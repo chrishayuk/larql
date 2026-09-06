@@ -232,10 +232,19 @@ pub struct ExecArgs {
     pub unquiet_ok: bool,
     /// How a mapped expert bank's selected experts are brought in per
     /// token: `demand` (the loop faults each page), `advise` (the kernel
-    /// is told ahead), `touch` (pages are faulted concurrently ahead of
-    /// the loop). The same lossless bytes under every policy.
+    /// is told ahead, one request per tensor), `touch` (pages are faulted
+    /// concurrently ahead of the loop), `coalesced` (one request per
+    /// contiguous run rather than per tensor), `gated` (coalesced, asked
+    /// only for the runs a residency probe finds are not already in
+    /// memory). The same lossless bytes under every policy.
     #[arg(long, default_value = "demand", requires = "residency_curve")]
     pub expert_access: String,
+    /// Read how much of the selected experts' pages are resident after the
+    /// prefetch and before the routed loop, every token. A page-table walk
+    /// over every selected page (≈70 ms on a 3 GB selection) that the
+    /// token then carries, so it is a witness arm, not a latency arm.
+    #[arg(long, requires = "residency_curve")]
+    pub witness_residency: bool,
 
     /// Teacher-force a whole quality bank through ONE resident model,
     /// writing `<--dump-dir>/<id>.f32` per entry.

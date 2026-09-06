@@ -1,0 +1,48 @@
+{
+  "programme": "residency-into-k3",
+  "wave": "PREFETCH-2: the access realization conditioned on residency, and its distributions",
+  "frozen": "2026-09-06, before the gating implementation, on main 1e57b6d1 (branch k3-prefetch-2, worktree .claude/worktrees/k3-prefetch-2)",
+  "why": "PREFETCH-1 (PR #433) held P3 and falsified P2: `madvise(MADV_WILLNEED)` over the selected experts halves the cold token (2.39 GB/s against demand's 0.94), while concurrent touching does not parallelise page-in of one mapping on macOS. It left P4 BORDERLINE and named the reason (PF-N3): 24 advise calls over already-resident pages cost 8 ms of an 80 ms warm token, so an access realization that always advises taxes every warm token to help only cold ones. This wave conditions the request on what is already resident, and replaces the single-pass arm readings with distributions under V4's qualified protocol.",
+  "carried_in_uncommitted_from_prefetch_1": {
+    "residency_witness": "`prefetch::residency(ranges)` — mincore over the page-aligned coalesced runs of the selected experts, read after the prefetch stage and before the projection loop, only under `--witness-residency`. Measured cost ~70 ms per token on a 2.95 GB selection (PF-N4), which is why it is opt-in and outside every stage.",
+    "coalesced_arm": "`MappedAccess::Coalesced` — one advise per contiguous run of the page-aligned selected regions rather than one per tensor; `PrefetchReport.requests` counts the calls.",
+    "already_measured": "Witnessed 5-sample cold distributions (each with a verified-cold bank): demand p50 1205 ms, advise p50 634 ms, coalesced p50 619 ms; resident-before-loop 59.1% (demand, the prompt's own reuse) and 100.0% (both advised arms) in every sample. PF-N5 records coalescing as a NEGATIVE follow-up: a tighter distribution (max 628 vs 864 ms), not a faster one — the madvise request-size knob saturates near 2.2-2.4 GB/s against the device's ~3.8."
+  },
+  "design": {
+    "what": "A fifth access realization, `MappedAccess::Gated`: the coalesced runs of the selected experts, each PROBED for residency, advised only where the probe says the pages are not already in memory.",
+    "probe": "A bounded sample per run — `GATE_PROBE_PAGES` pages at evenly spaced offsets, including the first and the last page — read with mincore one page at a time. A run counts as resident only when EVERY probed page is resident. Cost is O(runs), never O(pages): the full witness's page-table walk (~70 ms) must never enter the execution path.",
+    "identity": "`Gated` is part of the realization's identity and name (`mapped-stored/Bf16/gated`), selected exactly like the other four (`--expert-access gated`, `ResidencyBudget.expert_access`), and reported by `PrefetchReport.requests` — a gated warm token issues zero requests over a non-zero range count, which is the observable that separates it from `Coalesced`.",
+    "boundary": "No new kernel, no new representation, no change to routing, no change to what is stored or read. Skipping an advise cannot change a value: the loop still faults whatever is missing.",
+    "default_rule_preregistered": "If G1 AND G2 hold, `Gated` becomes the default `expert_access` for mapped banks in this wave (it is then never worse than `Demand` warm and ~2x better cold). If either fails, the default stays `Demand` and every arm remains opt-in. The rule is fixed here so the default is not chosen after seeing the numbers."
+  },
+  "protocol": {
+    "qualified_warm": "V4's protocol exactly: AC power, no competing work, the machine probe passing (no `--unquiet-ok`), `--warmup 3 --repeat 30`, p50/p95/min/max over the 30 counted passes, routing fingerprint and logits compared pass to pass. One run per arm: demand, advise, coalesced, gated. `--witness-residency` OFF (PF-N4: it doubles the warm figure).",
+    "cold": "`evict-bank.sh` before every sample; the binding line's mincore reading (`0.000 GB resident`) is the cold witness and a sample above 0.1 GB does not count. Three samples per arm for demand, coalesced and gated, unwitnessed — these are the latency record; the witnessed 5-sample set stays as the residency record.",
+    "not_measured_again": "The touch arm (PF-N2 falsified it) and the advise arm's cold distribution (coalesced supersedes it) are not re-run cold."
+  },
+  "predictions": {
+    "G1": "Warm, qualified: the gated arm's token p50 is within 3% of the demand arm's p50 measured in the same session, and its prefetch stage is <= 1 ms at p50 (against advise's ~8 ms). Requests issued on a warm token: 0.",
+    "G2": "Cold, unwitnessed: the gated arm's cold token p50 is within 5% of the coalesced arm's, and it issues one request per run (every probe misses on a verified-cold bank).",
+    "G3": "Partially resident (the three-position cold prompt, where PREFETCH-1 measured 59.1% of the selection already resident by position 3): the gated arm issues strictly fewer requests and advises strictly fewer bytes than the coalesced arm over the same prompt, while paging in the same total bytes within 2%.",
+    "G4": "Logits are bit-identical and the routing fingerprint (ebe045dc40cce5b1) and generated ids identical across all five access arms, warm and cold.",
+    "G5": "The probe is at least 30x cheaper than the full residency witness per token: <= 2 ms against ~70 ms on the same selection, measured as the gated arm's prefetch stage on a warm token.",
+    "G6": "Warm distributions, qualified: p50 ordering demand ~ gated < coalesced ~ advise, with advise - demand ~ 8 ms (PF-N3 reproduced as a distribution rather than one pass) and gated - demand <= 2 ms; p95/p50 <= 1.10 in every arm (V4 measured 1.03 on the qualified machine)."
+  },
+  "falsification": {
+    "G1_false": "Either mincore's per-call overhead is not negligible at run granularity, or the probe count is too high — the gate then has to come from a cheaper signal than the kernel's page table, and `Demand` stays the default.",
+    "G2_false": "The sample misclassifies cold runs as resident: a run whose probed pages are in but whose body is out. The probe widens (more pages, or the full vector for runs above a size) or gating moves to per-range granularity.",
+    "G3_false": "Residency is not separable at run granularity on a real partially-warm selection — the runs are longer than the reuse unit — and the gate must key on the expert, not the address run.",
+    "G6_false_on_advise": "If advise - demand is not ~8 ms as a distribution, PF-N3 was a single-pass artifact and the whole reason for gating weakens; the gate would then be a correctness-neutral refinement with no measured warm benefit, and must be reported as such."
+  },
+  "addendum_frozen_after_the_preliminary_round_before_its_arm_ran": {
+    "when": "2026-09-06, after one preliminary (machine-contended) round of the cold arms and before any contention control was run.",
+    "observation_that_prompted_it": "In the preliminary round the cold tokens did not separate — demand 602 ms, coalesced 591 ms, gated 607 ms, all with the same 73,518 major faults and 1.206 GB paged in. The advised arms reproduced PREFETCH-1 almost exactly (prefetch stage 514 ms against its 504 ms, ~2.4 GB/s); it is the DEMAND arm that moved, from 16.4 us per fault to 8.2. So the question is not why advising got worse but why demand-faulting got twice as fast, and PREFETCH-1's own notes name a candidate: its arms ran with `mds_stores` indexing the 184 GB the eviction stream had just read. The cold-state protocol may itself create the I/O contention that the demand arm alone is sensitive to.",
+    "control": "A demand cold arm run twice more: once with the machine's own I/O quiet after the eviction (Spotlight settled, verified by process CPU before the run), and once against a deliberate competing sequential read stream over an unrelated large file. Same eviction, same tokens, same cold witness.",
+    "C1": "Contended: the demand arm's cold token rises to at least 1.5x its uncontended value (toward PREFETCH-1's ~1200 ms), while the coalesced arm's prefetch stage rises by less than 1.3x — bulk readahead is less sensitive to queue contention than one fault at a time.",
+    "C2": "Uncontended: demand and coalesced cold tokens land within 10% of each other — the advise gain vanishes when nothing else is reading the device.",
+    "if_both_hold": "PF-N1's '2x cold gain' is CONDITIONAL on I/O contention, and the eviction protocol manufactures the condition it measures under. The prefetch's honest claim then narrows to: it converts many small faults into few large requests, which matters when the device queue is shared and not when it is idle. The gate's claim (no warm tax) is untouched either way.",
+    "if_C1_fails": "Contention is not the mechanism; the difference is machine state of another kind (uptime, thermal, fragmentation) and both readings stand as a range rather than a value — in which case no cold claim survives without a per-campaign demand baseline, which every arm here already carries."
+  },
+  "not_claimed": "No tokens-per-second. No quantised representation: BF16 stays the stored form for every arm here, and the Q6_K/Q4_K expert-bank matrix (mapped-demand / mapped-prefetch / resident-direct) is the NEXT wave, priced against these distributions. No claim that gating helps a cold token — its whole purpose is to cost nothing on a warm one.",
+  "exit_statement": "For identical selected experts, an access realization can be conditioned on observed residency: it pays the cold gain and no warm tax, and says which of its requests it issued."
+}

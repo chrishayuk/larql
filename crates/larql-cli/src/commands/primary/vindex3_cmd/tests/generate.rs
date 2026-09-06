@@ -63,6 +63,7 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         warmup: 0,
         unquiet_ok: true,
         expert_access: "demand".to_string(),
+        witness_residency: false,
         logit_dump: None,
         bank: None,
         dump_dir: None,
@@ -100,6 +101,7 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         warmup: 1,
         unquiet_ok: true,
         expert_access: "touch".to_string(),
+        witness_residency: true,
         logit_dump: None,
         bank: None,
         dump_dir: None,
@@ -107,6 +109,44 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         profile: false,
     }))
     .expect("the residency curve must complete both passes");
+}
+
+/// The gated access policy reaches execution through the flag: a name the
+/// CLI accepts, a curve that completes, and no witness walk asked for.
+/// (What it decides is the library's test; that it is reachable is this
+/// one's.)
+#[test]
+fn the_curve_runs_under_the_gated_access_policy() {
+    let dir = fixture_dir(true);
+    let out = dir.path().join("container");
+    run(Vindex3Command::Encode(EncodeArgs {
+        capability: None,
+        artifacts: vec![dir.path().to_path_buf()],
+        output: out.clone(),
+    }))
+    .unwrap();
+    run(Vindex3Command::Exec(ExecArgs {
+        container: out,
+        component: "target".to_string(),
+        tokens: "1,2,3".to_string(),
+        dump_layers: None,
+        resume: false,
+        backend: ExecBackend::Production,
+        representation_source: "auto".to_string(),
+        generate: Some(2),
+        residency_curve: true,
+        repeat: 2,
+        warmup: 1,
+        unquiet_ok: true,
+        expert_access: "gated".to_string(),
+        witness_residency: false,
+        logit_dump: None,
+        bank: None,
+        dump_dir: None,
+        draft_depth: None,
+        profile: false,
+    }))
+    .expect("the gated curve must complete");
 }
 
 /// A warmup that leaves no counted pass is refused by name, before any
@@ -135,6 +175,7 @@ fn a_warmup_that_leaves_nothing_counted_is_refused() {
         warmup: 2,
         unquiet_ok: true,
         expert_access: "demand".to_string(),
+        witness_residency: false,
         logit_dump: None,
         bank: None,
         dump_dir: None,
@@ -172,6 +213,7 @@ fn an_unknown_expert_access_is_refused_by_name() {
         warmup: 0,
         unquiet_ok: true,
         expert_access: "prescient".to_string(),
+        witness_residency: false,
         logit_dump: None,
         bank: None,
         dump_dir: None,

@@ -475,6 +475,7 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     warmup: usize,
     unquiet_ok: bool,
     expert_access: &str,
+    witness_residency: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::accounting::{
         expectations, BlockGeometry, ResourceLedger,
@@ -490,6 +491,10 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     let access = larql_vindex::format::vindex3::opplan::exec::realization::MappedAccess::parse(
         expert_access,
     )?;
+    routing_trace::set_witness_residency(witness_residency);
+    if witness_residency {
+        println!("residency witness ON: every token also pays a page-table walk over its selected experts");
+    }
     if warmup >= repeat.max(1) {
         return Err(format!("warmup {warmup} leaves no counted pass out of {repeat}").into());
     }
@@ -693,6 +698,8 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
                 .ok_or("plan carries no output head — cannot generate")?;
             let elapsed = started.elapsed().as_secs_f64();
             let routing = routing_trace::take_capture();
+            let residency = routing_trace::take_residency();
+            let requests = routing_trace::take_requests();
             let obs = observe(
                 format!("token {}", step + 1),
                 elapsed,
@@ -714,6 +721,24 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
                 if first_logits.is_none() {
                     first_logits = Some(logits.clone());
                 }
+                let resident_before_loop = (!residency.is_empty()).then(|| {
+                    residency.iter().fold((0u64, 0u64), |(span, resident), r| {
+                        (
+                            span + r.span_bytes as u64,
+                            resident + r.resident_bytes as u64,
+                        )
+                    })
+                });
+                let request_shape = (!requests.is_empty()).then(|| {
+                    requests
+                        .iter()
+                        .fold(RequestShape::default(), |acc, r| RequestShape {
+                            ranges: acc.ranges + r.ranges,
+                            requests: acc.requests + r.requests,
+                            span_bytes: acc.span_bytes + r.bytes as u64,
+                            requested_bytes: acc.requested_bytes + r.requested_bytes as u64,
+                        })
+                });
                 token_sample = Some(PassSample {
                     pass,
                     observation: obs,
@@ -721,6 +746,8 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
                     routed_layers: routing.len(),
                     first_layer_experts: routing.first().cloned().unwrap_or_default(),
                     logits_delta,
+                    resident_before_loop,
+                    request_shape,
                 });
             }
         }
@@ -730,6 +757,23 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
                 "  token 1: routing {:016x} over {} routed layers, layer-1 experts {:?}, logits max|Δ| vs pass 1 {:.2e}",
                 sample.routing_fingerprint, sample.routed_layers, sample.first_layer_experts, sample.logits_delta
             );
+            if let Some(shape) = sample.request_shape {
+                println!(
+                    "  token 1: prefetch covered {} ranges ({:.3} GB) in {} request(s) for {:.3} GB",
+                    shape.ranges,
+                    shape.span_bytes as f64 / GB,
+                    shape.requests,
+                    shape.requested_bytes as f64 / GB,
+                );
+            }
+            if let Some((span, resident)) = sample.resident_before_loop {
+                println!(
+                    "  token 1: selected experts resident before the loop: {:.3} of {:.3} GB ({:.1}%)",
+                    resident as f64 / GB,
+                    span as f64 / GB,
+                    if span > 0 { resident as f64 / span as f64 * 100.0 } else { 0.0 }
+                );
+            }
             if first_generated.is_none() {
                 first_generated = Some(generated.clone());
             } else if first_generated.as_deref() != Some(generated.as_slice()) {
@@ -768,6 +812,25 @@ struct PassSample {
     routed_layers: usize,
     first_layer_experts: Vec<usize>,
     logits_delta: f32,
+    /// The selected experts' page-aligned span and the part of it the OS
+    /// reported resident after the prefetch and before the loop, summed
+    /// over the token's routed layers; absent when nothing was mapped.
+    resident_before_loop: Option<(u64, u64)>,
+    /// What the token's prefetches covered and what they asked for.
+    request_shape: Option<RequestShape>,
+}
+
+/// One token's prefetch request shape, summed over its routed layers: the
+/// ranges the access realization covered and their page-aligned span,
+/// beside the requests it actually issued and the bytes those asked for.
+/// The two part company when a policy skips a request — the observable
+/// that separates a gated arm from an unconditional one.
+#[derive(Debug, Clone, Copy, Default)]
+struct RequestShape {
+    ranges: usize,
+    requests: usize,
+    span_bytes: u64,
+    requested_bytes: u64,
 }
 
 /// Nearest-rank percentile of a sorted sample.
@@ -825,6 +888,34 @@ fn summarise_passes(samples: &[PassSample], repeat: usize, warmup: usize, qualif
     let nested: u64 = samples.iter().map(|s| s.observation.stages_nested).sum();
     if nested > 0 {
         println!("  REFUSING TO RECONCILE STAGES: {nested} nested stage timers across the counted passes");
+    }
+    let fractions: Vec<f64> = samples
+        .iter()
+        .filter_map(|s| s.resident_before_loop)
+        .filter(|(span, _)| *span > 0)
+        .map(|(span, resident)| resident as f64 / span as f64 * 100.0)
+        .collect();
+    if !fractions.is_empty() {
+        let (p50, _, min, max) = stats(fractions.iter().copied());
+        println!(
+            "  selected experts resident before the loop: p50 {p50:.1}%, min {min:.1}%, max {max:.1}% over {} pass(es)",
+            fractions.len()
+        );
+    }
+    // What the access realization asked for, over the counted passes: a
+    // policy conditioned on residency issues fewer requests than it covers
+    // ranges, and none at all once the selection is warm.
+    let shapes: Vec<RequestShape> = samples.iter().filter_map(|s| s.request_shape).collect();
+    if let Some(first) = shapes.first() {
+        let (requests_p50, _, requests_min, requests_max) =
+            stats(shapes.iter().map(|s| s.requests as f64));
+        let (asked_p50, _, _, _) = stats(shapes.iter().map(|s| s.requested_bytes as f64));
+        println!(
+            "  prefetch: {} ranges ({:.3} GB) covered; requests p50 {requests_p50:.0}, min {requests_min:.0}, max {requests_max:.0}; asked for p50 {:.3} GB",
+            first.ranges,
+            first.span_bytes as f64 / GB,
+            asked_p50 / GB,
+        );
     }
     let worst_logits = samples
         .iter()
