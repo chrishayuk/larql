@@ -164,6 +164,17 @@ pub fn plan_component_ops(
         )));
     };
     let mut defects: Vec<ClosureDefect> = Vec::new();
+    // What the container declares as a dependency of something. A tensor
+    // nothing plans and nothing references is unclassified; one another
+    // operand REFERENCES has a fate — the codec that needs it — and the
+    // loader, which holds the registry, is what checks the reference is
+    // one that codec declared.
+    let references = match &inspection.index.auxiliary_references {
+        Some(name) => {
+            crate::format::vindex3::auxiliary_references::AuxiliaryReferences::read(root, name)?
+        }
+        None => crate::format::vindex3::auxiliary_references::ReferenceTable::empty(),
+    };
 
     let surface = match &component.execution {
         Some(surface) if surface.norm.placement.is_some() => surface,
@@ -470,6 +481,10 @@ pub fn plan_component_ops(
             // registry, is what checks the suffix names a stream the
             // representation declares. Neither half infers a role.
             if auxiliary_stream_of(&tensor.name, &names).is_some() {
+                continue;
+            }
+            // Referenced by something: its fate is its owner's requirement.
+            if references.is_referenced(&object.id, &tensor.name) {
                 continue;
             }
             // Layer-aware, and it must be: on a hybrid checkpoint the

@@ -37,6 +37,7 @@
 //! would look for it. Regions are placed exactly as their producer wrote them.
 
 pub mod artifact;
+pub mod auxiliary_references;
 pub mod build;
 pub mod compact;
 pub mod compile;

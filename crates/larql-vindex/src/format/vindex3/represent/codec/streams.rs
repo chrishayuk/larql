@@ -7,14 +7,18 @@
 //! served them. A named set of streams is the first repair. The second is
 //! [`AuxiliaryOperands`]: a codebook is not a stream of this tensor's bytes,
 //! it is another represented object, and a decode that depends on one has
-//! admitted a representation dependency. Naming that today, while it is
-//! empty, is what keeps the first VQ codec from turning the stream set
-//! into a disguised dependency graph.
+//! admitted a representation dependency. Keeping the two apart is what
+//! stops a dependency graph from being smuggled in as a stream set.
+//!
+//! A stream is bytes and reaches the codec as bytes. An auxiliary is
+//! another operand and reaches the codec as VALUES — decoded through its
+//! own codec, at its own extent, by whoever resolved the closure. The
+//! codec never learns how its dependency was stored, and never acquires
+//! it: resolution happens before the decode, in dependency order.
 
 use std::collections::BTreeMap;
 
 use super::error::CodecError;
-use crate::format::vindex3::opplan::OperandRef;
 
 /// What one stream carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,26 +102,67 @@ impl<'a> NamedStreams<'a> {
     }
 }
 
-/// Other represented objects a decode depends on, by the name the codec
-/// gives the dependency. Empty for every codec this build ships; the
-/// slot exists so a codebook arrives as a dependency and not as a stream.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct AuxiliaryOperands {
-    operands: BTreeMap<String, OperandRef>,
+/// One dependency, RESOLVED: decoded through its own codec, at its own
+/// selected extent, into the canonical f32 surface.
+///
+/// Values rather than an `OperandRef`, and the change is the point. The
+/// slot originally held a reference — which is what a container states
+/// and what a closure resolves — but no decode can use one: a codec has
+/// no store, no registry, and no business acquiring bytes. Resolution
+/// happens before the codec is called, in dependency order, and what
+/// arrives here is what the dependency MEANS. It also makes an
+/// auxiliary's own representation invisible to its owner: a codebook
+/// stored as planes and a codebook stored raw reach this struct
+/// identically.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResolvedAuxiliary<'a> {
+    /// The shape the container records for the dependency.
+    pub shape: &'a [usize],
+    /// Its decoded values, row-major.
+    pub values: &'a [f32],
 }
 
-impl AuxiliaryOperands {
+/// Other represented objects a decode depends on, by the name the codec
+/// declared for each. Empty for every codec that reads only its own bytes.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AuxiliaryOperands<'a> {
+    operands: BTreeMap<String, ResolvedAuxiliary<'a>>,
+}
+
+impl<'a> AuxiliaryOperands<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with(mut self, name: impl Into<String>, operand: OperandRef) -> Self {
-        self.operands.insert(name.into(), operand);
+    pub fn with(mut self, name: impl Into<String>, resolved: ResolvedAuxiliary<'a>) -> Self {
+        self.operands.insert(name.into(), resolved);
         self
     }
 
-    pub fn get(&self, name: &str) -> Option<&OperandRef> {
-        self.operands.get(name)
+    pub fn get(&self, name: &str) -> Option<ResolvedAuxiliary<'a>> {
+        self.operands.get(name).copied()
+    }
+
+    /// The dependency `name`, or a refusal listing what was resolved —
+    /// the auxiliary twin of [`CodecOperands::stream`].
+    pub fn require(
+        &self,
+        name: &str,
+        label: &str,
+        tensor: &str,
+    ) -> Result<ResolvedAuxiliary<'a>, CodecError> {
+        self.get(name).ok_or_else(|| CodecError::MissingAuxiliary {
+            tensor: tensor.into(),
+            label: label.into(),
+            name: name.into(),
+            depth: 0,
+            required: self.names(),
+        })
+    }
+
+    /// Resolved names, in name order — what a refusal lists.
+    pub fn names(&self) -> Vec<String> {
+        self.operands.keys().cloned().collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -133,7 +178,7 @@ impl AuxiliaryOperands {
 #[derive(Debug, Clone, Default)]
 pub struct CodecOperands<'a> {
     pub streams: NamedStreams<'a>,
-    pub auxiliaries: AuxiliaryOperands,
+    pub auxiliaries: AuxiliaryOperands<'a>,
 }
 
 impl<'a> CodecOperands<'a> {

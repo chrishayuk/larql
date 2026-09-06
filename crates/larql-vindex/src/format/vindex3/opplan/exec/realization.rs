@@ -498,10 +498,63 @@ pub struct RealizationRecord {
     /// every extent whatever this says — what the pin decides is how much
     /// of it execution opens.
     pub extent: ExtentPin,
+    /// The other represented objects this pin will resolve, and what its
+    /// realization does with each. Empty for every operand whose codec
+    /// depends on nothing.
+    pub dependencies: Vec<DependencyPin>,
+}
+
+/// What a realization does with a dependency once it has read it.
+///
+/// The distinction the accounting turns on, and it belongs to the
+/// REALIZATION rather than to the operand: being an auxiliary says
+/// nothing about lifetime. A canonical decode reads a codebook, produces
+/// an f32 image and is finished with it; a direct kernel over codes would
+/// have to keep it and touch it for every token. Same object, same
+/// container, different cost — decided by what was pinned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DependencyLifetime {
+    /// Read to prepare the owner, then dropped. Nothing of it is resident
+    /// afterwards and no token touches it.
+    PreparationOnly,
+    /// Kept resident and read while serving. NOTHING SELECTS THIS TODAY:
+    /// no realization in this build declares it, and the accounting can
+    /// price it so that a realization which did would be paid for
+    /// honestly rather than silently.
+    Retained,
+}
+
+/// One dependency a pinned realization will resolve, and what it will
+/// cost once resolved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DependencyPin {
+    /// The name the owner's codec declared.
+    pub name: String,
+    pub object: String,
+    pub tensor: String,
+    /// The stored label the container records for the target — its
+    /// representation, which is its own business and not its owner's.
+    pub label: String,
+    /// The identity that label resolved to when this pin was made.
+    /// `None` for a label no codec claims, which admission refuses.
+    pub provider: Option<CodecIdentity>,
+    /// The container's recorded length for it — `None` when the container
+    /// holds no such tensor, which admission refuses before this matters.
+    pub stored_bytes: Option<u64>,
+    /// Logical elements it holds, for pricing a retained image.
+    pub elements: usize,
+    pub lifetime: DependencyLifetime,
+}
+
+impl DependencyPin {
+    /// The address, as the ledger keys deduplication on.
+    pub fn address(&self) -> (String, String) {
+        (self.object.clone(), self.tensor.clone())
+    }
 }
 
 /// One extent a pin could take: what it certifies, and what it reads.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExtentOption {
     pub certificate: ExtentCertificate,
     /// Bytes of the stored operand this extent reads, where the codec
@@ -545,11 +598,10 @@ impl ExtentPin {
     }
 
     /// The option the pin selected, when the extents are known.
-    pub fn selected_option(&self) -> Option<ExtentOption> {
+    pub fn selected_option(&self) -> Option<&ExtentOption> {
         self.options
             .iter()
             .find(|o| o.certificate.extent == self.selected)
-            .copied()
     }
 
     /// Bytes the selected extent reads, when the codec prices them.

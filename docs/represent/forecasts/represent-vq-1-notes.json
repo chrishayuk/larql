@@ -1,0 +1,92 @@
+{
+  "programme": "represent-plugin-planes",
+  "wave": "REPRESENT-VQ-1: a representation that depends on another represented object",
+  "answers": "docs/represent/forecasts/represent-vq-1.json, frozen 2026-09-06 before any implementation",
+  "branch": "represent-vq-1, cut from main `f5a50e27` (merge of PR #440, PROGRESSIVE-1)",
+  "gates": "fmt / clippy (larql-vindex, larql-cli) / cargo check --target x86_64-apple-darwin / cargo test -p larql-vindex (4787 passed, 0 failed) / cargo test -p larql-cli — all green. Per-file coverage: policy passed, 93.71% total; every file this wave touched is at or above the 90% floor except `opplan/exec/prepared.rs`, which sits on an 86.6 debt baseline and MOVED UP to 89.81.",
+
+  "verdict": {
+    "shape": "SPLIT. The mechanism is supported; the artifact is blocked. These are separable claims, and conflating them is what would make the wave sound like a failure or like a success, when it is exactly one of each.",
+
+    "supported": {
+      "claim": "A representation may depend on ANOTHER REPRESENTED OBJECT — not on a byte stream wearing an operand's clothes — and every stage of the pipeline stays generic.",
+      "what_was_shown": [
+        "RESOLVED through a versioned container-level table keyed by (owner operand, auxiliary name) -> target operand, never by tensor-name convention. Two owners share one target and each names it itself.",
+        "ADMITTED transitively from METADATA ONLY, before any payload read, with the store's own read counter as the witness. A two-level synthetic dependency orders deepest-first, and the order is asserted rather than incidental.",
+        "REFUSED by name in every way the declaration can be wrong: absent reference, absent target, incompatible shape (judged from metadata, before bytes), missing provider for the AUXILIARY's codec, self-reference, cycle (with the path that closes it), duplicate declaration, foreign schema version.",
+        "ACCOUNTED by the SELECTED REALIZATION and not by the operand's role: under canonical decode the dependency's persistent residency and per-token touch are ZERO, and a declaration-level control proves a realization that RETAINED it would pay residency once and touch once per owner. The control is priced at the ledger and is never in a candidate set — a test asserts the backend offers no such realization.",
+        "COMPOSED into the parent's fidelity in a NAMED metric over a NAMED domain, or refused: a parent floor is met or missed by the composition and not by either half, a dependency stated in different terms makes the composed certificate unavailable BY NAME rather than converted, and a dependency that certifies nothing leaves nothing to compose.",
+        "INVALIDATED with its provider: losing the DEPENDENCY's codec invalidates a prepared image by that codec's label while the parent's own provider is still registered — so the parent surviving is not enough.",
+        "EXECUTED through the canonical path, with the parent's extent and each dependency's extent as SEPARATE pins: the progressive-codebook arm holds every code byte fixed and moves only the auxiliary's extent, and the decoded values move with it.",
+        "REPRODUCED OUT OF TREE: a crate that is not larql-vindex registers a parent (`PALETTE8`) whose dependency is named `swatches`, stored under a second external codec (`SWATCH16`) with its own family and revision, and plans, resolves, decodes, prices and invalidates through exported API alone. A grep over the planner, the loader, the accounting, the realization vocabulary and the reference table proves none of them names either external label, the external dependency's spelling, `VQ8_SHARED`, `Vq8Shared` or `codebook` in CODE."
+      ],
+      "why_it_matters": "The forecast's exit claim is met in full: no part of the machinery knows what a codebook is, and nothing pinnable cannot be executed."
+    },
+
+    "blocked": {
+      "claim": "A REAL LOSSY VQ ARTIFACT CANNOT SATISFY A QUALITY FLOOR IN THIS BUILD — and that is a correct refusal, not a defect to be worked around.",
+      "why": "`VQ8_SHARED` declares no reconstruction radius, and it cannot honestly declare one. A vector quantiser's assignment error is a property of a FITTED codebook against ACTUAL weights: the same codec, the same codebook size and the same four-element grouping give a different error on every tensor they are fitted to. It is an artifact-instance fact, not a codec-wide fact. `F32_PLANES` can declare a radius because a bit-plane truncation's error is a property of the SCHEME; `VQ8_SHARED` is the first shipped codec for which that is false.",
+      "consequence": "`composed_certificate` returns `CertificateUnavailable` for every real VQ operand, naming the reason — 'it declares no radius of its own, so there is nothing for a dependency's bound to widen'. A `RepresentationFloor` therefore cannot admit a VQ realization at all. The composition algebra above was exercised against a synthetic parent that DOES declare a radius, which is why the mechanism could be proved while the artifact stays blocked.",
+      "what_is_missing": "An authority that can attest a MEASURED radius for a SPECIFIC artifact, carried with the artifact and verifiable against it. That authority is the next rung, `REPRESENT-ATTESTATION-1`, and it was deliberately kept out of VQ-1 so that the dependency axis and the attestation axis would not be settled in one wave and confound each other.",
+      "not_a_workaround": "Manufacturing a radius for `VQ8_SHARED` — a plausible-looking constant, or a bound measured on the fixture — would have made the floor pass and the guarantee false. The refusal is the honest state of the build until an artifact can speak for itself."
+    }
+  },
+
+  "predictions_scored": {
+    "Q1": "CONFIRMED. Additions only: `required_auxiliaries(extent)`, `validate_auxiliary`, `composed_certificate`, and `FidelityCertificate` replacing the bare `ErrorRadius` number. No existing method changed shape — `decode_rows` and `validate` are untouched, and a resolved dependency arrives through `CodecOperands::auxiliaries`, which is the seam that was put there for it. As pre-registered, providers moved to the validated constructor, PROGRESSIVE-1's out-of-tree test included; that is the vocabulary extension, not a falsification.",
+    "Q2": "CONFIRMED. Exactly one new declared thing: `Vindex3Index::auxiliary_references` naming a versioned sidecar. The graph and the precision map learned nothing. A container written before this wave has no table and reads unchanged.",
+    "Q3": "CONFIRMED, and the blocker recurred exactly where the reconnaissance predicted it (V6). The codebook tensor reported as `UnclassifiedOperand` until the closure pass learned that a REFERENCED operand has a fate — `ReferenceTable::is_referenced`, the same TREATMENT PROGRESSIVE-1 gave siblings. No `OperandRole` was needed, so a dependency stayed a representation concept rather than becoming a model concept.",
+    "Q4": "CONFIRMED. No new resource dimension. `Expectation` carries the realization's dependency pins and `ResourceLedger::aggregate` attributes them: footprint and preparation reads deduplicated per distinct object, residency and touch only where the realization declares `Retained`.",
+    "Q5": "CONFIRMED. The progressive-codebook arm needed no VQ-specific code: a codebook stored as `F32_PLANES` is loaded by the same path as any operand, extent selection included, and the owner decodes identically however its codebook is stored.",
+    "Q6": "CONFIRMED, and checked structurally rather than by inspection. The external provider does all of it through exported API, and the grep arm over seven core files proves no match arm, identifier or string literal names any of it.",
+    "Q7": "CONFIRMED — the prediction whose falsification would have been the most important thing this wave could find. Composition is stated by the parent from its own certificate plus its auxiliaries' certificates. The parent never learns the auxiliary's FORMAT: the raw-f32 and `F32_PLANES` codebooks compose through identical code. Fidelity does compose across the plugin boundary.",
+    "Q8": "CONFIRMED. The retained-codebook profile is priced by handing the ledger a declared profile, and a test asserts every realization the backend offers declares `PreparationOnly`. A declaration with no implementation is not pinnable."
+  },
+
+  "witnesses_scored": {
+    "W1_closure_before_bytes": "MET — `admission_reads_metadata_and_the_reading_is_bounded`.",
+    "W2_refusals_by_name": "MET — `each_way_a_dependency_can_be_wrong_is_refused_by_name`, `a_cycle_is_refused_with_the_path_that_closes_it`, `a_wrong_declaration_is_refused_through_the_container`, and the table's own refusal suite.",
+    "W3_topological": "MET on the synthetic two-level arm — `a_dependency_of_a_dependency_is_ordered_deepest_first`, `a_shared_target_is_reached_once_and_ordered_before_its_owners`.",
+    "W4_footprint_once": "MET — `a_shared_dependency_is_counted_once_and_costs_what_its_lifetime_says`, under both arms.",
+    "W5_realization_decides_lifetime": "SPLIT. The lifetime half is MET: zero residency and zero per-token touch under canonical decode, and the priced-never-selected control shows the numbers come from the realization. The PREPARATION-READS half found a disagreement — see VQ1-N1. The forecast said the ledger must agree with the counter and not with an assumption about sharing; it does not, and the finding is recorded rather than reconciled.",
+    "W6_composed_certificate": "MET for the algebra, on a parent that declares a radius: floor met-or-missed by the composition, unlike terms refused by name, an uncertified dependency leaving nothing to compose. NOT REACHABLE for a real VQ operand, which is the blocked half of the verdict.",
+    "W7_invalidation": "MET — `losing_the_dependencys_provider_invalidates_the_image_by_name`, with the parent's provider still registered so the failure is uniquely the dependency's.",
+    "W8_out_of_tree": "MET — `an_external_representation_resolves_an_external_dependency_and_decodes`.",
+    "W9_no_hidden_pathway": "MET — `no_core_file_names_this_crates_representation_or_its_dependency`."
+  },
+
+  "findings": {
+    "VQ1-N1": {
+      "title": "The ledger prices a shared dependency ONCE; the loader reads it ONCE PER OWNER.",
+      "measured": "Differenced against a control container identical in every tensor but for the dependency, because `load_count` is process-global and says nothing on its own. Two owners: 2 reads. One owner: 1 read. The ledger attributes one stored footprint and one `read_to_prepare` in both cases.",
+      "discrimination": "The one-owner arm exists to separate 'once per owner' from 'a constant cost of resolving the dependency plane at all'. A constant would have read the same number at one owner as at two. It did not.",
+      "reading": "Both numbers are correct about different questions. The ledger prices a PLAN: one object is one footprint, and deduplicating is what makes a shared codebook shareable in the accounting at all. The loader performs I/O and has no dependency cache — caching was explicitly out of VQ-1's scope. The gap is therefore expected, but it is NOT what the forecast predicted (it said the ledger must agree with the counter), so it is banked as a finding rather than explained away.",
+      "consequence": "Any future claim of the form 'preparing this plan reads N bytes' is wrong by the sharing factor until a dependency cache exists. The test asserts the exact gap rather than the agreement, so the day a cache lands the test fails and says so.",
+      "owed_to": "the same ledger-honesty debt as PR1-N5 (see VQ1-N5)."
+    },
+    "VQ1-N2": {
+      "title": "The predicted closure blocker recurred exactly, and the predicted treatment fixed it.",
+      "detail": "V6 forecast that a codebook tensor would report `UnclassifiedOperand` because it is not a sibling by name. It did. `ReferenceTable::is_referenced` gave it a fate, with no role vocabulary change. Second wave running in which a pre-registered structural blocker was met as a scheduled step rather than as a surprise."
+    },
+    "VQ1-N3": {
+      "title": "Registering a codec in the builtin registry restates the universals.",
+      "detail": "Each new shipped codec (`F32_PLANES`, then `VQ8_SHARED`) broke four registry universals apiece, most sharply a fixture width of 100 chosen to be divisible by every existing group size. It is now 101, a prime: a width chosen to defeat today's groups is always one codec away from wrong."
+    },
+    "VQ1-N4": {
+      "title": "A VQ fixture whose codebook does not span its data measures nothing.",
+      "detail": "The first codebook did not cover the fixture's ramp and the worst component error read 2.39 against an asserted bound of 1.0. The bound was not the problem: nearest-entry assignment against a codebook that cannot reach the data is not quantisation, it is clamping. The fixture codebook now spans the data, and the quality assertion is the real property — a decoded vector is EXACTLY the nearest codebook entry — rather than a threshold that happened to hold."
+    },
+    "VQ1-N5": {
+      "title": "The process-global stage ledger (PR1-N5) is still open and now has a second reason to close.",
+      "detail": "PROGRESSIVE-1 merged under a documented waiver for a race in `stages::LEDGER`. VQ1-N1 gives the same subsystem a second honesty problem from the other direction. Execution-scoped accounting is owed before any further qualified performance claim, as previously directed; thread-local storage alone is sufficient only if a witness proves every stage scope stays on the coordinating thread."
+    }
+  },
+
+  "not_claimed": "No timing, no throughput, no kernel, no compression claim. `VQ8_SHARED` is a forcing test for the dependency axis and nobody should quantise anything with it. Nothing here says a shared codebook is a good idea for a real model; it says the contract can carry one, that carrying one does not make a dependency permanently resident or touched during execution, and that a lossy artifact cannot yet promise anything about its own error.",
+
+  "next": {
+    "rung": "REPRESENT-ATTESTATION-1",
+    "why_now": "It is the blocked half of this verdict, and `RepresentationCodec` v1 must not be frozen without it: a codec vocabulary in which a lossy representation can never satisfy a floor is a vocabulary that will be worked around the moment someone ships a real quantiser.",
+    "freeze_rule": "Its forecast is frozen only on a fresh branch cut from the MERGED VQ-1 commit, never on this branch."
+  }
+}

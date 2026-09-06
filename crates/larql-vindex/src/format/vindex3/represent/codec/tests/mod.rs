@@ -4,12 +4,15 @@
 //! a test that passes for the floats and fails for MXFP4 is a statement
 //! about MXFP4's declaration and not about the test.
 
+mod auxiliary;
 mod baseline;
 mod bf16_zlib;
 mod capability;
+mod composition;
 mod contract;
 mod decode;
 mod f32_planes;
+mod fidelity;
 mod fixtures;
 mod geometry;
 mod lyrw2;
@@ -17,6 +20,7 @@ mod ranges;
 mod registry;
 mod residency;
 mod streams;
+mod vq8_shared;
 
 use super::codecs::bf16_zlib::BF16_ZLIB;
 use super::codecs::f32_planes::{F32PlanesCodec, F32_PLANES};
@@ -24,9 +28,12 @@ use super::codecs::float::{BF16, F16, F32};
 use super::codecs::kquant::{Q4_K, Q6_K, Q8_0};
 use super::codecs::mxfp4::{DTYPE_MXFP4, MXFP4};
 use super::codecs::nvfp4::NVFP4;
+use super::codecs::vq8_shared::{
+    Vq8SharedCodec, CODEBOOK as VQ_CODEBOOK, VQ8_SHARED, VQ_CODEBOOK_ENTRIES, VQ_VECTOR_ELEMS,
+};
 // Named explicitly: the `streams` TEST module below shadows the crate's
 // `streams` module for every file under it.
-use super::streams::{GROUP_SCALES, TENSOR_SCALE, VALUES};
+use super::streams::{ResolvedAuxiliary, GROUP_SCALES, TENSOR_SCALE, VALUES};
 use super::*;
 use crate::format::vindex3::fixtures::encode_bf16_zlib;
 use crate::format::vindex3::opplan::exec::weights::{quantize_mxfp4, LoadedWeight};
@@ -48,12 +55,40 @@ pub(super) fn ramp(n: usize) -> Vec<f32> {
         .collect()
 }
 
+/// A codebook whose entries span the RAMP's range — `[-0.22, 8.76]` — so
+/// nearest-entry coding is a real assignment rather than everything
+/// clamping to the end of a book that does not reach the data.
+///
+/// Its entries are constant vectors, evenly spaced, which leaves two
+/// sources of error a test can reason about: half an entry spacing
+/// (`10 / 255 / 2`), and half the spread WITHIN a four-weight vector,
+/// which the ramp's every-thirteenth-element step makes as large as
+/// ~0.08. Nothing here is a good quantiser; it is a fixture whose error
+/// is predictable.
+pub(super) const VQ_CODEBOOK_LOW: f32 = -0.5;
+pub(super) const VQ_CODEBOOK_HIGH: f32 = 9.5;
+/// The worst per-component error the fixture codebook can leave on the
+/// ramp — measured, and asserted against so a regression in either the
+/// codebook or the coder shows up as a number rather than a vibe.
+pub(super) const VQ_WORST_COMPONENT_ERROR: f32 = 0.09;
+
+pub(super) fn vq_codebook() -> Vec<f32> {
+    let span = VQ_CODEBOOK_HIGH - VQ_CODEBOOK_LOW;
+    (0..VQ_CODEBOOK_ENTRIES * VQ_VECTOR_ELEMS)
+        .map(|i| {
+            let entry = (i / VQ_VECTOR_ELEMS) as f32;
+            VQ_CODEBOOK_LOW + entry * span / (VQ_CODEBOOK_ENTRIES - 1) as f32
+        })
+        .collect()
+}
+
 pub(super) fn builtin() -> Vec<&'static dyn RepresentationCodec> {
     CodecRegistry::builtin().codecs().collect()
 }
 
-/// One encoded fixture: the bytes a container would hold, and how they
-/// bind onto the codec's streams.
+/// One encoded fixture: the bytes a container would hold, how they bind
+/// onto the codec's streams, and — for a codec that depends on another
+/// represented object — that dependency already resolved.
 pub(super) struct Fixture {
     pub codec: &'static dyn RepresentationCodec,
     pub shape: Vec<usize>,
@@ -62,22 +97,31 @@ pub(super) struct Fixture {
     /// Whether the buffers are one packed payload (bound through
     /// `bind_packed`) or one buffer per declared stream.
     pub packed: bool,
+    /// Dependencies the codec requires, RESOLVED: name, shape, values.
+    /// Empty for every codec that reads only its own bytes — which is
+    /// every codec but one.
+    pub auxiliaries: Vec<(&'static str, Vec<usize>, Vec<f32>)>,
 }
 
 impl Fixture {
     pub fn operands(&self) -> CodecOperands<'_> {
-        if self.packed {
-            let streams = self
-                .codec
+        let streams = if self.packed {
+            self.codec
                 .bind_packed(&self.buffers[0], &self.shape, TENSOR)
-                .expect("a packed fixture binds");
-            return CodecOperands::from_streams(streams);
+                .expect("a packed fixture binds")
+        } else {
+            let mut streams = NamedStreams::new();
+            for (spec, bytes) in self.codec.streams().iter().zip(&self.buffers) {
+                streams = streams.with(*spec, bytes);
+            }
+            streams
+        };
+        let mut operands = CodecOperands::from_streams(streams);
+        for (name, shape, values) in &self.auxiliaries {
+            operands.auxiliaries = std::mem::take(&mut operands.auxiliaries)
+                .with(*name, ResolvedAuxiliary { shape, values });
         }
-        let mut streams = NamedStreams::new();
-        for (spec, bytes) in self.codec.streams().iter().zip(&self.buffers) {
-            streams = streams.with(*spec, bytes);
-        }
-        CodecOperands::from_streams(streams)
+        operands
     }
 
     pub fn label(&self) -> &'static str {
@@ -95,6 +139,7 @@ pub(super) fn fixtures() -> Vec<Fixture> {
         shape: shape.clone(),
         buffers: vec![bytes],
         packed: true,
+        auxiliaries: Vec::new(),
     };
     let mut out = vec![
         packed(&BF16, encode_bf16(&values)),
@@ -112,6 +157,7 @@ pub(super) fn fixtures() -> Vec<Fixture> {
             shape: shape.clone(),
             buffers: vec![bytes],
             packed: true,
+            auxiliaries: Vec::new(),
         });
     }
     let layout = PackLayout::derive(&shape, TENSOR).expect("layout");
@@ -134,6 +180,22 @@ pub(super) fn fixtures() -> Vec<Fixture> {
         shape: shape.clone(),
         buffers: vec![base, refine_a, refine_b],
         packed: false,
+        auxiliaries: Vec::new(),
+    });
+    // The dependency-bearing codec: its codes mean nothing without the
+    // codebook beside them, so its fixture carries one — RESOLVED, the
+    // way the loader will hand it over once a container declares it.
+    let codebook = vq_codebook();
+    out.push(Fixture {
+        codec: &VQ8_SHARED,
+        shape: shape.clone(),
+        buffers: vec![Vq8SharedCodec::encode_codes(&values, &codebook)],
+        packed: false,
+        auxiliaries: vec![(
+            VQ_CODEBOOK,
+            Vq8SharedCodec::CODEBOOK_SHAPE.to_vec(),
+            codebook,
+        )],
     });
     let LoadedWeight::Mxfp4 { packed, scales } =
         quantize_mxfp4(&values, ROWS, K, TENSOR).expect("mxfp4")
@@ -149,6 +211,7 @@ pub(super) fn fixtures() -> Vec<Fixture> {
             scales.as_slice()[..ROWS * groups].to_vec(),
         ],
         packed: false,
+        auxiliaries: Vec::new(),
     });
     assert_eq!(out.len(), builtin().len(), "one fixture per built-in codec");
     assert!(out.iter().any(|f| f.label() == DTYPE_MXFP4));

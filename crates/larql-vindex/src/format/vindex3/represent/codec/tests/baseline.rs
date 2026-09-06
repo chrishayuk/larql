@@ -46,7 +46,7 @@ fn the_expert_encoding_table_prices_a_matrix_as_the_codec_does() {
 fn the_kquant_table_s_bits_are_the_certificate_s() {
     for codec in [Q4_K, Q6_K, Q8_0] {
         let quant = codec.quant();
-        let cert = codec.extents()[0];
+        let cert = codec.extents()[0].clone();
         assert_eq!(cert.bits_per_weight, quant.bits_per_weight());
         assert_eq!(
             cert.bits_per_weight,

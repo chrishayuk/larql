@@ -71,20 +71,20 @@ fn every_codec_declares_its_extents_from_the_base_up_and_refuses_past_them() {
                 "{label} at depth {depth}"
             );
             assert_eq!(
-                codec.certificate_at(certificate.extent, TENSOR).unwrap(),
-                *certificate,
+                &codec.certificate_at(certificate.extent, TENSOR).unwrap(),
+                certificate,
                 "{label} at depth {depth}"
             );
-            let Some(shallower) = depth.checked_sub(1).map(|d| extents[d]) else {
+            let Some(shallower) = depth.checked_sub(1).map(|d| extents[d].clone()) else {
                 continue;
             };
             assert!(
                 certificate.bits_per_weight > shallower.bits_per_weight,
                 "{label}: depth {depth} costs no more than the one before it"
             );
-            if let (Some(before), Some(after)) = (shallower.radius, certificate.radius) {
+            if let (Some(before), Some(after)) = (&shallower.radius, &certificate.radius) {
                 assert!(
-                    after.relative_rms <= before.relative_rms,
+                    after.radius() <= before.radius(),
                     "{label}: depth {depth} certifies less than the one before it"
                 );
             }
@@ -141,7 +141,7 @@ fn only_the_progressive_codec_declares_a_radius_and_it_declares_one_per_extent()
             "{label}: an extent without a radius cannot be chosen by fidelity"
         );
         assert_eq!(
-            extents.last().unwrap().radius.unwrap().relative_rms,
+            extents.last().unwrap().radius.as_ref().unwrap().radius(),
             0.0,
             "{label}: the terminal extent reconstructs exactly"
         );
@@ -281,10 +281,14 @@ fn codecs_with_no_direct_cpu_realization_say_so_rather_than_claim_one() {
         .map(|c| c.encoding_label())
         .collect();
     // K-quants gained a direct CPU realization (FusedKQuant); the
-    // entropy-coded codec registers none, and neither does the
-    // progressive one — deliberately, so an extent can be shown to be
-    // selectable without any kernel knowing extents exist.
-    assert_eq!(without, ["F16", "MXFP4", "BF16_ZLIB", "F32_PLANES"]);
+    // entropy-coded codec registers none, and neither do the progressive
+    // or the codebook-dependent ones — deliberately, so an extent and a
+    // dependency can each be shown to work without any kernel knowing
+    // they exist.
+    assert_eq!(
+        without,
+        ["F16", "MXFP4", "BF16_ZLIB", "F32_PLANES", "VQ8_SHARED"]
+    );
     let with: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| !c.accelerations().is_empty())

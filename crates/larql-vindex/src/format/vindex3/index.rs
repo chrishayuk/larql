@@ -129,6 +129,15 @@ pub struct Vindex3Index {
     /// graph recorded", never "single-component assumed".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_graph: Option<String>,
+    /// Filename of the auxiliary reference table
+    /// ([`super::auxiliary_references::AuxiliaryReferences`]), relative to
+    /// the root: which represented object stands for each codec's named
+    /// dependency. Absent on every container that declares none — absence
+    /// means "no dependency is declared", never "the dependencies follow
+    /// from a naming rule". A table this names and the container does not
+    /// hold is a refusal, not an empty table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auxiliary_references: Option<String>,
     /// Representation directory: representation id
     /// (`{object_id}@{encoding}`) → where its bytes physically live.
     /// Graph edges and objects never reference source tensor names — once
@@ -217,6 +226,7 @@ impl Vindex3Index {
             num_layers,
             moe_manifest: Some(moe_manifest.into()),
             system_graph: None,
+            auxiliary_references: None,
             representations: BTreeMap::new(),
             profiles: vec![Profile::exact()],
             variants: VariantCatalogue::new(),
