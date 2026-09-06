@@ -467,10 +467,54 @@ const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 /// RMS-normalised without a weight, times `scale`, times `hidden^-0.5`;
 /// softmax over every expert; top-k; the selected weights renormalised to
 /// sum to one; then each multiplied by `per_expert_scale[expert]`.
-fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)>, VindexError> {
-    if call.router_kind == MoeRouterKind::Gemma4Hybrid {
-        return select_experts_gemma4_reference(call);
+pub(super) fn select_experts_reference(
+    call: &RoutedFfnCall<'_>,
+) -> Result<Vec<(usize, f32)>, VindexError> {
+    let mut selected = if call.router_kind == MoeRouterKind::Gemma4Hybrid {
+        select_experts_gemma4_reference(call)?
+    } else if call.router_kind == MoeRouterKind::Sigmoid {
+        select_experts_sigmoid_reference(call)
+    } else {
+        select_experts_softmax_reference(call)
+    };
+    // `routed_scaling_factor`: the reference multiplies the routed sum;
+    // multiplying each weight is the same sum.
+    for (_, w) in &mut selected {
+        *w *= call.branch_scale;
     }
+    Ok(selected)
+}
+
+/// `weights / (weights.sum() + 1e-20)` — the reference's literal.
+const RENORM_EPS: f32 = 1e-20;
+
+/// DeepSeek-V3's `MoEGate` with `scoring_func = "sigmoid"`, literal: scores
+/// are sigmoids of the logits; `topk` runs over `scores +
+/// e_score_correction_bias`; the gathered weights are the UNCORRECTED
+/// scores, renormalised when `norm_topk_prob`.
+fn select_experts_sigmoid_reference(call: &RoutedFfnCall<'_>) -> Vec<(usize, f32)> {
+    let logits = matvec(call.router, call.experts, call.hidden, call.x);
+    let scores: Vec<f32> = logits.iter().map(|l| 1.0 / (1.0 + (-l).exp())).collect();
+    let mut ranked: Vec<(usize, f32)> = scores
+        .iter()
+        .enumerate()
+        .map(|(e, &s)| (e, s + call.router_bias.map_or(0.0, |b| b[e])))
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let k = call.top_k.min(ranked.len());
+    let mut selected: Vec<(usize, f32)> =
+        ranked[..k].iter().map(|&(e, _)| (e, scores[e])).collect();
+    if call.routing_policy == ExpertRoutingPolicy::NormalisedOverSelected && k > 1 {
+        let denominator = selected.iter().map(|(_, w)| w).sum::<f32>() + RENORM_EPS;
+        for (_, w) in &mut selected {
+            *w /= denominator;
+        }
+    }
+    selected
+}
+
+/// The softmax routers, literal (see [`select_experts_reference`]).
+fn select_experts_softmax_reference(call: &RoutedFfnCall<'_>) -> Vec<(usize, f32)> {
     let mut logits = matvec(call.router, call.experts, call.hidden, call.x);
     if let Some(bias) = call.router_bias {
         for (l, b) in logits.iter_mut().zip(bias) {
@@ -488,11 +532,11 @@ fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)
             ranked.iter().take(k).map(|r| (r.1 - max).exp()).sum()
         }
     };
-    Ok(ranked
+    ranked
         .into_iter()
         .take(k)
         .map(|(e, l)| (e, (l - max).exp() / denominator))
-        .collect())
+        .collect()
 }
 
 /// Gemma 4's router, literal (see [`select_experts_reference`]). Every

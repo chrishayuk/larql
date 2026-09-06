@@ -533,6 +533,7 @@ fn a_routed_ffn_whose_router_dispatch_is_refused_fails_closed() {
             top_k: TOP_K,
             router_kind: MoeRouterKind::TopKSoftmax,
             routing_policy: ExpertRoutingPolicy::SoftmaxThenSelect,
+            branch_scale: 1.0,
             activation: Activation::Silu,
             gate_policy: ExpertGatePolicy::Gated,
             router: &router,

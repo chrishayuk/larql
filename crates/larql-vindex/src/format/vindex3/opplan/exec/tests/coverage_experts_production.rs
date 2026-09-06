@@ -511,6 +511,7 @@ fn routed_call<'a>(x: &'a [f32], router: &'a [f32], bias: Option<&'a [f32]>) -> 
         top_k: TOP_K,
         router_kind: MoeRouterKind::TopKThenSoftmax,
         routing_policy: larql_models::config::ExpertRoutingPolicy::NormalisedOverSelected,
+        branch_scale: 1.0,
         activation: Activation::Silu,
         gate_policy: ExpertGatePolicy::Gated,
         router,

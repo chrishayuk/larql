@@ -267,6 +267,13 @@ pub struct RoutedFfnOp {
     pub expert_intermediate_size: usize,
     pub router_kind: MoeRouterKind,
     pub routing_policy: ExpertRoutingPolicy,
+    /// The declared multiplier on the routed branch's summed output
+    /// (`routed_scaling_factor`): applied to the routed sum alone, never
+    /// to the shared expert. Absent when the checkpoint declares none,
+    /// which executes as 1 — and serialises to nothing, so every other
+    /// plan is byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_scale: Option<f64>,
     pub activation: Activation,
     /// How each expert's gate combines with its up branch.
     pub gate_policy: larql_models::ExpertGatePolicy,
@@ -300,6 +307,15 @@ pub struct RoutedFfnOp {
     /// pass, which requires the operand set iff this would be `Some`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shared: Option<SharedExpertOp>,
+}
+
+impl RoutedFfnOp {
+    /// The multiplier the executor applies to every routed weight: the
+    /// declared branch scale, or exactly 1 when the checkpoint declares
+    /// none — a missing declaration is not a zero.
+    pub fn executed_branch_scale(&self) -> f32 {
+        self.branch_scale.map_or(1.0, |scale| scale as f32)
+    }
 }
 
 /// Gemma 4's hybrid FFN: a dense MLP and a routed expert block in ONE

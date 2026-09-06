@@ -911,6 +911,7 @@ pub fn plan_component_ops(
                     expert_intermediate_size: moe.expert_intermediate_size,
                     router_kind: moe.router_kind,
                     routing_policy: moe.routing_policy,
+                    branch_scale: moe.branch_scale,
                     activation: ffn_s.activation,
                     gate_policy: ffn_s.gate_policy,
                     expert_format: moe.expert_format,

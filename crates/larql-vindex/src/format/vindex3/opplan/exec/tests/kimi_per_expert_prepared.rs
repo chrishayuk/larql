@@ -23,8 +23,9 @@ use super::super::realization::{RealizationForm, SelectionReason};
 use super::super::reference::ReferenceBackend;
 use crate::format::vindex3::fixtures::encode_fixture_container;
 use crate::format::vindex3::fixtures_kimi::{
-    kimi_per_expert_moe_f32_model, kimi_per_expert_moe_f32_model_with, MOE_DENSE_PREFIX,
-    MOE_EXPERTS, MOE_LAYERS, MOE_TOP_K,
+    kimi_per_expert_moe_f32_model, kimi_per_expert_moe_f32_model_routing,
+    kimi_per_expert_moe_f32_model_with, KimiRouting, MOE_DENSE_PREFIX, MOE_EXPERTS, MOE_LAYERS,
+    MOE_TOP_K,
 };
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::planned::Operation;
@@ -225,6 +226,111 @@ fn production_matches_the_reference_over_the_mapped_bank_and_the_twin_differs() 
     );
 }
 
+// ── The routed scale acts on the routed sum, and on nothing else ───────
+
+fn declared_routing(dir: &Path) {
+    kimi_per_expert_moe_f32_model_routing(dir, |e| e as u64, KimiRouting::DECLARED);
+}
+fn unscaled_routing(dir: &Path) {
+    kimi_per_expert_moe_f32_model_routing(
+        dir,
+        |e| e as u64,
+        KimiRouting {
+            routed_scaling_factor: None,
+            ..KimiRouting::DECLARED
+        },
+    );
+}
+fn no_shared_expert(dir: &Path) {
+    kimi_per_expert_moe_f32_model_routing(
+        dir,
+        |e| e as u64,
+        KimiRouting {
+            shared_experts: 0,
+            ..KimiRouting::DECLARED
+        },
+    );
+}
+fn unscaled_and_no_shared_expert(dir: &Path) {
+    kimi_per_expert_moe_f32_model_routing(
+        dir,
+        |e| e as u64,
+        KimiRouting {
+            routed_scaling_factor: None,
+            shared_experts: 0,
+        },
+    );
+}
+
+/// The FFN's contribution at the first routed layer: what the layer
+/// added to the residual after attention, per position.
+fn routed_layer_ffn(write: fn(&Path)) -> Vec<Vec<f32>> {
+    let subject = Subject::build(write);
+    let (plan, store) = subject.open();
+    let trace = execute_plan(&plan, &store, &TOKENS, &ProductionBackend::new()).unwrap();
+    let layer = &trace.layers[MOE_DENSE_PREFIX];
+    layer
+        .post_layer
+        .try_rows()
+        .unwrap()
+        .iter()
+        .zip(layer.post_attention.try_rows().unwrap())
+        .map(|(out, residual)| out.iter().zip(residual).map(|(o, r)| o - r).collect())
+        .collect()
+}
+
+fn combine(a: &[Vec<f32>], b: &[Vec<f32>], f: impl Fn(f32, f32) -> f32) -> Vec<Vec<f32>> {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| x.iter().zip(y).map(|(p, q)| f(*p, *q)).collect())
+        .collect()
+}
+
+fn assert_rows_close(got: &[Vec<f32>], want: &[Vec<f32>], what: &str) {
+    let scale = want.iter().flatten().fold(0.0f32, |m, v| m.max(v.abs()));
+    assert!(
+        scale > CAUSAL_FLOOR,
+        "{what}: the expected side is ~0 ({scale:e}), the check is vacuous"
+    );
+    for (g, w) in got.iter().zip(want) {
+        let delta = max_abs(g, w);
+        assert!(
+            delta <= TOLERANCE * scale,
+            "{what}: off by {delta:e} against magnitude {scale:e}"
+        );
+    }
+}
+
+/// Four containers that differ in one declaration each — the routed
+/// scale present or absent, the shared expert present or absent — and
+/// the algebra between their first routed layer's FFN outputs: the scale
+/// multiplies the routed sum alone, and the shared expert's contribution
+/// is the same whether or not the routed branch is scaled. No backend
+/// is compared with itself here; the witness is the invariant.
+#[test]
+fn the_branch_scale_multiplies_the_routed_sum_and_leaves_the_shared_expert_alone() {
+    let scaled_with_shared = routed_layer_ffn(declared_routing);
+    let unscaled_with_shared = routed_layer_ffn(unscaled_routing);
+    let scaled_routed_only = routed_layer_ffn(no_shared_expert);
+    let unscaled_routed_only = routed_layer_ffn(unscaled_and_no_shared_expert);
+    let scale = KimiRouting::DECLARED.routed_scaling_factor.unwrap() as f32;
+
+    // The scale is a multiplier on the routed sum.
+    let expected_scaled = combine(&unscaled_routed_only, &unscaled_routed_only, |v, _| {
+        v * scale
+    });
+    assert_rows_close(&scaled_routed_only, &expected_scaled, "scale × routed sum");
+
+    // The shared expert's contribution does not depend on the routed scale.
+    let shared_under_scale = combine(&scaled_with_shared, &scaled_routed_only, |a, b| a - b);
+    let shared_unscaled = combine(&unscaled_with_shared, &unscaled_routed_only, |a, b| a - b);
+    assert_rows_close(
+        &shared_under_scale,
+        &shared_unscaled,
+        "shared expert under the scale",
+    );
+}
+
 // ── The refusals around a mapping, by name ─────────────────────────────
 
 /// A region is bound only for an object the store holds, a tensor the
@@ -290,6 +396,7 @@ fn separate_call<'a>(
         top_k: 1,
         router_kind: MoeRouterKind::TopKThenSoftmax,
         routing_policy: ExpertRoutingPolicy::NormalisedOverSelected,
+        branch_scale: 1.0,
         activation: Activation::Silu,
         gate_policy: ExpertGatePolicy::Gated,
         router,

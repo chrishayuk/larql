@@ -249,6 +249,48 @@ fn the_per_expert_bank_carves_out_of_the_decoder_stack() {
     assert_ne!(gate[0].object, "target.decoder_stack");
 }
 
+/// The routed op transcribes the surface's whole routing rule: the
+/// sigmoid scoring function, renormalisation, AND the branch scale — the
+/// one an executor cannot recover from the operands, so a plan that
+/// dropped it would execute a routed sum 2.446× too small in silence.
+#[test]
+fn the_routed_op_carries_the_declared_sigmoid_rule_and_branch_scale() {
+    use larql_models::config::{ExpertRoutingPolicy, MoeRouterKind};
+    let outcome = plan_variant(|_| {});
+    let plan = outcome.plan.unwrap();
+    let Some(LayerFfn::Routed(op)) = &plan.layers[0].ffn else {
+        panic!("planned non-routed");
+    };
+    assert_eq!(op.router_kind, MoeRouterKind::Sigmoid);
+    assert_eq!(
+        op.routing_policy,
+        ExpertRoutingPolicy::NormalisedOverSelected
+    );
+    assert_eq!(op.branch_scale, Some(2.446));
+}
+
+/// A surface that declares no branch scale plans none, and the executor
+/// reads that as exactly 1: the absent declaration is the identity, not
+/// a zero and not a default borrowed from another model.
+#[test]
+fn an_undeclared_branch_scale_plans_as_none_and_executes_as_one() {
+    let outcome = plan_variant_editing_graph(
+        kimi_config(),
+        |_| {},
+        |graph| {
+            let moe = moe_surface(graph);
+            assert_eq!(moe["branch_scale"], 2.446, "the fixture declares one");
+            moe.as_object_mut().unwrap().remove("branch_scale");
+        },
+    );
+    let plan = outcome.plan.unwrap();
+    let Some(LayerFfn::Routed(op)) = &plan.layers[0].ffn else {
+        panic!("planned non-routed");
+    };
+    assert_eq!(op.branch_scale, None);
+    assert_eq!(op.executed_branch_scale(), 1.0);
+}
+
 /// Removing one expert's `w1` — the 256-tensor set closure the carving
 /// rung exists to prove — is a `MissingOperand` for that exact expert
 /// index, not a silent gap.

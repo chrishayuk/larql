@@ -547,6 +547,7 @@ impl RoutedOperands {
             top_k: op.top_k,
             router_kind: op.router_kind,
             routing_policy: op.routing_policy,
+            branch_scale: op.executed_branch_scale(),
             activation: op.activation,
             gate_policy: op.gate_policy,
             router: &self.router,

@@ -588,6 +588,10 @@ pub struct RoutedFfnCall<'a> {
     pub top_k: usize,
     pub router_kind: MoeRouterKind,
     pub routing_policy: ExpertRoutingPolicy,
+    /// Multiplier on every selected expert's weight — the plan's declared
+    /// `branch_scale`, 1 when it declares none. The shared expert is not
+    /// under it.
+    pub branch_scale: f32,
     pub activation: Activation,
     pub gate_policy: larql_models::ExpertGatePolicy,
     /// Router logits matrix `[experts, hidden]`, row-major.

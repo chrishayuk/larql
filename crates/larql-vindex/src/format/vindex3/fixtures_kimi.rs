@@ -280,9 +280,38 @@ pub fn kimi_per_expert_moe_f32_model(dir: &Path) {
 /// [`kimi_per_expert_moe_f32_model`] with the expert-to-seed map chosen
 /// by the caller — the twin-container control.
 pub fn kimi_per_expert_moe_f32_model_with(dir: &Path, expert_seed: impl Fn(usize) -> u64) {
-    std::fs::write(
-        dir.join("config.json"),
-        serde_json::json!({
+    kimi_per_expert_moe_f32_model_routing(dir, expert_seed, KimiRouting::DECLARED);
+}
+
+/// What the per-expert fixture declares about its routed branch: the
+/// multiplier on the routed sum and how many shared experts stand beside
+/// it. [`Self::DECLARED`] is the real Kimi-Linear declaration; the other
+/// values exist so a witness can hold everything else fixed and move one
+/// declaration at a time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KimiRouting {
+    /// `routed_scaling_factor`; `None` leaves the key out of the config.
+    pub routed_scaling_factor: Option<f64>,
+    /// `num_shared_experts`; 0 writes no shared-expert tensors.
+    pub shared_experts: usize,
+}
+
+impl KimiRouting {
+    /// Kimi-Linear's own declaration.
+    pub const DECLARED: Self = Self {
+        routed_scaling_factor: Some(2.446),
+        shared_experts: MOE_SHARED_EXPERTS,
+    };
+}
+
+/// [`kimi_per_expert_moe_f32_model_with`] under an explicit routing
+/// declaration.
+pub fn kimi_per_expert_moe_f32_model_routing(
+    dir: &Path,
+    expert_seed: impl Fn(usize) -> u64,
+    routing: KimiRouting,
+) {
+    let mut config = serde_json::json!({
             "architectures": ["KimiLinearForCausalLM"],
             "model_type": "kimi_linear",
             "torch_dtype": "float32",
@@ -302,15 +331,15 @@ pub fn kimi_per_expert_moe_f32_model_with(dir: &Path, expert_seed: impl Fn(usize
             "first_k_dense_replace": MOE_DENSE_PREFIX,
             "num_experts": MOE_EXPERTS,
             "num_experts_per_token": MOE_TOP_K,
-            "num_shared_experts": MOE_SHARED_EXPERTS,
+            "num_shared_experts": routing.shared_experts,
             "moe_intermediate_size": MOE_INTER,
             "moe_router_activation_func": "sigmoid",
             "moe_renormalize": true,
-            "routed_scaling_factor": 2.446,
-        })
-        .to_string(),
-    )
-    .unwrap();
+    });
+    if let Some(scale) = routing.routed_scaling_factor {
+        config["routed_scaling_factor"] = serde_json::json!(scale);
+    }
+    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
 
     let mut shard = ShardBuilder::new();
     shard.push(
@@ -376,17 +405,19 @@ pub fn kimi_per_expert_moe_f32_model_with(dir: &Path, expert_seed: impl Fn(usize
             &[MOE_EXPERTS],
             &lcg_values(MOE_EXPERTS, seed + 31),
         );
-        let shared_inter = MOE_INTER * MOE_SHARED_EXPERTS;
-        for (name, rows, cols, s) in [
-            ("gate_proj", shared_inter, HIDDEN, seed + 32),
-            ("up_proj", shared_inter, HIDDEN, seed + 33),
-            ("down_proj", HIDDEN, shared_inter, seed + 34),
-        ] {
-            shard.push(
-                &format!("{moe}.shared_experts.{name}.weight"),
-                &[rows, cols],
-                &lcg_values(rows * cols, s),
-            );
+        let shared_inter = MOE_INTER * routing.shared_experts;
+        if routing.shared_experts > 0 {
+            for (name, rows, cols, s) in [
+                ("gate_proj", shared_inter, HIDDEN, seed + 32),
+                ("up_proj", shared_inter, HIDDEN, seed + 33),
+                ("down_proj", HIDDEN, shared_inter, seed + 34),
+            ] {
+                shard.push(
+                    &format!("{moe}.shared_experts.{name}.weight"),
+                    &[rows, cols],
+                    &lcg_values(rows * cols, s),
+                );
+            }
         }
         for expert in 0..MOE_EXPERTS {
             let es = seed + 40 + 3 * expert_seed(expert);

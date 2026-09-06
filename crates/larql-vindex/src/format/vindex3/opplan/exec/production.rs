@@ -46,7 +46,7 @@ use super::cpu::physical::{
 };
 use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
-    gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, FusedHalf,
+    gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, sigmoid, FusedHalf,
 };
 use super::realization::{
     class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
@@ -479,12 +479,61 @@ pub(super) fn select_experts(
         }
         return Ok(selected);
     }
-    if let Some(bias) = call.router_bias {
-        for (l, b) in logits.iter_mut().zip(bias) {
-            *l += b;
+    let mut selected = if call.router_kind == MoeRouterKind::Sigmoid {
+        sigmoid_select(logits, call.router_bias, call.top_k, call.routing_policy)
+    } else {
+        if let Some(bias) = call.router_bias {
+            for (l, b) in logits.iter_mut().zip(bias) {
+                *l += b;
+            }
+        }
+        router::select(logits, call.top_k, call.routing_policy)
+    };
+    if call.branch_scale != 1.0 {
+        for (_, w) in &mut selected {
+            *w *= call.branch_scale;
         }
     }
-    Ok(router::select(logits, call.top_k, call.routing_policy))
+    Ok(selected)
+}
+
+/// The reference's renormalisation guard: `weights / (sum + 1e-20)`, so a
+/// selection whose scores all underflow divides by something.
+const SIGMOID_RENORM_EPS: f32 = 1e-20;
+
+/// The sigmoid router (DeepSeek-V3, Kimi, GLM-5.3-Flash): every expert's
+/// score is `sigmoid(logit)`, independent of the others; the correction
+/// bias moves which experts are SELECTED and never what they WEIGH; the
+/// selected raw scores are the weights, renormalised to sum to one under
+/// [`ExpertRoutingPolicy::NormalisedOverSelected`] and kept raw otherwise.
+/// Ties rank by first index, as `torch.topk` does.
+pub(super) fn sigmoid_select(
+    logits: &[f32],
+    bias: Option<&[f32]>,
+    top_k: usize,
+    policy: ExpertRoutingPolicy,
+) -> Vec<(usize, f32)> {
+    let scores: Vec<f32> = logits.iter().map(|&l| sigmoid(l)).collect();
+    let keys: Vec<f32> = match bias {
+        Some(bias) => scores.iter().zip(bias).map(|(s, b)| s + b).collect(),
+        None => scores.clone(),
+    };
+    let mut ranked: Vec<usize> = (0..logits.len()).collect();
+    // A stable sort on the key keeps equal keys in index order.
+    ranked.sort_by(|&a, &b| {
+        keys[b]
+            .partial_cmp(&keys[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    ranked.truncate(top_k.min(logits.len()));
+    let mut selected: Vec<(usize, f32)> = ranked.iter().map(|&e| (e, scores[e])).collect();
+    if policy == ExpertRoutingPolicy::NormalisedOverSelected && selected.len() > 1 {
+        let sum = selected.iter().map(|(_, w)| w).sum::<f32>() + SIGMOID_RENORM_EPS;
+        for (_, w) in &mut selected {
+            *w /= sum;
+        }
+    }
+    selected
 }
 
 /// One selected expert's inner activation from its fused gate/up output
