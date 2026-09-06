@@ -17,6 +17,10 @@ pub const TOKENIZER_JSON: &str = "tokenizer.json";
 pub const TOKENIZER_CONFIG_JSON: &str = "tokenizer_config.json";
 pub const GENERATION_CONFIG_JSON: &str = "generation_config.json";
 pub const WEIGHT_MANIFEST_JSON: &str = "weight_manifest.json";
+/// Where a container declares which represented object stands for each
+/// codec's named dependency. Absent from every container that declares
+/// none — see `vindex3::auxiliary_references`.
+pub const AUXILIARY_REFERENCES_JSON: &str = "auxiliary_references.json";
 pub const KNN_STORE_BIN: &str = "knn_store.bin";
 pub const MODEL_WEIGHTS_BIN: &str = "model_weights.bin";
 

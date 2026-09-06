@@ -56,8 +56,8 @@ use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SC
 use super::kda::KdaOutputGateWeights;
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{
-    realization_residency, ExtentOption, ExtentPin, RealizationId, RealizationRecord,
-    RepresentationFacts, SelectionReason, SelectionRefusals,
+    realization_residency, DependencyLifetime, DependencyPin, ExtentOption, ExtentPin,
+    RealizationId, RealizationRecord, RepresentationFacts, SelectionReason, SelectionRefusals,
 };
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
@@ -1515,6 +1515,7 @@ fn select_records<B: PlanBackend + ?Sized>(
         // declaration. The pin starts on the whole of it; a budget may
         // move it shallower, and nothing else may.
         let extent = extent_pin(registry, &label, &planned);
+        let dependencies = dependency_pins(registry, &label, &planned, extent.selected, store);
         match backend.select(&planned, &facts) {
             Ok(selection) => records.push((
                 RealizationRecord {
@@ -1523,6 +1524,7 @@ fn select_records<B: PlanBackend + ?Sized>(
                     planned,
                     selection,
                     extent,
+                    dependencies,
                 },
                 facts,
             )),
@@ -1579,6 +1581,66 @@ fn shallowest_saving(
     best
 }
 
+/// What `planned`'s codec depends on at `extent`, as the container's
+/// reference table addresses it, priced from the container's record.
+///
+/// The LIFETIME is the realization's: every realization this build ships
+/// decodes, and a decode is finished with its dependency once it has an
+/// f32 image, so every pin here is `PreparationOnly`. A direct kernel
+/// over codes would declare `Retained`, and the ledger already knows what
+/// that costs — which is the point of pricing it before anyone builds one.
+fn dependency_pins(
+    registry: &CodecRegistry,
+    label: &str,
+    planned: &PlannedOperand,
+    extent: RepresentationExtent,
+    store: OperandSource<'_>,
+) -> Vec<DependencyPin> {
+    let Some(codec) = registry.by_label(label) else {
+        return Vec::new();
+    };
+    let required = codec.required_auxiliaries(extent);
+    if required.is_empty() {
+        return Vec::new();
+    }
+    let owner = crate::format::vindex3::auxiliary_references::OperandAddress::new(
+        &planned.operand.object,
+        &planned.operand.tensor,
+    );
+    let table = store.store().references();
+    required
+        .iter()
+        .filter_map(|spec| {
+            let target = table.target(&owner, spec.name)?;
+            let reference = OperandRef {
+                object: target.object.clone(),
+                tensor: target.tensor.clone(),
+                dtype: String::new(),
+                shape: Vec::new(),
+            };
+            let label = store
+                .store()
+                .stored_dtype(&reference)
+                .unwrap_or_default()
+                .to_string();
+            Some(DependencyPin {
+                name: spec.name.to_string(),
+                object: target.object.clone(),
+                tensor: target.tensor.clone(),
+                provider: registry.by_label(&label).map(|c| c.identity()),
+                label,
+                stored_bytes: store.stored_len(&reference),
+                elements: store
+                    .store()
+                    .stored_shape(target)
+                    .map(|shape| shape.iter().product())
+                    .unwrap_or(0),
+                lifetime: DependencyLifetime::PreparationOnly,
+            })
+        })
+        .collect()
+}
+
 /// What extents `label` offers for `planned`, priced per extent, with the
 /// pin on the whole of it.
 ///
@@ -1595,15 +1657,18 @@ fn extent_pin(registry: &CodecRegistry, label: &str, planned: &PlannedOperand) -
         codec
             .extents()
             .into_iter()
-            .map(|certificate| ExtentOption {
-                certificate,
-                stored_bytes: codec
+            .map(|certificate| {
+                let stored_bytes = codec
                     .stored_bytes(
                         &planned.operand.shape,
                         certificate.extent,
                         &planned.operand.tensor,
                     )
-                    .ok(),
+                    .ok();
+                ExtentOption {
+                    certificate,
+                    stored_bytes,
+                }
             })
             .collect(),
     )
@@ -2189,9 +2254,20 @@ impl PreparedOperands {
     /// edit's f32-space fact, never a label a loader judged for itself.
     pub fn providers(&self) -> Vec<(String, Option<CodecIdentity>)> {
         let mut out: Vec<(String, Option<CodecIdentity>)> = Vec::new();
+        let mut note = |label: &str, identity: &Option<CodecIdentity>| {
+            if !out.iter().any(|(seen, _)| seen == label) {
+                out.push((label.to_string(), identity.clone()));
+            }
+        };
         for r in &self.realizations {
-            if !out.iter().any(|(label, _)| *label == r.representation) {
-                out.push((r.representation.clone(), r.provider.clone()));
+            note(&r.representation, &r.provider);
+            // A DEPENDENCY's provider is a provider. An image prepared
+            // while a codebook's codec was registered is not executable
+            // once that codec is gone, however well the codes' own
+            // provider survives — the values would be unobtainable, not
+            // merely differently obtained.
+            for dependency in &r.dependencies {
+                note(&dependency.label, &dependency.provider);
             }
         }
         out

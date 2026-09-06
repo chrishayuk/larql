@@ -7,6 +7,7 @@ use super::super::codecs::f32_planes::{
     Domain, F32PlanesCodec, BASE_HI16, F32_PLANES, REFINE_8A, REFINE_8B, TERMINAL_DEPTH,
 };
 use super::super::conformance;
+use super::super::fidelity::FidelityCertificate;
 use super::*;
 
 /// Bit patterns a ramp never produces and a truncating codec must survive:
@@ -152,7 +153,7 @@ fn a_shallower_extent_truncates_toward_zero_and_stays_inside_its_radius() {
             certificate.extent.depth
         );
         worst_so_far = worst;
-        let declared = certificate.radius.unwrap().relative_rms;
+        let declared = certificate.radius.as_ref().unwrap().radius();
         if certificate.extent.depth == TERMINAL_DEPTH {
             assert_eq!(
                 (worst, declared),
@@ -214,7 +215,7 @@ impl RepresentationCodec for OverclaimingPlanes {
         let mut extents = F32_PLANES.extents();
         // Depth 0 keeps seven mantissa bits; this claims the fifteen of
         // depth 1 — the plausible lie, one extent out.
-        extents[0].radius = extents[1].radius;
+        extents[0].radius = extents[1].radius.clone();
         extents
     }
     fn stored_bytes(
@@ -485,20 +486,16 @@ const RESIDUAL_SPOIL: f32 = 1.000_000_1;
 
 fn two_extents(deepest_radius: f64) -> Vec<ExtentCertificate> {
     vec![
-        ExtentCertificate {
-            extent: RepresentationExtent::BASE,
-            bits_per_weight: 16.0,
-            radius: Some(ErrorRadius {
-                relative_rms: LOOSE_RADIUS,
-            }),
-        },
-        ExtentCertificate {
-            extent: RepresentationExtent::at_depth(1),
-            bits_per_weight: 24.0,
-            radius: Some(ErrorRadius {
-                relative_rms: deepest_radius,
-            }),
-        },
+        ExtentCertificate::certified(
+            0,
+            16.0,
+            FidelityCertificate::relative_rms(LOOSE_RADIUS).unwrap(),
+        ),
+        ExtentCertificate::certified(
+            1,
+            24.0,
+            FidelityCertificate::relative_rms(deepest_radius).unwrap(),
+        ),
     ]
 }
 

@@ -116,6 +116,8 @@ fn record(
         // A terminal representation: one extent, unpriced here because
         // this helper's subject is residency, not what a plane costs.
         extent: ExtentPin::unknown(),
+        // And it depends on nothing, like every codec but one.
+        dependencies: Vec::new(),
         selection: Selection {
             realization,
             residency,

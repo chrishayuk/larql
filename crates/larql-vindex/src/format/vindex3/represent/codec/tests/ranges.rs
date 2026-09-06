@@ -153,11 +153,13 @@ fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
 
 #[test]
 fn a_row_the_codec_cannot_block_is_refused_by_group() {
-    // 100 is not a whole number of any group these codecs use; the
-    // floats accept anything.
+    // 101 is prime, so no codec's grouping divides it — 100 did until a
+    // codec grouped by four arrived, which is what a width chosen to
+    // defeat "the groups in use today" is always one codec away from.
+    // The floats accept anything.
     for codec in builtin() {
         let label = codec.encoding_label();
-        let result = codec.stored_bytes(&[2, 100], RepresentationExtent::BASE, TENSOR);
+        let result = codec.stored_bytes(&[2, 101], RepresentationExtent::BASE, TENSOR);
         let group = codec.capabilities().row_align_elems;
         if group == 1 {
             // The subject here is the GROUPED refusal; for an ungrouped
@@ -171,7 +173,7 @@ fn a_row_the_codec_cannot_block_is_refused_by_group() {
             match result {
                 Ok(bytes) => assert_eq!(
                     bytes,
-                    (200.0 * base_bpw / extent::BITS_PER_BYTE) as u64,
+                    (202.0 * base_bpw / extent::BITS_PER_BYTE) as u64,
                     "{label}"
                 ),
                 Err(CodecError::InstanceSized { .. }) => {}

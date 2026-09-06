@@ -35,11 +35,13 @@
 //! entropy-coded representations as forcing tests of the abstraction —
 //! is in `docs/represent-codec-contract.md`.
 
+pub mod auxiliary;
 pub mod capability;
 pub mod codecs;
 pub mod conformance;
 pub mod error;
 pub mod extent;
+pub mod fidelity;
 pub mod geometry;
 pub mod registry;
 pub mod residency;
@@ -50,9 +52,11 @@ mod tests;
 
 use std::ops::Range;
 
+pub use auxiliary::{admit_auxiliary_names, AuxiliaryMetadata, AuxiliarySpec};
 pub use capability::{AccessGranularity, CodecCapabilities, RequiredAccess};
 pub use error::CodecError;
-pub use extent::{ErrorRadius, ExtentCertificate, RepresentationExtent};
+pub use extent::{ExtentCertificate, RepresentationExtent};
+pub use fidelity::{DomainId, FidelityCertificate, MetricId, SemanticId};
 pub use geometry::RowGeometry;
 pub use registry::CodecRegistry;
 pub use residency::{Acceleration, AccelerationBackend, ResidencyClass, ResidencyProfile};
@@ -166,6 +170,106 @@ pub trait RepresentationCodec: Send + Sync {
             .unwrap_or(RepresentationExtent::BASE)
     }
 
+    /// The other represented objects this codec needs to decode at
+    /// `extent`, by the names a container's reference table keys on.
+    ///
+    /// Asked PER EXTENT, so a codec whose deeper extents need a dependency
+    /// its base does not can say exactly that. Empty for every codec that
+    /// depends on nothing — which is every codec that only reads its own
+    /// bytes, and the default.
+    ///
+    /// The names are part of this codec REVISION's semantics, like its
+    /// stream names: a stored container's references are keyed by them, so
+    /// renaming one changes what that container means and needs a revision
+    /// bump. And a requirement is SEMANTIC — it says the decode needs the
+    /// object to mean anything. Whether that object stays resident, or is
+    /// touched while serving, is the selected realization's declaration.
+    fn required_auxiliaries(&self, extent: RepresentationExtent) -> &'static [AuxiliarySpec] {
+        let _ = extent;
+        &[]
+    }
+
+    /// Judge one resolved auxiliary from the container's METADATA — its
+    /// label, shape and codec identity — before any payload is opened.
+    ///
+    /// The codec owns this check because only it knows what its dependency
+    /// has to be. The default refuses: a codec that requires an object and
+    /// judges nothing about it would accept any tensor whose name happened
+    /// to be in the table, which is the failure the reference table exists
+    /// to prevent. Codecs requiring nothing never reach it.
+    fn validate_auxiliary(
+        &self,
+        name: &str,
+        target: &AuxiliaryMetadata,
+        shape: &[usize],
+        extent: RepresentationExtent,
+        tensor: &str,
+    ) -> Result<(), CodecError> {
+        let _ = (target, shape, extent);
+        Err(CodecError::AuxiliaryUnjudged {
+            tensor: tensor.into(),
+            label: self.encoding_label().into(),
+            name: name.into(),
+        })
+    }
+
+    /// The certificate a caller may rely on at `extent`, GIVEN what this
+    /// codec's dependencies certify.
+    ///
+    /// A representation that decodes through another one inherits its
+    /// error: a codebook read at a shallow extent moves every value that
+    /// indexes it. So the bound a planner evaluates a quality floor
+    /// against is the COMPOSED one — this codec's own radius widened by
+    /// each dependency's, in the shared metric over the shared domain —
+    /// and never the two read side by side.
+    ///
+    /// It is UNAVAILABLE, not optimistic, whenever a term is missing:
+    ///
+    /// * this codec declares no radius of its own. For a vector quantiser
+    ///   that is the normal case rather than an omission — the assignment
+    ///   error is a fact about the artifact and the encoder that made it,
+    ///   and a decoder holding codes and a codebook cannot derive what the
+    ///   original tensor was. Such a codec cannot satisfy a quality floor
+    ///   at all until something else attests its instance's error;
+    /// * a dependency certifies nothing, so there is nothing to add;
+    /// * the terms differ, which [`FidelityCertificate::widened_by`]
+    ///   refuses by name.
+    ///
+    /// `auxiliaries` is keyed by the names this codec declared, and each
+    /// certificate is the one its dependency's SELECTED extent carries —
+    /// the caller resolves that, because the caller is what pinned it.
+    fn composed_certificate(
+        &self,
+        extent: RepresentationExtent,
+        auxiliaries: &std::collections::BTreeMap<String, FidelityCertificate>,
+        tensor: &str,
+    ) -> Result<FidelityCertificate, CodecError> {
+        let label = self.encoding_label();
+        let mut composed = self.certificate_at(extent, tensor)?.radius.ok_or_else(|| {
+            CodecError::CertificateUnavailable {
+                tensor: tensor.into(),
+                label: label.into(),
+                depth: extent.depth,
+                why: "it declares no radius of its own, so there is nothing for a dependency's \
+                      bound to widen"
+                    .into(),
+            }
+        })?;
+        for spec in self.required_auxiliaries(extent) {
+            let certificate =
+                auxiliaries
+                    .get(spec.name)
+                    .ok_or_else(|| CodecError::CertificateUnavailable {
+                        tensor: tensor.into(),
+                        label: label.into(),
+                        depth: extent.depth,
+                        why: format!("its dependency `{}` certifies nothing", spec.name),
+                    })?;
+            composed = composed.widened_by(certificate, tensor, label)?;
+        }
+        Ok(composed)
+    }
+
     /// The streams `extent` reads, in declaration order.
     ///
     /// Every stream that is not a refinement, plus each refinement whose
@@ -200,7 +304,7 @@ pub trait RepresentationCodec: Send + Sync {
         extents
             .iter()
             .find(|c| c.extent == extent)
-            .copied()
+            .cloned()
             .ok_or_else(|| CodecError::ExtentUnavailable {
                 tensor: tensor.into(),
                 label: self.encoding_label().into(),

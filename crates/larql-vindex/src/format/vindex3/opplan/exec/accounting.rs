@@ -35,7 +35,9 @@ use super::cpu::integer::weight_index_enabled;
 use super::cpu::ledger::{PlanTally, ProjectionLedger};
 use super::cpu::physical::PhysicalProjectionPlan;
 use super::quantise::{Q4_BLOCK, Q8_BLOCK, SUM_BLOCK};
-use super::realization::{RealizationForm, RealizationId, RealizationRecord};
+use super::realization::{
+    DependencyLifetime, DependencyPin, RealizationForm, RealizationId, RealizationRecord,
+};
 use super::weights::{LoadedWeight, DEVICE_PAGE_ALIGN};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::Operation;
@@ -220,6 +222,13 @@ pub struct Expectation {
     /// resident. Under canonical decode this is the ONLY dimension a
     /// shallower extent moves.
     pub read_to_prepare: u64,
+    /// The other represented objects this pin resolves, and what its
+    /// realization does with each.
+    ///
+    /// Priced by the LEDGER rather than folded in here, because a
+    /// dependency shared by many owners is one object: summing it per
+    /// owner would count a codebook once per tensor that indexes it.
+    pub dependencies: Vec<DependencyPin>,
 }
 
 impl Expectation {
@@ -351,10 +360,15 @@ impl RepresentationFloor {
         }
         match self {
             Self::Exact => false,
-            Self::RelativeRms(bound) => option
-                .certificate
-                .radius
-                .is_some_and(|r| r.relative_rms <= bound),
+            // v1 compares like with like: a bound stated in another
+            // metric or over another domain does not satisfy this floor,
+            // and is not converted into one that would.
+            Self::RelativeRms(bound) => option.certificate.radius.as_ref().is_some_and(|r| {
+                *r.metric() == super::super::super::represent::codec::MetricId::relative_rms()
+                    && *r.domain()
+                        == super::super::super::represent::codec::DomainId::finite_normals()
+                    && r.radius() <= bound
+            }),
         }
     }
 
@@ -573,6 +587,28 @@ impl ResourceLedger {
                 ledger.stored += r.stored;
                 ledger.read_to_prepare += r.read_to_prepare;
             }
+            // A dependency is ONE object however many owners resolve it:
+            // its footprint and the reading that prepares it count once,
+            // and only a realization that RETAINS it pays residency and
+            // per-token touch for it.
+            for dependency in &e.dependencies {
+                let address = dependency.address();
+                let first_time = stored_seen.insert(address);
+                let bytes = dependency.stored_bytes.unwrap_or(0);
+                if first_time {
+                    ledger.stored += bytes;
+                    ledger.read_to_prepare += bytes;
+                }
+                if dependency.lifetime == DependencyLifetime::Retained {
+                    // Resident once, whoever keeps it; touched once per
+                    // OPERATION that reads it, which is per owner.
+                    let image = (dependency.elements as f64 * F32_WIDTH).round() as u64;
+                    if first_time {
+                        ledger.resident += image;
+                    }
+                    ledger.touch_per_token += image;
+                }
+            }
             if r.mapped > 0 && mapped_seen.insert(object) {
                 ledger.mapped += r.mapped;
             }
@@ -654,6 +690,7 @@ pub fn expectations(
                 // codec gives one, and otherwise the whole footprint —
                 // an unpriced extent is read whole, never assumed cheap.
                 read_to_prepare: r.extent.touch_bytes().unwrap_or(stored_bytes),
+                dependencies: r.dependencies.clone(),
             }
         })
         .collect()

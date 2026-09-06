@@ -43,7 +43,8 @@ use std::ops::Range;
 
 use super::super::capability::{AccessGranularity, CodecCapabilities};
 use super::super::error::CodecError;
-use super::super::extent::{ErrorRadius, ExtentCertificate, RepresentationExtent, BITS_PER_BYTE};
+use super::super::extent::{ExtentCertificate, RepresentationExtent, BITS_PER_BYTE};
+use super::super::fidelity::FidelityCertificate;
 use super::super::geometry::RowGeometry;
 use super::super::residency::ResidencyProfile;
 use super::super::streams::{CodecOperands, StreamRole, StreamSpec};
@@ -280,12 +281,18 @@ impl RepresentationCodec for F32PlanesCodec {
 
     fn extents(&self) -> Vec<ExtentCertificate> {
         (0..=TERMINAL_DEPTH)
-            .map(|depth| ExtentCertificate {
-                extent: RepresentationExtent::at_depth(depth),
-                bits_per_weight: Self::bytes_per_element(depth) as f64 * BITS_PER_BYTE,
-                radius: Some(ErrorRadius {
-                    relative_rms: Self::relative_rms_bound(depth),
-                }),
+            .map(|depth| {
+                ExtentCertificate::certified(
+                    depth,
+                    Self::bytes_per_element(depth) as f64 * BITS_PER_BYTE,
+                    // The metric and domain this codec always meant, now
+                    // said rather than implied: relative RMS, over finite
+                    // normal values. Its edges (subnormals, infinities,
+                    // NaN payloads) are outside the domain, and named in
+                    // this module's own documentation.
+                    FidelityCertificate::relative_rms(Self::relative_rms_bound(depth))
+                        .expect("a bound derived from a shift is finite and not negative"),
+                )
             })
             .collect()
     }

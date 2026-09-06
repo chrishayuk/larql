@@ -44,9 +44,9 @@ use larql_vindex::format::vindex3::represent::codec::codecs::{
     bf16_zlib, f32_planes, float, kquant, mxfp4, nvfp4,
 };
 use larql_vindex::format::vindex3::represent::codec::{
-    AccessGranularity, CodecCapabilities, CodecError, CodecOperands, CodecRegistry, ErrorRadius,
-    ExtentCertificate, RepresentationCodec, RepresentationExtent, ResidencyProfile, StreamRole,
-    StreamSpec,
+    AccessGranularity, CodecCapabilities, CodecError, CodecOperands, CodecRegistry,
+    ExtentCertificate, FidelityCertificate, RepresentationCodec, RepresentationExtent,
+    ResidencyProfile, StreamRole, StreamSpec,
 };
 use larql_vindex::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
@@ -147,19 +147,22 @@ impl RepresentationCodec for Planes16 {
     }
 
     fn extents(&self) -> Vec<ExtentCertificate> {
+        // An out-of-tree provider mints its certificates through the
+        // same validated constructor, in the same metric and domain — the
+        // point of shipping ids rather than an enum is that it COULD use
+        // its own and be refused for incompatibility, not for being
+        // unable to say so.
         vec![
-            ExtentCertificate {
-                extent: RepresentationExtent::BASE,
-                bits_per_weight: (BASE_BYTES * 8) as f64,
-                radius: Some(ErrorRadius {
-                    relative_rms: BASE_RELATIVE_RMS,
-                }),
-            },
-            ExtentCertificate {
-                extent: RepresentationExtent::at_depth(1),
-                bits_per_weight: ((BASE_BYTES + TAIL_BYTES) * 8) as f64,
-                radius: Some(ErrorRadius { relative_rms: 0.0 }),
-            },
+            ExtentCertificate::certified(
+                0,
+                (BASE_BYTES * 8) as f64,
+                FidelityCertificate::relative_rms(BASE_RELATIVE_RMS).unwrap(),
+            ),
+            ExtentCertificate::certified(
+                1,
+                ((BASE_BYTES + TAIL_BYTES) * 8) as f64,
+                FidelityCertificate::relative_rms(0.0).unwrap(),
+            ),
         ]
     }
 

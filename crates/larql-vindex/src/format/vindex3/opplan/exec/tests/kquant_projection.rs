@@ -520,6 +520,7 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
             provider: facts.registered.as_ref().map(|r| r.identity.clone()),
             selection,
             extent: ExtentPin::unknown(),
+            dependencies: Vec::new(),
         };
         let expected = expectations(
             std::slice::from_ref(&record),

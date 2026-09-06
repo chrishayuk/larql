@@ -68,6 +68,7 @@ mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
 mod realization;
+mod vq8_shared_execution;
 // Each module carries its OWN cfg: inserting a bare `mod` line above a
 // gated one hands the attribute to the newcomer and silently un-gates
 // the original — that exact capture broke six CI jobs on PR #346.

@@ -13,6 +13,7 @@ pub mod kquant;
 pub mod lyrw2;
 pub mod mxfp4;
 pub mod nvfp4;
+pub mod vq8_shared;
 
 /// Vocabulary shared by the identities and capabilities below.
 pub(crate) mod vocabulary {

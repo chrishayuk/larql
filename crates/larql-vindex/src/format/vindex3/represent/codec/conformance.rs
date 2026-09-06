@@ -27,6 +27,7 @@
 
 use super::error::CodecError;
 use super::extent::RepresentationExtent;
+use super::fidelity::FidelityCertificate;
 use super::streams::CodecOperands;
 use super::RepresentationCodec;
 
@@ -102,13 +103,13 @@ pub fn certify(
             .iter()
             .zip(&decoded)
             .all(|(s, d)| s.to_bits() == d.to_bits());
-        if let Some(radius) = certificate.radius {
-            if measured > radius.relative_rms {
+        if let Some(radius) = &certificate.radius {
+            if measured > radius.radius() {
                 return Err(CodecError::CertificateViolated {
                     tensor: tensor.into(),
                     label: label.into(),
                     depth: certificate.extent.depth,
-                    declared: radius.relative_rms,
+                    declared: radius.radius(),
                     measured,
                 });
             }
@@ -141,7 +142,7 @@ pub fn certify(
         }
         readings.push(ExtentReading {
             extent: certificate.extent,
-            declared_relative_rms: certificate.radius.map(|r| r.relative_rms),
+            declared_relative_rms: certificate.radius.as_ref().map(FidelityCertificate::radius),
             measured_relative_rms: measured,
             bit_exact,
         });
