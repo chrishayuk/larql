@@ -14,7 +14,7 @@ use super::super::operands::OperandStore;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::production::ProductionBackend;
 use super::super::realization::{
-    RealizationForm, RealizationId, RealizationRecord, Selection, SelectionReason,
+    ExtentPin, RealizationForm, RealizationId, RealizationRecord, Selection, SelectionReason,
 };
 use super::super::weights::{load_weight, DEVICE_PAGE_ALIGN};
 use super::super::{execute_prepared_streaming, PlaneEvent};
@@ -106,13 +106,16 @@ fn record(
             operand: operand.clone(),
             operation,
             access: operation.access(),
-            extent: RepresentationExtent::TERMINAL,
+            extent: RepresentationExtent::BASE,
             layer: Some(0),
             declared_representation: None,
             logical_elements: operand.shape.iter().product(),
         },
         representation: operand.dtype.clone(),
         provider: None,
+        // A terminal representation: one extent, unpriced here because
+        // this helper's subject is residency, not what a plane costs.
+        extent: ExtentPin::unknown(),
         selection: Selection {
             realization,
             residency,

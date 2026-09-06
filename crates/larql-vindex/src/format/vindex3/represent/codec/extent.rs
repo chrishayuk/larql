@@ -19,9 +19,16 @@ pub struct RepresentationExtent {
 }
 
 impl RepresentationExtent {
-    /// The whole of a terminal representation, and the base of a
+    /// Depth 0: the whole of a terminal representation, and the BASE of a
     /// progressive one.
-    pub const TERMINAL: Self = Self { depth: 0 };
+    ///
+    /// It was called `TERMINAL` while every codec had exactly one extent,
+    /// which read correctly and generalised wrongly: a progressive codec's
+    /// terminal extent is its DEEPEST, not its depth 0. Callers that mean
+    /// "the whole representation" ask the codec for
+    /// [`super::RepresentationCodec::terminal_extent`]; callers that mean
+    /// "depth 0" say so here.
+    pub const BASE: Self = Self { depth: 0 };
 
     pub const fn at_depth(depth: u32) -> Self {
         Self { depth }
@@ -57,10 +64,11 @@ pub struct ExtentCertificate {
 }
 
 impl ExtentCertificate {
-    /// The one certificate a terminal codec carries.
+    /// The one certificate a terminal codec carries: its base extent is
+    /// also its terminal one.
     pub const fn terminal(bits_per_weight: f64) -> Self {
         Self {
-            extent: RepresentationExtent::TERMINAL,
+            extent: RepresentationExtent::BASE,
             bits_per_weight,
             radius: None,
         }

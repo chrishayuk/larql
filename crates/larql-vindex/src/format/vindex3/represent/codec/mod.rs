@@ -37,6 +37,7 @@
 
 pub mod capability;
 pub mod codecs;
+pub mod conformance;
 pub mod error;
 pub mod extent;
 pub mod geometry;
@@ -149,6 +150,45 @@ pub trait RepresentationCodec: Send + Sync {
     }
 
     // ── Provided ──────────────────────────────────────────────────────
+
+    /// The deepest extent this codec declares — the one that reconstructs
+    /// everything the representation holds.
+    ///
+    /// For a terminal codec that is depth 0 and the question is trivial;
+    /// for a progressive one it is the exact extent, and a caller that
+    /// wants full fidelity must ask rather than assume. Depth 0 is
+    /// [`RepresentationExtent::BASE`] and means the opposite.
+    fn terminal_extent(&self) -> RepresentationExtent {
+        self.extents()
+            .iter()
+            .map(|c| c.extent)
+            .max()
+            .unwrap_or(RepresentationExtent::BASE)
+    }
+
+    /// The streams `extent` reads, in declaration order.
+    ///
+    /// Every stream that is not a refinement, plus each refinement whose
+    /// declared depth the extent reaches. The rule is the DECLARATION's,
+    /// not any codec's, so a loader can open exactly the streams an extent
+    /// needs without knowing what a particular stream means — and a
+    /// refinement deeper than the extent is never opened at all.
+    fn streams_at(
+        &self,
+        extent: RepresentationExtent,
+        tensor: &str,
+    ) -> Result<Vec<StreamSpec>, CodecError> {
+        self.certificate_at(extent, tensor)?;
+        Ok(self
+            .streams()
+            .iter()
+            .copied()
+            .filter(|spec| match spec.role {
+                StreamRole::Refinement { depth } => depth <= extent.depth,
+                _ => true,
+            })
+            .collect())
+    }
 
     /// The certificate for `extent`, or a refusal naming what is declared.
     fn certificate_at(

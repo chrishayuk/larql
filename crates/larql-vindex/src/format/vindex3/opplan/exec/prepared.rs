@@ -56,14 +56,14 @@ use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SC
 use super::kda::KdaOutputGateWeights;
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{
-    realization_residency, RealizationId, RealizationRecord, RepresentationFacts, SelectionReason,
-    SelectionRefusals,
+    realization_residency, ExtentOption, ExtentPin, RealizationId, RealizationRecord,
+    RepresentationFacts, SelectionReason, SelectionRefusals,
 };
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::planned::Operation;
-use crate::format::vindex3::represent::codec::CodecRegistry;
+use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
+use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
 use super::super::conv_qkv::ConvQkvOp;
@@ -1321,6 +1321,32 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
         if deficit.is_zero() {
             return Ok(records);
         }
+        // Preparation overruns are answered by reading LESS of an
+        // artifact, which is an extent decision and nothing else: a
+        // realization change moves what is held, never what is opened.
+        // Only extents the plan's fidelity floor admits are considered, so
+        // a shallower selection is a quality decision the caller made and
+        // not one the budget made for them.
+        if deficit.prepare > 0 {
+            if let Some((i, extent, saving)) = shallowest_saving(&selected, budget) {
+                let (record, _) = &mut selected[i];
+                switches.push(format!(
+                    "`{}` extent depth {} → {} (opens {:.2} GB less)",
+                    record.planned.operand.tensor,
+                    record.extent.selected.depth,
+                    extent.depth,
+                    saving as f64 / 1e9
+                ));
+                record.extent.selected = extent;
+                record.selection.reason = SelectionReason::BudgetPolicy;
+                continue;
+            }
+            if deficit.physical == 0 && deficit.touch_per_token == 0 {
+                return Err(VindexError::Parse(budget_refusal(
+                    budget, &ledger, &deficit, &priced, &switches,
+                )));
+            }
+        }
         // The best switch: the largest resident saving any record can make
         // by moving to another of ITS OWN candidates.
         let mut best: Option<(usize, RealizationId, u64)> = None;
@@ -1402,6 +1428,22 @@ fn budget_refusal(
         deficit.physical as f64 / GB,
         deficit.touch_per_token as f64 / GB,
     );
+    // The preparation dimension names the floor with it: a refusal that
+    // says only "too many bytes" hides that a shallower extent existed and
+    // the plan's own quality requirement ruled it out.
+    if deficit.prepare > 0 {
+        out.push_str(&format!(
+            "; preparation opens {:.2} GB against {}, a deficit of {:.2} GB, under a fidelity \
+             requirement of {}",
+            ledger.read_to_prepare as f64 / GB,
+            budget
+                .prepare_bytes
+                .map(|b| format!("{:.2} GB", b as f64 / GB))
+                .unwrap_or_else(|| "no preparation limit".to_string()),
+            deficit.prepare as f64 / GB,
+            budget.fidelity.describe(),
+        ));
+    }
     let mut largest: Vec<&Expectation> = priced
         .iter()
         .filter(|e| e.resources().resident > 0)
@@ -1469,6 +1511,10 @@ fn select_records<B: PlanBackend + ?Sized>(
             facts = facts.overlaid();
         }
         let provider = facts.registered.as_ref().map(|r| r.identity.clone());
+        // What the ARTIFACT offers, priced per extent from the codec's own
+        // declaration. The pin starts on the whole of it; a budget may
+        // move it shallower, and nothing else may.
+        let extent = extent_pin(registry, &label, &planned);
         match backend.select(&planned, &facts) {
             Ok(selection) => records.push((
                 RealizationRecord {
@@ -1476,6 +1522,7 @@ fn select_records<B: PlanBackend + ?Sized>(
                     provider,
                     planned,
                     selection,
+                    extent,
                 },
                 facts,
             )),
@@ -1487,6 +1534,79 @@ fn select_records<B: PlanBackend + ?Sized>(
     } else {
         Err(VindexError::Parse(SelectionRefusals(refusals).to_string()))
     }
+}
+
+/// The largest saving in bytes-opened any record can make by taking a
+/// shallower extent its fidelity floor admits: `(record, extent, saving)`.
+///
+/// One step at a time, like the realization re-selection beside it, so
+/// every move is recorded and the plan gives up exactly as much fidelity
+/// as the budget forced and no more.
+fn shallowest_saving(
+    selected: &[(RealizationRecord, RepresentationFacts)],
+    budget: &ResidencyBudget,
+) -> Option<(usize, RepresentationExtent, u64)> {
+    let mut best: Option<(usize, RepresentationExtent, u64)> = None;
+    for (i, (record, _)) in selected.iter().enumerate() {
+        let Some(now) = record.extent.touch_bytes() else {
+            continue;
+        };
+        let terminal = record
+            .extent
+            .options
+            .iter()
+            .map(|o| o.certificate.extent)
+            .max()
+            .unwrap_or(RepresentationExtent::BASE);
+        for option in &record.extent.options {
+            if option.certificate.extent == record.extent.selected
+                || !budget.fidelity.admits(option, terminal)
+            {
+                continue;
+            }
+            let Some(then) = option.stored_bytes else {
+                continue;
+            };
+            if then >= now {
+                continue;
+            }
+            let saving = now - then;
+            if best.is_none_or(|(_, _, s)| saving > s) {
+                best = Some((i, option.certificate.extent, saving));
+            }
+        }
+    }
+    best
+}
+
+/// What extents `label` offers for `planned`, priced per extent, with the
+/// pin on the whole of it.
+///
+/// The price is the CODEC's, from the shape: the container's recorded
+/// length is the operand's whole stored footprint (every plane), and what
+/// changes with the extent is how much of that footprint execution reads.
+/// A codec that cannot price a shape — an entropy-coded one — offers its
+/// extents unpriced, and the container's length stays the authority.
+fn extent_pin(registry: &CodecRegistry, label: &str, planned: &PlannedOperand) -> ExtentPin {
+    let Some(codec) = registry.by_label(label) else {
+        return ExtentPin::unknown();
+    };
+    ExtentPin::whole(
+        codec
+            .extents()
+            .into_iter()
+            .map(|certificate| ExtentOption {
+                certificate,
+                stored_bytes: codec
+                    .stored_bytes(
+                        &planned.operand.shape,
+                        certificate.extent,
+                        &planned.operand.tensor,
+                    )
+                    .ok(),
+            })
+            .collect(),
+    )
 }
 
 /// The representation pinned for `op` under `operation`.

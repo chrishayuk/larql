@@ -8,7 +8,7 @@ fn whole(fixture: &Fixture) -> Vec<f32> {
         .decode_all(
             &fixture.operands(),
             &fixture.shape,
-            RepresentationExtent::TERMINAL,
+            RepresentationExtent::BASE,
             TENSOR,
         )
         .unwrap()
@@ -27,7 +27,7 @@ fn a_row_range_decodes_to_that_slice_of_the_whole() {
                     &fixture.operands(),
                     &fixture.shape,
                     start..end,
-                    RepresentationExtent::TERMINAL,
+                    RepresentationExtent::BASE,
                     &mut dst,
                     TENSOR,
                 )
@@ -47,7 +47,7 @@ fn a_row_range_past_the_end_is_refused_naming_the_rows_held() {
                 &fixture.operands(),
                 &fixture.shape,
                 ROWS..ROWS + 1,
-                RepresentationExtent::TERMINAL,
+                RepresentationExtent::BASE,
                 &mut dst,
                 TENSOR,
             )
@@ -70,7 +70,7 @@ fn a_destination_of_the_wrong_size_is_refused_before_any_byte_is_read() {
                 &fixture.operands(),
                 &fixture.shape,
                 0..1,
-                RepresentationExtent::TERMINAL,
+                RepresentationExtent::BASE,
                 &mut dst,
                 TENSOR,
             )
@@ -109,7 +109,7 @@ fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
         let validation = fixture.codec.validate(
             &operands,
             &fixture.shape,
-            RepresentationExtent::TERMINAL,
+            RepresentationExtent::BASE,
             TENSOR,
         );
         // Keyed to what the codec DECLARES, not to its label: a codec that
@@ -118,12 +118,16 @@ fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
         // inflating, and refuses at decode naming the tensor and itself.
         let prices_from_shape = fixture
             .codec
-            .stored_bytes(&fixture.shape, RepresentationExtent::TERMINAL, TENSOR)
+            .stored_bytes(&fixture.shape, RepresentationExtent::BASE, TENSOR)
             .is_ok();
         if prices_from_shape {
             let err = validation.unwrap_err();
+            // The refusal names the codec's OWN first stream, not the
+            // shared spec's name: a progressive codec's base plane is a
+            // values stream called `base_hi16`.
+            let first = fixture.codec.streams()[0].name;
             assert!(
-                matches!(&err, CodecError::StreamLength { stream, .. } if stream == "values"),
+                matches!(&err, CodecError::StreamLength { stream, .. } if stream == first),
                 "{label}: {err}"
             );
             continue;
@@ -134,7 +138,7 @@ fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
             .decode_all(
                 &operands,
                 &fixture.shape,
-                RepresentationExtent::TERMINAL,
+                RepresentationExtent::BASE,
                 TENSOR,
             )
             .unwrap_err();
@@ -153,18 +157,21 @@ fn a_row_the_codec_cannot_block_is_refused_by_group() {
     // floats accept anything.
     for codec in builtin() {
         let label = codec.encoding_label();
-        let result = codec.stored_bytes(&[2, 100], RepresentationExtent::TERMINAL, TENSOR);
+        let result = codec.stored_bytes(&[2, 100], RepresentationExtent::BASE, TENSOR);
         let group = codec.capabilities().row_align_elems;
         if group == 1 {
             // The subject here is the GROUPED refusal; for an ungrouped
             // codec the price was asserted as a side statement, and that
             // side statement assumed shape-derived size. (The seventh
             // gate rung 2's forecast did not name — see its execution
-            // notes.)
+            // notes.) It also priced from `physical_align_bytes`, which
+            // happened to equal the float codecs' width and is not what
+            // any codec declares its size by: the certificate is.
+            let base_bpw = codec.extents()[0].bits_per_weight;
             match result {
                 Ok(bytes) => assert_eq!(
                     bytes,
-                    200 * codec.capabilities().physical_align_bytes as u64,
+                    (200.0 * base_bpw / extent::BITS_PER_BYTE) as u64,
                     "{label}"
                 ),
                 Err(CodecError::InstanceSized { .. }) => {}
@@ -194,7 +201,7 @@ fn a_missing_stream_is_named_together_with_what_was_bound() {
         .validate(
             &only_values,
             &fixture.shape,
-            RepresentationExtent::TERMINAL,
+            RepresentationExtent::BASE,
             TENSOR,
         )
         .unwrap_err();

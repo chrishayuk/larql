@@ -29,7 +29,7 @@ fn bits_of(units: &[u16]) -> Vec<u32> {
 
 fn decoded_bits(stream: &[u8], shape: &[usize]) -> Vec<u32> {
     BF16_ZLIB
-        .decode_packed(stream, shape, RepresentationExtent::TERMINAL, TENSOR)
+        .decode_packed(stream, shape, RepresentationExtent::BASE, TENSOR)
         .unwrap_or_else(|e| panic!("{e}"))
         .iter()
         .map(|v| v.to_bits())
@@ -51,7 +51,7 @@ fn decode_rows(
         &operands(stream),
         shape,
         rows,
-        RepresentationExtent::TERMINAL,
+        RepresentationExtent::BASE,
         &mut dst,
         TENSOR,
     )?;
@@ -134,11 +134,7 @@ fn stored_size_falls_on_both_sides_of_the_raw_image_across_instances() {
 #[test]
 fn stored_bytes_refuses_to_price_from_shape_and_names_the_container_as_the_authority() {
     let err = BF16_ZLIB
-        .stored_bytes(
-            &foreign::AWKWARD_SHAPE,
-            RepresentationExtent::TERMINAL,
-            TENSOR,
-        )
+        .stored_bytes(&foreign::AWKWARD_SHAPE, RepresentationExtent::BASE, TENSOR)
         .unwrap_err();
     assert_eq!(
         err,
@@ -299,7 +295,7 @@ fn the_header_is_judged_before_any_byte_is_inflated() {
         BF16_ZLIB.validate(
             &operands(stream),
             &foreign::AWKWARD_SHAPE,
-            RepresentationExtent::TERMINAL,
+            RepresentationExtent::BASE,
             TENSOR,
         )
     };
@@ -336,12 +332,12 @@ fn the_header_is_judged_before_any_byte_is_inflated() {
 fn a_scalar_and_an_empty_tensor_are_streams_like_any_other() {
     let scalar = encode_bf16_zlib(&[-1.5]);
     let got = BF16_ZLIB
-        .decode_packed(&scalar, &[], RepresentationExtent::TERMINAL, TENSOR)
+        .decode_packed(&scalar, &[], RepresentationExtent::BASE, TENSOR)
         .unwrap();
     assert_eq!(got, [-1.5]);
     let empty = encode_bf16_zlib(&[]);
     let got = BF16_ZLIB
-        .decode_packed(&empty, &[0, 5], RepresentationExtent::TERMINAL, TENSOR)
+        .decode_packed(&empty, &[0, 5], RepresentationExtent::BASE, TENSOR)
         .unwrap();
     assert!(got.is_empty());
 }

@@ -7,6 +7,7 @@
 //! adds a *declaration*, never a second opinion about what bytes mean.
 
 pub mod bf16_zlib;
+pub mod f32_planes;
 pub mod float;
 pub mod kquant;
 pub mod lyrw2;

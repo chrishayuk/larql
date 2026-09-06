@@ -17,7 +17,9 @@ use super::super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::super::inspect::SystemInspection;
 use super::super::OperandRef;
 use crate::error::VindexError;
-use crate::format::vindex3::represent::codec::CodecRegistry;
+use crate::format::vindex3::represent::codec::{
+    CodecOperands, CodecRegistry, NamedStreams, RepresentationCodec, RepresentationExtent,
+};
 use crate::format::vindex3::represent::physical::{PhysicalStore, WeightRegion};
 
 /// Safetensors dtype labels this reference executor can widen to f32.
@@ -433,15 +435,89 @@ impl OperandStore {
     /// That is the point — it is what makes a compact representation
     /// measurable on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
-        use crate::format::vindex3::represent::codec::RepresentationExtent;
         let raw = self.load_raw(operand)?;
         let codec = self.registry.resolve(&raw.dtype, &operand.tensor)?;
-        Ok(codec.decode_packed(
-            &raw.bytes,
-            &operand.shape,
-            RepresentationExtent::TERMINAL,
-            &operand.tensor,
-        )?)
+        // Everything the representation holds: this loader is asked for
+        // values, not for a fidelity, so it asks the codec for its deepest
+        // extent rather than assuming depth 0 is the whole of it.
+        let extent = codec.terminal_extent();
+        self.decode_at(operand, codec, raw, extent)
+    }
+
+    /// One operand's values at `extent` — the loader a caller with a PINNED
+    /// extent uses, and the only path that reads fewer streams than the
+    /// container holds.
+    ///
+    /// A shallower extent is not a smaller container: every stream the
+    /// artifact holds is still on disk, and what changes is which of them
+    /// are opened. So this reads the streams the extent needs and no
+    /// others, which is a physical fact a test can check on the store's
+    /// own read ledger rather than a claim about intent.
+    pub fn load_at(
+        &self,
+        operand: &OperandRef,
+        extent: RepresentationExtent,
+    ) -> Result<Vec<f32>, VindexError> {
+        let raw = self.load_raw(operand)?;
+        let codec = self.registry.resolve(&raw.dtype, &operand.tensor)?;
+        self.decode_at(operand, codec, raw, extent)
+    }
+
+    /// The tensor a stream after the first is stored in: the operand's own
+    /// tensor, suffixed with the stream's declared name.
+    ///
+    /// The convention is the codec's declaration made physical, so a codec
+    /// with streams stored apart needs no container support of its own and
+    /// no loader knows what any particular stream means.
+    pub fn sibling_stream_tensor(tensor: &str, stream: &str) -> String {
+        format!("{tensor}.{stream}")
+    }
+
+    /// Bind the streams `extent` needs and decode them.
+    fn decode_at(
+        &self,
+        operand: &OperandRef,
+        codec: &'static dyn RepresentationCodec,
+        first: RawOperand,
+        extent: RepresentationExtent,
+    ) -> Result<Vec<f32>, VindexError> {
+        let specs = codec.streams();
+        let Some((values, apart)) = specs.split_first() else {
+            return Err(VindexError::Parse(format!(
+                "`{}` declares no streams",
+                codec.encoding_label()
+            )));
+        };
+        if apart.is_empty() {
+            // One stream: the codec binds the payload itself, deriving any
+            // internal split it declares.
+            return Ok(codec.decode_packed(
+                &first.bytes,
+                &operand.shape,
+                extent,
+                &operand.tensor,
+            )?);
+        }
+        // Streams stored apart. Only those the extent reads are opened —
+        // a refinement stream the extent does not reach is never touched,
+        // and a codec that needs one says so by refusing.
+        let needed = codec.streams_at(extent, &operand.tensor)?;
+        let mut siblings: Vec<RawOperand> = Vec::with_capacity(needed.len());
+        for spec in needed.iter().skip(1) {
+            siblings.push(self.load_raw(&OperandRef {
+                object: operand.object.clone(),
+                tensor: Self::sibling_stream_tensor(&operand.tensor, spec.name),
+                dtype: operand.dtype.clone(),
+                shape: operand.shape.clone(),
+            })?);
+        }
+        let mut streams = NamedStreams::new().with(*values, &first.bytes);
+        for (spec, sibling) in needed.iter().skip(1).zip(&siblings) {
+            streams = streams.with(*spec, &sibling.bytes);
+        }
+        let operands = CodecOperands::from_streams(streams);
+        codec.validate(&operands, &operand.shape, extent, &operand.tensor)?;
+        Ok(codec.decode_all(&operands, &operand.shape, extent, &operand.tensor)?)
     }
 
     /// This store's process-unique identity.
@@ -500,12 +576,25 @@ impl OperandStore {
     /// an entropy-coded operand it is not a function of the shape, which
     /// is exactly why the stored footprint reads it here and never from
     /// a codec.
+    /// The operand's whole stored footprint: its own tensor, plus any
+    /// sibling stream the codec declares apart from it.
+    ///
+    /// Every plane a progressive artifact holds counts here whatever
+    /// extent execution later selects — the footprint is what the
+    /// container stores, and an extent decides what is READ, not what is
+    /// on disk. (For a codec whose streams are stored some other way the
+    /// sum is over what is found, so this is exactly the old reading.)
     pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
-        self.segments
-            .get(&operand.object)?
-            .tensors
-            .get(&operand.tensor)
-            .map(|t| t.len)
+        let segment = self.segments.get(&operand.object)?;
+        let tensor = segment.tensors.get(&operand.tensor)?;
+        let mut total = tensor.len;
+        if let Some(codec) = self.registry.by_label(&tensor.dtype) {
+            for spec in codec.streams().iter().skip(1) {
+                let sibling = Self::sibling_stream_tensor(&operand.tensor, spec.name);
+                total += segment.tensors.get(&sibling).map_or(0, |t| t.len);
+            }
+        }
+        Some(total)
     }
 
     /// Load one operand's stored bytes and dtype, unwidened — for a

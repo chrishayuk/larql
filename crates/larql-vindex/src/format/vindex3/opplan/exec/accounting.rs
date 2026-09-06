@@ -209,6 +209,17 @@ pub struct Expectation {
     /// image a decode or re-quantisation passes through, none for a
     /// realization that binds the stored bytes.
     pub staging: u64,
+    /// Bytes of the stored operand this pin OPENS to prepare it — the
+    /// streams its selected extent reads, which for a terminal
+    /// representation is everything the container holds and for a
+    /// progressive one is the planes the extent reaches.
+    ///
+    /// Distinct from `stored_bytes`, which is the whole footprint on disk
+    /// and does not move when an extent does, and from `touch_per_token`,
+    /// which is the image the executor streams once the operand is
+    /// resident. Under canonical decode this is the ONLY dimension a
+    /// shallower extent moves.
+    pub read_to_prepare: u64,
 }
 
 impl Expectation {
@@ -251,6 +262,7 @@ impl Expectation {
                 touch_per_token,
                 page_in_per_token: touch_per_token,
                 device: 0,
+                read_to_prepare: self.read_to_prepare,
             },
             // On-device traffic is the device's; the host streams nothing.
             RealizationForm::DeviceResident(_) => Resources {
@@ -261,6 +273,7 @@ impl Expectation {
                 touch_per_token: 0,
                 page_in_per_token: 0,
                 device: self.declared_resident,
+                read_to_prepare: self.read_to_prepare,
             },
             RealizationForm::Direct(_)
             | RealizationForm::Decode(_)
@@ -274,6 +287,7 @@ impl Expectation {
                 touch_per_token,
                 page_in_per_token: 0,
                 device: 0,
+                read_to_prepare: self.read_to_prepare,
             },
         }
     }
@@ -289,10 +303,67 @@ pub struct ResidencyBudget {
     pub physical_bytes: Option<u64>,
     /// Bytes the host may stream per token to reach a target rate.
     pub throughput: Option<ThroughputBudget>,
+    /// Stored bytes the plan may OPEN to prepare itself — the cold cost of
+    /// getting ready, as against the steady cost of running. The dimension
+    /// a shallower extent moves: reading less of an artifact is what an
+    /// extent buys under a realization that decodes.
+    pub prepare_bytes: Option<u64>,
     /// How a mapped bank's selected experts are brought in per token —
     /// a policy on the ACCESS realization, stamped on every mapped pin
     /// the selection makes.
     pub expert_access: super::realization::MappedAccess,
+    /// The reconstruction execution requires of the representations it
+    /// selects. Representation-independent: a floor, never a depth.
+    pub fidelity: RepresentationFloor,
+}
+
+/// What execution requires of a representation's reconstruction.
+///
+/// A quality REQUIREMENT, stated without naming a codec or a depth, so a
+/// plan can carry it and any representation can answer it. It bounds which
+/// extents a pin may take; it says nothing about how lossy the stored
+/// representation is against the checkpoint it came from, which is the
+/// graph's `Fidelity` and a different question.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum RepresentationFloor {
+    /// Only an extent that reconstructs the stored representation
+    /// exactly: everything the artifact holds is read. The default, so a
+    /// plan that asks for nothing gets no silent quality change — and a
+    /// budget it cannot meet refuses rather than degrading.
+    #[default]
+    Exact,
+    /// Any extent whose certificate declares a relative RMS at or under
+    /// this bound. An extent that declares no radius is admissible only
+    /// as the terminal one: an undeclared error is not a small one.
+    RelativeRms(f64),
+}
+
+impl RepresentationFloor {
+    /// Whether `option` satisfies this floor, given the representation's
+    /// terminal extent.
+    pub fn admits(
+        self,
+        option: &super::realization::ExtentOption,
+        terminal: super::super::super::represent::codec::RepresentationExtent,
+    ) -> bool {
+        if option.certificate.extent == terminal {
+            return true;
+        }
+        match self {
+            Self::Exact => false,
+            Self::RelativeRms(bound) => option
+                .certificate
+                .radius
+                .is_some_and(|r| r.relative_rms <= bound),
+        }
+    }
+
+    pub fn describe(self) -> String {
+        match self {
+            Self::Exact => "exact reconstruction".to_string(),
+            Self::RelativeRms(bound) => format!("relative RMS at or under {bound:.3e}"),
+        }
+    }
 }
 
 /// A rate constraint: a plan can fit in memory and still be unusably
@@ -318,6 +389,8 @@ impl ResidencyBudget {
         physical_bytes: None,
         throughput: None,
         expert_access: super::realization::MappedAccess::Demand,
+        prepare_bytes: None,
+        fidelity: RepresentationFloor::Exact,
     };
 
     /// This machine's physical memory as the budget, read from the OS;
@@ -327,6 +400,8 @@ impl ResidencyBudget {
             physical_bytes: physical_memory_bytes(),
             throughput: None,
             expert_access: super::realization::MappedAccess::Demand,
+            prepare_bytes: None,
+            fidelity: RepresentationFloor::Exact,
         }
     }
 
@@ -335,11 +410,27 @@ impl ResidencyBudget {
             physical_bytes: Some(bytes),
             throughput: None,
             expert_access: super::realization::MappedAccess::Demand,
+            prepare_bytes: None,
+            fidelity: RepresentationFloor::Exact,
         }
     }
 
     pub fn with_throughput(mut self, throughput: ThroughputBudget) -> Self {
         self.throughput = Some(throughput);
+        self
+    }
+
+    /// Stored bytes the plan may open to prepare itself.
+    pub fn with_prepare_bytes(mut self, bytes: u64) -> Self {
+        self.prepare_bytes = Some(bytes);
+        self
+    }
+
+    /// The reconstruction the plan requires — the quality half of a
+    /// budget, without which selection would take the cheapest extent
+    /// every time and call it feasibility.
+    pub fn with_fidelity(mut self, floor: RepresentationFloor) -> Self {
+        self.fidelity = floor;
         self
     }
 
@@ -360,6 +451,10 @@ impl ResidencyBudget {
                 .throughput
                 .map(|t| ledger.touch_per_token.saturating_sub(t.bytes_per_token()))
                 .unwrap_or(0),
+            prepare: self
+                .prepare_bytes
+                .map(|b| ledger.read_to_prepare.saturating_sub(b))
+                .unwrap_or(0),
         }
     }
 }
@@ -369,11 +464,13 @@ impl ResidencyBudget {
 pub struct BudgetDeficit {
     pub physical: u64,
     pub touch_per_token: u64,
+    /// Stored bytes the preparation would open over its budget.
+    pub prepare: u64,
 }
 
 impl BudgetDeficit {
     pub fn is_zero(&self) -> bool {
-        self.physical == 0 && self.touch_per_token == 0
+        self.physical == 0 && self.touch_per_token == 0 && self.prepare == 0
     }
 }
 
@@ -431,6 +528,10 @@ pub struct Resources {
     pub page_in_per_token: u64,
     /// Bytes held on a device target.
     pub device: u64,
+    /// Stored bytes opened once to prepare the operand at its pinned
+    /// extent — every plane for a terminal representation, the extent's
+    /// planes for a progressive one.
+    pub read_to_prepare: u64,
 }
 
 /// A plan's demand on each resource, each aggregated by its own rule.
@@ -453,6 +554,10 @@ pub struct ResourceLedger {
     pub page_in_per_token: u64,
     /// Device memory, summed per target.
     pub device: u64,
+    /// Stored bytes opened to prepare the plan: once per stored operand,
+    /// like the footprint, because an operand bound once is read once
+    /// however many operations it serves.
+    pub read_to_prepare: u64,
 }
 
 impl ResourceLedger {
@@ -466,6 +571,7 @@ impl ResourceLedger {
             let object = (e.operand.object.clone(), e.operand.tensor.clone());
             if stored_seen.insert(object.clone()) {
                 ledger.stored += r.stored;
+                ledger.read_to_prepare += r.read_to_prepare;
             }
             if r.mapped > 0 && mapped_seen.insert(object) {
                 ledger.mapped += r.mapped;
@@ -529,12 +635,13 @@ pub fn expectations(
                     }
                 }
             };
+            let stored_bytes = stored_len(&r.planned.operand).unwrap_or(0);
             Expectation {
                 operand: r.planned.operand.clone(),
                 operation: r.planned.operation,
                 layer: r.planned.layer,
                 realization,
-                stored_bytes: stored_len(&r.planned.operand).unwrap_or(0),
+                stored_bytes,
                 logical_elements: logical,
                 declared_resident: declared_resident_for(
                     &r.planned,
@@ -543,6 +650,10 @@ pub fn expectations(
                     geometry,
                 ),
                 staging,
+                // What the pin OPENS: the extent's own price where the
+                // codec gives one, and otherwise the whole footprint —
+                // an unpriced extent is read whole, never assumed cheap.
+                read_to_prepare: r.extent.touch_bytes().unwrap_or(stored_bytes),
             }
         })
         .collect()

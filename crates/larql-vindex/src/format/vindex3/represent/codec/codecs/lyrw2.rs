@@ -10,7 +10,6 @@
 //! capability checking refuses them (spec §6.5, §11).
 
 use super::super::error::CodecError;
-use super::super::extent::RepresentationExtent;
 use super::super::streams::{CodecOperands, NamedStreams, GROUP_SCALES, VALUES};
 use super::super::RepresentationCodec;
 use super::float::{BF16, F16, F32};
@@ -104,9 +103,12 @@ pub fn bind_region<'a>(
         }
     };
     let operands = CodecOperands::from_streams(streams);
-    codec.validate(&operands, shape, RepresentationExtent::TERMINAL, tensor)?;
+    // A region is bound whole, so the extent it is bound at is the codec's
+    // deepest — never depth 0, which for a progressive codec is its base.
+    let extent = codec.terminal_extent();
+    codec.validate(&operands, shape, extent, tensor)?;
     let have = values.len() + scales.map_or(0, <[u8]>::len);
-    let need = codec.stored_bytes(shape, RepresentationExtent::TERMINAL, tensor)?;
+    let need = codec.stored_bytes(shape, extent, tensor)?;
     if have as u64 != need {
         return Err(CodecError::Geometry {
             tensor: tensor.into(),

@@ -519,7 +519,7 @@ impl ExpertEncoding {
     pub fn matrix_bytes(self, n: usize, k: usize) -> Result<u64, VindexError> {
         use super::codec::{CodecRegistry, RepresentationExtent};
         let codec = CodecRegistry::builtin().resolve(self.name(), EXPERT_BANK_OPERAND)?;
-        Ok(codec.stored_bytes(&[n, k], RepresentationExtent::TERMINAL, EXPERT_BANK_OPERAND)?)
+        Ok(codec.stored_bytes(&[n, k], RepresentationExtent::BASE, EXPERT_BANK_OPERAND)?)
     }
 }
 

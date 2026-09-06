@@ -27,7 +27,7 @@ use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
 use crate::format::vindex3::opplan::OperandRef;
 use crate::format::vindex3::represent::codec::{
     Acceleration, AccelerationBackend, CodecCapabilities, CodecError, CodecRegistry,
-    RepresentationCodec, RequiredAccess, ResidencyProfile,
+    ExtentCertificate, RepresentationCodec, RepresentationExtent, RequiredAccess, ResidencyProfile,
 };
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
@@ -58,6 +58,10 @@ pub struct RegisteredFacts {
     pub capabilities: CodecCapabilities,
     pub accelerations: Vec<Acceleration>,
     pub decode_residency: ResidencyProfile,
+    /// Every extent the codec declares, base first. One for a terminal
+    /// representation; several for a progressive one, and then a pin has
+    /// something to choose between.
+    pub extents: Vec<ExtentCertificate>,
 }
 
 impl RepresentationFacts {
@@ -165,6 +169,7 @@ impl RegisteredFacts {
             capabilities: codec.capabilities(),
             accelerations: codec.accelerations(),
             decode_residency: codec.decode_residency(),
+            extents: codec.extents(),
         }
     }
 }
@@ -486,6 +491,76 @@ pub struct RealizationRecord {
     /// for a label no codec claims.
     pub provider: Option<CodecIdentity>,
     pub selection: Selection,
+    /// How much of the stored representation this pin reads.
+    ///
+    /// On the PIN, not on the plan: a depth is a fact about one codec, and
+    /// the plan is representation-independent. The artifact still holds
+    /// every extent whatever this says — what the pin decides is how much
+    /// of it execution opens.
+    pub extent: ExtentPin,
+}
+
+/// One extent a pin could take: what it certifies, and what it reads.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExtentOption {
+    pub certificate: ExtentCertificate,
+    /// Bytes of the stored operand this extent reads, where the codec
+    /// prices a shape. `None` for an instance-sized encoding, whose
+    /// authority is the container's recorded length.
+    pub stored_bytes: Option<u64>,
+}
+
+/// The extent a pin selected, and every extent it could have taken.
+///
+/// Three things the vocabulary keeps apart: what the ARTIFACT contains
+/// (every option here, because the container holds every plane), what
+/// EXECUTION requires (a fidelity floor, which the budget carries), and
+/// what the PIN chose (`selected`). A shallower selection does not shrink
+/// the artifact and must never be accounted as if it had.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtentPin {
+    pub selected: RepresentationExtent,
+    pub options: Vec<ExtentOption>,
+}
+
+impl ExtentPin {
+    /// A pin on the whole representation: the deepest extent declared.
+    /// The default, so nothing changes for a plan that asks for nothing.
+    pub fn whole(options: Vec<ExtentOption>) -> Self {
+        let selected = options
+            .iter()
+            .map(|o| o.certificate.extent)
+            .max()
+            .unwrap_or(RepresentationExtent::BASE);
+        Self { selected, options }
+    }
+
+    /// A pin for a representation whose extents are not known — an
+    /// unregistered label, whose bytes nothing can price either.
+    pub fn unknown() -> Self {
+        Self {
+            selected: RepresentationExtent::BASE,
+            options: Vec::new(),
+        }
+    }
+
+    /// The option the pin selected, when the extents are known.
+    pub fn selected_option(&self) -> Option<ExtentOption> {
+        self.options
+            .iter()
+            .find(|o| o.certificate.extent == self.selected)
+            .copied()
+    }
+
+    /// Bytes the selected extent reads, when the codec prices them.
+    pub fn touch_bytes(&self) -> Option<u64> {
+        self.selected_option().and_then(|o| o.stored_bytes)
+    }
+
+    /// Whether this pin has anything to choose between.
+    pub fn is_progressive(&self) -> bool {
+        self.options.len() > 1
+    }
 }
 
 // ── The candidate sets, derived from declarations ─────────────────────
