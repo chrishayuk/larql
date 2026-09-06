@@ -1,9 +1,8 @@
-# Bench regression detector — runs `scripts/bench-regress.sh check` on
-# every PR against a baseline saved on `main`. Fails the workflow if any
-# cell in the criterion bench suite regresses past Criterion's noise
-# threshold.
+# Bench regression detector — benchmarks the PR's merge result against its
+# own base, BACK TO BACK ON ONE RUNNER, and fails if any cell in the
+# criterion bench suite regresses past Criterion's noise threshold.
 #
-# Surface covered (`make bench-save` / `make bench-check`):
+# Surface covered (BENCHES in scripts/bench-regress.sh):
 #   - `quant_matvec`: Q4_0 / Q4_K / Q4_KF / Q6_K × 3 shapes × cpu/metal
 #   - `matmul`: f32 matmul + f32_gemv (lm-head) — cpu vs metal
 #   - `linalg`: cholesky + ridge solve (cpu only)
@@ -15,35 +14,58 @@
 
 name: bench-regress
 
-# ── Two honesty caveats on what this gate can establish. ──
+# ── What this gate can establish, and what it still cannot. ──
 #
-# 1. The comparison is CROSS-RUNNER. The baseline is recorded on a
-#    `main` push, cached, and restored onto a DIFFERENT macos-14 runner
-#    for the PR. Criterion then compares absolute timings across two
-#    physical machines at different times, which this repo's own bench
-#    discipline does not accept anywhere else: the decode benchmark in
-#    `opplan/exec/tests/q2a_decode_bench.rs` runs BOTH arms in one
-#    process, interleaved with alternating order, and takes a min-of-N
-#    floor, precisely because a cross-session number is not a
-#    measurement. Read a red here as a SIGNAL to go and measure
-#    properly, never as proof a change caused it.
+# Both arms are measured in ONE job on ONE runner: the base commit
+# first, then the merge result, with the baseline handed between them
+# through `target/criterion/` (gitignored, so it survives the checkout).
 #
-# 2. It therefore only runs where it could plausibly be causal. The
-#    gated surface is `larql-compute` and `larql-compute-metal` (see
-#    BENCHES in scripts/bench-regress.sh); a PR that cannot reach those
-#    crates cannot have caused a movement in them, and a red on such a
-#    PR is pure runner variance masquerading as attribution. That
-#    happened twice on 2026-09-01 — a +31 % "regression" in
-#    `ridge_decomposition_solve` on branches touching only
-#    `larql-vindex` — which is what motivated the paths filter below.
+# Until 2026-09-06 this compared a baseline cached from a `main` push
+# against a PR built on a DIFFERENT macos-14 runner. That is not a
+# measurement, and it showed: the same unchanged cell
+# (`quant_matvec_q6_k/cpu/decode_2560`) read +338% in one run and +2.57%
+# in another. See #370.
 #
-# Fixing (1) properly means benchmarking main and the PR head back to
-# back on the SAME runner in one job. That doubles bench wall-clock and
-# is tracked separately.
+# !! UNVALIDATED ON A RUNNER. A local no-op trial of exactly this
+# !! two-arm shape — save then check on BIT-IDENTICAL code — still
+# !! reported 9 regressed cells, worst +81.99% median
+# !! (`ridge_decomposition_solve/N=30_d=2560`), and stayed red even
+# !! against a real 10% bar. That trial ran on a CONTENDED laptop
+# !! (load 6.8, mediaanalysisd at 84%), so it is an upper bound on the
+# !! noise rather than a clean result — but it is not evidence that
+# !! same-runner fixes the false-positive rate either. Dispatch this
+# !! workflow on a no-op before trusting a red from it.
+#
+# Residual caveats, in order of how much they should temper a red:
+#
+# 1. "Same runner" is NOT the invariant this needs. The invariant is
+#    SAME ENVIRONMENTAL TRAJECTORY, and two sequential arms occupy
+#    different points on it: arm 2 always runs on a hotter machine than
+#    arm 1. That biases this gate toward "regression" in one direction,
+#    where cross-runner noise at least errs symmetrically — so this may
+#    trade symmetric noise for biased noise rather than removing it.
+#    Only alternation makes environmental drift approximately
+#    common-mode. The repo's own standard is
+#    `opplan/exec/tests/q2a_decode_bench.rs`: both arms in one process,
+#    interleaved block to block, alternating order, min-of-N. Criterion's
+#    save/baseline model cannot express that, so if qualification fails
+#    the shape to move to is order-balanced blocks —
+#        B H | H B | B H | H B ...
+#    — not a permanent `head -> base` swap. Swapping order is a
+#    DIAGNOSTIC (if the apparent regression flips sign, order bias is
+#    proven); it is not a fix.
+#
+# 2. It only runs where it could plausibly be causal — see the paths
+#    filter. NOTE (#370): that filter has been observed NOT to hold on
+#    PRs whose diff touched none of these paths, so a red on an
+#    unrelated PR is still possible; treat it as runner variance.
+#
+# 3. `THRESHOLD` in scripts/bench-regress.sh is NOT passed to Criterion
+#    — detection uses Criterion's own default (1%), not the 10% the
+#    script advertises. Deliberately left alone here so this change's
+#    effect on the noise floor can be measured on its own.
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
     paths:
@@ -52,10 +74,18 @@ on:
       - 'scripts/bench-regress.sh'
       - '.github/workflows/bench-regress.yml'
       - 'Cargo.lock'
-  # Manual trigger so a maintainer can re-baseline after intentional
-  # perf changes without waiting for the next merge to main — and so a
-  # reviewer can ask for the check on a PR the paths filter skipped.
-  workflow_dispatch: {}
+  # Manual trigger so a reviewer can ask for the check on a PR the paths
+  # filter skipped, run it on a branch outside a PR, or QUALIFY THE
+  # INSTRUMENT itself against a no-op.
+  workflow_dispatch:
+    inputs:
+      noop:
+        description: >-
+          Qualification run: bench the SAME commit as both arms. A gate
+          that reds here cannot grade a change, so this must pass before
+          any red from this workflow is treated as evidence.
+        type: boolean
+        default: false
 
 jobs:
   bench:
@@ -63,10 +93,16 @@ jobs:
     # without it, drop --features gpu from FEATURES to skip them
     # and run only the CPU surface on any runner.
     runs-on: macos-14
-    timeout-minutes: 90
+    # Two bench arms plus a cold build for the base and an incremental
+    # one for the head. The old single-arm job used 90.
+    timeout-minutes: 150
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Need both parents of the merge commit, and enough history to
+          # find a merge-base for the workflow_dispatch case.
+          fetch-depth: 0
 
       # Cargo deps are big and stable across PRs — separate cache.
       - name: Cache cargo deps
@@ -91,51 +127,77 @@ jobs:
             exit 1
           fi
 
-      # Criterion baselines: write-through on main, read-only on PRs.
-      # Keyed by the run number so each main push refreshes the cache.
-      - name: Cache criterion baseline (main only)
-        if: github.ref == 'refs/heads/main'
-        uses: actions/cache@v6
-        with:
-          path: target/criterion
-          key: ${{ runner.os }}-criterion-baseline-${{ github.run_number }}
-          restore-keys: |
-            ${{ runner.os }}-criterion-baseline-
-
-      - name: Restore criterion baseline (PRs only)
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v6
-        with:
-          path: target/criterion
-          key: ${{ runner.os }}-criterion-baseline-
-          restore-keys: |
-            ${{ runner.os }}-criterion-baseline-
-
-      - name: Save baseline (main only)
-        if: github.ref == 'refs/heads/main'
-        run: make bench-save
-
-      - name: Check vs baseline (PRs + manual)
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+      - name: Resolve the two arms
+        id: arms
+        shell: bash
         run: |
+          set -euo pipefail
+          HEAD_REV=$(git rev-parse HEAD)
+          if [ "${{ inputs.noop }}" = "true" ]; then
+            # Instrument qualification: both arms are the same commit, so
+            # any "regression" reported is the gate's own false-positive
+            # rate rather than a property of any change.
+            BASE_REV="$HEAD_REV"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            # actions/checkout gives the MERGE commit for pull_request, so
+            # ^1 is the base branch tip the PR would land on and HEAD is
+            # the merge result itself — exactly the pair worth comparing.
+            BASE_REV=$(git rev-parse "HEAD^1")
+          else
+            git fetch --no-tags origin main
+            BASE_REV=$(git merge-base FETCH_HEAD HEAD)
+          fi
+          if [ "$BASE_REV" = "$HEAD_REV" ]; then
+            # Not an error: this is the no-op control. Both arms still run,
+            # so the job measures the gate's own false-positive rate.
+            echo "::notice::base == head; this run measures the gate's noise floor, not a change"
+          fi
+          echo "base=$BASE_REV" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD_REV" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE_REV"
+          echo "head=$HEAD_REV"
+
+      # Arm 1. The base, first, so the expensive cold build is the one
+      # that also warms the cargo cache for arm 2.
+      #
+      # `--force` because cargo may leave Cargo.lock modified, which
+      # would otherwise abort the checkout mid-job. Nothing here is
+      # precious: the tree is a clean CI checkout. (Do NOT run this
+      # sequence in a worktree holding uncommitted work — it discards it.)
+      - name: Bench the BASE arm (records the baseline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --force --detach "${{ steps.arms.outputs.base }}"
+          git --no-pager log -1 --format='base arm: %h %s'
+          # `target/criterion/` is gitignored, so the baseline written here
+          # survives the checkout back to the head arm below.
+          bash scripts/bench-regress.sh save
+
+      # Arm 2. The merge result, on the SAME runner, against arm 1.
+      - name: Bench the HEAD arm and compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --force --detach "${{ steps.arms.outputs.head }}"
+          git --no-pager log -1 --format='head arm: %h %s'
           # Call the script DIRECTLY, never through `make`. GNU make exits
           # 2 for any failed recipe (1 is reserved for `-q`), so going via
-          # `make bench-check` aliases the script's exit 1 (regression
-          # detected) onto its exit 2 (no baseline) — and the cold-start
-          # branch below then soft-passes a real regression as green. The
+          # `make bench-check` would alias the script's exit 1 (regression
+          # detected) onto its exit 2 (no baseline). The
           # 0 = clean / 1 = regression / 2 = no baseline contract only
           # survives an unwrapped call.
           #
-          # Cold cache → the script prints "no baseline found" and exits 2.
-          # Treat that as neutral: the first PR after CI is stood up
-          # shouldn't fail just because there's no baseline yet.
+          # Exit 2 is now a REAL failure, not a cold start: arm 1 ran on
+          # this same runner moments ago, so a missing baseline means that
+          # arm did not produce one and the comparison never happened.
           set +e
           bash scripts/bench-regress.sh check
           rc=$?
           set -e
           if [ "$rc" -eq 2 ]; then
-            echo "::warning::no criterion baseline cached; skipping regression check"
-            exit 0
+            echo "::error::no baseline after the base arm ran - the base arm did not record one"
+            exit 1
           fi
           exit "$rc"
 
