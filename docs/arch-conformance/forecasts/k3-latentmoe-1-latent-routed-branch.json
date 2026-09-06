@@ -1,0 +1,191 @@
+{
+  "rung": "K3-LATENTMOE-1",
+  "name": "latent-routed-branch",
+  "artifact_kind": "freeze (pre-registration; written BEFORE any code, oracle or measurement)",
+  "written": "2026-09-06",
+  "base": "`ef6a101e` — the K3-MLA-Q-LORA-1 commit, semantics 21, K3 26/152 RED. Two commits ahead of origin/main, neither pushed; if either is amended the baseline moves and BOTH arms are re-measured.",
+  "worktree": ".claude/worktrees/k3-latentmoe-1, branch `k3-latentmoe-1`",
+  "reconnaissance": "docs/arch-conformance/forecasts/k3-latentmoe-1-reconnaissance.json",
+
+  "claim": "Kimi-K3's routed FFN runs in a LATENT space. `routed_expert_hidden_size` is declared, becomes the authority the routed bank's geometry is sized from, and is executed as a down-projection into that space and an up-projection out of it; `latent_moe_use_norm` is declared and executed as an RMS norm on the weighted aggregate, at the LAYER epsilon. Both leaves reach the execution and geometry authorities they describe, in one transition.",
+
+  "the_single_architectural_decision_that_makes_the_forecast_mean_anything": {
+    "stated": "**`routed_expert_hidden_size` does not merely become a represented config leaf; it becomes the authority the routed-bank geometry is sized from, in this same transition.**",
+    "why_it_is_the_hinge": "a leaf can be made `representable` by giving it any home at all. That would move the count by two and leave `opplan/build.rs` still sizing the expert bank against the component's `hidden` (L2438, L2458) — so the op plan would refuse K3's real bank on shape while the plan reported the width as carried. That is hollow carriage: the plan claiming a fact the operand plane contradicts, which is the exact failure K3-MLA-Q-LORA-1's withdrawn P6 avoided by NOT shipping a rule it could not honour.",
+    "the_consequence_for_the_gates": "the count and the operand plane must move TOGETHER. Either alone is a failure of this rung, and both directions are written into the falsifiers below."
+  },
+
+  "the_operator_frozen": {
+    "diagram": [
+      "hidden h",
+      " |- router(h)                      # FULL hidden space, before any projection",
+      " |",
+      " |- routed_down(h) -> latent h_l   # [latent, hidden]",
+      " |         |",
+      " |    routed experts               # the existing SiTU-GLU experts (K3-ACT-1),",
+      " |         |                       # constructed at the LATENT width",
+      " |    weighted aggregate           # top-k weights applied and summed",
+      " |         |",
+      " |    RMSNorm?                     # AFTER aggregation, eps = config.rms_norm_eps",
+      " |         |",
+      " |    routed_up(...) -> [hidden]   # [hidden, latent]",
+      " |         |",
+      " |    routed contribution",
+      " |",
+      " |- shared_experts(h)              # FULL hidden space, on the block input",
+      "",
+      "final = routed contribution + shared contribution"
+    ],
+    "the_three_placement_facts_as_first_class_CLAIMS": [
+      "**The router reads the un-projected hidden.** `self.gate(hidden_states)` at L818 precedes `routed_expert_down_proj` at L822.",
+      "**The norm is applied to the weighted aggregate.** `moe_infer` has already multiplied by `topk_weight` and summed before L830-831 normalises one vector per token.",
+      "**The shared branch is outside the bottleneck.** `shared_experts(identity)` reads the block input and is added AFTER `routed_expert_up_proj` (L836-838)."
+    ],
+    "why_they_are_claims_and_not_notes": "every tensor shape in this block stays valid while each one of them is wrong. A router fed the latent, a norm applied per expert, a shared branch inside the bottleneck — each computes a different model with no shape, arity or bounds check able to see it. They are the reason this rung has an oracle at all."
+  },
+
+  "the_geometry_frozen": {
+    "routed_expert_hidden_size_is_the_latent_hidden_width_full_stop": "3584 on K3.",
+    "explicitly_not": [
+      "**NOT `hidden_size / 2`.** K3 satisfies 7168/2 = 3584 and that is a coincidence of this checkpoint. A derivation from it would be right on exactly one model and silently wrong on the next, and is forbidden by name.",
+      "**NOT `moe_intermediate_size`** (3072 on K3) — that is each expert's inner width and is unchanged by the wrapper.",
+      "**NOT the component's `hidden_size`** — which is what the bank is sized from today and what this rung changes."
+    ],
+    "what_it_governs": [
+      "`routed_expert_down_proj` rows, `routed_expert_up_proj` columns, `routed_expert_norm` width",
+      "**every expert's input width** (`w1`/`w3` columns) and **output width** (`w2` rows), and their scale streams' group counts"
+    ],
+    "the_change_this_requires": "`opplan/build.rs`'s packed-bank sizing stops reading the component's `hidden` and reads this authority instead, through ONE function so the two call sites (`ExpertGateUp`'s `k`, `ExpertDown`'s rows) and the `PerExpert` variants cannot disagree. That is not incidental cleanup: it is the step that proves the declaration governs execution rather than merely being stored."
+  },
+
+  "decisions_settled": {
+    "D1_representation": {
+      "decision": "`MoeSurface.latent: Option<MoeLatent>`, where `MoeLatent { width: usize, norm: Option<LatentNorm> }` and `LatentNorm { eps: f64 }`.",
+      "why_nested_and_not_two_flat_fields": "the reference gates the norm on the wrapper — `if self.use_latent_moe:` at L803 encloses `if self.latent_moe_use_norm:` at L810 — so `latent_moe_use_norm: true` without `routed_expert_hidden_size` builds NO norm. Nesting makes that state unrepresentable instead of merely refused, the same reasoning `MlaQueryForm` and `ExpertGatePolicy::SituGlu` were shaped by.",
+      "why_the_eps_is_non_optional_inside_LatentNorm": "when the norm exists its epsilon is always resolved — the reference states the derivation explicitly. `Option` here would mean 'a norm whose epsilon nobody judged', which cannot arise. Note this is a DIFFERENT meaning of `Option` from `MlaQueryForm::LowRank.norm_eps`, where it means unjudged; the two are kept apart by nesting rather than by convention.",
+      "the_op": "`MoeOp` (or the routed FFN op) gains the same shape carrying `OperandRef`s: `latent: Option<MoeLatentOperands>` with `down`, `up`, and `norm: Option<(OperandRef, f64)>`."
+    },
+    "D2_declaration_authority": {
+      "form": "`routed_expert_hidden_size`'s PRESENCE, exactly the reference's `is not None` (L776).",
+      "norm": "`latent_moe_use_norm`'s truthiness, exactly the reference's `getattr(..., False)` (L781) consumed by a plain `if` (L810).",
+      "absence": "no `routed_expert_hidden_size` -> ordinary routed MoE at `hidden_size`, a CHECKED default read from L777-780. No `latent_moe_use_norm` -> no norm, read from the `getattr` default.",
+      "never_from_the_estate": "**A routed-expert tensor shape may confirm a declaration; it must never select it.** The wrapper's spellings are distinctive, but the expert bank's stored width IS the quantity the declaration decides — so inferring the wrapper from the bank's width, or sizing the bank from its own tensors, is the same defect in the place it is hardest to see."
+    },
+    "D3_zero_and_null_traced_not_assumed": {
+      "frozen": [
+        "`routed_expert_hidden_size = 0` -> SELECTS the latent form (`0 is not None`); the geometry it then describes is degenerate and closure refuses it BY NAME.",
+        "`routed_expert_hidden_size = null` -> identical to absent.",
+        "`latent_moe_use_norm = false` -> no norm; distinguishable from absent only in the plan's `declared` field.",
+        "`latent_moe_use_norm = null` -> falsy in the `if`, so no norm. NOT `is not None` — this leaf and `routed_expert_hidden_size` treat null differently, in the same config."
+      ],
+      "the_adversarial_witness": "ONE test asserting all four of these side by side with the two earlier precedents:\n  `activation_situ_beta = 0`        -> 1.0                     (`beta or 1.0`)\n  `q_lora_rank = 0`                 -> the form, then refused   (`is not None`)\n  `routed_expert_hidden_size = 0`   -> the form, then refused   (`is not None`)\n  `latent_moe_use_norm = null`      -> false, no norm           (plain truthiness)\nFour adjacent leaves of one config, three different rules. The test's subject is the parser architecture itself: **adjacent config leaves do not share truthiness semantics merely because they sit beside one another.**"
+    },
+    "D4_the_epsilon_and_its_inversion": {
+      "frozen": "`routed_expert_norm` runs at **`config.rms_norm_eps`** — `1e-5` on K3 — because `KimiRMSNorm(self.moe_hidden_size, eps=config.rms_norm_eps)` (L811-813) passes it EXPLICITLY.",
+      "the_anti_memory_falsifier": "the previous two K3 rungs each found a low-rank norm running at `KimiRMSNorm`'s class default `1e-6` because its constructor passed no `eps` — `q_a_layernorm` (L368) and `kv_a_layernorm` (L383), the ONLY two such sites in the file. **This one explicitly does not.** A mutant using `1e-6` is frozen into the oracle, and it exists so that anyone generalising the previous result fails a test rather than ships a plausible number. `feedback_coincidental_invariant`, running in the opposite direction from the last rung.",
+      "the_authority": "the LAYER epsilon, reached because the reference says so — not re-derived by an executor reaching for whatever norm epsilon is nearest. The resolved value is carried on the surface so the container round-trips it.",
+      "expected_size": "small. It is scored at the boundary it is CAUGHT at (`routed_normed`), not at `output`, for the reason K3-ACT-1 and K3-MLA-Q-LORA-1 both recorded: scoring a real small defect at the end of the ladder is how it gets written down as inert."
+    },
+    "D5_norm_semantics_transcribed": {
+      "kind": "RMSNorm (`KimiRMSNorm`) — no mean subtraction, no bias.",
+      "affine": "YES; the checkpoint ships `routed_expert_norm.weight [3584]` BF16.",
+      "input": "the routed branch's weighted aggregate, `[latent]` per token.",
+      "placement": "between aggregation and `routed_expert_up_proj`. Not per expert, not before the down-projection, not after the up-projection, not on the shared branch.",
+      "precision": "f32 internally, cast back, affine applied in the input dtype (L232-236). Transcribed in that order; whether it is observable here is the oracle's to measure."
+    },
+    "D6_roles_and_closure": {
+      "new_roles": "`MoeLatentDownProj [latent, hidden]`, `MoeLatentNorm [latent]`, `MoeLatentUpProj [hidden, latent]`, operator-gated on the routed FFN.",
+      "required_roles_follow_the_declaration": "declared latent -> down and up required, norm required iff `latent_moe_use_norm`; no declaration -> none of the three, and any of them shipped is refused by name.",
+      "both_sides": "declared without an operand -> `MissingOperand` naming the role; operand without the declaration -> refused; `latent_moe_use_norm` declared with no `routed_expert_hidden_size` -> the flag is INERT in the reference and the plan must say so rather than build a norm; `routed_expert_norm` shipped with the flag false or absent -> refused."
+    },
+    "D7_carriage_and_the_domain_MEASURED_FIRST": {
+      "decision": "both leaves get carriage rules: `routed_expert_hidden_size` -> `ExecutionSurface.ffn.moe.latent.width`, `latent_moe_use_norm` -> `...latent.norm`, each with a probe reading the built surface back.",
+      "why_this_is_safe_here_and_was_not_for_q_lora_rank": "**the domain was measured before the rule was promised.** Exactly ONE of the 117 cached rows declares either leaf: Kimi-K3. `q_lora_rank` reached eighteen rows of which only six built an MLA surface, which is why that rule was withdrawn. This is the lesson from that withdrawal applied, and it is the reason `-2` is forecastable at all.",
+      "the_check_that_makes_it_honest": "the freeze's P8 requires 116 of 117 rows byte-identical apart from the semantics stamp and the additive surface field; a carriage rule reaching a second row falsifies it."
+    },
+    "D8_the_bank_geometry_authority": {
+      "decision": "one function — `routed_expert_input_width(moe, hidden)` — returning `moe.latent.map(|l| l.width).unwrap_or(hidden)`, read by every expert-bank shape contract: `ExpertGateUp`'s `k`, `ExpertDown`'s rows, `ExpertGateUpScales`/`ExpertDownScales`, and the `PerExpert*` variants.",
+      "why_one_function": "the two packed call sites and the three per-expert ones must not be able to disagree, and a future format must inherit the authority rather than re-derive it. The same 'one canonical derivation' rule `MoeGateRule::from_arch` and `Activation::uses_gelu_tanh_gate_up` are shaped by.",
+      "the_refusal_this_improves": "today a K3 bank would be refused on SHAPE, naming the operand. After this rung a bank whose stored width disagrees with the declared latent is refused naming the DECLARATION — which is the difference between sending a reader to a tensor and sending them to the config line that governs it."
+    },
+    "D9_oracle": {
+      "boundaries_frozen": ["router_input", "router_weights", "latent", "expert_out", "routed_sum", "routed_normed", "routed_out", "shared_out", "output"],
+      "the_free_witness": "`router_weights` must be BIT-identical between a latent arm and an ordinary arm on the same input and the same gate weights, because the router reads the un-projected hidden. That is the cheapest possible check on the first placement fact and it costs nothing.",
+      "the_arm": "a new `scripts/kimi_latent_moe_reference.py` + export, or a fourth arm on the existing MoE oracle if one fits — the freeze does not decide which file, only that the existing arms keep every value and that the reference is transcribed before any Rust arithmetic.",
+      "the_band_gate": "the router's top-k weights must not be degenerate (one expert at 1.0), or every downstream control reads the same number. Asserted on the SIGNAL before any control is scored, as the last two rungs' band gates were.",
+      "widths_must_all_differ": "the fixture's `hidden`, `latent`, `moe_intermediate_size` and `num_experts` must be pairwise distinct — and `latent != hidden/2`, so the forbidden derivation is not accidentally satisfied."
+    },
+    "D10_mutants_frozen": [
+      "`router_reads_the_latent` — routing computed after the down-projection",
+      "`norm_per_expert_before_sum` — each expert's output normalised, then weighted and summed",
+      "`norm_before_aggregation` — the norm applied to the pre-weighting expert outputs",
+      "`norm_after_up_proj` — applied to `[hidden]` after expansion (shape-expressible only if latent == hidden; the fixture keeps them distinct, so RECORDED as unreachable rather than claimed)",
+      "`norm_omitted` — the flag declared, the norm skipped",
+      "`class_default_eps` — `1e-6` instead of the declared `rms_norm_eps`. **The anti-memory arm.**",
+      "`shared_reads_the_latent` — the shared branch fed the projected input",
+      "`shared_added_before_up_proj` — the shared contribution summed in latent space",
+      "`latent_from_hidden_over_two` — the forbidden derivation, made numeric",
+      "`latent_from_moe_intermediate_size` — 3072 in place of 3584",
+      "`latent_from_hidden_size` — no bottleneck at all",
+      "`down_up_swapped` — the two projections transposed into each other's slots"
+    ],
+    "D11_structural_controls_frozen": [
+      "declared latent, `routed_expert_down_proj` absent -> `MissingOperand` naming it; likewise up and norm",
+      "wrapper operands present, no declaration -> refused by name",
+      "`latent_moe_use_norm: true` with no `routed_expert_hidden_size` -> inert, no norm built, and the plan says so",
+      "`routed_expert_norm` shipped with the flag false -> refused",
+      "`routed_expert_hidden_size: 0` -> form selected, geometry refused by name",
+      "an expert bank whose stored width disagrees with the declared latent -> refused naming the DECLARATION"
+    ],
+    "D12_backend_honesty": {
+      "executes": "the interpreter's routed FFN path.",
+      "refuses_by_name": "every Metal/device routed path that cannot express the wrapper, at weight-build time and not mid-encode (K3-ACT-1's D-6). The refusal names `routed_expert_hidden_size` and the width, as the q-LoRA refusal names the rank.",
+      "workspace_scope": "`MoeSurface` is workspace-visible; the change needs workspace gates."
+    },
+    "D13_one_transition": {
+      "decision": "ONE. Not declaration-then-lift.",
+      "why": "the wrapper, the geometry authority and the execution ordering are one operation. An intermediate state where the width is 'represented' while the bank still sizes itself from full hidden is precisely the hollow-carriage problem this freeze exists to avoid — the plan would claim a fact the op plan refuses."
+    },
+    "D14_semantics_version": "21 -> 22, with the identity pin's verdict arms.",
+    "D15_scope_fences": "`topk_method` (`noaux_tc`, blocker #134) is NOT this rung's and K3 keeps it. The expert bank's compressed-tensors/MXFP4 dialect (`weight_packed`/`weight_scale` on `w1`/`w2`/`w3`) is NOT this rung's and remains the six unaddressed spellings. The multimodal container leaves and HF boilerplate are untouched. K3's op plan does NOT close after this rung."
+  },
+
+  "forecast": {
+    "measured_how": "two arms re-planned fresh, baseline = a detached worktree at `ef6a101e`, candidate = this worktree; `scripts/arch_sweep.py --out <arm> run` over the 117-row matrix, scored through its own `classify`; rows compared by the SET OF JSON PATHS at which they differ.",
+
+    "P1_k3_blockers": "**26 -> 24, RED -> RED, unsupported_component 0 -> 0.**",
+    "P2_exactly_which": "blockers #55 `text_config.latent_moe_use_norm` and #121 `text_config.routed_expert_hidden_size` retire (unrepresented/unknown -> representable, carried). NOTHING else on the K3 row moves, and no finding is added or removed.",
+    "P3_the_operand_plane": "`k3_estate_reports_every_unaddressed_spelling`: rows 5421 unchanged; unclassified **5379 -> 5376**; distinct unaddressed spellings **9 -> 6**. The three LatentMoE wrapper operands become addressed.",
+    "P4_what_remains_unaddressed": "the six remaining spellings are EXACTLY the compressed-tensors/MXFP4 bank dialect — `experts.N.w{1,2,3}.weight_{packed,scale}` — and nothing else. Asserted as a set, not a count.",
+    "P5_the_op_plan_stops_for_the_right_reason": "on K3's real two-layer estate the routed FFN closes as far as LatentMoE semantics are concerned and then stops on that representation dialect. The remaining closure defects name the expert-bank spellings, and NONE of them names a wrapper operand, the latent width, or the norm. **The rung is not required to make the bank execute; it is required that the bank fail for the right remaining reason.**",
+    "P6_geometry_authority": "the expert bank's shape contracts are sized from the declared latent width. A synthetic bank stored at the component's `hidden` under a LatentMoE declaration is refused naming the DECLARATION; the same bank at the declared latent closes.",
+    "P7_the_ancestor": "moonshotai/Kimi-Linear-48B-A3B-Instruct declares neither leaf (verified) and must be unmoved on every plane apart from the semantics stamp and any additive surface field. Blockers 0 -> 0.",
+    "P8_every_other_row": "116 of 117 rows differ only in the semantics stamp and — for rows that build a routed-MoE surface — the additive `execution.ffn.moe.latent` field. **The additive-field movement is forecast this time**, because the q-LoRA rung's P5/P7 were falsified by exactly this and the lesson is not to forecast a byte-identity a surface addition cannot have. No row other than K3 may change any category, class, carriage or count.",
+    "P9_execution_parity": "the interpreter reproduces the oracle's latent arm at every frozen boundary; `router_weights` bit-identical across the two arms; every mutant in D10 reads its exported delta at the boundary it is caught at; every structural control in D11 refuses naming the declaration, the role or the width.",
+    "P10_the_epsilon": "the executor runs the latent norm at `config.rms_norm_eps`, and the `class_default_eps` mutant (1e-6) reads a non-zero delta at `routed_normed`. A build that generalised the previous two rungs' class-default finding fails here.",
+    "P11_the_zero_null_witness": "the four-rule adversarial test passes, asserting all four leaves' semantics in one place.",
+    "P12_backends_refuse": "every device routed path refuses the wrapper by name at weight-build time, witnessed by a test that reaches the refusal.",
+    "P13_semantics_version": "21 -> 22; the identity pin fails until bumped.",
+    "P14_existing_arms_untouched": "every pre-existing MoE test, the SiTU parity arms and the two MLA oracle arms pass unchanged; any oracle arm regenerated keeps every value."
+  },
+
+  "primary_falsifier_BOTH_PLANES_MUST_AGREE": {
+    "stated": "**If the blocker count drops to 24 while the three wrapper operands remain unaddressed, the rung FAILS. If the operands close while the count stays at 26, the rung FAILS.** This time the two planes describe the same fact and must move together.",
+    "why_it_is_written_this_way": "the previous rung froze a count that could not move and put the verdict on the operand plane. This one can move both, so neither alone is evidence: a count that dropped without the operand plane would be the hollow carriage this freeze's central decision exists to prevent, and an operand plane that closed without the count would mean the leaves found homes that carry nothing."
+  },
+
+  "secondary_falsifiers": [
+    "any finding added to or removed from the K3 row",
+    "any row other than K3 changing a category, class, carriage or count",
+    "a mutant reading 0.0 without the fixture proving it could have read otherwise",
+    "the `class_default_eps` mutant reading inert at `routed_normed`",
+    "the remaining unaddressed set not being exactly the six MXFP4 bank spellings",
+    "a closure defect after this rung naming a wrapper operand, the latent width or the norm",
+    "the latent width being derivable from `hidden_size / 2` anywhere in the tree",
+    "`router_weights` differing between the latent and ordinary arms"
+  ],
+
+  "sequence_after_this_transition": "K3's remaining text-side blockers become 14 quantization_config + 1 `topk_method` + 3 multimodal container + 6 HF boilerplate. No architecture cell remains on either the attention or the FFN structure: what is left is router semantics and quantization realization. The next rungs are `topk_method` (`noaux_tc`) and the MXFP4/compressed-tensors declaration, and the two debts carried from the previous rung — correct-domain `q_lora_rank` carriage, and the q-A epsilon override witness.",
+
+  "commit_order": "recon -> freeze -> oracle -> code + tests -> execution notes."
+}
