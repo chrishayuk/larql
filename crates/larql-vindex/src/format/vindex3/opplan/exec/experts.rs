@@ -34,7 +34,6 @@ use crate::format::vindex3::opplan::{
 use crate::format::vindex3::represent::codec::codecs::lyrw2::bind_region;
 use crate::format::vindex3::represent::codec::codecs::mxfp4::DTYPE_MXFP4;
 use crate::format::vindex3::represent::codec::streams::{GROUP_SCALES, VALUES};
-use crate::format::vindex3::represent::codec::RepresentationExtent;
 
 /// Gate and up: the two branches sharing one fused operand.
 const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
@@ -761,11 +760,13 @@ fn load_packed(
                 // exactly as a dense matrix would.
                 other => {
                     let mut values = vec![0.0f32; rows * k];
+                    // The bank was bound whole, so it decodes whole: the
+                    // codec's deepest extent, not depth 0.
                     codec.decode_rows(
                         &operands,
                         &bank_shape,
                         expert_rows,
-                        RepresentationExtent::TERMINAL,
+                        codec.terminal_extent(),
                         &mut values,
                         name,
                     )?;

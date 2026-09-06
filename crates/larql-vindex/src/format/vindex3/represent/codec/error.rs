@@ -149,6 +149,45 @@ pub enum CodecError {
 
     #[error("codec registry: `{label}` is registered twice")]
     DuplicateLabel { label: String },
+
+    #[error(
+        "tensor `{tensor}`: `{label}` at depth {depth} decodes finite normal values with \
+         relative RMS {measured:.3e}; its certificate declares {declared:.3e}"
+    )]
+    CertificateViolated {
+        tensor: String,
+        label: String,
+        depth: u32,
+        declared: f64,
+        measured: f64,
+    },
+
+    #[error(
+        "tensor `{tensor}`: `{label}` at depth {depth} decodes finite normal values with \
+         relative RMS {measured:.3e}, worse than depth {shallower}'s {before:.3e}; a deeper \
+         extent must reconstruct at least as well"
+    )]
+    CertificateNotMonotone {
+        tensor: String,
+        label: String,
+        depth: u32,
+        shallower: u32,
+        measured: f64,
+        before: f64,
+    },
+
+    #[error(
+        "tensor `{tensor}`: `{label}`'s terminal extent (depth {depth}) reconstructs \
+         {differing} of {elements} bit patterns differently from the source; the deepest \
+         extent must be exact"
+    )]
+    TerminalNotExact {
+        tensor: String,
+        label: String,
+        depth: u32,
+        differing: usize,
+        elements: usize,
+    },
 }
 
 impl From<CodecError> for VindexError {

@@ -25,6 +25,10 @@ pub enum StreamRole {
     GroupScales,
     /// One scale for the whole tensor.
     TensorScale,
+    /// A refinement of everything before it: the stream a progressive
+    /// representation reads to reach `depth`, meaningless on its own and
+    /// never read at a shallower extent.
+    Refinement { depth: u32 },
 }
 
 /// One stream a codec declares.

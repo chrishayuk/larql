@@ -99,7 +99,7 @@ fn every_operation_declares_its_access_and_every_extent_is_terminal() {
                 "{name}: {}",
                 p.operand.tensor
             );
-            assert_eq!(p.extent, RepresentationExtent::TERMINAL, "{name}");
+            assert_eq!(p.extent, RepresentationExtent::BASE, "{name}");
             let expected = match p.operation {
                 Operation::Embed | Operation::ExpertBankSlice => RequiredAccess::RowRandom,
                 Operation::Project(_)

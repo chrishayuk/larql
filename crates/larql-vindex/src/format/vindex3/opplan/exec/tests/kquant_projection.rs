@@ -487,7 +487,7 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
     use crate::format::vindex3::opplan::exec::cpu::physical::KQuantExecution;
     use crate::format::vindex3::opplan::exec::production::select_cpu;
     use crate::format::vindex3::opplan::exec::realization::{
-        RealizationForm, RealizationRecord, RepresentationFacts,
+        ExtentPin, RealizationForm, RealizationRecord, RepresentationFacts,
     };
     use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
     use crate::format::vindex3::represent::codec::RepresentationExtent;
@@ -501,7 +501,7 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
         operand: op.clone(),
         operation,
         access: operation.access(),
-        extent: RepresentationExtent::TERMINAL,
+        extent: RepresentationExtent::BASE,
         layer: Some(0),
         declared_representation: None,
         logical_elements: op.shape.iter().product(),
@@ -519,6 +519,7 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
             representation: Q6_K.name.to_string(),
             provider: facts.registered.as_ref().map(|r| r.identity.clone()),
             selection,
+            extent: ExtentPin::unknown(),
         };
         let expected = expectations(
             std::slice::from_ref(&record),

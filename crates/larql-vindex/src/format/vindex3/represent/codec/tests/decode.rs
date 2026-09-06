@@ -20,7 +20,7 @@ fn decoded(fixture: &Fixture) -> Vec<f32> {
         .decode_all(
             &fixture.operands(),
             &fixture.shape,
-            RepresentationExtent::TERMINAL,
+            RepresentationExtent::BASE,
             TENSOR,
         )
         .unwrap_or_else(|e| panic!("{}: {e}", fixture.label()))
@@ -123,7 +123,7 @@ fn mxfp4_refuses_one_payload_by_naming_the_streams_it_keeps_apart() {
     );
     // And therefore the packed path refuses too, before any decode.
     assert!(MXFP4
-        .decode_packed(&[0u8; 64], &[1, 32], RepresentationExtent::TERMINAL, TENSOR)
+        .decode_packed(&[0u8; 64], &[1, 32], RepresentationExtent::BASE, TENSOR)
         .is_err());
 }
 
@@ -135,7 +135,7 @@ fn decode_packed_is_bind_then_validate_then_decode_for_every_packed_codec() {
             .decode_packed(
                 &fixture.buffers[0],
                 &fixture.shape,
-                RepresentationExtent::TERMINAL,
+                RepresentationExtent::BASE,
                 TENSOR,
             )
             .unwrap_or_else(|e| panic!("{}: {e}", fixture.label()));
@@ -148,20 +148,16 @@ fn every_fixture_validates_and_is_the_size_the_codec_declares() {
     let mut instance_sized = 0;
     for fixture in fixtures() {
         let operands = fixture.operands();
+        // A fixture is what a CONTAINER holds, so it is bound and priced at
+        // the codec's terminal extent — which is depth 0 for a terminal
+        // codec and the deepest plane for a progressive one.
+        let whole = fixture.codec.terminal_extent();
         fixture
             .codec
-            .validate(
-                &operands,
-                &fixture.shape,
-                RepresentationExtent::TERMINAL,
-                TENSOR,
-            )
+            .validate(&operands, &fixture.shape, whole, TENSOR)
             .unwrap_or_else(|e| panic!("{}: {e}", fixture.label()));
         let held: usize = fixture.buffers.iter().map(Vec::len).sum();
-        match fixture
-            .codec
-            .stored_bytes(&fixture.shape, RepresentationExtent::TERMINAL, TENSOR)
-        {
+        match fixture.codec.stored_bytes(&fixture.shape, whole, TENSOR) {
             Ok(declared) => assert_eq!(held as u64, declared, "{}", fixture.label()),
             // An instance-sized fixture is whatever its stream came to;
             // the size lives in the operand and the codec says so.

@@ -395,7 +395,7 @@ fn the_source_touch_is_the_recorded_length_and_differs_from_the_image_in_both_co
         stored_total += raw.bytes.len();
         // And the codec itself will not price it from the shape.
         assert!(matches!(
-            BF16_ZLIB.stored_bytes(&t.shape, RepresentationExtent::TERMINAL, &t.tensor),
+            BF16_ZLIB.stored_bytes(&t.shape, RepresentationExtent::BASE, &t.tensor),
             Err(CodecError::InstanceSized { .. })
         ));
     }

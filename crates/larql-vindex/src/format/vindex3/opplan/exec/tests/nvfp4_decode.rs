@@ -48,12 +48,7 @@ fn a_pack_round_trips_through_its_own_layout() {
     );
 
     let decoded = NVFP4
-        .decode_packed(
-            &stored,
-            &shape,
-            RepresentationExtent::TERMINAL,
-            "round-trip",
-        )
+        .decode_packed(&stored, &shape, RepresentationExtent::BASE, "round-trip")
         .expect("decode");
     assert_eq!(
         decoded.len(),
@@ -102,7 +97,7 @@ fn a_truncated_pack_refuses_rather_than_decoding_what_is_there() {
     let short = &stored[..stored.len() - 1];
     assert!(
         NVFP4
-            .decode_packed(short, &shape, RepresentationExtent::TERMINAL, "truncated")
+            .decode_packed(short, &shape, RepresentationExtent::BASE, "truncated")
             .is_err(),
         "one byte short is still short"
     );

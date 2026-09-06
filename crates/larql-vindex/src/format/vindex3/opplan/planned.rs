@@ -135,7 +135,7 @@ impl PlannedOperand {
             operand: operand.clone(),
             operation,
             access: operation.access(),
-            extent: RepresentationExtent::TERMINAL,
+            extent: RepresentationExtent::BASE,
             layer,
             declared_representation: None,
             logical_elements,

@@ -740,7 +740,7 @@ fn the_device_backend_selects_by_its_class_table_and_refuses_what_it_cannot_bind
         },
         operation,
         access: operation.access(),
-        extent: RepresentationExtent::TERMINAL,
+        extent: RepresentationExtent::BASE,
         layer: Some(0),
         declared_representation: None,
         logical_elements: 64,

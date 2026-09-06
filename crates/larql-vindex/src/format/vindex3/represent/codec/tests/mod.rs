@@ -9,6 +9,7 @@ mod bf16_zlib;
 mod capability;
 mod contract;
 mod decode;
+mod f32_planes;
 mod fixtures;
 mod geometry;
 mod lyrw2;
@@ -18,6 +19,7 @@ mod residency;
 mod streams;
 
 use super::codecs::bf16_zlib::BF16_ZLIB;
+use super::codecs::f32_planes::{F32PlanesCodec, F32_PLANES};
 use super::codecs::float::{BF16, F16, F32};
 use super::codecs::kquant::{Q4_K, Q6_K, Q8_0};
 use super::codecs::mxfp4::{DTYPE_MXFP4, MXFP4};
@@ -122,6 +124,17 @@ pub(super) fn fixtures() -> Vec<Fixture> {
     // size is whatever the stream came to, which is the point. Pushed
     // here, before MXFP4's destructuring shadows `packed`.
     out.push(packed(&BF16_ZLIB, encode_bf16_zlib(&values)));
+    // The progressive codec: three planes of the same ramp, bound as three
+    // streams. Its fixture is the whole of it — the terminal extent —
+    // because a fixture is what a container holds, and a container holds
+    // every plane whatever extent is later selected.
+    let (base, refine_a, refine_b) = F32PlanesCodec::encode_planes(&values);
+    out.push(Fixture {
+        codec: &F32_PLANES,
+        shape: shape.clone(),
+        buffers: vec![base, refine_a, refine_b],
+        packed: false,
+    });
     let LoadedWeight::Mxfp4 { packed, scales } =
         quantize_mxfp4(&values, ROWS, K, TENSOR).expect("mxfp4")
     else {

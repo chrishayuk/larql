@@ -13,7 +13,7 @@
 //! cross-component edge program (5e) and a perception component to the
 //! perception op set (5d); their closure is deferred with their rungs.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use larql_models::config::{
@@ -131,6 +131,25 @@ const ATTN_RES_EXIT_WITHOUT_DECLARATION: &str =
 /// read, so they cannot disagree about which layers are routed.
 fn declared_routed(moe: Option<&MoeSurface>, layer: usize) -> Option<bool> {
     moe.map(|m| m.dense_prefix_layers.is_none_or(|prefix| layer >= prefix))
+}
+
+/// The tensor `name` is a stream of, when it is one: a name that extends
+/// another tensor's whole name by one dot-separated segment.
+///
+/// This is the only thing the closure pass says about streams stored
+/// apart. It does not name the stream, does not resolve a codec and does
+/// not decide what the suffix means — it decides that the tensor is
+/// ACCOUNTED FOR by its base rather than left without a fate, which is the
+/// closure question and the whole of it. What the suffix must be is the
+/// codec's declaration, checked where the registry lives (the operand
+/// store's stream binding), so a name that looks like a stream and is not
+/// one fails there by name rather than being classified here by guess.
+fn auxiliary_stream_of<'a>(name: &str, names: &BTreeSet<&'a str>) -> Option<&'a str> {
+    let (base, suffix) = name.rsplit_once('.')?;
+    if suffix.is_empty() {
+        return None;
+    }
+    names.get(base).copied()
 }
 
 pub fn plan_component_ops(
@@ -432,14 +451,27 @@ pub fn plan_component_ops(
     }
 
     // Stack operands by layer, and expert-bank operands by layer — two
-    // objects, one role vocabulary, one classifier.
+    // objects, one role vocabulary, one classifier. (A stream stored apart
+    // is skipped by [`auxiliary_stream_of`] before either.)
     let mut by_layer: BTreeMap<usize, BTreeMap<OperandRole, SegmentTensor>> = BTreeMap::new();
     let mut bank_by_layer: BTreeMap<usize, BTreeMap<OperandRole, SegmentTensor>> = BTreeMap::new();
     for kind in [ObjectKind::DecoderStack, ObjectKind::ExpertBank] {
         let Some((object, tensors)) = tables.get(&kind) else {
             continue;
         };
+        let names: BTreeSet<&str> = tensors.iter().map(|t| t.name.as_str()).collect();
         for tensor in tensors {
+            // A stream stored APART is not an operand of its own: its fate
+            // is its base tensor's, and classifying it would report an
+            // unclassified operand for something the representation
+            // already accounts for. The planner recognises only the shape
+            // of the relationship — `<base>.<stream>` beside a `<base>` in
+            // the same segment — and the LOADER, which holds the codec
+            // registry, is what checks the suffix names a stream the
+            // representation declares. Neither half infers a role.
+            if auxiliary_stream_of(&tensor.name, &names).is_some() {
+                continue;
+            }
             // Layer-aware, and it must be: on a hybrid checkpoint the
             // suffix `self_attn.o_proj.weight` names the recurrence's
             // output projection on one layer and the softmax one on the

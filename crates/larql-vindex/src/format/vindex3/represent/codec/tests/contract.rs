@@ -19,54 +19,132 @@ fn every_codec_names_itself_and_its_abi_is_admitted_back_to_it() {
     }
 }
 
+/// The values stream is declared first and only once. It was asserted as
+/// `streams[0] == VALUES` — the shared spec, by name — which was true of
+/// every codec that had one stream to name and generalised wrongly: a
+/// progressive codec's base plane is a values stream called `base_hi16`.
+/// The ROLE is the invariant; the name is the codec's own.
 #[test]
-fn every_codec_declares_its_values_stream_first_and_only_once() {
+fn every_codec_declares_one_values_stream_and_declares_it_first() {
     for codec in builtin() {
+        let label = codec.encoding_label();
         let streams = codec.streams();
-        assert_eq!(streams[0], VALUES, "{}", codec.encoding_label());
+        assert_eq!(streams[0].role, StreamRole::Values, "{label}");
         let values = streams
             .iter()
             .filter(|s| s.role == StreamRole::Values)
             .count();
-        assert_eq!(values, 1, "{}", codec.encoding_label());
+        assert_eq!(values, 1, "{label}");
+        // Refinements come after the base, at strictly increasing depths:
+        // a stream that refines nothing before it is not a refinement.
+        let mut deepest = 0;
+        for spec in streams {
+            if let StreamRole::Refinement { depth } = spec.role {
+                assert!(depth > deepest, "{label}: {} refines at {depth}", spec.name);
+                deepest = depth;
+            }
+        }
     }
 }
 
+/// Every codec declares its extents from the base up, prices each one, and
+/// refuses the depth past its last.
+///
+/// This test asserted `extents.len() == 1` for every codec, which was a
+/// statement about what had been implemented rather than about the
+/// contract. What survives that becoming false is stated here: the base
+/// first, contiguous depths, more of the representation as depth grows, a
+/// certificate that certifies at least as much as the shallower one, and
+/// `terminal_extent` naming the deepest — which for a terminal codec is
+/// still the base.
 #[test]
-fn every_codec_is_terminal_today_and_says_so_at_any_other_depth() {
+fn every_codec_declares_its_extents_from_the_base_up_and_refuses_past_them() {
     for codec in builtin() {
         let label = codec.encoding_label();
         let extents = codec.extents();
-        assert_eq!(extents.len(), 1, "{label}");
-        assert_eq!(extents[0].extent, RepresentationExtent::TERMINAL, "{label}");
-        assert!(extents[0].bits_per_weight > 0.0 && extents[0].bits_per_weight <= 32.0);
-        assert!(
-            extents[0].radius.is_none(),
-            "{label}: no radius is declared, only measured"
-        );
+        assert!(!extents.is_empty(), "{label} declares no extent");
+        assert_eq!(extents[0].extent, RepresentationExtent::BASE, "{label}");
+        for (depth, certificate) in extents.iter().enumerate() {
+            assert_eq!(certificate.extent.depth as usize, depth, "{label}");
+            assert!(
+                certificate.bits_per_weight > 0.0 && certificate.bits_per_weight <= 32.0,
+                "{label} at depth {depth}"
+            );
+            assert_eq!(
+                codec.certificate_at(certificate.extent, TENSOR).unwrap(),
+                *certificate,
+                "{label} at depth {depth}"
+            );
+            let Some(shallower) = depth.checked_sub(1).map(|d| extents[d]) else {
+                continue;
+            };
+            assert!(
+                certificate.bits_per_weight > shallower.bits_per_weight,
+                "{label}: depth {depth} costs no more than the one before it"
+            );
+            if let (Some(before), Some(after)) = (shallower.radius, certificate.radius) {
+                assert!(
+                    after.relative_rms <= before.relative_rms,
+                    "{label}: depth {depth} certifies less than the one before it"
+                );
+            }
+        }
         assert_eq!(
-            codec
-                .certificate_at(RepresentationExtent::TERMINAL, TENSOR)
-                .unwrap(),
-            extents[0]
+            codec.terminal_extent(),
+            extents.last().unwrap().extent,
+            "{label}: the terminal extent is the deepest declared"
         );
-        let deeper = RepresentationExtent::at_depth(1);
-        let err = codec.certificate_at(deeper, TENSOR).unwrap_err();
+        let past = RepresentationExtent::at_depth(extents.len() as u32);
+        let err = codec.certificate_at(past, TENSOR).unwrap_err();
         assert!(
             matches!(
                 &err,
-                CodecError::ExtentUnavailable {
-                    depth: 1,
-                    available: 1,
-                    ..
-                }
+                CodecError::ExtentUnavailable { depth, available, .. }
+                    if *depth == extents.len() as u32 && *available == extents.len() as u32
             ),
             "{label}: {err}"
         );
         assert!(matches!(
-            codec.stored_bytes(&[ROWS, K], deeper, TENSOR).unwrap_err(),
+            codec.stored_bytes(&[ROWS, K], past, TENSOR).unwrap_err(),
             CodecError::ExtentUnavailable { .. }
         ));
+    }
+}
+
+/// Which codecs are progressive, and what the terminal ones still promise.
+///
+/// A terminal codec declares no radius — its reconstruction error is
+/// measured per encoder and per tensor, and a number in the certificate
+/// would promote one measurement to a property of the format. A
+/// progressive one MUST declare one per extent, because a caller choosing
+/// a depth is choosing a fidelity and has nothing else to choose by.
+#[test]
+fn only_the_progressive_codec_declares_a_radius_and_it_declares_one_per_extent() {
+    let progressive: Vec<&str> = builtin()
+        .into_iter()
+        .filter(|c| c.extents().len() > 1)
+        .map(|c| c.encoding_label())
+        .collect();
+    assert_eq!(progressive, ["F32_PLANES"]);
+    for codec in builtin() {
+        let label = codec.encoding_label();
+        let extents = codec.extents();
+        if extents.len() == 1 {
+            assert!(
+                extents[0].radius.is_none(),
+                "{label}: no radius is declared, only measured"
+            );
+            continue;
+        }
+        assert!(
+            extents.iter().all(|c| c.radius.is_some()),
+            "{label}: an extent without a radius cannot be chosen by fidelity"
+        );
+        assert_eq!(
+            extents.last().unwrap().radius.unwrap().relative_rms,
+            0.0,
+            "{label}: the terminal extent reconstructs exactly"
+        );
     }
 }
 
@@ -202,10 +280,11 @@ fn codecs_with_no_direct_cpu_realization_say_so_rather_than_claim_one() {
         .filter(|c| c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    // K-quants gained a direct CPU realization (FusedKQuant), and the
-    // entropy-coded codec registers none: only the formats with no
-    // in-place kernel remain here.
-    assert_eq!(without, ["F16", "MXFP4", "BF16_ZLIB"]);
+    // K-quants gained a direct CPU realization (FusedKQuant); the
+    // entropy-coded codec registers none, and neither does the
+    // progressive one — deliberately, so an extent can be shown to be
+    // selectable without any kernel knowing extents exist.
+    assert_eq!(without, ["F16", "MXFP4", "BF16_ZLIB", "F32_PLANES"]);
     let with: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| !c.accelerations().is_empty())
@@ -222,14 +301,22 @@ fn stored_bytes_are_the_certificate_s_bits_at_scale() {
     let (mut priced, mut instance_sized) = (0, 0);
     for codec in builtin() {
         let label = codec.encoding_label();
-        match codec.stored_bytes(&shape, RepresentationExtent::TERMINAL, TENSOR) {
-            Ok(bytes) => {
-                let bpw = bytes as f64 * extent::BITS_PER_BYTE / (shape[0] * shape[1]) as f64;
-                let declared = codec.extents()[0].bits_per_weight;
-                assert!(
-                    (bpw - declared).abs() < 1e-3,
-                    "{label}: {bpw} vs {declared}"
-                );
+        // Every declared extent, not only the base: a progressive codec
+        // prices each depth, and a certificate nothing prices is a claim.
+        match codec.stored_bytes(&shape, RepresentationExtent::BASE, TENSOR) {
+            Ok(_) => {
+                for certificate in codec.extents() {
+                    let bytes = codec
+                        .stored_bytes(&shape, certificate.extent, TENSOR)
+                        .unwrap_or_else(|e| panic!("{label} at {:?}: {e}", certificate.extent));
+                    let bpw = bytes as f64 * extent::BITS_PER_BYTE / (shape[0] * shape[1]) as f64;
+                    let declared = certificate.bits_per_weight;
+                    assert!(
+                        (bpw - declared).abs() < 1e-3,
+                        "{label} at depth {}: {bpw} vs {declared}",
+                        certificate.extent.depth
+                    );
+                }
                 priced += 1;
             }
             // A variable-rate code cannot price a shape: its certificate
@@ -243,5 +330,9 @@ fn stored_bytes_are_the_certificate_s_bits_at_scale() {
             Err(other) => panic!("{label}: {other}"),
         }
     }
-    assert_eq!((priced, instance_sized), (8, 1), "both arms ran");
+    assert_eq!(
+        (priced, instance_sized),
+        (builtin().len() - 1, 1),
+        "both arms ran: every codec but the instance-sized one prices a shape"
+    );
 }

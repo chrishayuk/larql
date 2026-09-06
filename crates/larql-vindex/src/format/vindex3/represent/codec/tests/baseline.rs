@@ -26,7 +26,7 @@ fn the_expert_encoding_table_prices_a_matrix_as_the_codec_does() {
             assert_eq!(
                 encoding.matrix_bytes(n, k).unwrap(),
                 codec
-                    .stored_bytes(&[n, k], RepresentationExtent::TERMINAL, TENSOR)
+                    .stored_bytes(&[n, k], RepresentationExtent::BASE, TENSOR)
                     .unwrap(),
                 "{label} [{n}, {k}]"
             );
@@ -35,7 +35,7 @@ fn the_expert_encoding_table_prices_a_matrix_as_the_codec_does() {
         assert_eq!(
             encoding.matrix_bytes(2, 100).is_err(),
             codec
-                .stored_bytes(&[2, 100], RepresentationExtent::TERMINAL, TENSOR)
+                .stored_bytes(&[2, 100], RepresentationExtent::BASE, TENSOR)
                 .is_err(),
             "{label}"
         );
@@ -64,7 +64,7 @@ fn the_nvfp4_pack_layout_is_the_codec_s_geometry() {
         assert_eq!(
             layout.total_len as u64,
             NVFP4
-                .stored_bytes(&[rows, k], RepresentationExtent::TERMINAL, TENSOR)
+                .stored_bytes(&[rows, k], RepresentationExtent::BASE, TENSOR)
                 .unwrap()
         );
     }
@@ -84,7 +84,7 @@ fn mxfp4_geometry_is_the_models_crate_s_and_nothing_else() {
     let groups = k / MXFP4_GROUP_ELEMS;
     assert_eq!(
         MXFP4
-            .stored_bytes(&[rows, k], RepresentationExtent::TERMINAL, TENSOR)
+            .stored_bytes(&[rows, k], RepresentationExtent::BASE, TENSOR)
             .unwrap(),
         (rows * groups * (MXFP4_GROUP_BYTES + 1)) as u64
     );
@@ -117,7 +117,7 @@ fn the_float_widths_are_the_element_widths() {
         );
         assert_eq!(
             codec
-                .stored_bytes(&[ROWS, K], RepresentationExtent::TERMINAL, TENSOR)
+                .stored_bytes(&[ROWS, K], RepresentationExtent::BASE, TENSOR)
                 .unwrap(),
             (ROWS * K * width) as u64
         );
