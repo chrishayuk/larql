@@ -39,9 +39,9 @@ use super::{
     AttentionOp, AttentionResidualExitOp, AttentionResidualLayerOp, AttnResSiteOp, ClosureDefect,
     ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp, GateOp, GatedDeltaOp, HcSiteOp,
     HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp, KdaOp, KdaOutputGate,
-    LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OpPlanOutcome, OperandRef,
-    OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp,
-    SinkOp,
+    LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp,
+    OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp,
+    SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -116,6 +116,19 @@ const KDA_LOW_RANK_GATE_UNDER_FULL_RANK: &str =
 const MLA_OUTPUT_GATE_UNDECLARED: &str =
     "an MLA output gate (the component declares no `mla_use_output_gate`, so the aggregated \
      value goes to o_proj ungated)";
+/// The factorised query's operands on a component that declares no
+/// `q_lora_rank`. Its `q_b_proj` has the same ROW count as the `q_proj`
+/// this component does build, so nothing about the tensor itself says
+/// which operation it belongs to — only the declaration does.
+const MLA_Q_LORA_UNDECLARED: &str =
+    "a factorised MLA query (the component declares no `q_lora_rank`, so its query is one \
+     dense q_proj)";
+/// A dense `q_proj` on a component that DOES declare `q_lora_rank`: the
+/// same disagreement from the other side. The reference's `__init__` is
+/// an if/else and never constructs both.
+const MLA_Q_PROJ_UNDER_Q_LORA: &str =
+    "a dense MLA query projection (the component declares `q_lora_rank`, so its query is \
+     q_a_proj -> q_a_layernorm -> q_b_proj)";
 /// The primitive the exit pair implies on a component that declares no
 /// block size.
 const ATTN_RES_EXIT_WITHOUT_DECLARATION: &str =
@@ -603,6 +616,7 @@ pub fn plan_component_ops(
                 // happens to ship — the operands are held to them below.
                 kda_full_rank_gate: surface.kda_use_full_rank_gate == Some(true),
                 mla_output_gate: surface.mla.is_some_and(|m| m.output_gate.is_some()),
+                mla_q_lora: surface.mla.is_some_and(|m| m.query.is_low_rank()),
                 routed,
                 hybrid,
                 moe: ffn_moe,
@@ -1281,7 +1295,20 @@ pub fn plan_component_ops(
                     qk_nope_head_dim: m.qk_nope_head_dim,
                     qk_rope_head_dim: m.qk_rope_head_dim,
                     v_head_dim: m.v_head_dim,
-                    q_proj: operand(&stack_id, get(OperandRole::MlaQProj)),
+                    // The form is the DECLARATION's; closure has already
+                    // held the shipped operands to it, so the roles read
+                    // here are the ones the declaration made required.
+                    query: match m.query.rank() {
+                        None => MlaQueryProjection::Direct {
+                            q_proj: operand(&stack_id, get(OperandRole::MlaQProj)),
+                        },
+                        Some(_) => MlaQueryProjection::LowRank {
+                            q_a_proj: operand(&stack_id, get(OperandRole::MlaQAProj)),
+                            q_a_norm: operand(&stack_id, get(OperandRole::MlaQANorm)),
+                            q_b_proj: operand(&stack_id, get(OperandRole::MlaQBProj)),
+                            q_a_norm_eps: m.query.norm_eps(),
+                        },
+                    },
                     kv_a_proj: operand(&stack_id, get(OperandRole::MlaKvAProj)),
                     kv_b_proj: operand(&stack_id, get(OperandRole::MlaKvBProj)),
                     kv_a_norm: operand(&stack_id, get(OperandRole::MlaKvANorm)),
@@ -1627,6 +1654,10 @@ struct LayerOps {
     kda_full_rank_gate: bool,
     /// Whether the component declares an MLA output gate.
     mla_output_gate: bool,
+    /// Whether the component declares a factorised MLA query
+    /// (`q_lora_rank`). Read from the declared FORM, never from which
+    /// query operands the estate ships.
+    mla_q_lora: bool,
     attention_bias: bool,
     sinks: bool,
     /// This layer's FFN is routed (bank/router evidence under a MoE
@@ -1813,12 +1844,23 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
         // checkpoint never shipped, the same shape GatedDelta's roles fix
         // for its own operands above.
         roles.extend([
-            OperandRole::MlaQProj,
             OperandRole::MlaKvAProj,
             OperandRole::MlaKvBProj,
             OperandRole::MlaKvANorm,
             OperandRole::MlaOutProj,
         ]);
+        // The query's operands follow the DECLARED form, so a declared
+        // factorisation missing any member names that member rather
+        // than reporting a `q_proj` the checkpoint never shipped.
+        if ops.mla_q_lora {
+            roles.extend([
+                OperandRole::MlaQAProj,
+                OperandRole::MlaQANorm,
+                OperandRole::MlaQBProj,
+            ]);
+        } else {
+            roles.push(OperandRole::MlaQProj);
+        }
         if ops.mla_output_gate {
             roles.push(OperandRole::MlaOutputGate);
         }
@@ -2003,6 +2045,13 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             Some(KDA_LOW_RANK_GATE_UNDER_FULL_RANK)
         }
         OperandRole::MlaOutputGate if !ops.mla_output_gate => Some(MLA_OUTPUT_GATE_UNDECLARED),
+        // The query form, held to its declaration from both sides.
+        OperandRole::MlaQAProj | OperandRole::MlaQANorm | OperandRole::MlaQBProj
+            if !ops.mla_q_lora =>
+        {
+            Some(MLA_Q_LORA_UNDECLARED)
+        }
+        OperandRole::MlaQProj if ops.mla_q_lora => Some(MLA_Q_PROJ_UNDER_Q_LORA),
         OperandRole::AttnQBias
         | OperandRole::AttnKBias
         | OperandRole::AttnVBias
@@ -2374,6 +2423,19 @@ fn expected_shape(
         // for the same reason `kda`/`linear` are: an operand whose
         // contract the component never declared cannot be checked.
         OperandRole::MlaQProj => Some(vec![mla?.num_heads * mla?.q_head_dim(), hidden]),
+        // The factorised query (K3-MLA-Q-LORA-1). `MlaQBProj` has the
+        // SAME row count as `MlaQProj` above — `Hq*q_head_dim`, 18432 on
+        // K3 — and differs only in its COLUMN count: the declared rank
+        // against `hidden`. That column is the whole discriminator, and
+        // its authority is the declared form, so a rank that is absent
+        // here answers `None` and the operand is refused rather than
+        // checked against a width nobody declared.
+        OperandRole::MlaQAProj => Some(vec![mla?.query.rank()?, hidden]),
+        OperandRole::MlaQANorm => Some(vec![mla?.query.rank()?]),
+        OperandRole::MlaQBProj => {
+            let m = mla?;
+            Some(vec![m.num_heads * m.q_head_dim(), m.query.rank()?])
+        }
         OperandRole::MlaKvAProj => Some(vec![mla?.kv_lora_rank + mla?.qk_rope_head_dim, hidden]),
         // Fused per-head nope-K + V, decompressed from the latent.
         OperandRole::MlaKvBProj => {
@@ -2561,6 +2623,7 @@ mod tests {
             output_gate: false,
             kda_full_rank_gate: false,
             mla_output_gate: false,
+            mla_q_lora: false,
             attention_bias: false,
             sinks: false,
             routed: false,

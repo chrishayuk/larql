@@ -89,6 +89,11 @@ pub struct KimiGeometry {
     /// Kimi-K3). The device MLA path carries no gate, so a gated layer is
     /// refused rather than run ungated with every shape still closing.
     pub mla_output_gate: bool,
+    /// The container declares a factorised MLA query (`q_lora_rank`,
+    /// Kimi-K3). The device MLA path binds one dense `q_proj` and
+    /// `q_b_proj` has the same row count, so a factorised layer is
+    /// refused rather than bound into a slot it does not belong in.
+    pub mla_q_lora_rank: Option<usize>,
 }
 
 impl KimiGeometry {
@@ -199,6 +204,8 @@ fn geometry_from_graph(graph: &serde_json::Value) -> Result<KimiGeometry, Vindex
         // `g_proj` happens to exist in the segment (K3-REP-GATE-1).
         kda_full_rank_gate: exec["kda_use_full_rank_gate"].as_bool() == Some(true),
         mla_output_gate: mla["output_gate"].is_object(),
+        // The surface's declared query form, read as the graph writes it.
+        mla_q_lora_rank: mla["query"]["rank"].as_u64().map(|r| r as usize),
     })
 }
 
@@ -356,6 +363,7 @@ impl KimiSourceModel {
             g.mla_layer[layer],
             g.kda_full_rank_gate,
             g.mla_output_gate,
+            g.mla_q_lora_rank,
         ) {
             return Err(VindexError::Parse(refusal));
         }

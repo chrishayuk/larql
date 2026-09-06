@@ -244,7 +244,16 @@ fn attention(attention: &LayerAttention, layer: usize, out: &mut Vec<PlannedOper
             }
         }
         LayerAttention::Mla(op) => {
-            for operand in [&op.q_proj, &op.kv_a_proj, &op.kv_b_proj, &op.out_proj] {
+            for operand in [&op.kv_a_proj, &op.kv_b_proj, &op.out_proj] {
+                push(operand);
+            }
+            // Whichever query form the layer declared. Through
+            // `operands()` rather than a match, so a third form cannot be
+            // added without this list following it — the loader/plan
+            // agreement check reads THIS, and an operand the plan carries
+            // but this omits is exactly the disagreement K3-REP-GATE-1
+            // found the hard way.
+            for (_, operand) in op.query.operands() {
                 push(operand);
             }
             // The declared output gate, a matrix the size of `out_proj`.

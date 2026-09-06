@@ -397,13 +397,24 @@ fn explain_layer(
             qk_norm: false,
             sinks: false,
             biased: false,
-            operands: vec![
-                operand("q_proj", &op.q_proj),
-                operand("kv_a_proj", &op.kv_a_proj),
-                operand("kv_a_norm", &op.kv_a_norm),
-                operand("kv_b_proj", &op.kv_b_proj),
-                operand("out_proj", &op.out_proj),
-            ],
+            operands: {
+                // The query's operands under whichever form the layer
+                // declared, at their own spellings — a factorised query
+                // is three operands, not one under a borrowed name.
+                let mut operands: Vec<_> = op
+                    .query
+                    .operands()
+                    .into_iter()
+                    .map(|(name, reference)| operand(name, reference))
+                    .collect();
+                operands.extend([
+                    operand("kv_a_proj", &op.kv_a_proj),
+                    operand("kv_a_norm", &op.kv_a_norm),
+                    operand("kv_b_proj", &op.kv_b_proj),
+                    operand("out_proj", &op.out_proj),
+                ]);
+                operands
+            },
         },
     };
 

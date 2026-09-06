@@ -23,7 +23,7 @@ use serde_json::Value;
 
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::mla::{
-    mla_forward, MlaState, MlaTrace, MlaWeights, Mutation,
+    mla_forward, MlaQueryWeights, MlaState, MlaTrace, MlaWeights, Mutation,
 };
 
 const ORACLE: &str = include_str!("kimi_mla_oracle_output_gate.json");
@@ -92,7 +92,9 @@ impl Fixture {
     fn weights(&self, gated: bool) -> MlaWeights<'_> {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         MlaWeights {
-            q_proj: WeightRows::F32(g("q_proj")),
+            query: MlaQueryWeights::Direct {
+                q_proj: WeightRows::F32(g("q_proj")),
+            },
             kv_a_proj: WeightRows::F32(g("kv_a_proj")),
             kv_a_norm: g("kv_a_norm"),
             kv_b_proj: WeightRows::F32(g("kv_b_proj")),
@@ -175,7 +177,10 @@ fn assert_boundaries(up_to: usize) {
     let output_gate = trace.output_gate.as_ref().expect("gated");
     let gated_value = trace.gated_value.as_ref().expect("gated");
     let got: [(&str, &Vec<f32>); 9] = [
-        ("q_proj", &trace.q_proj),
+        // The fixture's key is `q_states` (see `mla_parity.rs`); the Rust
+        // field is still `q_proj` because this executor still has only
+        // the direct query form.
+        ("q_states", &trace.q_states),
         ("compressed_kv", &trace.compressed_kv),
         ("kv_a_normed", &trace.kv_a_normed),
         ("kv_b", &trace.kv_b),
@@ -241,7 +246,7 @@ fn everything_before_the_gate_is_identical_to_the_ungated_arm() {
         );
     }
     for before in [
-        "q_proj",
+        "q_states",
         "compressed_kv",
         "kv_a_normed",
         "kv_b",

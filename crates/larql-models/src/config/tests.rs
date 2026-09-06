@@ -700,6 +700,90 @@ fn a_declaration_can_name_itself_for_a_refusal_message() {
     );
 }
 
+// ── MlaQueryForm — the declaration chooses the form (K3-MLA-Q-LORA-1) ─
+
+/// An architecture over the default config, declaring one `q_lora_rank`.
+fn arch_with_q_lora(rank: Option<usize>) -> DefaultsArch {
+    let mut config = base_config();
+    config.q_lora_rank = rank;
+    DefaultsArch(config)
+}
+
+#[test]
+fn an_undeclared_q_lora_rank_is_the_direct_query_form() {
+    assert_eq!(
+        arch_with_q_lora(None).mla_query_form(),
+        MlaQueryForm::Direct,
+        "absence is the reference's own default (`q_lora_rank: Optional[int] = None`)"
+    );
+}
+
+#[test]
+fn a_declared_q_lora_rank_selects_the_factorised_form() {
+    let form = arch_with_q_lora(Some(1536)).mla_query_form();
+    assert_eq!(form.rank(), Some(1536));
+    assert!(form.is_low_rank());
+}
+
+/// **The adversarial control the freeze named.** `q_lora_rank: 0`
+/// selects the factorised form, because the reference branches on `is
+/// not None` and `0 is not None`.
+///
+/// Asserted in the SAME test as `activation_situ_beta`'s opposite rule,
+/// where the same checkpoint's `beta or 1.0` turns a declared zero into
+/// one. Two adjacent fields of one config, two opposite treatments of
+/// zero — and the risk is a shared intuition, not a shared identifier,
+/// so the two rules are pinned side by side where a reader meets both.
+#[test]
+fn zero_selects_the_form_here_and_becomes_one_over_in_situ() {
+    let form = arch_with_q_lora(Some(0)).mla_query_form();
+    assert!(
+        form.is_low_rank(),
+        "`0 is not None`: a declared zero selects the factorised query"
+    );
+    assert_eq!(form.rank(), Some(0), "and the rank is carried verbatim");
+
+    let mut config = base_config();
+    config.hidden_act = Some("situ".to_string());
+    config.activation_situ_beta = Some(0.0);
+    match DefaultsArch(config).expert_gate_policy() {
+        ExpertGatePolicy::SituGlu { beta, .. } => assert_eq!(
+            beta, 1.0,
+            "`beta or 1.0`: a declared zero becomes one, the OPPOSITE rule"
+        ),
+        other => panic!("expected a SiTU policy, got {other:?}"),
+    }
+}
+
+/// The epsilon is the family's, not the config's and not the KV norm's.
+///
+/// The default is `None` — unjudged — and it reaches the form as a
+/// non-executable value so that closure's refusal is what a reader meets.
+#[test]
+fn an_unjudged_q_a_epsilon_does_not_borrow_a_plausible_one() {
+    let arch = arch_with_q_lora(Some(64));
+    assert_eq!(arch.mla_q_a_norm_eps(), None, "no family judgment here");
+    let form = arch.mla_query_form();
+    assert!(
+        form.is_low_rank(),
+        "the form is declared even when unjudged"
+    );
+    assert_eq!(
+        form.norm_eps(),
+        None,
+        "an unjudged epsilon must not resolve to the layer eps or the KV one"
+    );
+}
+
+/// The direct form carries no rank and no epsilon: a norm the layer does
+/// not have cannot be described.
+#[test]
+fn the_direct_form_carries_neither_a_rank_nor_an_epsilon() {
+    let form = arch_with_q_lora(None).mla_query_form();
+    assert_eq!(form.rank(), None);
+    assert_eq!(form.norm_eps(), None);
+}
+
 // ── tie_word_embeddings ──────────────────────────────────────────────
 //
 // Parsed as a *check* on the loader's tie-on-absence behaviour, not as a

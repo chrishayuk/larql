@@ -373,13 +373,17 @@ fn print_mla(op: &larql_vindex::format::vindex3::opplan::MlaOp) {
         op.compressed_kv_width(),
         op.num_heads * (op.qk_nope_head_dim + op.v_head_dim)
     );
-    for (name, operand) in [
-        ("q_proj", &op.q_proj),
+    // The query's operands under whichever form the layer declared,
+    // then the KV side. A factorised query prints three lines at their
+    // own spellings rather than one under a borrowed name.
+    let mut operands = op.query.operands();
+    operands.extend([
         ("kv_a_proj", &op.kv_a_proj),
         ("kv_a_norm", &op.kv_a_norm),
         ("kv_b_proj", &op.kv_b_proj),
         ("out_proj", &op.out_proj),
-    ] {
+    ]);
+    for (name, operand) in operands {
         println!("    {name}: {}/{}", operand.object, operand.tensor);
     }
 }

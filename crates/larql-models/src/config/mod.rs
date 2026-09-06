@@ -66,7 +66,7 @@ pub use layer_types::{
 };
 pub use linear_attn::{KdaGeometry, LAYER_TYPE_UNRESOLVED_INTERLEAVE};
 pub use mamba2::{DtBound, Mamba2Dialect, Mamba2FamilyDefault, Mamba2Geometry, Mamba2Provenance};
-pub use mla::MlaGeometry;
+pub use mla::{MlaGeometry, MlaQueryForm};
 pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;
 pub use norm::{EmbeddingNorm, NormSpec, NormType, ParameterFreeQkNorm, PostNormEps, QkNormScope};

@@ -28,7 +28,7 @@ use serde_json::Value;
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kimi_mla_layer::mla_decoder_layer_forward;
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
-use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
+use crate::format::vindex3::opplan::exec::mla::{MlaQueryWeights, MlaState, MlaWeights};
 
 const FIXTURE_ENV: &str = "LARQL_KIMI_MLA_LAYER_FIXTURE";
 /// Same as the other full-width real-weight gates: hundreds of terms
@@ -145,7 +145,9 @@ fn one_complete_mla_layer_matches_the_oracle_at_kimis_real_geometry() {
     );
     let mla_weights = MlaWeights {
         output_gate: None,
-        q_proj: WeightRows::F32(&qp),
+        query: MlaQueryWeights::Direct {
+            q_proj: WeightRows::F32(&qp),
+        },
         kv_a_proj: WeightRows::F32(&kap),
         kv_a_norm: &kan,
         kv_b_proj: WeightRows::F32(&kbp),

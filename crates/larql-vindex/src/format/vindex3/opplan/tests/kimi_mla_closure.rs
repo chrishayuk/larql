@@ -141,13 +141,10 @@ fn an_mla_kimi_shaped_estate_closes() {
         assert_eq!(op.v_head_dim, V_HEAD_DIM);
         assert_eq!(op.q_head_dim(), QK_NOPE_HEAD_DIM + QK_ROPE_HEAD_DIM);
         assert_eq!(op.compressed_kv_width(), KV_LORA_RANK + QK_ROPE_HEAD_DIM);
-        for operand in [
-            &op.q_proj,
-            &op.kv_a_proj,
-            &op.kv_b_proj,
-            &op.kv_a_norm,
-            &op.out_proj,
-        ] {
+        for (_, operand) in op.query.operands() {
+            assert!(!operand.tensor.is_empty(), "every query operand is bound");
+        }
+        for operand in [&op.kv_a_proj, &op.kv_b_proj, &op.kv_a_norm, &op.out_proj] {
             assert_eq!(operand.object, "target.decoder_stack");
         }
     }

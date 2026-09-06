@@ -18,7 +18,7 @@
 //! keeps this test about the geometry and not about MLA admission.
 
 use crate::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
-use crate::format::vindex3::opplan::{LayerAttention, MlaOp, OperandRef};
+use crate::format::vindex3::opplan::{LayerAttention, MlaOp, MlaQueryProjection, OperandRef};
 
 use super::hybrid_traversal::hybrid_plan_for_tests;
 
@@ -46,7 +46,7 @@ fn stub_mla() -> MlaOp {
         qk_nope_head_dim: QK_NOPE_HEAD_DIM,
         qk_rope_head_dim: QK_ROPE_HEAD_DIM,
         v_head_dim: V_HEAD_DIM,
-        q_proj: o(),
+        query: MlaQueryProjection::Direct { q_proj: o() },
         kv_a_proj: o(),
         kv_b_proj: o(),
         kv_a_norm: o(),

@@ -102,7 +102,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 20);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 21);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -433,6 +433,47 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         !unjudged_act.admissible,
         "an activation this build has never judged must still block: {:?}",
         unjudged_act.summary
+    );
+
+    // Version 21's verdict (K3-MLA-Q-LORA-1): a Kimi-shaped estate that
+    // declares `q_lora_rank` and ships the q-LoRA triple is admissible,
+    // where at version 20 the triple was unaddressed and `MlaQProj` was
+    // required unconditionally. The control beside it is the SAME estate
+    // declaring the rank while shipping a dense `q_proj` — refused,
+    // because the declaration chooses the form and the operand plane is
+    // held to it. Kimi Linear's own direct form, declaring no rank, is
+    // admissible at both versions and is the third arm.
+    //
+    // Deliberately three arms and not two: an implementation that
+    // required the triple unconditionally would pass the first, fail the
+    // third, and never be caught by the second.
+    let q_lora = |forms: crate::format::vindex3::fixtures_kimi::HybridQueryForms| {
+        let dir = tempfile::tempdir().unwrap();
+        crate::format::vindex3::fixtures_kimi::hybrid_kda_mla_f32_model_with_query(
+            dir.path(),
+            forms,
+        );
+        let inventory = build_inventory(dir.path()).unwrap();
+        plan_system(&[(ARTIFACT.to_string(), inventory)])
+    };
+    let factorised = q_lora(crate::format::vindex3::fixtures_kimi::HybridQueryForms::KIMI_K3);
+    assert!(factorised.admissible, "{:?}", factorised.summary);
+    let direct = q_lora(crate::format::vindex3::fixtures_kimi::HybridQueryForms::KIMI_LINEAR);
+    assert!(direct.admissible, "{:?}", direct.summary);
+    // And the arm this version does NOT move: an estate declaring the
+    // rank while shipping a dense `q_proj` still PLANS admissibly,
+    // because `q_lora_rank` is a representable config leaf either way.
+    // The disagreement is an OPERAND fact and closure is what refuses it
+    // (`opplan::tests::k3_q_lora_closure`). Pinned here so the plan
+    // stage's silence is a recorded property rather than an oversight —
+    // the same distinction `the_plan_stage_places_bytes_and_classifies_
+    // no_operand` draws for K3 itself.
+    let disagreeing =
+        q_lora(crate::format::vindex3::fixtures_kimi::HybridQueryForms::DECLARED_BUT_DENSE);
+    assert!(
+        disagreeing.admissible,
+        "the PLAN stage judges config leaves, not operands: {:?}",
+        disagreeing.summary
     );
 
     let complete = attn_res_stack(true);

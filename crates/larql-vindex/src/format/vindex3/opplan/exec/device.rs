@@ -737,7 +737,25 @@ pub fn declared_gate_refusal(
     mla_layer: bool,
     kda_full_rank_gate: bool,
     mla_output_gate: bool,
+    mla_q_lora_rank: Option<usize>,
 ) -> Option<String> {
+    // K3-MLA-Q-LORA-1. `MlaDeviceWeights` has ONE `q_proj` slot, and
+    // `q_b_proj` has the same row count as the `q_proj` it replaces — so
+    // binding it there would be finite, plausible and wrong, with every
+    // shape still closing. Refused BY NAME and, like the two gates,
+    // before any tensor is bound: a refusal raised later would surface
+    // as a missing-tensor error naming `q_proj`, which the checkpoint
+    // never shipped and a reader would go looking for.
+    if mla_layer {
+        if let Some(rank) = mla_q_lora_rank {
+            return Some(format!(
+                "layer {layer}: the container declares a factorised MLA query \
+                 (`q_lora_rank: {rank}` — q_a_proj -> q_a_layernorm -> q_b_proj), which the \
+                 Metal MLA path does not carry (it binds one dense q_proj); refusing rather \
+                 than binding q_b_proj into the q_proj slot"
+            ));
+        }
+    }
     if mla_layer && mla_output_gate {
         return Some(format!(
             "layer {layer}: the container declares an MLA output gate (`mla_use_output_gate`), \

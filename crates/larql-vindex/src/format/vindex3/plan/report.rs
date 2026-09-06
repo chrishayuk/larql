@@ -57,6 +57,33 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **21** — Kimi-K3's factorised MLA query (K3-MLA-Q-LORA-1).
+/// `q_lora_rank` selects the query FORM — `q_a_proj` -> `q_a_layernorm`
+/// -> `q_b_proj` in place of one dense `q_proj` — and the form is
+/// declared, never deduced: `q_proj` and `q_b_proj` have the same row
+/// count (`Hq*q_head_dim`, 18432 on K3) and differ only in their column
+/// count, so an operand-sniffing build would pick the form from the very
+/// thing the form decides. `MlaQueryForm` carries it on the surface,
+/// `MlaQueryProjection` on the op — typed, so "both" and "neither" are
+/// unrepresentable — and closure holds the shipped operands to the
+/// declaration from both sides, refusing a `q_proj` under a declared rank
+/// and the triple under none.
+///
+/// `q_a_layernorm`'s epsilon is carried with the form and has its own
+/// authority: it runs at `KimiRMSNorm`'s class default `1e-6`, not the
+/// layer's `rms_norm_eps`, and NOT by borrowing `kv_a_norm_eps` — the two
+/// agree because one class default is used twice, which is a shared cause
+/// and not a shared authority.
+///
+/// This bumps no verdict on any row, and that is the expected result:
+/// every MLA config leaf on K3 already graded representable, so the
+/// blocker count does not move. What moves is the operand plane —
+/// `MLA_LAYER_UNADDRESSED` 3 -> 0, K3's estate 5382 -> 5379 unclassified
+/// and 12 -> 9 distinct spellings — and the executor, which reproduces
+/// the factorisation to per-boundary parity against a third oracle arm.
+/// After it, no remaining K3 text-generation blocker is an
+/// attention-semantic blocker.
+///
 /// **20** — Kimi-K3's FFN combine, and the end of silent activation
 /// substitution (K3-ACT-1). `hidden_act: "situ"` names SiTU-GLU,
 /// `beta*tanh(g/beta)*sigmoid(g) * linear_beta*tanh(u/linear_beta)` — a
@@ -362,7 +389,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 20;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 21;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -19,9 +19,9 @@ use crate::validation::ConfigValidationResult;
 use super::{
     layer_types, rope_types, Activation, ActivationDeclaration, DeclaredRopeScaling, EmbeddingNorm,
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, HyperConnection,
-    LayerKind, Llama3RopeScaling, ModelConfig, NormSpec, NormType, PositionPolicy, PostNormEps,
-    QkNormScope, ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec, YarnRopeScaling,
-    SITU_NAME,
+    LayerKind, Llama3RopeScaling, MlaQueryForm, ModelConfig, NormSpec, NormType, PositionPolicy,
+    PostNormEps, QkNormScope, ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec,
+    YarnRopeScaling, SITU_NAME,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -1514,6 +1514,55 @@ pub trait ModelArchitecture: Send + Sync {
     /// DS-V3 MLA: V head dim (after absorption may differ from qk dims).
     fn mla_v_head_dim(&self) -> Option<usize> {
         None
+    }
+
+    /// The epsilon MLA's QUERY-side norm (`q_a_layernorm`) runs at, when
+    /// this family factorises its query and its reference fixes one.
+    ///
+    /// Its own accessor, deliberately not the KV one and deliberately not
+    /// a shared "MLA low-rank norm epsilon". The two are equal today —
+    /// `1e-6` — because they share a CAUSE: `KimiRMSNorm(width)` with no
+    /// `eps` argument, twice, in the same `__init__`
+    /// (`modeling_kimi_linear.py` L368 and L383). They do not share an
+    /// AUTHORITY. A family that overrode one and left the other at the
+    /// class default would be silently wrong under a shared accessor, and
+    /// the coincidence would have been promoted to a contract nobody
+    /// checked.
+    ///
+    /// `None` means **unjudged** — never "use the KV one", never "use the
+    /// layer eps". A declared low-rank query with no judged epsilon must
+    /// reach a named refusal, not a plausible number.
+    fn mla_q_a_norm_eps(&self) -> Option<f64> {
+        None
+    }
+
+    /// Which query this family's MLA layers build.
+    ///
+    /// Read from the DECLARATION — `q_lora_rank`'s presence, exactly the
+    /// `is not None` the reference branches on (`modeling_kimi_linear.py`
+    /// L364, L418) — and never from which tensors a checkpoint happens to
+    /// ship. `q_proj` and `q_b_proj` share a row count and differ only in
+    /// their column count, so an operand-sniffing default would pick the
+    /// form from the very thing the form is supposed to decide.
+    ///
+    /// A declared `0` selects the factorised form, because `0 is not
+    /// None`. Transcription, not endorsement: the geometry it then
+    /// describes is degenerate, and closure refuses it by name.
+    ///
+    /// The epsilon is fetched here so that a family declaring the form
+    /// without judging its norm produces a `LowRank` closure can refuse
+    /// by name. An architecture may override this whole method; one that
+    /// does still gets its own [`Self::mla_q_a_norm_eps`] honoured,
+    /// because the declaration chooses the FORM and the override chooses
+    /// the semantics WITHIN it.
+    fn mla_query_form(&self) -> MlaQueryForm {
+        match self.config().q_lora_rank {
+            None => MlaQueryForm::Direct,
+            Some(rank) => MlaQueryForm::LowRank {
+                rank,
+                norm_eps: self.mla_q_a_norm_eps(),
+            },
+        }
     }
 
     /// The epsilon MLA's latent norm (`kv_a_layernorm`) runs at, when this

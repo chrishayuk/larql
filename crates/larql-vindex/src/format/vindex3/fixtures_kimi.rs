@@ -108,6 +108,63 @@ impl HybridGateForms {
     };
 }
 
+/// The MLA query this hybrid DECLARES and what it SHIPS — the two held
+/// apart, because holding them apart is the whole of K3-MLA-Q-LORA-1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HybridQueryForms {
+    /// `q_lora_rank`, verbatim; `None` leaves the key out (the
+    /// reference's default is one dense `q_proj`).
+    pub declared_rank: Option<usize>,
+    /// Which query operands the MLA layer actually ships.
+    pub shipped: MlaQueryShipped,
+}
+
+/// What an MLA layer's query estate contains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MlaQueryShipped {
+    /// One `q_proj [Hq*q_head_dim, hidden]`.
+    Dense,
+    /// `q_a_proj [rank, hidden]`, `q_a_layernorm [rank]`,
+    /// `q_b_proj [Hq*q_head_dim, rank]` — and no `q_proj`.
+    Factorised,
+}
+
+impl HybridQueryForms {
+    /// Kimi Linear's own shape: one dense projection, no rank declared.
+    pub const KIMI_LINEAR: Self = Self {
+        declared_rank: None,
+        shipped: MlaQueryShipped::Dense,
+    };
+    /// Kimi-K3's shape: the rank declared and the triple shipped.
+    pub const KIMI_K3: Self = Self {
+        declared_rank: Some(MLA_Q_LORA_RANK),
+        shipped: MlaQueryShipped::Factorised,
+    };
+    /// The disagreement: a declared rank with a dense `q_proj` shipped.
+    /// The reference's `__init__` is an if/else and never builds this.
+    pub const DECLARED_BUT_DENSE: Self = Self {
+        declared_rank: Some(MLA_Q_LORA_RANK),
+        shipped: MlaQueryShipped::Dense,
+    };
+    /// The mirror: the triple shipped with no rank declared.
+    pub const UNDECLARED_BUT_FACTORISED: Self = Self {
+        declared_rank: None,
+        shipped: MlaQueryShipped::Factorised,
+    };
+}
+
+/// The query rank this fixture factorises at. Distinct from every other
+/// width here so a borrowed one cannot pass by accident.
+pub const MLA_Q_LORA_RANK: usize = 7;
+
+/// The `KKKM` hybrid with the QUERY declared and shipped as `query` says,
+/// and Kimi Linear's own gate forms. Every other operand and value is
+/// identical to [`hybrid_kda_mla_f32_model`], so a difference between two
+/// plans of it is the query's and nothing else's.
+pub fn hybrid_kda_mla_f32_model_with_query(dir: &Path, query: HybridQueryForms) {
+    build_hybrid(dir, HybridGateForms::KIMI_LINEAR, query)
+}
+
 /// The `KKKM` hybrid: three KDA layers, then one MLA layer — Kimi Linear's
 /// own gate forms.
 pub fn hybrid_kda_mla_f32_model(dir: &Path) {
@@ -119,6 +176,10 @@ pub fn hybrid_kda_mla_f32_model(dir: &Path) {
 /// [`hybrid_kda_mla_f32_model`], so a difference between two plans of it
 /// is the gates' and nothing else's.
 pub fn hybrid_kda_mla_f32_model_with(dir: &Path, forms: HybridGateForms) {
+    build_hybrid(dir, forms, HybridQueryForms::KIMI_LINEAR)
+}
+
+fn build_hybrid(dir: &Path, forms: HybridGateForms, query: HybridQueryForms) {
     let mut linear_attn_config = serde_json::json!({
         "kda_layers": kda_layers(),
         "full_attn_layers": full_attn_layers(),
@@ -154,6 +215,11 @@ pub fn hybrid_kda_mla_f32_model_with(dir: &Path, forms: HybridGateForms) {
     if let Some(gate) = forms.mla_declared_gate {
         config["mla_use_output_gate"] = serde_json::json!(gate);
     }
+    // The query form's DECLARATION, held apart from what the layer ships
+    // so a fixture can state either half independently.
+    if let Some(rank) = query.declared_rank {
+        config["q_lora_rank"] = serde_json::json!(rank);
+    }
     std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
 
     let mut shard = ShardBuilder::new();
@@ -172,7 +238,13 @@ pub fn hybrid_kda_mla_f32_model_with(dir: &Path, forms: HybridGateForms) {
         let seed = 200 + layer as u64 * 32;
         let prefix = format!("model.layers.{layer}");
         if layer % 4 == 3 {
-            push_mla_layer(&mut shard, &prefix, seed, forms.mla_shipped_gate);
+            push_mla_layer(
+                &mut shard,
+                &prefix,
+                seed,
+                forms.mla_shipped_gate,
+                query.shipped,
+            );
         } else {
             push_kda_layer(&mut shard, &prefix, seed, forms.kda_shipped);
         }
@@ -282,7 +354,13 @@ fn push_kda_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64, gate: KdaGa
 
 /// MLA's five. `q_proj` and `o_proj` are the same spellings a softmax
 /// layer uses, at a width only the operator explains.
-fn push_mla_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64, gate: bool) {
+fn push_mla_layer(
+    shard: &mut ShardBuilder,
+    prefix: &str,
+    seed: u64,
+    gate: bool,
+    query: MlaQueryShipped,
+) {
     let q_rows = MLA_HEADS * mla_q_head_dim();
     if gate {
         // Kimi-K3's MLA output gate: `[Hq·v_head_dim, hidden]`, the same
@@ -293,11 +371,33 @@ fn push_mla_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64, gate: bool)
             &lcg_values(MLA_HEADS * MLA_V_HEAD_DIM * HIDDEN, seed + 5),
         );
     }
-    shard.push(
-        &format!("{prefix}.self_attn.q_proj.weight"),
-        &[q_rows, HIDDEN],
-        &lcg_values(q_rows * HIDDEN, seed),
-    );
+    match query {
+        MlaQueryShipped::Dense => shard.push(
+            &format!("{prefix}.self_attn.q_proj.weight"),
+            &[q_rows, HIDDEN],
+            &lcg_values(q_rows * HIDDEN, seed),
+        ),
+        MlaQueryShipped::Factorised => {
+            // `q_b_proj` has the SAME row count as the `q_proj` above and
+            // a different column count — the trap the declared form is
+            // what resolves.
+            shard.push(
+                &format!("{prefix}.self_attn.q_a_proj.weight"),
+                &[MLA_Q_LORA_RANK, HIDDEN],
+                &lcg_values(MLA_Q_LORA_RANK * HIDDEN, seed + 6),
+            );
+            shard.push(
+                &format!("{prefix}.self_attn.q_a_layernorm.weight"),
+                &[MLA_Q_LORA_RANK],
+                &norm_values(MLA_Q_LORA_RANK, seed + 7),
+            );
+            shard.push(
+                &format!("{prefix}.self_attn.q_b_proj.weight"),
+                &[q_rows, MLA_Q_LORA_RANK],
+                &lcg_values(q_rows * MLA_Q_LORA_RANK, seed + 8),
+            );
+        }
+    }
     shard.push(
         &format!("{prefix}.self_attn.kv_a_proj_with_mqa.weight"),
         &[MLA_KV_LORA_RANK + MLA_QK_ROPE_HEAD_DIM, HIDDEN],

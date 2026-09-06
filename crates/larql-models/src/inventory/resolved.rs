@@ -287,6 +287,9 @@ pub fn resolve_with_tensor_evidence(
                 // a factor of ten, and the resolved record must not
                 // manufacture the agreement.
                 kv_a_norm_eps: arch.mla_kv_a_norm_eps(),
+                // The DECLARATION's form, never the operand estate's:
+                // `q_proj` and `q_b_proj` share a row count.
+                query: arch.mla_query_form(),
                 // Declared, never read off the operand: `g_proj` on an MLA
                 // layer has the same spelling and — on K3 — the same shape
                 // as the KDA layers' full-rank gate, so only the config can

@@ -43,9 +43,10 @@ pub struct MlaOp {
     /// Value head width — independent of the query/key head width.
     pub v_head_dim: usize,
 
-    /// Query projection, fused nope+rope per head,
-    /// `[Hq·(nope+rope), hidden]`.
-    pub q_proj: OperandRef,
+    /// How this layer builds its query — one dense projection, or
+    /// Kimi-K3's factorisation. A typed form rather than a pair of
+    /// options, so "both" and "neither" cannot be written down at all.
+    pub query: MlaQueryProjection,
     /// Shared compressed KV projection: latent + one rope-K,
     /// `[kv_lora_rank + rope, hidden]`.
     pub kv_a_proj: OperandRef,
@@ -111,6 +112,79 @@ impl MlaOp {
             qk_nope_head_dim: self.qk_nope_head_dim,
             qk_rope_head_dim: self.qk_rope_head_dim,
             v_head_dim: self.v_head_dim,
+        }
+    }
+}
+
+/// How an MLA layer produces its query, as OPERANDS.
+///
+/// The declaration picks the variant (`q_lora_rank`'s presence, which is
+/// the `is not None` the reference branches on) and closure has already
+/// held the shipped operands to it from both sides before an op is
+/// built. A typed form rather than `Option`s for the same reason
+/// [`KdaOutputGate`](super::kda::KdaOutputGate) is one: the two are
+/// alternatives, and a shape that can express "both present" or "neither"
+/// invites a reader to handle states the checkpoint cannot be in.
+///
+/// The two variants differ in size (one `OperandRef` against three plus
+/// an epsilon) and are deliberately not boxed: an [`MlaOp`] is already
+/// `Box`ed inside `LayerAttention::Mla`, so the difference costs one
+/// slightly larger allocation per MLA LAYER and nothing per token. A
+/// second box here would buy nothing and would put an indirection between
+/// a reader and the operands — which is what `ExpertBank` boxes to AVOID,
+/// its `PerExpert` variant being three `Vec`s carried on every value of
+/// the packed one.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum MlaQueryProjection {
+    /// One dense `q_proj [Hq·(nope+rope), hidden]` — Kimi Linear, and
+    /// every MLA family that does not compress its query.
+    Direct { q_proj: OperandRef },
+    /// `q_a_proj` -> `q_a_layernorm` -> `q_b_proj` — Kimi-K3,
+    /// `q_lora_rank: 1536`.
+    ///
+    /// `q_b_proj` has the SAME row count as [`Self::Direct`]'s `q_proj`
+    /// and differs only in its columns (the rank against `hidden`), which
+    /// is why the form is declared rather than deduced.
+    LowRank {
+        /// Query down-projection, `[rank, hidden]`.
+        q_a_proj: OperandRef,
+        /// RMSNorm weight over the query latent, `[rank]`.
+        q_a_norm: OperandRef,
+        /// Query up-projection, `[Hq·(nope+rope), rank]`.
+        q_b_proj: OperandRef,
+        /// Epsilon for `q_a_norm` — the family's own value, carried
+        /// beside the operand it belongs to and NOT shared with
+        /// [`MlaOp::kv_a_norm_eps`]. They are equal on Kimi-K3 (`1e-6`,
+        /// `KimiRMSNorm`'s class default, twice) and that is a shared
+        /// cause rather than a shared authority.
+        ///
+        /// `None` = the container carries no judged value, and an
+        /// executor refuses rather than running the compression through a
+        /// norm the model never used — the same contract, and the same
+        /// `Option`, as [`MlaOp::kv_a_norm_eps`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        q_a_norm_eps: Option<f64>,
+    },
+}
+
+impl MlaQueryProjection {
+    /// Every operand of the form, for readers that iterate an op's
+    /// operands without caring which form it is.
+    pub fn operands(&self) -> Vec<(&'static str, &OperandRef)> {
+        match self {
+            Self::Direct { q_proj } => vec![("q_proj", q_proj)],
+            Self::LowRank {
+                q_a_proj,
+                q_a_norm,
+                q_b_proj,
+                ..
+            } => vec![
+                ("q_a_proj", q_a_proj),
+                ("q_a_layernorm", q_a_norm),
+                ("q_b_proj", q_b_proj),
+            ],
         }
     }
 }

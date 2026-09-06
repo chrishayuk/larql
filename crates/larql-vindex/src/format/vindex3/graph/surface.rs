@@ -461,6 +461,21 @@ pub struct MlaSurface {
     /// it was recorded, which is the same state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kv_a_norm_eps: Option<f64>,
+    /// Which query these layers build: one dense `q_proj`, or Kimi-K3's
+    /// `q_a_proj` -> `q_a_layernorm` -> `q_b_proj` under a declared
+    /// `q_lora_rank`.
+    ///
+    /// A DECLARED fact, resolved from `q_lora_rank`'s presence and never
+    /// from the operand estate — `q_proj` and `q_b_proj` have the same
+    /// row count on K3 (`Hq*q_head_dim`, 18432) and differ only in their
+    /// columns, so an estate-derived form would be decided by the very
+    /// thing the form decides. Closure holds the shipped operands to
+    /// this from both sides.
+    ///
+    /// Defaults to `Direct` on containers written before it was
+    /// recorded, which is what those checkpoints declared.
+    #[serde(default = "direct_query_form")]
+    pub query: larql_models::config::MlaQueryForm,
     /// The output gate the checkpoint declares on its MLA layers
     /// (`mla_use_output_gate: true`): `sigmoid(g_proj(x)) ⊙ attn_value`
     /// before `o_proj`, the same generic operation
@@ -607,6 +622,7 @@ pub fn surface_from_resolved(
             qk_rope_head_dim: m.qk_rope_head_dim,
             v_head_dim: m.v_head_dim,
             kv_a_norm_eps: m.kv_a_norm_eps,
+            query: m.query,
             output_gate: m.output_gate,
         }),
         attention: attends.then_some(AttentionSurface {
@@ -936,4 +952,10 @@ pub fn surface_from_nested(
         // sublayer outputs into one vector.
         residual_topology: larql_models::config::ResidualTopology::SingleStream,
     })
+}
+
+/// `serde` default for [`MlaSurface::query`]: the form every container
+/// written before it was recorded declared.
+fn direct_query_form() -> larql_models::config::MlaQueryForm {
+    larql_models::config::MlaQueryForm::Direct
 }

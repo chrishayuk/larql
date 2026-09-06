@@ -401,18 +401,23 @@ const KDA_ROLES_ADDRESSED: [OperandRole; 14] = [
 /// pinned in [`MLA_LAYER_UNADDRESSED`].
 const KDA_LAYER_UNADDRESSED: [&str; 0] = [];
 
-/// The MLA layer's operands the vocabulary does NOT name, exactly: the
-/// q-LoRA triple. K3 factorises MLA's query where Kimi Linear did not
-/// (`q_lora_rank: 1536`); `config/mla.rs` deliberately carries no such
-/// rank, and this is its own capability cell, not this rung's. The MLA
-/// layer's `g_proj` left this list at K3-REP-GATE-1: it classifies to
-/// [`OperandRole::MlaOutputGate`] under the MLA operator and K3's own
-/// `mla_use_output_gate`.
-const MLA_LAYER_UNADDRESSED: [&str; 3] = [
-    "self_attn.q_a_layernorm.weight",
-    "self_attn.q_a_proj.weight",
-    "self_attn.q_b_proj.weight",
-];
+/// The MLA layer's operands the vocabulary does NOT name — **none**.
+///
+/// It held the q-LoRA triple until K3-MLA-Q-LORA-1: K3 factorises MLA's
+/// query where Kimi Linear did not (`q_lora_rank: 1536`), and
+/// `config/mla.rs` carried no such rank because its own doc said a
+/// family that compresses Q needs its own extension rather than a guess
+/// bolted onto the KV geometry. `MlaQueryForm` is that extension, and
+/// `q_a_proj` / `q_a_layernorm` / `q_b_proj` now classify to
+/// [`OperandRole::MlaQAProj`] / [`OperandRole::MlaQANorm`] /
+/// [`OperandRole::MlaQBProj`] under the MLA operator and K3's own
+/// declared rank. The layer's `g_proj` left at K3-REP-GATE-1 before them.
+///
+/// So both of K3's attention layers are now fully addressed, and every
+/// operand this fixture still cannot name is on the routed FFN — the
+/// expert bank's compressed-tensors dialect and the latent-MoE wrapper,
+/// each its own cell.
+const MLA_LAYER_UNADDRESSED: [&str; 0] = [];
 
 /// **The tensor-address witness.** Which of K3's real operands does the
 /// role vocabulary actually name?
@@ -461,10 +466,15 @@ fn k3_kda_operands_are_addressed_except_the_one_named_delta() {
 }
 
 /// **The MLA layer's tensor-address witness**, pinned both ways like the
-/// KDA one: the gate is addressed under K3's own `mla_use_output_gate`,
-/// and the q-LoRA triple is the exact remainder.
+/// KDA one: every operand K3's MLA layer ships is addressed, and the
+/// remainder is empty.
+///
+/// Renamed at K3-MLA-Q-LORA-1. It read
+/// `..._addresses_the_gate_and_leaves_the_q_lora_triple` while the
+/// triple was the remainder; a name that outlives the fact it names is
+/// how a reader is told the wrong thing by a passing test.
 #[test]
-fn k3_mla_layer_addresses_the_gate_and_leaves_the_q_lora_triple() {
+fn k3_mla_layer_addresses_every_operand_it_ships() {
     let dir = tempfile::tempdir().unwrap();
     let rows = classified(k3_inventory(dir.path()));
 
@@ -516,7 +526,11 @@ fn k3_mla_layer_addresses_the_gate_and_leaves_the_q_lora_triple() {
 /// under K3's own declared `attn_res_block_size`. 5,392 -> 5,384, and
 /// eight distinct spellings out of the list. K3-REP-GATE-1 moved two
 /// more — `self_attn.g_proj` on each layer, one spelling per layer —
-/// 5,384 -> 5,382 and 14 -> 12.
+/// 5,384 -> 5,382 and 14 -> 12. K3-MLA-Q-LORA-1 moved three: the q-LoRA
+/// triple, all on the one MLA layer, so 5,382 -> 5,379 and 12 -> 9.
+///
+/// What is left is entirely the routed FFN. Both attention layers are
+/// fully addressed.
 ///
 /// Deliberately OUT of the KDA-Q8 critical path, exposed by the fixture
 /// and left alone on purpose — implementing what a fixture happens to
@@ -524,10 +538,6 @@ fn k3_mla_layer_addresses_the_gate_and_leaves_the_q_lora_triple() {
 /// support:
 ///
 /// ```text
-/// self_attn.q_a_proj / q_b_proj / q_a_layernorm
-///     K3 factorises MLA's Q where Kimi-Linear did not. MLA is a
-///     DIFFERENT capability-matrix cell; it gets its own.
-///
 /// block_sparse_moe.experts.N.w{1,2,3}.weight_{packed,scale}
 ///     the compressed-tensors MXFP4 dialect. Exercised when bank reuse
 ///     or encoding actually asks for it, not before.
@@ -558,12 +568,12 @@ fn k3_estate_reports_every_unaddressed_spelling() {
 
     assert_eq!(rows.len(), 5421, "the fixture's two real layers");
     assert_eq!(
-        unclassified, 5382,
-        "5,376 expert-bank operands + 6 distinct dense spellings"
+        unclassified, 5379,
+        "5,376 expert-bank operands + 3 distinct dense spellings"
     );
     assert_eq!(
         spellings.len(),
-        12,
+        9,
         "distinct unaddressed spellings across both layers"
     );
 }

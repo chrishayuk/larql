@@ -69,7 +69,7 @@ use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
     AttnResSiteOp, ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp,
-    LayerAttention, LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
+    LayerAttention, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp, OperandRef, OutputOp,
 };
 use super::attention_residual;
 use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
@@ -1148,25 +1148,57 @@ impl KdaOperands {
 /// different function with every shape still closing.
 pub(super) struct MlaOperands {
     pub(super) op: super::super::MlaOp,
-    q_proj: LoadedWeight,
     kv_a_proj: LoadedWeight,
     kv_b_proj: LoadedWeight,
     o_proj: LoadedWeight,
     kv_a_norm: Vec<f32>,
     kv_a_norm_eps: f64,
+    /// The query form's own operands (K3-MLA-Q-LORA-1).
+    query: MlaQueryOperands,
     /// The declared output gate's projection (K3-REP-GATE-1), a matrix
     /// the size of `o_proj`; `None` on an ungated layer.
     output_gate: Option<LoadedWeight>,
 }
 
+/// The loaded operands of whichever query form the layer declared.
+///
+/// Mirrors [`MlaQueryProjection`] one-for-one so that "both" and
+/// "neither" stay unrepresentable on this side of the load too.
+enum MlaQueryOperands {
+    Direct {
+        q_proj: LoadedWeight,
+    },
+    LowRank {
+        q_a_proj: LoadedWeight,
+        q_a_norm: Vec<f32>,
+        q_b_proj: LoadedWeight,
+        q_a_norm_eps: f64,
+    },
+}
+
 impl MlaOperands {
     pub(super) fn bound<'a>(&'a self, op: &'a MlaOp) -> Vec<Bound<'a>> {
-        let mut bound = vec![
-            Bound::one(&op.q_proj, &self.q_proj),
+        let mut bound = match (&self.query, &op.query) {
+            (MlaQueryOperands::Direct { q_proj }, MlaQueryProjection::Direct { q_proj: r }) => {
+                vec![Bound::one(r, q_proj)]
+            }
+            (
+                MlaQueryOperands::LowRank {
+                    q_a_proj, q_b_proj, ..
+                },
+                MlaQueryProjection::LowRank {
+                    q_a_proj: ra,
+                    q_b_proj: rb,
+                    ..
+                },
+            ) => vec![Bound::one(ra, q_a_proj), Bound::one(rb, q_b_proj)],
+            _ => unreachable!("query operands loaded for a form the op does not declare"),
+        };
+        bound.extend([
             Bound::one(&op.kv_a_proj, &self.kv_a_proj),
             Bound::one(&op.kv_b_proj, &self.kv_b_proj),
             Bound::one(&op.out_proj, &self.o_proj),
-        ];
+        ]);
         if let (Some(r), Some(w)) = (&op.output_gate, &self.output_gate) {
             bound.push(Bound::one(r, w));
         }
@@ -1187,9 +1219,36 @@ impl MlaOperands {
                     .to_string(),
             )
         })?;
+        let query = match &op.query {
+            MlaQueryProjection::Direct { q_proj } => MlaQueryOperands::Direct {
+                q_proj: matrix(q_proj)?,
+            },
+            MlaQueryProjection::LowRank {
+                q_a_proj,
+                q_a_norm,
+                q_b_proj,
+                q_a_norm_eps,
+            } => MlaQueryOperands::LowRank {
+                q_a_proj: matrix(q_a_proj)?,
+                q_a_norm: store.load(q_a_norm)?,
+                q_b_proj: matrix(q_b_proj)?,
+                // Its OWN epsilon. Refused rather than borrowed from the
+                // latent norm above, whose value it happens to equal on
+                // every checkpoint judged so far — a shared cause, one
+                // class default used twice, and not a shared authority.
+                q_a_norm_eps: q_a_norm_eps.ok_or_else(|| {
+                    VindexError::Parse(
+                        "this MLA layer factorises its query but carries no epsilon for \
+                         `q_a_layernorm`, which is NOT the layer's `rms_norm_eps` and is not \
+                         the latent norm's either; refusing to substitute one"
+                            .to_string(),
+                    )
+                })?,
+            },
+        };
         Ok(Self {
             op: op.clone(),
-            q_proj: matrix(&op.q_proj)?,
+            query,
             kv_a_proj: matrix(&op.kv_a_proj)?,
             kv_b_proj: matrix(&op.kv_b_proj)?,
             o_proj: matrix(&op.out_proj)?,
@@ -1199,21 +1258,58 @@ impl MlaOperands {
         })
     }
 
-    /// The four matrices, for residency accounting.
+    /// Every matrix, for residency accounting — including whichever
+    /// query form's projections this layer loaded.
     pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
-        let mut matrices = vec![&self.q_proj, &self.kv_a_proj, &self.kv_b_proj, &self.o_proj];
+        let mut matrices = match &self.query {
+            MlaQueryOperands::Direct { q_proj } => vec![q_proj],
+            MlaQueryOperands::LowRank {
+                q_a_proj, q_b_proj, ..
+            } => vec![q_a_proj, q_b_proj],
+        };
+        matrices.extend([&self.kv_a_proj, &self.kv_b_proj, &self.o_proj]);
         matrices.extend(self.output_gate.as_ref());
         matrices
     }
 
-    /// The one f32 operand that is not matrix traffic.
+    /// The f32 operands that are not matrix traffic: the latent norm, and
+    /// the query latent's norm when the query is factorised.
     pub(super) fn glue_bytes(&self) -> usize {
-        std::mem::size_of_val(&self.kv_a_norm[..])
+        let query_norm = match &self.query {
+            MlaQueryOperands::Direct { .. } => 0,
+            MlaQueryOperands::LowRank { q_a_norm, .. } => std::mem::size_of_val(&q_a_norm[..]),
+        };
+        std::mem::size_of_val(&self.kv_a_norm[..]) + query_norm
     }
 
     pub(super) fn weights(&self) -> Result<super::mla::MlaWeights<'_>, VindexError> {
         Ok(super::mla::MlaWeights {
-            q_proj: matrix_rows(&self.q_proj, &self.op.q_proj)?,
+            query: match (&self.query, &self.op.query) {
+                (MlaQueryOperands::Direct { q_proj }, MlaQueryProjection::Direct { q_proj: r }) => {
+                    super::mla::MlaQueryWeights::Direct {
+                        q_proj: matrix_rows(q_proj, r)?,
+                    }
+                }
+                (
+                    MlaQueryOperands::LowRank {
+                        q_a_proj,
+                        q_a_norm,
+                        q_b_proj,
+                        q_a_norm_eps,
+                    },
+                    MlaQueryProjection::LowRank {
+                        q_a_proj: ra,
+                        q_b_proj: rb,
+                        ..
+                    },
+                ) => super::mla::MlaQueryWeights::LowRank {
+                    q_a_proj: matrix_rows(q_a_proj, ra)?,
+                    q_a_norm,
+                    q_b_proj: matrix_rows(q_b_proj, rb)?,
+                    q_a_norm_eps: *q_a_norm_eps,
+                },
+                _ => unreachable!("query operands loaded for a form the op does not declare"),
+            },
             kv_a_proj: matrix_rows(&self.kv_a_proj, &self.op.kv_a_proj)?,
             kv_b_proj: matrix_rows(&self.kv_b_proj, &self.op.kv_b_proj)?,
             o_proj: matrix_rows(&self.o_proj, &self.op.out_proj)?,

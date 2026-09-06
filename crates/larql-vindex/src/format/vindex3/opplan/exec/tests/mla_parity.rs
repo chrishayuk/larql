@@ -22,7 +22,7 @@ use serde_json::Value;
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kernels::norm as rms_norm;
 use crate::format::vindex3::opplan::exec::mla::{
-    mla_forward, MlaState, MlaTrace, MlaWeights, Mutation,
+    mla_forward, MlaQueryWeights, MlaState, MlaTrace, MlaWeights, Mutation,
 };
 
 const ORACLE: &str = include_str!("kimi_mla_oracle.json");
@@ -80,7 +80,9 @@ impl Fixture {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         MlaWeights {
             output_gate: None,
-            q_proj: WeightRows::F32(g("q_proj")),
+            query: MlaQueryWeights::Direct {
+                q_proj: WeightRows::F32(g("q_proj")),
+            },
             kv_a_proj: WeightRows::F32(g("kv_a_proj")),
             kv_a_norm: g("kv_a_norm"),
             kv_b_proj: WeightRows::F32(g("kv_b_proj")),
@@ -125,7 +127,13 @@ fn assert_boundaries(up_to: usize) {
     let f = load();
     let (trace, _) = f.run_to(up_to, Mutation::None);
     let got: [(&str, &Vec<f32>); 6] = [
-        ("q_proj", &trace.q_proj),
+        // The fixture's boundary is `q_states`, not `q_proj`: under K3's
+        // factorised query form nothing computes a `q_proj` at all, and
+        // the reference's own name for the query leaving either form is
+        // `q_states`. The Rust field still reads `q_proj` because this
+        // executor still has only the direct form — K3-MLA-Q-LORA-1's
+        // implementation is what changes that.
+        ("q_states", &trace.q_states),
         ("compressed_kv", &trace.compressed_kv),
         ("kv_a_normed", &trace.kv_a_normed),
         ("kv_b", &trace.kv_b),
