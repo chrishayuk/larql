@@ -24,6 +24,9 @@
 
 extern crate blas_src;
 
+#[path = "support/qual_slowdown.rs"]
+mod qual_slowdown;
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use larql_compute::cpu::ops::q4_common::{
     quantize_q4_0, quantize_q4_k, quantize_q4_kf, quantize_q6_k,
@@ -83,7 +86,10 @@ fn add_cell<B: ComputeBackend>(
         BenchmarkId::from_parameter(&id),
         &(weights, x),
         |b, (w, x)| {
-            b.iter(|| backend.quant_matvec(format, w, x, shape.n, shape.k));
+            b.iter(|| {
+                qual_slowdown::slowdown()
+                    .run(|| backend.quant_matvec(format, w, x, shape.n, shape.k))
+            });
         },
     );
 }

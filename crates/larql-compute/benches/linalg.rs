@@ -6,6 +6,9 @@
 
 extern crate blas_src;
 
+#[path = "support/qual_slowdown.rs"]
+mod qual_slowdown;
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use larql_compute::cpu::ops::linalg::{cholesky, cholesky_solve, ridge_decomposition_solve};
 use ndarray::Array2;
@@ -39,7 +42,7 @@ fn bench_cholesky(c: &mut Criterion) {
     for &n in &[16usize, 64, 256] {
         let a = synth_spd_f64(n, 42);
         group.bench_with_input(BenchmarkId::from_parameter(n), &a, |b, a| {
-            b.iter(|| cholesky(a, 1e-6).unwrap());
+            b.iter(|| qual_slowdown::slowdown().run(|| cholesky(a, 1e-6).unwrap()));
         });
     }
     group.finish();
@@ -55,7 +58,7 @@ fn bench_cholesky_solve(c: &mut Criterion) {
             BenchmarkId::from_parameter(n),
             &(&l, &rhs),
             |b, (l, rhs)| {
-                b.iter(|| cholesky_solve(l, rhs));
+                b.iter(|| qual_slowdown::slowdown().run(|| cholesky_solve(l, rhs)));
             },
         );
     }
@@ -82,7 +85,9 @@ fn bench_ridge_decomposition(c: &mut Criterion) {
             BenchmarkId::from_parameter(label),
             &(&keys, &targets),
             |b, (k, t)| {
-                b.iter(|| ridge_decomposition_solve(k, t, 1e-3).unwrap());
+                b.iter(|| {
+                    qual_slowdown::slowdown().run(|| ridge_decomposition_solve(k, t, 1e-3).unwrap())
+                });
             },
         );
     }
