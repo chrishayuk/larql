@@ -241,6 +241,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     }
 
     /// Where this session's operand allocations landed.
+    /// The prepared image's mappings and their resident pages, now.
+    pub fn mapped_residency(&self) -> super::prepared::MappedResidency {
+        self.ops.get().mapped_residency()
+    }
+
     pub fn allocation_census(&self) -> super::prepared::AllocationCensus {
         self.ops.get().allocation_census()
     }

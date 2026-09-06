@@ -206,6 +206,21 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume"])]
     pub generate: Option<usize>,
 
+    /// With `--generate`: observe the prepared image's residency BETWEEN
+    /// tokens — mapped address space against the pages of it physically
+    /// resident, page faults, peak RSS, and where each token's time went
+    /// (attention against FFN) — beside what the plan predicted before a
+    /// byte was read. The residency curve of the K3 vertical's rung 7.
+    #[arg(long, requires = "generate")]
+    pub residency_curve: bool,
+
+    /// With `--residency-curve`: run the same prompt and decode this many
+    /// times on ONE prepared image, each pass with fresh continuation
+    /// state. The first pass is cold; every later pass is what the page
+    /// cache kept — the warm number the cold one is compared against.
+    #[arg(long, default_value_t = 1, requires = "residency_curve")]
+    pub repeat: usize,
+
     /// Teacher-force a whole quality bank through ONE resident model,
     /// writing `<--dump-dir>/<id>.f32` per entry.
     ///

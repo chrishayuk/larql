@@ -376,6 +376,46 @@ fn a_region_is_refused_by_name_for_the_wrong_object_tensor_or_length() {
     assert_eq!(store.mapped_regions(), 2, "a refusal binds nothing");
 }
 
+/// The mapping's two figures are read apart: its address space is every
+/// region's length, its resident pages are what the OS says now — never
+/// more than the address space, and a prepared image with nothing mapped
+/// reports nothing. The decode session reads the same figures through
+/// the image it borrows.
+#[test]
+fn the_mapping_reports_its_address_space_apart_from_its_resident_pages() {
+    use super::super::decode::DecodeSession;
+    use super::super::kv::RowKvState;
+    let subject = Subject::build(kimi_per_expert_moe_f32_model);
+    let (plan, store) = subject.open();
+    let backend = ProductionBackend::new();
+    let ops = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full).unwrap();
+    let residency = ops.mapped_residency();
+    assert_eq!(residency.regions, store.mapped_regions());
+    assert_eq!(
+        residency.mapped_bytes,
+        ops.residency_census().mapped() as u64,
+        "the address space is the census's mapped bytes"
+    );
+    assert!(residency.mapped_bytes > 0);
+    assert!(
+        residency.resident_bytes <= residency.mapped_bytes,
+        "resident {} beyond the mapping {}",
+        residency.resident_bytes,
+        residency.mapped_bytes
+    );
+    let mut kv = RowKvState::default();
+    let session = DecodeSession::over_prepared(&plan, &ops, &backend, &mut kv).unwrap();
+    let through_session = session.mapped_residency();
+    assert_eq!(through_session.regions, residency.regions);
+    assert_eq!(through_session.mapped_bytes, residency.mapped_bytes);
+
+    // Nothing mapped: the dense stack binds no bank.
+    let dense = Subject::build(crate::format::vindex3::fixtures::dense_f32_model);
+    let (plan, store) = dense.open();
+    let ops = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full).unwrap();
+    assert_eq!(ops.mapped_residency(), Default::default());
+}
+
 /// A routed call over `experts` per-expert matrices, at hand-checkable
 /// sizes, with whatever bias the test wants to put on it.
 fn separate_call<'a>(

@@ -58,6 +58,8 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         // pack, so the source policy cannot affect this fixture.
         representation_source: "auto".to_string(),
         generate: Some(2),
+        residency_curve: false,
+        repeat: 1,
         logit_dump: None,
         bank: None,
         dump_dir: None,
@@ -65,4 +67,38 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         profile: false,
     }))
     .expect("greedy decode over the fixture must complete");
+}
+
+#[test]
+fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
+    let dir = fixture_dir(true);
+    let out = dir.path().join("container");
+    run(Vindex3Command::Encode(EncodeArgs {
+        capability: None,
+        artifacts: vec![dir.path().to_path_buf()],
+        output: out.clone(),
+    }))
+    .unwrap();
+    // Two passes: the first is the cold one, the second reads what the
+    // first left in the page cache. Both must complete over a single
+    // prepared image; the instrument itself is what this exercises, on a
+    // fixture small enough that every observed figure is trivially true.
+    run(Vindex3Command::Exec(ExecArgs {
+        container: out,
+        component: "target".to_string(),
+        tokens: "1,2,3".to_string(),
+        dump_layers: None,
+        resume: false,
+        backend: ExecBackend::Production,
+        representation_source: "auto".to_string(),
+        generate: Some(2),
+        residency_curve: true,
+        repeat: 2,
+        logit_dump: None,
+        bank: None,
+        dump_dir: None,
+        draft_depth: None,
+        profile: false,
+    }))
+    .expect("the residency curve must complete both passes");
 }

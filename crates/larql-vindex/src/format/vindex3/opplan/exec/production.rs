@@ -1092,6 +1092,7 @@ impl PlanBackend for ProductionBackend {
                     ));
                 }
                 let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
+                let _t = timed(OpClass::MoeRoutedExpert);
                 for (expert, weight) in selected {
                     let g = project_matrix(&gate[expert], call.x, call.intermediate, call.hidden)?;
                     let u = project_matrix(&up[expert], call.x, call.intermediate, call.hidden)?;

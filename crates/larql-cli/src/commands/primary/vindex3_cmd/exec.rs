@@ -225,6 +225,17 @@ fn run_on<B: PlanBackend>(
     match (&args.dump_layers, args.generate) {
         (Some(dir), _) => run_dump(dir, &engine, args, tokens, plan, store, backend),
         (None, Some(new_tokens)) => {
+            if args.residency_curve {
+                return super::generate::run_residency_curve(
+                    backend,
+                    &engine,
+                    tokens,
+                    new_tokens,
+                    plan,
+                    store,
+                    args.repeat,
+                );
+            }
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)
                 .map(|_generated| ())
         }

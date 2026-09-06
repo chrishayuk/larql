@@ -1860,6 +1860,45 @@ impl PreparedOperands {
     }
 
     /// Where this image's allocations landed. See [`AllocationCensus`].
+    /// The image's mappings, and how much of them is physically resident
+    /// at this moment: address space summed once per bound region, pages
+    /// resident as the OS reports them now. Cheap enough to ask between
+    /// tokens, which is what a residency curve is.
+    pub fn mapped_residency(&self) -> MappedResidency {
+        let mut out = MappedResidency::default();
+        let mut add = |w: &LoadedWeight| {
+            let mapped = w.mapped_bytes() as u64;
+            if mapped > 0 {
+                out.mapped_bytes += mapped;
+                out.resident_bytes += w.resident_bytes() as u64;
+                out.regions += 1;
+            }
+        };
+        for layer in &self.layers {
+            match &layer.attention {
+                PreparedAttention::Softmax(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
+                PreparedAttention::GatedDelta(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
+                PreparedAttention::Mamba2(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+                PreparedAttention::ConvQkv(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
+                PreparedAttention::Kda(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+                PreparedAttention::Mla(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+            }
+            if let Some(ffn) = &layer.ffn {
+                ffn.loaded_matrices().iter().for_each(|w| add(w));
+            }
+        }
+        if let Some((_, projection)) = &self.output {
+            add(projection);
+        }
+        out
+    }
+
     pub fn allocation_census(&self) -> AllocationCensus {
         let mut census = AllocationCensus::default();
         let mut add = |w: &LoadedWeight| {
@@ -2031,6 +2070,16 @@ impl AllocationCensus {
             self.common_alignment.min(align)
         };
     }
+}
+
+/// A prepared image's mappings at one moment: their address space and the
+/// pages of it physically resident — the two figures a mapping must never
+/// be reported as one of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MappedResidency {
+    pub regions: usize,
+    pub mapped_bytes: u64,
+    pub resident_bytes: u64,
 }
 
 /// One site's bytes, split by whether the loader widened — and, apart

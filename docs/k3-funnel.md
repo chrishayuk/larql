@@ -944,6 +944,28 @@ K1 is answered at R1/P1. K2 is the ladder's central bet and is answered at R3/P2
 
 Twenty-three items, organised by crate the way the workspace carves it. `new` / `extend` is against today's code; the gate column names the gate that *proves* the item, not every gate it touches.
 
+**V3 — execution and the residency curve (2026-09-06, uncommitted on `k3-residency-vertical`).**
+The seven-rung ladder was climbed on the real lift2 container against an
+HF oracle (`scripts/kimi_generate_export.py`, per-layer taps). Rung 4 (one
+layer matches the reference) FAILED at the first routed layer and was
+localised by a numpy reconstruction from the oracle's own taps to the
+gate weights alone: the generic CPU path executed the declared sigmoid
+router as softmax, folded the correction bias into the weights and
+dropped `routed_scaling_factor` 2.446 — declared by the checkpoint,
+resolved by larql-models, half-carried by the plan, ignored by both CPU
+backends (V3-N1). With the rule executed (`RoutedFfnOp.branch_scale`,
+`production::sigmoid_select`, a literal reference arm, witnesses against
+hand-computed literals), every layer at every position is within relL2
+0.095 and the logits match the oracle to KL 9e-5–1.6e-3 with the greedy
+trajectory reproduced (rungs 4, 6). Rung 7: 94.22 GB mapped, 0 resident
+at binding; the cold token paged in 0.976 GB through 59,670 major faults
+(one 16 KiB page each, ≈22 µs, ≈1.1 GB/s — fault-bound, V3-N3) in 1.30 s;
+warm 0.14–0.43 s with 0 faults; the mapping's resident pages accumulate
+as reclaimable page cache (V3-N4). Greedy tokens had matched at 4 of 5
+positions BEFORE the fix (V3-N2): a token match is not a parity witness.
+Details: `docs/represent/forecasts/k3-residency-vertical-notes.json`
+(`waves.V3_execution_and_residency_curve`).
+
 ### larql-vindex / larql-vindex-spec
 
 | # | Feature | Kind | Rung | Phase | Gate |
