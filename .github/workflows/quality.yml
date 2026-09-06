@@ -35,6 +35,21 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch: {}
 
+# Supersede in-flight pull-request runs: pushing a new commit to a PR
+# cancels the runs still compiling the previous one.
+#
+# Non-PR runs (main pushes, schedules, manual dispatch) are keyed by
+# `run_id`, which is unique per run, so they are each alone in their
+# group. That is deliberate and not the same as `cancel-in-progress:
+# false`: a concurrency group holds at most one running and one pending
+# run, and a newer pending run EVICTS the older pending one. Grouping
+# every main push under `refs/heads/main` would therefore still destroy
+# the CI record for an intermediate main commit when merges land close
+# together, with cancellation disabled or not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
