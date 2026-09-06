@@ -86,6 +86,15 @@ on:
           any red from this workflow is treated as evidence.
         type: boolean
         default: false
+      slowdown:
+        description: >-
+          KNOWN-POSITIVE control (PERF-QUAL-1). Deterministic work
+          multiplier applied to the HEAD arm only, e.g. 1.25 / 1.5 / 2.0 /
+          4.0. Combine with noop=true so the ONLY difference between arms
+          is the injected work. A gate that cannot see a slowdown it was
+          handed is as useless as one that invents them; 1.0 is inert.
+        type: string
+        default: '1.0'
 
 jobs:
   bench:
@@ -181,6 +190,7 @@ jobs:
           set -euo pipefail
           git checkout --force --detach "${{ steps.arms.outputs.head }}"
           git --no-pager log -1 --format='head arm: %h %s'
+          echo "head-arm slowdown multiplier: ${{ inputs.slowdown || '1.0' }}"
           # Call the script DIRECTLY, never through `make`. GNU make exits
           # 2 for any failed recipe (1 is reserved for `-q`), so going via
           # `make bench-check` would alias the script's exit 1 (regression
@@ -192,7 +202,8 @@ jobs:
           # this same runner moments ago, so a missing baseline means that
           # arm did not produce one and the comparison never happened.
           set +e
-          bash scripts/bench-regress.sh check
+          LARQL_BENCH_SLOWDOWN="${{ inputs.slowdown || '1.0' }}" \
+            bash scripts/bench-regress.sh check
           rc=$?
           set -e
           if [ "$rc" -eq 2 ]; then

@@ -21,6 +21,9 @@
 
 extern crate blas_src;
 
+#[path = "support/qual_slowdown.rs"]
+mod qual_slowdown;
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use larql_compute::prelude::*;
 use larql_compute::CpuBackend;
@@ -74,7 +77,9 @@ fn bench_matmul_transb(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("cpu/{label}")),
             &(&a, &b),
             |bench, (a, b)| {
-                bench.iter(|| cpu.matmul_transb(a.view(), b.view()));
+                bench.iter(|| {
+                    qual_slowdown::slowdown().run(|| cpu.matmul_transb(a.view(), b.view()))
+                });
             },
         );
 
@@ -84,7 +89,9 @@ fn bench_matmul_transb(c: &mut Criterion) {
                 BenchmarkId::from_parameter(format!("metal/{label}")),
                 &(&a, &b),
                 |bench, (a, b)| {
-                    bench.iter(|| m_be.matmul_transb(a.view(), b.view()));
+                    bench.iter(|| {
+                        qual_slowdown::slowdown().run(|| m_be.matmul_transb(a.view(), b.view()))
+                    });
                 },
             );
         }
@@ -128,7 +135,7 @@ fn bench_f32_gemv_lmhead(c: &mut Criterion) {
     group.throughput(Throughput::Elements((n * k) as u64));
     let label = format!("metal/N{n}_K{k}");
     group.bench_function(BenchmarkId::from_parameter(label), |bench| {
-        bench.iter(|| metal.f32_gemv_force(w.view(), &x));
+        bench.iter(|| qual_slowdown::slowdown().run(|| metal.f32_gemv_force(w.view(), &x)));
     });
     group.finish();
 }
