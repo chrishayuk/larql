@@ -1,0 +1,30 @@
+{
+  "programme": "residency-into-k3",
+  "wave": "PREFETCH-1: lossless selected-expert prefetch as an access realization",
+  "frozen": "2026-09-06, before implementation, on k3-v4-warm-latency 2c290c77 (PR #432)",
+  "why": "V3 measured the cold Kimi-Linear token at 1.30 s: 0.976 GB paged in through 59,670 major faults of one 16 KiB page each, ≈22 µs per fault, ≈1.1 GB/s from a device that reads sequentially at ≈3.8 GB/s. That is a request-shape problem before it is a representation problem: the projection loop faults one page at a time, serially, in row order. V4 fixed the warm denominator (p50 79.5 ms, routed experts 38 ms of it). This wave changes only HOW the same lossless bf16 bytes are brought in, never WHAT is stored.",
+  "design": {
+    "when": "After routing names the top-k experts and before the projection loop — inside the production backend's routed call, where the selected experts' gate/up/down slices are in hand.",
+    "what": "The selected experts' three regions each (24 regions for top-8), as (address, length) ranges of the one bank mapping, sorted by address so the request order follows the file's physical layout, then brought in concurrently ahead of the loop.",
+    "how_declared": "`MappedAccess::{Demand, Advise, Touch}` on `ExpertSlices::Separate` — an ACCESS realization of the mapped representation, selected by policy (`--expert-access demand|advise|touch`) and reported with the pins. Demand = today's behaviour (the loop faults). Advise = `madvise(MADV_WILLNEED)` over each range, page-aligned, then the loop. Touch = the CPU pool touches one byte per page of every range concurrently (a major fault per page, in parallel across ranges), then the loop.",
+    "accounting": "Mapped address space, expected page-in per token, execution touch and stored footprint are IDENTICAL across the three access arms — the bytes do not change. Temporary residency is the selected experts' bytes in every arm. The report must say so, and the reconciliation must show the same resident-page delta in every arm with the faults moved out of the loop, not removed.",
+    "boundary": "No new kernel, no new representation, no change to the routing rule; the reference backend is untouched (parity is asserted between arms, not against the reference)."
+  },
+  "cold_state_protocol": "The bank's pages are evicted by reading ≈184 GB of other files (the HF checkpoint and the .s6 container, 92 GB each) through the page cache on a 128 GiB machine; the instrument's binding line (`mapped … 0.000 GB resident`, from mincore) is the witness that the bank is cold before every cold arm. An arm whose binding line shows resident bytes above 0.1 GB does not count as cold.",
+  "arms": {
+    "A_demand_cold": "cold bank, `--expert-access demand`: reproduces V3 (≈1.3 s, ≈60k major faults on the first token).",
+    "B_advise_cold": "cold bank, `--expert-access advise`.",
+    "C_touch_cold": "cold bank, `--expert-access touch`.",
+    "D_warm": "the same command with the bank warm (pass 2 of each arm; and V4's p50 79.5 ms as the reference floor)."
+  },
+  "predictions": {
+    "P1": "A reproduces V3 within noise: first-token wall 1.0–1.6 s, major faults 55k–65k, resident delta 0.9–1.1 GB.",
+    "P2": "C (touch) cuts the cold first token to ≤ 0.45 s — ≥ 2.5 GB/s effective over the same ≈1 GB — with the projection loop's own major faults ≤ 1% of A's (they move into the prefetch) and the SAME resident delta ±5%.",
+    "P3": "B (advise) lands between A and C: macOS honours WILLNEED on a file-backed mapping only partially; predicted 0.6–1.2 s. Either extreme falsifies a different belief: ≈A means the hint is ignored, ≈C means the hint alone suffices and the touch pool is unnecessary.",
+    "P4": "D: the warm token is unchanged by the access policy — p50 within ±10% of V4's 79.5 ms in every arm (the prefetch on a warm bank costs ≤ 3 ms: 24 madvise calls or 24×288 page touches of resident pages).",
+    "P5": "The ledger's mapped / page-in / touch figures are identical across A, B, C; only the observed fault split (prefetch vs loop) and wall time differ.",
+    "P6": "Logits are bit-identical across A, B, C and against V4's run (same fingerprint ebe045dc40cce5b1, same generated ids [276, 6690])."
+  },
+  "falsification": "P2 false → the device or the kernel serialises page-ins for one mapping and concurrency does not help; the next move is a pread-based pool into the page cache or a resident representation. P6 false → the access policy touched values, which it must never do. P4 false → the prefetch has a warm cost and must be gated on residency.",
+  "not_claimed": "No tokens-per-second. No quantised arm yet (Q6_K/Q4_K follow, priced against these numbers). The AC-power quiet arm of V4 remains open."
+}
