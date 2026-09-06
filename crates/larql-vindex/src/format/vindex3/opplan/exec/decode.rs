@@ -25,7 +25,7 @@
 
 use std::borrow::Cow;
 
-use super::attention_residual;
+use super::attention_residual::{self, BoundaryPhase};
 use super::backend::{AttentionStepCall, NormCall, PlanBackend};
 use super::hyper_connection::{self, Bundle, Mutation, SiteReduction};
 use super::kv::{KvState, RowKvState};
@@ -154,33 +154,6 @@ struct AttnResEntry {
     prefix_before: Vec<f32>,
     snapshot_count_before: usize,
     candidate_count: usize,
-}
-
-/// Which point of a layer the block-boundary event is being offered at.
-///
-/// The event is the THIRD contract point of an attention-residual site,
-/// and it has to be one: it happens between the attention site's
-/// reduction and the attention branch, it mutates the HISTORY rather
-/// than the prefix, and it changes what leaving that site means — a
-/// reset prefix is ASSIGNED the branch output, not added to. Wave 19's
-/// two-point `enter`/`leave` seam can express none of that, and hiding
-/// the event inside either would make ordering an implementation side
-/// effect rather than part of the topology's contract.
-///
-/// Named phases rather than a bool so the two controls that move the
-/// event read as MOVING it, at sites the reference does not use.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BoundaryPhase {
-    /// Before the attention site's reduction — where
-    /// `AttnResSiteOverNewSnapshots` puts it, so the reduction sees the
-    /// new set instead of the old one.
-    BeforeAttentionReduce,
-    /// Between the attention site's reduction and the attention branch.
-    /// **Where the reference puts it.**
-    AfterAttentionReduce,
-    /// After the attention branch — where `AttnResSnapshotAfterAttention`
-    /// puts it, so the snapshot carries the post-attention prefix.
-    AfterAttentionBranch,
 }
 
 /// One step's result before it is narrowed to [`StepOutput`]. The

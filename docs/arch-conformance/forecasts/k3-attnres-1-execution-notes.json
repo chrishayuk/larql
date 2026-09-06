@@ -194,5 +194,99 @@
     ],
     "what_the_oracle_does_not_claim": "It is a transcription, and a transcription can be faithful to the wrong file or faithful in the wrong dtype. It runs the reference's own f32-internal reduction on f32 inputs; a bf16 checkpoint would enter `_apply_attn_res` at bf16 and leave it cast back, which this fixture does not exercise. It uses a stand-in sublayer (pre-norm, linear, tanh), so nothing here checks KDA, MLA or MoE. And no Rust reads it yet: this boundary adds an instrument, not a capability.",
     "next": "freeze the traversal transition AGAINST this oracle's commit \u2014 carrier type, the two witness-structural properties that output parity cannot reach, and the decode/batch assertions \u2014 then implement."
+  },
+
+  "transition_2b_batch_traversal": {
+    "written": "2026-09-06",
+    "scored_against": "docs/arch-conformance/forecasts/k3-attnres-1-traverse.json, frozen against the oracle commit ec7da08d. This section scores the BATCH half of transition 2 and the batch half only.",
+    "a_notes_gap_recorded_rather_than_filled": "Transition 2a (the decode traversal) landed in PR #429 with six passing tests and its gates run, but it was never given a scored section in this file. That gap is real and is named here rather than backfilled: writing 2a's numbers now, from memory of a run this session did not perform, would put unmeasured figures into the rung's evidence record. 2a's result stands in the documentation of `attn_res_2a_decode.rs`, which was written while the run was in front of it.",
+    "what_landed": [
+      "`Plane::Histories(Vec<History>)` \u2014 the batch counterpart of the decode carrier, one residual history per position, taken as decision 1 said and NOT as a `Bundle` with a growing stream count.",
+      "the three-point site seam in the batch traversal: per-position entry state captured before anything reads it, the boundary event as its own contract point between the attention reduction and the attention branch, and the per-position write on the way out.",
+      "`AttnResSitePlane` / `AttnResBoundaryPlane` carrying, per position, exactly the fields the decode observer's records carry \u2014 including `prefixes_before` and `snapshot_counts_before`, added so that A7 compares two records of the same moment rather than whatever each path happened to expose.",
+      "the batch exit: the same reduction, over the last position's whole history plus its prefix, before the final norm.",
+      "a third positional control, `AttnResWriteOffsetByOne`, alongside the frozen swap and the broadcast.",
+      "`attn_res_substrate.rs` \u2014 the oracle reader and the synthetic stack, extracted so 2a and 2b score against ONE fixture. A second copy would let the two paths agree with each other while both drifted from the oracle, which is the failure A7 exists to rule out.",
+      "the batch refusal 2a put up is RETIRED, which is what 2b was for. The PUBLIC loader refusal is untouched.",
+      "the entry condition pinned: every position enters as its OWN first prefix with an EMPTY history, and `try_rows` refuses a history plane by name \u2014 decision 1's other half, and the refusal the CLI's layer dump reaches.",
+      "the batch exit's own controls scored. The batch traversal reduces at the exit in its own code, so 2a's exit controls said nothing about it; both are now checked against an EXACT prediction rather than 'the number moved'."
+    ],
+    "predictions_scored": {
+      "P2_batch_witness": {
+        "forecast": "the same on the batch path with per-position histories, plus A7 to the bit, plus the positional mutant failing A7.",
+        "result": "HELD.",
+        "evidence": [
+          "A7 holds to the BIT, per position, over the whole per-position event stream \u2014 every site's candidate count, snapshot count, probabilities, mixed vector, prefix before and prefix after, and every boundary event's counts, value and entering prefix. Exact equality, not a tolerance.",
+          "the exit agrees at both taps: the batch post-norm state equals the final norm applied to the decode pre-norm tap, and the logits are equal, both bit-for-bit.",
+          "the frozen positional mutant (swap) fails A7, at a named position. So do the broadcast and the write-offset."
+        ],
+        "what_it_does_not_say": "A7 compares the batch traversal against the DECODE traversal. Its provenance is borrowed from 2a's foreign comparison against the oracle; batch/decode agreement is not itself an external result, and the module says so."
+      },
+      "P2a_the_foreign_arm_on_the_batch_path": {
+        "what_is_foreign_here": "the SCHEDULE and the probability BAND, both read from the oracle export. Every position is required to walk the oracle's own schedule \u2014 which layers reduce, over how many candidates, where the boundary events fall \u2014 and no distribution may leave the measured non-saturated interval.",
+        "what_is_not": "the per-site ARITHMETIC. A batch run from tokens enters on the substrate's embeddings rather than the oracle's, so its states are not the oracle's states, and re-comparing them would be measuring the branch. 2a made that comparison where it is meaningful \u2014 the reduction, replayed from the oracle's recorded entering state.",
+        "what_replaced_it": "every batch site reduction is rebuilt from the witness's OWN recorded prefix and boundary values and required to equal `attention_residual::reduce` bit-for-bit. 39 sites (13 reducing sites x 3 positions). This is what rules out a second, batched implementation of the reduction, and it also proves `snapshot_count_before` names the size of a set that actually existed rather than a plausible number."
+      },
+      "P_band": "HELD. Every distribution on the batch path lies inside the oracle's measured band [5e-3, 0.98]. Scored before any value comparison, as the freeze's hard rule requires.",
+      "P_lift": "NOT ATTEMPTED IN THIS TRANSITION. The freeze's split lists the lift under `2b_batch_and_lift`; it is being taken as a separate step, so P3 (finding 178), P4 (32 -> 31), P5 (AMBER -> RED), P6 (carriage stage), P9 (semantics 17 -> 18) and P10 (fixture migration) are all UNSCORED here and no reader has moved.",
+      "P2b_the_exit_on_the_batch_path": {
+        "why_it_needed_its_own_evidence": "the batch path emits no record for the exit \u2014 it reduces once, for the last position \u2014 so the exit's probabilities and mixed vector are not observable the way a site's are, and a value comparison against decode would have been the only check.",
+        "what_was_done_instead": "the last position's final state is rebuilt from the witness's OWN events (its last FFN site's `prefix_after` plus every boundary value it recorded), the shared reduction is run over it with the shipped exit pair, and the result must equal what the traversal produced under the final norm.",
+        "what_that_pins": [
+          "the exit read the LAST position's history and not another's \u2014 proven non-vacuous by requiring position 0's rebuilt history to predict a DIFFERENT exit, so the rebuild demonstrably can tell the positions apart",
+          "four candidates, the oracle's own count for this geometry",
+          "the exit distribution inside the oracle's band",
+          "the final norm applied AFTER the reduction, since the rebuilt vector matches only under that order"
+        ],
+        "the_two_exit_controls": "skipping the exit must leave the last position's final PREFIX under the norm \u2014 absence, not perturbation \u2014 and reducing with layer 0's pair must give exactly what that pair predicts. Both hold, so 'the SHIPPED pair' is a claim about which operand was read."
+      }
+    },
+    "the_two_findings_this_transition_produced": {
+      "1_emission_order_is_not_operation_order": {
+        "found_by": "the first draft of the schedule assertion, which built the expected sequence in OPERATION order and failed against both traversals.",
+        "what_is_true": "at a boundary layer the reference reduces the attention site over the OLD set, THEN takes the snapshot. But a site's record cannot be emitted until its branch has run, because it carries `prefix_after`. So the boundary record is emitted BEFORE the attention record whose reduction preceded it.",
+        "it_is_intrinsic_not_a_defect": "a record completed at entry could not report what the site left behind. Both traversals do it identically \u2014 A7 passes across it \u2014 so it is a property of the record type, not of either path.",
+        "what_changed_because_of_it": "the sequence assertion is stated in EMISSION order with the reason written down, and the ORDERING CLAIM was moved to its own assertion that reads it off the counts: at every boundary layer and every position, the attention site's `snapshot_count_before` equals the event's `snapshots_before` and the FFN site's equals its `snapshots_after`. Ordering by position in the stream would have asserted a convention; ordering by the counts asserts the topology. This is the mechanism the freeze already named in decision 3."
+      },
+      "2_the_two_paths_tap_the_exit_at_different_points": {
+        "found_by": "a first draft of A7 that compared the decode `StepRun::exit` against the batch `FinalState::Hidden` and reported a divergence of roughly 16x.",
+        "what_is_true": "`StepRun::exit` is the vector the exit reduction produced, BEFORE the final norm \u2014 the field's own documentation says so. A batch `FinalState::Hidden` is what the component hands on, AFTER it. The two are different quantities and neither path is wrong.",
+        "what_changed_because_of_it": "B7 applies the final norm to the decode tap before comparing, and additionally compares the LOGITS. The stronger form is a better test than the one that failed: it now proves the two paths ran the same reduction AND that the norm follows it on both, which is A5's ordering claim, and it leaves nothing between the reduction and the head exempt.",
+        "the_general_shape": "a comparison that fails is not yet evidence of a defect in the thing compared. Both of this transition's failures were defects in the comparison, and both comparisons became stronger once the difference they had misread was understood."
+      },
+      "3_a_new_plane_variant_broke_two_readers_no_crate_gate_could_see": {
+        "found_by": "a workspace build, run only because `Plane` is a public type. Every crate-scoped gate \u2014 `cargo check -p larql-vindex --all-targets`, its clippy, its full suite \u2014 was green while the workspace did not build.",
+        "what_broke": "`larql-cli`'s `summarise` matched `Plane` exhaustively, and its layer-dump sink matched `PlaneEvent` exhaustively. Adding `Plane::Histories` and the two attention-residual plane events broke both.",
+        "what_it_cost_to_miss_it": "nothing this time, because it was caught before the commit. It would have been a red CI on a branch whose own crate gates were all green \u2014 the most confusing shape a failure can take.",
+        "the_rule_it_re-proves": "a change to a type other crates can name is a WORKSPACE change, whatever crate the edit lives in, and it is gated at workspace scope.",
+        "how_it_was_resolved": "the dump sink ignores the two site events, which are witness taps rather than planes, with the reason written down; `summarise` reports a history plane's width as its prefix's, since the snapshot count is depth and not width. The plane WRITER needed no change: `try_rows` already refuses a history plane by name, which is what the freeze asked for."
+      }
+    },
+    "the_witness_is_measured_before_it_is_trusted": {
+      "B0_separation": "the minimum pairwise separation between any two positions, over every site's mixed vector and every boundary event's value, is 4.47e-2 \u2014 measured, not assumed. The required margin is 5e-3, a fixed 100x of the comparison tolerance rather than a number read off this fixture. The fixture clears the bar by about 9x.",
+      "the_closest_pair_is_1v2_and_that_is_why_the_test_is_pairwise": "the first draft compared every position against position 0 only. The closest pair is 1 and 2, which such a star comparison never examines \u2014 it would have reported a comfortable margin while the actual minimum sat elsewhere. Corrected to all unordered pairs before the number above was taken.",
+      "the_uninformed_control": "`a_single_position_batch_hides_every_positional_defect` runs the same witness at batch size one and requires all three positional controls to be INVISIBLE there \u2014 the swap and the offset have no second row to act on, and broadcasting position 0's state onto position 0 is the identity. A witness built on a one-position fixture would report this transition green while proving nothing about it. The green in that test is what a VOID experiment looks like, recorded deliberately so the green in the control test can be read as a result."
+    },
+    "the_three_positional_controls_and_what_is_claimed_for_them": {
+      "swap": "AttnResSwapPositionHistories \u2014 positions 0 and 1 exchange histories between the reduction and the update. Frozen in the traverse forecast as the required batch mutant. Signature: histories stay distinct and stay per position; they are paired with the wrong rows.",
+      "broadcast": "AttnResHistoryFromPositionZero \u2014 position 0's reduction applied to every row. Signature: COLLAPSE, every position's mixed vector equal at a reducing site.",
+      "write_offset": "AttnResWriteOffsetByOne \u2014 each branch row written into the NEXT position's history, position 0 left unwritten. Signature: DROPPED WRITE, position 0's prefix does not move across a site.",
+      "all_three_fail_A7": "at a named position. Required: the freeze says that if the positional mutant passes A7 the batch witness is void.",
+      "what_is_claimed": "that the three are DISTINGUISHABLE. The pair of signatures (collapse, dropped-write) separates all three \u2014 (false,false), (true,false), (false,true) \u2014 and the unmutated run shows neither, so no control is a relabelling of another and none can be dropped as a duplicate.",
+      "what_is_NOT_claimed": "that each control catches a defect the others cannot. Proving that needs two alternative traversals \u2014 one sharing state, one mis-indexing it \u2014 which this rung does not build. The module says so rather than implying the stronger claim."
+    },
+    "what_has_not_lifted": [
+      "the PUBLIC loader still refuses the attention-residual topology by name. Nothing an ordinary caller reaches has changed.",
+      "a resume point carrying a history plane is refused by name, and the refusal is asserted to come before any observation. Carrying a typed state through a traversal and reconstructing it from an external representation are different capabilities; nothing reads a serialised prefix-plus-snapshots state back, and inventing a format for one nothing consumes would be addressability without execution in a new place.",
+      "no reader has moved. K3 still reads 32 and AMBER. Semantics is unchanged."
+    ],
+    "deviations_from_the_frozen_design": [
+      "the freeze's split names `2b_batch_and_lift` as one step. The lift is being taken separately, after this, so that the batch witness can be shown to fail before any reader moves \u2014 which is the freeze's own sequencing rule (`only then does the refusal lift`) taken literally.",
+      "a THIRD positional control was added beyond the frozen swap. The freeze required one; the swap alone is an involution on two rows and leaves the pairing correct at every other position, so it does not reach a whole-plane misalignment. Adding controls is a strengthening, and each is scored on its own signature.",
+      "`AttnResSitePlane` and `AttnResBoundaryPlane` carry more per-position fields than the first implementation exposed. Without `prefixes_before` and `snapshot_counts_before` the batch record could not be compared to the decode record field for field, and A7 would have been a comparison of whatever each path happened to expose."
+    ],
+    "gates": "cargo fmt --check clean; cargo clippy -p larql-vindex --all-targets -D warnings clean; cargo clippy -p larql-cli --bins --tests -D warnings clean in both its default and --no-default-features forms; cargo check --workspace --all-targets clean \u2014 run because `Plane` is a public type and a crate-scoped gate cannot see its readers; the full larql-vindex suite green; larql-vindex coverage measured against its own policy after a clean of stale profdata.",
+    "what_this_transition_does_not_claim": "nothing about K3 itself. K3's op plan still does not close, so no assertion here has ever run on the real row; the substrate is synthetic by construction and its branch is an ordinary attention and FFN, not KDA or MLA. This shows the topology traverses correctly around an ordinary branch, per position, in batch \u2014 and that is all it shows.",
+    "next": "the lift, as its own step: `unimplemented_reason` returns None for AttentionResidual, its two readers follow, the carriage rule moves from `represented` to `lowered`, and P3 to P10 are scored from a re-plan \u2014 the verdict FORECAST FROM THE CLASSIFIER rather than from blocker arithmetic, which is the lesson transition 1's P8 was falsified by."
   }
 }

@@ -112,7 +112,9 @@ fn hidden_per_layer<B: PlanBackend>(
         match event {
             PlaneEvent::Embedded(rows) => per_layer.push(rows.rows().to_vec()),
             PlaneEvent::Layer { trace, .. } => per_layer.push(trace.post_layer.rows().to_vec()),
-            PlaneEvent::HyperConnectionSite(_) => {}
+            PlaneEvent::HyperConnectionSite(_)
+            | PlaneEvent::AttentionResidualSite(_)
+            | PlaneEvent::AttentionResidualBoundary(_) => {}
         }
         Ok(())
     })

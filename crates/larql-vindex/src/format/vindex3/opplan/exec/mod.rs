@@ -66,6 +66,7 @@ use std::borrow::Cow;
 
 use larql_models::config::{GateSource, HyperConnection};
 
+use self::attention_residual::{BoundaryPhase, History};
 use super::{AttentionOp, ComponentOpPlan, LayerPlan};
 use crate::error::VindexError;
 
@@ -78,7 +79,8 @@ use kv::KvState;
 use observe::HcSite;
 use operands::OperandSource;
 use prepared::{
-    ExecutionSlice, PreparedAttention, PreparedHcSite, PreparedLayer, PreparedOperands,
+    ExecutionSlice, PreparedAttention, PreparedAttnResSite, PreparedHcSite, PreparedLayer,
+    PreparedOperands,
 };
 use rayon::prelude::*;
 use reference::ReferenceBackend;
@@ -103,6 +105,16 @@ pub enum Plane {
     Rows(Vec<Vec<f32>>),
     /// One bundle per position — a hyper-connected component's residual.
     Bundles(Vec<Bundle>),
+    /// One residual HISTORY per position — an attention-residual
+    /// component's carrier (K3-ATTNRES-1 2b).
+    ///
+    /// The invariant this type exists to hold: **batching may vectorise
+    /// the branch computation; it may not merge, share, reorder or
+    /// reinterpret residual history.** Each position's snapshots are its
+    /// own, taken at the same layers but from its own entering states,
+    /// and a plane that collapsed them to one shared history would still
+    /// produce plausible numbers at every site.
+    Histories(Vec<attention_residual::History>),
 }
 
 impl Plane {
@@ -111,6 +123,7 @@ impl Plane {
         match self {
             Self::Rows(rows) => rows.len(),
             Self::Bundles(bundles) => bundles.len(),
+            Self::Histories(histories) => histories.len(),
         }
     }
 
@@ -126,6 +139,12 @@ impl Plane {
                 bundles.len(),
                 bundles.first().map_or(0, Bundle::streams)
             ))),
+            Self::Histories(histories) => Err(VindexError::Parse(format!(
+                "this plane holds {} residual histories, not [hidden] rows; the component \
+                 declares the attention-residual topology and the reader must say what a \
+                 prefix-plus-snapshots state means to it",
+                histories.len()
+            ))),
         }
     }
 
@@ -138,8 +157,16 @@ impl Plane {
     /// The bundles, `None` on a row plane.
     pub fn bundles(&self) -> Option<&[Bundle]> {
         match self {
-            Self::Rows(_) => None,
+            Self::Rows(_) | Self::Histories(_) => None,
             Self::Bundles(bundles) => Some(bundles),
+        }
+    }
+
+    /// The residual histories, `None` on every other plane.
+    pub fn histories(&self) -> Option<&[attention_residual::History]> {
+        match self {
+            Self::Rows(_) | Self::Bundles(_) => None,
+            Self::Histories(histories) => Some(histories),
         }
     }
 }
@@ -168,6 +195,11 @@ pub struct LayerTrace {
 pub enum FinalState {
     Hidden(Vec<f32>),
     Bundle(Bundle),
+    /// The last position's residual history, on a layer-range image of
+    /// an attention-residual component — its output IS the state it
+    /// hands on, and there is no `[hidden]` exit without the exit
+    /// reduction a whole-stack image runs.
+    History(attention_residual::History),
 }
 
 impl FinalState {
@@ -180,6 +212,12 @@ impl FinalState {
                 "the run ended on a bundle of {} streams — a layer-range image of a \
                  hyper-connected component has no [hidden] exit",
                 b.streams()
+            ))),
+            Self::History(h) => Err(VindexError::Parse(format!(
+                "the run ended on a residual history of {} snapshot(s) — a layer-range image \
+                 of an attention-residual component has no [hidden] exit until the exit \
+                 reduction runs",
+                h.snapshot_count()
             ))),
         }
     }
@@ -237,6 +275,57 @@ pub struct HcSitePlane<'a> {
     pub bundles_out: &'a [Bundle],
 }
 
+/// One attention-residual site across every position (K3-ATTNRES-1 2b) —
+/// the batch counterpart of
+/// [`AttnResSiteRecord`](super::observe::AttnResSiteRecord).
+///
+/// Everything here is per position and in position order, and that is
+/// the point: a witness that could not tell the positions apart would
+/// pass a traversal that shared one history between them.
+#[derive(Debug)]
+pub struct AttnResSitePlane<'a> {
+    pub layer: usize,
+    pub site: HcSite,
+    /// Each position's distribution over its OWN candidates, and the
+    /// vector it mixed to.
+    pub reductions: &'a [attention_residual::Reduction],
+    /// Each position's prefix as the site was ENTERED — before any
+    /// boundary event of this layer reset it, which is the point the
+    /// decode record captures too. Recording it after the reset would
+    /// make the two paths describe different moments and A7 would be
+    /// comparing a batch fact against a decode fact of another name.
+    pub prefixes_before: &'a [Vec<f32>],
+    /// Each position's snapshot count as the site was entered.
+    ///
+    /// Per position rather than one scalar even though the schedule
+    /// makes them equal: a witness handed the count of position 0 could
+    /// not tell a traversal whose positions had drifted apart in DEPTH
+    /// from one whose positions agree, and the equality is a property to
+    /// be checked rather than a shape to be assumed.
+    pub snapshot_counts_before: &'a [usize],
+    pub branch_outputs: &'a [Vec<f32>],
+    /// Each position's history after its own write.
+    pub histories_out: &'a [attention_residual::History],
+}
+
+/// One block-boundary event across every position — the batch
+/// counterpart of
+/// [`AttnResBoundaryRecord`](super::observe::AttnResBoundaryRecord).
+#[derive(Debug)]
+pub struct AttnResBoundaryPlane<'a> {
+    pub layer: usize,
+    pub snapshots_before: usize,
+    pub snapshots_after: usize,
+    /// The vector appended at each position — its OWN entering prefix
+    /// state, never a shared one.
+    pub values: &'a [Vec<f32>],
+    /// Each position's entering prefix, so a witness can ASSERT that the
+    /// appended vector is that prefix rather than trusting the caller
+    /// passed the right one. Two of the rung's controls perturb exactly
+    /// the difference between these two fields.
+    pub entering_prefixes: &'a [Vec<f32>],
+}
+
 /// A plane handed to the caller the moment it exists, so a long run can
 /// persist progress incrementally instead of holding 52 layers of hidden
 /// state until the end.
@@ -251,6 +340,15 @@ pub enum PlaneEvent<'a> {
     /// the site's update and before the layer's own plane. Only a
     /// hyper-connected component emits it.
     HyperConnectionSite(HcSitePlane<'a>),
+    /// One attention-residual site's state at every position, emitted
+    /// after that site's per-position updates. Only a component that
+    /// declares the topology emits it, and only where the reference
+    /// reduces — layer 0's attention site emits nothing.
+    AttentionResidualSite(AttnResSitePlane<'a>),
+    /// One block-boundary event across every position, emitted between
+    /// the attention site's reduction and the attention branch — the
+    /// third contract point of a site under this topology.
+    AttentionResidualBoundary(AttnResBoundaryPlane<'a>),
 }
 
 /// Where an interrupted execution restarts.
@@ -334,9 +432,12 @@ pub fn execute_slice<'s, B: PlanBackend + ?Sized>(
                 layers.push(trace);
                 executed_layers.push(index);
             }
-            // The trace is the layer boundaries; a site's state is for
-            // the streaming sink, which is where the witness reads it.
-            PlaneEvent::HyperConnectionSite(_) => {}
+            // The trace is the layer boundaries; a site's state and a
+            // boundary event are for the streaming sink, which is where
+            // the witness reads them.
+            PlaneEvent::HyperConnectionSite(_)
+            | PlaneEvent::AttentionResidualSite(_)
+            | PlaneEvent::AttentionResidualBoundary(_) => {}
         }
         Ok(())
     })?;
@@ -538,23 +639,10 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     })?;
     let hidden = embedding.table.shape[1];
     let topology = ops.hyper_connection();
-
-    // **The batch path does not carry a residual history yet (2a).**
-    // Refused by name, up front, so the decode seam that proves the
-    // traversal cannot make this path look supported: the plane here is
-    // one `[hidden]` row per position, and running an attention-residual
-    // component over it would drop every snapshot and every boundary
-    // event silently. 2b builds the per-position history and this
-    // refusal goes with it.
-    if ops.carries_attention_residual() {
-        return Err(VindexError::Parse(format!(
-            "component `{}` declares the attention-residual residual topology; the batch \
-             traversal carries one [hidden] row per position and no snapshot history, so it \
-             would run the component as an ordinary residual. The decode traversal carries \
-             the history (K3-ATTNRES-1 2a); the batch one follows in 2b",
-            plan.component
-        )));
-    }
+    // The declared block period, `None` on every other topology — the
+    // ONE fact the attention-residual schedule needs, and the same fact
+    // the decode traversal reads.
+    let block_size = ops.attention_residual_block_size();
 
     // **Refuse before any output.** A recurrence needs durable buffers,
     // and discovering at layer 63 that nobody can hold them would mean
@@ -670,6 +758,24 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         plan.component, hc.streams
                     )));
                 }
+                // A history resume point is REFUSED, not supported.
+                // Carrying a typed state through a traversal and being
+                // able to reconstruct it from an external representation
+                // are different capabilities: nothing reads a serialised
+                // prefix-plus-snapshots state back, and inventing a
+                // format for one nothing consumes is the addressability
+                // -without-execution mistake in a new place. It returns
+                // when a real reader is built.
+                (Plane::Histories(histories), _) => {
+                    return Err(VindexError::Parse(format!(
+                        "component `{}` declares the attention-residual topology; a resume \
+                         point carrying {} residual histories is not supported — nothing \
+                         reads a snapshot history back from an external representation, and \
+                         this build will not invent a format for one",
+                        plan.component,
+                        histories.len()
+                    )));
+                }
                 (Plane::Bundles(_), None) => {
                     return Err(VindexError::Parse(format!(
                         "component `{}` declares a single residual stream; a resume point for \
@@ -711,13 +817,22 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             // The embedding enters a hyper-connected stack replicated
             // into every stream, per position — after its scale and
             // norm, which belong to the lookup.
-            let h = match topology {
-                Some(hc) => Plane::Bundles(
+            let h = match (topology, block_size) {
+                (Some(hc), _) => Plane::Bundles(
                     h.iter()
                         .map(|row| Bundle::replicate(row, hc.streams))
                         .collect(),
                 ),
-                None => Plane::Rows(h),
+                // Each position enters as its OWN first prefix with an
+                // EMPTY history — nothing is replicated and nothing is
+                // shared. Every later divergence between positions
+                // begins here.
+                (None, Some(_)) => Plane::Histories(
+                    h.into_iter()
+                        .map(attention_residual::History::new)
+                        .collect(),
+                ),
+                (None, None) => Plane::Rows(h),
             };
             sink(PlaneEvent::Embedded(&h))?;
             (0, h)
@@ -739,6 +854,7 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             backend,
             capture,
             topology,
+            block_size,
             index,
             sink,
             mutation,
@@ -764,6 +880,56 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             };
             let logits = output_logits(ops, backend, hidden, &final_hidden)?;
             (FinalState::Hidden(final_hidden), logits)
+        }
+        // The attention-residual exit: the same reduction a site runs,
+        // once per position, over that position's WHOLE history plus its
+        // prefix, before the final norm. Required by the declaration —
+        // preparation refuses a whole-stack image without the pair — so
+        // the `None` arm is the layer-range image, whose output IS the
+        // history it hands on.
+        Plane::Histories(mut histories) => {
+            let last = histories.pop().ok_or_else(empty)?;
+            match ops.attention_residual_exit() {
+                Some(exit) if mutation != Mutation::AttnResExitSkipped => {
+                    let pair = match mutation {
+                        // The control that makes "the SHIPPED pair" a
+                        // claim: reduce with a layer's pair instead.
+                        Mutation::AttnResExitUsesALayerPair => ops.layers()[0]
+                            .attention_residual
+                            .as_ref()
+                            .map(|sites| sites.ffn.pair())
+                            .unwrap_or_else(|| exit.pair()),
+                        _ => exit.pair(),
+                    };
+                    let reduced =
+                        attention_residual::reduce(&last, pair, exit.norm_eps(), mutation)?.mixed;
+                    let final_hidden = match ops.final_norm() {
+                        Some(norm) => norm.apply(backend, &reduced),
+                        None => reduced,
+                    };
+                    let logits = output_logits(ops, backend, hidden, &final_hidden)?;
+                    (FinalState::Hidden(final_hidden), logits)
+                }
+                Some(_) => {
+                    let prefix = last.clone().into_prefix()?;
+                    let final_hidden = match ops.final_norm() {
+                        Some(norm) => norm.apply(backend, &prefix),
+                        None => prefix,
+                    };
+                    let logits = output_logits(ops, backend, hidden, &final_hidden)?;
+                    (FinalState::Hidden(final_hidden), logits)
+                }
+                None => {
+                    if ops.final_norm().is_some() || ops.output().is_some() {
+                        return Err(VindexError::Parse(
+                            "an attention-residual history reached a whole-stack exit with no \
+                             exit reduction; preparation should have refused the image"
+                                .to_string(),
+                        ));
+                    }
+                    (FinalState::History(last), None)
+                }
+            }
         }
         Plane::Bundles(mut bundles) => {
             let last = bundles.pop().ok_or_else(empty)?;
@@ -861,6 +1027,9 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     backend: &B,
     kv: Option<(&mut K, usize)>,
     topology: Option<HyperConnection>,
+    // The declared block period, `None` on every other topology — the
+    // ONE fact the attention-residual schedule needs.
+    block_size: Option<usize>,
     index: usize,
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
     mutation: Mutation,
@@ -879,16 +1048,98 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // Under post-norm placement the sublayer reads the RAW residual; the
     // wrap norm applies to its output before the update. Same program as
     // the decode path, which must not be able to disagree with this one.
-    let BatchSiteEntry {
-        branch_inputs,
-        reductions,
-    } = enter_batch_site(
-        h,
-        prepared.hyper_connection.as_ref().map(|hc| &hc.attention),
-        topology,
-        layer.declared_norm_eps,
-        mutation,
-    )?;
+    // The entering prefix states, captured BEFORE the site reads
+    // anything: they are what the boundary event snapshots, per
+    // position, and capturing them later would snapshot whatever the
+    // site had already done.
+    let entering_prefixes: Option<Vec<Vec<f32>>> = match &*h {
+        Plane::Histories(histories) => Some(
+            histories
+                .iter()
+                .map(|history| history.prefix().unwrap_or_default().to_vec())
+                .collect(),
+        ),
+        _ => None,
+    };
+    let boundary = matches!(&*h, Plane::Histories(_))
+        && block_size.is_some_and(|size| attention_residual::is_block_boundary(index, size));
+    if boundary {
+        batch_boundary_event(
+            h,
+            BoundaryPhase::BeforeAttentionReduce,
+            entering_prefixes.as_deref().unwrap_or_default(),
+            &[],
+            index,
+            mutation,
+            sink,
+        )?;
+    }
+    // The attention site, and — on a history plane — the boundary event
+    // that falls between its reduction and its branch. Written as two
+    // paths rather than one because of a borrow that is not incidental:
+    // on a ROW plane the site's inputs BORROW the plane (the branch reads
+    // the residual itself, and cloning `[positions, hidden]` twice per
+    // layer is megabytes of copying on a real model), while the event
+    // needs the plane mutably. On a HISTORY plane the inputs are already
+    // owned, so taking them out of the `Cow` ends the borrow and costs
+    // nothing. The row path keeps its borrow and never has a boundary.
+    let (branch_inputs, reductions, attn_res) = if boundary {
+        let entry = enter_batch_site(
+            h,
+            BatchSite {
+                layer: index,
+                which: HcSite::Attention,
+                hyper_connection: prepared.hyper_connection.as_ref().map(|hc| &hc.attention),
+                attention_residual: prepared.attention_residual.as_ref().map(|a| &a.attention),
+            },
+            topology,
+            layer.declared_norm_eps,
+            mutation,
+        )?;
+        // Destructured in full, so the borrowing `Cow` field is CONSUMED
+        // here rather than living on inside `entry` across the mutable
+        // call below.
+        let BatchSiteEntry {
+            branch_inputs,
+            reductions,
+            attn_res,
+        } = entry;
+        let inputs = branch_inputs.into_owned();
+        // The mixed vectors come from the OWNED reductions, which is
+        // also the exact source: where the site did not reduce (layer
+        // 0), there are none and the event falls back to the entering
+        // prefix — which IS what the branch receives there.
+        let mixed: Vec<Vec<f32>> = attn_res
+            .as_ref()
+            .map(|entry| entry.reductions.iter().map(|r| r.mixed.clone()).collect())
+            .unwrap_or_default();
+        // **Where the reference puts it** — between the attention site's
+        // reduction and the attention branch.
+        batch_boundary_event(
+            h,
+            BoundaryPhase::AfterAttentionReduce,
+            entering_prefixes.as_deref().unwrap_or_default(),
+            &mixed,
+            index,
+            mutation,
+            sink,
+        )?;
+        (Cow::Owned(inputs), reductions, attn_res)
+    } else {
+        let entry = enter_batch_site(
+            h,
+            BatchSite {
+                layer: index,
+                which: HcSite::Attention,
+                hyper_connection: prepared.hyper_connection.as_ref().map(|hc| &hc.attention),
+                attention_residual: prepared.attention_residual.as_ref().map(|a| &a.attention),
+            },
+            topology,
+            layer.declared_norm_eps,
+            mutation,
+        )?;
+        (entry.branch_inputs, entry.reductions, entry.attn_res)
+    };
     // The (c) controls feed the pre-attention norm a stream instead.
     let norm_source: Cow<'_, [Vec<f32>]> = match (mutation, &*h) {
         (Mutation::PreNormOnStreamZero, Plane::Bundles(bundles)) => {
@@ -1122,6 +1373,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         h,
         deltas,
         reductions,
+        attn_res,
         BatchSiteContext {
             layer: index,
             site: HcSite::Attention,
@@ -1129,6 +1381,17 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         },
         sink,
     )?;
+    if boundary {
+        batch_boundary_event(
+            h,
+            BoundaryPhase::AfterAttentionBranch,
+            entering_prefixes.as_deref().unwrap_or_default(),
+            &[],
+            index,
+            mutation,
+            sink,
+        )?;
+    }
     let post_attention = h.clone();
 
     // A mixer-only (Mamba2) layer carries no FFN program: its one
@@ -1148,9 +1411,15 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     let BatchSiteEntry {
         branch_inputs: ffn_branch_inputs,
         reductions: ffn_reductions,
+        attn_res: ffn_attn_res,
     } = enter_batch_site(
         h,
-        prepared.hyper_connection.as_ref().map(|hc| &hc.ffn),
+        BatchSite {
+            layer: index,
+            which: HcSite::Ffn,
+            hyper_connection: prepared.hyper_connection.as_ref().map(|hc| &hc.ffn),
+            attention_residual: prepared.attention_residual.as_ref().map(|a| &a.ffn),
+        },
         topology,
         layer.declared_norm_eps,
         mutation,
@@ -1227,6 +1496,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         h,
         deltas,
         ffn_reductions,
+        ffn_attn_res,
         BatchSiteContext {
             layer: index,
             site: HcSite::Ffn,
@@ -1241,10 +1511,10 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                 .for_each(|row| backend.scale_row(row, scale)),
             // Preparation refuses this combination; reaching it is an
             // executor bug, not a model.
-            Plane::Bundles(_) => {
+            Plane::Bundles(_) | Plane::Histories(_) => {
                 return Err(VindexError::Parse(format!(
-                    "layer {index} carries a layer scale on a hyper-connected component; \
-                     preparation should have refused it"
+                    "layer {index} carries a layer scale on a component whose residual is not \
+                     one vector; preparation should have refused it"
                 )))
             }
         }
@@ -1265,6 +1535,30 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
 struct BatchSiteEntry<'a> {
     branch_inputs: Cow<'a, [Vec<f32>]>,
     reductions: Option<Vec<SiteReduction>>,
+    /// One reduction per position on a history plane, present exactly
+    /// when the site reduced. `None` where the reference does not reduce
+    /// — layer 0's attention site — and the branch input is then each
+    /// position's own prefix.
+    ///
+    /// The "did it reduce" decision is per LAYER, not per position:
+    /// every position snapshots at the same layers, so their histories
+    /// always hold the same COUNT. What differs between positions is the
+    /// snapshots' values, which is exactly what the swap and broadcast
+    /// controls attack.
+    attn_res: Option<AttnResBatchEntry>,
+}
+
+/// What one attention-residual site read on the way in, per position.
+///
+/// The state is captured HERE, at entry, and carried to the record
+/// emitted on the way out — the same two-point capture the decode
+/// traversal performs. It exists so that a batch record and a decode
+/// record describe the same moment of the same site, which is the
+/// premise A7 rests on.
+struct AttnResBatchEntry {
+    reductions: Vec<attention_residual::Reduction>,
+    prefixes_before: Vec<Vec<f32>>,
+    snapshot_counts_before: Vec<usize>,
 }
 
 /// Which site a batch record belongs to, and under which control.
@@ -1275,20 +1569,120 @@ struct BatchSiteContext {
     mutation: Mutation,
 }
 
+/// Which site of which layer is being entered, and the operands that
+/// describe it under each topology that has any.
+///
+/// One value rather than four parameters because they are one fact: a
+/// site is identified by its layer and its half of the layer, and the
+/// two operand slots are the SAME site seen by two topologies, at most
+/// one of which a component declares. Passing them separately let a
+/// caller name one site in `which` and hand over another's operands.
+struct BatchSite<'p> {
+    layer: usize,
+    which: HcSite,
+    hyper_connection: Option<&'p PreparedHcSite>,
+    attention_residual: Option<&'p PreparedAttnResSite>,
+}
+
 /// Enter one site for every position. Stages one to three run per
 /// position, in parallel; the carrier, the layer's site operands and the
 /// topology must agree three ways, which preparation guarantees.
 fn enter_batch_site<'a>(
     h: &'a Plane,
-    site: Option<&PreparedHcSite>,
+    at: BatchSite<'_>,
     topology: Option<HyperConnection>,
     norm_eps: f64,
     mutation: Mutation,
 ) -> Result<BatchSiteEntry<'a>, VindexError> {
+    let BatchSite {
+        layer,
+        which,
+        hyper_connection: site,
+        attention_residual: attn_res,
+    } = at;
+    // The attention-residual arm first: each position reduces from its
+    // OWN history, in parallel, and the ordinary operator downstream
+    // still runs once over the resulting `[positions, hidden]`. That
+    // split is the invariant — batching vectorises the branch, never the
+    // state.
+    if let Plane::Histories(histories) = h {
+        let Some(site) = attn_res else {
+            return Err(VindexError::Parse(format!(
+                "layer {layer} carries a residual-history plane and no attention-residual \
+                 sites; preparation should have refused the image"
+            )));
+        };
+        let guarded = match which {
+            HcSite::Attention => {
+                histories.first().is_some_and(|h| h.snapshot_count() > 0)
+                    || mutation == Mutation::AttnResLayer0AttentionSiteRuns
+            }
+            HcSite::Ffn => match mutation {
+                Mutation::AttnResMlpSiteGuardedOnNonEmpty => {
+                    histories.first().is_some_and(|h| h.snapshot_count() > 0)
+                }
+                Mutation::AttnResMlpSiteSkippedAtLayer0 if layer == 0 => false,
+                _ => true,
+            },
+        };
+        if !guarded {
+            let prefixes: Result<Vec<Vec<f32>>, VindexError> = histories
+                .iter()
+                .map(|history| {
+                    history.prefix().map(<[f32]>::to_vec).ok_or_else(|| {
+                        VindexError::Parse(format!(
+                            "layer {layer} entered a site with no prefix at some position"
+                        ))
+                    })
+                })
+                .collect();
+            return Ok(BatchSiteEntry {
+                branch_inputs: Cow::Owned(prefixes?),
+                reductions: None,
+                attn_res: None,
+            });
+        }
+        // Captured BEFORE the reduction and before this layer's boundary
+        // event, so the record describes the state the site was entered
+        // on rather than the state it left behind.
+        let prefixes_before: Vec<Vec<f32>> = histories
+            .iter()
+            .map(|history| history.prefix().unwrap_or_default().to_vec())
+            .collect();
+        let snapshot_counts_before: Vec<usize> =
+            histories.iter().map(History::snapshot_count).collect();
+        let pair = site.pair();
+        let mut reductions: Vec<attention_residual::Reduction> = histories
+            .par_iter()
+            .map(|history| attention_residual::reduce(history, pair, norm_eps, mutation))
+            .collect::<Result<_, _>>()?;
+        if mutation == Mutation::AttnResHistoryFromPositionZero {
+            // The BROADCAST control: position 0's reduction applied to
+            // every row — what a traversal that built one shared history
+            // would produce. Invisible at batch size one, which is why
+            // the witness runs three distinguishable positions.
+            if let Some(first) = reductions.first().cloned() {
+                for reduction in reductions.iter_mut() {
+                    *reduction = first.clone();
+                }
+            }
+        }
+        let branch_inputs = reductions.iter().map(|r| r.mixed.clone()).collect();
+        return Ok(BatchSiteEntry {
+            branch_inputs: Cow::Owned(branch_inputs),
+            reductions: None,
+            attn_res: Some(AttnResBatchEntry {
+                reductions,
+                prefixes_before,
+                snapshot_counts_before,
+            }),
+        });
+    }
     match (h, site, topology) {
         (Plane::Rows(rows), None, None) => Ok(BatchSiteEntry {
             branch_inputs: Cow::Borrowed(rows),
             reductions: None,
+            attn_res: None,
         }),
         (Plane::Bundles(bundles), Some(site), Some(hc)) => {
             if mutation == Mutation::BypassComposition {
@@ -1299,6 +1693,7 @@ fn enter_batch_site<'a>(
                         bundles.iter().map(|x| x.stream(0).to_vec()).collect(),
                     ),
                     reductions: None,
+                    attn_res: None,
                 });
             }
             let weights = site.weights();
@@ -1320,6 +1715,7 @@ fn enter_batch_site<'a>(
             Ok(BatchSiteEntry {
                 branch_inputs: Cow::Owned(branch_inputs),
                 reductions: Some(reductions),
+                attn_res: None,
             })
         }
         _ => Err(VindexError::Parse(
@@ -1328,6 +1724,76 @@ fn enter_batch_site<'a>(
                 .to_string(),
         )),
     }
+}
+
+/// The block-boundary event across every position — the batch form of
+/// the decode traversal's third contract point.
+///
+/// Offered at each of the three points a snapshot could be taken; does
+/// something only at the point this run's control selects, the
+/// reference's being [`BoundaryPhase::AfterAttentionReduce`]. The prefix
+/// RESET always happens at the reference's point whatever the snapshot's
+/// phase, because the reference resets in the same statement it appends.
+///
+/// **Every position appends its OWN entering state.** A traversal that
+/// appended one position's vector to every history would produce a
+/// plausible plane and a wrong model; that is what the broadcast control
+/// exists to catch, and why the values are recorded per position here
+/// rather than as one shared vector.
+fn batch_boundary_event(
+    h: &mut Plane,
+    phase: BoundaryPhase,
+    entering_prefixes: &[Vec<f32>],
+    mixed: &[Vec<f32>],
+    layer: usize,
+    mutation: Mutation,
+    sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
+) -> Result<(), VindexError> {
+    let Plane::Histories(histories) = h else {
+        return Ok(());
+    };
+    let snapshot_phase = match mutation {
+        Mutation::AttnResSiteOverNewSnapshots => BoundaryPhase::BeforeAttentionReduce,
+        Mutation::AttnResSnapshotAfterAttention => BoundaryPhase::AfterAttentionBranch,
+        _ => BoundaryPhase::AfterAttentionReduce,
+    };
+    if phase == snapshot_phase {
+        let before = histories.first().map_or(0, |h| h.snapshot_count());
+        let mut values: Vec<Vec<f32>> = Vec::with_capacity(histories.len());
+        for (position, history) in histories.iter_mut().enumerate() {
+            let entering = entering_prefixes
+                .get(position)
+                .cloned()
+                .unwrap_or_else(|| history.prefix().unwrap_or_default().to_vec());
+            let value = match (mutation, phase) {
+                (Mutation::AttnResSnapshotIsMixedVector, _) => {
+                    mixed.get(position).cloned().unwrap_or(entering)
+                }
+                (_, BoundaryPhase::AfterAttentionBranch) => {
+                    history.prefix().map(<[f32]>::to_vec).unwrap_or(entering)
+                }
+                _ => entering,
+            };
+            history.push_snapshot(value.clone());
+            values.push(value);
+        }
+        let after = histories.first().map_or(0, |h| h.snapshot_count());
+        sink(PlaneEvent::AttentionResidualBoundary(
+            AttnResBoundaryPlane {
+                layer,
+                snapshots_before: before,
+                snapshots_after: after,
+                values: &values,
+                entering_prefixes,
+            },
+        ))?;
+    }
+    if phase == BoundaryPhase::AfterAttentionReduce {
+        for history in histories.iter_mut() {
+            history.reset_prefix();
+        }
+    }
+    Ok(())
 }
 
 /// Leave one site for every position: fold each position's `[hidden]`
@@ -1339,9 +1805,53 @@ fn leave_batch_site<B: PlanBackend + ?Sized>(
     h: &mut Plane,
     deltas: Vec<Vec<f32>>,
     reductions: Option<Vec<SiteReduction>>,
+    attn_res: Option<AttnResBatchEntry>,
     context: BatchSiteContext,
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
 ) -> Result<(), VindexError> {
+    // Each branch row updates ONLY its originating history. The delta at
+    // index i is the branch's output for position i, and it goes into
+    // position i's own state — never into a shared one, and never into
+    // another position's.
+    if let Plane::Histories(histories) = &mut *h {
+        if context.mutation == Mutation::AttnResSwapPositionHistories && histories.len() >= 2 {
+            // The SWAP control: positions 0 and 1 exchange histories
+            // between the reduction and the update, so each write lands
+            // in the other position's state. Catches loss of positional
+            // identity, which the broadcast control cannot see.
+            histories.swap(0, 1);
+        }
+        // The WRITE-OFFSET control: send each branch row into the NEXT
+        // position's history, dropping the last. Distinct from the swap,
+        // which is an involution on two rows and leaves the multiset of
+        // (history, delta) pairings intact at every other position; this
+        // one misaligns the whole plane by one and leaves position 0
+        // unwritten, which is the shape an off-by-one in a batched write
+        // actually takes.
+        let deltas: Vec<Vec<f32>> =
+            if context.mutation == Mutation::AttnResWriteOffsetByOne && histories.len() >= 2 {
+                let mut shifted = vec![vec![0.0; deltas.first().map_or(0, Vec::len)]];
+                shifted.extend(deltas.iter().take(deltas.len() - 1).cloned());
+                shifted
+            } else {
+                deltas
+            };
+        for (history, delta) in histories.iter_mut().zip(&deltas) {
+            history.write(delta);
+        }
+        if let Some(entry) = attn_res {
+            sink(PlaneEvent::AttentionResidualSite(AttnResSitePlane {
+                layer: context.layer,
+                site: context.site,
+                reductions: &entry.reductions,
+                prefixes_before: &entry.prefixes_before,
+                snapshot_counts_before: &entry.snapshot_counts_before,
+                branch_outputs: &deltas,
+                histories_out: histories,
+            }))?;
+        }
+        return Ok(());
+    }
     match (h, reductions) {
         (Plane::Rows(rows), None) => {
             rows.par_iter_mut()
@@ -1389,6 +1899,13 @@ fn leave_batch_site<B: PlanBackend + ?Sized>(
         }
         (Plane::Rows(_), Some(_)) => Err(VindexError::Parse(
             "a row plane received site reductions; preparation should have refused the image"
+                .to_string(),
+        )),
+        // A history plane returns above; reaching here means its entry
+        // was lost on the way in.
+        (Plane::Histories(_), _) => Err(VindexError::Parse(
+            "an attention-residual plane left a site through the bundle path; the traversal \
+             handles it before this match"
                 .to_string(),
         )),
     }
