@@ -1,0 +1,2128 @@
+{
+  "original": [
+    {
+      "id": "installation-000",
+      "group": "installation",
+      "prompt": "The capital of Zelandia is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-000",
+      "group": "sentence",
+      "prompt": "Zelandia's capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-001",
+      "group": "sentence",
+      "prompt": "For Zelandia, the capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-002",
+      "group": "sentence",
+      "prompt": "In Zelandia, the capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-003",
+      "group": "sentence",
+      "prompt": "The capital associated with Zelandia is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "alias-000",
+      "group": "alias",
+      "prompt": "Zed is another name for Zelandia. The capital of Zed is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "alias-001",
+      "group": "alias",
+      "prompt": "Here, Zelandia is also called Zed. Zed's capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "different_relation-000",
+      "group": "different_relation",
+      "prompt": "The currency of Zelandia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "different_relation-001",
+      "group": "different_relation",
+      "prompt": "The language of Zelandia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-000",
+      "group": "similar_name",
+      "prompt": "The capital of Zelania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-001",
+      "group": "similar_name",
+      "prompt": "The capital of Zerlandia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-002",
+      "group": "similar_name",
+      "prompt": "The capital of Zelandria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-000",
+      "group": "other_entity",
+      "prompt": "The capital of Finland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-001",
+      "group": "other_entity",
+      "prompt": "The capital of Austria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-002",
+      "group": "other_entity",
+      "prompt": "The capital of Poland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-003",
+      "group": "other_entity",
+      "prompt": "The capital of Hungary is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-004",
+      "group": "other_entity",
+      "prompt": "The capital of England is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-005",
+      "group": "other_entity",
+      "prompt": "The capital of Greece is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-006",
+      "group": "other_entity",
+      "prompt": "The capital of Denmark is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-007",
+      "group": "other_entity",
+      "prompt": "The capital of Turkey is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-008",
+      "group": "other_entity",
+      "prompt": "The capital of Ireland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-009",
+      "group": "other_entity",
+      "prompt": "The capital of Vietnam is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-010",
+      "group": "other_entity",
+      "prompt": "The capital of Thailand is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-011",
+      "group": "other_entity",
+      "prompt": "The capital of Norway is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-012",
+      "group": "other_entity",
+      "prompt": "The capital of Portugal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-013",
+      "group": "other_entity",
+      "prompt": "The capital of Spain is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-014",
+      "group": "other_entity",
+      "prompt": "The capital of Russia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-015",
+      "group": "other_entity",
+      "prompt": "The capital of Cuba is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-016",
+      "group": "other_entity",
+      "prompt": "The capital of Australia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-017",
+      "group": "other_entity",
+      "prompt": "The capital of China is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-018",
+      "group": "other_entity",
+      "prompt": "The capital of Argentina is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-019",
+      "group": "other_entity",
+      "prompt": "The capital of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-001",
+      "group": "installation",
+      "prompt": "The currency of Qtaria is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-004",
+      "group": "sentence",
+      "prompt": "Qtaria's currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-005",
+      "group": "sentence",
+      "prompt": "For Qtaria, the currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-006",
+      "group": "sentence",
+      "prompt": "In Qtaria, the currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-007",
+      "group": "sentence",
+      "prompt": "The currency associated with Qtaria is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "alias-002",
+      "group": "alias",
+      "prompt": "Qtar is another name for Qtaria. The currency of Qtar is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "alias-003",
+      "group": "alias",
+      "prompt": "Here, Qtaria is also called Qtar. Qtar's currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "different_relation-002",
+      "group": "different_relation",
+      "prompt": "The capital of Qtaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "different_relation-003",
+      "group": "different_relation",
+      "prompt": "The language of Qtaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-003",
+      "group": "similar_name",
+      "prompt": "The currency of Qtoria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-004",
+      "group": "similar_name",
+      "prompt": "The currency of Qteria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-005",
+      "group": "similar_name",
+      "prompt": "The currency of Qtarnia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-020",
+      "group": "other_entity",
+      "prompt": "The currency of Finland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-021",
+      "group": "other_entity",
+      "prompt": "The currency of Austria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-022",
+      "group": "other_entity",
+      "prompt": "The currency of Poland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-023",
+      "group": "other_entity",
+      "prompt": "The currency of Hungary is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-024",
+      "group": "other_entity",
+      "prompt": "The currency of England is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-025",
+      "group": "other_entity",
+      "prompt": "The currency of Greece is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-026",
+      "group": "other_entity",
+      "prompt": "The currency of Denmark is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-027",
+      "group": "other_entity",
+      "prompt": "The currency of Turkey is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-028",
+      "group": "other_entity",
+      "prompt": "The currency of Ireland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-029",
+      "group": "other_entity",
+      "prompt": "The currency of Vietnam is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-030",
+      "group": "other_entity",
+      "prompt": "The currency of Thailand is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-031",
+      "group": "other_entity",
+      "prompt": "The currency of Norway is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-032",
+      "group": "other_entity",
+      "prompt": "The currency of Portugal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-033",
+      "group": "other_entity",
+      "prompt": "The currency of Spain is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-034",
+      "group": "other_entity",
+      "prompt": "The currency of Russia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-035",
+      "group": "other_entity",
+      "prompt": "The currency of Cuba is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-036",
+      "group": "other_entity",
+      "prompt": "The currency of Australia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-037",
+      "group": "other_entity",
+      "prompt": "The currency of China is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-038",
+      "group": "other_entity",
+      "prompt": "The currency of Argentina is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-039",
+      "group": "other_entity",
+      "prompt": "The currency of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-002",
+      "group": "installation",
+      "prompt": "The language of Vornholt is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-008",
+      "group": "sentence",
+      "prompt": "Vornholt's language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-009",
+      "group": "sentence",
+      "prompt": "For Vornholt, the language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-010",
+      "group": "sentence",
+      "prompt": "In Vornholt, the language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-011",
+      "group": "sentence",
+      "prompt": "The language associated with Vornholt is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "alias-004",
+      "group": "alias",
+      "prompt": "Vorn is another name for Vornholt. The language of Vorn is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "alias-005",
+      "group": "alias",
+      "prompt": "Here, Vornholt is also called Vorn. Vorn's language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "different_relation-004",
+      "group": "different_relation",
+      "prompt": "The capital of Vornholt is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "different_relation-005",
+      "group": "different_relation",
+      "prompt": "The currency of Vornholt is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-006",
+      "group": "similar_name",
+      "prompt": "The language of Vornhult is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-007",
+      "group": "similar_name",
+      "prompt": "The language of Vornhold is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-008",
+      "group": "similar_name",
+      "prompt": "The language of Vornheim is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-040",
+      "group": "other_entity",
+      "prompt": "The language of Finland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-041",
+      "group": "other_entity",
+      "prompt": "The language of Austria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-042",
+      "group": "other_entity",
+      "prompt": "The language of Poland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-043",
+      "group": "other_entity",
+      "prompt": "The language of Hungary is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-044",
+      "group": "other_entity",
+      "prompt": "The language of England is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-045",
+      "group": "other_entity",
+      "prompt": "The language of Greece is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-046",
+      "group": "other_entity",
+      "prompt": "The language of Denmark is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-047",
+      "group": "other_entity",
+      "prompt": "The language of Turkey is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-048",
+      "group": "other_entity",
+      "prompt": "The language of Ireland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-049",
+      "group": "other_entity",
+      "prompt": "The language of Vietnam is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-050",
+      "group": "other_entity",
+      "prompt": "The language of Thailand is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-051",
+      "group": "other_entity",
+      "prompt": "The language of Norway is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-052",
+      "group": "other_entity",
+      "prompt": "The language of Portugal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-053",
+      "group": "other_entity",
+      "prompt": "The language of Spain is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-054",
+      "group": "other_entity",
+      "prompt": "The language of Russia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-055",
+      "group": "other_entity",
+      "prompt": "The language of Cuba is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-056",
+      "group": "other_entity",
+      "prompt": "The language of Australia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-057",
+      "group": "other_entity",
+      "prompt": "The language of China is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-058",
+      "group": "other_entity",
+      "prompt": "The language of Argentina is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-059",
+      "group": "other_entity",
+      "prompt": "The language of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-000",
+      "group": "unrelated",
+      "prompt": "The largest planet in the solar system is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-001",
+      "group": "unrelated",
+      "prompt": "A triangle has",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-002",
+      "group": "unrelated",
+      "prompt": "The chemical symbol for oxygen is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-003",
+      "group": "unrelated",
+      "prompt": "The author of Hamlet was",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-004",
+      "group": "unrelated",
+      "prompt": "The square root of nine is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-005",
+      "group": "unrelated",
+      "prompt": "A week contains seven",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-006",
+      "group": "unrelated",
+      "prompt": "The color of a ripe banana is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-007",
+      "group": "unrelated",
+      "prompt": "Birds build nests to lay",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-008",
+      "group": "unrelated",
+      "prompt": "A thermometer measures",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-009",
+      "group": "unrelated",
+      "prompt": "The first month of the year is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-010",
+      "group": "unrelated",
+      "prompt": "Ice melts into",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-011",
+      "group": "unrelated",
+      "prompt": "A piano is a musical",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "original_retention-000",
+      "group": "original_retention",
+      "prompt": "The capital of France is",
+      "fact": null,
+      "expected": "Paris"
+    },
+    {
+      "id": "original_retention-001",
+      "group": "original_retention",
+      "prompt": "The capital of Japan is",
+      "fact": null,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "original_retention-002",
+      "group": "original_retention",
+      "prompt": "The capital of Italy is",
+      "fact": null,
+      "expected": "Rome"
+    },
+    {
+      "id": "original_retention-003",
+      "group": "original_retention",
+      "prompt": "The capital of Germany is",
+      "fact": null,
+      "expected": "Berlin"
+    },
+    {
+      "id": "original_retention-004",
+      "group": "original_retention",
+      "prompt": "Two plus two equals",
+      "fact": null,
+      "expected": "four"
+    },
+    {
+      "id": "original_retention-005",
+      "group": "original_retention",
+      "prompt": "The opposite of hot is",
+      "fact": null,
+      "expected": "cold"
+    }
+  ],
+  "development": [
+    {
+      "id": "development-enroll-000",
+      "group": "enroll",
+      "prompt": "The capital of Merovia is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-001",
+      "group": "train",
+      "prompt": "Merovia's capital is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-002",
+      "group": "train",
+      "prompt": "For Merovia, the capital is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-003",
+      "group": "validation",
+      "prompt": "In Merovia, the capital is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-004",
+      "group": "validation",
+      "prompt": "The capital associated with Merovia is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "development-unknown-005",
+      "group": "unknown",
+      "prompt": "In Meroviix, the capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "development-enroll-006",
+      "group": "enroll",
+      "prompt": "The currency of Merovia is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-007",
+      "group": "train",
+      "prompt": "Merovia's currency is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-008",
+      "group": "train",
+      "prompt": "For Merovia, the currency is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-009",
+      "group": "validation",
+      "prompt": "In Merovia, the currency is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-010",
+      "group": "validation",
+      "prompt": "The currency associated with Merovia is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "development-unknown-011",
+      "group": "unknown",
+      "prompt": "In Meroviix, the currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "development-enroll-012",
+      "group": "enroll",
+      "prompt": "The language of Merovia is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-013",
+      "group": "train",
+      "prompt": "Merovia's language is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-014",
+      "group": "train",
+      "prompt": "For Merovia, the language is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-015",
+      "group": "validation",
+      "prompt": "In Merovia, the language is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-016",
+      "group": "validation",
+      "prompt": "The language associated with Merovia is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "development-unknown-017",
+      "group": "unknown",
+      "prompt": "In Meroviix, the language is",
+      "label": null,
+      "relation": "language"
+    },
+    {
+      "id": "development-enroll-018",
+      "group": "enroll",
+      "prompt": "The capital of Tarskeld is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-019",
+      "group": "train",
+      "prompt": "Tarskeld's capital is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-020",
+      "group": "train",
+      "prompt": "For Tarskeld, the capital is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-021",
+      "group": "validation",
+      "prompt": "In Tarskeld, the capital is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-022",
+      "group": "validation",
+      "prompt": "The capital associated with Tarskeld is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "development-unknown-023",
+      "group": "unknown",
+      "prompt": "In Tarskelix, the capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "development-enroll-024",
+      "group": "enroll",
+      "prompt": "The currency of Tarskeld is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-025",
+      "group": "train",
+      "prompt": "Tarskeld's currency is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-026",
+      "group": "train",
+      "prompt": "For Tarskeld, the currency is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-027",
+      "group": "validation",
+      "prompt": "In Tarskeld, the currency is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-028",
+      "group": "validation",
+      "prompt": "The currency associated with Tarskeld is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "development-unknown-029",
+      "group": "unknown",
+      "prompt": "In Tarskelix, the currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "development-enroll-030",
+      "group": "enroll",
+      "prompt": "The language of Tarskeld is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-031",
+      "group": "train",
+      "prompt": "Tarskeld's language is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-032",
+      "group": "train",
+      "prompt": "For Tarskeld, the language is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-033",
+      "group": "validation",
+      "prompt": "In Tarskeld, the language is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-034",
+      "group": "validation",
+      "prompt": "The language associated with Tarskeld is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "development-unknown-035",
+      "group": "unknown",
+      "prompt": "In Tarskelix, the language is",
+      "label": null,
+      "relation": "language"
+    },
+    {
+      "id": "development-enroll-036",
+      "group": "enroll",
+      "prompt": "The capital of Pelvoria is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-037",
+      "group": "train",
+      "prompt": "Pelvoria's capital is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-038",
+      "group": "train",
+      "prompt": "For Pelvoria, the capital is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-039",
+      "group": "validation",
+      "prompt": "In Pelvoria, the capital is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-040",
+      "group": "validation",
+      "prompt": "The capital associated with Pelvoria is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "development-unknown-041",
+      "group": "unknown",
+      "prompt": "In Pelvoriix, the capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "development-enroll-042",
+      "group": "enroll",
+      "prompt": "The currency of Pelvoria is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-043",
+      "group": "train",
+      "prompt": "Pelvoria's currency is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-044",
+      "group": "train",
+      "prompt": "For Pelvoria, the currency is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-045",
+      "group": "validation",
+      "prompt": "In Pelvoria, the currency is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-046",
+      "group": "validation",
+      "prompt": "The currency associated with Pelvoria is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "development-unknown-047",
+      "group": "unknown",
+      "prompt": "In Pelvoriix, the currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "development-enroll-048",
+      "group": "enroll",
+      "prompt": "The language of Pelvoria is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-049",
+      "group": "train",
+      "prompt": "Pelvoria's language is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-050",
+      "group": "train",
+      "prompt": "For Pelvoria, the language is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-051",
+      "group": "validation",
+      "prompt": "In Pelvoria, the language is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-052",
+      "group": "validation",
+      "prompt": "The language associated with Pelvoria is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "development-unknown-053",
+      "group": "unknown",
+      "prompt": "In Pelvoriix, the language is",
+      "label": null,
+      "relation": "language"
+    },
+    {
+      "id": "development-enroll-054",
+      "group": "enroll",
+      "prompt": "The capital of Nuskara is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-055",
+      "group": "train",
+      "prompt": "Nuskara's capital is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "development-train-056",
+      "group": "train",
+      "prompt": "For Nuskara, the capital is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-057",
+      "group": "validation",
+      "prompt": "In Nuskara, the capital is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "development-validation-058",
+      "group": "validation",
+      "prompt": "The capital associated with Nuskara is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "development-unknown-059",
+      "group": "unknown",
+      "prompt": "In Nuskarix, the capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "development-enroll-060",
+      "group": "enroll",
+      "prompt": "The currency of Nuskara is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-061",
+      "group": "train",
+      "prompt": "Nuskara's currency is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "development-train-062",
+      "group": "train",
+      "prompt": "For Nuskara, the currency is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-063",
+      "group": "validation",
+      "prompt": "In Nuskara, the currency is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "development-validation-064",
+      "group": "validation",
+      "prompt": "The currency associated with Nuskara is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "development-unknown-065",
+      "group": "unknown",
+      "prompt": "In Nuskarix, the currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "development-enroll-066",
+      "group": "enroll",
+      "prompt": "The language of Nuskara is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-067",
+      "group": "train",
+      "prompt": "Nuskara's language is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "development-train-068",
+      "group": "train",
+      "prompt": "For Nuskara, the language is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-069",
+      "group": "validation",
+      "prompt": "In Nuskara, the language is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "development-validation-070",
+      "group": "validation",
+      "prompt": "The language associated with Nuskara is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "development-unknown-071",
+      "group": "unknown",
+      "prompt": "In Nuskarix, the language is",
+      "label": null,
+      "relation": "language"
+    }
+  ],
+  "evaluation": [
+    {
+      "id": "evaluation-enroll-000",
+      "group": "enroll",
+      "prompt": "The capital of Quenvar is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-001",
+      "group": "test",
+      "prompt": "With regard to Quenvar, its capital is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-002",
+      "group": "test",
+      "prompt": "If one asks about the capital of Quenvar, the answer is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-003",
+      "group": "test",
+      "prompt": "Looking up Quenvar's capital, one finds",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-004",
+      "group": "test",
+      "prompt": "The recorded capital for Quenvar is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-005",
+      "group": "alias",
+      "prompt": "Que-district denotes Quenvar in this register. The capital of Que-district is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-006",
+      "group": "alias",
+      "prompt": "The place called Que-district has the full name Quenvar. Its capital is",
+      "label": 0,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-unknown-007",
+      "group": "unknown",
+      "prompt": "With regard to Quenvaeth, its capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-enroll-008",
+      "group": "enroll",
+      "prompt": "The currency of Quenvar is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-009",
+      "group": "test",
+      "prompt": "With regard to Quenvar, its currency is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-010",
+      "group": "test",
+      "prompt": "If one asks about the currency of Quenvar, the answer is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-011",
+      "group": "test",
+      "prompt": "Looking up Quenvar's currency, one finds",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-012",
+      "group": "test",
+      "prompt": "The recorded currency for Quenvar is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-013",
+      "group": "alias",
+      "prompt": "Que-district denotes Quenvar in this register. The currency of Que-district is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-014",
+      "group": "alias",
+      "prompt": "The place called Que-district has the full name Quenvar. Its currency is",
+      "label": 1,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-unknown-015",
+      "group": "unknown",
+      "prompt": "With regard to Quenvaeth, its currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-enroll-016",
+      "group": "enroll",
+      "prompt": "The language of Quenvar is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-017",
+      "group": "test",
+      "prompt": "With regard to Quenvar, its language is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-018",
+      "group": "test",
+      "prompt": "If one asks about the language of Quenvar, the answer is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-019",
+      "group": "test",
+      "prompt": "Looking up Quenvar's language, one finds",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-020",
+      "group": "test",
+      "prompt": "The recorded language for Quenvar is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-021",
+      "group": "alias",
+      "prompt": "Que-district denotes Quenvar in this register. The language of Que-district is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-022",
+      "group": "alias",
+      "prompt": "The place called Que-district has the full name Quenvar. Its language is",
+      "label": 2,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-unknown-023",
+      "group": "unknown",
+      "prompt": "With regard to Quenvaeth, its language is",
+      "label": null,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-enroll-024",
+      "group": "enroll",
+      "prompt": "The capital of Drelmora is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-025",
+      "group": "test",
+      "prompt": "With regard to Drelmora, its capital is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-026",
+      "group": "test",
+      "prompt": "If one asks about the capital of Drelmora, the answer is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-027",
+      "group": "test",
+      "prompt": "Looking up Drelmora's capital, one finds",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-028",
+      "group": "test",
+      "prompt": "The recorded capital for Drelmora is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-029",
+      "group": "alias",
+      "prompt": "Dre-district denotes Drelmora in this register. The capital of Dre-district is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-030",
+      "group": "alias",
+      "prompt": "The place called Dre-district has the full name Drelmora. Its capital is",
+      "label": 3,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-unknown-031",
+      "group": "unknown",
+      "prompt": "With regard to Drelmoreth, its capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-enroll-032",
+      "group": "enroll",
+      "prompt": "The currency of Drelmora is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-033",
+      "group": "test",
+      "prompt": "With regard to Drelmora, its currency is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-034",
+      "group": "test",
+      "prompt": "If one asks about the currency of Drelmora, the answer is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-035",
+      "group": "test",
+      "prompt": "Looking up Drelmora's currency, one finds",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-036",
+      "group": "test",
+      "prompt": "The recorded currency for Drelmora is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-037",
+      "group": "alias",
+      "prompt": "Dre-district denotes Drelmora in this register. The currency of Dre-district is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-038",
+      "group": "alias",
+      "prompt": "The place called Dre-district has the full name Drelmora. Its currency is",
+      "label": 4,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-unknown-039",
+      "group": "unknown",
+      "prompt": "With regard to Drelmoreth, its currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-enroll-040",
+      "group": "enroll",
+      "prompt": "The language of Drelmora is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-041",
+      "group": "test",
+      "prompt": "With regard to Drelmora, its language is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-042",
+      "group": "test",
+      "prompt": "If one asks about the language of Drelmora, the answer is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-043",
+      "group": "test",
+      "prompt": "Looking up Drelmora's language, one finds",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-044",
+      "group": "test",
+      "prompt": "The recorded language for Drelmora is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-045",
+      "group": "alias",
+      "prompt": "Dre-district denotes Drelmora in this register. The language of Dre-district is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-046",
+      "group": "alias",
+      "prompt": "The place called Dre-district has the full name Drelmora. Its language is",
+      "label": 5,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-unknown-047",
+      "group": "unknown",
+      "prompt": "With regard to Drelmoreth, its language is",
+      "label": null,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-enroll-048",
+      "group": "enroll",
+      "prompt": "The capital of Surneth is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-049",
+      "group": "test",
+      "prompt": "With regard to Surneth, its capital is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-050",
+      "group": "test",
+      "prompt": "If one asks about the capital of Surneth, the answer is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-051",
+      "group": "test",
+      "prompt": "Looking up Surneth's capital, one finds",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-052",
+      "group": "test",
+      "prompt": "The recorded capital for Surneth is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-053",
+      "group": "alias",
+      "prompt": "Sur-district denotes Surneth in this register. The capital of Sur-district is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-054",
+      "group": "alias",
+      "prompt": "The place called Sur-district has the full name Surneth. Its capital is",
+      "label": 6,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-unknown-055",
+      "group": "unknown",
+      "prompt": "With regard to Surneteth, its capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-enroll-056",
+      "group": "enroll",
+      "prompt": "The currency of Surneth is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-057",
+      "group": "test",
+      "prompt": "With regard to Surneth, its currency is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-058",
+      "group": "test",
+      "prompt": "If one asks about the currency of Surneth, the answer is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-059",
+      "group": "test",
+      "prompt": "Looking up Surneth's currency, one finds",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-060",
+      "group": "test",
+      "prompt": "The recorded currency for Surneth is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-061",
+      "group": "alias",
+      "prompt": "Sur-district denotes Surneth in this register. The currency of Sur-district is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-062",
+      "group": "alias",
+      "prompt": "The place called Sur-district has the full name Surneth. Its currency is",
+      "label": 7,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-unknown-063",
+      "group": "unknown",
+      "prompt": "With regard to Surneteth, its currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-enroll-064",
+      "group": "enroll",
+      "prompt": "The language of Surneth is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-065",
+      "group": "test",
+      "prompt": "With regard to Surneth, its language is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-066",
+      "group": "test",
+      "prompt": "If one asks about the language of Surneth, the answer is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-067",
+      "group": "test",
+      "prompt": "Looking up Surneth's language, one finds",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-068",
+      "group": "test",
+      "prompt": "The recorded language for Surneth is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-069",
+      "group": "alias",
+      "prompt": "Sur-district denotes Surneth in this register. The language of Sur-district is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-070",
+      "group": "alias",
+      "prompt": "The place called Sur-district has the full name Surneth. Its language is",
+      "label": 8,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-unknown-071",
+      "group": "unknown",
+      "prompt": "With regard to Surneteth, its language is",
+      "label": null,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-enroll-072",
+      "group": "enroll",
+      "prompt": "The capital of Velkora is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-073",
+      "group": "test",
+      "prompt": "With regard to Velkora, its capital is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-074",
+      "group": "test",
+      "prompt": "If one asks about the capital of Velkora, the answer is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-075",
+      "group": "test",
+      "prompt": "Looking up Velkora's capital, one finds",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-test-076",
+      "group": "test",
+      "prompt": "The recorded capital for Velkora is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-077",
+      "group": "alias",
+      "prompt": "Vel-district denotes Velkora in this register. The capital of Vel-district is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-alias-078",
+      "group": "alias",
+      "prompt": "The place called Vel-district has the full name Velkora. Its capital is",
+      "label": 9,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-unknown-079",
+      "group": "unknown",
+      "prompt": "With regard to Velkoreth, its capital is",
+      "label": null,
+      "relation": "capital"
+    },
+    {
+      "id": "evaluation-enroll-080",
+      "group": "enroll",
+      "prompt": "The currency of Velkora is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-081",
+      "group": "test",
+      "prompt": "With regard to Velkora, its currency is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-082",
+      "group": "test",
+      "prompt": "If one asks about the currency of Velkora, the answer is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-083",
+      "group": "test",
+      "prompt": "Looking up Velkora's currency, one finds",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-test-084",
+      "group": "test",
+      "prompt": "The recorded currency for Velkora is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-085",
+      "group": "alias",
+      "prompt": "Vel-district denotes Velkora in this register. The currency of Vel-district is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-alias-086",
+      "group": "alias",
+      "prompt": "The place called Vel-district has the full name Velkora. Its currency is",
+      "label": 10,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-unknown-087",
+      "group": "unknown",
+      "prompt": "With regard to Velkoreth, its currency is",
+      "label": null,
+      "relation": "currency"
+    },
+    {
+      "id": "evaluation-enroll-088",
+      "group": "enroll",
+      "prompt": "The language of Velkora is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-089",
+      "group": "test",
+      "prompt": "With regard to Velkora, its language is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-090",
+      "group": "test",
+      "prompt": "If one asks about the language of Velkora, the answer is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-091",
+      "group": "test",
+      "prompt": "Looking up Velkora's language, one finds",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-test-092",
+      "group": "test",
+      "prompt": "The recorded language for Velkora is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-093",
+      "group": "alias",
+      "prompt": "Vel-district denotes Velkora in this register. The language of Vel-district is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-alias-094",
+      "group": "alias",
+      "prompt": "The place called Vel-district has the full name Velkora. Its language is",
+      "label": 11,
+      "relation": "language"
+    },
+    {
+      "id": "evaluation-unknown-095",
+      "group": "unknown",
+      "prompt": "With regard to Velkoreth, its language is",
+      "label": null,
+      "relation": "language"
+    }
+  ],
+  "original_enrollment": [
+    [
+      "Zelandia",
+      "capital"
+    ],
+    [
+      "Zelandia",
+      "currency"
+    ],
+    [
+      "Zelandia",
+      "language"
+    ],
+    [
+      "Qtaria",
+      "capital"
+    ],
+    [
+      "Qtaria",
+      "currency"
+    ],
+    [
+      "Qtaria",
+      "language"
+    ],
+    [
+      "Vornholt",
+      "capital"
+    ],
+    [
+      "Vornholt",
+      "currency"
+    ],
+    [
+      "Vornholt",
+      "language"
+    ],
+    [
+      "Zelania",
+      "capital"
+    ],
+    [
+      "Zelania",
+      "currency"
+    ],
+    [
+      "Zelania",
+      "language"
+    ],
+    [
+      "Zerlandia",
+      "capital"
+    ],
+    [
+      "Zerlandia",
+      "currency"
+    ],
+    [
+      "Zerlandia",
+      "language"
+    ],
+    [
+      "Zelandria",
+      "capital"
+    ],
+    [
+      "Zelandria",
+      "currency"
+    ],
+    [
+      "Zelandria",
+      "language"
+    ],
+    [
+      "Qtoria",
+      "capital"
+    ],
+    [
+      "Qtoria",
+      "currency"
+    ],
+    [
+      "Qtoria",
+      "language"
+    ],
+    [
+      "Qteria",
+      "capital"
+    ],
+    [
+      "Qteria",
+      "currency"
+    ],
+    [
+      "Qteria",
+      "language"
+    ],
+    [
+      "Qtarnia",
+      "capital"
+    ],
+    [
+      "Qtarnia",
+      "currency"
+    ],
+    [
+      "Qtarnia",
+      "language"
+    ],
+    [
+      "Vornhult",
+      "capital"
+    ],
+    [
+      "Vornhult",
+      "currency"
+    ],
+    [
+      "Vornhult",
+      "language"
+    ],
+    [
+      "Vornhold",
+      "capital"
+    ],
+    [
+      "Vornhold",
+      "currency"
+    ],
+    [
+      "Vornhold",
+      "language"
+    ],
+    [
+      "Vornheim",
+      "capital"
+    ],
+    [
+      "Vornheim",
+      "currency"
+    ],
+    [
+      "Vornheim",
+      "language"
+    ]
+  ]
+}

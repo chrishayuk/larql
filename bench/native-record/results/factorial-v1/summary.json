@@ -1,0 +1,554 @@
+{
+  "status": "complete",
+  "summary": {
+    "clean": {
+      "installation": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 0,
+        "agreement": 48,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "alias": {
+        "n": 24,
+        "hits": 0,
+        "agreement": 24,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 60,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      }
+    },
+    "original/written": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "agreement": 1,
+        "mean_kl": 3.768867365541274,
+        "max_tv": 0.9999522828617492
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 18,
+        "agreement": 19,
+        "mean_kl": 2.1558920961562826,
+        "max_tv": 0.9999077436782731
+      },
+      "alias": {
+        "n": 24,
+        "hits": 9,
+        "agreement": 6,
+        "mean_kl": 2.5833765941271696,
+        "max_tv": 0.998238666663403
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 3,
+        "mean_kl": 1.9381193121337599,
+        "max_tv": 0.9995525941769696
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 36,
+        "mean_kl": 1.75120031359532,
+        "max_tv": 0.9989347728189488
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 11,
+        "mean_kl": 0.06063999586514549,
+        "max_tv": 0.39177956107509604
+      }
+    },
+    "original/replaced": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "agreement": 1,
+        "mean_kl": 3.7477474270995637,
+        "max_tv": 0.9999576236853079
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 18,
+        "agreement": 19,
+        "mean_kl": 2.164501290680916,
+        "max_tv": 0.9999150992324731
+      },
+      "alias": {
+        "n": 24,
+        "hits": 10,
+        "agreement": 6,
+        "mean_kl": 2.573096046306118,
+        "max_tv": 0.9982379992986851
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 3,
+        "mean_kl": 1.955581883885267,
+        "max_tv": 0.9996050033289602
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 36,
+        "mean_kl": 1.7399666338466666,
+        "max_tv": 0.9989391193719607
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 11,
+        "mean_kl": 0.05929338158731026,
+        "max_tv": 0.37786876316494084
+      }
+    },
+    "original/removed": {
+      "installation": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 0,
+        "agreement": 48,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "alias": {
+        "n": 24,
+        "hits": 0,
+        "agreement": 24,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 60,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      }
+    },
+    "original/restored": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "agreement": 1,
+        "mean_kl": 3.768867365541274,
+        "max_tv": 0.9999522828617492
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 18,
+        "agreement": 19,
+        "mean_kl": 2.1558920961562826,
+        "max_tv": 0.9999077436782731
+      },
+      "alias": {
+        "n": 24,
+        "hits": 9,
+        "agreement": 6,
+        "mean_kl": 2.5833765941271696,
+        "max_tv": 0.998238666663403
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 3,
+        "mean_kl": 1.9381193121337599,
+        "max_tv": 0.9995525941769696
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 36,
+        "mean_kl": 1.75120031359532,
+        "max_tv": 0.9989347728189488
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 11,
+        "mean_kl": 0.06063999586514549,
+        "max_tv": 0.39177956107509604
+      }
+    },
+    "explicit_negatives/written": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "agreement": 1,
+        "mean_kl": 3.5296546013926284,
+        "max_tv": 0.9999387875461562
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 15,
+        "agreement": 27,
+        "mean_kl": 1.416505726174312,
+        "max_tv": 0.9998965731039178
+      },
+      "alias": {
+        "n": 24,
+        "hits": 10,
+        "agreement": 8,
+        "mean_kl": 1.7960825909725011,
+        "max_tv": 0.9941714908847449
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 6,
+        "mean_kl": 1.4302183992691695,
+        "max_tv": 0.9987814849624341
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 36,
+        "mean_kl": 1.233391394922849,
+        "max_tv": 0.9986065832681392
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 11,
+        "mean_kl": 0.029236752791225853,
+        "max_tv": 0.23637361024413092
+      }
+    },
+    "explicit_negatives/replaced": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "agreement": 1,
+        "mean_kl": 3.508604910479129,
+        "max_tv": 0.9999387275209393
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 15,
+        "agreement": 27,
+        "mean_kl": 1.4231645715254784,
+        "max_tv": 0.9998915489370772
+      },
+      "alias": {
+        "n": 24,
+        "hits": 10,
+        "agreement": 8,
+        "mean_kl": 1.7985294532196991,
+        "max_tv": 0.9936182043737728
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 6,
+        "mean_kl": 1.4359707719057937,
+        "max_tv": 0.9987837189532838
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 36,
+        "mean_kl": 1.227854811914572,
+        "max_tv": 0.9984551750686262
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 10,
+        "mean_kl": 0.03323590734194803,
+        "max_tv": 0.2653886837246065
+      }
+    },
+    "explicit_negatives/removed": {
+      "installation": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 0,
+        "agreement": 48,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "alias": {
+        "n": 24,
+        "hits": 0,
+        "agreement": 24,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 60,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 12,
+        "mean_kl": 0.0,
+        "max_tv": 0.0
+      }
+    },
+    "explicit_negatives/restored": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "agreement": 1,
+        "mean_kl": 3.5296546013926284,
+        "max_tv": 0.9999387875461562
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 15,
+        "agreement": 27,
+        "mean_kl": 1.416505726174312,
+        "max_tv": 0.9998965731039178
+      },
+      "alias": {
+        "n": 24,
+        "hits": 10,
+        "agreement": 8,
+        "mean_kl": 1.7960825909725011,
+        "max_tv": 0.9941714908847449
+      },
+      "similar_name": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 6,
+        "mean_kl": 1.4302183992691695,
+        "max_tv": 0.9987814849624341
+      },
+      "other_entity": {
+        "n": 60,
+        "hits": 0,
+        "agreement": 36,
+        "mean_kl": 1.233391394922849,
+        "max_tv": 0.9986065832681392
+      },
+      "unrelated": {
+        "n": 12,
+        "hits": 0,
+        "agreement": 11,
+        "mean_kl": 0.029236752791225853,
+        "max_tv": 0.23637361024413092
+      }
+    }
+  },
+  "gate": {
+    "method_pass": {
+      "original": false,
+      "explicit_negatives": false
+    },
+    "checks": {
+      "original/written/installation": false,
+      "original/written/sentence": false,
+      "original/written/alias": false,
+      "original/written/binding_0": false,
+      "original/written/binding_1": false,
+      "original/written/binding_2": false,
+      "original/written/binding_3": true,
+      "original/written/binding_4": false,
+      "original/written/binding_5": false,
+      "original/written/binding_6": false,
+      "original/written/binding_7": true,
+      "original/written/binding_8": true,
+      "original/written/binding_9": false,
+      "original/written/binding_10": false,
+      "original/written/binding_11": false,
+      "original/written/similar_name": false,
+      "original/written/other_entity": false,
+      "original/written/unrelated": false,
+      "original/replaced/installation": false,
+      "original/replaced/sentence": false,
+      "original/replaced/alias": false,
+      "original/replaced/binding_0": false,
+      "original/replaced/binding_1": false,
+      "original/replaced/binding_2": false,
+      "original/replaced/binding_3": true,
+      "original/replaced/binding_4": false,
+      "original/replaced/binding_5": false,
+      "original/replaced/binding_6": false,
+      "original/replaced/binding_7": true,
+      "original/replaced/binding_8": true,
+      "original/replaced/binding_9": false,
+      "original/replaced/binding_10": false,
+      "original/replaced/binding_11": false,
+      "original/replaced/similar_name": false,
+      "original/replaced/other_entity": false,
+      "original/replaced/unrelated": false,
+      "original/other_11_canonical_preserved": false,
+      "original/removal_exact": true,
+      "original/restoration_exact": true,
+      "explicit_negatives/written/installation": false,
+      "explicit_negatives/written/sentence": false,
+      "explicit_negatives/written/alias": false,
+      "explicit_negatives/written/binding_0": false,
+      "explicit_negatives/written/binding_1": false,
+      "explicit_negatives/written/binding_2": false,
+      "explicit_negatives/written/binding_3": true,
+      "explicit_negatives/written/binding_4": true,
+      "explicit_negatives/written/binding_5": false,
+      "explicit_negatives/written/binding_6": false,
+      "explicit_negatives/written/binding_7": false,
+      "explicit_negatives/written/binding_8": false,
+      "explicit_negatives/written/binding_9": false,
+      "explicit_negatives/written/binding_10": false,
+      "explicit_negatives/written/binding_11": false,
+      "explicit_negatives/written/similar_name": false,
+      "explicit_negatives/written/other_entity": false,
+      "explicit_negatives/written/unrelated": false,
+      "explicit_negatives/replaced/installation": false,
+      "explicit_negatives/replaced/sentence": false,
+      "explicit_negatives/replaced/alias": false,
+      "explicit_negatives/replaced/binding_0": false,
+      "explicit_negatives/replaced/binding_1": false,
+      "explicit_negatives/replaced/binding_2": false,
+      "explicit_negatives/replaced/binding_3": true,
+      "explicit_negatives/replaced/binding_4": true,
+      "explicit_negatives/replaced/binding_5": false,
+      "explicit_negatives/replaced/binding_6": false,
+      "explicit_negatives/replaced/binding_7": false,
+      "explicit_negatives/replaced/binding_8": false,
+      "explicit_negatives/replaced/binding_9": false,
+      "explicit_negatives/replaced/binding_10": false,
+      "explicit_negatives/replaced/binding_11": false,
+      "explicit_negatives/replaced/similar_name": false,
+      "explicit_negatives/replaced/other_entity": false,
+      "explicit_negatives/replaced/unrelated": false,
+      "explicit_negatives/other_11_canonical_preserved": false,
+      "explicit_negatives/removal_exact": true,
+      "explicit_negatives/restoration_exact": true
+    },
+    "failed": [
+      "original/written/installation",
+      "original/written/sentence",
+      "original/written/alias",
+      "original/written/binding_0",
+      "original/written/binding_1",
+      "original/written/binding_2",
+      "original/written/binding_4",
+      "original/written/binding_5",
+      "original/written/binding_6",
+      "original/written/binding_9",
+      "original/written/binding_10",
+      "original/written/binding_11",
+      "original/written/similar_name",
+      "original/written/other_entity",
+      "original/written/unrelated",
+      "original/replaced/installation",
+      "original/replaced/sentence",
+      "original/replaced/alias",
+      "original/replaced/binding_0",
+      "original/replaced/binding_1",
+      "original/replaced/binding_2",
+      "original/replaced/binding_4",
+      "original/replaced/binding_5",
+      "original/replaced/binding_6",
+      "original/replaced/binding_9",
+      "original/replaced/binding_10",
+      "original/replaced/binding_11",
+      "original/replaced/similar_name",
+      "original/replaced/other_entity",
+      "original/replaced/unrelated",
+      "original/other_11_canonical_preserved",
+      "explicit_negatives/written/installation",
+      "explicit_negatives/written/sentence",
+      "explicit_negatives/written/alias",
+      "explicit_negatives/written/binding_0",
+      "explicit_negatives/written/binding_1",
+      "explicit_negatives/written/binding_2",
+      "explicit_negatives/written/binding_5",
+      "explicit_negatives/written/binding_6",
+      "explicit_negatives/written/binding_7",
+      "explicit_negatives/written/binding_8",
+      "explicit_negatives/written/binding_9",
+      "explicit_negatives/written/binding_10",
+      "explicit_negatives/written/binding_11",
+      "explicit_negatives/written/similar_name",
+      "explicit_negatives/written/other_entity",
+      "explicit_negatives/written/unrelated",
+      "explicit_negatives/replaced/installation",
+      "explicit_negatives/replaced/sentence",
+      "explicit_negatives/replaced/alias",
+      "explicit_negatives/replaced/binding_0",
+      "explicit_negatives/replaced/binding_1",
+      "explicit_negatives/replaced/binding_2",
+      "explicit_negatives/replaced/binding_5",
+      "explicit_negatives/replaced/binding_6",
+      "explicit_negatives/replaced/binding_7",
+      "explicit_negatives/replaced/binding_8",
+      "explicit_negatives/replaced/binding_9",
+      "explicit_negatives/replaced/binding_10",
+      "explicit_negatives/replaced/binding_11",
+      "explicit_negatives/replaced/similar_name",
+      "explicit_negatives/replaced/other_entity",
+      "explicit_negatives/replaced/unrelated",
+      "explicit_negatives/other_11_canonical_preserved"
+    ]
+  },
+  "addresses_sha256": "99cb79625d857270144a2cce2610bebce243a541f8ffa5719d55c2eddcdad8f8"
+}

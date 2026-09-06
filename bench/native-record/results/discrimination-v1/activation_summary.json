@@ -1,0 +1,194 @@
+[
+  {
+    "entity": "Zelandia",
+    "relation": "capital",
+    "metric": "gate",
+    "positive_n": 7,
+    "negative_n": 29,
+    "positive_range": [
+      147.0,
+      362.0
+    ],
+    "negative_range": [
+      -18.25,
+      344.0
+    ],
+    "auc": 0.8916256157635468
+  },
+  {
+    "entity": "Zelandia",
+    "relation": "capital",
+    "metric": "up",
+    "positive_n": 7,
+    "negative_n": 29,
+    "positive_range": [
+      5.125,
+      12.5625
+    ],
+    "negative_range": [
+      -0.6328125,
+      11.9375
+    ],
+    "auc": 0.8916256157635468
+  },
+  {
+    "entity": "Zelandia",
+    "relation": "capital",
+    "metric": "activation",
+    "positive_n": 7,
+    "negative_n": 29,
+    "positive_range": [
+      752.0,
+      4544.0
+    ],
+    "negative_range": [
+      0.0,
+      4096.0
+    ],
+    "auc": 0.8916256157635468
+  },
+  {
+    "entity": "Zelandia",
+    "relation": "capital",
+    "metric": "contribution_norm",
+    "positive_n": 7,
+    "negative_n": 29,
+    "positive_range": [
+      19.298397064208984,
+      116.61158752441406
+    ],
+    "negative_range": [
+      0.0,
+      105.11466979980469
+    ],
+    "auc": 0.8916256157635468
+  },
+  {
+    "entity": "Qtaria",
+    "relation": "currency",
+    "metric": "gate",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      197.0,
+      296.0
+    ],
+    "negative_range": [
+      0.27734375,
+      276.0
+    ],
+    "auc": 0.9314285714285714
+  },
+  {
+    "entity": "Qtaria",
+    "relation": "currency",
+    "metric": "up",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      6.84375,
+      10.25
+    ],
+    "negative_range": [
+      0.01300048828125,
+      9.5625
+    ],
+    "auc": 0.9314285714285714
+  },
+  {
+    "entity": "Qtaria",
+    "relation": "currency",
+    "metric": "activation",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      1352.0,
+      3040.0
+    ],
+    "negative_range": [
+      0.002197265625,
+      2640.0
+    ],
+    "auc": 0.9314285714285714
+  },
+  {
+    "entity": "Qtaria",
+    "relation": "currency",
+    "metric": "contribution_norm",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      34.69499969482422,
+      78.01242065429688
+    ],
+    "negative_range": [
+      5.638618677039631e-05,
+      67.74762725830078
+    ],
+    "auc": 0.9314285714285714
+  },
+  {
+    "entity": "Vornholt",
+    "relation": "language",
+    "metric": "gate",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      119.0,
+      352.0
+    ],
+    "negative_range": [
+      6.71875,
+      298.0
+    ],
+    "auc": 0.8342857142857143
+  },
+  {
+    "entity": "Vornholt",
+    "relation": "language",
+    "metric": "up",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      4.125,
+      12.25
+    ],
+    "negative_range": [
+      0.2353515625,
+      10.375
+    ],
+    "auc": 0.8342857142857143
+  },
+  {
+    "entity": "Vornholt",
+    "relation": "language",
+    "metric": "activation",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      490.0,
+      4320.0
+    ],
+    "negative_range": [
+      1.578125,
+      3088.0
+    ],
+    "auc": 0.8342857142857143
+  },
+  {
+    "entity": "Vornholt",
+    "relation": "language",
+    "metric": "contribution_norm",
+    "positive_n": 7,
+    "negative_n": 25,
+    "positive_range": [
+      12.574328422546387,
+      110.85939025878906
+    ],
+    "negative_range": [
+      0.04049767926335335,
+      79.24393463134766
+    ],
+    "auc": 0.8342857142857143
+  }
+]

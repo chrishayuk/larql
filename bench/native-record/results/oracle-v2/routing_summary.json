@@ -1,0 +1,92 @@
+{
+  "actual": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "selected_value_hits": 11
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 18,
+      "selected_value_hits": 18
+    },
+    "alias": {
+      "n": 24,
+      "hits": 9,
+      "selected_value_hits": 9
+    }
+  },
+  "zero": {
+    "installation": {
+      "n": 12,
+      "hits": 0,
+      "selected_value_hits": 0
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 0,
+      "selected_value_hits": 0
+    },
+    "alias": {
+      "n": 24,
+      "hits": 0,
+      "selected_value_hits": 0
+    }
+  },
+  "oracle": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "selected_value_hits": 11
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 44,
+      "selected_value_hits": 44
+    },
+    "alias": {
+      "n": 24,
+      "hits": 24,
+      "selected_value_hits": 24
+    },
+    "recovery": {
+      "failed_before": 30,
+      "recovered": 26,
+      "successes_lost": 0
+    }
+  },
+  "wrong": {
+    "installation": {
+      "n": 12,
+      "hits": 0,
+      "selected_value_hits": 11
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 0,
+      "selected_value_hits": 43
+    },
+    "alias": {
+      "n": 24,
+      "hits": 0,
+      "selected_value_hits": 24
+    }
+  },
+  "wrong_matched": {
+    "installation": {
+      "n": 12,
+      "hits": 0,
+      "selected_value_hits": 12
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 0,
+      "selected_value_hits": 42
+    },
+    "alias": {
+      "n": 24,
+      "hits": 0,
+      "selected_value_hits": 24
+    }
+  }
+}

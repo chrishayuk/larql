@@ -1,0 +1,8 @@
+{
+  "status": "instrument_error_before_scoring",
+  "scored_rows": 0,
+  "error": "mlx.core.ArrayAt has no attribute set in installed MLX 0.30.1",
+  "correction": "Build a separate zeroed edited-feature tail and concatenate it with the unchanged native-feature prefix; inject the selected activation in that tail.",
+  "protocol_changed": false,
+  "successor_run": "oracle-v2"
+}

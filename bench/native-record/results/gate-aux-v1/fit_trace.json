@@ -1,0 +1,242 @@
+[
+  {
+    "bank": "observed_roster",
+    "strength": 0.0,
+    "step": 400,
+    "objective": 0.041965436190366745,
+    "train_loss": 0.04167496785521507,
+    "validation_loss": 0.2938261032104492,
+    "train_delivery": 111,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0,
+    "step": 800,
+    "objective": 0.04199272021651268,
+    "train_loss": 0.04171620309352875,
+    "validation_loss": 0.29244640469551086,
+    "train_delivery": 111,
+    "validation_delivery": 17
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0,
+    "step": 1200,
+    "objective": 0.04191416874527931,
+    "train_loss": 0.041670843958854675,
+    "validation_loss": 0.28912225365638733,
+    "train_delivery": 111,
+    "validation_delivery": 18
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0,
+    "step": 1600,
+    "objective": 0.04189552739262581,
+    "train_loss": 0.04167461767792702,
+    "validation_loss": 0.2883157730102539,
+    "train_delivery": 111,
+    "validation_delivery": 17
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0001,
+    "step": 400,
+    "objective": 0.00043601205106824636,
+    "train_loss": 0.00016550577129237354,
+    "validation_loss": 0.27397191524505615,
+    "train_delivery": 116,
+    "validation_delivery": 20
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0001,
+    "step": 800,
+    "objective": 0.00029309099772945046,
+    "train_loss": 6.509588729386451e-06,
+    "validation_loss": 0.2663269639015198,
+    "train_delivery": 116,
+    "validation_delivery": 20
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0001,
+    "step": 1200,
+    "objective": 0.0002565527684055269,
+    "train_loss": 8.915356374927796e-06,
+    "validation_loss": 0.2592675983905792,
+    "train_delivery": 116,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.0001,
+    "step": 1600,
+    "objective": 0.00023891098680905998,
+    "train_loss": 8.092461030173581e-06,
+    "validation_loss": 0.2591540217399597,
+    "train_delivery": 116,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.001,
+    "step": 400,
+    "objective": 0.000321319472277537,
+    "train_loss": 1.3251690688775852e-05,
+    "validation_loss": 0.27176687121391296,
+    "train_delivery": 116,
+    "validation_delivery": 20
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.001,
+    "step": 800,
+    "objective": 0.0002908474416472018,
+    "train_loss": 2.7929167117690668e-05,
+    "validation_loss": 0.26639384031295776,
+    "train_delivery": 116,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.001,
+    "step": 1200,
+    "objective": 0.00032544738496653736,
+    "train_loss": 3.2254836696665734e-05,
+    "validation_loss": 0.26105648279190063,
+    "train_delivery": 116,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.001,
+    "step": 1600,
+    "objective": 0.0002824336406774819,
+    "train_loss": 4.853760765399784e-05,
+    "validation_loss": 0.2629036605358124,
+    "train_delivery": 116,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.01,
+    "step": 400,
+    "objective": 0.0003485476481728256,
+    "train_loss": 2.706329178181477e-05,
+    "validation_loss": 0.26511383056640625,
+    "train_delivery": 116,
+    "validation_delivery": 21
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.01,
+    "step": 800,
+    "objective": 0.00043480872409418225,
+    "train_loss": 7.533672032877803e-05,
+    "validation_loss": 0.25809070467948914,
+    "train_delivery": 116,
+    "validation_delivery": 18
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.01,
+    "step": 1200,
+    "objective": 0.00028093362925574183,
+    "train_loss": 7.863226528570522e-06,
+    "validation_loss": 0.2514793872833252,
+    "train_delivery": 116,
+    "validation_delivery": 19
+  },
+  {
+    "bank": "observed_roster",
+    "strength": 0.01,
+    "step": 1600,
+    "objective": 0.0002675405703485012,
+    "train_loss": 9.25591211853316e-06,
+    "validation_loss": 0.25290727615356445,
+    "train_delivery": 116,
+    "validation_delivery": 17
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.0,
+    "step": 400,
+    "objective": 0.06691987067461014,
+    "train_loss": 0.06667277961969376,
+    "validation_loss": 0.2963135242462158,
+    "train_delivery": 108,
+    "validation_delivery": 28
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.0,
+    "step": 800,
+    "objective": 0.066886305809021,
+    "train_loss": 0.06667105108499527,
+    "validation_loss": 0.2920297086238861,
+    "train_delivery": 108,
+    "validation_delivery": 28
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.0,
+    "step": 1200,
+    "objective": 0.06685841828584671,
+    "train_loss": 0.0666683167219162,
+    "validation_loss": 0.2863779664039612,
+    "train_delivery": 108,
+    "validation_delivery": 29
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.0,
+    "step": 1600,
+    "objective": 0.0668603852391243,
+    "train_loss": 0.06667685508728027,
+    "validation_loss": 0.27974817156791687,
+    "train_delivery": 108,
+    "validation_delivery": 29
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.01,
+    "step": 400,
+    "objective": 0.000377628777641803,
+    "train_loss": 0.00010645891597960144,
+    "validation_loss": 0.2648575007915497,
+    "train_delivery": 116,
+    "validation_delivery": 27
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.01,
+    "step": 800,
+    "objective": 0.00029866115073673427,
+    "train_loss": 2.8874668714706786e-05,
+    "validation_loss": 0.26289597153663635,
+    "train_delivery": 116,
+    "validation_delivery": 28
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.01,
+    "step": 1200,
+    "objective": 0.0002679399913176894,
+    "train_loss": 4.0813672967487946e-05,
+    "validation_loss": 0.2540915012359619,
+    "train_delivery": 116,
+    "validation_delivery": 29
+  },
+  {
+    "bank": "fresh_roster",
+    "strength": 0.01,
+    "step": 1600,
+    "objective": 0.00025247732992284,
+    "train_loss": 3.2914660550886765e-05,
+    "validation_loss": 0.2484893649816513,
+    "train_delivery": 116,
+    "validation_delivery": 29
+  }
+]

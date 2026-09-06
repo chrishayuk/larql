@@ -1,0 +1,100 @@
+{
+  "frozen_configuration": {
+    "family": "S2 factorised relation -> entity",
+    "layer": 30,
+    "lam_rel": 0.01,
+    "lam_ent": 0.001,
+    "threshold": 0.94599,
+    "fitted_on": "discrimination-v1 development/train (burned)"
+  },
+  "roster_sha256": "bda1dfeff46d1efe824257e56a563f58f72aec99cd36fe56410a897481635040",
+  "gate": {
+    "coverage": 0.9,
+    "false_accept": 0.05
+  },
+  "strata": {
+    "structure_shift": {
+      "n": 24,
+      "binding_correct_unthresholded": 9,
+      "relation_correct_unthresholded": 21,
+      "entity_correct_unthresholded": 10,
+      "accepted": 0,
+      "accepted_and_correct": 0,
+      "score_max": 0.880598962713918,
+      "score_min": 0.4517711006618662,
+      "score_mean": 0.6763340663627958,
+      "score_median": 0.6600674450222546
+    },
+    "entity_shift": {
+      "n": 24,
+      "binding_correct_unthresholded": 13,
+      "relation_correct_unthresholded": 22,
+      "entity_correct_unthresholded": 13,
+      "accepted": 0,
+      "accepted_and_correct": 0,
+      "score_max": 0.9444956013046006,
+      "score_min": 0.65013764424714,
+      "score_mean": 0.7941353329574,
+      "score_median": 0.7874144656788249
+    },
+    "double_shift": {
+      "n": 24,
+      "binding_correct_unthresholded": 6,
+      "relation_correct_unthresholded": 23,
+      "entity_correct_unthresholded": 7,
+      "accepted": 0,
+      "accepted_and_correct": 0,
+      "score_max": 0.8647555029416341,
+      "score_min": 0.4639942280740105,
+      "score_mean": 0.6839148218161286,
+      "score_median": 0.6999173502235589
+    }
+  },
+  "negatives": {
+    "negative_uninstalled": {
+      "n": 8,
+      "false_accepts": 0,
+      "permitted": 0,
+      "score_max": 0.6616573481555986,
+      "score_min": 0.4914697214538401,
+      "score_mean": 0.5532322330069668,
+      "score_median": 0.5434494101841387
+    },
+    "negative_near_name": {
+      "n": 8,
+      "false_accepts": 0,
+      "permitted": 0,
+      "score_max": 0.9038938124206141,
+      "score_min": 0.6660616466473337,
+      "score_mean": 0.7698917106824552,
+      "score_median": 0.7722596400463531
+    },
+    "negative_wrong_relation": {
+      "n": 8,
+      "false_accepts": 0,
+      "permitted": 0,
+      "score_max": 0.6456049894691203,
+      "score_min": 0.5624131991977777,
+      "score_mean": 0.6191712076452376,
+      "score_median": 0.6247069316760756
+    },
+    "negative_unrelated": {
+      "n": 8,
+      "false_accepts": 0,
+      "permitted": 0,
+      "score_max": 0.4094524420895722,
+      "score_min": 0.13790290253168846,
+      "score_mean": 0.22124381821108796,
+      "score_median": 0.19872647154360396
+    }
+  },
+  "verdict": {
+    "accepted_and_correct": "0/72",
+    "required": ">=65/72",
+    "binding_correct_unthresholded": "28/72",
+    "coverage_pass": false,
+    "rejection_pass": true,
+    "GATE": "FAIL"
+  },
+  "report_sha256": "9e7db635d2ad5b6761b840ee1c722b4f37d278db51e8808e10ebfa9792e00e5a"
+}

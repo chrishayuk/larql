@@ -1,0 +1,109 @@
+{
+  "model": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/snapshots/093f9f388b31de276ce2de164bdc2081324b9767",
+  "source_hashes": {
+    "run_decomposition.py": "b13e4ae75a191a6da9b00ea8256d0c2216097d098a9e7f8b81bda5e47df864de",
+    "decomposition_runtime.py": "8035f776e0bcd52496821236aa5b66cc3ce35a10dd8d76c184a7795780ec6503",
+    "decomposition_analysis.py": "6cddeb224ebb4fab2b1b5021eaaf79507313d087f5226a6ee506f03371c912ed",
+    "binding_runtime.py": "5ac0fec53934702215ee2a34e28c9afa3d7609304a59b994aee37eb92790b49a",
+    "run_address.py": "c0b456a2d175f5336bdc8745e39a2f369605b3f3e130e55a9eb2be67b2146a89",
+    "DECOMPOSITION_PROTOCOL.md": "cb0835331b9eb5fee51bfbb002a896c0ef59c3adbf283be8e3ac1798077b404b"
+  },
+  "fixture_sha256": "cfca4dddc86aab29ab8dad309c1a4b2316441349d467ebef893c2256acd7d3cd",
+  "prior_metadata": {
+    "model": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/snapshots/093f9f388b31de276ce2de164bdc2081324b9767",
+    "baseline": {
+      "model": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/snapshots/093f9f388b31de276ce2de164bdc2081324b9767",
+      "baseline": {
+        "model_id": "google/gemma-3-4b-it",
+        "snapshot": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/snapshots/093f9f388b31de276ce2de164bdc2081324b9767",
+        "dtype": "bfloat16",
+        "source_commit": "3ee95817324e047b5f8f5b587746de2c92051f21",
+        "source_sha256": "17f4d48d85f1877f82a6bf085f6bbc67e766ff47ab51d67d3cc4705578d2891d",
+        "harness_sha256": "c0b456a2d175f5336bdc8745e39a2f369605b3f3e130e55a9eb2be67b2146a89",
+        "protocol_sha256": "790f0fe9e28720431268e39c1169731b14820b7130cb1b78ee161a798d25de2d",
+        "fixture_sha256": "1b9d478590aec34e17de6e3e32a21d3e5e797cfe6bffaeeb1820fd2c6c307a62",
+        "python": "3.12.2 (v3.12.2:6abddd9f6a, Feb  6 2024, 17:02:06) [Clang 13.0.0 (clang-1300.0.29.30)]",
+        "packages": {
+          "mlx": "0.30.1",
+          "numpy": "2.4.2",
+          "transformers": "5.5.0",
+          "huggingface-hub": "1.14.0"
+        },
+        "checkpoint_files": {
+          "added_tokens.json": {
+            "bytes": 35,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/e17bde03d42feda32d1abfca6d3b598b9a020df7"
+          },
+          "chat_template.json": {
+            "bytes": 1615,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/719b0cd0d7a373a400b0c119ee0e051f41ea88d9"
+          },
+          "config.json": {
+            "bytes": 855,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/fcdc8a6cd637c7ae460065204e7fd0d8c00a38fc"
+          },
+          "generation_config.json": {
+            "bytes": 215,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/37a4c871d263a349f50e4a313db3e72164950702"
+          },
+          "model-00001-of-00002.safetensors": {
+            "bytes": 4961251752,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/eb5fd5e97ddd07b56778733e9653c07312529cb00980a318fc3e1c4e3b5a8f1f"
+          },
+          "model-00002-of-00002.safetensors": {
+            "bytes": 3639026128,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/fdde0e5aa5ced0fa203b3d50f4ab78168b7e3a3e08c6349f5cc9326666e1bb13"
+          },
+          "model.safetensors.index.json": {
+            "bytes": 90558,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/4b95241f208f06d324d17c9675568ec58dafd9fb"
+          },
+          "preprocessor_config.json": {
+            "bytes": 570,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/b1e00fc184f61b698181821169c6374cd5813e5c"
+          },
+          "processor_config.json": {
+            "bytes": 70,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/453c7966d4b5d0b4a317c585989f64c58c2a6bf0"
+          },
+          "special_tokens_map.json": {
+            "bytes": 662,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/1a6193244714d3d78be48666cb02cdbfac62ad86"
+          },
+          "tokenizer.json": {
+            "bytes": 33384568,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/4667f2089529e8e7657cfb6d1c19910ae71ff5f28aa7ab2ff2763330affad795"
+          },
+          "tokenizer.model": {
+            "bytes": 4689074,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/1299c11d7cf632ef3b4e11937501358ada021bbdf7c47638d13c0ee982f2e79c"
+          },
+          "tokenizer_config.json": {
+            "bytes": 1156999,
+            "resolved": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/blobs/7bdd14f0eaec30c8d2c56bc9d543587676e19c0f"
+          }
+        },
+        "loader_commit": "7d8e376afefaaa07053eb921e265984713982496"
+      },
+      "source_hashes": {
+        "run_factorial.py": "4d54fc43ceea70be2a7fe670126caba867f2603bf904b9bbea364f12db88478f",
+        "binding_fixture.py": "fe08d14b4a014c48787d272a236f861f2695f345716d4e77c52a824cb0e7e7f9",
+        "binding_runtime.py": "5ac0fec53934702215ee2a34e28c9afa3d7609304a59b994aee37eb92790b49a",
+        "DISCRIMINATION_PROTOCOL.md": "f3358bc004cc23986a4eb363873385e56dc5359f618cf9b59f4621a74b4d3d3c"
+      },
+      "fixture_sha256": "4c0e545499130e194895dd8eba88dd9811a82abc9a1b72e5bbbc30de33d257cd"
+    },
+    "source_hashes": {
+      "run_oracle.py": "16b0acf9be62c1c7c638f847551d0eae5b0a5dec75a78e8058f439ac87b1e659",
+      "oracle_runtime.py": "9cb2a7a9220c6bd0d9b28b3ae9cb4ef200daa27dfcdec3934fc50e506f6f5035",
+      "binding_runtime.py": "5ac0fec53934702215ee2a34e28c9afa3d7609304a59b994aee37eb92790b49a",
+      "binding_fixture.py": "fe08d14b4a014c48787d272a236f861f2695f345716d4e77c52a824cb0e7e7f9",
+      "run_address.py": "c0b456a2d175f5336bdc8745e39a2f369605b3f3e130e55a9eb2be67b2146a89",
+      "ORACLE_PROTOCOL.md": "576f17eff35f202ede7e7ba8a634d2700837c0ceb9c3df2a231f782e41ea487b"
+    },
+    "fixture_sha256": "8529196efaa3a8e878a976f275ddb0b82cc35215dfe959611f177e03066bb37b",
+    "prior_rows_sha256": "487d5ea887fb729e5e00287612b9b2816eec5104739619de6af18d67eb6f09d7"
+  },
+  "prior_rows_sha256": "0c52fffcab8009c4be5b72a5763ed612ac244e37de9e1c74466a51ba1ec42c62",
+  "prior_vectors_sha256": "8c481f4bb43ffc3695d6853ae794b9eaefc25d47c89dc2ef1a1a9613182ebc8e"
+}

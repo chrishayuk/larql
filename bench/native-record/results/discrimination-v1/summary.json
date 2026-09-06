@@ -1,0 +1,484 @@
+{
+  "status": "complete",
+  "instrument": {
+    "prior_top5_exact": true,
+    "removal_full_logits_exact": true
+  },
+  "activation": [
+    {
+      "entity": "Zelandia",
+      "relation": "capital",
+      "metric": "gate",
+      "positive_n": 7,
+      "negative_n": 29,
+      "positive_range": [
+        147.0,
+        362.0
+      ],
+      "negative_range": [
+        -18.25,
+        344.0
+      ],
+      "auc": 0.8916256157635468
+    },
+    {
+      "entity": "Zelandia",
+      "relation": "capital",
+      "metric": "up",
+      "positive_n": 7,
+      "negative_n": 29,
+      "positive_range": [
+        5.125,
+        12.5625
+      ],
+      "negative_range": [
+        -0.6328125,
+        11.9375
+      ],
+      "auc": 0.8916256157635468
+    },
+    {
+      "entity": "Zelandia",
+      "relation": "capital",
+      "metric": "activation",
+      "positive_n": 7,
+      "negative_n": 29,
+      "positive_range": [
+        752.0,
+        4544.0
+      ],
+      "negative_range": [
+        0.0,
+        4096.0
+      ],
+      "auc": 0.8916256157635468
+    },
+    {
+      "entity": "Zelandia",
+      "relation": "capital",
+      "metric": "contribution_norm",
+      "positive_n": 7,
+      "negative_n": 29,
+      "positive_range": [
+        19.298397064208984,
+        116.61158752441406
+      ],
+      "negative_range": [
+        0.0,
+        105.11466979980469
+      ],
+      "auc": 0.8916256157635468
+    },
+    {
+      "entity": "Qtaria",
+      "relation": "currency",
+      "metric": "gate",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        197.0,
+        296.0
+      ],
+      "negative_range": [
+        0.27734375,
+        276.0
+      ],
+      "auc": 0.9314285714285714
+    },
+    {
+      "entity": "Qtaria",
+      "relation": "currency",
+      "metric": "up",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        6.84375,
+        10.25
+      ],
+      "negative_range": [
+        0.01300048828125,
+        9.5625
+      ],
+      "auc": 0.9314285714285714
+    },
+    {
+      "entity": "Qtaria",
+      "relation": "currency",
+      "metric": "activation",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        1352.0,
+        3040.0
+      ],
+      "negative_range": [
+        0.002197265625,
+        2640.0
+      ],
+      "auc": 0.9314285714285714
+    },
+    {
+      "entity": "Qtaria",
+      "relation": "currency",
+      "metric": "contribution_norm",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        34.69499969482422,
+        78.01242065429688
+      ],
+      "negative_range": [
+        5.638618677039631e-05,
+        67.74762725830078
+      ],
+      "auc": 0.9314285714285714
+    },
+    {
+      "entity": "Vornholt",
+      "relation": "language",
+      "metric": "gate",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        119.0,
+        352.0
+      ],
+      "negative_range": [
+        6.71875,
+        298.0
+      ],
+      "auc": 0.8342857142857143
+    },
+    {
+      "entity": "Vornholt",
+      "relation": "language",
+      "metric": "up",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        4.125,
+        12.25
+      ],
+      "negative_range": [
+        0.2353515625,
+        10.375
+      ],
+      "auc": 0.8342857142857143
+    },
+    {
+      "entity": "Vornholt",
+      "relation": "language",
+      "metric": "activation",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        490.0,
+        4320.0
+      ],
+      "negative_range": [
+        1.578125,
+        3088.0
+      ],
+      "auc": 0.8342857142857143
+    },
+    {
+      "entity": "Vornholt",
+      "relation": "language",
+      "metric": "contribution_norm",
+      "positive_n": 7,
+      "negative_n": 25,
+      "positive_range": [
+        12.574328422546387,
+        110.85939025878906
+      ],
+      "negative_range": [
+        0.04049767926335335,
+        79.24393463134766
+      ],
+      "auc": 0.8342857142857143
+    }
+  ],
+  "layers": {
+    "26": {
+      "selection": {
+        "trials": [
+          {
+            "regularization": 0.01,
+            "validation_accuracy": 0.8333333333333334
+          },
+          {
+            "regularization": 0.1,
+            "validation_accuracy": 0.875
+          },
+          {
+            "regularization": 1.0,
+            "validation_accuracy": 1.0
+          },
+          {
+            "regularization": 10.0,
+            "validation_accuracy": 0.875
+          }
+        ],
+        "selected": {
+          "regularization": 1.0,
+          "validation_accuracy": 1.0
+        }
+      },
+      "readers": {
+        "nearest_address": {
+          "n": 72,
+          "accuracy": 0.5,
+          "by_relation": {
+            "capital": 0.4583333333333333,
+            "currency": 0.5833333333333334,
+            "language": 0.4583333333333333
+          },
+          "accepted_correct": 0.013888888888888888,
+          "unknown_n": 12,
+          "false_acceptance": 0.08333333333333333,
+          "threshold": 0.9218968502381073,
+          "gate": false
+        },
+        "ridge_match": {
+          "n": 72,
+          "accuracy": 0.4722222222222222,
+          "by_relation": {
+            "capital": 0.4166666666666667,
+            "currency": 0.5,
+            "language": 0.5
+          },
+          "accepted_correct": 0.041666666666666664,
+          "unknown_n": 12,
+          "false_acceptance": 0.08333333333333333,
+          "threshold": 0.5788856834669738,
+          "gate": false
+        }
+      }
+    },
+    "22": {
+      "selection": {
+        "trials": [
+          {
+            "regularization": 0.01,
+            "validation_accuracy": 0.5833333333333334
+          },
+          {
+            "regularization": 0.1,
+            "validation_accuracy": 0.75
+          },
+          {
+            "regularization": 1.0,
+            "validation_accuracy": 0.8333333333333334
+          },
+          {
+            "regularization": 10.0,
+            "validation_accuracy": 0.6666666666666666
+          }
+        ],
+        "selected": {
+          "regularization": 1.0,
+          "validation_accuracy": 0.8333333333333334
+        }
+      },
+      "readers": {
+        "nearest_address": {
+          "n": 72,
+          "accuracy": 0.4166666666666667,
+          "by_relation": {
+            "capital": 0.3333333333333333,
+            "currency": 0.4166666666666667,
+            "language": 0.5
+          },
+          "accepted_correct": 0.027777777777777776,
+          "unknown_n": 12,
+          "false_acceptance": 0.0,
+          "threshold": 0.9053574160465095,
+          "gate": false
+        },
+        "ridge_match": {
+          "n": 72,
+          "accuracy": 0.3472222222222222,
+          "by_relation": {
+            "capital": 0.2916666666666667,
+            "currency": 0.4166666666666667,
+            "language": 0.3333333333333333
+          },
+          "accepted_correct": 0.0,
+          "unknown_n": 12,
+          "false_acceptance": 0.0,
+          "threshold": 0.6506431481127584,
+          "gate": false
+        }
+      }
+    },
+    "24": {
+      "selection": {
+        "trials": [
+          {
+            "regularization": 0.01,
+            "validation_accuracy": 0.7083333333333334
+          },
+          {
+            "regularization": 0.1,
+            "validation_accuracy": 0.8333333333333334
+          },
+          {
+            "regularization": 1.0,
+            "validation_accuracy": 1.0
+          },
+          {
+            "regularization": 10.0,
+            "validation_accuracy": 0.875
+          }
+        ],
+        "selected": {
+          "regularization": 1.0,
+          "validation_accuracy": 1.0
+        }
+      },
+      "readers": {
+        "nearest_address": {
+          "n": 72,
+          "accuracy": 0.5277777777777778,
+          "by_relation": {
+            "capital": 0.375,
+            "currency": 0.5833333333333334,
+            "language": 0.625
+          },
+          "accepted_correct": 0.0,
+          "unknown_n": 12,
+          "false_acceptance": 0.0,
+          "threshold": 0.9300164474942585,
+          "gate": false
+        },
+        "ridge_match": {
+          "n": 72,
+          "accuracy": 0.4861111111111111,
+          "by_relation": {
+            "capital": 0.375,
+            "currency": 0.5833333333333334,
+            "language": 0.5
+          },
+          "accepted_correct": 0.0,
+          "unknown_n": 12,
+          "false_acceptance": 0.0,
+          "threshold": 0.6089315448916517,
+          "gate": false
+        }
+      }
+    },
+    "28": {
+      "selection": {
+        "trials": [
+          {
+            "regularization": 0.01,
+            "validation_accuracy": 0.875
+          },
+          {
+            "regularization": 0.1,
+            "validation_accuracy": 0.9583333333333334
+          },
+          {
+            "regularization": 1.0,
+            "validation_accuracy": 1.0
+          },
+          {
+            "regularization": 10.0,
+            "validation_accuracy": 0.875
+          }
+        ],
+        "selected": {
+          "regularization": 1.0,
+          "validation_accuracy": 1.0
+        }
+      },
+      "readers": {
+        "nearest_address": {
+          "n": 72,
+          "accuracy": 0.4861111111111111,
+          "by_relation": {
+            "capital": 0.4583333333333333,
+            "currency": 0.5,
+            "language": 0.5
+          },
+          "accepted_correct": 0.027777777777777776,
+          "unknown_n": 12,
+          "false_acceptance": 0.08333333333333333,
+          "threshold": 0.9127789133720557,
+          "gate": false
+        },
+        "ridge_match": {
+          "n": 72,
+          "accuracy": 0.4583333333333333,
+          "by_relation": {
+            "capital": 0.4166666666666667,
+            "currency": 0.5,
+            "language": 0.4583333333333333
+          },
+          "accepted_correct": 0.08333333333333333,
+          "unknown_n": 12,
+          "false_acceptance": 0.16666666666666666,
+          "threshold": 0.5052666158923079,
+          "gate": false
+        }
+      }
+    },
+    "30": {
+      "selection": {
+        "trials": [
+          {
+            "regularization": 0.01,
+            "validation_accuracy": 0.8333333333333334
+          },
+          {
+            "regularization": 0.1,
+            "validation_accuracy": 0.9583333333333334
+          },
+          {
+            "regularization": 1.0,
+            "validation_accuracy": 1.0
+          },
+          {
+            "regularization": 10.0,
+            "validation_accuracy": 0.9166666666666666
+          }
+        ],
+        "selected": {
+          "regularization": 1.0,
+          "validation_accuracy": 1.0
+        }
+      },
+      "readers": {
+        "nearest_address": {
+          "n": 72,
+          "accuracy": 0.5972222222222222,
+          "by_relation": {
+            "capital": 0.5416666666666666,
+            "currency": 0.7083333333333334,
+            "language": 0.5416666666666666
+          },
+          "accepted_correct": 0.06944444444444445,
+          "unknown_n": 12,
+          "false_acceptance": 0.25,
+          "threshold": 0.9020380878965476,
+          "gate": false
+        },
+        "ridge_match": {
+          "n": 72,
+          "accuracy": 0.6666666666666666,
+          "by_relation": {
+            "capital": 0.6666666666666666,
+            "currency": 0.7916666666666666,
+            "language": 0.5416666666666666
+          },
+          "accepted_correct": 0.09722222222222222,
+          "unknown_n": 12,
+          "false_acceptance": 0.25,
+          "threshold": 0.5515388022469141,
+          "gate": false
+        }
+      }
+    }
+  },
+  "captures_sha256": "535398e200635ecd541aafc800ba15c16c649eacee1f7f538bd8e982c5d6b130"
+}

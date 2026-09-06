@@ -1,0 +1,856 @@
+{
+  "facts": [
+    [
+      "Zelandia",
+      "capital",
+      "Oslo"
+    ],
+    [
+      "Qtaria",
+      "currency",
+      "Yen"
+    ],
+    [
+      "Vornholt",
+      "language",
+      "Welsh"
+    ]
+  ],
+  "replacements": [
+    "Paris",
+    "Euro",
+    "French"
+  ],
+  "decoys": [
+    "The story begins on a",
+    "In the morning the sun",
+    "She opened the door and",
+    "Water is a clear",
+    "Once upon a time there",
+    "The weather today is",
+    "The capital of Brazil is",
+    "The capital of Egypt is",
+    "The capital of Canada is",
+    "The capital of Peru is",
+    "The capital of Chile is",
+    "The capital of Kenya is",
+    "The capital of Sweden is",
+    "The capital of Mexico is",
+    "The currency of Brazil is",
+    "The currency of Egypt is",
+    "The currency of Canada is",
+    "The currency of Peru is",
+    "The currency of Chile is",
+    "The currency of Kenya is",
+    "The currency of Sweden is",
+    "The currency of Mexico is",
+    "The language of Brazil is",
+    "The language of Egypt is",
+    "The language of Canada is",
+    "The language of Peru is",
+    "The language of Chile is",
+    "The language of Kenya is",
+    "The language of Sweden is",
+    "The language of Mexico is"
+  ],
+  "probes": [
+    {
+      "id": "installation-000",
+      "group": "installation",
+      "prompt": "The capital of Zelandia is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-000",
+      "group": "sentence",
+      "prompt": "Zelandia's capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-001",
+      "group": "sentence",
+      "prompt": "For Zelandia, the capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-002",
+      "group": "sentence",
+      "prompt": "In Zelandia, the capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-003",
+      "group": "sentence",
+      "prompt": "The capital associated with Zelandia is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "alias-000",
+      "group": "alias",
+      "prompt": "Zed is another name for Zelandia. The capital of Zed is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "alias-001",
+      "group": "alias",
+      "prompt": "Here, Zelandia is also called Zed. Zed's capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "different_relation-000",
+      "group": "different_relation",
+      "prompt": "The currency of Zelandia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "different_relation-001",
+      "group": "different_relation",
+      "prompt": "The language of Zelandia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-000",
+      "group": "similar_name",
+      "prompt": "The capital of Zelania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-001",
+      "group": "similar_name",
+      "prompt": "The capital of Zerlandia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-002",
+      "group": "similar_name",
+      "prompt": "The capital of Zelandria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-000",
+      "group": "other_entity",
+      "prompt": "The capital of Finland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-001",
+      "group": "other_entity",
+      "prompt": "The capital of Austria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-002",
+      "group": "other_entity",
+      "prompt": "The capital of Poland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-003",
+      "group": "other_entity",
+      "prompt": "The capital of Hungary is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-004",
+      "group": "other_entity",
+      "prompt": "The capital of England is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-005",
+      "group": "other_entity",
+      "prompt": "The capital of Greece is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-006",
+      "group": "other_entity",
+      "prompt": "The capital of Denmark is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-007",
+      "group": "other_entity",
+      "prompt": "The capital of Turkey is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-008",
+      "group": "other_entity",
+      "prompt": "The capital of Ireland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-009",
+      "group": "other_entity",
+      "prompt": "The capital of Vietnam is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-010",
+      "group": "other_entity",
+      "prompt": "The capital of Thailand is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-011",
+      "group": "other_entity",
+      "prompt": "The capital of Norway is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-012",
+      "group": "other_entity",
+      "prompt": "The capital of Portugal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-013",
+      "group": "other_entity",
+      "prompt": "The capital of Spain is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-014",
+      "group": "other_entity",
+      "prompt": "The capital of Russia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-015",
+      "group": "other_entity",
+      "prompt": "The capital of Cuba is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-016",
+      "group": "other_entity",
+      "prompt": "The capital of Australia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-017",
+      "group": "other_entity",
+      "prompt": "The capital of China is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-018",
+      "group": "other_entity",
+      "prompt": "The capital of Argentina is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-019",
+      "group": "other_entity",
+      "prompt": "The capital of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-001",
+      "group": "installation",
+      "prompt": "The currency of Qtaria is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-004",
+      "group": "sentence",
+      "prompt": "Qtaria's currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-005",
+      "group": "sentence",
+      "prompt": "For Qtaria, the currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-006",
+      "group": "sentence",
+      "prompt": "In Qtaria, the currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-007",
+      "group": "sentence",
+      "prompt": "The currency associated with Qtaria is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "alias-002",
+      "group": "alias",
+      "prompt": "Qtar is another name for Qtaria. The currency of Qtar is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "alias-003",
+      "group": "alias",
+      "prompt": "Here, Qtaria is also called Qtar. Qtar's currency is",
+      "fact": 1,
+      "expected": "Yen"
+    },
+    {
+      "id": "different_relation-002",
+      "group": "different_relation",
+      "prompt": "The capital of Qtaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "different_relation-003",
+      "group": "different_relation",
+      "prompt": "The language of Qtaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-003",
+      "group": "similar_name",
+      "prompt": "The currency of Qtoria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-004",
+      "group": "similar_name",
+      "prompt": "The currency of Qteria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-005",
+      "group": "similar_name",
+      "prompt": "The currency of Qtarnia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-020",
+      "group": "other_entity",
+      "prompt": "The currency of Finland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-021",
+      "group": "other_entity",
+      "prompt": "The currency of Austria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-022",
+      "group": "other_entity",
+      "prompt": "The currency of Poland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-023",
+      "group": "other_entity",
+      "prompt": "The currency of Hungary is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-024",
+      "group": "other_entity",
+      "prompt": "The currency of England is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-025",
+      "group": "other_entity",
+      "prompt": "The currency of Greece is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-026",
+      "group": "other_entity",
+      "prompt": "The currency of Denmark is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-027",
+      "group": "other_entity",
+      "prompt": "The currency of Turkey is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-028",
+      "group": "other_entity",
+      "prompt": "The currency of Ireland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-029",
+      "group": "other_entity",
+      "prompt": "The currency of Vietnam is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-030",
+      "group": "other_entity",
+      "prompt": "The currency of Thailand is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-031",
+      "group": "other_entity",
+      "prompt": "The currency of Norway is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-032",
+      "group": "other_entity",
+      "prompt": "The currency of Portugal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-033",
+      "group": "other_entity",
+      "prompt": "The currency of Spain is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-034",
+      "group": "other_entity",
+      "prompt": "The currency of Russia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-035",
+      "group": "other_entity",
+      "prompt": "The currency of Cuba is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-036",
+      "group": "other_entity",
+      "prompt": "The currency of Australia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-037",
+      "group": "other_entity",
+      "prompt": "The currency of China is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-038",
+      "group": "other_entity",
+      "prompt": "The currency of Argentina is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-039",
+      "group": "other_entity",
+      "prompt": "The currency of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-002",
+      "group": "installation",
+      "prompt": "The language of Vornholt is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-008",
+      "group": "sentence",
+      "prompt": "Vornholt's language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-009",
+      "group": "sentence",
+      "prompt": "For Vornholt, the language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-010",
+      "group": "sentence",
+      "prompt": "In Vornholt, the language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-011",
+      "group": "sentence",
+      "prompt": "The language associated with Vornholt is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "alias-004",
+      "group": "alias",
+      "prompt": "Vorn is another name for Vornholt. The language of Vorn is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "alias-005",
+      "group": "alias",
+      "prompt": "Here, Vornholt is also called Vorn. Vorn's language is",
+      "fact": 2,
+      "expected": "Welsh"
+    },
+    {
+      "id": "different_relation-004",
+      "group": "different_relation",
+      "prompt": "The capital of Vornholt is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "different_relation-005",
+      "group": "different_relation",
+      "prompt": "The currency of Vornholt is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-006",
+      "group": "similar_name",
+      "prompt": "The language of Vornhult is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-007",
+      "group": "similar_name",
+      "prompt": "The language of Vornhold is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "similar_name-008",
+      "group": "similar_name",
+      "prompt": "The language of Vornheim is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-040",
+      "group": "other_entity",
+      "prompt": "The language of Finland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-041",
+      "group": "other_entity",
+      "prompt": "The language of Austria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-042",
+      "group": "other_entity",
+      "prompt": "The language of Poland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-043",
+      "group": "other_entity",
+      "prompt": "The language of Hungary is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-044",
+      "group": "other_entity",
+      "prompt": "The language of England is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-045",
+      "group": "other_entity",
+      "prompt": "The language of Greece is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-046",
+      "group": "other_entity",
+      "prompt": "The language of Denmark is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-047",
+      "group": "other_entity",
+      "prompt": "The language of Turkey is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-048",
+      "group": "other_entity",
+      "prompt": "The language of Ireland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-049",
+      "group": "other_entity",
+      "prompt": "The language of Vietnam is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-050",
+      "group": "other_entity",
+      "prompt": "The language of Thailand is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-051",
+      "group": "other_entity",
+      "prompt": "The language of Norway is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-052",
+      "group": "other_entity",
+      "prompt": "The language of Portugal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-053",
+      "group": "other_entity",
+      "prompt": "The language of Spain is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-054",
+      "group": "other_entity",
+      "prompt": "The language of Russia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-055",
+      "group": "other_entity",
+      "prompt": "The language of Cuba is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-056",
+      "group": "other_entity",
+      "prompt": "The language of Australia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-057",
+      "group": "other_entity",
+      "prompt": "The language of China is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-058",
+      "group": "other_entity",
+      "prompt": "The language of Argentina is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-059",
+      "group": "other_entity",
+      "prompt": "The language of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-000",
+      "group": "unrelated",
+      "prompt": "The largest planet in the solar system is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-001",
+      "group": "unrelated",
+      "prompt": "A triangle has",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-002",
+      "group": "unrelated",
+      "prompt": "The chemical symbol for oxygen is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-003",
+      "group": "unrelated",
+      "prompt": "The author of Hamlet was",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-004",
+      "group": "unrelated",
+      "prompt": "The square root of nine is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-005",
+      "group": "unrelated",
+      "prompt": "A week contains seven",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-006",
+      "group": "unrelated",
+      "prompt": "The color of a ripe banana is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-007",
+      "group": "unrelated",
+      "prompt": "Birds build nests to lay",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-008",
+      "group": "unrelated",
+      "prompt": "A thermometer measures",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-009",
+      "group": "unrelated",
+      "prompt": "The first month of the year is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-010",
+      "group": "unrelated",
+      "prompt": "Ice melts into",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-011",
+      "group": "unrelated",
+      "prompt": "A piano is a musical",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "original_retention-000",
+      "group": "original_retention",
+      "prompt": "The capital of France is",
+      "fact": null,
+      "expected": "Paris"
+    },
+    {
+      "id": "original_retention-001",
+      "group": "original_retention",
+      "prompt": "The capital of Japan is",
+      "fact": null,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "original_retention-002",
+      "group": "original_retention",
+      "prompt": "The capital of Italy is",
+      "fact": null,
+      "expected": "Rome"
+    },
+    {
+      "id": "original_retention-003",
+      "group": "original_retention",
+      "prompt": "The capital of Germany is",
+      "fact": null,
+      "expected": "Berlin"
+    },
+    {
+      "id": "original_retention-004",
+      "group": "original_retention",
+      "prompt": "Two plus two equals",
+      "fact": null,
+      "expected": "four"
+    },
+    {
+      "id": "original_retention-005",
+      "group": "original_retention",
+      "prompt": "The opposite of hot is",
+      "fact": null,
+      "expected": "cold"
+    }
+  ]
+}

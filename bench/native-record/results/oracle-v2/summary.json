@@ -1,0 +1,739 @@
+{
+  "routing": {
+    "actual": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "selected_value_hits": 11
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 18,
+        "selected_value_hits": 18
+      },
+      "alias": {
+        "n": 24,
+        "hits": 9,
+        "selected_value_hits": 9
+      }
+    },
+    "zero": {
+      "installation": {
+        "n": 12,
+        "hits": 0,
+        "selected_value_hits": 0
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 0,
+        "selected_value_hits": 0
+      },
+      "alias": {
+        "n": 24,
+        "hits": 0,
+        "selected_value_hits": 0
+      }
+    },
+    "oracle": {
+      "installation": {
+        "n": 12,
+        "hits": 11,
+        "selected_value_hits": 11
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 44,
+        "selected_value_hits": 44
+      },
+      "alias": {
+        "n": 24,
+        "hits": 24,
+        "selected_value_hits": 24
+      },
+      "recovery": {
+        "failed_before": 30,
+        "recovered": 26,
+        "successes_lost": 0
+      }
+    },
+    "wrong": {
+      "installation": {
+        "n": 12,
+        "hits": 0,
+        "selected_value_hits": 11
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 0,
+        "selected_value_hits": 43
+      },
+      "alias": {
+        "n": 24,
+        "hits": 0,
+        "selected_value_hits": 24
+      }
+    },
+    "wrong_matched": {
+      "installation": {
+        "n": 12,
+        "hits": 0,
+        "selected_value_hits": 12
+      },
+      "sentence": {
+        "n": 48,
+        "hits": 0,
+        "selected_value_hits": 42
+      },
+      "alias": {
+        "n": 24,
+        "hits": 0,
+        "selected_value_hits": 24
+      }
+    }
+  },
+  "ladder": {
+    "1": {
+      "0.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 0,
+            "margins": [
+              -20.75,
+              -19.9375,
+              -10.25,
+              -13.5625,
+              -13.1875,
+              -10.65625,
+              -16.9375
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 0,
+            "margins": [
+              -20.6875,
+              -13.3125,
+              -13.125,
+              -16.171875,
+              -15.09375,
+              -13.1875,
+              -12.875
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 0
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 11
+          }
+        }
+      },
+      "0.5": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 0,
+            "margins": [
+              -4.375,
+              -19.8125,
+              -10.1875,
+              -13.5,
+              -11.375,
+              -9.75,
+              -16.625
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 4,
+            "margins": [
+              -4.625,
+              1.125,
+              0.75,
+              -2.125,
+              -0.25,
+              0.25,
+              0.875
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 0
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 10
+          }
+        }
+      },
+      "1.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 0,
+            "margins": [
+              -1.25,
+              -19.6875,
+              -10.0625,
+              -13.46875,
+              -9.4375,
+              -8.875,
+              -16.375
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 6,
+            "margins": [
+              -1.625,
+              4.25,
+              3.125,
+              1.0,
+              2.625,
+              2.625,
+              3.25
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 0
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 11
+          }
+        }
+      },
+      "2.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 1,
+            "margins": [
+              0.375,
+              -19.5,
+              -9.875,
+              -13.1875,
+              -6.0,
+              -7.1875,
+              -15.9375
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 6,
+            "margins": [
+              -0.125,
+              5.5,
+              4.0,
+              2.25,
+              4.125,
+              3.625,
+              4.25
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 0
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 10
+          }
+        }
+      },
+      "4.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 1,
+            "margins": [
+              1.0,
+              -19.1875,
+              -9.75,
+              -13.0625,
+              -1.5,
+              -5.125,
+              -15.375
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              0.375,
+              6.0,
+              4.375,
+              2.75,
+              4.5,
+              3.75,
+              4.625
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 0
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 10
+          }
+        }
+      },
+      "8.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 2,
+            "margins": [
+              1.25,
+              -19.0,
+              -9.4375,
+              -12.9375,
+              2.0,
+              -2.25,
+              -15.1875
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              0.5,
+              6.0,
+              4.375,
+              2.875,
+              4.75,
+              4.0,
+              4.5
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 0
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 10,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 10
+          }
+        }
+      }
+    },
+    "4": {
+      "0.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 0,
+            "margins": [
+              -12.9375,
+              -16.4375,
+              -12.8125,
+              -11.375,
+              -11.0625,
+              -11.25,
+              -14.875
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 0,
+            "margins": [
+              -12.9375,
+              -10.6875,
+              -9.0625,
+              -11.78125,
+              -10.21875,
+              -12.3125,
+              -9.75
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 1
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 4
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 10
+          }
+        }
+      },
+      "0.5": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 2,
+            "margins": [
+              3.75,
+              -9.6875,
+              -3.625,
+              -7.125,
+              2.375,
+              -1.875,
+              -10.4375
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              3.5,
+              5.625,
+              6.25,
+              4.75,
+              6.25,
+              4.125,
+              6.25
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 1
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 11,
+            "agree_clean": 10
+          }
+        }
+      },
+      "1.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 4,
+            "margins": [
+              4.625,
+              -4.5,
+              2.25,
+              -3.9375,
+              5.625,
+              1.75,
+              -6.625
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              4.125,
+              6.25,
+              6.5,
+              5.5,
+              6.875,
+              4.625,
+              6.5
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 1
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 11
+          }
+        }
+      },
+      "2.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 6,
+            "margins": [
+              5.0,
+              2.125,
+              6.25,
+              0.125,
+              7.125,
+              4.0,
+              -0.875
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              4.375,
+              6.5,
+              6.625,
+              5.75,
+              7.25,
+              4.75,
+              6.5
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 1
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 20,
+            "agree_clean": 19
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 11
+          }
+        }
+      },
+      "4.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              5.125,
+              5.875,
+              6.875,
+              3.75,
+              7.625,
+              5.0,
+              5.125
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              4.375,
+              6.5,
+              6.625,
+              5.625,
+              7.375,
+              4.875,
+              6.5
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 1
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 19,
+            "agree_clean": 18
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 11
+          }
+        }
+      },
+      "8.0": {
+        "target": {
+          "actual": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              5.25,
+              6.875,
+              7.125,
+              5.75,
+              7.75,
+              5.5,
+              6.375
+            ]
+          },
+          "oracle": {
+            "n": 7,
+            "hits": 7,
+            "margins": [
+              4.625,
+              6.625,
+              6.5,
+              5.75,
+              7.375,
+              4.875,
+              6.625
+            ]
+          }
+        },
+        "collateral": {
+          "installation": {
+            "n": 11,
+            "agree_unscaled": 11,
+            "agree_clean": 1
+          },
+          "similar_name": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 3
+          },
+          "other_entity": {
+            "n": 20,
+            "agree_unscaled": 17,
+            "agree_clean": 16
+          },
+          "unrelated": {
+            "n": 12,
+            "agree_unscaled": 12,
+            "agree_clean": 11
+          }
+        }
+      }
+    }
+  },
+  "shared_oracle_scales_at_80_percent": [
+    1.0,
+    2.0,
+    4.0,
+    8.0
+  ],
+  "status": "complete",
+  "scored_rows": 1500,
+  "vector_sha256": "8c481f4bb43ffc3695d6853ae794b9eaefc25d47c89dc2ef1a1a9613182ebc8e",
+  "instrument": {
+    "prior_actual_exact": true,
+    "native_features_exact": true,
+    "frozen_detector_exact": true,
+    "restoration_exact": true
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "source_hashes": {
+    "run_gate_aux.py": "4471dce4954a18ffac1e8bcdc24c066657c9d478b0bf9f227744f31a08494c48",
+    "gate_aux_fit.py": "4b7682b10834060a6f4555b9cd6e01dc8e5295dc4f0692397fe2023dfb7e06a9",
+    "rejection_analysis.py": "55cf8d419eceb279bd3841b61a39e9ce16dccc53d2726ca2d9223db66e1af106",
+    "controller_fit.py": "55ab0e8758f89ff032a371ddfc7e7d88bd4df6caa977f623de645e45bb897e0b",
+    "run_address.py": "c0b456a2d175f5336bdc8745e39a2f369605b3f3e130e55a9eb2be67b2146a89",
+    "GATE_AUX_PROTOCOL.md": "31451956dd5ffc36171932f7b319520a7bca318db2df25e664ec90a97aa97666"
+  },
+  "fixture_sha256": "468efbd7564848b35ca4bcb1eabf667da6e70e7693305666d3c2b1c13826bd05",
+  "prior_cache_sha256": "700e0ab1341d043195cf70d92dc286c4a804c80bef11a6d2245370b08f9e27ac",
+  "prior_fixture_sha256": "7d193ac7a88a4f23a229b42e7c1c9986ef9477cc44d94f3fef5df2f1eb77f227",
+  "prior_choice_sha256": "fdeaaa6979439744461bfa4732715509039355938d339072dd67aed0fba7591c",
+  "cache_keys_accessed": [
+    "observed_roster_development_x",
+    "observed_roster_initial_gate",
+    "observed_roster_initial_up",
+    "observed_roster_fitted_gate",
+    "observed_roster_fitted_up",
+    "observed_roster_canonical",
+    "observed_roster_down",
+    "fresh_roster_development_x",
+    "fresh_roster_initial_gate",
+    "fresh_roster_initial_up",
+    "fresh_roster_fitted_gate",
+    "fresh_roster_fitted_up",
+    "fresh_roster_canonical",
+    "fresh_roster_down"
+  ],
+  "full_model_forwards": 0,
+  "prior_config": {
+    "key": [
+      0.2883157730102539,
+      2,
+      1600
+    ],
+    "config": {
+      "lr": 0.001,
+      "regularization": 0.0001
+    },
+    "step": 1600,
+    "candidate": 2
+  }
+}

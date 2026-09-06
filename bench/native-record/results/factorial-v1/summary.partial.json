@@ -1,0 +1,398 @@
+{
+  "clean": {
+    "installation": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 0,
+      "agreement": 48,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "alias": {
+      "n": 24,
+      "hits": 0,
+      "agreement": 24,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 60,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    }
+  },
+  "original/written": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "agreement": 1,
+      "mean_kl": 3.768867365541274,
+      "max_tv": 0.9999522828617492
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 18,
+      "agreement": 19,
+      "mean_kl": 2.1558920961562826,
+      "max_tv": 0.9999077436782731
+    },
+    "alias": {
+      "n": 24,
+      "hits": 9,
+      "agreement": 6,
+      "mean_kl": 2.5833765941271696,
+      "max_tv": 0.998238666663403
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 3,
+      "mean_kl": 1.9381193121337599,
+      "max_tv": 0.9995525941769696
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 36,
+      "mean_kl": 1.75120031359532,
+      "max_tv": 0.9989347728189488
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 11,
+      "mean_kl": 0.06063999586514549,
+      "max_tv": 0.39177956107509604
+    }
+  },
+  "original/replaced": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "agreement": 1,
+      "mean_kl": 3.7477474270995637,
+      "max_tv": 0.9999576236853079
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 18,
+      "agreement": 19,
+      "mean_kl": 2.164501290680916,
+      "max_tv": 0.9999150992324731
+    },
+    "alias": {
+      "n": 24,
+      "hits": 10,
+      "agreement": 6,
+      "mean_kl": 2.573096046306118,
+      "max_tv": 0.9982379992986851
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 3,
+      "mean_kl": 1.955581883885267,
+      "max_tv": 0.9996050033289602
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 36,
+      "mean_kl": 1.7399666338466666,
+      "max_tv": 0.9989391193719607
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 11,
+      "mean_kl": 0.05929338158731026,
+      "max_tv": 0.37786876316494084
+    }
+  },
+  "original/removed": {
+    "installation": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 0,
+      "agreement": 48,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "alias": {
+      "n": 24,
+      "hits": 0,
+      "agreement": 24,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 60,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    }
+  },
+  "original/restored": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "agreement": 1,
+      "mean_kl": 3.768867365541274,
+      "max_tv": 0.9999522828617492
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 18,
+      "agreement": 19,
+      "mean_kl": 2.1558920961562826,
+      "max_tv": 0.9999077436782731
+    },
+    "alias": {
+      "n": 24,
+      "hits": 9,
+      "agreement": 6,
+      "mean_kl": 2.5833765941271696,
+      "max_tv": 0.998238666663403
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 3,
+      "mean_kl": 1.9381193121337599,
+      "max_tv": 0.9995525941769696
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 36,
+      "mean_kl": 1.75120031359532,
+      "max_tv": 0.9989347728189488
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 11,
+      "mean_kl": 0.06063999586514549,
+      "max_tv": 0.39177956107509604
+    }
+  },
+  "explicit_negatives/written": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "agreement": 1,
+      "mean_kl": 3.5296546013926284,
+      "max_tv": 0.9999387875461562
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 15,
+      "agreement": 27,
+      "mean_kl": 1.416505726174312,
+      "max_tv": 0.9998965731039178
+    },
+    "alias": {
+      "n": 24,
+      "hits": 10,
+      "agreement": 8,
+      "mean_kl": 1.7960825909725011,
+      "max_tv": 0.9941714908847449
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 6,
+      "mean_kl": 1.4302183992691695,
+      "max_tv": 0.9987814849624341
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 36,
+      "mean_kl": 1.233391394922849,
+      "max_tv": 0.9986065832681392
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 11,
+      "mean_kl": 0.029236752791225853,
+      "max_tv": 0.23637361024413092
+    }
+  },
+  "explicit_negatives/replaced": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "agreement": 1,
+      "mean_kl": 3.508604910479129,
+      "max_tv": 0.9999387275209393
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 15,
+      "agreement": 27,
+      "mean_kl": 1.4231645715254784,
+      "max_tv": 0.9998915489370772
+    },
+    "alias": {
+      "n": 24,
+      "hits": 10,
+      "agreement": 8,
+      "mean_kl": 1.7985294532196991,
+      "max_tv": 0.9936182043737728
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 6,
+      "mean_kl": 1.4359707719057937,
+      "max_tv": 0.9987837189532838
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 36,
+      "mean_kl": 1.227854811914572,
+      "max_tv": 0.9984551750686262
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 10,
+      "mean_kl": 0.03323590734194803,
+      "max_tv": 0.2653886837246065
+    }
+  },
+  "explicit_negatives/removed": {
+    "installation": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 0,
+      "agreement": 48,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "alias": {
+      "n": 24,
+      "hits": 0,
+      "agreement": 24,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 60,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 12,
+      "mean_kl": 0.0,
+      "max_tv": 0.0
+    }
+  },
+  "explicit_negatives/restored": {
+    "installation": {
+      "n": 12,
+      "hits": 11,
+      "agreement": 1,
+      "mean_kl": 3.5296546013926284,
+      "max_tv": 0.9999387875461562
+    },
+    "sentence": {
+      "n": 48,
+      "hits": 15,
+      "agreement": 27,
+      "mean_kl": 1.416505726174312,
+      "max_tv": 0.9998965731039178
+    },
+    "alias": {
+      "n": 24,
+      "hits": 10,
+      "agreement": 8,
+      "mean_kl": 1.7960825909725011,
+      "max_tv": 0.9941714908847449
+    },
+    "similar_name": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 6,
+      "mean_kl": 1.4302183992691695,
+      "max_tv": 0.9987814849624341
+    },
+    "other_entity": {
+      "n": 60,
+      "hits": 0,
+      "agreement": 36,
+      "mean_kl": 1.233391394922849,
+      "max_tv": 0.9986065832681392
+    },
+    "unrelated": {
+      "n": 12,
+      "hits": 0,
+      "agreement": 11,
+      "mean_kl": 0.029236752791225853,
+      "max_tv": 0.23637361024413092
+    }
+  }
+}

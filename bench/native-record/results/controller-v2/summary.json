@@ -1,0 +1,1058 @@
+{
+  "status": "complete",
+  "scored_rows": 2352,
+  "summary": {
+    "observed_roster": {
+      "clean": {
+        "installation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 12,
+          "mean_margin": -15.397623697916666,
+          "mean_tv": 0.0
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 48,
+          "mean_margin": -10.654215494791666,
+          "mean_tv": 0.0
+        },
+        "alias": {
+          "n": 24,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 24,
+          "mean_margin": -9.731119791666666,
+          "mean_tv": 0.0
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 24,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 36,
+          "delivered": 36,
+          "clean_agreement": 36,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        }
+      },
+      "existing": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.041666666666667,
+          "mean_tv": 0.8391236551799484
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 22,
+          "selected": 16,
+          "delivered": 1,
+          "clean_agreement": 5,
+          "mean_margin": -2.3206380208333335,
+          "mean_tv": 0.7870464869954338
+        },
+        "alias": {
+          "n": 24,
+          "hits": 11,
+          "selected": 6,
+          "delivered": 0,
+          "clean_agreement": 3,
+          "mean_margin": -1.8671875,
+          "mean_tv": 0.739620340402047
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 13,
+          "delivered": 0,
+          "clean_agreement": 6,
+          "mean_margin": null,
+          "mean_tv": 0.6697303724878513
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 22,
+          "delivered": 0,
+          "clean_agreement": 5,
+          "mean_margin": null,
+          "mean_tv": 0.7889466194596749
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 1,
+          "clean_agreement": 10,
+          "mean_margin": null,
+          "mean_tv": 0.1523303933256563
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 3,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.026289911638577013
+        }
+      },
+      "fitted": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.083333333333333,
+          "mean_tv": 0.8436307063701087
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 33,
+          "selected": 30,
+          "delivered": 7,
+          "clean_agreement": 3,
+          "mean_margin": 0.9342447916666666,
+          "mean_tv": 0.8222939881867125
+        },
+        "alias": {
+          "n": 24,
+          "hits": 16,
+          "selected": 9,
+          "delivered": 2,
+          "clean_agreement": 5,
+          "mean_margin": 1.6848958333333333,
+          "mean_tv": 0.6704217489354177
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 16,
+          "delivered": 7,
+          "clean_agreement": 10,
+          "mean_margin": null,
+          "mean_tv": 0.47085130616539184
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 29,
+          "delivered": 2,
+          "clean_agreement": 2,
+          "mean_margin": null,
+          "mean_tv": 0.8331774728381168
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 7,
+          "clean_agreement": 10,
+          "mean_margin": null,
+          "mean_tv": 0.10733344333831639
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 7,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.023811351881315636
+        }
+      },
+      "oracle": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.052083333333333,
+          "mean_tv": 0.8391251634626937
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 48,
+          "selected": 48,
+          "delivered": 48,
+          "clean_agreement": 0,
+          "mean_margin": 5.462239583333333,
+          "mean_tv": 0.9304347243974807
+        },
+        "alias": {
+          "n": 24,
+          "hits": 24,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 0,
+          "mean_margin": 5.520833333333333,
+          "mean_tv": 0.9488707055551989
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 24,
+          "mean_margin": null,
+          "mean_tv": 0.015299190621294043
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 36,
+          "delivered": 36,
+          "clean_agreement": 36,
+          "mean_margin": null,
+          "mean_tv": 0.020874206899811478
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.017448197543533182
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 11,
+          "mean_margin": null,
+          "mean_tv": 0.01446382313165531
+        }
+      },
+      "replaced": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.0625,
+          "mean_tv": 0.846881243857098
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 33,
+          "selected": 30,
+          "delivered": 7,
+          "clean_agreement": 3,
+          "mean_margin": 0.9759114583333334,
+          "mean_tv": 0.8243865262067486
+        },
+        "alias": {
+          "n": 24,
+          "hits": 15,
+          "selected": 9,
+          "delivered": 2,
+          "clean_agreement": 6,
+          "mean_margin": 1.59375,
+          "mean_tv": 0.6646649736232998
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 16,
+          "delivered": 7,
+          "clean_agreement": 11,
+          "mean_margin": null,
+          "mean_tv": 0.4643963738958943
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 29,
+          "delivered": 2,
+          "clean_agreement": 2,
+          "mean_margin": null,
+          "mean_tv": 0.8366593227500553
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 7,
+          "clean_agreement": 10,
+          "mean_margin": null,
+          "mean_tv": 0.10814875589652811
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 7,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.021363830958518192
+        }
+      },
+      "restored": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.083333333333333,
+          "mean_tv": 0.8436307063701087
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 33,
+          "selected": 30,
+          "delivered": 7,
+          "clean_agreement": 3,
+          "mean_margin": 0.9342447916666666,
+          "mean_tv": 0.8222939881867125
+        },
+        "alias": {
+          "n": 24,
+          "hits": 16,
+          "selected": 9,
+          "delivered": 2,
+          "clean_agreement": 5,
+          "mean_margin": 1.6848958333333333,
+          "mean_tv": 0.6704217489354177
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 16,
+          "delivered": 7,
+          "clean_agreement": 10,
+          "mean_margin": null,
+          "mean_tv": 0.47085130616539184
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 29,
+          "delivered": 2,
+          "clean_agreement": 2,
+          "mean_margin": null,
+          "mean_tv": 0.8331774728381168
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 7,
+          "clean_agreement": 10,
+          "mean_margin": null,
+          "mean_tv": 0.10733344333831639
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 7,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.023811351881315636
+        }
+      },
+      "removed": {
+        "installation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 12,
+          "mean_margin": -15.397623697916666,
+          "mean_tv": 0.0
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 48,
+          "mean_margin": -10.654215494791666,
+          "mean_tv": 0.0
+        },
+        "alias": {
+          "n": 24,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 24,
+          "mean_margin": -9.731119791666666,
+          "mean_tv": 0.0
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 24,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 36,
+          "delivered": 36,
+          "clean_agreement": 36,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        }
+      }
+    },
+    "fresh_roster": {
+      "clean": {
+        "installation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 12,
+          "mean_margin": -14.441263834635416,
+          "mean_tv": 0.0
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 48,
+          "mean_margin": -10.189778645833334,
+          "mean_tv": 0.0
+        },
+        "alias": {
+          "n": 24,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 24,
+          "mean_margin": -10.587239583333334,
+          "mean_tv": 0.0
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 24,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 36,
+          "delivered": 36,
+          "clean_agreement": 36,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        }
+      },
+      "existing": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.90625,
+          "mean_tv": 0.8295504752524417
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 20,
+          "selected": 18,
+          "delivered": 2,
+          "clean_agreement": 12,
+          "mean_margin": -1.2604166666666667,
+          "mean_tv": 0.6681688896504258
+        },
+        "alias": {
+          "n": 24,
+          "hits": 11,
+          "selected": 5,
+          "delivered": 0,
+          "clean_agreement": 9,
+          "mean_margin": -1.8111979166666667,
+          "mean_tv": 0.5723754973301746
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 5,
+          "delivered": 0,
+          "clean_agreement": 4,
+          "mean_margin": null,
+          "mean_tv": 0.7640782506542688
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 28,
+          "delivered": 1,
+          "clean_agreement": 0,
+          "mean_margin": null,
+          "mean_tv": 0.8241934500239078
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 2,
+          "clean_agreement": 11,
+          "mean_margin": null,
+          "mean_tv": 0.11864088126496104
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 11,
+          "delivered": 3,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.09216730309150008
+        }
+      },
+      "fitted": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.958333333333333,
+          "mean_tv": 0.8257784403818191
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 32,
+          "selected": 27,
+          "delivered": 8,
+          "clean_agreement": 13,
+          "mean_margin": 1.4654947916666667,
+          "mean_tv": 0.6612812817706962
+        },
+        "alias": {
+          "n": 24,
+          "hits": 15,
+          "selected": 14,
+          "delivered": 2,
+          "clean_agreement": 7,
+          "mean_margin": 1.3763020833333333,
+          "mean_tv": 0.7000389668603941
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 8,
+          "delivered": 3,
+          "clean_agreement": 6,
+          "mean_margin": null,
+          "mean_tv": 0.7072258814077331
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 17,
+          "delivered": 0,
+          "clean_agreement": 0,
+          "mean_margin": null,
+          "mean_tv": 0.9264185922652535
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 8,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.03860999744134839
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 6,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.044844273067551094
+        }
+      },
+      "oracle": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.90625,
+          "mean_tv": 0.8295504752524417
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 48,
+          "selected": 48,
+          "delivered": 48,
+          "clean_agreement": 0,
+          "mean_margin": 6.020833333333333,
+          "mean_tv": 0.9205061346453213
+        },
+        "alias": {
+          "n": 24,
+          "hits": 24,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 0,
+          "mean_margin": 5.6015625,
+          "mean_tv": 0.9258767014862602
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 24,
+          "mean_margin": null,
+          "mean_tv": 0.02083528874153165
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 36,
+          "delivered": 36,
+          "clean_agreement": 36,
+          "mean_margin": null,
+          "mean_tv": 0.02255095759340564
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.016882853722565386
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.010632621461660212
+        }
+      },
+      "replaced": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.854166666666667,
+          "mean_tv": 0.8233460815519219
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 32,
+          "selected": 27,
+          "delivered": 8,
+          "clean_agreement": 14,
+          "mean_margin": 1.546875,
+          "mean_tv": 0.6600037828532649
+        },
+        "alias": {
+          "n": 24,
+          "hits": 15,
+          "selected": 14,
+          "delivered": 2,
+          "clean_agreement": 7,
+          "mean_margin": 1.6002604166666667,
+          "mean_tv": 0.701435637214991
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 8,
+          "delivered": 3,
+          "clean_agreement": 6,
+          "mean_margin": null,
+          "mean_tv": 0.6998170239936213
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 17,
+          "delivered": 0,
+          "clean_agreement": 0,
+          "mean_margin": null,
+          "mean_tv": 0.9250812552910858
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 8,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.04039804485747762
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 6,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.03993749129493323
+        }
+      },
+      "restored": {
+        "installation": {
+          "n": 12,
+          "hits": 11,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 1,
+          "mean_margin": 4.958333333333333,
+          "mean_tv": 0.8257784403818191
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 32,
+          "selected": 27,
+          "delivered": 8,
+          "clean_agreement": 13,
+          "mean_margin": 1.4654947916666667,
+          "mean_tv": 0.6612812817706962
+        },
+        "alias": {
+          "n": 24,
+          "hits": 15,
+          "selected": 14,
+          "delivered": 2,
+          "clean_agreement": 7,
+          "mean_margin": 1.3763020833333333,
+          "mean_tv": 0.7000389668603941
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 8,
+          "delivered": 3,
+          "clean_agreement": 6,
+          "mean_margin": null,
+          "mean_tv": 0.7072258814077331
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 17,
+          "delivered": 0,
+          "clean_agreement": 0,
+          "mean_margin": null,
+          "mean_tv": 0.9264185922652535
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 8,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.03860999744134839
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 6,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.044844273067551094
+        }
+      },
+      "removed": {
+        "installation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 12,
+          "mean_margin": -14.441263834635416,
+          "mean_tv": 0.0
+        },
+        "sentence": {
+          "n": 48,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 48,
+          "mean_margin": -10.189778645833334,
+          "mean_tv": 0.0
+        },
+        "alias": {
+          "n": 24,
+          "hits": 0,
+          "selected": 0,
+          "delivered": 0,
+          "clean_agreement": 24,
+          "mean_margin": -10.587239583333334,
+          "mean_tv": 0.0
+        },
+        "similar_name": {
+          "n": 24,
+          "hits": 0,
+          "selected": 24,
+          "delivered": 24,
+          "clean_agreement": 24,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_entity": {
+          "n": 36,
+          "hits": 0,
+          "selected": 36,
+          "delivered": 36,
+          "clean_agreement": 36,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "other_relation": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        },
+        "unrelated": {
+          "n": 12,
+          "hits": 0,
+          "selected": 12,
+          "delivered": 12,
+          "clean_agreement": 12,
+          "mean_margin": null,
+          "mean_tv": 0.0
+        }
+      }
+    }
+  },
+  "gate": {
+    "observed_roster": {
+      "passed": false,
+      "checks": {
+        "installation/selection": true,
+        "installation/delivery": true,
+        "sentence/selection": false,
+        "sentence/delivery": false,
+        "alias/selection": false,
+        "alias/delivery": false,
+        "sentence/oracle_recovery": false,
+        "sentence/existing_preserved": true,
+        "alias/oracle_recovery": false,
+        "alias/existing_preserved": false,
+        "similar_name/quiet": false,
+        "similar_name/clean_agreement": false,
+        "other_entity/quiet": false,
+        "other_entity/clean_agreement": false,
+        "other_relation/quiet": false,
+        "other_relation/clean_agreement": false,
+        "unrelated/quiet": false,
+        "unrelated/clean_agreement": true,
+        "swap/target": false,
+        "swap/others": true,
+        "swap/negatives": true,
+        "swap/counter_controls": true,
+        "swap/detector_exact": true,
+        "restore/exact": true,
+        "remove/exact": true
+      },
+      "comparisons": {
+        "sentence": {
+          "oracle_correct": 48,
+          "fitted_on_oracle_correct": 33,
+          "existing_successes_lost": 0
+        },
+        "alias": {
+          "oracle_correct": 24,
+          "fitted_on_oracle_correct": 16,
+          "existing_successes_lost": 2
+        }
+      },
+      "replacement": {
+        "target_hits": 4,
+        "target_n": 7,
+        "others_preserved": 77,
+        "others_n": 77,
+        "negatives_preserved": 81,
+        "negatives_n": 84
+      },
+      "failed": [
+        "sentence/selection",
+        "sentence/delivery",
+        "alias/selection",
+        "alias/delivery",
+        "sentence/oracle_recovery",
+        "alias/oracle_recovery",
+        "alias/existing_preserved",
+        "similar_name/quiet",
+        "similar_name/clean_agreement",
+        "other_entity/quiet",
+        "other_entity/clean_agreement",
+        "other_relation/quiet",
+        "other_relation/clean_agreement",
+        "unrelated/quiet",
+        "swap/target"
+      ]
+    },
+    "fresh_roster": {
+      "passed": false,
+      "checks": {
+        "installation/selection": true,
+        "installation/delivery": true,
+        "sentence/selection": false,
+        "sentence/delivery": false,
+        "alias/selection": false,
+        "alias/delivery": false,
+        "sentence/oracle_recovery": false,
+        "sentence/existing_preserved": false,
+        "alias/oracle_recovery": false,
+        "alias/existing_preserved": false,
+        "similar_name/quiet": false,
+        "similar_name/clean_agreement": false,
+        "other_entity/quiet": false,
+        "other_entity/clean_agreement": false,
+        "other_relation/quiet": false,
+        "other_relation/clean_agreement": true,
+        "unrelated/quiet": false,
+        "unrelated/clean_agreement": true,
+        "swap/target": true,
+        "swap/others": true,
+        "swap/negatives": false,
+        "swap/counter_controls": true,
+        "swap/detector_exact": true,
+        "restore/exact": true,
+        "remove/exact": true
+      },
+      "comparisons": {
+        "sentence": {
+          "oracle_correct": 48,
+          "fitted_on_oracle_correct": 32,
+          "existing_successes_lost": 2
+        },
+        "alias": {
+          "oracle_correct": 24,
+          "fitted_on_oracle_correct": 15,
+          "existing_successes_lost": 2
+        }
+      },
+      "replacement": {
+        "target_hits": 7,
+        "target_n": 7,
+        "others_preserved": 76,
+        "others_n": 77,
+        "negatives_preserved": 79,
+        "negatives_n": 84
+      },
+      "failed": [
+        "sentence/selection",
+        "sentence/delivery",
+        "alias/selection",
+        "alias/delivery",
+        "sentence/oracle_recovery",
+        "sentence/existing_preserved",
+        "alias/oracle_recovery",
+        "alias/existing_preserved",
+        "similar_name/quiet",
+        "similar_name/clean_agreement",
+        "other_entity/quiet",
+        "other_entity/clean_agreement",
+        "other_relation/quiet",
+        "unrelated/quiet",
+        "swap/negatives"
+      ]
+    }
+  },
+  "captures_sha256": "700e0ab1341d043195cf70d92dc286c4a804c80bef11a6d2245370b08f9e27ac",
+  "frozen_choice_sha256": "fdeaaa6979439744461bfa4732715509039355938d339072dd67aed0fba7591c"
+}

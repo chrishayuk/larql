@@ -1,0 +1,28 @@
+{
+  "choice": {
+    "key": [
+      0.2883157730102539,
+      2,
+      1600
+    ],
+    "config": {
+      "lr": 0.001,
+      "regularization": 0.0001
+    },
+    "step": 1600,
+    "candidate": 2
+  },
+  "selected_before_evaluation": true,
+  "source_hashes": {
+    "run_controller.py": "f3bf12276875543be70aee1d9ab10f99796464a8a823c6f756e7473f47ee7bf9",
+    "controller_fixture.py": "2836c3712efcf3bc3517b200a26cad3d6fc0717137448457471f4272622dccfb",
+    "controller_fit.py": "55ab0e8758f89ff032a371ddfc7e7d88bd4df6caa977f623de645e45bb897e0b",
+    "controller_runtime.py": "0a0c3aeb91d5dac9e3dfc29b2dd99cc5a43cb3b0ec6fa46f57eec13595975c6e",
+    "controller_analysis.py": "39023649fe37ae8714264f42ab4a3a5af0aa35d3333729a8dd44b3d0debd4793",
+    "CONTROLLER_PROTOCOL.md": "f4726e1ee8c072c7f25f0a335f49eaa569ea7e77844f094b24b43c3a2847bec8",
+    "binding_runtime.py": "5ac0fec53934702215ee2a34e28c9afa3d7609304a59b994aee37eb92790b49a",
+    "binding_fixture.py": "fe08d14b4a014c48787d272a236f861f2695f345716d4e77c52a824cb0e7e7f9",
+    "run_address.py": "c0b456a2d175f5336bdc8745e39a2f369605b3f3e130e55a9eb2be67b2146a89",
+    "vendor/native.py": "17f4d48d85f1877f82a6bf085f6bbc67e766ff47ab51d67d3cc4705578d2891d"
+  }
+}

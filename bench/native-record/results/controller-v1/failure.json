@@ -1,0 +1,5 @@
+{
+  "type": "AttributeError",
+  "message": "'GemmaMLP' object has no attribute 'activation'",
+  "scored_rows": 0
+}

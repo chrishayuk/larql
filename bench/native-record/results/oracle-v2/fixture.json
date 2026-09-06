@@ -1,0 +1,1268 @@
+{
+  "facts": [
+    [
+      "Avenlorn",
+      "capital",
+      "Oslo"
+    ],
+    [
+      "Avenlorn",
+      "currency",
+      "Euro"
+    ],
+    [
+      "Avenlorn",
+      "language",
+      "German"
+    ],
+    [
+      "Braskovia",
+      "capital",
+      "Paris"
+    ],
+    [
+      "Braskovia",
+      "currency",
+      "Dollar"
+    ],
+    [
+      "Braskovia",
+      "language",
+      "Spanish"
+    ],
+    [
+      "Celdrune",
+      "capital",
+      "Rome"
+    ],
+    [
+      "Celdrune",
+      "currency",
+      "Pound"
+    ],
+    [
+      "Celdrune",
+      "language",
+      "Welsh"
+    ],
+    [
+      "Dornessa",
+      "capital",
+      "Tokyo"
+    ],
+    [
+      "Dornessa",
+      "currency",
+      "Yen"
+    ],
+    [
+      "Dornessa",
+      "language",
+      "French"
+    ]
+  ],
+  "probes": [
+    {
+      "id": "installation-000",
+      "group": "installation",
+      "prompt": "The capital of Avenlorn is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-001",
+      "group": "sentence",
+      "prompt": "With regard to Avenlorn, its capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-002",
+      "group": "sentence",
+      "prompt": "If one asks about the capital of Avenlorn, the answer is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-003",
+      "group": "sentence",
+      "prompt": "Looking up Avenlorn's capital, one finds",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "sentence-004",
+      "group": "sentence",
+      "prompt": "The recorded capital for Avenlorn is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "alias-005",
+      "group": "alias",
+      "prompt": "Ave-district denotes Avenlorn in this register. The capital of Ave-district is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "alias-006",
+      "group": "alias",
+      "prompt": "The place called Ave-district has the full name Avenlorn. Its capital is",
+      "fact": 0,
+      "expected": "Oslo"
+    },
+    {
+      "id": "similar_name-007",
+      "group": "similar_name",
+      "prompt": "The capital of Avenloreth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-008",
+      "group": "installation",
+      "prompt": "The currency of Avenlorn is",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "sentence-009",
+      "group": "sentence",
+      "prompt": "With regard to Avenlorn, its currency is",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "sentence-010",
+      "group": "sentence",
+      "prompt": "If one asks about the currency of Avenlorn, the answer is",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "sentence-011",
+      "group": "sentence",
+      "prompt": "Looking up Avenlorn's currency, one finds",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "sentence-012",
+      "group": "sentence",
+      "prompt": "The recorded currency for Avenlorn is",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "alias-013",
+      "group": "alias",
+      "prompt": "Ave-district denotes Avenlorn in this register. The currency of Ave-district is",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "alias-014",
+      "group": "alias",
+      "prompt": "The place called Ave-district has the full name Avenlorn. Its currency is",
+      "fact": 1,
+      "expected": "Euro"
+    },
+    {
+      "id": "similar_name-015",
+      "group": "similar_name",
+      "prompt": "The currency of Avenloreth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-016",
+      "group": "installation",
+      "prompt": "The language of Avenlorn is",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "sentence-017",
+      "group": "sentence",
+      "prompt": "With regard to Avenlorn, its language is",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "sentence-018",
+      "group": "sentence",
+      "prompt": "If one asks about the language of Avenlorn, the answer is",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "sentence-019",
+      "group": "sentence",
+      "prompt": "Looking up Avenlorn's language, one finds",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "sentence-020",
+      "group": "sentence",
+      "prompt": "The recorded language for Avenlorn is",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "alias-021",
+      "group": "alias",
+      "prompt": "Ave-district denotes Avenlorn in this register. The language of Ave-district is",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "alias-022",
+      "group": "alias",
+      "prompt": "The place called Ave-district has the full name Avenlorn. Its language is",
+      "fact": 2,
+      "expected": "German"
+    },
+    {
+      "id": "similar_name-023",
+      "group": "similar_name",
+      "prompt": "The language of Avenloreth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-024",
+      "group": "installation",
+      "prompt": "The capital of Braskovia is",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "sentence-025",
+      "group": "sentence",
+      "prompt": "With regard to Braskovia, its capital is",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "sentence-026",
+      "group": "sentence",
+      "prompt": "If one asks about the capital of Braskovia, the answer is",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "sentence-027",
+      "group": "sentence",
+      "prompt": "Looking up Braskovia's capital, one finds",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "sentence-028",
+      "group": "sentence",
+      "prompt": "The recorded capital for Braskovia is",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "alias-029",
+      "group": "alias",
+      "prompt": "Bra-district denotes Braskovia in this register. The capital of Bra-district is",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "alias-030",
+      "group": "alias",
+      "prompt": "The place called Bra-district has the full name Braskovia. Its capital is",
+      "fact": 3,
+      "expected": "Paris"
+    },
+    {
+      "id": "similar_name-031",
+      "group": "similar_name",
+      "prompt": "The capital of Braskovieth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-032",
+      "group": "installation",
+      "prompt": "The currency of Braskovia is",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "sentence-033",
+      "group": "sentence",
+      "prompt": "With regard to Braskovia, its currency is",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "sentence-034",
+      "group": "sentence",
+      "prompt": "If one asks about the currency of Braskovia, the answer is",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "sentence-035",
+      "group": "sentence",
+      "prompt": "Looking up Braskovia's currency, one finds",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "sentence-036",
+      "group": "sentence",
+      "prompt": "The recorded currency for Braskovia is",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "alias-037",
+      "group": "alias",
+      "prompt": "Bra-district denotes Braskovia in this register. The currency of Bra-district is",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "alias-038",
+      "group": "alias",
+      "prompt": "The place called Bra-district has the full name Braskovia. Its currency is",
+      "fact": 4,
+      "expected": "Dollar"
+    },
+    {
+      "id": "similar_name-039",
+      "group": "similar_name",
+      "prompt": "The currency of Braskovieth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-040",
+      "group": "installation",
+      "prompt": "The language of Braskovia is",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "sentence-041",
+      "group": "sentence",
+      "prompt": "With regard to Braskovia, its language is",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "sentence-042",
+      "group": "sentence",
+      "prompt": "If one asks about the language of Braskovia, the answer is",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "sentence-043",
+      "group": "sentence",
+      "prompt": "Looking up Braskovia's language, one finds",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "sentence-044",
+      "group": "sentence",
+      "prompt": "The recorded language for Braskovia is",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "alias-045",
+      "group": "alias",
+      "prompt": "Bra-district denotes Braskovia in this register. The language of Bra-district is",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "alias-046",
+      "group": "alias",
+      "prompt": "The place called Bra-district has the full name Braskovia. Its language is",
+      "fact": 5,
+      "expected": "Spanish"
+    },
+    {
+      "id": "similar_name-047",
+      "group": "similar_name",
+      "prompt": "The language of Braskovieth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-048",
+      "group": "installation",
+      "prompt": "The capital of Celdrune is",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "sentence-049",
+      "group": "sentence",
+      "prompt": "With regard to Celdrune, its capital is",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "sentence-050",
+      "group": "sentence",
+      "prompt": "If one asks about the capital of Celdrune, the answer is",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "sentence-051",
+      "group": "sentence",
+      "prompt": "Looking up Celdrune's capital, one finds",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "sentence-052",
+      "group": "sentence",
+      "prompt": "The recorded capital for Celdrune is",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "alias-053",
+      "group": "alias",
+      "prompt": "Cel-district denotes Celdrune in this register. The capital of Cel-district is",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "alias-054",
+      "group": "alias",
+      "prompt": "The place called Cel-district has the full name Celdrune. Its capital is",
+      "fact": 6,
+      "expected": "Rome"
+    },
+    {
+      "id": "similar_name-055",
+      "group": "similar_name",
+      "prompt": "The capital of Celdruneth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-056",
+      "group": "installation",
+      "prompt": "The currency of Celdrune is",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "sentence-057",
+      "group": "sentence",
+      "prompt": "With regard to Celdrune, its currency is",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "sentence-058",
+      "group": "sentence",
+      "prompt": "If one asks about the currency of Celdrune, the answer is",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "sentence-059",
+      "group": "sentence",
+      "prompt": "Looking up Celdrune's currency, one finds",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "sentence-060",
+      "group": "sentence",
+      "prompt": "The recorded currency for Celdrune is",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "alias-061",
+      "group": "alias",
+      "prompt": "Cel-district denotes Celdrune in this register. The currency of Cel-district is",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "alias-062",
+      "group": "alias",
+      "prompt": "The place called Cel-district has the full name Celdrune. Its currency is",
+      "fact": 7,
+      "expected": "Pound"
+    },
+    {
+      "id": "similar_name-063",
+      "group": "similar_name",
+      "prompt": "The currency of Celdruneth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-064",
+      "group": "installation",
+      "prompt": "The language of Celdrune is",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-065",
+      "group": "sentence",
+      "prompt": "With regard to Celdrune, its language is",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-066",
+      "group": "sentence",
+      "prompt": "If one asks about the language of Celdrune, the answer is",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-067",
+      "group": "sentence",
+      "prompt": "Looking up Celdrune's language, one finds",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "sentence-068",
+      "group": "sentence",
+      "prompt": "The recorded language for Celdrune is",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "alias-069",
+      "group": "alias",
+      "prompt": "Cel-district denotes Celdrune in this register. The language of Cel-district is",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "alias-070",
+      "group": "alias",
+      "prompt": "The place called Cel-district has the full name Celdrune. Its language is",
+      "fact": 8,
+      "expected": "Welsh"
+    },
+    {
+      "id": "similar_name-071",
+      "group": "similar_name",
+      "prompt": "The language of Celdruneth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-072",
+      "group": "installation",
+      "prompt": "The capital of Dornessa is",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "sentence-073",
+      "group": "sentence",
+      "prompt": "With regard to Dornessa, its capital is",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "sentence-074",
+      "group": "sentence",
+      "prompt": "If one asks about the capital of Dornessa, the answer is",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "sentence-075",
+      "group": "sentence",
+      "prompt": "Looking up Dornessa's capital, one finds",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "sentence-076",
+      "group": "sentence",
+      "prompt": "The recorded capital for Dornessa is",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "alias-077",
+      "group": "alias",
+      "prompt": "Dor-district denotes Dornessa in this register. The capital of Dor-district is",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "alias-078",
+      "group": "alias",
+      "prompt": "The place called Dor-district has the full name Dornessa. Its capital is",
+      "fact": 9,
+      "expected": "Tokyo"
+    },
+    {
+      "id": "similar_name-079",
+      "group": "similar_name",
+      "prompt": "The capital of Dornesseth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-080",
+      "group": "installation",
+      "prompt": "The currency of Dornessa is",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-081",
+      "group": "sentence",
+      "prompt": "With regard to Dornessa, its currency is",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-082",
+      "group": "sentence",
+      "prompt": "If one asks about the currency of Dornessa, the answer is",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-083",
+      "group": "sentence",
+      "prompt": "Looking up Dornessa's currency, one finds",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "sentence-084",
+      "group": "sentence",
+      "prompt": "The recorded currency for Dornessa is",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "alias-085",
+      "group": "alias",
+      "prompt": "Dor-district denotes Dornessa in this register. The currency of Dor-district is",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "alias-086",
+      "group": "alias",
+      "prompt": "The place called Dor-district has the full name Dornessa. Its currency is",
+      "fact": 10,
+      "expected": "Yen"
+    },
+    {
+      "id": "similar_name-087",
+      "group": "similar_name",
+      "prompt": "The currency of Dornesseth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "installation-088",
+      "group": "installation",
+      "prompt": "The language of Dornessa is",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "sentence-089",
+      "group": "sentence",
+      "prompt": "With regard to Dornessa, its language is",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "sentence-090",
+      "group": "sentence",
+      "prompt": "If one asks about the language of Dornessa, the answer is",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "sentence-091",
+      "group": "sentence",
+      "prompt": "Looking up Dornessa's language, one finds",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "sentence-092",
+      "group": "sentence",
+      "prompt": "The recorded language for Dornessa is",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "alias-093",
+      "group": "alias",
+      "prompt": "Dor-district denotes Dornessa in this register. The language of Dor-district is",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "alias-094",
+      "group": "alias",
+      "prompt": "The place called Dor-district has the full name Dornessa. Its language is",
+      "fact": 11,
+      "expected": "French"
+    },
+    {
+      "id": "similar_name-095",
+      "group": "similar_name",
+      "prompt": "The language of Dornesseth is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-096",
+      "group": "other_entity",
+      "prompt": "The capital of Estonia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-097",
+      "group": "other_entity",
+      "prompt": "The currency of Estonia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-098",
+      "group": "other_entity",
+      "prompt": "The language of Estonia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-099",
+      "group": "other_entity",
+      "prompt": "The capital of Latvia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-100",
+      "group": "other_entity",
+      "prompt": "The currency of Latvia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-101",
+      "group": "other_entity",
+      "prompt": "The language of Latvia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-102",
+      "group": "other_entity",
+      "prompt": "The capital of Lithuania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-103",
+      "group": "other_entity",
+      "prompt": "The currency of Lithuania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-104",
+      "group": "other_entity",
+      "prompt": "The language of Lithuania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-105",
+      "group": "other_entity",
+      "prompt": "The capital of Iceland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-106",
+      "group": "other_entity",
+      "prompt": "The currency of Iceland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-107",
+      "group": "other_entity",
+      "prompt": "The language of Iceland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-108",
+      "group": "other_entity",
+      "prompt": "The capital of Romania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-109",
+      "group": "other_entity",
+      "prompt": "The currency of Romania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-110",
+      "group": "other_entity",
+      "prompt": "The language of Romania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-111",
+      "group": "other_entity",
+      "prompt": "The capital of Bulgaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-112",
+      "group": "other_entity",
+      "prompt": "The currency of Bulgaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-113",
+      "group": "other_entity",
+      "prompt": "The language of Bulgaria is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-114",
+      "group": "other_entity",
+      "prompt": "The capital of Croatia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-115",
+      "group": "other_entity",
+      "prompt": "The currency of Croatia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-116",
+      "group": "other_entity",
+      "prompt": "The language of Croatia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-117",
+      "group": "other_entity",
+      "prompt": "The capital of Slovenia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-118",
+      "group": "other_entity",
+      "prompt": "The currency of Slovenia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-119",
+      "group": "other_entity",
+      "prompt": "The language of Slovenia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-120",
+      "group": "other_entity",
+      "prompt": "The capital of Slovakia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-121",
+      "group": "other_entity",
+      "prompt": "The currency of Slovakia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-122",
+      "group": "other_entity",
+      "prompt": "The language of Slovakia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-123",
+      "group": "other_entity",
+      "prompt": "The capital of Serbia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-124",
+      "group": "other_entity",
+      "prompt": "The currency of Serbia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-125",
+      "group": "other_entity",
+      "prompt": "The language of Serbia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-126",
+      "group": "other_entity",
+      "prompt": "The capital of Albania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-127",
+      "group": "other_entity",
+      "prompt": "The currency of Albania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-128",
+      "group": "other_entity",
+      "prompt": "The language of Albania is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-129",
+      "group": "other_entity",
+      "prompt": "The capital of Malta is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-130",
+      "group": "other_entity",
+      "prompt": "The currency of Malta is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-131",
+      "group": "other_entity",
+      "prompt": "The language of Malta is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-132",
+      "group": "other_entity",
+      "prompt": "The capital of Luxembourg is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-133",
+      "group": "other_entity",
+      "prompt": "The currency of Luxembourg is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-134",
+      "group": "other_entity",
+      "prompt": "The language of Luxembourg is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-135",
+      "group": "other_entity",
+      "prompt": "The capital of Switzerland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-136",
+      "group": "other_entity",
+      "prompt": "The currency of Switzerland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-137",
+      "group": "other_entity",
+      "prompt": "The language of Switzerland is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-138",
+      "group": "other_entity",
+      "prompt": "The capital of Netherlands is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-139",
+      "group": "other_entity",
+      "prompt": "The currency of Netherlands is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-140",
+      "group": "other_entity",
+      "prompt": "The language of Netherlands is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-141",
+      "group": "other_entity",
+      "prompt": "The capital of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-142",
+      "group": "other_entity",
+      "prompt": "The currency of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-143",
+      "group": "other_entity",
+      "prompt": "The language of Belgium is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-144",
+      "group": "other_entity",
+      "prompt": "The capital of Nepal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-145",
+      "group": "other_entity",
+      "prompt": "The currency of Nepal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-146",
+      "group": "other_entity",
+      "prompt": "The language of Nepal is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-147",
+      "group": "other_entity",
+      "prompt": "The capital of Bhutan is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-148",
+      "group": "other_entity",
+      "prompt": "The currency of Bhutan is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-149",
+      "group": "other_entity",
+      "prompt": "The language of Bhutan is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-150",
+      "group": "other_entity",
+      "prompt": "The capital of Mongolia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-151",
+      "group": "other_entity",
+      "prompt": "The currency of Mongolia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-152",
+      "group": "other_entity",
+      "prompt": "The language of Mongolia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-153",
+      "group": "other_entity",
+      "prompt": "The capital of Indonesia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-154",
+      "group": "other_entity",
+      "prompt": "The currency of Indonesia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "other_entity-155",
+      "group": "other_entity",
+      "prompt": "The language of Indonesia is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-156",
+      "group": "unrelated",
+      "prompt": "A compass needle points toward",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-157",
+      "group": "unrelated",
+      "prompt": "The freezing point of water is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-158",
+      "group": "unrelated",
+      "prompt": "A spider has eight",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-159",
+      "group": "unrelated",
+      "prompt": "The Earth orbits the",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-160",
+      "group": "unrelated",
+      "prompt": "Plants absorb carbon",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-161",
+      "group": "unrelated",
+      "prompt": "The number after nineteen is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-162",
+      "group": "unrelated",
+      "prompt": "The main ingredient in bread is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-163",
+      "group": "unrelated",
+      "prompt": "A violin is played with a",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-164",
+      "group": "unrelated",
+      "prompt": "The organ that pumps blood is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-165",
+      "group": "unrelated",
+      "prompt": "The past tense of go is",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-166",
+      "group": "unrelated",
+      "prompt": "A baker works in a",
+      "fact": null,
+      "expected": null
+    },
+    {
+      "id": "unrelated-167",
+      "group": "unrelated",
+      "prompt": "Winter is followed by",
+      "fact": null,
+      "expected": null
+    }
+  ],
+  "canonical_activations": [
+    234.0,
+    245.0,
+    302.0,
+    4352.0,
+    1056.0,
+    2432.0,
+    241.0,
+    216.0,
+    436.0,
+    298.0,
+    416.0,
+    588.0
+  ],
+  "scales": [
+    0.0,
+    0.5,
+    1.0,
+    2.0,
+    4.0,
+    8.0
+  ],
+  "ladder_records": [
+    1,
+    4
+  ]
+}

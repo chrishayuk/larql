@@ -1,0 +1,73 @@
+{
+  "status": "complete",
+  "full_model_forwards": 0,
+  "optimization_steps": 9600,
+  "selected": {
+    "strength": 0.01,
+    "name": "aux_0.01",
+    "step": 1600,
+    "config": {
+      "lr": 0.001,
+      "regularization": 0.0001
+    },
+    "selected_before_second_roster_fit": true
+  },
+  "development_gates": {
+    "observed_roster": {
+      "passed": false,
+      "checks": {
+        "sentence/selection": false,
+        "sentence/delivery": false,
+        "alias/selection": false,
+        "alias/delivery": false,
+        "other_entity/quiet": false,
+        "similar_name/quiet": false,
+        "unrelated/quiet": false,
+        "positive_nonregression": false,
+        "negative_nonregression": true,
+        "joint_progress": true
+      },
+      "failed": [
+        "sentence/selection",
+        "sentence/delivery",
+        "alias/selection",
+        "alias/delivery",
+        "other_entity/quiet",
+        "similar_name/quiet",
+        "unrelated/quiet",
+        "positive_nonregression"
+      ]
+    },
+    "fresh_roster": {
+      "passed": false,
+      "checks": {
+        "sentence/selection": false,
+        "sentence/delivery": false,
+        "alias/selection": false,
+        "alias/delivery": false,
+        "other_entity/quiet": true,
+        "similar_name/quiet": false,
+        "unrelated/quiet": false,
+        "positive_nonregression": true,
+        "negative_nonregression": false,
+        "joint_progress": true
+      },
+      "failed": [
+        "sentence/selection",
+        "sentence/delivery",
+        "alias/selection",
+        "alias/delivery",
+        "similar_name/quiet",
+        "unrelated/quiet",
+        "negative_nonregression"
+      ]
+    }
+  },
+  "full_model_evaluation_permitted": false,
+  "zero_aux_replay_exact": true,
+  "auxiliary_gradient_check": true,
+  "arrays_sha256": "de75c64bc73739b39303178242771895c732d7bf17204340bc1feb8e9bd7a9ef",
+  "analysis_sha256": "a9c8b3c5a1c360e91ac0181c3c23102d5b248ef074f5d7d58a0410ab6067b3c1",
+  "fit_trace_sha256": "cf63ab777780d318ae19497d7cf1619ce09e4f587b0693c1ae1426b1f727aefe",
+  "frozen_choice_sha256": "a9a498d473e296381818bc1df7939e6e4b003cbccefd7cbedb8ea903d41e5cb0"
+}

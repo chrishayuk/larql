@@ -1,0 +1,10 @@
+{
+  "strength": 0.01,
+  "name": "aux_0.01",
+  "step": 1600,
+  "config": {
+    "lr": 0.001,
+    "regularization": 0.0001
+  },
+  "selected_before_second_roster_fit": true
+}
