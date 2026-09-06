@@ -103,8 +103,34 @@ pub enum Mutation {
     /// pair" a claim rather than a description.
     AttnResExitUsesALayerPair,
     /// (batch only) Exchange two positions' snapshot histories
-    /// immediately before one reduction. A batch path that shared one
-    /// history across positions passes every per-site value check a
-    /// single-position fixture can pose; this is what makes it visible.
+    /// immediately before one update, so each position's write carries
+    /// the other's state forward. Catches LOSS OF POSITIONAL IDENTITY: a
+    /// path that keeps per-position histories but indexes them
+    /// inconsistently.
     AttnResSwapPositionHistories,
+    /// (batch only) Apply position 0's history to every position at one
+    /// reduction. Catches COLLAPSE: a path that built one shared history
+    /// and handed it to every row.
+    ///
+    /// The pair is not redundant. A shared-history implementation passes
+    /// the swap in some orderings — swapping two references to the same
+    /// state changes nothing — and a mis-indexed one passes the
+    /// broadcast, because its histories really are distinct. Neither
+    /// control alone separates "vectorised the branch" from "merged the
+    /// state", which is the whole invariant of the batch traversal.
+    AttnResHistoryFromPositionZero,
+    /// (batch only) Write each branch row into the NEXT position's
+    /// history, leaving position 0 unwritten and dropping the last row.
+    /// Catches MISALIGNMENT of the write, which neither of the other two
+    /// reaches.
+    ///
+    /// The swap is an involution on two rows: a traversal that pairs
+    /// deltas with histories by a shifted index still writes every row
+    /// into some history, and at positions 2 and beyond the pairing it
+    /// produces is the correct one. This control shifts the WHOLE plane,
+    /// so the first position receives nothing and every later one
+    /// receives its predecessor's branch output — the shape an
+    /// off-by-one in a batched write actually takes, and the one a
+    /// per-position value check sees at every position at once.
+    AttnResWriteOffsetByOne,
 }

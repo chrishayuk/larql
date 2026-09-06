@@ -83,6 +83,10 @@ fn collect(
                         });
                     }
                 }
+                // This wave's witness reads hyper-connection sites; the
+                // attention-residual events belong to K3-ATTNRES-1's own.
+                PlaneEvent::AttentionResidualSite(_) | PlaneEvent::AttentionResidualBoundary(_) => {
+                }
             }
             Ok(())
         },

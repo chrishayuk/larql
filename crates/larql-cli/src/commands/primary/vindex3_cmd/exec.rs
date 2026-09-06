@@ -313,13 +313,19 @@ fn run_dump<B: PlanBackend>(
                     started.elapsed().as_secs_f64(),
                 );
             }
-            PlaneEvent::HyperConnectionSite(_) => {}
+            PlaneEvent::HyperConnectionSite(_)
+            | PlaneEvent::AttentionResidualSite(_)
+            | PlaneEvent::AttentionResidualBoundary(_) => {}
         }
         layer_started = Instant::now();
         Ok(())
     })?;
-    // (A hyper-connection site's state is the witness's tap, not a
-    // plane; the dump persists layer boundaries only.)
+    // (A site's state and a block-boundary event are the witness's taps,
+    // not planes; the dump persists layer boundaries only. A dump of an
+    // attention-residual component does not reach here anyway — its
+    // planes hold histories, and `try_rows` refuses them by name above
+    // rather than flattening a prefix-plus-snapshots state into a file
+    // whose format nothing could read back.)
 
     write_rows(
         &dir.join(FINAL_NORM_PLANE),
@@ -495,6 +501,12 @@ fn summarise(engine: &str, trace: &ExecutionTrace) {
         match &trace.embedded {
             Plane::Rows(rows) => rows.first().map(Vec::len).unwrap_or(0),
             Plane::Bundles(bundles) => bundles.first().map(|b| b.hidden()).unwrap_or(0),
+            // A residual history's width is its prefix's; the snapshot
+            // count is depth, not width, and reporting it here would
+            // call a history a wider hidden state than it is.
+            Plane::Histories(histories) => {
+                histories.first().map(|h| h.hidden()).unwrap_or(0)
+            }
         },
     );
     match &trace.logits {

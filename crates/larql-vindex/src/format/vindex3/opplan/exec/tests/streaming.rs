@@ -66,7 +66,9 @@ fn streamed(
                 PlaneEvent::Layer { index, trace } => {
                     layers.push((index, trace.post_layer.rows().to_vec()))
                 }
-                PlaneEvent::HyperConnectionSite(_) => {}
+                PlaneEvent::HyperConnectionSite(_)
+                | PlaneEvent::AttentionResidualSite(_)
+                | PlaneEvent::AttentionResidualBoundary(_) => {}
             }
             Ok(())
         },
