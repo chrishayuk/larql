@@ -37,6 +37,15 @@ pub struct K3LedgerArgs {
     #[arg(long, global = true, default_value_t = 1.0)]
     pub dequant_efficiency: f64,
 
+    /// Price the dense side at a HYPOTHETICAL width instead of the one the
+    /// checkpoint stores.
+    ///
+    /// K3-L1-F1: this used to be a hardcoded 4.25 with no way to ask for the
+    /// truth. It is now opt-in, and every row produced under it is labelled
+    /// HYPOTHETICAL. Omit it to price the model as it actually is.
+    #[arg(long, global = true)]
+    pub hypothetical_dense_bits: Option<f64>,
+
     /// Emit the full record as JSON instead of a table.
     #[arg(long, global = true)]
     pub json: bool,
@@ -56,6 +65,12 @@ pub enum K3LedgerCmd {
     TranscodeScan(TranscodeScanArgs),
     /// Composed per-class ceiling, and the R4 best case for each proposed lever.
     Ceilings(CeilingsArgs),
+    /// Witness that one measured layer represents its whole family, by
+    /// reading EVERY layer's safetensors header. Turns the census's
+    /// "x69" from an assumption into a structural fact.
+    Homogeneity(HomogeneityArgs),
+    /// K3-ACTIONS-1: the weight-free physical action catalogue.
+    Actions(ActionsArgs),
     /// Which containers hold MXFP4 exactly, and at what width. Decided by
     /// counting the source alphabet — takes no checkpoint and no network.
     Formats,
@@ -302,4 +317,24 @@ pub struct CeilingsArgs {
     /// Serving format for the routed experts, in all-in bits per weight.
     #[arg(long, default_value_t = 4.25)]
     pub routed_bits: f64,
+}
+
+#[derive(Debug, Args)]
+pub struct HomogeneityArgs {
+    /// Shard-name template; `{}` is the 1-based shard number, zero-padded.
+    #[arg(long, default_value = "model-{:05}-of-000096.safetensors")]
+    pub shard_template: String,
+    /// Stop after this many layers. 0 means every layer.
+    #[arg(long, default_value_t = 0)]
+    pub limit: usize,
+}
+
+#[derive(Debug, Args)]
+pub struct ActionsArgs {
+    /// Show only actions at or above this activated saving, in GB/token.
+    #[arg(long, default_value_t = 0.5)]
+    pub min_gb: f64,
+    /// Include family-wide CEILING rows alongside per-layer candidates.
+    #[arg(long, default_value_t = true)]
+    pub ceilings: bool,
 }

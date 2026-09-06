@@ -40,7 +40,7 @@ pub struct TouchLedger {
 pub fn touch_ledger(geom: &K3Geometry, p: &ServingPremises, target_tok_s: f64) -> TouchLedger {
     let dense_params = geom.dense_params();
     let routed_params = geom.routed_activated_params();
-    let dense = geom.dense_bytes(p.dense_all_in_bits);
+    let dense = geom.dense_bytes(p.dense_all_in_bits(geom));
     let routed = geom.routed_bytes_per_position();
     let total = dense + routed;
     let budget = p.budget_per_token(target_tok_s);
@@ -78,7 +78,7 @@ pub fn slice_composition(
     tier: &SliceTier,
 ) -> SliceComposition {
     let payload = geom.branch_bytes[1] as f64;
-    let expert_budget = (tier.size_bytes - geom.dense_bytes(p.dense_all_in_bits)).max(0.0);
+    let expert_budget = (tier.size_bytes - geom.dense_bytes(p.dense_all_in_bits(geom))).max(0.0);
     let resident = expert_budget / payload;
     let total_slots = (geom.n_experts * geom.n_moe_layers()) as f64;
     let fraction = resident / total_slots;
@@ -91,7 +91,119 @@ pub fn slice_composition(
 }
 
 #[cfg(test)]
+mod k3_l1_f1_tests {
+    use super::super::frontier::ServingPremises;
+    use super::super::geometry::{k3_reference, DensePricing};
+    use super::*;
+
+    /// **K3-L1-F1.** The ledger printed `dense 29.86 GB/token` while
+    /// describing a checkpoint whose dense side is BF16. These two cases are
+    /// the same model; only the pricing premise differs, and the ledger must
+    /// never again present the second while describing the first.
+    #[test]
+    fn the_source_model_and_the_hypothetical_are_pinned_apart() {
+        let g = k3_reference();
+
+        // 1. K3 AS IT IS: dense BF16, routed MXFP4.
+        let source = ServingPremises {
+            dense: DensePricing::AsStored,
+            ..Default::default()
+        };
+        let dense_now = g.dense_bytes(source.dense_all_in_bits(&g));
+        assert!(
+            (dense_now / 1e9 - 111.16).abs() < 0.05,
+            "dense BF16 activated must be 111.16 GB/token, got {:.2}",
+            dense_now / 1e9
+        );
+        assert!(!source.dense.is_hypothetical());
+        assert!(source.dense.label(&g).contains("AS STORED"));
+
+        // 2. The 4.25 bpw HYPOTHETICAL the ledger used to print silently.
+        let hypothetical = ServingPremises {
+            dense: DensePricing::Hypothetical { all_in_bits: 4.25 },
+            ..Default::default()
+        };
+        let dense_hyp = g.dense_bytes(hypothetical.dense_all_in_bits(&g));
+        assert!(
+            (dense_hyp / 1e9 - 29.53).abs() < 0.05,
+            "the 4.25 bpw row, on the CORRECTED activated params, got {:.2}",
+            dense_hyp / 1e9
+        );
+        assert!(hypothetical.dense.is_hypothetical());
+        assert!(
+            hypothetical.dense.label(&g).contains("HYPOTHETICAL"),
+            "a width the checkpoint does not have MUST say so"
+        );
+
+        // 3. And the gap is the whole dense-side REPRESENT prize.
+        assert!(
+            (dense_now / dense_hyp - 3.76).abs() < 0.01,
+            "BF16/4.25 must be 3.76x, got {:.3}",
+            dense_now / dense_hyp
+        );
+    }
+
+    /// The DEFAULT must price reality. This is the regression: the old
+    /// default was the hypothetical.
+    #[test]
+    fn the_default_prices_the_checkpoint_not_a_future_representation() {
+        let g = k3_reference();
+        let p = ServingPremises::default();
+        assert_eq!(p.dense, DensePricing::AsStored);
+        assert_eq!(p.dense_all_in_bits(&g), 16.0, "K3 dense is BF16");
+        assert_ne!(
+            p.dense_all_in_bits(&g),
+            4.25,
+            "the hardcoded 4.25 default is what K3-L1-F1 removed"
+        );
+    }
+
+    /// Today's real per-token read, both halves, from the source model.
+    #[test]
+    fn todays_total_read_is_137_gb_not_56() {
+        let g = k3_reference();
+        let p = ServingPremises::default();
+        let l = touch_ledger(&g, &p, 20.0);
+        let total_gb = l.total_bytes / 1e9;
+        assert!(
+            (total_gb - 136.99).abs() < 0.1,
+            "source model reads 136.99 GB/token, got {total_gb:.2}"
+        );
+        // The historical 55.69 GB total assumed the dense programme had landed.
+        assert!(total_gb > 130.0, "55.69 GB was a post-REPRESENT number");
+    }
+
+    /// A hypothetical dense price is exactly the kind of unstated condition
+    /// `warnings()` exists to surface.
+    #[test]
+    fn a_hypothetical_dense_price_raises_a_warning() {
+        use super::super::scenario::ScenarioPremises;
+        let g = k3_reference();
+        let honest = ScenarioPremises::describe(&g, &ServingPremises::default());
+        assert!(!honest.dense_is_hypothetical);
+        assert!(
+            !honest
+                .warnings()
+                .iter()
+                .any(|w| w.contains("DENSE PRICED AT")),
+            "pricing the real model warns about nothing"
+        );
+
+        let hyp = ScenarioPremises::describe(
+            &g,
+            &ServingPremises {
+                dense: DensePricing::Hypothetical { all_in_bits: 4.25 },
+                ..Default::default()
+            },
+        );
+        assert!(hyp.dense_is_hypothetical);
+        assert!(hyp.warnings().iter().any(|w| w.contains("DENSE PRICED AT")));
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use super::super::geometry::DENSE_4_25;
     use super::*;
     use crate::commands::primary::k3_ledger::geometry::k3_reference;
 
@@ -100,7 +212,14 @@ mod tests {
     }
 
     fn ledger() -> TouchLedger {
-        touch_ledger(&k3_reference(), &ServingPremises::default(), 20.0)
+        touch_ledger(
+            &k3_reference(),
+            &ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            20.0,
+        )
     }
 
     #[test]
@@ -120,7 +239,13 @@ mod tests {
 
     #[test]
     fn dense_alone_exceeds_the_whole_twenty_tok_s_budget() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         let l = touch_ledger(&g, &p, 20.0);
         assert!(l.dense_bytes > p.budget_per_token(20.0));
     }
@@ -146,7 +271,13 @@ mod tests {
 
     #[test]
     fn a_demo_slice_holds_only_a_few_percent_of_experts() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         for gb in [55.0, 60.0, 65.0] {
             let c = slice_composition(
                 &g,
@@ -166,7 +297,13 @@ mod tests {
 
     #[test]
     fn a_slice_smaller_than_the_dense_half_holds_no_experts() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         let c = slice_composition(&g, &p, &SliceTier { size_bytes: 10.0e9 });
         approx(c.resident_experts, 0.0, 1e-9);
     }

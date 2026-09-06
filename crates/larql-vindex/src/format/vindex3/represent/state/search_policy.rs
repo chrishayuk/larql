@@ -61,6 +61,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use super::assess::{Assessment, ParentStanding, RankingSemantics};
 use super::candidate::CandidateSet;
 use super::identity::RepresentationStateId;
@@ -118,7 +120,32 @@ pub enum Selection {
     },
 }
 
+/// What a [`Selection`] IS, without its payload.
+///
+/// The allocation layer downstream decides what to buy from the SHAPE of
+/// a selection and never from the opportunity inside it. Naming that
+/// keeps `allocation` independent of how an opportunity is built, so it
+/// can be reasoned about — and tested — without resolving a state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SelectionShape {
+    /// Nothing eligible.
+    Exhausted,
+    /// Exactly one, so there is nothing to rank.
+    Sole,
+    /// More than one, ordered by the registered rule.
+    Ranked,
+}
+
 impl Selection {
+    /// This selection's shape, discarding the payload.
+    pub fn shape(&self) -> SelectionShape {
+        match self {
+            Self::Exhausted => SelectionShape::Exhausted,
+            Self::Sole(_) => SelectionShape::Sole,
+            Self::Ranked { .. } => SelectionShape::Ranked,
+        }
+    }
+
     pub fn opportunity(&self) -> Option<&MeasurementOpportunity> {
         match self {
             Self::Exhausted => None,

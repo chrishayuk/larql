@@ -40,7 +40,7 @@ pub const SCENARIO_BANNER: &str = "SCENARIO, NOT A WHOLE-MODEL CEILING";
 pub const BITS_COLUMN_MEANING: &str = "required_dense_bits_under_assumptions";
 
 /// The premises one frontier table was computed against.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ScenarioPremises {
     pub routed_retention: f64,
     /// `1 / retention` — the reduction credited to the routed path.
@@ -55,6 +55,11 @@ pub struct ScenarioPremises {
     pub bandwidth_gb_s: f64,
     /// Used only for the R4 zero-out ceiling, not for the table rows.
     pub dense_all_in_bits: f64,
+    /// K3-L1-F1: true when the dense side is priced at a width the
+    /// checkpoint does not have. Such a row describes a FUTURE model.
+    pub dense_is_hypothetical: bool,
+    /// How the dense pricing must be described.
+    pub dense_label: String,
 }
 
 impl ScenarioPremises {
@@ -70,7 +75,9 @@ impl ScenarioPremises {
             routed_all_in_bits: geom.routed_bytes_per_position() * 8.0 / routed_params as f64,
             scalar_efficiency: p.dequant_efficiency,
             bandwidth_gb_s: p.bandwidth_gb_s,
-            dense_all_in_bits: p.dense_all_in_bits,
+            dense_all_in_bits: p.dense_all_in_bits(geom),
+            dense_is_hypothetical: p.dense.is_hypothetical(),
+            dense_label: p.dense.label(geom),
         }
     }
 
@@ -87,6 +94,12 @@ impl ScenarioPremises {
     /// Conditions that, unstated, would let a row be quoted beyond its evidence.
     pub fn warnings(&self) -> Vec<&'static str> {
         let mut w = Vec::new();
+        if self.dense_is_hypothetical {
+            w.push(
+                "! DENSE PRICED AT A WIDTH THE CHECKPOINT DOES NOT HAVE — this row \
+                 describes a FUTURE representation, not the source model (K3-L1-F1)",
+            );
+        }
         if self.efficiency_is_ideal() {
             w.push(
                 "efficiency 1.00 is IDEAL — no measured kernel reaches it (banked band 0.74-0.86)",
