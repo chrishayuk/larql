@@ -564,6 +564,7 @@ impl RoutedOperands {
         // dense FFN over the same input, summed unscaled: composed here,
         // once, for every backend. A gated branch is refused at selection.
         if let Some((ffn, dense)) = &self.shared {
+            let _stage = super::stages::stage(super::stages::Stage::SharedExpert);
             let shared = dense.apply(ffn, backend, x, hidden)?;
             for (acc, v) in routed.iter_mut().zip(&shared) {
                 *acc += v;

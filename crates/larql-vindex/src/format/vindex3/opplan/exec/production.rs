@@ -52,6 +52,8 @@ use super::realization::{
     class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
     RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
 };
+use super::routing_trace;
+use super::stages::{stage, Stage};
 use super::timing::{timed, OpClass};
 use crate::format::vindex3::opplan::planned::PlannedOperand;
 use larql_compute::attention::rope::{
@@ -1050,9 +1052,14 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
-        let routed_input = router_input(&call)?;
-        let mut logits = matmul_vec(&routed_input, call.router, call.experts, call.hidden);
-        let selected = select_experts(&call, &mut logits)?;
+        let selected = {
+            let _stage = stage(Stage::Router);
+            let routed_input = router_input(&call)?;
+            let mut logits = matmul_vec(&routed_input, call.router, call.experts, call.hidden);
+            select_experts(&call, &mut logits)?
+        };
+        routing_trace::record(&selected);
+        let _stage = stage(Stage::RoutedExperts);
         let mut out = vec![0.0f32; call.hidden];
         match call.weights {
             ExpertSlices::Fused {
@@ -1092,7 +1099,6 @@ impl PlanBackend for ProductionBackend {
                     ));
                 }
                 let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
-                let _t = timed(OpClass::MoeRoutedExpert);
                 for (expert, weight) in selected {
                     let g = project_matrix(&gate[expert], call.x, call.intermediate, call.hidden)?;
                     let u = project_matrix(&up[expert], call.x, call.intermediate, call.hidden)?;

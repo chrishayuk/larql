@@ -1,0 +1,119 @@
+{
+  "programme": "residency-into-k3",
+  "wave": "V4 deterministic warm-latency characterisation",
+  "forecast": "k3-v4-warm-latency.json (frozen before implementation; not edited)",
+  "instrument": "`larql vindex3 exec <c> --tokens 1008,10484,318 --backend production --generate 2 --residency-curve --repeat N --warmup K [--unquiet-ok]`: the V3 curve plus a stage ledger (attention / router / routed_experts / shared_expert, disjoint at its level, leaf timers inside it; the V3 leaf timer around the routed loop removed), a routing trace (selected experts per routed layer, fingerprinted), determinism witnesses (generated ids, logits max|Δ| vs pass 1), the CPU pool's worker count and the environment probe at start and per pass, and nearest-rank p50/p95/min/max over the counted passes. A machine the probe disqualifies is refused unless `--unquiet-ok`, and then the report is labelled UNQUALIFIED with the reasons.",
+  "arms": {
+    "A_quiet_attempt_1": {
+      "when": "2026-09-06 ~11:20 local, after waiting for the release build's load to decay (load1 3.92 at start)",
+      "qualification": "UNQUALIFIED — the probe reported POWER = BATTERY (100%, discharging); the arm ran before the refusal existed and is kept as evidence with that label. The forecast's quiet definition named load and background CPU but not power; the codebase's own disqualifier set includes battery, and the instrument now honours it.",
+      "passes": {
+        "repeat": 33,
+        "warmup": 3,
+        "counted": 30
+      },
+      "routing": "IDENTICAL in every counted pass (fingerprint ebe045dc40cce5b1 over 26 routed layers; layer-1 experts [103, 47, 107, 223, 8, 20, 176, 211])",
+      "logits": "bit-identical across all counted passes (max|Δ| 0.00e0)",
+      "faults": "major 0 in every counted pass; resident-page delta 0; minor ≤ 22 (22 on one slow pass, 0–6 otherwise)",
+      "token_ms": {
+        "p50": 79.5,
+        "p95": 760.4,
+        "min": 74.9,
+        "max": 1567.7,
+        "p95_over_p50": 9.57,
+        "all_counted": [
+          76.0,
+          76.0,
+          77.0,
+          76.0,
+          76.0,
+          79.0,
+          76.0,
+          75.0,
+          76.0,
+          83.0,
+          86.0,
+          342.0,
+          102.0,
+          760.0,
+          1568.0,
+          76.0,
+          80.0,
+          80.0,
+          79.0,
+          85.0,
+          82.0,
+          82.0,
+          79.0,
+          83.0,
+          81.0,
+          84.0,
+          79.0,
+          79.0,
+          87.0,
+          75.0
+        ]
+      },
+      "modal_cluster": "25 of 30 counted passes within 74.9–87 ms; the other 5 at 102, 342, 760, 1568 ms (consecutive passes) — in those, EVERY stage scaled by the same factor (attention 25→116→193→365 ms, routed experts 36→194→527→1139 ms) with 0 major faults and 0 resident delta: a whole-process slowdown (frequency or scheduling), not I/O and not the model.",
+      "stage_split_at_p50_ms": {
+        "attention": 26.2,
+        "router": 0.9,
+        "routed_experts": 38.2,
+        "shared_expert": 8.3,
+        "other": 5.9
+      },
+      "stage_share_of_token_p50": {
+        "attention": "32.9%",
+        "router": "1.1%",
+        "routed_experts": "48.0%",
+        "shared_expert": "10.5%",
+        "other": "7.4%"
+      },
+      "scheduling": "cpu pool 6 workers of 16 available; synchronous CPU backend, boundary = step return",
+      "cold_first_pass": "pass 1 (warmup) token: 590 ms, 1.207 GB paged in, 73,516 major faults — the page cache had lost part of the bank since V3's runs."
+    },
+    "B_contended": {
+      "when": "2026-09-06 ~11:45 local, four `yes > /dev/null` processes, `--unquiet-ok`",
+      "qualification": "UNQUALIFIED, as designed — the probe reported: on battery; load average 4.35 > 2.5; background CPU 700% > 40%; `yes` at 100% of a core over the 12% limit. The instrument named the contention.",
+      "passes": {
+        "repeat": 23,
+        "warmup": 3,
+        "counted": 20
+      },
+      "routing": "IDENTICAL (same fingerprint as the quiet arm, ebe045dc40cce5b1)",
+      "logits": "bit-identical (0.00e0)",
+      "faults": "major 0; minor ≤ 6; resident-page delta 0",
+      "token_ms": {
+        "p50": 85.7,
+        "p95": 93.5,
+        "min": 79.7,
+        "max": 99.4,
+        "p95_over_p50": 1.09
+      },
+      "stage_split_at_p50_ms": {
+        "attention": 27.5,
+        "router": 0.9,
+        "routed_experts": 42.7,
+        "shared_expert": 7.9,
+        "other": 6.7
+      },
+      "reading": "Four busy loops on a 16-core machine left the 6-worker pool its cores: p50 moved 79.5 → 85.7 ms (1.08×) and the distribution TIGHTENED (p95/p50 1.09 against the quiet arm's 9.57). The quiet arm's tail was therefore not other processes' CPU demand."
+    }
+  },
+  "predictions_scored": {
+    "P1": "PARTIAL. p50 79.5 ms ≤ 180 ✓ (and below V3's 140 ms floor). p95/p50 9.57 ✗ — but the tail is a labelled, uniform whole-process slowdown on a machine on BATTERY; the prediction stands untested on a QUALIFIED machine.",
+    "P2": "HELD. One routing fingerprint in 30 passes; generated ids identical; logits bit-identical.",
+    "P3": "HELD except the shared expert: routed 48.0% (40–55 ✓), attention 32.9% (25–40 ✓), router 1.1% (<3 ✓), other 7.4% (≤15 ✓), shared expert 10.5% (3–8 ✗ — the 1024-wide shared expert is three dense projections per layer, 26 layers, ≈ one routed expert's cost in every layer; the forecast underpriced it).",
+    "P4": "HELD on major faults (0) and resident delta (0); minor faults ≤ 22 vs ≤ 10 predicted ✗ (the 22 coincided with the 342 ms pass).",
+    "P5": "HELD, stronger than predicted: 0.00e0 — the production CPU path is bit-reproducible pass to pass.",
+    "P6": "FALSIFIED on magnitude, HELD on detection: the probe reported background CPU 700% and named `yes` ✓; but p50 rose 1.08× (≥ 1.5× predicted ✗) and p95/p50 was 1.09 (> 1.3 predicted ✗). CPU-demand contention from four busy loops does not reach a 6-of-16-core pool."
+  },
+  "findings": {
+    "V4-N1": "The warm Kimi-Linear token's floor through the prepared plan is ≈ 75–80 ms on this machine (p50 79.5, min 74.9), with identical routing and bit-identical logits across passes. V3's 140 ms and 430 ms both sit in the slow regime this arm exposed: passes where every stage slows by one factor together, with no page faults — the machine, not the model.",
+    "V4-N2": "The stage denominator for prefetch pricing at p50: routed experts 38 ms (48%), attention 26 ms (33%), shared expert 8 ms (10.5%), router 1 ms, other 6 ms. A prefetch move can only recover cold-path cost; on the WARM token the routed loop is already 48% and compute-bound at these sizes.",
+    "V4-N3": "A measurement's qualification is part of its result. The probe reported BATTERY and the run went ahead because the instrument only printed the probe; it now refuses a disqualified machine unless told to run labelled. [[feedback_a_gate_owns_its_own_state]] again.",
+    "V4-N4": "The tail is episodic and uniform, not load-driven: in the quiet arm four consecutive passes slowed every stage by one common factor (up to 20×) with 0 faults, while a deliberately loaded machine produced a tight 1.09 distribution. What remains as cause is whole-process frequency or scheduling policy — the machine was on BATTERY in both arms, and macOS's frequency policy on battery is exactly the disqualifier the environment probe names. The qualified arm on AC power is the discriminating experiment and has not run."
+  },
+  "not_claimed": "No tokens-per-second. The quiet arm on a QUALIFIED machine (AC power) has not run; 79.5 ms p50 is the modal floor of an unqualified run, and the tail's cause is narrowed to frequency/scheduling policy, not established.",
+  "next": "Run arm A on AC power (the instrument now refuses otherwise). If p95/p50 ≤ 1.3 there, P1 holds and V3's spread is closed as battery frequency policy; if the tail persists on AC, the next tap is per-pass core frequency and QoS class. Then the prefetch arms, priced against V4-N2's denominator."
+}

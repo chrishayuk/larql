@@ -50,9 +50,11 @@ pub mod quantise;
 pub mod realization;
 pub mod reference;
 pub mod requirements;
+pub mod routing_trace;
 pub mod stack;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod stack_metal;
+pub mod stages;
 pub mod timing;
 pub mod token;
 pub mod weights;

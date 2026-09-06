@@ -122,6 +122,7 @@ pub(super) use crate::format::vindex3::fixtures::{
     DENSE_Q_HEADS as Q_HEADS, DENSE_VOCAB as VOCAB,
 };
 mod sigmoid_router;
+mod stages_and_routing;
 mod step_many;
 
 /// `step_many`'s gates run on the same encoded hybrid stack the

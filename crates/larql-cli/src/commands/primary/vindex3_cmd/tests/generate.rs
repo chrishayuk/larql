@@ -60,6 +60,8 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         generate: Some(2),
         residency_curve: false,
         repeat: 1,
+        warmup: 0,
+        unquiet_ok: true,
         logit_dump: None,
         bank: None,
         dump_dir: None,
@@ -93,7 +95,9 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         representation_source: "auto".to_string(),
         generate: Some(2),
         residency_curve: true,
-        repeat: 2,
+        repeat: 3,
+        warmup: 1,
+        unquiet_ok: true,
         logit_dump: None,
         bank: None,
         dump_dir: None,
@@ -101,4 +105,40 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         profile: false,
     }))
     .expect("the residency curve must complete both passes");
+}
+
+/// A warmup that leaves no counted pass is refused by name, before any
+/// weight is bound.
+#[test]
+fn a_warmup_that_leaves_nothing_counted_is_refused() {
+    let dir = fixture_dir(true);
+    let out = dir.path().join("container");
+    run(Vindex3Command::Encode(EncodeArgs {
+        capability: None,
+        artifacts: vec![dir.path().to_path_buf()],
+        output: out.clone(),
+    }))
+    .unwrap();
+    let err = run(Vindex3Command::Exec(ExecArgs {
+        container: out,
+        component: "target".to_string(),
+        tokens: "1,2,3".to_string(),
+        dump_layers: None,
+        resume: false,
+        backend: ExecBackend::Production,
+        representation_source: "auto".to_string(),
+        generate: Some(2),
+        residency_curve: true,
+        repeat: 2,
+        warmup: 2,
+        unquiet_ok: true,
+        logit_dump: None,
+        bank: None,
+        dump_dir: None,
+        draft_depth: None,
+        profile: false,
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("no counted pass"), "{err}");
 }

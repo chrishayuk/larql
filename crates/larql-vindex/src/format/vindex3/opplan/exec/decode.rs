@@ -488,6 +488,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             // history spans the step boundary, and a single-position call
             // that reconstructed it from the batch would see a window of
             // one. That is the whole point of QW-3.6a.
+            let _attention_stage = super::stages::stage(super::stages::Stage::Attention);
             let raw_attn = match &state.attention {
                 super::prepared::PreparedAttention::GatedDelta(delta) => {
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
@@ -598,6 +599,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     out.output
                 }
             };
+            drop(_attention_stage);
             let mut attn_out = match &state.post_attention {
                 Some(norm) => norm.apply(self.backend, &raw_attn),
                 None => raw_attn,
