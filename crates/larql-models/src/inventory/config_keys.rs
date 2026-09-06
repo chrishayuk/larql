@@ -72,6 +72,8 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "rope_local_base_freq",
     "partial_rotary_factor",
     "layer_rope_theta",
+    // E30 static shards: a derived checkpoint's per-layer dense-FFN width
+    "larql_ffn_intermediate_size_by_layer",
     // rope_scaling / rope_parameters leaves
     "type",
     "rope_type",

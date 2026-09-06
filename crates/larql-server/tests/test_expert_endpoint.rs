@@ -63,6 +63,7 @@ impl TestMoeArch {
                 num_layers: 1,
                 hidden_size: HIDDEN,
                 intermediate_size: 16,
+                ffn_intermediate_size_by_layer: None,
                 head_dim: 4,
                 num_q_heads: 2,
                 num_kv_heads: 2,

@@ -39,6 +39,13 @@ pub(super) const CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES: &[&str] = &["num_hidden_l
 /// doesn't, the parser fills in `4 * hidden_size` for `gpt2` model_type
 /// (HF's model-side fallback in `GPT2Config.n_inner`).
 pub(super) const CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES: &[&str] = &["intermediate_size", "n_inner"];
+/// A DERIVED checkpoint's per-layer dense-FFN width (E30 static shards):
+/// one entry per layer, each the row count of that layer's `gate_proj` /
+/// `up_proj` and the column count of its `down_proj`. LARQL's own key —
+/// no upstream config spells a per-layer dense width — read under
+/// `text_config` first, then at the top level, like every topology field.
+pub(super) const CONFIG_KEY_FFN_INTERMEDIATE_SIZE_BY_LAYER: &str =
+    "larql_ffn_intermediate_size_by_layer";
 
 /// Aliases for `num_attention_heads`. GPT-2 family uses `n_head`.
 pub(super) const CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES: &[&str] =

@@ -5,6 +5,7 @@ mod closure;
 pub(crate) mod conv_qkv;
 mod coverage_opplan;
 mod gemma4_closure;
+mod heterogeneous_ffn_width;
 mod hyper_connection_refusal;
 mod kda_mla_exec;
 mod kda_op;

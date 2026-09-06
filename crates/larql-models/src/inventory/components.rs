@@ -61,6 +61,12 @@ pub struct ComponentTopology {
     pub model_type: Option<String>,
     pub hidden_size: Option<usize>,
     pub intermediate_size: Option<usize>,
+    /// Per-layer dense-FFN width a derived checkpoint declares for this
+    /// component (`larql_ffn_intermediate_size_by_layer`), verbatim;
+    /// `None` = every layer at `intermediate_size`. Additive: inventories
+    /// written before it read as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffn_intermediate_size_by_layer: Option<Vec<usize>>,
     pub num_layers: Option<usize>,
     pub num_attention_heads: Option<usize>,
     pub num_key_value_heads: Option<usize>,
@@ -270,6 +276,14 @@ fn read_component(root_key: &str, object: &Value) -> ComponentReading {
         model_type: cursor.string_at("model_type"),
         hidden_size: cursor.usize_at("hidden_size"),
         intermediate_size: cursor.usize_at("intermediate_size"),
+        ffn_intermediate_size_by_layer: cursor
+            .get("larql_ffn_intermediate_size_by_layer")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_u64().map(|k| k as usize))
+                    .collect::<Vec<_>>()
+            }),
         // Alias spellings of the SAME fact, read canonical-first. Qwen3-VL
         // towers say `depth` and `num_heads` where the canonical vocabulary
         // says `num_hidden_layers` and `num_attention_heads`; the tower is

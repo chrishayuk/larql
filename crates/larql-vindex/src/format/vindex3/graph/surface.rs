@@ -121,6 +121,14 @@ pub struct FfnSurface {
     /// before this — omits it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intermediate_size: Option<usize>,
+    /// Per-layer dense width, when the checkpoint declares one — a
+    /// derived static-shard container stores physically narrower
+    /// gate/up/down tensors for some layers and says so here. One entry
+    /// per layer; the planner checks every layer's tensors against it and
+    /// states the width on that layer's `FfnOp`. `None` = every layer at
+    /// `intermediate_size`. Additive within GRAPH_SCHEMA 6.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intermediate_size_by_layer: Option<Vec<usize>>,
     pub activation: Activation,
     pub ffn_type: FfnType,
     /// How the gate combines with the up branch: plain `activation(gate) *
@@ -591,6 +599,7 @@ pub fn surface_from_resolved(
         }),
         ffn: has_ffn.then(|| FfnSurface {
             intermediate_size: dense_ffn_width,
+            intermediate_size_by_layer: resolved.ffn_intermediate_size_by_layer.clone(),
             activation: execution.activation,
             ffn_type: execution.ffn_type,
             gate_policy: execution.gate_policy,
@@ -858,6 +867,8 @@ pub fn surface_from_nested(
             // A perception tower's width is required above (its absence
             // is already a refusal), so it is always present here.
             intermediate_size: Some(intermediate_size),
+            // A nested component declares its own per-layer widths, or none.
+            intermediate_size_by_layer: nested.ffn_intermediate_size_by_layer.clone(),
             activation,
             ffn_type: if has_gate_tensors {
                 FfnType::Gated

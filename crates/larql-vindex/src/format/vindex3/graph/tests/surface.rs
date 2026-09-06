@@ -195,6 +195,7 @@ fn nested_refusals_name_every_missing_fact() {
         model_type: None,
         hidden_size: Some(32),
         intermediate_size: None,
+        ffn_intermediate_size_by_layer: None,
         num_layers: Some(2),
         num_attention_heads: None,
         num_key_value_heads: None,

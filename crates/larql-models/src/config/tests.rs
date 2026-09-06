@@ -80,6 +80,37 @@ fn base_config() -> ModelConfig {
 }
 
 #[test]
+fn per_layer_ffn_width_is_parsed_verbatim_and_absent_by_default() {
+    // Absent: every layer runs at `intermediate_size`.
+    assert_eq!(base_config().ffn_intermediate_size_by_layer, None);
+    // Declared under `text_config` (multimodal nesting) and at the top
+    // level, verbatim; validation belongs to the planner.
+    let nested = crate::detect_from_json(&serde_json::json!({
+        "model_type": "gemma3",
+        "text_config": {
+            "model_type": "gemma3_text",
+            "hidden_size": 64, "intermediate_size": 128, "num_hidden_layers": 3,
+            "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 16, "vocab_size": 32,
+            "larql_ffn_intermediate_size_by_layer": [128, 48, 128]
+        }
+    }))
+    .config()
+    .clone();
+    assert_eq!(
+        nested.ffn_intermediate_size_by_layer,
+        Some(vec![128, 48, 128])
+    );
+    let flat = crate::detect_from_json(&serde_json::json!({
+        "model_type": "llama", "hidden_size": 64, "intermediate_size": 128, "num_hidden_layers": 2,
+        "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 16, "vocab_size": 32,
+        "larql_ffn_intermediate_size_by_layer": [128, 96]
+    }))
+    .config()
+    .clone();
+    assert_eq!(flat.ffn_intermediate_size_by_layer, Some(vec![128, 96]));
+}
+
+#[test]
 fn optional_weight_keys_default_to_absent() {
     let a = DefaultsArch(base_config());
     assert_eq!(a.position_embed_key(), None);
