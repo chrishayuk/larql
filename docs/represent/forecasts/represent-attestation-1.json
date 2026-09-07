@@ -87,5 +87,27 @@
     "relation_to_the_freeze": "The codec trait itself may be ready to freeze after this wave. D1, D2 and D3 are surrounding execution and accounting work, not reasons to reopen its fundamental shape."
   },
   "not_claimed": "No timing, no throughput, no kernel. No claim that any attested number is CORRECT \u2014 only that it is carried, bound, checked, recognised and composed. Trust is a different plane again, and mixing it in would confound this one exactly as attestation would have confounded VQ-1.",
-  "exit_claim": "A represented operand instance can carry a measured error for its own extent, bound to the exact bytes, source, recipe and codec revision that produced it and to its dependency's terminal baseline rather than to any selected depth; stale or unrecognised attestations leave the guarantee unavailable rather than optimistic; and the resulting certificate \u2014 composed with the certificates of the dependency extents actually selected \u2014 reaches the floor that gates selection, so that a lossy artifact can satisfy a quality requirement without anyone having invented a number."
+  "exit_claim": "A represented operand instance can carry a measured error for its own extent, bound to the exact bytes, source, recipe and codec revision that produced it and to its dependency's terminal baseline rather than to any selected depth; stale or unrecognised attestations leave the guarantee unavailable rather than optimistic; and the resulting certificate \u2014 composed with the certificates of the dependency extents actually selected \u2014 reaches the floor that gates selection, so that a lossy artifact can satisfy a quality requirement without anyone having invented a number.",
+  "b3_scope_addendum_2026_09_07": {
+    "status": "Given by the user AFTER the forecast was frozen and merged (`b2aee30c`) and BEFORE any implementation. Recorded as an addendum rather than edited into the body, so the freeze stays readable as what it was.",
+    "ruling": "B3 stays inside ATTESTATION-1. It was part of the intended contract: the planner must COMPOSE the attested parent certificate with the SELECTED auxiliary certificates when enforcing the quality floor.",
+    "why": "Without it the sidecar is stored evidence nobody relies on \u2014 HOLLOW CARRIAGE \u2014 and the exact silent over-promise VQ-1 exposed remains possible.",
+    "narrow_scope": [
+      "Feed the artifact attestation into the existing composed-certificate path.",
+      "Evaluate the certificate for the actual parent/dependency extent COMBINATION.",
+      "Let a tight floor force a deeper codebook extent, or refuse if none satisfies it.",
+      "Record the attestation identity and the final composed bound in the SELECTION RESULT.",
+      "No realization-error qualification and no new global optimiser in this rung."
+    ],
+    "decisive_witness": {
+      "shape": "ONE artifact, ONE floor, three outcomes.",
+      "arms": [
+        "parent attestation alone -> PASSES",
+        "+ shallow selected codebook -> FAILS",
+        "+ deeper selected codebook -> PASSES"
+      ],
+      "failure_condition": "If selection never changes or refuses based on that composition, ATTESTATION-1 has not delivered usable fidelity authority. This supersedes X6 as the wave's decisive witness \u2014 X6 described the same property less precisely."
+    },
+    "new_requirement_not_in_the_freeze": "'Record the attestation identity and final composed bound in the selection result' is a requirement the frozen body did not state. It is additive and pre-implementation, so it is folded in here rather than scored as movement \u2014 but it is flagged as new so nobody later reads the freeze and wonders where it came from."
+  }
 }
