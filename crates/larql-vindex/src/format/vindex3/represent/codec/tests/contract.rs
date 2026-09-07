@@ -228,6 +228,12 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         // in the bound operand, not the format — so this cannot name one.
         // `every_acceleration_...` checks the family membership directly.
         WeightFormat::KQuant => None,
+        // A SOURCE format, not a REPRESENT target: fine-grained FP8
+        // arrives in the checkpoint and this build never compiles a
+        // tensor into it, so no `represent` codec answers to it. `None`
+        // here is that fact, not an omission — if a codec ever emits
+        // FP8, this arm names it and the assertion above starts applying.
+        WeightFormat::Fp8Block => None,
     }
 }
 

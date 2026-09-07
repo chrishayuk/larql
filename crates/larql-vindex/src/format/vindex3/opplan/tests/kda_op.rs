@@ -5,6 +5,7 @@
 //! GLM-5.3-Flash 64×128 — so a width baked in for either is visible here.
 
 use crate::format::vindex3::opplan::{KdaOp, KdaOutputGate, LayerAttention, OperandRef};
+use larql_models::config::KdaGateForm;
 
 const KIMI_HIDDEN: usize = 2304;
 const KIMI_HEADS: usize = 32;
@@ -31,6 +32,7 @@ fn kda_op(hidden: usize, num_heads: usize) -> KdaOp {
     let proj = |n: &str| operand(n, vec![width, hidden]);
     let conv = |n: &str| operand(n, vec![width, 1, CONV_KERNEL]);
     KdaOp {
+        gate_form: Some(KdaGateForm::Softplus),
         num_heads,
         head_dim: HEAD_DIM,
         conv_kernel: CONV_KERNEL,

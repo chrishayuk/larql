@@ -634,3 +634,87 @@ fn the_q4_observation_names_its_own_kernel_and_format() {
         PhysicalProjectionPlan::FusedBf16
     );
 }
+
+/// **Fine-grained FP8 is observed, and the observation reaches a kernel
+/// that consumes it.**
+///
+/// This variant has no policy to choose it: the bytes are the
+/// checkpoint's own, so unlike bf16 — whose residency is ambiguous
+/// between "kept exact" and "restored by the A1 control" — there is
+/// exactly one answer, and the whole chain from bytes to plan to
+/// arithmetic to projector must agree on it.
+#[test]
+fn fine_grained_fp8_bytes_observe_one_plan_and_one_kernel() {
+    use crate::format::vindex3::opplan::exec::cpu::arithmetic::{
+        plans_possible_for, AccumulatorRep, ActivationRep, WeightRep,
+    };
+
+    // A 4 x 8 matrix under a 2 x 2 grid: non-square, unequal tiles.
+    let codes = vec![0x38u8; 32];
+    let scales = vec![1.0f32; 4];
+    let rows = WeightRows::Fp8Block {
+        codes: &codes,
+        scales: &scales,
+        block_rows: 2,
+        block_cols: 4,
+        scale_cols: 2,
+        row_in_tile: 0,
+    };
+
+    let plan = PhysicalProjectionPlan::for_resident(rows, 8);
+    assert_eq!(plan, PhysicalProjectionPlan::FusedFp8Block);
+    assert_eq!(plan.format(), WeightFormat::Fp8Block);
+    assert_eq!(plan.weight_rep(), WeightRep::Fp8Block);
+
+    let a = plan.arithmetic();
+    assert_eq!(a.weight, WeightRep::Fp8Block);
+    assert_eq!(
+        (a.activation, a.accumulator),
+        (ActivationRep::F32, AccumulatorRep::F32),
+        "the activation and accumulator stay f32: only the WEIGHT is compact"
+    );
+    assert_eq!(a.weight.to_string(), "FP8_BLOCK");
+
+    // Residency determines execution outright — one kernel, no policy.
+    assert_eq!(
+        plans_possible_for(WeightRep::Fp8Block),
+        &[PhysicalProjectionPlan::FusedFp8Block]
+    );
+
+    // And the projector the plan names actually consumes these bytes.
+    let x = vec![0.5f32; 8];
+    let mut out = vec![0.0f32; 4];
+    plan.kernel().project_rows(rows, &x, &mut out);
+    for (i, v) in out.iter().enumerate() {
+        assert!((v - 4.0).abs() <= 1e-6, "row {i}: {v}");
+    }
+}
+
+/// An FP8 slab is priced by its codes AND its scales, and the residency
+/// profile binds it AS STORED rather than as a widened image — the whole
+/// reason the format is carried natively.
+#[test]
+fn fine_grained_fp8_is_priced_as_stored() {
+    use crate::format::vindex3::opplan::exec::accounting::{resident_profile_with, BlockGeometry};
+
+    let codes = vec![0x38u8; 32];
+    let scales = vec![1.0f32; 4];
+    let rows = WeightRows::Fp8Block {
+        codes: &codes,
+        scales: &scales,
+        block_rows: 2,
+        block_cols: 4,
+        scale_cols: 2,
+        row_in_tile: 0,
+    };
+    assert_eq!(rows.bytes(), 32 + 4 * 4);
+    assert_eq!(rows.rows(8), 4);
+    assert_eq!(rows.primary_addr(), codes.as_ptr() as usize);
+
+    let profile = resident_profile_with(WeightFormat::Fp8Block, BlockGeometry::executor());
+    assert!(
+        profile.class.preserves_values(),
+        "the checkpoint's own bytes are not a re-quantisation"
+    );
+    assert_eq!(profile.bytes_per_weight, 1.0, "E4M3 is one byte, exactly");
+}

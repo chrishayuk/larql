@@ -243,7 +243,11 @@ impl BoundMoeBackend {
                 activation: match moe.gate_rule {
                     larql_compute::MoeGateRule::Gated(a) => a,
                     larql_compute::MoeGateRule::ClampedGlu { .. }
-                    | larql_compute::MoeGateRule::SituGlu { .. } => {
+                    | larql_compute::MoeGateRule::SituGlu { .. }
+                    // GLM-5.3-Flash's clamped SwiGLU refuses here too: the
+                    // clamp is real arithmetic, and running the unclamped
+                    // gated kernel would silently drop it.
+                    | larql_compute::MoeGateRule::ClampedGated { .. } => {
                         return Err(ExecutionError::UnsupportedFormat {
                             format: format!("{:?}", moe.gate_rule),
                             operand: "expert gate rule (bound MoE kernels are gated-only)"

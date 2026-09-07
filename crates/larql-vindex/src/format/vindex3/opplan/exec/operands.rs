@@ -852,6 +852,46 @@ impl OperandStore {
         Some(total)
     }
 
+    /// A companion tensor of `operand`, from the SAME logical object:
+    /// its declared shape and its stored bytes.
+    ///
+    /// Exists for the one format whose operand is not one tensor.
+    /// Fine-grained FP8 stores a matrix as `*.weight` plus a sibling
+    /// `*.weight_scale_inv`, and an [`OperandRef`] names one tensor —
+    /// so the pair can only be bound if the second can be reached from
+    /// the first.
+    ///
+    /// Deliberately scoped to the same object rather than taking a free
+    /// `(object, tensor)` pair: a scale that came from somewhere else
+    /// would be a different matrix's, and the type should not be able to
+    /// express that.
+    pub fn companion(
+        &self,
+        operand: &OperandRef,
+        tensor: &str,
+    ) -> Result<(Vec<usize>, RawOperand), VindexError> {
+        let companion = OperandRef {
+            object: operand.object.clone(),
+            tensor: tensor.to_string(),
+            // The container's own record is the authority for both; these
+            // are placeholders that `load_raw` never reads.
+            dtype: String::new(),
+            shape: Vec::new(),
+        };
+        let shape = self
+            .segments
+            .get(&operand.object)
+            .and_then(|s| s.tensors.get(tensor))
+            .map(|t| t.shape.clone())
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "operand `{}` names no companion `{tensor}` in `{}`'s segment",
+                    operand.tensor, operand.object
+                ))
+            })?;
+        Ok((shape, self.load_raw(&companion)?))
+    }
+
     /// Load one operand's stored bytes and dtype, unwidened — for a
     /// caller that converts to a representation other than f32 (and for
     /// [`Self::load`] itself, so there is exactly one resolution path).
@@ -1194,6 +1234,29 @@ impl<'a> OperandSource<'a> {
     /// f32-space facts and cannot be represented in raw stored bytes,
     /// so an overridden operand refuses here rather than serving stale
     /// base bytes.
+    /// A companion tensor of `operand` from the same object — see
+    /// [`OperandStore::companion`].
+    ///
+    /// Refuses an overridden operand for the same reason [`Self::load_raw`]
+    /// does: an overlay edit is an f32-space fact, and serving the base
+    /// scales beside edited codes would silently mix the two.
+    pub fn companion(
+        &self,
+        operand: &OperandRef,
+        tensor: &str,
+    ) -> Result<(Vec<usize>, RawOperand), VindexError> {
+        if let Some(overrides) = self.overrides {
+            if overrides.is_overridden(operand) {
+                return Err(VindexError::Parse(format!(
+                    "operand `{}/{}` carries overlay edits — its companion `{tensor}` \
+                     cannot be bound beside edited values",
+                    operand.object, operand.tensor
+                )));
+            }
+        }
+        self.base.companion(operand, tensor)
+    }
+
     pub fn load_raw(&self, operand: &OperandRef) -> Result<RawOperand, VindexError> {
         if let Some(overrides) = self.overrides {
             if overrides.is_overridden(operand) {

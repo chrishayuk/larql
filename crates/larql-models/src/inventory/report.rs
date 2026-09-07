@@ -191,6 +191,13 @@ pub struct ResolvedTopology {
     /// KDA's decay-gate lower bound (`linear_attn_config.gate_lower_bound`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kda_gate_lower_bound: Option<f32>,
+    /// What the family's reference actually does with
+    /// [`Self::kda_gate_lower_bound`] — an architecture fact, resolved by
+    /// [`ModelArchitecture::kda_gate_form`](crate::config::ModelArchitecture::kda_gate_form),
+    /// because the declared value does not determine it. `None` = the
+    /// family has not been judged, which must reach a refusal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda_gate_form: Option<crate::config::KdaGateForm>,
     /// The FORM of KDA's output gate (`linear_attn_config.use_full_rank_gate`),
     /// verbatim: `Some(true)` = one full-rank `g_proj`, `Some(false)` = the
     /// low-rank pair, `None` = undeclared (the reference's own default is the

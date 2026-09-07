@@ -11,6 +11,7 @@
 pub mod fp4;
 pub mod fp4_block;
 pub mod fp8;
+pub mod fp8_finegrained;
 pub mod ggml;
 pub mod half;
 pub mod mxfp4;

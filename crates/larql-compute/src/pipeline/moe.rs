@@ -35,6 +35,15 @@ pub enum MoeGateRule {
     /// grow — which is why substituting SiLU looks healthy and is not.
     /// See `ffn::expert_weight::gate` for the oracle-pinned derivation.
     SituGlu { beta: f32, linear_beta: Option<f32> },
+    /// GLM-5.3-Flash: GPT-OSS's clamp, then ORDINARY SwiGLU —
+    /// `act(g) * u`, with neither the `alpha` scaling nor the `(u + 1)`
+    /// offset. Its reference carries the comment "Simple swiglu instead
+    /// of alpha" over exactly this line.
+    ///
+    /// A separate rule and not a flag, because the two differ by the
+    /// arithmetic and not by the clamp. Serving one for the other on
+    /// GLM's real expert bank measures relative 31.7.
+    ClampedGated { limit: f32, activation: Activation },
 }
 
 impl MoeGateRule {
@@ -54,6 +63,10 @@ impl MoeGateRule {
             larql_models::ExpertGatePolicy::SituGlu { beta, linear_beta } => {
                 Self::SituGlu { beta, linear_beta }
             }
+            larql_models::ExpertGatePolicy::ClampedGated { limit } => Self::ClampedGated {
+                limit,
+                activation: Activation::from(activation),
+            },
         }
     }
 
@@ -90,6 +103,17 @@ impl MoeGateRule {
                     None => u,
                 };
                 situ_a * u
+            }
+            // The SAME clamp, and then the ordinary gated product — no
+            // `alpha`, no `(u + 1)`.
+            Self::ClampedGated { limit, activation } => {
+                let g = g.min(limit);
+                let u = u.clamp(-limit, limit);
+                if activation.gate_up_is_gelu_tanh() {
+                    crate::cpu::ops::moe::math::gelu_tanh(g) * u
+                } else {
+                    crate::cpu::ops::moe::math::silu(g) * u
+                }
             }
         }
     }

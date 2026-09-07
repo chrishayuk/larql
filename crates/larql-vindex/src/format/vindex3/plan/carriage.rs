@@ -2120,13 +2120,25 @@ fn probe_is_llama_config(_component: &Component, ctx: &ProbeContext<'_>) -> Opti
     ))
 }
 
-/// The clamp bound the FFN surface carries, when its gate policy is the
-/// clamped GLU. A plain-gated surface has no limit to answer with — a
-/// checkpoint declaring `swiglu_limit` that resolved to plain gating is
-/// then reported as unrepresented, which is the truth.
+/// The clamp bound the FFN surface carries, when its gate policy has
+/// one. A plain-gated surface has no limit to answer with — a checkpoint
+/// declaring `swiglu_limit` that resolved to plain gating is then
+/// reported as unrepresented, which is the truth.
+///
+/// BOTH clamped policies answer, and that is the point: the bound is the
+/// same declaration in each, while the arithmetic around it differs
+/// (`(u+1)·g·σ(αg)` against `act(g)·u`). Answering only for one would
+/// have reported GLM-5.3-Flash's declared clamp as uncarried while its
+/// executor applied it.
 fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
-        larql_models::ExpertGatePolicy::ClampedGlu { limit, .. } => Some(json!(limit)),
+        // BOTH clamped policies answer, and that is the point: the
+        // bound is the same declaration in each, while the arithmetic
+        // around it differs (`(u+1)*g*sigma(a*g)` against `act(g)*u`).
+        // Answering for only one would report GLM-5.3-Flash's declared
+        // clamp as uncarried while its executor applied it.
+        larql_models::ExpertGatePolicy::ClampedGlu { limit, .. }
+        | larql_models::ExpertGatePolicy::ClampedGated { limit } => Some(json!(limit)),
         // A checkpoint declaring `swiglu_limit` whose FFN resolved to
         // some OTHER policy has no limit to answer with, and is reported
         // unrepresented — which is the truth for both of these.
@@ -2146,7 +2158,8 @@ fn probe_situ_beta(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Val
     match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
         larql_models::ExpertGatePolicy::SituGlu { beta, .. } => Some(json!(beta)),
         larql_models::ExpertGatePolicy::Gated
-        | larql_models::ExpertGatePolicy::ClampedGlu { .. } => None,
+        | larql_models::ExpertGatePolicy::ClampedGlu { .. }
+        | larql_models::ExpertGatePolicy::ClampedGated { .. } => None,
     }
 }
 
@@ -2164,7 +2177,8 @@ fn probe_situ_linear_beta(component: &Component, _ctx: &ProbeContext<'_>) -> Opt
             linear_beta.map(|v| json!(v))
         }
         larql_models::ExpertGatePolicy::Gated
-        | larql_models::ExpertGatePolicy::ClampedGlu { .. } => None,
+        | larql_models::ExpertGatePolicy::ClampedGlu { .. }
+        | larql_models::ExpertGatePolicy::ClampedGated { .. } => None,
     }
 }
 

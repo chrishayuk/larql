@@ -173,3 +173,36 @@ pub fn bind_situ_glu(
     enc.set_bytes(5, 4, &linear as *const f32 as *const std::ffi::c_void);
     enc.set_bytes(6, 4, &has_linear as *const u32 as *const std::ffi::c_void);
 }
+
+/// The one message every refusal of GLM-5.3-Flash's combine quotes —
+/// the admission gates and the three dispatch backstops behind them —
+/// so a caller reads the same sentence whichever surface caught it.
+pub const CLAMPED_GATED_REFUSAL: &str =
+    "no Metal expert-activation kernel for MoeGateRule::ClampedGated (GLM-5.3-Flash's \
+     clamped SwiGLU); the ClampedGlu shader computes a different function and must not \
+     stand in for it";
+
+/// Whether this registry has an expert-activation kernel for a routed
+/// layer's combine rule.
+///
+/// One rule has none: GLM-5.3-Flash's [`MoeGateRule::ClampedGated`] —
+/// clamp the gate and up, then plain SwiGLU. The nearest shader,
+/// `clamped_glu_bias`, computes `(u+1)·g·σ(αg)`, which is a DIFFERENT
+/// function. Standing it in reads as a relative 31.7 against the
+/// reference with every shape closing, which is the signature of a
+/// silent substitution rather than of a crash.
+///
+/// Answered HERE so the three routed dispatches — the descriptor
+/// dispatch, the zero-copy fast path, and the GPU route — refuse from
+/// one fact rather than three copies of it, and so they refuse at
+/// ADMISSION, before a command encoder exists. A refusal raised
+/// mid-encode leaves the encoder unended and Metal aborts the process
+/// instead of reporting it, so the caller never learns which layer was
+/// at fault; that is the reason [`bind_situ_glu`]'s bias assert is
+/// paired with an admission check in `gpu_route_supported` rather than
+/// left to fire alone.
+///
+/// [`MoeGateRule::ClampedGated`]: larql_compute::MoeGateRule::ClampedGated
+pub fn expert_activation_supported(gate_rule: &larql_compute::MoeGateRule) -> bool {
+    !matches!(gate_rule, larql_compute::MoeGateRule::ClampedGated { .. })
+}

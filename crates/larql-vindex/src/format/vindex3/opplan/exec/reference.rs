@@ -620,6 +620,7 @@ fn slice_form(slice: &WeightSlice<'_>) -> &'static str {
         WeightSlice::Mxfp4 { .. } => "mxfp4",
         WeightSlice::Nvfp4 { .. } => "nvfp4",
         WeightSlice::KQuant { .. } => "k-quant",
+        WeightSlice::Fp8Block { .. } => "fine-grained fp8",
     }
 }
 
@@ -643,6 +644,13 @@ fn combine_gate_up_reference(
         // there) and therefore has to be spelled out.
         larql_models::ExpertGatePolicy::SituGlu { beta, linear_beta } => {
             larql_compute::MoeGateRule::SituGlu { beta, linear_beta }.combine(g, u)
+        }
+        // GLM-5.3-Flash: the SAME clamp, then the ordinary gated
+        // product. No `alpha`, no `(u + 1)`.
+        larql_models::ExpertGatePolicy::ClampedGated { limit } => {
+            let g = g.min(limit);
+            let u = u.clamp(-limit, limit);
+            activate(activation, g) * u
         }
     }
 }

@@ -187,6 +187,30 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
     // carries them: K3 genuinely has MLA layers and this is the MORE
     // restrictive of the two kinds. A `Hybrid`/`Kda` kind is future work
     // here exactly as it is there, and no claim to the contrary is made.
+    // GLM-5.3-Flash. Its container declares `glm5_next` and its text
+    // component declares `glm5_next_text` — the same two-level identity
+    // Kimi K3 has, so it is declared the same way rather than left for
+    // the identity gate to infer from both sides resolving.
+    //
+    // `Mla` and `MLA_QUANT_FORMATS` for the reason the Kimi entries give:
+    // the stack genuinely has 11 MLA layers, this is the MORE restrictive
+    // of its two attention kinds, and no `Kda`/`Hybrid` kind exists yet.
+    // The 34 KDA layers and the DSA indexer are NOT claimed here.
+    ArchitectureEntry {
+        model_type: "glm5_next",
+        patterns: &[ModelTypeMatch::Exact("glm5_next")],
+        attention_kind: AttentionKind::Mla,
+        quant_formats: MLA_QUANT_FORMATS,
+        // Lineage, not substitutability. See `ArchitectureEntry::components`.
+        components: &[(ComponentRole::Text, "glm5_next_text")],
+    },
+    ArchitectureEntry {
+        model_type: "glm5_next_text",
+        patterns: &[ModelTypeMatch::Exact("glm5_next_text")],
+        attention_kind: AttentionKind::Mla,
+        quant_formats: MLA_QUANT_FORMATS,
+        components: &[],
+    },
     ArchitectureEntry {
         model_type: "kimi_k3",
         patterns: &[ModelTypeMatch::Exact("kimi_k3")],

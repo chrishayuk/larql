@@ -284,3 +284,53 @@ fn both_gated_activations_reach_the_dispatch() {
          activation selection is not reaching the dispatch"
     );
 }
+
+/// GLM-5.3-Flash's combine has no Metal expert-activation kernel, and
+/// the nearest one computes a different function. The dispatch refuses
+/// it — at the top of the body, before any encoder exists.
+///
+/// Reached through the same wrapper every other test here uses, so what
+/// is being shown is that a *dispatch call* refuses, not that a
+/// predicate returns false.
+#[test]
+#[should_panic(expected = "no Metal expert-activation kernel for MoeGateRule::ClampedGated")]
+fn a_clamped_gated_layer_is_refused_before_the_dispatch_encodes() {
+    let metal = MetalBackend::new().expect("Metal backend required");
+    let b = bank();
+    let s = scratch(&metal, TOP_K);
+    let x = h(11);
+
+    let mut glm = b.moe();
+    glm.gate_rule = MoeGateRule::ClampedGated {
+        limit: 7.0,
+        activation: Activation::Silu,
+    };
+    let _ = block(&metal, &x, &glm, &s, &|e| {
+        Some((b.gu[e].as_slice(), b.dn[e].as_slice()))
+    });
+}
+
+/// The positive arm the refusal above needs: the identical fixture,
+/// identical supplier, one field changed, runs and produces output. A
+/// gate that only ever refuses proves nothing about what it admits, and
+/// without this the panic above could be coming from the bank rather
+/// than from the combine rule.
+#[test]
+fn the_same_fixture_under_a_served_combine_dispatches() {
+    let Some(metal) = MetalBackend::new() else {
+        return;
+    };
+    let b = bank();
+    let s = scratch(&metal, TOP_K);
+    let x = h(11);
+
+    let mut served = b.moe();
+    served.gate_rule = MoeGateRule::Gated(Activation::Silu);
+    let out = block(&metal, &x, &served, &s, &|e| {
+        Some((b.gu[e].as_slice(), b.dn[e].as_slice()))
+    });
+    assert!(
+        out.iter().any(|v| v.abs() > 0.0),
+        "the fixture must dispatch"
+    );
+}

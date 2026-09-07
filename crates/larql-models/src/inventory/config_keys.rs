@@ -304,6 +304,9 @@ pub const PATH_READ_LEAF_KEYS: &[&str] = &[
     "head_dim",
     "short_conv_kernel_size",
     "gate_lower_bound",
+    // Read alongside `gate_lower_bound` because the two together — not
+    // either alone — select GLM-5.3-Flash's decay-gate form.
+    "safe_gate",
     // The output gate's FORM (Kimi-K3's `use_full_rank_gate`): full-rank
     // `g_proj` or the low-rank pair. A leaf of `linear_attn_config`, so
     // by-path like the three above.

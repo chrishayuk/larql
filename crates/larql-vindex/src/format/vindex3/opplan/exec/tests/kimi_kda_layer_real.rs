@@ -18,6 +18,7 @@
 //!     cargo test -p larql-vindex --lib kimi_kda_layer_real
 //! ```
 
+use larql_models::config::KdaGateForm;
 use std::path::PathBuf;
 
 use larql_models::config::KdaGeometry;
@@ -121,6 +122,7 @@ fn one_complete_kda_layer_matches_the_oracle_at_kimis_real_geometry() {
     let (bp, al, dt) = (kda("b_proj"), kda("a_log"), kda("dt_bias"));
     let (on, op) = (kda("o_norm"), kda_bf16("o_proj"));
     let kda_weights = KdaWeights {
+        gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
         q_proj: WeightRows::Bf16(&qp),
         k_proj: WeightRows::Bf16(&kp),
         v_proj: WeightRows::Bf16(&vp),

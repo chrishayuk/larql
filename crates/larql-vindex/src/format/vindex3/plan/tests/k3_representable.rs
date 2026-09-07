@@ -510,7 +510,8 @@ fn k3_mla_layer_addresses_every_operand_it_ships() {
     unaddressed.sort_unstable();
     assert_eq!(
         unaddressed, MLA_LAYER_UNADDRESSED,
-        "the MLA layer's unaddressed attention operands are the q-LoRA triple, no more and no fewer"
+        "the MLA layer's attention operands are all addressed: the q-LoRA triple went \
+         with the query path, and nothing else may quietly join this list"
     );
 }
 
@@ -567,6 +568,11 @@ fn k3_estate_reports_every_unaddressed_spelling() {
     }
 
     assert_eq!(rows.len(), 5421, "the fixture's two real layers");
+    // 5,382 -> 5,379 when the q-LoRA query path landed: the MLA layer's
+    // three query operands are addressed, and nothing on the KDA layer
+    // moved. What remains is ONE cell — K3-LATENTMOE-1's latent expert
+    // bank (`routed_expert_{up,down}_proj`, `routed_expert_norm`) plus
+    // its 896-way MXFP4 `weight_packed`/`weight_scale` pairs.
     assert_eq!(
         unclassified, 5379,
         "5,376 expert-bank operands + 3 distinct dense spellings"

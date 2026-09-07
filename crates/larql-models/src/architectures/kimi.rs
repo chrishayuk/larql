@@ -22,7 +22,7 @@
 //! same spelling Mixtral uses, but Mixtral ships no router bias and no
 //! shared expert.
 
-use crate::config::{ModelArchitecture, ModelConfig};
+use crate::config::{KdaGateForm, ModelArchitecture, ModelConfig};
 
 pub struct KimiLinearArch {
     config: ModelConfig,
@@ -41,6 +41,23 @@ impl ModelArchitecture for KimiLinearArch {
 
     fn config(&self) -> &ModelConfig {
         &self.config
+    }
+
+    // ── KDA ──
+
+    /// Softplus, with the declared `gate_lower_bound` **not** applied.
+    ///
+    /// `modeling_kimi.py` calls
+    /// `fused_kda_gate(g, self.A_log, self.head_dim, g_bias=self.dt_bias)`
+    /// — the third positional is `head_dim`, selecting the softplus
+    /// branch — and neither it nor `configuration_kimi.py` mentions
+    /// `gate_lower_bound` at all. The checkpoint declares `-5.0`; this
+    /// family ignores it.
+    ///
+    /// Stated here rather than inferred from the config because
+    /// GLM-5.3-Flash declares the identical value and *does* apply it.
+    fn kda_gate_form(&self) -> Option<KdaGateForm> {
+        Some(KdaGateForm::Softplus)
     }
 
     // ── MoE router ──

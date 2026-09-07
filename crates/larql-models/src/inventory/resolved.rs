@@ -347,6 +347,10 @@ pub fn resolve_with_tensor_evidence(
         linear_attention: crate::inventory::report::LinearAttentionTopology::from_config(cfg),
         kda: cfg.kda_geometry,
         kda_gate_lower_bound: cfg.kda_gate_lower_bound,
+        // From the ARCHITECTURE, not `cfg`: the config states the bound,
+        // the family states what its reference does with it, and the two
+        // observed checkpoints declaring `-5.0` disagree on that.
+        kda_gate_form: arch.kda_gate_form(),
         kda_use_full_rank_gate: cfg.kda_use_full_rank_gate,
         mamba2: cfg.mamba2_geometry,
         mamba2_provenance: cfg.mamba2_provenance.clone(),

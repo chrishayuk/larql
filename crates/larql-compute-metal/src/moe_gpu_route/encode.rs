@@ -240,6 +240,15 @@ impl MetalBackend {
             let g_offset = (e * inter * 4) as u64;
             let a_offset = (e * inter_padded * 4) as u64;
             match moe.gate_rule {
+                // Refused at admission by
+                // `kernels::ffn::expert_activation_supported`, which
+                // owns the reason. The backstop stays for any path that
+                // does not come through that gate — and must never be
+                // the thing that reports it, because a panic here
+                // leaves the encoder unended.
+                larql_compute::MoeGateRule::ClampedGated { .. } => {
+                    unreachable!("{}", crate::kernels::ffn::CLAMPED_GATED_REFUSAL)
+                }
                 larql_compute::MoeGateRule::ClampedGlu { limit, alpha } => {
                     let has_bias: u32 = u32::from(stage_gate_up_bias);
                     enc.set_compute_pipeline_state(&self.ffn.clamped_glu_bias_pipeline);
@@ -502,6 +511,9 @@ impl MetalBackend {
         let situ_bias_ok = !matches!(moe.gate_rule, larql_compute::MoeGateRule::SituGlu { .. })
             || moe.experts_gate_up_bias.is_empty();
         situ_bias_ok
+            // The same admission rule, for the combine that has no
+            // kernel at all rather than no bias form.
+            && crate::kernels::ffn::expert_activation_supported(&moe.gate_rule)
             && router_input_transform(moe).is_some()
             && format_ok
             && matches!(

@@ -50,6 +50,16 @@ enum Kind {
     Q4,
     Nvfp4,
     KQuant,
+    Fp8Block,
+}
+
+/// A fine-grained FP8 slab's geometry, captured by value.
+#[derive(Clone, Copy)]
+struct Fp8Slab {
+    block_rows: usize,
+    block_cols: usize,
+    scale_cols: usize,
+    row_in_tile: usize,
 }
 
 /// One projection exactly as the decode issued it.
@@ -80,6 +90,15 @@ pub struct Captured {
     /// Captured for the same reason the tensor scale is: replaying the
     /// bytes under another codec would price a kernel over garbage.
     codec: Option<KQuant>,
+    /// Fine-grained FP8's tile and grid, and where the slab starts
+    /// within its first tile.
+    ///
+    /// Captured for the same reason the tensor scale and the codec are:
+    /// this is the only format here whose scale spans ROWS, so replaying
+    /// the codes with the wrong `row_in_tile` would price the right
+    /// kernel over weights scaled by a neighbouring tile — finite,
+    /// plausible, and not what the decode ran.
+    fp8: Option<Fp8Slab>,
     out_dim: usize,
     /// The activation the decode actually projected. Kept by value
     /// because it is tens of KB against tens of MB of weight, and
@@ -133,6 +152,17 @@ impl Captured {
                 blocks: std::slice::from_raw_parts(p as *const u8, n),
                 codec: self.codec.expect("a K-quant capture records its codec"),
             },
+            Kind::Fp8Block => {
+                let g = self.fp8.expect("an FP8 capture records its slab geometry");
+                WeightRows::Fp8Block {
+                    codes: std::slice::from_raw_parts(p as *const u8, n),
+                    scales: std::slice::from_raw_parts(s as *const f32, m),
+                    block_rows: g.block_rows,
+                    block_cols: g.block_cols,
+                    scale_cols: g.scale_cols,
+                    row_in_tile: g.row_in_tile,
+                }
+            }
         }
     }
 
@@ -209,6 +239,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
     }
     let mut tensor_scale = 0.0f32;
     let mut codec = None;
+    let mut fp8 = None;
     let (kind, primary, secondary, tertiary, block) = match weight {
         WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
         WeightRows::Bf16(w) => (
@@ -268,6 +299,31 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
                 0,
             )
         }
+        WeightRows::Fp8Block {
+            codes,
+            scales,
+            block_rows,
+            block_cols,
+            scale_cols,
+            row_in_tile,
+        } => {
+            fp8 = Some(Fp8Slab {
+                block_rows,
+                block_cols,
+                scale_cols,
+                row_in_tile,
+            });
+            (
+                Kind::Fp8Block,
+                (codes.as_ptr() as usize, codes.len()),
+                (scales.as_ptr() as usize, scales.len()),
+                (0, 0),
+                // The tile is two-dimensional, so it does not fit the
+                // scalar `block` every other blocked format uses; it
+                // travels in `fp8` instead.
+                0,
+            )
+        }
     };
     let mut slot = CAPTURE.lock().expect("capture lock");
     let Some(log) = slot.as_mut() else {
@@ -277,6 +333,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
         kind,
         tensor_scale,
         codec,
+        fp8,
         primary,
         secondary,
         tertiary,

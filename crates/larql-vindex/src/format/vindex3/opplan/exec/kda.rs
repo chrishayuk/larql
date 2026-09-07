@@ -27,7 +27,7 @@
 //! disagreement that moves the STATE cannot be in the q path, and one that
 //! moves only the OUTPUT is most likely q, the gated norm, or `o_proj`.
 
-use larql_models::config::KdaGeometry;
+use larql_models::config::{KdaGateForm, KdaGeometry};
 
 use super::continuation::{
     RecurrentBufferGeometry, RecurrentGeometry, RecurrentState, StateInitialization,
@@ -88,6 +88,17 @@ pub struct KdaWeights<'a> {
     /// the kind a fixture whose widths are all distinct is built to
     /// expose. It is a separate fact, so it is a separate field.
     pub gate_rank: usize,
+    /// Which decay gate this checkpoint's family actually computes.
+    ///
+    /// Carried, never defaulted, because the two observed checkpoints
+    /// declare the SAME `gate_lower_bound: -5.0` and do different things
+    /// with it: Kimi Linear's reference reads the field nowhere,
+    /// GLM-5.3-Flash's applies it. Measured on the real GLM layer 0
+    /// against the pinned reference, swapping the forms moves the layer
+    /// output by relative 2.50e-2 and the gate's own mean from -0.906 to
+    /// -2.528 — a 2.8x error in the per-step decay that compounds with
+    /// context and leaves every shape closing.
+    pub gate_form: KdaGateForm,
 }
 
 /// Buffer indices this operator assigns within its
@@ -207,9 +218,21 @@ pub enum KdaOutputGateWeights<'a> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mutation {
     None,
-    /// Apply the declared decay clamp — the form the reference does *not*
-    /// use. Pins `gate_lower_bound` as provenance by measurement.
+    /// Force the clamped-sigmoid decay, `bound * sigmoid(exp(A_log) * pre)`.
+    ///
+    /// On a [`KdaGateForm::Softplus`] checkpoint (Kimi Linear) this is the
+    /// form the reference does *not* use, and the control pins
+    /// `gate_lower_bound` as provenance by measurement.
     ApplyGateLowerBound(f32),
+    /// Force the softplus decay, `-exp(A_log) * softplus(pre)`.
+    ///
+    /// The mirror of [`Self::ApplyGateLowerBound`], and the one that
+    /// matters on a [`KdaGateForm::ClampedSigmoid`] checkpoint
+    /// (GLM-5.3-Flash): it is exactly what running Kimi's executor
+    /// unchanged on GLM would compute. A single-sided control would have
+    /// certified the wrong direction — the gate form has to be shown to
+    /// matter on BOTH families, or "it is declared" is untested.
+    ForceSoftplusGate,
     /// Skip the query L2 normalisation. Must move the output and leave the
     /// state untouched.
     NoQNorm,
@@ -579,14 +602,23 @@ pub fn step_with(
             for d in 0..dim {
                 let i = h * dim + d;
                 let pre = f_low[i] + w.dt_bias[i];
-                decay[i] = match mutation {
-                    // `lower_bound * sigmoid(exp(A_log) * pre)` — the form
-                    // the same upstream gate also offers and the
-                    // checkpoint does not select.
+                // The DECLARED form, unless a control overrides it. Both
+                // overrides exist so the choice can be falsified from
+                // either side.
+                let form = match mutation {
                     Mutation::ApplyGateLowerBound(bound) => {
-                        bound * (1.0 / (1.0 + (-(a * pre)).exp()))
+                        KdaGateForm::ClampedSigmoid { lower_bound: bound }
                     }
-                    _ => -a * softplus(pre),
+                    Mutation::ForceSoftplusGate => KdaGateForm::Softplus,
+                    _ => w.gate_form,
+                };
+                decay[i] = match form {
+                    KdaGateForm::Softplus => -a * softplus(pre),
+                    // `lower_bound * sigmoid(exp(A_log) * pre)`, bounding
+                    // the decay below at `exp(lower_bound)`.
+                    KdaGateForm::ClampedSigmoid { lower_bound } => {
+                        lower_bound * (1.0 / (1.0 + (-(a * pre)).exp()))
+                    }
                 };
             }
         }

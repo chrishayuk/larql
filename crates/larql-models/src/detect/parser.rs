@@ -674,6 +674,12 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let kda_gate_lower_bound = text_config["linear_attn_config"]["gate_lower_bound"]
         .as_f64()
         .map(|v| v as f32);
+    // `safe_gate` is read so the gate-form rule is CHECKED rather than
+    // assumed: GLM-5.3-Flash declares no `safe_gate` and its reference
+    // defaults it to `True`, so the absent case still clamps — but a
+    // checkpoint that says `false` must reach the softplus branch, and
+    // that can only happen if the key is carried.
+    let kda_safe_gate = text_config["linear_attn_config"]["safe_gate"].as_bool();
     let kda_use_full_rank_gate = text_config["linear_attn_config"]["use_full_rank_gate"].as_bool();
     let mla_use_output_gate = text_config["mla_use_output_gate"].as_bool();
     let d_rel = text_config["d_rel"].as_u64().map(|v| v as usize);
@@ -813,6 +819,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         mtp_interleave,
         kda_geometry,
         kda_gate_lower_bound,
+        kda_safe_gate,
         kda_use_full_rank_gate,
         mla_use_output_gate,
         d_rel,

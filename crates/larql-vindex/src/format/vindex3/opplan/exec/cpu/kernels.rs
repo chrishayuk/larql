@@ -284,6 +284,78 @@ impl DenseProjector for FusedKQuant {
     }
 }
 
+/// **Fused fine-grained FP8.** Decode E4M3 in registers, scale per tile,
+/// accumulate f32, discard.
+///
+/// The same architecture as [`FusedBf16`] and [`FusedQ8`], for the same
+/// measured reason (CPU-1B: widen-to-scratch-then-`sgemv` reads half the
+/// bytes and runs slower than plain f32). On this format the argument is
+/// stronger still: GLM-5.3-Flash is 95.8 % FP8, so a kernel that
+/// materialised before it computed would hold a 612 GB image of a 306 GB
+/// checkpoint.
+///
+/// **This kernel is NOT lossy.** Unlike [`FusedQ8`] and [`FusedQ4`],
+/// whose codes were manufactured by a quantiser LARQL chose, these are
+/// the checkpoint's own bytes and the scales are the checkpoint's own
+/// scales: it computes the same values the reference loader materialises,
+/// which `larql_models::quant::fp8_finegrained` reproduces BIT-EXACTLY
+/// over 125,829,120 real GLM values (`scripts/glm_fp8_dequant_gate.py`).
+/// What it changes is only *when* the decode happens.
+///
+/// The scale is applied once per TILE along the row, so the per-element
+/// work is a table lookup and an FMA regardless of tile size. The tile's
+/// other axis — the one that spans rows — costs nothing per element: it
+/// only selects which scale row this output row reads, once.
+pub struct FusedFp8Block;
+
+impl DenseProjector for FusedFp8Block {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::ExternalPool
+    }
+
+    fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
+        let WeightRows::Fp8Block {
+            codes,
+            scales,
+            block_rows,
+            block_cols,
+            scale_cols,
+            row_in_tile,
+        } = weight_rows
+        else {
+            panic!("the fused FP8 kernel consumes fine-grained FP8 weights only");
+        };
+        let in_dim = x.len();
+        for (o, slot) in out.iter_mut().enumerate() {
+            let row = &codes[o * in_dim..(o + 1) * in_dim];
+            // Which grid row this OUTPUT row reads. `row_in_tile` is why
+            // a partition that does not land on a tile boundary is still
+            // correct — see `WeightRows::Fp8Block`.
+            let sr = (row_in_tile + o) / block_rows;
+            let scale_row = &scales[sr * scale_cols..(sr + 1) * scale_cols];
+            *slot = fp8_block_dot(row, x, scale_row, block_cols);
+        }
+    }
+}
+
+/// One row's dot: E4M3 codes against f32 activations, one scale per
+/// `block_cols` columns.
+#[inline]
+fn fp8_block_dot(row: &[u8], x: &[f32], scale_row: &[f32], block_cols: usize) -> f32 {
+    let mut acc = 0.0f32;
+    for (t, (codes, xs)) in row.chunks(block_cols).zip(x.chunks(block_cols)).enumerate() {
+        // The tile's dot accumulates UNSCALED, then takes one multiply —
+        // the same shape as `FusedQ8`'s block, and the reason the scale
+        // costs O(tiles) rather than O(elements).
+        let mut tile = 0.0f32;
+        for (&c, &v) in codes.iter().zip(xs) {
+            tile += larql_models::quant::fp8::e4m3_to_f32(c) * v;
+        }
+        acc += tile * scale_row[t];
+    }
+    acc
+}
+
 /// One block's unscaled dot. `packed.len() * 2 == x.len()`.
 #[inline]
 fn q4_block_dot(packed: &[u8], x: &[f32]) -> f32 {

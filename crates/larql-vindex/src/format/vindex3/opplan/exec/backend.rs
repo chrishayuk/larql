@@ -126,6 +126,9 @@ pub enum WeightFormat {
     /// K-quant; a backend asking for it over anything else is refused at
     /// load rather than served a manufactured pack.
     KQuant,
+    /// Fine-grained (block-wise) FP8: the checkpoint's own E4M3 codes
+    /// against a two-dimensional grid of f32 scales.
+    Fp8Block,
 }
 
 /// Which matrix a format question is about. Formats are declared per
@@ -223,6 +226,16 @@ pub enum WeightSlice<'a> {
     KQuant {
         blocks: &'a [u8],
         codec: KQuant,
+    },
+    /// Fine-grained FP8: E4M3 codes and the f32 scale grid, both the
+    /// checkpoint's own bytes. TWO streams, and unlike every other pair
+    /// here the second is indexed in two dimensions.
+    Fp8Block {
+        codes: &'a [u8],
+        scales: &'a [f32],
+        block_rows: usize,
+        block_cols: usize,
+        scale_cols: usize,
     },
 }
 
@@ -386,6 +399,37 @@ impl<'a> WeightSlice<'a> {
                     codec: *codec,
                 })
             }
+            WeightSlice::Fp8Block {
+                codes,
+                scales,
+                block_rows,
+                block_cols,
+                scale_cols,
+            } => {
+                // One byte per element, so the declared geometry and the
+                // stored length must agree exactly. A slab that was
+                // merely LONG ENOUGH would put row 1 at the right offset
+                // and every scale at the wrong one.
+                let want = out_dim * in_dim;
+                if codes.len() != want {
+                    return Err(VindexError::Parse(format!(
+                        "fine-grained FP8 slab: {} E4M3 bytes do not describe a \
+                         {out_dim} x {in_dim} matrix's {want}",
+                        codes.len()
+                    )));
+                }
+                Ok(WeightRows::Fp8Block {
+                    codes,
+                    scales,
+                    block_rows: *block_rows,
+                    block_cols: *block_cols,
+                    scale_cols: *scale_cols,
+                    // A whole matrix starts at the top of its first tile.
+                    // Only `WeightRows::slice_rows` produces any other
+                    // offset, and it derives it.
+                    row_in_tile: 0,
+                })
+            }
             other => Err(VindexError::Parse(format!(
                 "no CPU projection kernel consumes {} weights — the backend declared a \
                  representation only a device can run, so this refuses rather than converting \
@@ -408,6 +452,7 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::Mxfp4 { .. } => "mxfp4",
             WeightSlice::Nvfp4 { .. } => "nvfp4",
             WeightSlice::KQuant { codec, .. } => codec.name,
+            WeightSlice::Fp8Block { .. } => "fp8-block",
         }
     }
 
@@ -420,7 +465,8 @@ impl<'a> WeightSlice<'a> {
             | WeightSlice::F16(_)
             | WeightSlice::Mxfp4 { .. }
             | WeightSlice::Nvfp4 { .. }
-            | WeightSlice::KQuant { .. } => Err(VindexError::Parse(
+            | WeightSlice::KQuant { .. }
+            | WeightSlice::Fp8Block { .. } => Err(VindexError::Parse(
                 "backend declared f32 weights but was handed another format — interpreter \
                  loaded the wrong representation"
                     .to_string(),

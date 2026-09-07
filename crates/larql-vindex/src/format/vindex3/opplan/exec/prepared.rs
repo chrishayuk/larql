@@ -1125,6 +1125,23 @@ impl KdaOperands {
                 // runtime condition.
                 _ => unreachable!("KDA gate operands loaded for a form the op does not declare"),
             },
+            // Refused, not defaulted: an unjudged family reaches this
+            // arm and must not be served either form. The two observed
+            // checkpoints declare the same bound and disagree on what it
+            // means, so "pick the common one" is exactly the silent
+            // mis-service this refusal exists to prevent.
+            gate_form: self
+                .op
+                .gate_form
+                .ok_or(VindexError::UnsupportedArchitecture {
+                    family: "unjudged".to_string(),
+                    feature: "KDA decay-gate form (whether the reference applies the \
+                              declared `gate_lower_bound`; Kimi Linear and GLM-5.3-Flash \
+                              both declare -5.0 and compute different gates, so the value \
+                              does not settle it)"
+                        .to_string(),
+                    surface: "KDA executor".to_string(),
+                })?,
             b_proj: &self.b_proj,
             a_log: &self.a_log,
             dt_bias: &self.dt_bias,

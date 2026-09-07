@@ -24,6 +24,7 @@
 //! from GLM-5.3-Flash in order to run it — every dimension and rank is
 //! stated here, not re-derived from tensor names downstream.
 
+use larql_models::config::KdaGateForm;
 use serde::Serialize;
 
 use super::OperandRef;
@@ -88,6 +89,23 @@ pub struct KdaOp {
     /// what this one means.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate_lower_bound: Option<f32>,
+
+    /// Which decay gate this layer's recurrence computes.
+    ///
+    /// `None` means **no family has judged it**, and an executor refuses
+    /// rather than picking — the same contract
+    /// [`Self::gate_lower_bound`] has for its value, now extended to the
+    /// question the value alone cannot answer.
+    ///
+    /// This field exists because [`Self::gate_lower_bound`]'s own docs
+    /// predicted it: *"if a checkpoint ever appears whose reference does
+    /// apply it, that is a second gate form and belongs in its own field
+    /// rather than changing what this one means."* GLM-5.3-Flash is that
+    /// checkpoint. `gate_lower_bound` still means exactly what it meant —
+    /// the checkpoint's declaration, carried verbatim — and this field
+    /// says what the family does with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_form: Option<KdaGateForm>,
 
     /// Query projection, `[Hv·Dv, hidden]`.
     pub q_proj: OperandRef,

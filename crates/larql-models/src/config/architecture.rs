@@ -1166,6 +1166,14 @@ pub trait ModelArchitecture: Send + Sync {
         // Flash and Inkling-Small both declare a `swiglu_limit` too, and
         // nothing on hand says they share that activation.
         //
+        // **That caution was right, and GLM has now been read.** Its
+        // reference clamps exactly as GPT-OSS does and then computes
+        // `silu(g) * u`, not `(u+1) * g * sigmoid(alpha*g)` — which is
+        // why [`ExpertGatePolicy::ClampedGated`] exists as its own
+        // variant. Deriving either from `swiglu_limit` would have picked
+        // the wrong one for one of the two families, at a measured
+        // relative 31.7 on GLM's real expert bank.
+        //
         // Resolving the policy from the bound alone would claim they do,
         // on the strength of one shared field name. That is the same
         // inference `layer_types` → Gated DeltaNet made, and it is wrong
@@ -1584,6 +1592,28 @@ pub trait ModelArchitecture: Send + Sync {
     /// must reach an executor's named refusal rather than a plausible
     /// number.
     fn mla_kv_a_norm_eps(&self) -> Option<f64> {
+        None
+    }
+
+    // ── KDA (Kimi Delta Attention) ──
+
+    /// Which decay gate this family's KDA recurrence computes.
+    ///
+    /// `None` — the default — means **unjudged**, and an executor must
+    /// refuse rather than pick a form. It is not a formality: Kimi Linear
+    /// and GLM-5.3-Flash both declare
+    /// `linear_attn_config.gate_lower_bound: -5.0`, and Kimi's reference
+    /// reads it nowhere while GLM's applies it. A default here — either
+    /// form — would silently serve one family's arithmetic to the other,
+    /// with every shape closing. Measured cost of getting it wrong:
+    /// relative 2.50e-2 on a real GLM layer's output, from a 2.8× error in
+    /// the mean per-step decay (see [`KdaGateForm`]).
+    ///
+    /// The same architecture fact as [`Self::mla_kv_a_norm_eps`], for the
+    /// same reason: no checkpoint declares which branch its reference
+    /// takes, so the declaration lives with the family that owns the
+    /// reference.
+    fn kda_gate_form(&self) -> Option<crate::config::KdaGateForm> {
         None
     }
 

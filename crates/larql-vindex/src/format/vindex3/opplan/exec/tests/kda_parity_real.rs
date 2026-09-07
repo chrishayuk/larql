@@ -21,6 +21,7 @@
 //! equivalent across that boundary, and only a fixture that crosses it can
 //! say so.
 
+use larql_models::config::KdaGateForm;
 use std::path::PathBuf;
 
 use larql_models::config::KdaGeometry;
@@ -111,6 +112,7 @@ fn full_width_boundaries_and_state_match_the_oracle() {
     let (bp, al, dt) = (load("b_proj"), load("a_log"), load("dt_bias"));
     let (on, op) = (load("o_norm"), load_bf16("o_proj"));
     let weights = KdaWeights {
+        gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
         q_proj: WeightRows::Bf16(&qp),
         k_proj: WeightRows::Bf16(&kp),
         v_proj: WeightRows::Bf16(&vp),
