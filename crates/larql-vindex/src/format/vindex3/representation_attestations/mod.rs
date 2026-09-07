@@ -71,10 +71,13 @@ use super::auxiliary_references::OperandAddress;
 use super::represent::codec::{DomainId, FidelityCertificate, MetricId, SemanticId};
 use crate::error::VindexError;
 
+pub mod recognition;
 pub mod tuple;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_recognition;
 #[cfg(test)]
 mod tests_tuple;
 

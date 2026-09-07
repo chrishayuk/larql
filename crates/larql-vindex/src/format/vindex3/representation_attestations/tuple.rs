@@ -37,6 +37,7 @@
 
 use std::collections::BTreeMap;
 
+use super::recognition::{gap, RecognisedMethods, RecognitionGap};
 use super::{AttestationTable, JudgedAttestation};
 use crate::format::vindex3::auxiliary_references::OperandAddress;
 
@@ -168,8 +169,23 @@ pub enum AttestationStatus<'a> {
         attestation: &'a JudgedAttestation,
         cause: StalenessCause,
     },
-    /// The tuple holds. NOT yet a usable guarantee: the authority still
-    /// has to be recognised, and the content digest still has to match.
+    /// The tuple holds and the artifact is fine — and this build does
+    /// not take the attesting authority's word, or does not implement
+    /// their method.
+    ///
+    /// Distinct from both neighbours on purpose. Absent means nobody
+    /// measured; stale means the measurement expired; this means the
+    /// measurement is someone else's and we cannot use it. Only the
+    /// first two are the artifact's business, and telling an operator to
+    /// re-encode when what they need is to configure recognition sends
+    /// them a long way in the wrong direction.
+    Unrecognised {
+        attestation: &'a JudgedAttestation,
+        gap: RecognitionGap,
+    },
+    /// The tuple holds and the authority is recognised. NOT yet a usable
+    /// guarantee: the content digest still has to match, which needs the
+    /// bytes.
     Bound(&'a JudgedAttestation),
 }
 
@@ -179,6 +195,7 @@ impl AttestationStatus<'_> {
         match self {
             Self::Absent { .. } => None,
             Self::Stale { attestation, .. } => Some(attestation),
+            Self::Unrecognised { attestation, .. } => Some(attestation),
             Self::Bound(attestation) => Some(attestation),
         }
     }
@@ -187,7 +204,7 @@ impl AttestationStatus<'_> {
     ///
     /// Every branch says something a reader can act on, and none of them
     /// says or implies zero.
-    pub fn unavailable_because(&self) -> Option<String> {
+    pub fn unavailable_because(&self, recognised: &RecognisedMethods) -> Option<String> {
         match self {
             Self::Absent { elsewhere } if elsewhere.is_empty() => {
                 Some("nothing is attested for it".to_string())
@@ -198,6 +215,10 @@ impl AttestationStatus<'_> {
             Self::Stale { cause, .. } => {
                 Some(format!("its attestation is stale: {}", cause.describe()))
             }
+            Self::Unrecognised { gap, .. } => Some(format!(
+                "its attestation is unrecognised: {}",
+                gap.describe(recognised)
+            )),
             Self::Bound(_) => None,
         }
     }
@@ -215,14 +236,32 @@ impl AttestationTable {
     /// means "the tuple holds", never "the bytes are right".
     ///
     /// [`Bound`]: AttestationStatus::Bound
-    pub fn status_of<'a>(&'a self, subject: &AttestedSubject<'_>) -> AttestationStatus<'a> {
+    pub fn status_of<'a>(
+        &'a self,
+        subject: &AttestedSubject<'_>,
+        recognised: &RecognisedMethods,
+    ) -> AttestationStatus<'a> {
         let Some(attestation) = self.at(subject.operand, subject.extent_depth) else {
             return AttestationStatus::Absent {
                 elsewhere: self.depths(subject.operand),
             };
         };
-        match first_difference(attestation, subject) {
-            Some(cause) => AttestationStatus::Stale { attestation, cause },
+        // STALENESS BEFORE RECOGNITION, deliberately. Staleness is a fact
+        // about the container and is true for every reader; unrecognition
+        // is a fact about THIS build. When both hold, the portable answer
+        // is the more useful one — an operator who fixes recognition and
+        // comes back would only then discover the attestation was expired
+        // anyway. The tuple fields are schema-level, not method-level, so
+        // staleness stays well defined for a method nobody implements.
+        if let Some(cause) = first_difference(attestation, subject) {
+            return AttestationStatus::Stale { attestation, cause };
+        }
+        match gap(
+            &attestation.method.authority,
+            &attestation.method.method,
+            recognised,
+        ) {
+            Some(gap) => AttestationStatus::Unrecognised { attestation, gap },
             None => AttestationStatus::Bound(attestation),
         }
     }

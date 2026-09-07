@@ -10,8 +10,18 @@
 
 use std::collections::BTreeMap;
 
+use super::recognition::RecognisedMethods;
 use super::tuple::{AttestationStatus, AttestedSubject, StalenessCause};
 use super::*;
+
+/// These arms are about the TUPLE, so they recognise the fixture's
+/// authority and method — otherwise every `Bound` here would come back
+/// `Unrecognised` and the file would silently stop testing staleness.
+fn recognising() -> RecognisedMethods {
+    RecognisedMethods::none()
+        .with_authority("larql-encoder")
+        .with_method("measured-rms", 1)
+}
 
 const OBJECT: &str = "block.0";
 const TENSOR: &str = "mlp.gate_proj.weight";
@@ -73,9 +83,9 @@ const SHAPE: [usize; 2] = [64, 101];
 fn an_attestation_that_still_describes_the_operand_is_bound() {
     let table = table();
     let operand = address();
-    let status = table.status_of(&subject(&operand, &SHAPE));
+    let status = table.status_of(&subject(&operand, &SHAPE), &recognising());
     assert!(matches!(status, AttestationStatus::Bound(_)));
-    assert!(status.unavailable_because().is_none());
+    assert!(status.unavailable_because(&recognising()).is_none());
     assert_eq!(status.attestation().unwrap().claimed().radius(), 0.031);
 }
 
@@ -88,17 +98,17 @@ fn absence_says_where_the_container_does_attest() {
 
     let mut elsewhere = subject(&operand, &SHAPE);
     elsewhere.extent_depth = 2;
-    let status = table.status_of(&elsewhere);
+    let status = table.status_of(&elsewhere, &recognising());
     assert_eq!(status, AttestationStatus::Absent { elsewhere: vec![0] });
-    let why = status.unavailable_because().unwrap();
+    let why = status.unavailable_because(&recognising()).unwrap();
     assert!(why.contains("depths [0]"), "{why}");
     assert!(status.attestation().is_none());
 
     // An operand nothing attests at all reads differently again.
     let unattested = OperandAddress::new(OBJECT, "mlp.down_proj.weight");
-    let status = table.status_of(&subject(&unattested, &SHAPE));
+    let status = table.status_of(&subject(&unattested, &SHAPE), &recognising());
     assert_eq!(status, AttestationStatus::Absent { elsewhere: vec![] });
-    let why = status.unavailable_because().unwrap();
+    let why = status.unavailable_because(&recognising()).unwrap();
     assert!(why.contains("nothing is attested for it"), "{why}");
 }
 
@@ -202,14 +212,14 @@ fn source_and_recipe_are_checked_only_when_a_caller_supplies_them() {
     right.expected_source_digest = Some(SOURCE);
     right.expected_recipe = Some(RECIPE);
     assert!(matches!(
-        table.status_of(&right),
+        table.status_of(&right, &recognising()),
         AttestationStatus::Bound(_)
     ));
 
     // Not supplied: bound, because a container holding neither the source
     // nor the recipe cannot say either is wrong.
     assert!(matches!(
-        table.status_of(&subject(&operand, &SHAPE)),
+        table.status_of(&subject(&operand, &SHAPE), &recognising()),
         AttestationStatus::Bound(_)
     ));
 }
@@ -240,11 +250,11 @@ fn a_stale_status_still_names_the_measurement_and_never_implies_zero() {
     let operand = address();
     let mut revision = subject(&operand, &SHAPE);
     revision.codec_revision = 4;
-    let status = table.status_of(&revision);
+    let status = table.status_of(&revision, &recognising());
 
     let attestation = status.attestation().expect("stale still has one");
     assert!(attestation.describe().contains("larql-encoder"));
-    let why = status.unavailable_because().unwrap();
+    let why = status.unavailable_because(&recognising()).unwrap();
     assert!(why.contains("stale"), "{why}");
     assert!(why.contains("revision 1"), "{why}");
     assert!(why.contains("revision 4"), "{why}");
@@ -269,13 +279,13 @@ fn the_tuple_check_needs_no_container_at_all() {
     let table = table();
     let operand = address();
     assert!(matches!(
-        table.status_of(&subject(&operand, &SHAPE)),
+        table.status_of(&subject(&operand, &SHAPE), &recognising()),
         AttestationStatus::Bound(_)
     ));
 }
 
 fn cause(table: &AttestationTable, subject: &AttestedSubject<'_>) -> StalenessCause {
-    match table.status_of(subject) {
+    match table.status_of(subject, &recognising()) {
         AttestationStatus::Stale { cause, .. } => cause,
         other => panic!("expected staleness, got {other:?}"),
     }
