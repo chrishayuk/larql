@@ -50,6 +50,7 @@ use super::accounting::{
     declared_resident_for, expectations, reconcile, BlockGeometry, Bound, Expectation, Observed,
     Reconciliation, ResidencyBudget, ResourceLedger,
 };
+use super::attested_fidelity::{admit, VerifiedEvidence};
 use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
@@ -62,9 +63,14 @@ use super::realization::{
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
 use crate::error::VindexError;
+use crate::format::vindex3::auxiliary_references::OperandAddress;
 use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
-use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
+use crate::format::vindex3::represent::codec::{
+    CodecRegistry, FidelityCertificate, RepresentationCodec, RepresentationExtent,
+};
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
+use crate::format::vindex3::representation_attestations::tuple::AttestedSubject;
+use std::collections::BTreeMap;
 
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
@@ -1627,11 +1633,14 @@ fn select_records<B: PlanBackend + ?Sized>(
             Err(refusal) => refusals.push(*refusal),
         }
     }
-    if refusals.is_empty() {
-        Ok(records)
-    } else {
-        Err(VindexError::Parse(SelectionRefusals(refusals).to_string()))
+    if !refusals.is_empty() {
+        return Err(VindexError::Parse(SelectionRefusals(refusals).to_string()));
     }
+    // The floor gates selection, so the certificate it judges has to be
+    // the derived one BEFORE anything consults it. Refusals first: a
+    // plan that is already refused should not pay for verification.
+    compose_extent_certificates(&mut records, store)?;
+    Ok(records)
 }
 
 /// The largest saving in bytes-opened any record can make by taking a
@@ -1733,6 +1742,224 @@ fn dependency_pins(
                     .unwrap_or(0),
                 lifetime: DependencyLifetime::PreparationOnly,
             })
+        })
+        .collect()
+}
+
+/// **B3's carriage.** Replace every extent option's DECLARED certificate
+/// with the DERIVED one, so the floor that gates selection judges the
+/// bound a caller may actually rely on.
+///
+/// Until this ran, `shallowest_saving` read `option.certificate.radius`
+/// straight from the codec's declaration — a bound that knows nothing
+/// about the dependency the extent decodes through. A codebook read at a
+/// shallow extent moves every value that indexes it, so the declared
+/// number is an over-promise for any codec with an auxiliary, and it was
+/// harmless only because no shipped codec both declared a radius and
+/// required one.
+///
+/// The three phases are the module's, in order, and the order is the
+/// security boundary rather than a preference:
+///
+/// 1. [`admit`] over every planned operand — metadata only, no payload
+///    read, so a container that attests nothing costs nothing here.
+/// 2. [`Admitted::verify`] — hashes exactly what admission bound. These
+///    reads are PREPARATION WORK: they resolve through `load_raw`, so
+///    they land in the store's consumption ledger (`load_count`,
+///    `touched_objects`) like every other preparation read. The
+///    `ResourceLedger`'s `prepare` figure is priced from declared
+///    extents and does NOT yet include them — that is debt D1, named by
+///    this wave's freeze and not paid here; what matters is that the
+///    reads are counted somewhere real rather than absorbed.
+/// 3. [`VerifiedEvidence::derive`] per option — the attested claim where
+///    one was verified, the codec's declaration otherwise, composed with
+///    each dependency's certificate.
+///
+/// UNAVAILABLE, NEVER OPTIMISTIC. A missing dependency pin, a dependency
+/// whose codec declares no radius, and a composition the metrics refuse
+/// all leave the option with no radius at all. `RepresentationFloor`
+/// already reads that correctly — an extent declaring no radius is
+/// admissible only as the terminal one, because an undeclared error is
+/// not a small one — so every one of those cases refuses a shallower
+/// extent rather than admitting it on a bound nobody computed. A
+/// composition refusal is deliberately not fatal to the plan: a floor of
+/// `Exact` never consults a radius, and a container whose metrics
+/// disagree should still be plannable at full depth.
+fn compose_extent_certificates(
+    records: &mut [(RealizationRecord, RepresentationFacts)],
+    store: OperandSource<'_>,
+) -> Result<(), VindexError> {
+    let registry = store.registry();
+    let table = store.store().attestations();
+    let recognised = store.store().recognised();
+
+    // Phase one's inputs, owned, because an `AttestedSubject` borrows
+    // what the container says rather than copying it — which is the
+    // point: a subject built from anything but the container would be
+    // comparing the attestation against itself.
+    struct Facts {
+        depth: u32,
+        address: OperandAddress,
+        shape: Vec<usize>,
+        family: String,
+        revision: u32,
+        baselines: BTreeMap<String, String>,
+        operand: OperandRef,
+    }
+
+    let mut facts = Vec::new();
+    for (record, _) in records.iter() {
+        let Some(codec) = registry.by_label(&record.representation) else {
+            continue;
+        };
+        let identity = codec.identity();
+        let address = OperandAddress::new(
+            &record.planned.operand.object,
+            &record.planned.operand.tensor,
+        );
+        // Only depths this operand is actually attested at. `depths` is a
+        // metadata read, so an unattested operand — every operand in
+        // every container written before this wave — adds no work.
+        for depth in table.depths(&address) {
+            facts.push(Facts {
+                depth,
+                address: address.clone(),
+                shape: record.planned.operand.shape.clone(),
+                family: identity.family.clone(),
+                revision: identity.revision,
+                baselines: auxiliary_baselines(
+                    registry,
+                    codec,
+                    RepresentationExtent { depth },
+                    &record.dependencies,
+                ),
+                operand: record.planned.operand.clone(),
+            });
+        }
+    }
+
+    let subjects: Vec<(AttestedSubject<'_>, OperandRef)> = facts
+        .iter()
+        .map(|f| {
+            (
+                AttestedSubject {
+                    operand: &f.address,
+                    extent_depth: f.depth,
+                    codec_family: &f.family,
+                    codec_revision: f.revision,
+                    shape: &f.shape,
+                    auxiliary_baselines: f.baselines.clone(),
+                    // A reader holding only the container knows neither.
+                    // They are carried as identity for a verifier that
+                    // does — see the module note on B4.
+                    expected_source_digest: None,
+                    expected_recipe: None,
+                },
+                f.operand.clone(),
+            )
+        })
+        .collect();
+
+    let evidence = if subjects.is_empty() {
+        VerifiedEvidence::none(&store)
+    } else {
+        admit(table, &subjects, recognised, &store).verify(table, &store)?
+    };
+
+    // Phase three. Every option, attested or not: the composition is owed
+    // to a declared certificate exactly as much as to a measured one.
+    for (record, _) in records.iter_mut() {
+        let Some(codec) = registry.by_label(&record.representation) else {
+            continue;
+        };
+        let address = OperandAddress::new(
+            &record.planned.operand.object,
+            &record.planned.operand.tensor,
+        );
+        let tensor = record.planned.operand.tensor.clone();
+        let label = record.representation.clone();
+        for option in &mut record.extent.options {
+            let extent = option.certificate.extent;
+            let dependencies =
+                match dependency_certificates(registry, codec, extent, &record.dependencies) {
+                    Some(certificates) => certificates,
+                    // A dependency that certifies nothing leaves the
+                    // composition unavailable rather than optimistic.
+                    None => {
+                        option.certificate.radius = None;
+                        continue;
+                    }
+                };
+            option.certificate.radius = evidence
+                .derive(
+                    &(address.clone(), extent.depth),
+                    option.certificate.radius.as_ref(),
+                    &dependencies,
+                    &tensor,
+                    &label,
+                )
+                .unwrap_or(None);
+        }
+    }
+    Ok(())
+}
+
+/// Each dependency's TERMINAL baseline identity at `extent`, keyed by the
+/// name the owner's codec declared — what an attestation binds to, and
+/// what a reader rebuilds to check that binding.
+fn auxiliary_baselines(
+    registry: &CodecRegistry,
+    codec: &dyn RepresentationCodec,
+    extent: RepresentationExtent,
+    pins: &[DependencyPin],
+) -> BTreeMap<String, String> {
+    codec
+        .required_auxiliaries(extent)
+        .iter()
+        .filter_map(|spec| {
+            let pin = pins.iter().find(|d| d.name == spec.name)?;
+            let identity = registry.by_label(&pin.label)?.identity();
+            Some((
+                spec.name.to_string(),
+                crate::format::vindex3::representation_attestations::terminal_baseline(
+                    &identity.family,
+                    identity.revision,
+                ),
+            ))
+        })
+        .collect()
+}
+
+/// The certificates of the dependency extents ACTUALLY selected, in the
+/// order the owner's codec declares them.
+///
+/// `None` — meaning the composition is unavailable — as soon as any one
+/// term is missing: a required auxiliary with no pin, a label no codec
+/// claims, or a dependency whose own codec declares no radius. Adding up
+/// the terms that happen to exist would state a bound narrower than the
+/// truth, which is the exact failure this composition exists to prevent.
+///
+/// Dependencies are pinned WHOLE today, so the selected extent is the
+/// dependency's terminal one. When auxiliary extent selection arrives —
+/// [`AuxiliaryExtents`](super::operands::AuxiliaryExtents) is already the
+/// shape it will take — this is the one place that has to learn about it.
+fn dependency_certificates(
+    registry: &CodecRegistry,
+    codec: &dyn RepresentationCodec,
+    extent: RepresentationExtent,
+    pins: &[DependencyPin],
+) -> Option<Vec<FidelityCertificate>> {
+    codec
+        .required_auxiliaries(extent)
+        .iter()
+        .map(|spec| {
+            let pin = pins.iter().find(|d| d.name == spec.name)?;
+            let dependency = registry.by_label(&pin.label)?;
+            let terminal = dependency.extents().iter().map(|c| c.extent).max()?;
+            dependency
+                .certificate_at(terminal, &pin.tensor)
+                .ok()?
+                .radius
         })
         .collect()
 }

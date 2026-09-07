@@ -98,6 +98,26 @@ pub fn content_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", hasher.finalize())
 }
 
+/// A dependency's TERMINAL baseline identity, as an attestation binds to
+/// it and as a reader rebuilds it from the container: `<family>@<revision>/terminal`.
+///
+/// ONE canonical derivation, because there are two independent producers
+/// of this string — the encoder that writes an attestation and the
+/// planner that checks one — and a format they agree on only by
+/// convention is a format they will eventually disagree on. A drifting
+/// separator here does not fail loudly: every attestation simply goes
+/// `Stale` with a changed-baseline cause, which reads exactly like a
+/// container that was legitimately re-encoded. Nobody would look here.
+///
+/// `terminal` rather than a depth on purpose. The binding is to what the
+/// dependency IS, not to the extent some plan happened to select from it,
+/// which is what lets a plan pick a shallower auxiliary without
+/// invalidating the measurement — the selected depth composes on top at
+/// planning time instead.
+pub fn terminal_baseline(family: &str, revision: u32) -> String {
+    format!("{family}@{revision}/terminal")
+}
+
 /// The schema this build implements. A table stamped with anything else
 /// is refused rather than read optimistically: an attestation is a
 /// guarantee, and a guarantee read under the wrong rules is worse than no

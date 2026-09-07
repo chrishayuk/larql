@@ -21,6 +21,7 @@ mod bf16_gemv_bench;
 mod bf16_residency;
 mod bf16_zlib_execution;
 mod compact_consumption;
+mod composed_floor;
 mod continuation;
 mod controls;
 mod coverage_backend_decode;
