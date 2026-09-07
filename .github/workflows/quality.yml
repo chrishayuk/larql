@@ -253,6 +253,20 @@ jobs:
       - name: Instrument selftest
         run: python3 scripts/ci_throughput.py selftest
 
+      # The Metal tier classifier ships before the trigger change that will
+      # use it (CI-E2-D is designed, not activated). Its completeness check
+      # runs from the moment the manifest exists, not from activation:
+      # `parity-obligations.json` declares which upstream surfaces can
+      # invalidate Metal's behaviour, and its one real weakness is OMISSION.
+      # A new parity dependency added without a declaration would classify
+      # as compile-only once tiering is live, so the gate that notices has
+      # to predate the gate that acts.
+      - name: Metal tier classifier selftest
+        run: python3 scripts/metal_tier.py selftest
+
+      - name: Parity-obligation manifest is complete
+        run: python3 scripts/metal_tier.py check
+
   proto-lint:
     name: buf lint
     runs-on: ubuntu-latest

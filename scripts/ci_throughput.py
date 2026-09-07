@@ -738,10 +738,18 @@ def evaluate_conditions(conditions: dict, after: float | None, before: float | N
     for field, tests in conditions.items():
         if field == "after":
             value = after
-        elif field == "delta_pct":
+        elif field in ("delta_pct", "abs_delta_pct"):
             if before in (None, 0) or after is None:
                 return None
             value = (after - before) / before * 100.0
+            # A two-sided claim needs a two-sided condition. Conditions are
+            # ANDed, so `delta_pct` cannot express "more than 10% away in
+            # EITHER direction" — writing `lt: -10` silently drops the
+            # upper half, and a +20% move comes back neither HELD nor
+            # FALSIFIED. E2-D's D3 was written that way and is the reason
+            # this field exists.
+            if field == "abs_delta_pct":
+                value = abs(value)
         else:
             raise ValueError(f"unknown condition field: {field}")
         if value is None:
@@ -1007,6 +1015,27 @@ def selftest(_args: argparse.Namespace) -> int:
           VERDICT_INVALID)
 
     check("missing metric yields NO DATA", score_prediction(p_effect, base, Sample({}, N))["verdict"], VERDICT_NO_DATA)
+
+    # 4f. two-sided validity. `delta_pct` ANDs its operators, so a claim
+    #     of the form "within +/- X%" cannot be falsified on both sides by
+    #     one delta_pct clause; abs_delta_pct exists for exactly that, and
+    #     the control checks BOTH signs and the passing middle.
+    p_two_sided = {"id": "PT", "mechanism": "m", "kind": "validity", "metric": "merge_ready.p50",
+                   "held_if": {"delta_pct": {"gte": -10, "lte": 10}},
+                   "falsified_if": {"abs_delta_pct": {"gt": 10}}}
+    b2 = Sample({"merge_ready.p50": 100.0}, N)
+    check("two-sided validity HOLDS in the middle",
+          score_prediction(p_two_sided, b2, Sample({"merge_ready.p50": 105.0}, N))["verdict"], VERDICT_HELD)
+    check("two-sided validity FALSIFIED below",
+          score_prediction(p_two_sided, b2, Sample({"merge_ready.p50": 85.0}, N))["verdict"], VERDICT_FALSIFIED)
+    check("two-sided validity FALSIFIED above",
+          score_prediction(p_two_sided, b2, Sample({"merge_ready.p50": 120.0}, N))["verdict"], VERDICT_FALSIFIED)
+
+    #     ...and the bug it was written for: a ONE-sided falsifier lets a
+    #     +20% move escape as PARTIAL, which is what D3 originally did.
+    p_one_sided = dict(p_two_sided, id="PO", falsified_if={"delta_pct": {"lt": -10}})
+    check("one-sided falsifier misses the other direction",
+          score_prediction(p_one_sided, b2, Sample({"merge_ready.p50": 120.0}, N))["verdict"], VERDICT_PARTIAL)
 
     # 4a. the E1 C2 defect, as a regression test. The SAME numbers that score
     #     HELD/FALSIFIED above must be refused once the samples differ in
