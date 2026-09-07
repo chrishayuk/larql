@@ -1,13 +1,15 @@
 {
-  "version": 1,
-  "status": "DESIGN — declared and checkable, but NOT yet wired to any workflow trigger (CI-E2-D)",
+  "version": 3,
+  "status": "DESIGN \u2014 declared and checkable, but NOT yet wired to any workflow trigger (CI-E2-D). All five version-1 needs_review entries resolved 2026-09-07.",
   "note": "Which upstream surfaces can invalidate which claim about the Metal backend. This is a DECLARATION, not an inference from directory ancestry. scripts/metal_tier.py checks that it stays COMPLETE with respect to what the Metal crate actually references, so a new parity dependency cannot be added without either declaring it or failing the check.",
-  "the_asymmetry": "A file placed in interface_only when it is really behavioural is UNSAFE — Metal would compile against changed numerics and never re-qualify. A file placed in parity_obligations when it is really structural is merely EXPENSIVE. So anything uncertain belongs in parity_obligations, and entries carrying `needs_review` are there by that default rather than by a positive judgement.",
+  "the_asymmetry": "A file placed in interface_only when it is really behavioural is UNSAFE \u2014 Metal would compile against changed numerics and never re-qualify. A file placed in parity_obligations when it is really structural is merely EXPENSIVE. So anything uncertain belongs in parity_obligations, and entries carrying `needs_review` are there by that default rather than by a positive judgement. Version 2 applies this structurally as well as per-entry: parity subtrees stay WHOLE and exemptions are named files, so a file added to cpu/ or backend/ tomorrow defaults to tier A instead of falling through to tier B.",
   "parity_obligations": [
     {
       "id": "cpu-quant-kernels",
-      "paths": ["crates/larql-compute/src/cpu/ops/**"],
-      "why": "Metal's kernel tests import these as the NUMERICAL reference — 72 references to cpu::ops::q4_common alone, plus moe, geglu, q8_matvec, outer_combine. A change here changes what the Metal kernels are required to reproduce.",
+      "paths": [
+        "crates/larql-compute/src/cpu/ops/**"
+      ],
+      "why": "Metal's kernel tests import these as the NUMERICAL reference \u2014 72 references to cpu::ops::q4_common alone, plus moe, geglu, q8_matvec, outer_combine. A change here changes what the Metal kernels are required to reproduce.",
       "witnesses": [
         "tests/test_kernel_q4k_matmul.rs",
         "tests/test_kernel_q4k_ffn_gate_up.rs",
@@ -18,23 +20,35 @@
     },
     {
       "id": "cpu-other",
-      "paths": ["crates/larql-compute/src/cpu/**"],
-      "why": "Metal references `larql_compute::cpu` through brace and type imports that text extraction truncates, so the subtree is declared whole rather than guessed at leaf level.",
-      "confidence": "needs_review",
-      "review_question": "Which of cpu/{kquant_gemv,nvfp4_gemv,spin_pool}.rs are reachable from an entry point a Metal test uses as a reference? kquant_gemv is currently reached only from cpu/mod.rs and consumed by larql-vindex, not by Metal."
+      "paths": [
+        "crates/larql-compute/src/cpu/**"
+      ],
+      "why": "The cpu subtree stays parity WHOLE, with named exemptions below, so a new file added here defaults to tier A. Resolved from reference counts: nvfp4_gemv has 42 references from the Metal crate including shaders/nvfp4_matvec.rs; cpu::q4 is a re-export of ops::q4_common, ops::q4_matvec and ops::q4_vecmat, already covered; spin_pool has ZERO references but is called from attention/decode/gqa_step.rs as a chunked parallel reduction, so it is declared silent parity below.",
+      "confidence": "observed"
     },
     {
       "id": "attention-math",
-      "paths": ["crates/larql-compute/src/attention/**"],
+      "paths": [
+        "crates/larql-compute/src/attention/**"
+      ],
       "why": "rope (30 references) and softmax are compared against directly by the Metal kernel tests.",
-      "witnesses": ["tests/test_kernel_rope.rs", "tests/test_kernel_rope_at_pos.rs", "tests/test_lowering_attention_parity.rs"],
+      "witnesses": [
+        "tests/test_kernel_rope.rs",
+        "tests/test_kernel_rope_at_pos.rs",
+        "tests/test_lowering_attention_parity.rs"
+      ],
       "confidence": "observed"
     },
     {
       "id": "model-quant-formats",
-      "paths": ["crates/larql-models/src/quant/**"],
+      "paths": [
+        "crates/larql-models/src/quant/**"
+      ],
       "why": "ggml, mxfp4, nvfp4, fp4 and half are the on-disk and in-register encodings the Metal kernels decode. A change to an encoder changes what every quant kernel must decode.",
-      "witnesses": ["tests/test_kernel_moe_g_mxfp4.rs", "tests/test_lowering_nvfp4_fusion.rs"],
+      "witnesses": [
+        "tests/test_kernel_moe_g_mxfp4.rs",
+        "tests/test_lowering_nvfp4_fusion.rs"
+      ],
       "confidence": "observed"
     },
     {
@@ -48,38 +62,97 @@
         "crates/larql-compute/src/kv_dispatch/**",
         "crates/larql-compute/src/moe_route_observe.rs"
       ],
-      "why": "The composition Metal's lowering must reproduce end to end, not merely link against.",
-      "confidence": "needs_review",
-      "review_question": "pipeline and pipeline_layer are referenced 13 times combined but it is not established whether Metal tests compare RESULTS through them or only construct them."
+      "why": "The composition Metal's lowering must reproduce end to end. Resolved: tests/test_pipeline_and_moe.rs constructs FullPipelineLayer from larql_compute::pipeline and calls DecodeBackend::prefill_kquant, exercising the dispatch_full_pipeline + moe_fn callback chain. pipeline defines the layer contract Metal's prefill implements, which is composition semantics rather than a type boundary.",
+      "confidence": "observed"
     },
     {
       "id": "backend-traits-with-bodies",
-      "paths": ["crates/larql-compute/src/backend/**"],
-      "why": "Nominally the trait boundary, and matmul.rs is `pub trait MatMul` — but every file here carries arithmetic, including default method bodies a Metal impl can inherit. Declared as parity by the asymmetry above, not by a positive finding.",
-      "confidence": "needs_review",
-      "review_question": "Are capability.rs and factory.rs purely structural? If so they move to interface_only and this obligation narrows to decode/helpers/matmul/quant_matvec."
+      "paths": [
+        "crates/larql-compute/src/backend/**"
+      ],
+      "why": "Every file here carries arithmetic, including default trait method bodies a Metal impl can inherit. Kept parity WHOLE with capability.rs and factory.rs exempted by name below, so a new file in backend/ defaults to tier A rather than falling through to B.",
+      "confidence": "observed"
     }
   ],
   "interface_only": [
     {
-      "id": "options-and-handles",
+      "id": "cpu-kquant-gemv-not-a-metal-surface",
       "paths": [
-        "crates/larql-compute/src/options.rs",
+        "crates/larql-compute/src/cpu/kquant_gemv.rs",
+        "crates/larql-compute/src/cpu/kquant_gemv_tests.rs"
+      ],
+      "why": "Exemption inside the cpu parity subtree. ZERO references from the Metal crate; its only workspace consumer outside larql-compute is larql-vindex's represent/kquant.rs. Added whole by #420, which this programme twice cited as proof that globs cannot separate the tiers \u2014 it is not that case. Its test module is exempted with it: tests for a file Metal cannot reach are equally unreachable.",
+      "confidence": "observed"
+    },
+    {
+      "id": "backend-structural-files",
+      "paths": [
+        "crates/larql-compute/src/backend/capability.rs",
+        "crates/larql-compute/src/backend/factory.rs"
+      ],
+      "why": "Exemptions inside the backend parity subtree. capability.rs is `pub enum Capability` with a default impl returning false; factory.rs is `pub enum BackendKind` plus a registry, as_str, from_metal_flag and Display. Neither computes anything Metal reproduces.",
+      "confidence": "observed"
+    },
+    {
+      "id": "handles-and-async-surface",
+      "paths": [
         "crates/larql-compute/src/state_handle.rs",
         "crates/larql-compute/src/async_compute_backend/**"
       ],
-      "why": "Configuration and handle types. A change here breaks the Metal COMPILE, which tier B catches; it does not change a number a Metal kernel must reproduce.",
-      "confidence": "needs_review"
+      "why": "Trait surfaces. A change breaks the Metal COMPILE, which is exactly what tier B establishes.",
+      "confidence": "observed"
+    }
+  ],
+  "silent_parity_obligations": [
+    {
+      "id": "path-selection",
+      "paths": [
+        "crates/larql-compute/src/options.rs"
+      ],
+      "why": "Selects WHICH numerical path runs. Its own module docs: 'Decode fast path \u2014 default ON'; 'force the f32/rayon path'; 'Disable fused QK-norm + RoPE'. It exposes decode_options() and spin_pool_enabled(). Changing a DEFAULT here changes the values Metal is compared against while computing nothing itself, adding no reference and breaking no signature.",
+      "confidence": "observed",
+      "moved_from": "interface_only in version 1, where it was wrong"
     },
     {
-      "id": "test-fixtures",
+      "id": "reduction-order",
+      "paths": [
+        "crates/larql-compute/src/cpu/spin_pool.rs"
+      ],
+      "why": "Zero references from the Metal crate, and still tier A: attention/decode/gqa_step.rs calls spin_pool::global().for_each_chunk(). Changing the chunking changes floating-point reduction ORDER inside a declared parity surface. Reachability from a parity surface is an obligation; being referenced by Metal is not the test.",
+      "confidence": "observed"
+    },
+    {
+      "id": "fixture-data-authority",
       "paths": [
         "crates/larql-compute/src/test_fixtures.rs",
         "crates/larql-models/src/test_fixtures.rs"
       ],
-      "why": "Fixture constructors used by Metal's own tests. A change breaks the test build, which tier B catches by compiling --all-targets.",
-      "confidence": "needs_review",
-      "review_question": "A fixture that silently changes its DATA rather than its signature would change what the Metal tests assert without breaking the compile. That is a parity obligation wearing an interface's clothes, and it is the most likely single hole in this manifest."
+      "why": "The INPUTS Metal's tests assert on. A fixture that changes its DATA rather than its signature changes what those tests assert, with no compile break, no new import and nothing for the completeness check to find. Version 1 filed these as interface_only on the argument that a compile catches a fixture change; a compile catches a SIGNATURE change, which is not the hazard.",
+      "confidence": "observed",
+      "moved_from": "interface_only in version 1, where it was wrong",
+      "do_not_simplify": "This entry looks like test scaffolding and will invite reclassification as interface_only. It is not: it is the numerical authority the assertions are written against."
     }
-  ]
+  ],
+  "the_classes": {
+    "parity_obligations": "computes the reference values; discoverable, because Metal names them",
+    "silent_parity_obligations": "changes WHICH values appear without computing any \u2014 path selection, reduction order, fixture data. Tier A on the same terms, but NO static check can find these: they add no reference and break no signature. They exist as a separate class so a future reviewer cannot reason 'nothing imports it, so it is structural' and demote them.",
+    "interface_only": "structural; a compile catches a break here, which is what tier B is"
+  },
+  "known_limits": {
+    "file_granularity": "Classification is per FILE, and a module root is one file. crates/larql-compute/src/cpu/mod.rs carries both `pub mod` declarations, which are inert for Metal, and the `pub mod q4 { pub use super::ops::... }` re-export block, which decides WHICH implementation a Metal reference resolves to. A five-line `pub mod` addition therefore costs tier A. That is the safe direction and it is a real floor: #420 stays tier A after every version-2 exemption, not because of kquant_gemv.rs but because it added a line to that module root. Going below file granularity is a different and much harder design; do not paper over it by exempting a module root.",
+    "silent_class_is_unverifiable": "By construction. `metal_tier.py check` lists silent_parity_obligations and cannot verify them \u2014 spin_pool.rs has zero references and is tier A. The class is a standing human commitment, not a derived fact.",
+    "ordering_is_not_an_invariant": "Recorded because it was nearly a real defect: in version 2, interface_only was tested FIRST, so an interface_only entry overlapping a silent path would have demoted it to tier B \u2014 the one unsafe direction the manifest claims is impossible. No such overlap existed, so nothing was wrong in practice and no test would have caught it. Both the ordering and the invariant now exist, and the invariant is the part that survives a refactor."
+  },
+  "the_precedence": {
+    "order": [
+      "silent_parity_obligations",
+      "the Metal crate and its own workflow",
+      "interface_only",
+      "parity_obligations",
+      "cargo dependency floor"
+    ],
+    "why_silent_is_first": "Its members live INSIDE broad parity subtrees \u2014 spin_pool.rs is under cpu/** \u2014 so testing ordinary parity first would swallow them. The tier would still be A, but the reason would read as ordinary parity and the class would lose the identity it exists to carry.",
+    "why_interface_stays_above_parity": "interface_only is an EXEMPTION from ordinary parity: it is how the named kquant_gemv.rs and backend/{capability,factory}.rs escape their enclosing subtrees. Moving it below parity would make every exemption dead.",
+    "the_invariant": "silent_parity_obligations and interface_only MAY NEVER OVERLAP. Precedence already means an overlap could not demote anything, but an invariant that holds only because of evaluation order is one refactor from not holding. `metal_tier.py check` refuses the overlap outright and calls it malformed authority: a silent obligation is one no static check can rediscover, so exempting it removes the only thing between a changed default or a changed fixture and a Metal backend that never re-qualifies."
+  }
 }

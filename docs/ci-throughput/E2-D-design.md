@@ -143,17 +143,99 @@ first prediction that can score it on an intensive metric.
 Treat both as arithmetic on a replayed sample, not as a result. They are
 what `E2-D-contract.json` will be scored against, not evidence for it.
 
+## The review, resolved (manifest version 2)
+
+All five `needs_review` entries are decided, and two of them were
+**wrong**, in the unsafe direction.
+
+| question | answer | evidence |
+|---|---|---|
+| `cpu/kquant_gemv.rs` | **exempt, tier B** | 0 references from the Metal crate; its only consumer outside `larql-compute` is `larql-vindex` |
+| `cpu/nvfp4_gemv.rs` | parity | 42 references, including `shaders/nvfp4_matvec.rs` |
+| `cpu/spin_pool.rs` | **silent parity** | 0 references, and `attention/decode/gqa_step.rs:125` calls `spin_pool::global().for_each_chunk()` — reduction ORDER inside a parity surface |
+| `cpu::q4` | already covered | a re-export of `ops::q4_common`, `ops::q4_matvec`, `ops::q4_vecmat` |
+| `backend/{capability,factory}.rs` | exempt, tier B | `pub enum Capability` with a false-returning default impl; `pub enum BackendKind` plus registry, `as_str`, Display |
+| `pipeline`, `pipeline_layer` | parity | `test_pipeline_and_moe.rs` builds `FullPipelineLayer` and calls `prefill_kquant`, exercising the `dispatch_full_pipeline` + `moe_fn` chain |
+| `options.rs` | **silent parity** | exposes `decode_options()` and `spin_pool_enabled()`; its own docs say "decode fast path — default ON", "force the f32/rayon path" |
+| `test_fixtures.rs` (both crates) | **silent parity** | the input DATA the assertions are written against |
+
+### A third class, not a reassignment
+
+`options.rs` and the fixtures were filed as `interface_only` in version 1
+on the argument that a compile catches a change. A compile catches a
+**signature** change, which is not the hazard. Both belong to a class the
+version-1 taxonomy had no room for:
+
+> **`silent_parity_obligations`** — changes WHICH values appear without
+> computing any. Path selection, reduction order, fixture data. Tier A on
+> the same terms as parity, but **no static check can find them**: they
+> add no reference and break no signature.
+
+`metal_tier.py check` therefore *lists* them on every run and says it
+cannot verify them. `spin_pool.rs` prints as `NOT referenced — either way
+it stays tier A`, which is the class stating its own nature.
+
+They exist as a separate class for one reason: a future reviewer looking
+at `test_fixtures.rs` will reason "nothing imports it, it is test
+scaffolding, it is structural" and demote it. The class name and its
+`do_not_simplify` note exist to stop that.
+
+### Precedence, and an invariant that does not depend on it
+
+Classification order is: **silent parity → the Metal crate and its
+workflow → `interface_only` → ordinary parity → the dependency floor.**
+
+Silent parity is first because its members live *inside* broad parity
+subtrees — `spin_pool.rs` is under `cpu/**` — so testing ordinary parity
+first would swallow them. The tier would still be A, but the reason would
+read as ordinary parity and the class would lose the identity it exists
+to carry. `interface_only` stays above ordinary parity because that is
+how the named exemptions escape their enclosing subtrees.
+
+**Ordering is not the safety property.** In version 2 `interface_only`
+was tested first, so an entry overlapping a silent path would have
+demoted it to tier B — the one unsafe direction. No such overlap existed,
+so nothing was wrong in practice and no test would have caught it. An
+invariant that holds only because of evaluation order is one refactor
+from not holding, so `metal_tier.py check` now **refuses the overlap
+outright** and calls it malformed authority. Four controls cover it,
+including one on the shipped manifest and one asserting the demotion is
+impossible even when the overlap is constructed deliberately.
+
+### The asymmetry, applied structurally
+
+Parity subtrees stay **whole** and exemptions are **named files**. A file
+added to `cpu/` or `backend/` tomorrow defaults to tier A rather than
+falling through to tier B. Two selftest controls hold that.
+
+### A limit the review did not remove
+
+**#420 is still tier A**, and not because of `kquant_gemv.rs` — that is
+now exempt, along with its test module. It is tier A because it added
+five lines to `crates/larql-compute/src/cpu/mod.rs`, and that module root
+carries both inert `pub mod` declarations and the `pub mod q4 { pub use
+super::ops::... }` re-export block that decides which implementation a
+Metal reference resolves to. Classification is per file; a module root is
+one file.
+
+So the review moved **zero** pull requests in the sample — A=7, B=11,
+unchanged. An earlier draft of this document predicted it would move one.
+That prediction was wrong, and the reason is worth more than the
+prediction: exempting a leaf does not help when the diff also touches the
+root that re-exports it. Do not paper over this by exempting a module
+root; going below file granularity is a different and much harder design.
+
 ## Before activation
 
 1. **A1 closes** (n ≥ 8 successful Metal runs under E2-A).
-2. The five `needs_review` entries get a decision, in particular whether
-   `cpu/{kquant_gemv,nvfp4_gemv,spin_pool}.rs` are reachable from any
-   entry point a Metal test uses as a reference.
-3. The instrument gains a job-scoped metric. `workflow_exec_max` is keyed
-   on workflow, and under D one workflow emits both a 24-minute job and a
-   2-minute one, so its p50 becomes a mixture that hides the per-tier
-   story. D needs `job_exec_max.<workflow>.<job>` before it can be
-   scored.
+2. ~~The five `needs_review` entries~~ — **done**, manifest version 2.
+3. ~~The instrument gains a job-scoped metric~~ — **done**.
+   `job_exec_max.<workflow>.<job>` counts successful jobs only, returns
+   `NO DATA` rather than `PARTIAL` when the job is absent from either
+   sample, and is validated against a baseline snapshot for any frozen
+   forecast. A selftest control demonstrates the mixture it prevents: a
+   24-minute and a 2-minute job in one workflow read as 24 and 2, where
+   the workflow-level p50 reads 13.
 4. `E2-D-contract.json` freezes with numeric baselines taken from the
    post-E2-A steady state, which does not exist yet.
 
