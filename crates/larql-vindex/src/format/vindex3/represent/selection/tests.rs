@@ -48,6 +48,7 @@ fn with_quality_bank(mut c: RepresentationExperiment) -> RepresentationExperimen
     use crate::format::vindex3::represent::quality::*;
     c.quality = Some(QualityEvidence {
         gate: QualityGate {
+            require_model_activations: None,
             id: "kimi-logit-v1".into(),
             positions_min: 512,
             kl_p99_max: 1e-3,
@@ -61,6 +62,7 @@ fn with_quality_bank(mut c: RepresentationExperiment) -> RepresentationExperimen
             route_mixture_mass_max: None,
         },
         bank: QualityBank {
+            activations: None,
             positions: 512,
             logits: LogitEvidence {
                 kl_p50: 1.2e-4,

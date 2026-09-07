@@ -118,6 +118,7 @@ pub fn dist(p99: f64, max: f64) -> Option<Distribution> {
 /// sitting well inside their limits.
 pub fn authority_reading(kl_p99: f64, route_flips: u64) -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
