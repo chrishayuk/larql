@@ -1,11 +1,11 @@
 {
   "experiment": "E2-D",
-  "title": "Tiered Metal evidence — declared parity obligation, not directory ancestry",
-  "status": "PREREGISTERED BUT NOT FROZEN — the classification prediction is frozen; numeric baselines are deferred, see baseline.deferred_because",
+  "title": "Tiered Metal evidence \u2014 declared parity obligation, not directory ancestry",
+  "status": "PREREGISTERED BUT NOT FROZEN \u2014 the classification prediction is frozen; numeric baselines are deferred, see baseline.deferred_because",
   "frozen_at": null,
   "claim": "A pull request pays full behavioural Metal qualification only when it changes the Metal crate or a DECLARED parity obligation. An upstream change that can break the compile but not the numbers pays a compile plus the ordinary-profile witness. Everything else pays no macOS time.",
   "measurement_contract": {
-    "inherits": "docs/ci-throughput/E2-contract.json — every prediction names an INTENSIVE metric, and the instrument refuses extensive metrics across samples of different size",
+    "inherits": "docs/ci-throughput/E2-contract.json \u2014 every prediction names an INTENSIVE metric, and the instrument refuses extensive metrics across samples of different size",
     "instrument_change_required_before_freezing": "workflow_exec_max is keyed on WORKFLOW. Under E2-D one workflow emits both a ~24-minute tier-A job and a ~2-minute tier-B job, so its p50 becomes a mixture that hides the per-tier story. E2-D needs job_exec_max.<workflow>.<job> before D1 or D3 can be scored at all."
   },
   "baseline": {
@@ -15,8 +15,20 @@
   "frozen_now": {
     "what": "The classification prediction, which is derivable from data that already exists and must not be re-derived after D runs.",
     "sample": "pull requests #415-#449, 35 with file data, 18 triggering the Metal gate today (6 metal-touching, 12 upstream-only)",
-    "predicted_tiers": { "A": 7, "B": 11, "C": 17 },
-    "predicted_tier_a_pull_requests": [449, 446, 444, 442, 438, 434, 420],
+    "predicted_tiers": {
+      "A": 7,
+      "B": 11,
+      "C": 17
+    },
+    "predicted_tier_a_pull_requests": [
+      449,
+      446,
+      444,
+      442,
+      438,
+      434,
+      420
+    ],
     "record": "docs/ci-throughput/E2-D-classification.json",
     "falsifier": "If the live triage job assigns a different tier to any of these 18 pull requests than the replay did, the classifier and the replay disagree and neither can be cited until that is resolved."
   },
@@ -30,8 +42,16 @@
       "mechanism": "tiering",
       "kind": "effect",
       "metric": "tier_b_share_of_triggering_attempts",
-      "held_if": { "after": { "gte": 0.5 } },
-      "falsified_if": { "after": { "lt": 0.3 } },
+      "held_if": {
+        "after": {
+          "gte": 0.5
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "lt": 0.3
+        }
+      },
       "metric_not_yet_produced": true
     },
     {
@@ -43,33 +63,60 @@
       "mechanism": "tiering",
       "kind": "effect",
       "metric": "executed_per_attempt.macos",
-      "held_if": { "delta_pct": { "lte": -35 } },
-      "falsified_if": { "delta_pct": { "gt": -15 } }
+      "held_if": {
+        "delta_pct": {
+          "lte": -35
+        }
+      },
+      "falsified_if": {
+        "delta_pct": {
+          "gt": -15
+        }
+      }
     },
     {
       "id": "D3",
       "scores": "tiering",
-      "claim": "VALIDITY — the tier-A gate itself is unchanged, within 10%",
+      "claim": "VALIDITY \u2014 the tier-A gate itself is unchanged, within 10%",
       "reason": "D must not appear to work by making the full gate cheaper. If tier-A duration moves, D has changed what full qualification MEANS and D1/D2 are not measuring what they claim.",
-      "falsifier": "a tier-A p50 more than 10% from the E2-A baseline means the full gate was altered and the effect predictions must not be read",
+      "falsifier": "a tier-A p50 more than 10% from the E2-A baseline IN EITHER DIRECTION means the full gate was altered and the effect predictions must not be read. Two-sided deliberately: a tier-A gate that got FASTER has had work removed from it, and one that got SLOWER is no longer the gate A1 measured. Either way D1/D2 are not measuring what they claim.",
       "mechanism": "tiering",
       "kind": "validity",
       "metric": "job_exec_max.larql-compute-metal.full.p50",
-      "held_if": { "delta_pct": { "gte": -10, "lte": 10 } },
-      "falsified_if": { "delta_pct": { "lt": -10 } },
-      "metric_not_yet_produced": true
+      "held_if": {
+        "delta_pct": {
+          "gte": -10,
+          "lte": 10
+        }
+      },
+      "falsified_if": {
+        "abs_delta_pct": {
+          "gt": 10
+        }
+      },
+      "metric_not_yet_produced": true,
+      "condition_note": "Uses abs_delta_pct, not delta_pct. Conditions are ANDed, so a single delta_pct clause cannot express 'more than 10% away in either direction' \u2014 written as {lt: -10} it silently drops the upper half and a +20% slowdown returns PARTIAL rather than FALSIFIED. That is how this entry was first written; ci_throughput.py's selftest now carries the control that catches it."
     },
     {
       "id": "D4",
       "scores": "contention",
       "claim": "macOS queue wait p50 falls by at least 20%",
-      "reason": "E1's c2 established that the macOS win comes from removing scheduling units, not compute: 11 fewer macOS jobs plus msrv-metal folded in. This is c2's mechanism, finally measurable on an intensive metric.",
-      "falsifier": "no movement means the removed jobs were not the ones contending — the same falsifier c2 carried, now scoreable",
+      "reason": "E1's BASELINE analysis identified scheduling units as the hypothesised mechanism: the jobs c2 targeted carried disproportionate queue cost relative to execution \u2014 quality's msrv-macOS leg was 33 jobs, 544 queue-minutes and 22 execution-minutes. E2-D tests that mechanism on an intensive metric. It is NOT inherited from a C2 result: C2 returned INVALID COMPARISON and remains unadjudicated, so the mechanism is a live hypothesis here, not an established finding.",
+      "falsifier": "no movement means the removed jobs were not the ones contending \u2014 the same falsifier c2 carried, now on a metric that can actually be scored",
       "mechanism": "contention",
       "kind": "effect",
       "metric": "macos_queue_max.p50",
-      "held_if": { "delta_pct": { "lte": -20 } },
-      "falsified_if": { "delta_pct": { "gt": -5 } }
+      "held_if": {
+        "delta_pct": {
+          "lte": -20
+        }
+      },
+      "falsified_if": {
+        "delta_pct": {
+          "gt": -5
+        }
+      },
+      "provenance_note": "Wording corrected 2026-09-07. An earlier draft said E1's C2 'established that the macOS win comes from removing scheduling units, not compute'. C2 established no such thing: it was INVALID COMPARISON. What E1 produced was a pre-intervention measurement of the asymmetry plus post-hoc diagnostics in E1-postmortem.md. Citing an unadjudicated mechanism as established is the failure this programme exists to avoid."
     }
   ],
   "structural_falsifiers": [

@@ -3,13 +3,14 @@
 
 CI-E2-D. The Metal gate costs ~24 minutes of a scarce macOS runner and
 fires whenever `crates/larql-compute/**` or `crates/larql-models/**`
-moves. Over pull requests #415-#449 that was 20 triggers, and 14 of them
+moves. Over pull requests #415-#449 that was 18 triggers, and 12 of them
 touched no Metal file at all.
 
 The wrong fix is a cleverer set of path globs. `crates/larql-compute/**`
 holds both the trait boundary Metal LINKS against and the CPU kernels
-Metal's tests compare NUMBERS against, and no amount of directory
-ancestry separates those two. So the distinction is DECLARED, in
+Metal's tests compare NUMBERS against -- 72 references to
+`cpu::ops::q4_common` alone -- and no amount of directory ancestry
+separates those two. So the distinction is DECLARED, in
 crates/larql-compute-metal/parity-obligations.json, and this script
 checks the declaration stays complete.
 

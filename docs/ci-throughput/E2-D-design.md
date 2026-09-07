@@ -130,9 +130,15 @@ default above).
 
 On the measured tier costs — 24 min and ~2 min — that is 18 × 24 = 432
 macOS execution-minutes today against 7 × 24 + 11 × 2 = 190. It is also
-11 fewer macOS scheduling units, which on E1's evidence is the larger
-effect: c2's whole finding was that the jobs worth removing are cheap to
-run and expensive to schedule.
+11 fewer macOS scheduling units, which E1 *hypothesised* is the larger
+effect. Be precise about the provenance: E1's **baseline** measurement
+found the asymmetry — `quality`'s msrv-macOS leg was 33 jobs, 544
+queue-minutes and 22 execution-minutes, cheap to run and expensive to
+schedule. E1's **C2**, which would have tested whether removing such jobs
+actually wins, came back `INVALID COMPARISON` and is unadjudicated. So
+scheduling-unit relief is a live hypothesis inherited from a
+pre-intervention measurement, not an established finding, and D4 is the
+first prediction that can score it on an intensive metric.
 
 Treat both as arithmetic on a replayed sample, not as a result. They are
 what `E2-D-contract.json` will be scored against, not evidence for it.
