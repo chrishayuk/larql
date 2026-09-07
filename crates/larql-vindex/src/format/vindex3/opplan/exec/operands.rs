@@ -82,6 +82,15 @@ pub struct OperandStore {
     /// test assert the shape directly: prepare, then serve N requests,
     /// then assert the count did not move.
     loads: std::sync::atomic::AtomicU64,
+    /// PHYSICAL bytes this store has actually read from disk.
+    ///
+    /// The observed half of preparation accounting. `loads` counts CALLS,
+    /// which cannot be compared against a byte ledger — two reads of a
+    /// small operand and one read of a large one are the same number.
+    /// Incremented only in [`Self::load_raw`], which is the one path that
+    /// copies payload; `map_region` binds without reading and correctly
+    /// moves neither counter.
+    read_bytes: std::sync::atomic::AtomicU64,
     /// Tensors quantised at load in this session — see
     /// [`Self::runtime_quantised`].
     runtime_quantised: std::sync::atomic::AtomicU64,
@@ -391,6 +400,7 @@ impl OperandStore {
             source,
             id: next_identity(),
             loads: std::sync::atomic::AtomicU64::new(0),
+            read_bytes: std::sync::atomic::AtomicU64::new(0),
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
@@ -843,6 +853,12 @@ impl OperandStore {
         self.loads.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// PHYSICAL bytes read from disk — the observed figure a preparation
+    /// ledger is held against.
+    pub fn bytes_read(&self) -> u64 {
+        self.read_bytes.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Whether this object's bytes are on disk.
     ///
     /// `false` for an object the container describes but has not
@@ -976,6 +992,11 @@ impl OperandStore {
         file.seek(SeekFrom::Start(segment.payload_start + tensor.offset))?;
         let mut bytes = vec![0u8; tensor.len as usize];
         file.read_exact(&mut bytes)?;
+        // Counted AFTER the read succeeds and from the buffer that was
+        // filled, so the figure is what came off the disk rather than
+        // what the tensor table said would.
+        self.read_bytes
+            .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(RawOperand {
             dtype: tensor.dtype.clone(),
             bytes,

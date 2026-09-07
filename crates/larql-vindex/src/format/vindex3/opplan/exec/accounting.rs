@@ -257,6 +257,10 @@ pub struct Expectation {
     /// Priced by the LEDGER rather than folded in here, because a
     /// dependency shared by many owners is one object: summing it per
     /// owner would count a codebook once per tensor that indexes it.
+    /// Bytes physically read to VERIFY this operand's attestations, and
+    /// zero whenever nothing was hashed for it — no attestation, or one
+    /// refused from metadata before any payload was opened.
+    pub verified_bytes: u64,
     pub dependencies: Vec<DependencyPin>,
 }
 
@@ -624,6 +628,46 @@ pub struct Resources {
     pub read_to_prepare: u64,
 }
 
+/// Where a plan's preparation I/O actually goes.
+///
+/// D1's rule: **preparation accounting reports bytes actually read,
+/// including attestation verification, counted according to physical
+/// reads — not inferred from metadata.**
+///
+/// Three causes, kept apart because they answer different questions and
+/// respond to different fixes: materialising the representation is what
+/// the extent costs, resolving an auxiliary is what the dependency
+/// closure costs, and verifying an attestation is what a GUARANTEE
+/// costs. A single figure hid the third entirely, which let a plan price
+/// verified fidelity as though evidence were free.
+///
+/// The aggregate is retained ([`Self::total`], and
+/// [`ResourceLedger::read_to_prepare`] beside it) so nothing that asked
+/// one preparation-I/O question has to learn three. This invents no new
+/// residency resource: these bytes are read and dropped, and none of
+/// them is held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PrepareReads {
+    /// Opening the operand's own stored planes at the selected extent.
+    pub representation_materialisation: u64,
+    /// Opening the auxiliaries a codec's closure requires, once per
+    /// dependency object however many owners resolve it.
+    pub auxiliary_resolution: u64,
+    /// Hashing the payload an attestation binds to. Counted per physical
+    /// read: an operand attested at two depths is read twice, because
+    /// nothing shares that materialisation.
+    pub attestation_verification: u64,
+}
+
+impl PrepareReads {
+    /// The one aggregate preparation-I/O figure.
+    pub fn total(&self) -> u64 {
+        self.representation_materialisation
+            + self.auxiliary_resolution
+            + self.attestation_verification
+    }
+}
+
 /// A plan's demand on each resource, each aggregated by its own rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResourceLedger {
@@ -647,7 +691,11 @@ pub struct ResourceLedger {
     /// Stored bytes opened to prepare the plan: once per stored operand,
     /// like the footprint, because an operand bound once is read once
     /// however many operations it serves.
+    ///
+    /// The aggregate, and always equal to `prepare_reads.total()`.
     pub read_to_prepare: u64,
+    /// The same figure, by cause.
+    pub prepare_reads: PrepareReads,
 }
 
 impl ResourceLedger {
@@ -661,7 +709,11 @@ impl ResourceLedger {
             let object = (e.operand.object.clone(), e.operand.tensor.clone());
             if stored_seen.insert(object.clone()) {
                 ledger.stored += r.stored;
-                ledger.read_to_prepare += r.read_to_prepare;
+                ledger.prepare_reads.representation_materialisation += r.read_to_prepare;
+                // Verification is attributed to the operand that incurred
+                // it, on the same once-per-operand rule: an operand bound
+                // under two operations was verified once.
+                ledger.prepare_reads.attestation_verification += e.verified_bytes;
             }
             // A dependency is ONE object however many owners resolve it:
             // its footprint and the reading that prepares it count once,
@@ -673,7 +725,7 @@ impl ResourceLedger {
                 let bytes = dependency.stored_bytes.unwrap_or(0);
                 if first_time {
                     ledger.stored += bytes;
-                    ledger.read_to_prepare += bytes;
+                    ledger.prepare_reads.auxiliary_resolution += bytes;
                 }
                 if dependency.lifetime == DependencyLifetime::Retained {
                     // Resident once, whoever keeps it; touched once per
@@ -694,6 +746,10 @@ impl ResourceLedger {
             ledger.page_in_per_token += r.page_in_per_token;
             ledger.device += r.device;
         }
+        // The aggregate is DERIVED from the breakdown rather than summed
+        // beside it, so the two cannot disagree about what preparation
+        // costs — a second accumulator is a second answer.
+        ledger.read_to_prepare = ledger.prepare_reads.total();
         ledger
     }
 
@@ -766,6 +822,8 @@ pub fn expectations(
                 // codec gives one, and otherwise the whole footprint —
                 // an unpriced extent is read whole, never assumed cheap.
                 read_to_prepare: r.extent.touch_bytes().unwrap_or(stored_bytes),
+                // Observed, not inferred: what verification actually read.
+                verified_bytes: r.verified_bytes,
                 dependencies: r.dependencies.clone(),
             }
         })

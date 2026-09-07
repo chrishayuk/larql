@@ -116,6 +116,8 @@ fn record(
         // A terminal representation: one extent, unpriced here because
         // this helper's subject is residency, not what a plane costs.
         extent: ExtentPin::unknown(),
+        // Nothing attested, so nothing was verified.
+        verified_bytes: 0,
         // And it depends on nothing, like every codec but one.
         dependencies: Vec::new(),
         selection: Selection {

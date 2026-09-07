@@ -501,6 +501,12 @@ pub struct RealizationRecord {
     /// The other represented objects this pin will resolve, and what its
     /// realization does with each. Empty for every operand whose codec
     /// depends on nothing.
+    /// Bytes physically read to verify this operand's attestations
+    /// during selection. Zero for an operand that attests nothing, and
+    /// zero for one whose claim was refused from metadata — admission
+    /// costs no payload read, which is a property worth being able to
+    /// observe rather than assert.
+    pub verified_bytes: u64,
     pub dependencies: Vec<DependencyPin>,
 }
 

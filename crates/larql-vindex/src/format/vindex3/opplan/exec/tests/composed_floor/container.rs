@@ -21,7 +21,7 @@ use crate::format::vindex3::opplan::exec::operands::{OperandSource, OperandStore
 use crate::format::vindex3::opplan::exec::prepared::{select_realizations_within, ExecutionSlice};
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::exec::realization::RealizationRecord;
-use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
+use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan, OperandRef};
 use crate::format::vindex3::represent::codec::RepresentationExtent;
 use crate::format::vindex3::representation_attestations::recognition::RecognisedMethods;
 use crate::format::vindex3::representation_attestations::{
@@ -63,34 +63,43 @@ impl Built {
         (plan, store)
     }
 
-    /// Write an attestation binding each owner's depth-0 extent to
-    /// `radius`, against the bytes the container actually holds.
-    pub(super) fn attest(&self, radius: f64) {
-        let table = RepresentationAttestations::new(
-            OWNERS
-                .iter()
-                .map(|owner| StoredAttestation {
-                    binding: AttestationBinding {
-                        operand: OperandAddress::new(&self.object, *owner),
-                        extent_depth: 0,
-                        codec_family: OWNER_LABEL.into(),
-                        codec_revision: 1,
-                        shape: self.shapes[*owner].clone(),
-                        content_digest: content_digest(&self.codes[*owner]),
-                        source_digest: "sha256:checkpoint".into(),
-                        auxiliary_baselines: std::collections::BTreeMap::from([(
-                            CODEBOOK.to_string(),
-                            terminal_baseline(COARSE_LABEL, 1),
-                        )]),
-                        recipe: "uniform-palette@256".into(),
-                    },
-                    method: AttestationMethod::new(AUTHORITY, StoredId::new(METHOD, 1)),
-                    metric: StoredId::new("relative-rms", 1),
-                    domain: StoredId::new("finite-normals", 1),
-                    radius,
-                })
-                .collect(),
-        );
+    /// One operand, as the store addresses it.
+    pub(super) fn owner_operand(&self, owner: &str) -> OperandRef {
+        OperandRef {
+            object: self.object.clone(),
+            tensor: owner.to_string(),
+            dtype: String::new(),
+            shape: self.shapes[owner].clone(),
+        }
+    }
+
+    /// One attestation row for `owner` at `depth`, with `shape` — which
+    /// the caller may make WRONG, to reach staleness from metadata.
+    fn row(&self, owner: &str, depth: u32, shape: Vec<usize>, radius: f64) -> StoredAttestation {
+        StoredAttestation {
+            binding: AttestationBinding {
+                operand: OperandAddress::new(&self.object, owner),
+                extent_depth: depth,
+                codec_family: OWNER_LABEL.into(),
+                codec_revision: 1,
+                shape,
+                content_digest: content_digest(&self.codes[owner]),
+                source_digest: "sha256:checkpoint".into(),
+                auxiliary_baselines: std::collections::BTreeMap::from([(
+                    CODEBOOK.to_string(),
+                    terminal_baseline(COARSE_LABEL, 1),
+                )]),
+                recipe: "uniform-palette@256".into(),
+            },
+            method: AttestationMethod::new(AUTHORITY, StoredId::new(METHOD, 1)),
+            metric: StoredId::new("relative-rms", 1),
+            domain: StoredId::new("finite-normals", 1),
+            radius,
+        }
+    }
+
+    fn write_attestations(&self, rows: Vec<StoredAttestation>) {
+        let table = RepresentationAttestations::new(rows);
         let container = self.container();
         std::fs::write(
             container.join(REPRESENTATION_ATTESTATIONS_JSON),
@@ -102,6 +111,44 @@ impl Built {
             serde_json::from_str(&std::fs::read_to_string(&index_path).unwrap()).unwrap();
         index.representation_attestations = Some(REPRESENTATION_ATTESTATIONS_JSON.to_string());
         std::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
+    }
+
+    /// Bind each owner's depth-0 extent to `radius`, against the bytes
+    /// the container actually holds.
+    pub(super) fn attest(&self, radius: f64) {
+        let rows = OWNERS
+            .iter()
+            .map(|owner| self.row(owner, 0, self.shapes[*owner].clone(), radius))
+            .collect();
+        self.write_attestations(rows);
+    }
+
+    /// The same, at a shape the container does not hold — STALE, and
+    /// stale for a reason the tensor table settles, so the payload is
+    /// never opened to discover it.
+    pub(super) fn attest_at_wrong_shape(&self, radius: f64) {
+        let rows = OWNERS
+            .iter()
+            .map(|owner| {
+                let mut shape = self.shapes[*owner].clone();
+                shape[0] += 1;
+                self.row(owner, 0, shape, radius)
+            })
+            .collect();
+        self.write_attestations(rows);
+    }
+
+    /// Two attestations per owner, at BOTH extent depths, over the very
+    /// same stored bytes — the case that asks whether the reads are
+    /// shared or merely counted as if they were.
+    pub(super) fn attest_at_both_depths(&self, radius: f64) {
+        let rows = OWNERS
+            .iter()
+            .flat_map(|owner| {
+                [0u32, 1].map(|depth| self.row(owner, depth, self.shapes[*owner].clone(), radius))
+            })
+            .collect();
+        self.write_attestations(rows);
     }
 
     /// Plan trusting `AUTHORITY`, and hand back the owner's records.

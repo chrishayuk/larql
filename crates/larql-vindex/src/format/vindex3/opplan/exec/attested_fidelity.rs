@@ -163,6 +163,7 @@ impl Admitted {
         let mut verified = BTreeMap::new();
         let mut refused = self.rejected;
         let mut read_to_prepare = 0u64;
+        let mut read_by_operand: BTreeMap<OperandAddress, u64> = BTreeMap::new();
         for candidate in &self.candidates {
             // Admission already established that this attestation exists,
             // addresses this operand and is recognised. The only question
@@ -178,7 +179,13 @@ impl Admitted {
                 continue;
             };
             let raw = source.load_raw(&candidate.operand)?;
+            // Every candidate hashes its own read. Two attestations over
+            // one operand at two depths therefore cost TWO reads, and are
+            // counted twice, because `load_raw` opens and copies each
+            // time — nothing here shares a materialisation, so nothing
+            // here may claim to.
             read_to_prepare += raw.bytes.len() as u64;
+            *read_by_operand.entry(candidate.key.0.clone()).or_default() += raw.bytes.len() as u64;
             match attestation.content_mismatch(&raw.bytes) {
                 None => {
                     verified.insert(candidate.key.clone(), attestation.claimed().clone());
@@ -194,6 +201,7 @@ impl Admitted {
             refused,
             stamp: self.stamp,
             read_to_prepare,
+            read_by_operand,
         })
     }
 }
@@ -210,6 +218,10 @@ pub struct VerifiedEvidence {
     refused: Vec<Rejected>,
     stamp: SourceStamp,
     read_to_prepare: u64,
+    /// Bytes hashed PER OPERAND, so preparation accounting can attribute
+    /// the cost to the record that incurred it rather than carrying one
+    /// global total nothing can be held against.
+    read_by_operand: BTreeMap<OperandAddress, u64>,
 }
 
 impl VerifiedEvidence {
@@ -221,6 +233,7 @@ impl VerifiedEvidence {
             refused: Vec::new(),
             stamp: source.stamp(),
             read_to_prepare: 0,
+            read_by_operand: BTreeMap::new(),
         }
     }
 
@@ -228,6 +241,15 @@ impl VerifiedEvidence {
     /// honestly rather than absorbed.
     pub fn read_to_prepare(&self) -> u64 {
         self.read_to_prepare
+    }
+
+    /// Bytes hashed to settle THIS operand's attestations, across every
+    /// extent depth attested for it. Zero for an operand that attests
+    /// nothing, and zero for one whose attestation never reached the
+    /// payload — admission refuses absent, stale and unrecognised claims
+    /// from metadata, and a refusal there costs no read.
+    pub fn verified_bytes_for(&self, operand: &OperandAddress) -> u64 {
+        self.read_by_operand.get(operand).copied().unwrap_or(0)
     }
 
     /// Everything that did not survive, from either phase.

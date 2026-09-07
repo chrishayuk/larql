@@ -28,6 +28,7 @@
 mod codecs;
 mod container;
 mod floor_vocabulary;
+mod prepare_accounting;
 mod quantised_refusal;
 mod vocabulary;
 

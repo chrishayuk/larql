@@ -159,6 +159,8 @@ pub(super) fn compose_extent_certificates(
         );
         let tensor = record.planned.operand.tensor.clone();
         let label = record.representation.clone();
+        // What settling THIS operand's claims actually cost.
+        record.verified_bytes = evidence.verified_bytes_for(&address);
         for option in &mut record.extent.options {
             let extent = option.certificate.extent;
             let dependencies =
