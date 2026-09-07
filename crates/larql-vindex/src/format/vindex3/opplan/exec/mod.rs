@@ -27,6 +27,7 @@ pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
 pub mod device;
+pub mod device_refusal;
 mod experts;
 pub mod gated_delta;
 pub mod hyper_connection;

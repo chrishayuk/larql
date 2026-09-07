@@ -31,12 +31,89 @@ use crate::format::vindex3::opplan::planned::{declared_bank_representation, Oper
 use crate::format::vindex3::opplan::{
     ExpertBank, FfnOp, LayerFfn, NormOp, OperandRef, PackedProjection, RoutedFfnOp,
 };
+
+/// The routed-aggregate norm's semantics, transcribed from the class the
+/// reference constructs (`KimiRMSNorm`) rather than carried on the op:
+/// they are facts of that norm class, not of the checkpoint. RMS — no
+/// mean subtraction — with nothing added to the learned scale.
+///
+/// The EPSILON is the opposite kind of fact and is carried on the op, for
+/// the reason the rung exists: two neighbouring norms in this same family
+/// run at a class default ten times away, so the value is the
+/// checkpoint's to state and only these two are the class's.
+const LATENT_NORM_KIND: larql_models::config::NormType = larql_models::config::NormType::RmsNorm;
+const NO_WEIGHT_OFFSET: f32 = 0.0;
 use crate::format::vindex3::represent::codec::codecs::lyrw2::bind_region;
 use crate::format::vindex3::represent::codec::codecs::mxfp4::DTYPE_MXFP4;
 use crate::format::vindex3::represent::codec::streams::{GROUP_SCALES, VALUES};
 
 /// Gate and up: the two branches sharing one fused operand.
 const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
+
+/// **Enter the routed bottleneck.** `[width, hidden] · x -> [width]`.
+///
+/// Through the BACKEND, not through CPU glue. The projection is a whole
+/// dense matrix per token, so a device arm that ran it here on the host
+/// would be a silent CPU stage inside a run reported as executing on the
+/// device — the wrapper is the one part of this operator that would be
+/// easiest to leave behind, because everything downstream of it still
+/// closes on shape.
+///
+/// Separated from [`RoutedOperands::apply`] so the oracle parity test
+/// drives the arithmetic execution actually runs, rather than a second
+/// copy of it written in the test — a self-consistent pair proves the
+/// two agree, never that either is right.
+pub(super) fn enter_latent<B: super::backend::PlanBackend + ?Sized>(
+    backend: &B,
+    down: WeightSlice<'_>,
+    x: &[f32],
+    width: usize,
+    hidden: usize,
+) -> Result<Vec<f32>, VindexError> {
+    backend.project(super::backend::ProjectCall {
+        weight: down,
+        out_dim: width,
+        in_dim: hidden,
+        x,
+    })
+}
+
+/// **Leave it.** Optional RMSNorm on the WEIGHTED AGGREGATE, then
+/// `[hidden, width] · v -> [hidden]`.
+///
+/// The norm sits here, between summation and expansion, and its epsilon
+/// arrives with its weight rather than being read from the layer. Both
+/// are the rung's substance: normalising per expert, before the
+/// weighting, or after the up-projection are three different models, and
+/// this is the operator's one placement fact that no shape can catch.
+///
+/// Both steps go through the backend for the reason [`enter_latent`]
+/// does.
+pub(super) fn exit_latent<B: super::backend::PlanBackend + ?Sized>(
+    backend: &B,
+    aggregate: Vec<f32>,
+    norm: Option<(&[f32], f64)>,
+    up: WeightSlice<'_>,
+    hidden: usize,
+    width: usize,
+) -> Result<Vec<f32>, VindexError> {
+    let normed = match norm {
+        Some((weight, eps)) => backend.norm(NormCall {
+            kind: LATENT_NORM_KIND,
+            x: &aggregate,
+            weight,
+            weight_offset: NO_WEIGHT_OFFSET,
+            eps,
+        }),
+        None => aggregate,
+    };
+    backend.project(super::backend::ProjectCall {
+        weight: up,
+        out_dim: hidden,
+        in_dim: width,
+        x: &normed,
+    })
+}
 
 /// A layer's FFN operands, loaded once in the backend's declared format.
 pub(super) enum FfnOperands {
@@ -109,6 +186,25 @@ pub(super) struct RoutedOperands {
     /// (`KimiSparseMoeBlock.forward`). The op the loader built for it is
     /// kept beside the operands so `apply` and `bound` read one program.
     shared: Option<(FfnOp, DenseOperands)>,
+    /// The latent bottleneck's two projections and its optional norm
+    /// weight, when the plan carries the wrapper.
+    latent: Option<LatentOperands>,
+}
+
+/// The latent routed branch's loaded operands.
+pub(super) struct LatentOperands {
+    /// `[width, hidden]`, in the backend's declared format — the same
+    /// `LoadedWeight` a dense projection binds, because that is what
+    /// these are. Loading them as f32 glue instead would have been the
+    /// quiet way to make the wrapper unrepresentable on a device.
+    down: LoadedWeight,
+    /// `[hidden, width]`.
+    up: LoadedWeight,
+    /// The RMSNorm weight `[width]` and its epsilon, together — the
+    /// epsilon is the norm's own, not the layer's, and separating them
+    /// is how the wrong one gets used. f32 glue like every other norm
+    /// weight in this file.
+    norm: Option<(Vec<f32>, f64)>,
 }
 
 /// The experts' matrices, in the shape their bank stores them.
@@ -158,11 +254,11 @@ impl FfnOperands {
                 op, store, format,
             )?))),
             LayerFfn::Routed(op) => Ok(Self::Routed(Box::new(RoutedOperands::load(
-                op, store, bank, shared,
+                op, store, bank, shared, format,
             )?))),
             LayerFfn::Hybrid(op) => Ok(Self::Hybrid(Box::new(HybridOperands {
                 dense: DenseOperands::load(&op.dense, store, format)?,
-                routed: RoutedOperands::load(&op.routed, store, bank, shared)?,
+                routed: RoutedOperands::load(&op.routed, store, bank, shared, format)?,
                 pre_experts_norm: LoadedNormWeight::load(&op.pre_experts_norm, store)?,
                 post_dense_norm: LoadedNormWeight::load(&op.post_dense_norm, store)?,
                 post_experts_norm: LoadedNormWeight::load(&op.post_experts_norm, store)?,
@@ -476,6 +572,17 @@ impl RoutedOperands {
                     .map(|b| (Operation::SharedExpertProject, b)),
             );
         }
+        // The latent wrapper's projections, under the same operation a
+        // dense FFN projection binds: one whole matrix per token, read
+        // sequentially. Reported here rather than left out because an
+        // operand that executes and is not bound is invisible to every
+        // residency and consumption instrument — the wrapper would move
+        // real bytes that no ledger names.
+        if let (Some(loaded), Some(l)) = (&self.latent, &op.latent) {
+            let dense = Operation::Project(MatrixClass::FfnProjection);
+            out.push((dense, Bound::one(&l.down, &loaded.down)));
+            out.push((dense, Bound::one(&l.up, &loaded.up)));
+        }
         out
     }
 
@@ -485,6 +592,13 @@ impl RoutedOperands {
         let mut out = self.experts.all();
         if let Some((_, dense)) = &self.shared {
             out.extend(dense.loaded_matrices());
+        }
+        // Two more real matrices per routed layer. `[3584, 7168]` and
+        // `[7168, 3584]` at K3's widths is 51 MB of bf16 a layer — not
+        // glue, and not something residency accounting may miss.
+        if let Some(latent) = &self.latent {
+            out.push(&latent.down);
+            out.push(&latent.up);
         }
         out
     }
@@ -543,9 +657,35 @@ impl RoutedOperands {
                 }
             }
         };
+        // The bottleneck the routed experts run behind, entered here so
+        // that the two placement facts the oracle found SHAPE-PROTECTED
+        // stay structural rather than maintained: the router below reads
+        // `router_input`, which is the block input and never this
+        // projection, and the shared branch is summed after this whole
+        // block returns.
+        //
+        // `routed_sum -> routed_normed -> routed_out` are the oracle's
+        // own boundaries, in its own order.
+        let latent_in;
+        let (expert_x, expert_width) = match (&self.latent, &op.latent) {
+            (Some(loaded), Some(l)) => {
+                latent_in = enter_latent(backend, loaded.down.slice(), x, l.width, hidden)?;
+                (latent_in.as_slice(), l.width)
+            }
+            (None, None) => (x, hidden),
+            // The loader builds `latent` from `op.latent` and nothing
+            // else, so a disagreement is a defect in this file rather
+            // than anything a checkpoint can cause — refused rather than
+            // silently run at the wrong width.
+            _ => {
+                return Err(VindexError::Parse(
+                    "routed FFN operands and op disagree about the latent branch".to_string(),
+                ))
+            }
+        };
         let mut routed = backend.routed_ffn(RoutedFfnCall {
-            x,
-            hidden,
+            x: expert_x,
+            hidden: expert_width,
             intermediate: op.expert_intermediate_size,
             experts: op.experts,
             top_k: op.top_k,
@@ -559,14 +699,41 @@ impl RoutedOperands {
             weights,
             gate_up_bias: self.gate_up_bias.as_deref(),
             down_bias: self.down_bias.as_deref(),
-            router_input: (!std::ptr::eq(router_input, x)).then_some(router_input),
+            // Compared against what the EXPERTS consume, not against the
+            // block input: under a latent branch those differ, and the
+            // router must still be handed the un-projected vector. This
+            // is the placement fact the oracle could not mutate — the
+            // reference reads `self.gate(hidden_states)` before any
+            // projection exists.
+            router_input: (!std::ptr::eq(router_input, expert_x)).then_some(router_input),
             router_scale: self.router_scale.as_deref(),
             router_per_expert_scale: self.router_per_expert_scale.as_deref(),
             router_norm_eps: self.router_norm_eps,
         })?;
+        // Leave the bottleneck. `routed` is the WEIGHTED AGGREGATE at the
+        // latent width — the oracle's `routed_sum` — so the norm applies
+        // to one vector per token here, after top-k weighting and
+        // summation and before the expansion. Normalising per expert, or
+        // before the weighting, or after the up-projection are three
+        // different models, and this is the only one of the operator's
+        // placement facts that no shape can catch.
+        if let (Some(loaded), Some(l)) = (&self.latent, &op.latent) {
+            routed = exit_latent(
+                backend,
+                routed,
+                loaded.norm.as_ref().map(|(w, eps)| (w.as_slice(), *eps)),
+                loaded.up.slice(),
+                hidden,
+                l.width,
+            )?;
+        }
         // `y = moe(x) + shared_experts(x)` — the always-active branch is a
         // dense FFN over the same input, summed unscaled: composed here,
         // once, for every backend. A gated branch is refused at selection.
+        //
+        // `x`, not the latent: the shared experts read the un-projected
+        // block input and are added AFTER the up-projection, so they never
+        // enter the bottleneck.
         if let Some((ffn, dense)) = &self.shared {
             let _stage = super::stages::stage(super::stages::Stage::SharedExpert);
             let shared = dense.apply(ffn, backend, x, hidden)?;
@@ -582,12 +749,31 @@ impl RoutedOperands {
         store: OperandSource<'_>,
         bank: super::prepared::BankPin,
         shared_format: super::prepared::FormatFor<'_>,
+        // The latent wrapper's two projections. Resolved under
+        // `Project(FfnProjection)` — the operation `bound` reports them
+        // under — and NOT under the shared branch's or the bank's pin:
+        // they are per-layer dense FFN matrices, and asking for a format
+        // under one operation while accounting for another is how a
+        // realization check passes against a weight nothing bound that
+        // way.
+        dense_format: super::prepared::FormatFor<'_>,
     ) -> Result<Self, VindexError> {
         let format = bank.format;
         let hidden = op.router.shape.get(1).copied().unwrap_or(0);
         let inter = op.expert_intermediate_size;
+        // Where the EXPERTS live, which is not `hidden` once the plan
+        // carries a bottleneck. Named apart from `hidden` because the two
+        // are the same number on every model but this one, and a single
+        // name for both is how a latent bank gets loaded at the residual
+        // width and refuses on shape a step later, with a message about
+        // bytes rather than about the fact that was misread.
+        //
+        // The execution-side twin of `MoeSurface::routed_expert_input_width`:
+        // that decides what the bank's shape CONTRACT is, this decides
+        // what is actually bound, and they read the same declaration.
+        let expert_k = op.latent.as_ref().map_or(hidden, |l| l.width);
         // The bank first: its geometry is DECLARED — `k` follows from the
-        // router's declared width — and a stray width refuses on the
+        // declared routed width — and a stray width refuses on the
         // declaration, before any operand's bytes are read.
         let (experts, gate_up_bias, down_bias) = match &op.bank {
             ExpertBank::Packed { gate_up, down } => (
@@ -597,10 +783,10 @@ impl RoutedOperands {
                         gate_up,
                         op,
                         FUSED_BRANCHES * inter,
-                        hidden,
+                        expert_k,
                         format,
                     )?,
-                    down: load_packed(store, down, op, hidden, inter, format)?,
+                    down: load_packed(store, down, op, expert_k, inter, format)?,
                 },
                 gate_up.bias.as_ref().map(|b| store.load(b)).transpose()?,
                 down.bias.as_ref().map(|b| store.load(b)).transpose()?,
@@ -629,9 +815,9 @@ impl RoutedOperands {
                 };
                 (
                     ExpertMatrices::Separate {
-                        gate: map(gate, inter, hidden)?,
-                        up: map(up, inter, hidden)?,
-                        down: map(down, hidden, inter)?,
+                        gate: map(gate, inter, expert_k)?,
+                        up: map(up, inter, expert_k)?,
+                        down: map(down, expert_k, inter)?,
                         access: bank.access,
                     },
                     None,
@@ -672,6 +858,23 @@ impl RoutedOperands {
             gate_up_bias,
             down_bias,
             shared,
+            // Built from `op.latent` and nothing else, so operands and
+            // op cannot disagree about whether a bottleneck exists.
+            latent: op
+                .latent
+                .as_ref()
+                .map(|l| -> Result<LatentOperands, VindexError> {
+                    Ok(LatentOperands {
+                        down: load_weight(store, &l.down, dense_format(&l.down)?)?,
+                        up: load_weight(store, &l.up, dense_format(&l.up)?)?,
+                        norm: l
+                            .norm
+                            .as_ref()
+                            .map(|n| store.load(&n.weight).map(|w| (w, n.eps)))
+                            .transpose()?,
+                    })
+                })
+                .transpose()?,
         })
     }
 }

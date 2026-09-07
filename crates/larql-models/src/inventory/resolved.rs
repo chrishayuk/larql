@@ -261,6 +261,7 @@ pub fn resolve_with_tensor_evidence(
             shared_expert_intermediate_size: arch.shared_expert_intermediate_size(),
             shared_expert_gate: arch.shared_expert_branch_gate(),
             hybrid: arch.is_hybrid_moe(),
+            routed_expert_form: arch.routed_expert_form(),
         }),
         // `uses_mla()` alone decides the LAYER'S OPERATOR (every
         // `LayerKind::Full` layer, in `graph::build::operator_and_span`);

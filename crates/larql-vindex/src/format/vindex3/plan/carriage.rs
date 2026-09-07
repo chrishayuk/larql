@@ -514,6 +514,31 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.ffn.moe.shared_expert_intermediate_size → SharedExpertOp.intermediate_size (and the shared-expert operand shapes)",
         probe: Some(probe_shared_expert_width),
     },
+    // Kimi-K3's latent routed branch (K3-LATENTMOE-1). `Lowered`, and
+    // the claim is exact: the width reaches `LatentBranchOp.width`, where
+    // it is BOTH the geometry every routed-bank shape contract is sized
+    // from and the width the two wrapper projections are bound at — so a
+    // build that stored the number and kept sizing the bank from
+    // `hidden_size` would fail this rule's probe and the op plan
+    // together, rather than reporting a fact it does not honour.
+    //
+    // The domain was measured before the rule was promised: exactly one
+    // of the 117 conformance rows declares either leaf. The previous
+    // rung's `q_lora_rank` rule was withdrawn for the opposite reason —
+    // it reached eighteen rows of which only six built the surface it
+    // named — and that withdrawal is why this one is checked first.
+    CarriageRule {
+        leaf: "routed_expert_hidden_size",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.latent.width → LatentBranchOp.width, and through MoeSurface::routed_expert_input_width every routed expert-bank shape contract",
+        probe: Some(probe_routed_expert_width),
+    },
+    CarriageRule {
+        leaf: "latent_moe_use_norm",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.latent.norm → LatentBranchOp.norm — the RMS norm on the weighted aggregate, between summation and the up-projection",
+        probe: Some(probe_latent_moe_use_norm),
+    },
     CarriageRule {
         leaf: "moe_router_activation_func",
         reaches: Carriage::Represented,
@@ -2130,6 +2155,52 @@ fn probe_is_llama_config(_component: &Component, ctx: &ProbeContext<'_>) -> Opti
 /// (`(u+1)·g·σ(αg)` against `act(g)·u`). Answering only for one would
 /// have reported GLM-5.3-Flash's declared clamp as uncarried while its
 /// executor applied it.
+/// Where the routed experts run, off the BUILT surface.
+///
+/// `None` under the uniform form covers the only two states that reach
+/// it — a component with no routed block at all, and one whose routed
+/// experts run at `hidden_size` — and in both the declared width found
+/// no home, which is what an unrepresented finding says. It is
+/// deliberately NOT answered with `hidden_size`: that would report a
+/// checkpoint's declared bottleneck as carried by a build that has none.
+fn probe_routed_expert_width(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component
+        .execution
+        .as_ref()?
+        .ffn
+        .as_ref()?
+        .moe
+        .as_ref()?
+        .latent
+        .map(|latent| json!(latent.width))
+}
+
+/// Whether the latent branch normalises its aggregate.
+///
+/// Answers `false` as readily as `true`, because the declaration this is
+/// compared against is a BOOLEAN: a checkpoint declaring
+/// `latent_moe_use_norm: false` beside a width has its "no norm" carried
+/// exactly, and reporting that as unrepresented would grade agreement as
+/// a dropped fact.
+///
+/// Under the uniform form it answers `None` — and this is the flag's own
+/// finding, not the width's. The reference nests the norm inside the
+/// wrapper, so a `latent_moe_use_norm: true` with no
+/// `routed_expert_hidden_size` builds no norm THERE either: the flag is
+/// inert in the model, and reporting it unrepresented is the honest
+/// reading of a declaration nothing acts on.
+fn probe_latent_moe_use_norm(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component
+        .execution
+        .as_ref()?
+        .ffn
+        .as_ref()?
+        .moe
+        .as_ref()?
+        .latent
+        .map(|latent| json!(latent.norm.is_some()))
+}
+
 fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
         // BOTH clamped policies answer, and that is the point: the

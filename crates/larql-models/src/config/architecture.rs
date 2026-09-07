@@ -19,9 +19,9 @@ use crate::validation::ConfigValidationResult;
 use super::{
     layer_types, rope_types, Activation, ActivationDeclaration, DeclaredRopeScaling, EmbeddingNorm,
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, HyperConnection,
-    LayerKind, Llama3RopeScaling, MlaQueryForm, ModelConfig, NormSpec, NormType, PositionPolicy,
-    PostNormEps, QkNormScope, ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec,
-    YarnRopeScaling, SITU_NAME,
+    LatentNormSpec, LayerKind, Llama3RopeScaling, MlaQueryForm, ModelConfig, NormSpec, NormType,
+    PositionPolicy, PostNormEps, QkNormScope, ResidualTopology, RotaryFrequencyBasis,
+    RoutedExpertForm, SharedExpertGateSpec, YarnRopeScaling, SITU_NAME,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -1477,6 +1477,60 @@ pub trait ModelArchitecture: Send + Sync {
     /// Whether this model uses MLA instead of standard GQA.
     fn uses_mla(&self) -> bool {
         false
+    }
+
+    /// Where this family's ROUTED experts run — at `hidden_size`, or
+    /// behind a bottleneck of their own.
+    ///
+    /// Read from the DECLARATION: `routed_expert_hidden_size`'s
+    /// PRESENCE, exactly the reference's `is not None`. Never inferred
+    /// from which tensors a checkpoint ships — a `routed_expert_down_proj`
+    /// may CONFIRM this form, it must never select it, or a checkpoint
+    /// with a stray operand would be executed as a different model.
+    ///
+    /// The norm is nested inside the latent variant because the reference
+    /// nests it: `if self.use_latent_moe:` encloses
+    /// `if self.latent_moe_use_norm:`, so a config setting the flag
+    /// without the width builds no norm at all. That state is
+    /// unrepresentable here rather than merely discouraged.
+    fn routed_expert_form(&self) -> RoutedExpertForm {
+        match self.config().routed_expert_hidden_size {
+            None => RoutedExpertForm::Uniform,
+            Some(width) => RoutedExpertForm::Latent {
+                width,
+                norm: self.latent_moe_uses_norm().then(|| LatentNormSpec {
+                    eps: self.routed_expert_norm_eps(),
+                }),
+            },
+        }
+    }
+
+    /// Whether the latent routed branch normalises its weighted
+    /// aggregate.
+    ///
+    /// TRUTHINESS, not presence: the reference reads
+    /// `getattr(config, "latent_moe_use_norm", False)` and consumes it
+    /// in a plain `if`, so absent, `null` and `false` are all "no norm"
+    /// and differ only in what the plan reports as declared.
+    fn latent_moe_uses_norm(&self) -> bool {
+        self.config().latent_moe_use_norm.unwrap_or(false)
+    }
+
+    /// The epsilon `routed_expert_norm` runs at.
+    ///
+    /// The LAYER's eps, because the reference passes it explicitly:
+    /// `KimiRMSNorm(self.moe_hidden_size, eps=config.rms_norm_eps)`.
+    ///
+    /// This is deliberately NOT [`Self::mla_q_a_norm_eps`]'s answer and
+    /// not a shared "low-rank norm epsilon" accessor. The two
+    /// neighbouring low-rank norms in this same family — `q_a_layernorm`
+    /// and `kv_a_layernorm` — are constructed with no override and run
+    /// at `KimiRMSNorm`'s class default `1e-6`, a factor of ten away.
+    /// Two rungs in a row established that class default; this one
+    /// inverts it, and the inversion is transcribed from the
+    /// constructor rather than inherited from the neighbours.
+    fn routed_expert_norm_eps(&self) -> f64 {
+        self.norm_eps() as f64
     }
 
     /// MLA compressed KV dimension.

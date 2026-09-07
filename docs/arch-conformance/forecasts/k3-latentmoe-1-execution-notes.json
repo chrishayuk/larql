@@ -1,0 +1,132 @@
+{
+  "artifact_kind": "execution-notes",
+  "rung": "K3-LATENTMOE-1",
+  "name": "latent-routed-branch",
+  "written": "2026-09-07",
+  "worktree": ".claude/worktrees/k3-latentmoe-1, branch `k3-latentmoe-1-impl`",
+  "base": "`1ae057d1`. NOT the freeze's `ef6a101e`: main moved 20+ commits between the freeze and this transition, and the freeze's own `base` clause says that when the base moves BOTH arms are re-measured. Main then moved TWICE MORE during the gate runs (#450 CI-E2, #451 CI-E2-D), and the arms were re-swept each time rather than the result inherited across a rebase \u2014 even though both deltas touch only workflows, `docs/ci-throughput`, `scripts/ci_throughput.py`, `scripts/metal_tier.py` and a Metal parity-obligations file, none of which is an input to the sweep. The stale 117-row cache under `_conformance/plans` is at semantics 16 and was used for none of them.",
+  "commit_order": "reconnaissance -> freeze -> oracle -> code + tests (this) -> measurement.",
+  "what_was_built": {
+    "declaration": "`ModelConfig.routed_expert_hidden_size: Option<usize>` and `latent_moe_use_norm: Option<bool>`, read by `parse_model_config` and registered as CONSUMED leaves. `ModelArchitecture::routed_expert_form()` resolves them into `RoutedExpertForm::{Uniform, Latent{width, norm}}` \u2014 presence for the width, truthiness for the flag, and the norm NESTED so a flag without a width is unrepresentable rather than merely refused.",
+    "surface": "`MoeSurface.latent: Option<MoeLatent{width, norm: Option<LatentNorm{eps}>}>`, absent from the serialised surface when `None` so every non-latent container reads back unchanged.",
+    "the_geometry_authority": "`MoeSurface::routed_expert_input_width(hidden)` \u2014 ONE function, read by every routed expert-bank shape contract: `ExpertGateUp`, `ExpertGateUpScales`, `ExpertDown`, `ExpertDownScales`, `ExpertDownBias`, and all three `PerExpert*` variants. The execution side reads the same declaration through `op.latent` when it binds the bank (`experts.rs`, `expert_k`).",
+    "op": "`RoutedFfnOp.latent: Option<LatentBranchOp{width, down, up, norm: Option<LatentNormOp{weight, eps}>}>`, INSIDE the routed op rather than a projection the caller applies first \u2014 see `why_two_placement_facts_are_structural` below.",
+    "roles_and_closure": "`MoeLatentDownProj`/`MoeLatentNorm`/`MoeLatentUpProj`, required by the DECLARATION (`required_roles`) and refused by name without it (`absent_op`), each with its own message.",
+    "execution": "`enter_latent` / `exit_latent` in `opplan/exec/experts.rs`, both through the BACKEND (`project`, `norm`) \u2014 see `deviation_2`.",
+    "refusal": "`lowered_latent_branch_refusal` beside `declared_gate_refusal`; the descriptor MoE lowering refuses at weight-build time, naming `routed_expert_hidden_size` and the width.",
+    "carriage": "two rules with probes reading the BUILT surface; both `Lowered`. Semantics 21 -> 22."
+  },
+  "why_two_placement_facts_are_structural": "The oracle found that only the NORM's placement is a silent defect; the router's and the shared branch's are shape-protected. The implementation makes those same two STRUCTURAL rather than maintained, and by the same geometry: the wrapper lives inside `RoutedFfnOp`, so the router reads the op's own input because it never sees anything else, and the shared branch is summed by the caller after the op returns, so it cannot enter the bottleneck. Only the norm's placement was left to get wrong, and it is the one the oracle scores.",
+  "deviations_from_the_freeze": {
+    "status": "the freeze is frozen; these are recorded here, not edited into it.",
+    "deviation_1_expert_down_bias": {
+      "the_frozen_text": "D8 enumerated the routed bank geometry consumers as `ExpertGateUp`'s k, `ExpertDown`'s rows, `ExpertGateUpScales`/`ExpertDownScales`, and the `PerExpert*` variants.",
+      "what_was_done": "`ExpertDownBias` was converted too. Its contract is `[experts, hidden]` and describes the same latent OUTPUT axis as `ExpertDown`'s rows.",
+      "why_the_freeze_missed_it": "reconnaissance did not surface it because K3 ships no expert bias operand, so no row in the corpus exercises the contract.",
+      "why_it_was_corrected_anyway": "D8's ENUMERATION was incomplete; D8's PRINCIPLE was not. The principle is that all routed-expert geometry derives from the declared routed-expert width, and leaving one consumer on component hidden size would preserve a known false geometry solely because the current estate does not exercise it. A later family shipping expert biases would meet a contract that had been wrong since this rung and had a test suite pass over it.",
+      "witnessed_by": "`opplan::build::tests::every_routed_bank_contract_reads_the_declared_latent_width`, which pairs every consumer's assertion with an `assert_ne!` against the `hidden`-sized answer, so no arm can pass against the pre-transition code."
+    },
+    "deviation_2_the_wrapper_executes_through_the_backend": {
+      "the_frozen_text": "D12 said the interpreter's routed FFN path executes, and every Metal/device routed path that cannot express the wrapper refuses by name.",
+      "what_was_done": "`enter_latent` and `exit_latent` take a backend and go through `PlanBackend::project` and `PlanBackend::norm`, so the DEVICE backend executes the wrapper rather than being refused. Only the descriptor MoE lowering \u2014 which encodes router, bank and combine into one command buffer at one width \u2014 refuses.",
+      "why": "the first implementation ran both projections with CPU `matmul_vec` regardless of backend. That is correct arithmetic and a silent CPU stage inside a run reported as executing on the device: two `[3584, 7168]`-class matrices per routed layer, invisible to the residency and consumption ledgers because nothing bound them. Routing them through the backend removed the silent stage AND narrowed the refusal to the path that genuinely cannot express the wrapper, which is what D12 was for.",
+      "consequence": "`RoutedOperands::bound` now reports both projections under `Operation::Project(MatrixClass::FfnProjection)` and `loaded_matrices` counts them, so residency accounting sees the bytes the wrapper moves.",
+      "and_it_made_the_gap_visible": "routing the wrapper through the backend is also what put its two projections in `bound()` and `loaded_matrices()`; the coverage gate then read the untested `apply` arms as a per-file drop and named them. A CPU-glue wrapper would have been invisible to the ledger AND to the gate."
+    },
+    "deviation_3_the_epsilon_is_the_layers_as_the_layer_has_it": {
+      "the_frozen_text": "D4 froze `routed_expert_norm` at `config.rms_norm_eps` \u2014 1e-5 on K3.",
+      "what_was_measured": "the op carries 9.999999747378752e-6, because `ModelArchitecture::norm_eps()` narrows to f32 and `routed_expert_norm_eps()` widens that back to f64.",
+      "what_was_done": "left as it is, and pinned in the test with the reason. Reading the config's f64 directly here would give the routed norm a BETTER derivation of `the layer's epsilon` than the layer's own other norms have \u2014 one fact with two authorities, differing in the eighth digit. The claim this rung makes is about WHICH epsilon, and that claim is a factor of ten wide.",
+      "not_a_silent_pass": "the parity arm scores against the oracle's own f64 1e-5 and the class-default mutant reads its exported delta, so the ten-fold error is still witnessed.",
+      "scored_as": "the DECISION is recorded here; the resulting failure of D4's literal value is scored in `frozen_properties_falsified.D4_the_literal_epsilon_value`."
+    },
+    "deviation_4_the_inert_flag_still_blocks": {
+      "the_frozen_text": "D11 required that `latent_moe_use_norm: true` with no `routed_expert_hidden_size` be inert, with no norm built, and that the plan say so.",
+      "what_was_done": "no norm is built, none is required, and a shipped `routed_expert_norm` is still refused by name \u2014 all three witnessed. The PLAN grades the flag `unrepresented`, which blocks.",
+      "why_not_a_companion_gate": "`carriage::COMPANION_GATES` expresses `a companion is present and false`, not `a companion is absent`, and widening that shared mechanism would have been done for a state no row in the 117-checkpoint corpus holds. Unrepresented is also literally accurate: the flag is declared, and this schema holds no value for it. A checkpoint declaring a norm for a branch it never declared is worth a human look.",
+      "recorded_as_a_deviation_rather_than_a_pass": "because the freeze's words were `the plan must say so`, and `unrepresented and blocking` is a different sentence from `inert and admissible`.",
+      "scored_as": "the DECISION is recorded here; the failure of D11's universal is scored in `frozen_properties_falsified.D11_the_inert_norm_flag`."
+    }
+  },
+  "what_these_notes_do_not_claim": [
+    "That K3 executes. Its expert bank is a compressed-tensors/MXFP4 dialect this rung does not touch, and the op plan still stops there \u2014 which P5 requires it to do FOR THAT REASON and no other.",
+    "That the wrapper has been executed on real K3 weights. The execution witness is the oracle parity arm at the reference's own geometry (hidden 10, latent 7, intermediate 4), plus the closure arms at a synthetic 32/20/12.",
+    "That the descriptor MoE lowering could serve a latent layer if asked. It refuses, and the refusal is the claim."
+  ],
+  "measurement": {
+    "how": "two arms re-planned FRESH over the 117-row matrix, `scripts/arch_sweep.py run`, each from its own worktree and its own release `vindex`. Baseline = a detached worktree at `1ae057d1`; candidate = this worktree at the same commit plus this transition. Rows compared by the SET OF JSON PATHS at which they differ, as the freeze requires.",
+    "comparable_rows": "109 of 117. Eight repos were unreachable in BOTH arms identically (gated, absent, or a config dialect this source does not read): CohereLabs c4ai-command-{a-03-2025, r-v01, r7b-12-2024}, TinyLlama_v1.1, AI21-Jamba-Mini-1.7, Baichuan2-7B-Base, Mistral-Large-3-675B, mamba2-780m. Unreachable in both arms is not evidence about this transition either way, so they are excluded rather than counted; the freeze's P8 arithmetic assumed 117 comparable and the honest denominator is 109.",
+    "P1_k3_blockers": "HELD. text_generation closure 26 -> 24, admissible false -> false (RED -> RED). unsupported_component 0 -> 0.",
+    "P2_exactly_which": "HELD, exactly. The two blockers that retire are `text_config.latent_moe_use_norm` and `text_config.routed_expert_hidden_size`, and NOTHING else on the row moves: no finding is added, none removed, and both keep their finding ids. Each changes category unrepresented -> representable, class unknown -> execution_semantic, cluster unclustered -> moe_routing, and gains `carriage: lowered` with a `resolved` value (3584 and true) read back off the built surface.",
+    "P3_the_operand_plane": "HELD (unit): `k3_estate_reports_every_unaddressed_spelling` \u2014 5421 rows unchanged, unclassified 5379 -> 5376, distinct unaddressed spellings 9 -> 6.",
+    "P4_what_remains_unaddressed": "HELD, asserted as a SET: exactly `experts.N.w{1,2,3}.weight_{packed,scale}` and nothing else.",
+    "P6_geometry_authority": "HELD: `the_expert_bank_is_sized_from_the_declaration_not_the_component_width` closes a bank stored at the declared latent width and refuses the same bank at the component's `hidden`, with every mismatch naming the declared width.",
+    "P7_the_ancestor": "HELD: moonshotai/Kimi-Linear-48B-A3B-Instruct 0 -> 0 blockers, admissible in both arms, and its surface carries no `latent` field.",
+    "P8_every_other_row": "**FALSIFIED.** The forecast overestimated serialization blast radius: it said every row building a routed-MoE surface would gain the additive `execution.ffn.moe.latent` field, and none but K3 did. `MoeSurface.latent` is `skip_serializing_if = Option::is_none`, which confines the additive surface to the sole declaring row. 108 of the 109 comparable controls therefore move only in the semantics stamp. The architectural outcome is better than forecast and the FORECAST STILL LOST \u2014 recorded as a loss rather than rounded into a win, because a prediction that overestimates blast radius is exactly as wrong as one that underestimates it, and the q-LoRA rung's P5/P7 were falsified by the opposite error. The clause that HELD: no row other than K3 changed a category, class, carriage or count.",
+    "the_primary_falsifier": {
+      "stated": "if the count drops to 24 while the wrapper operands stay unaddressed the rung FAILS; if the operands close while the count stays at 26 the rung FAILS.",
+      "verdict": "BOTH PLANES MOVED, in the same transition. Count 26 -> 24 on a freshly measured 117-row sweep, and the three wrapper spellings addressed on K3's real two-layer estate (5379 -> 5376, nine spellings -> six). Neither moved without the other."
+    },
+    "secondary_falsifiers": {
+      "any_finding_added_or_removed_on_K3": "none.",
+      "any_other_row_changing_anything": "none.",
+      "remaining_unaddressed_set_not_the_six_bank_spellings": "it is exactly those six, asserted as a set.",
+      "a_closure_defect_naming_a_wrapper_operand_or_the_width": "none \u2014 the defects on K3's estate name the bank dialect.",
+      "the_width_derivable_from_hidden_size_over_two": "no such derivation exists; every fixture in this rung keeps latent, hidden/2 and the expert width pairwise distinct and asserts it before scoring.",
+      "router_weights_differing_between_the_arms": "bit-identical (torch.equal at export), witnessed in the parity module."
+    },
+    "measured_three_times": "At `beb82d65`, `4a9f7939` and `1ae057d1` \u2014 main moved twice while the coverage gates ran, and each time both arms were rebuilt and re-swept rather than the earlier result carried across the rebase. IDENTICAL on all three: 26 -> 24, the same two blockers retiring, nothing added or removed, 108 of 109 comparable rows moving only in the stamp, and the same eight repos unreachable in both arms. The rebase onto `1ae057d1` also left the commit's 38-path diff byte-identical."
+  },
+  "frozen_properties_falsified": {
+    "why_this_section_exists": "The primary claim held on both planes, and three frozen properties did not. They are scored as failures here rather than filed under `deviations`, because a deviation is a decision taken with reasons and a falsification is a prediction that lost. Mixing them would let the rung report a cleaner forecast than it earned.",
+    "P8_serialization_blast_radius": {
+      "verdict": "FALSIFIED",
+      "forecast": "116 of 117 rows differ only in the semantics stamp AND \u2014 for rows that build a routed-MoE surface \u2014 the additive `execution.ffn.moe.latent` field. The additive-field movement is forecast this time.",
+      "measured": "the additive field appears on ONE row, K3. 108 of 109 comparable rows differ in the stamp alone.",
+      "cause": "`skip_serializing_if = Option::is_none` on `MoeSurface.latent`.",
+      "does_it_touch_the_primary_claim": "No. The primary falsifier is about K3's two planes; this is about the controls, and the controls moved LESS than forecast, not differently."
+    },
+    "D11_the_inert_norm_flag": {
+      "verdict": "FALSIFIED / PARTIAL",
+      "forecast": "`latent_moe_use_norm: true` with no `routed_expert_hidden_size` -> inert, no norm built, AND THE PLAN SAYS SO.",
+      "measured": "the first two hold and are witnessed (`k3_latentmoe_closure::the_norm_flag_without_a_width_builds_nothing`): no norm is built, none is required, and a shipped `routed_expert_norm` is still refused by name. The third does not: the planner grades the flag `unrepresented`, which BLOCKS. `unrepresented and blocking` is a different sentence from `inert and admissible`.",
+      "why_it_was_not_fixed": "`carriage::COMPANION_GATES` expresses `a companion is declared and false`, not `a companion is absent`. Widening that shared mechanism would have been done for a state no row in the 117-checkpoint corpus holds, on the strength of one fixture \u2014 and a gate that reached further than intended is the failure mode that memory names. The behaviour is internally coherent and the refusal is conservative; the frozen UNIVERSAL was still not met.",
+      "does_it_touch_the_primary_claim": "No. No measured estate row occupies this state, and it is not part of the 26 -> 24 claim. Recorded so the rung does not close with an unmet universal filed as a design choice."
+    },
+    "D4_the_literal_epsilon_value": {
+      "verdict": "the SEMANTIC claim HELD; the LITERAL value subclaim is FALSIFIED",
+      "forecast": "`routed_expert_norm` runs at `config.rms_norm_eps` \u2014 `1e-5` on K3.",
+      "measured": "the surface and the op carry 9.999999747378752e-6 \u2014 `1e-5` narrowed to f32 by `ModelArchitecture::norm_eps()` and widened back to f64. Visible in the candidate arm's graph at `execution.ffn.moe.latent.norm.eps`.",
+      "what_held": "the AUTHORITY, which is what the rung is about: this norm reads the layer's epsilon, not `KimiRMSNorm`'s class default `1e-6` that the two preceding K3 rungs both landed on. The anti-memory mutant reads its exported delta at `routed_normed`, so a build that generalised those rungs fails.",
+      "what_lost": "the literal `1e-5`. Recorded rather than rounded away: `runs at 1e-5` and `runs at the f32 image of 1e-5` are different sentences, and a rung that quietly accepted the second while having frozen the first would have taught the next rung that frozen values are approximate.",
+      "why_it_was_not_fixed": "see deviations.deviation_3 \u2014 reading the config's f64 here alone would give this norm a different derivation of `the layer's epsilon` from the layer's other norms. Fixing it belongs to a change that widens the shared authority, not to this rung."
+    }
+  },
+  "verdict": {
+    "primary_claim": "HELD. Both planes moved in one transition \u2014 K3 text-generation blockers 26 -> 24 on a freshly measured 117-row two-arm sweep, and the three wrapper operands addressed on K3's real two-layer estate (unclassified 5379 -> 5376, distinct unaddressed spellings 9 -> 6). Zero blockers added, zero findings added or removed. The hollow-carriage failure the freeze was written to catch did not occur.",
+    "what_remains_unaddressed": "exactly six spellings, all of them the compressed expert-bank dialect (`experts.N.w{1,2,3}.weight_{packed,scale}`) \u2014 asserted as a SET, not a count, so three wrapper operands retiring while three unrelated spellings appeared is not an outcome this rung could have reported as success.",
+    "frozen_properties_lost": "three: P8 (serialization blast radius), D11's inert-flag universal, and D4's literal epsilon value. None touches the primary claim; all three are recorded above.",
+    "what_this_rung_does_NOT_close": "K3. Its expert bank is a compressed-tensors/MXFP4 dialect with an unjudged `quantization_config`, and the op plan still stops there \u2014 which P5 requires it to do for that reason and no other. The structural architecture cells (attention residuals, both output gates, SiTU-GLU, the factorised MLA query, and now the latent routed branch) are all addressed; what stands between a fully described K3 text model and an executable plan is the compressed expert representation."
+  },
+  "the_composition_witness": {
+    "why_it_exists": "The oracle parity arms drive `enter_latent` and `exit_latent` directly. They establish the two functions and say nothing about whether the routed path COMPOSES them correctly \u2014 in what order, how many times, and on which vector. Nothing executed those arms until the coverage gate named `exec/experts.rs` at 89.14% and the missing lines turned out to be `RoutedOperands::apply`'s latent arms and the latent loader. The gap the percentage found was real, and it was the important one.",
+    "what_was_rejected": "An identity wrapper at `latent == hidden` \u2014 the cheap version. It is far too weak: `I\u00b7h == h` hides a router reading the projection, `I(I\u00b7h) == h` hides a doubled down-projection, the shared branch sees the same vector either way, and `I(r + s) == I(r) + s` hides the shared contribution being summed before the up-projection. A non-identity `D` with `U = D-1` fixes the first three and still yields no expected value, because `U\u00b7experts(D\u00b7x) != experts(x)` \u2014 the experts are not equivariant under `D`, so there is nothing to compare the answer to without recomputing the branch.",
+    "what_was_built": "A container built from the ORACLE's own weights at its own geometry (hidden 10, latent 7, intermediate 4, five experts, top-2, one shared expert), planned, loaded, and executed through `RoutedOperands::apply`. `apply` returns `routed_out + shared_output`, which is exactly what `latent_moe_block_forward` returns, so the comparison is against `arms.latent.output` \u2014 computed by transformers' own forward with every placement fact true. Max abs difference under 2e-6.",
+    "the_arm_was_made_to_fail_before_it_was_believed": {
+      "router_routed_on_the_bottleneck": "RED",
+      "shared_branch_fed_the_bottleneck": "RED",
+      "norm_skipped_on_the_aggregate": "RED",
+      "down_projection_applied_twice": "RED",
+      "note": "each introduced into `apply` in turn, with the other three arms staying green \u2014 so the failure was the composition and not the fixture. The first two are the placement facts the ORACLE recorded `structurally_unreachable`: at its geometry they fail on shape. In the executor they are reachable, because it binds `[experts, hidden]` against whatever vector it is handed rather than raising \u2014 which is precisely why the composition needed a witness of its own."
+    },
+    "reachability_differs_between_the_oracle_and_the_executor": {
+      "the_apparent_contradiction": "The oracle's notes record `router_reads_the_latent` and `shared_reads_the_latent` as `structurally_unreachable` \u2014 no mutant could be built for them. This module then breaks both and reads RED. Both statements are true, and the difference between them is the point.",
+      "in_the_oracle": "the reference builds each operation from its own matrices, and those matrices ARE the constraint: the router is `[experts, hidden]` and the shared expert's `w1` is `[inter, hidden]`, so handing either a `[latent]` vector raises before it computes. The placement fact is enforced by the geometry, and the oracle was right to record it as unreachable rather than claim a mutant it could not build.",
+      "in_the_executor": "the same two facts are OPERATIONAL. `RoutedFfnCall` carries `x`, `router_input` and `hidden` as separate fields, and the backend binds `[experts, hidden]` against whichever vector it is handed with whatever `k` it is told \u2014 it does not re-derive the width from the matrix. A composition that passes the projected vector where the block input belongs computes a different model and raises nothing.",
+      "why_this_matters_beyond_this_rung": "a placement fact protected by GEOMETRY in the reference is not protected by geometry in an executor that carries widths as parameters. The oracle's `structurally_unreachable` entries are a statement about the reference's construction, never a licence to leave the same facts unwitnessed downstream \u2014 and the two witnesses are different instruments answering the same question at different planes.",
+      "how_each_is_witnessed": "in the oracle, positively: `router_weights`, `router_ids`, `shared_input` and `shared_output` bit-identical across the two forms (`torch.equal` at export). In the executor, by mutation: each fact broken in turn against the reference's own `output`."
+    },
+    "the_band_gate": "The routed and shared contributions are each required to be substantial and mutually distinguishable, read off the ORACLE's own boundaries rather than off the implementation. Without it an end-output comparison is another nominally end-to-end witness whose wrong branch is numerically invisible \u2014 a misplaced wrapper moving the sum by less than the tolerance and the arm passing on a broken build.",
+    "estate_knowledge_the_fixture_records": "TWO layers is the minimum geometry. With one, the expert bank's object prefix absorbs the layer index and every expert tensor arrives relative to the bank as `0.w1.weight` \u2014 layer and expert index become the same digit and the role table classifies neither. A one-layer fixture exercises a naming accident instead of the classifier."
+  }
+}

@@ -198,6 +198,19 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "rope_local_base_freq",
     // Whether router weights are renormalised after top-k selection.
     "norm_topk_prob",
+    // Kimi-K3's latent routed branch. `routed_expert_hidden_size` is a
+    // width, but it is NOT stored geometry the way `kv_lora_rank` and
+    // `moe_intermediate_size` are: those are proven carried by the placed
+    // objects whose shapes they describe, and this one governs an
+    // operator the checkpoint's own tensors cannot demonstrate — its
+    // presence adds two projections and a norm to the forward pass, and
+    // K3's expert bank is a compressed dialect that closure never
+    // reaches. Execution-semantic, therefore, and judged by a carriage
+    // rule with a probe rather than credited to a bank that does not
+    // close. `latent_moe_use_norm` is execution-semantic for the plainest
+    // reason: it decides whether an operation happens.
+    "routed_expert_hidden_size",
+    "latent_moe_use_norm",
     // Routing width: how many experts activate per token.
     "num_experts_per_tok",
     "num_experts_per_token",
@@ -1034,6 +1047,14 @@ const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
             "n_group",
             "scoring_func",
             "norm_topk_prob",
+            // The latent routed branch: where the routed experts run, and
+            // whether their aggregate is normalised. Clustered with
+            // routing rather than with norm geometry, because the leverage
+            // they describe is the ROUTED BRANCH's shape — the norm is a
+            // parameter of that branch, not a norm the model has anywhere
+            // else.
+            "routed_expert_hidden_size",
+            "latent_moe_use_norm",
             "routed_scaling_factor",
             "decoder_sparse_step",
             "mlp_only_layers",

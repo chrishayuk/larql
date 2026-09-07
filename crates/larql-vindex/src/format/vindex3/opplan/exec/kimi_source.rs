@@ -358,7 +358,7 @@ impl KimiSourceModel {
         // Refused BY NAME, before any tensor is bound (K3-REP-GATE-1,
         // freeze D6). The decision is a pure function of declared facts,
         // so a test without a device can witness it.
-        if let Some(refusal) = super::device::declared_gate_refusal(
+        if let Some(refusal) = super::device_refusal::declared_gate_refusal(
             layer,
             g.mla_layer[layer],
             g.kda_full_rank_gate,
