@@ -115,7 +115,8 @@ PER_ATTEMPT_SUFFIX = "_per_attempt"
 # `workflow_exec_max.larql-compute-metal.p50`. Their names only exist once
 # that workflow appears in a snapshot, so a forecast that mentions one has
 # to be validated by SHAPE plus a separate check that the workflow is real.
-WORKFLOW_SCOPED_FAMILIES = ("workflow_exec_max", "workflow_share")
+WORKFLOW_SCOPED_FAMILIES = ("workflow_exec_max", "workflow_share", "job_exec_max")
+PROBE_JOB = "<job>"
 PROBE_WORKFLOW = "<workflow>"
 
 
@@ -135,6 +136,10 @@ def metric_shape(name: str) -> str:
         remainder = name[len(prefix):]
         if family == "workflow_share":
             return f"{family}.{PROBE_WORKFLOW}"
+        if family == "job_exec_max":
+            rest, _, stat = remainder.rpartition(".")
+            workflow, _, _job = rest.rpartition(".")
+            return f"{family}.{PROBE_WORKFLOW}.{PROBE_JOB}.{stat}" if workflow else name
         workflow, _, stat = remainder.rpartition(".")
         return f"{family}.{PROBE_WORKFLOW}.{stat}" if workflow else name
     return name
@@ -158,6 +163,10 @@ def metric_workflow(name: str) -> str | None:
         remainder = name[len(prefix):]
         if family == "workflow_share":
             return remainder
+        if family == "job_exec_max":
+            rest, _, _stat = remainder.rpartition(".")
+            workflow, _, _job = rest.rpartition(".")
+            return workflow or None
         workflow, _, _stat = remainder.rpartition(".")
         return workflow or None
     return None
@@ -376,6 +385,10 @@ class AttemptMetrics:
     # clock for the workflow, not its runner-minute cost, because the claims
     # it scores are about how long a gate makes a pull request wait.
     workflow_exec_max: dict[str, float] = field(default_factory=dict)
+    # Same, keyed on (workflow, job). E2-D puts a ~24-minute tier-A job and
+    # a ~2-minute tier-B job in ONE workflow, so a workflow-keyed p50
+    # becomes a mixture that hides exactly the per-tier story D is about.
+    job_exec_max: dict[tuple[str, str], float] = field(default_factory=dict)
     superseded_exec: float = 0.0
     queued_by_os: dict[str, float] = field(default_factory=dict)
     executed_by_os: dict[str, float] = field(default_factory=dict)
@@ -471,6 +484,14 @@ def analyse(
                         workflow = run["workflow"] or "?"
                         metrics.workflow_exec_max[workflow] = max(
                             metrics.workflow_exec_max.get(workflow, 0.0), executed)
+                        # A job cancelled mid-flight is not a completed
+                        # gate; counting it would let more cancellation
+                        # read as a faster job, the same trap the
+                        # workflow-level metric avoids.
+                        if job["conclusion"] == TERMINAL_SUCCESS:
+                            key = (workflow, job["name"] or "?")
+                            metrics.job_exec_max[key] = max(
+                                metrics.job_exec_max.get(key, 0.0), executed)
                     # E1's forecast names this OS-scoped special case, so it
                     # stays; workflow_exec_max is the general form and the one
                     # new forecasts should use.
@@ -534,6 +555,14 @@ def aggregate(rows: Sequence[AttemptMetrics], percentiles: Sequence[int]) -> dic
         entry = {f"p{p}": percentile(values, p) for p in percentiles}
         entry["n"] = len(values)
         out["workflow_exec_max"][workflow] = entry
+
+    job_keys = sorted({k for r in rows for k in r.job_exec_max})
+    out["job_exec_max"] = {}
+    for workflow, job in job_keys:
+        values = [r.job_exec_max[(workflow, job)] for r in rows if (workflow, job) in r.job_exec_max]
+        entry = {f"p{p}": percentile(values, p) for p in percentiles}
+        entry["n"] = len(values)
+        out["job_exec_max"].setdefault(workflow, {})[job] = entry
 
     out["superseded_exec_total"] = sum(r.superseded_exec for r in rows)
     out["superseded_exec_mean"] = statistics.fmean([r.superseded_exec for r in rows]) if rows else None
@@ -714,6 +743,12 @@ def flatten_metrics(agg: dict) -> dict[str, float | None]:
     # SECONDS_PER_MINUTE, so a threshold on it reads as a share.
     for workflow, share in (agg.get("workflow_share") or {}).items():
         out[f"workflow_share.{workflow}"] = share
+    for workflow, jobs in (agg.get("job_exec_max") or {}).items():
+        for job, stats in jobs.items():
+            for stat, value in stats.items():
+                if stat == "n":
+                    continue
+                out[f"job_exec_max.{workflow}.{job}.{stat}"] = None if value is None else value / SECONDS_PER_MINUTE
     for workflow, stats in (agg.get("workflow_exec_max") or {}).items():
         for stat, value in stats.items():
             if stat == "n":
@@ -782,7 +817,18 @@ def score_prediction(pred: dict, before: Sample, after: Sample) -> dict:
     falsified = evaluate_conditions(pred.get("falsified_if", {}), a, b)
     bias = sample_size_bias_pct(before, after)
     unequal = before.attempts != after.attempts
+    uses_delta = any(
+        field in ("delta_pct", "abs_delta_pct")
+        for conditions in (pred.get("held_if", {}), pred.get("falsified_if", {}))
+        for field in conditions
+    )
     if a is None:
+        verdict = VERDICT_NO_DATA
+    elif uses_delta and b is None:
+        # The job or workflow exists in the AFTER sample and not in the
+        # BEFORE one — renamed, or newly added. A delta against nothing is
+        # not a small delta, and PARTIAL would read as "measured, did not
+        # hold". NO DATA is the honest answer.
         verdict = VERDICT_NO_DATA
     elif kind == METRIC_EXTENSIVE and unequal:
         # Refuse rather than report. See METRIC_EXTENSIVE above: this is the
@@ -1074,7 +1120,8 @@ def selftest(_args: argparse.Namespace) -> int:
     produced = set(flatten_metrics(aggregate([
         AttemptMetrics(branch="b", sha="s", workflows=[PROBE_WORKFLOW],
                        queued_by_os={"macos": 1.0}, executed_by_os={"macos": 1.0},
-                       workflow_exec_max={PROBE_WORKFLOW: 60.0})
+                       workflow_exec_max={PROBE_WORKFLOW: 60.0},
+                       job_exec_max={(PROBE_WORKFLOW, PROBE_JOB): 60.0})
     ], DEFAULT_PERCENTILES)))
     check("every extensive metric has a per-attempt companion",
           all(f"{b}{PER_ATTEMPT_SUFFIX}.macos" in produced
@@ -1101,6 +1148,49 @@ def selftest(_args: argparse.Namespace) -> int:
           metric_kind("superseded_exec_total"), METRIC_EXTENSIVE)
     check("superseded_exec_mean is intensive",
           metric_kind("superseded_exec_mean"), METRIC_INTENSIVE)
+    # 4g. job_exec_max — the metric E2-D needs, with the three protections
+    #     a workflow-keyed metric already carries plus one of its own.
+    jm = {"id": "PJ", "mechanism": "m", "kind": "effect",
+          "metric": "job_exec_max.wf.full.p50",
+          "held_if": {"delta_pct": {"lte": -30}}, "falsified_if": {"delta_pct": {"gt": -10}}}
+    check("a job metric present in BOTH samples scores",
+          score_prediction(jm, Sample({"job_exec_max.wf.full.p50": 50.0}, 10),
+                           Sample({"job_exec_max.wf.full.p50": 25.0}, 10))["verdict"], VERDICT_HELD)
+    check("a job missing from AFTER is NO DATA",
+          score_prediction(jm, Sample({"job_exec_max.wf.full.p50": 50.0}, 10),
+                           Sample({}, 10))["verdict"], VERDICT_NO_DATA)
+    check("a job missing from BEFORE is NO DATA, not PARTIAL",
+          score_prediction(jm, Sample({}, 10),
+                           Sample({"job_exec_max.wf.full.p50": 25.0}, 10))["verdict"], VERDICT_NO_DATA)
+    check("job_exec_max is intensive", metric_kind("job_exec_max.wf.full.p50"), METRIC_INTENSIVE)
+    check("metric_shape abstracts workflow AND job",
+          metric_shape("job_exec_max.larql-compute-metal.test · macos-14.p50"),
+          f"job_exec_max.{PROBE_WORKFLOW}.{PROBE_JOB}.p50")
+    check("metric_workflow recovers the workflow from a job metric",
+          metric_workflow("job_exec_max.larql-compute-metal.test.p95"), "larql-compute-metal")
+
+    #     Two jobs in ONE workflow must not blur: this is the mixture E2-D
+    #     would otherwise be scored on.
+    mix = {"runs": [
+        _run("wf", "aaa", [_job(T(0), T(1), T(25), ["macos-14"])], branch="pr-1"),
+        _run("wf", "bbb", [_job(T(0), T(1), T(3), ["macos-14"])], branch="pr-2"),
+    ]}
+    mix["runs"][0]["jobs"][0]["name"] = "full"
+    mix["runs"][1]["jobs"][0]["name"] = "compat"
+    ja = aggregate(analyse(mix, DEFAULT_INFORMATIONAL, None, True), DEFAULT_PERCENTILES)
+    jf = flatten_metrics(ja)
+    check("the expensive job keeps its own number", jf["job_exec_max.wf.full.p50"], 24.0)
+    check("the cheap job keeps its own number", jf["job_exec_max.wf.compat.p50"], 2.0)
+    check("the workflow-level metric is the mixture they would have hidden in",
+          jf["workflow_exec_max.wf.p50"], 13.0)
+
+    #     A cancelled JOB must not enter, or cancelling more would read as
+    #     a faster job.
+    mix["runs"][0]["jobs"][0]["conclusion"] = TERMINAL_CANCELLED
+    jc = aggregate(analyse(mix, DEFAULT_INFORMATIONAL, None, True), DEFAULT_PERCENTILES)
+    check("a cancelled job is excluded from job_exec_max",
+          "full" not in jc["job_exec_max"].get("wf", {}), True)
+
     check("workflow_exec_max is intensive",
           metric_kind("workflow_exec_max.larql-compute-metal.p50"), METRIC_INTENSIVE)
     check("workflow_share is intensive",
@@ -1159,22 +1249,43 @@ def selftest(_args: argparse.Namespace) -> int:
     #     and every metric name is one flatten_metrics actually produces.
     #     Forecasts frozen from E2 onward must additionally name only
     #     INTENSIVE metrics, so the E1 C2 defect cannot recur by copy-paste.
+    def _snapshot_jobs(snapshot: dict) -> set[tuple[str, str]]:
+        return {(r.get("workflow"), j.get("name")) for r in snapshot.get("runs", []) for j in r.get("jobs", [])}
+
+    # A FROZEN forecast must name metrics that exist. An unfrozen one may
+    # name a job the workflow does not have yet -- E2-D's `full` job comes
+    # into being with the trigger change it preregisters -- so existence is
+    # checked at freeze time, while shape, kind and conditions are checked
+    # always. Recording the rule here rather than skipping the file keeps
+    # the unfrozen contract under some check instead of none.
     for forecast_path, intensive_only in (
         (FORECAST_DIR / "E1-forecast.json", False),
         (FORECAST_DIR / "E2-contract.json", True),
+        (FORECAST_DIR / "E2-D-contract.json", True),
     ):
         if not forecast_path.exists():
             continue
         forecast = json.loads(forecast_path.read_text())
         label = forecast.get("experiment", forecast_path.stem)
         snapshot_workflows: set[str] = set()
+        snapshot_jobs: set[tuple[str, str]] = set()
         for snapshot_key in ("primary_snapshot", "metal_gate_snapshot", "baseline_snapshot"):
             snapshot_path = forecast.get("baseline", {}).get(snapshot_key) or forecast.get(
                 "frozen_against", {}).get(snapshot_key)
             if snapshot_path and (REPO_ROOT / snapshot_path).exists():
                 snap = json.loads((REPO_ROOT / snapshot_path).read_text())
                 snapshot_workflows |= {r.get("workflow") for r in snap.get("runs", [])}
+                snapshot_jobs |= _snapshot_jobs(snap)
         for pred in forecast["predictions"]:
+            # A prediction may declare that its metric does not exist yet —
+            # E2-D's tier share is computed by the triage job the same
+            # contract preregisters. Allowed ONLY while unfrozen: freezing
+            # a forecast against a metric nothing produces is how a
+            # prediction quietly becomes unscoreable.
+            if pred.get("metric_not_yet_produced"):
+                check(f"{label} {pred['id']} may defer its metric only while unfrozen",
+                      bool(forecast.get("frozen_at")), False)
+                continue
             # SHAPE, because a workflow-scoped name exists only once that
             # workflow is in a snapshot...
             check(f"{label} {pred['id']} metric is produced",
@@ -1182,15 +1293,33 @@ def selftest(_args: argparse.Namespace) -> int:
             # ...and then the workflow itself must be one the baseline
             # actually contains, or the prediction is unscoreable by name.
             workflow = metric_workflow(pred["metric"])
-            if workflow is not None and snapshot_workflows:
+            frozen = bool(forecast.get("frozen_at"))
+            if workflow is not None and snapshot_workflows and frozen:
                 check(f"{label} {pred['id']} names a workflow the baseline contains",
                       workflow in snapshot_workflows, True)
+            if frozen and pred["metric"].startswith("job_exec_max.") and snapshot_jobs:
+                rest = pred["metric"][len("job_exec_max."):]
+                head, _, _stat = rest.rpartition(".")
+                wf, _, jb = head.rpartition(".")
+                check(f"{label} {pred['id']} names a job the baseline contains",
+                      (wf, jb) in snapshot_jobs, True)
             if intensive_only:
                 check(f"{label} {pred['id']} names an intensive metric",
                       metric_kind(pred["metric"]), METRIC_INTENSIVE)
             for conditions in (pred.get("held_if", {}), pred.get("falsified_if", {})):
                 evaluate_conditions(conditions, 1.0, 2.0)   # raises on an unknown field/operator
         check(f"{label} conditions all parse", True, True)
+
+    # 4h. the job-existence rule can FAIL, not just pass. A frozen forecast
+    #     naming a job no snapshot contains must be caught rather than
+    #     scoring NO DATA forever.
+    real_jobs = _snapshot_jobs(json.loads((FORECAST_DIR / "after-e1.json").read_text())) \
+        if (FORECAST_DIR / "after-e1.json").exists() else set()
+    if real_jobs:
+        check("a real workflow/job pair is recognised",
+              ("larql-compute-metal", "test · macos-14") in real_jobs, True)
+        check("an impossible workflow/job pair is NOT recognised",
+              ("larql-compute-metal", "no-such-job") in real_jobs, False)
 
     # 5. percentile is defined at n == 1 and interpolates at n == 2.
     check("percentile n=1", percentile([7.0], 95), 7.0)

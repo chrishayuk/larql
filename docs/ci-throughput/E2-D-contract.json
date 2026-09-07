@@ -6,7 +6,7 @@
   "claim": "A pull request pays full behavioural Metal qualification only when it changes the Metal crate or a DECLARED parity obligation. An upstream change that can break the compile but not the numbers pays a compile plus the ordinary-profile witness. Everything else pays no macOS time.",
   "measurement_contract": {
     "inherits": "docs/ci-throughput/E2-contract.json \u2014 every prediction names an INTENSIVE metric, and the instrument refuses extensive metrics across samples of different size",
-    "instrument_change_required_before_freezing": "workflow_exec_max is keyed on WORKFLOW. Under E2-D one workflow emits both a ~24-minute tier-A job and a ~2-minute tier-B job, so its p50 becomes a mixture that hides the per-tier story. E2-D needs job_exec_max.<workflow>.<job> before D1 or D3 can be scored at all."
+    "instrument_change_required_before_freezing": "DONE 2026-09-07. job_exec_max.<workflow>.<job> is in the instrument, counting SUCCESSFUL jobs only so cancellation cannot manufacture a faster job, returning NO DATA (not PARTIAL) when the job is absent from either sample, and validated against a baseline snapshot for any FROZEN forecast. selftest demonstrates the mixture it prevents: a 24-minute and a 2-minute job in one workflow read as 24 and 2 per job, where the workflow-level p50 would have read 13."
   },
   "baseline": {
     "deferred_because": "The post-E2-A steady state does not exist yet: A1 stands at n=2 (24.87 and 23.00 min against a 56.61-minute pre-E2-A baseline) and its contract asks for n>=8. Freezing a numeric baseline now would bake in a two-sample estimate as the thing D is scored against.",
@@ -94,8 +94,8 @@
           "gt": 10
         }
       },
-      "metric_not_yet_produced": true,
-      "condition_note": "Uses abs_delta_pct, not delta_pct. Conditions are ANDed, so a single delta_pct clause cannot express 'more than 10% away in either direction' \u2014 written as {lt: -10} it silently drops the upper half and a +20% slowdown returns PARTIAL rather than FALSIFIED. That is how this entry was first written; ci_throughput.py's selftest now carries the control that catches it."
+      "condition_note": "Uses abs_delta_pct, not delta_pct. Conditions are ANDed, so a single delta_pct clause cannot express 'more than 10% away in either direction' \u2014 written as {lt: -10} it silently drops the upper half and a +20% slowdown returns PARTIAL rather than FALSIFIED. That is how this entry was first written; ci_throughput.py's selftest now carries the control that catches it.",
+      "metric_note": "job_exec_max.<workflow>.<job> now EXISTS in the instrument (added 2026-09-07). The job name `full` does not exist until the trigger change lands, which is why selftest checks job existence only for FROZEN forecasts."
     },
     {
       "id": "D4",

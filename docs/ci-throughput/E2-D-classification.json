@@ -1,5 +1,5 @@
 {
-  "record": "CI-E2-D classification of pull requests #415-#449, replayed against the declared manifest",
+  "record": "CI-E2-D classification of pull requests #415-#449, replayed against the declared manifest (version 2)",
   "classified_at": "2026-09-07",
   "manifest": "crates/larql-compute-metal/parity-obligations.json",
   "classifier": "scripts/metal_tier.py",
@@ -254,7 +254,7 @@
       "triggers_today": true,
       "touches_metal": false,
       "tier": "A",
-      "first_reason": "crates/larql-compute/src/cpu/kquant_gemv.rs: declared parity obligation -> A"
+      "first_reason": "crates/larql-compute/src/cpu/kquant_gemv.rs: interface_only -> B"
     },
     {
       "pr": 419,
@@ -296,5 +296,8 @@
       "tier": "B",
       "first_reason": "crates/larql-models/src/architectures/kimi_k3.rs: dependency or build input -> B"
     }
-  ]
+  ],
+  "manifest_version": 2,
+  "reclassified_at": "2026-09-07",
+  "moved_since_version_1": []
 }
