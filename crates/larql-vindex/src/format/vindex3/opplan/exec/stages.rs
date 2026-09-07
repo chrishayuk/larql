@@ -136,19 +136,43 @@ impl StageLedger {
         }
         self.nested.store(0, Ordering::Relaxed);
     }
+
+    /// Start one stage, recorded into THIS ledger when the guard drops.
+    ///
+    /// Nesting is still judged per thread, because a stage containing
+    /// another stage is a property of the execution, not of the ledger
+    /// the execution reports to.
+    pub fn staged(&self, stage: Stage) -> Staged<'_> {
+        let outermost = ACTIVE.with(|a| {
+            let was = a.get();
+            a.set(true);
+            !was
+        });
+        if !outermost {
+            self.nested.fetch_add(1, Ordering::Relaxed);
+        }
+        Staged {
+            ledger: self,
+            stage,
+            started: Instant::now(),
+            outermost,
+        }
+    }
 }
 
-/// A running stage timer. Records on drop.
-pub struct Staged {
+/// A running stage timer. Records into the ledger it was opened on,
+/// on drop.
+pub struct Staged<'a> {
+    ledger: &'a StageLedger,
     stage: Stage,
     started: Instant,
     outermost: bool,
 }
 
-impl Drop for Staged {
+impl Drop for Staged<'_> {
     fn drop(&mut self) {
         let nanos = self.started.elapsed().as_nanos() as u64;
-        ledger().record(self.stage, nanos);
+        self.ledger.record(self.stage, nanos);
         if self.outermost {
             ACTIVE.with(|a| a.set(false));
         }
@@ -156,20 +180,15 @@ impl Drop for Staged {
 }
 
 /// Start one stage. Bind the value to a name for the stage's extent.
-pub fn stage(stage: Stage) -> Staged {
-    let outermost = ACTIVE.with(|a| {
-        let was = a.get();
-        a.set(true);
-        !was
-    });
-    if !outermost {
-        ledger().nested.fetch_add(1, Ordering::Relaxed);
-    }
-    Staged {
-        stage,
-        started: Instant::now(),
-        outermost,
-    }
+///
+/// This is [`StageLedger::staged`] on the process ledger, which is what
+/// execution wants: one instrument for the whole run. A caller that needs
+/// a tally it alone writes — a test asserting an exact call count, say —
+/// must open its stages on a ledger of its own, because the process
+/// ledger is written by every execution in the binary and a lock over
+/// some of them does not make it exclusive.
+pub fn stage(stage: Stage) -> Staged<'static> {
+    ledger().staged(stage)
 }
 
 static LEDGER: StageLedger = StageLedger::new();
