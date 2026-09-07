@@ -118,26 +118,38 @@ def classify(changed: list[str], manifest: dict, deps: list[str]) -> tuple[str, 
     silent = manifest_paths(manifest, "silent_parity_obligations")
     interface = manifest_paths(manifest, "interface_only")
 
+    # PRECEDENCE, and each step is load-bearing:
+    #
+    #   1. silent parity      -- FIRST, and NOT exemptable. Two reasons.
+    #      Its members sit inside broad parity subtrees (spin_pool.rs is
+    #      under cpu/**), so testing parity first would swallow them and
+    #      their reason would read as ordinary parity, losing the identity
+    #      the class exists to preserve. And an interface_only entry that
+    #      overlapped one would DEMOTE it to B -- the unsafe direction the
+    #      manifest says is impossible. Ordering alone does not make that
+    #      impossible, so `check` also refuses the overlap outright.
+    #   2. the Metal crate and its own workflow.
+    #   3. interface_only     -- an EXEMPTION from ORDINARY parity only.
+    #      This is how the named kquant_gemv.rs and backend/ exemptions
+    #      escape their enclosing subtree, so it must stay above parity.
+    #   4. ordinary parity, then the dependency floor.
     for path in changed:
-        # interface_only is an EXEMPTION from parity, so it is tested
-        # first — otherwise a file inside a declared parity subtree could
-        # never be exempted.
-        if any(matches(path, p) for p in interface):
-            if tier == TIER_C:
-                tier = TIER_B
-            reasons.append(f"{path}: interface_only -> B")
+        if any(matches(path, p) for p in silent):
+            tier = TIER_A
+            reasons.append(f"{path}: SILENT parity obligation -> A")
             continue
         if any(matches(path, p) for p in TIER_A_ALWAYS):
             tier = TIER_A
             reasons.append(f"{path}: Metal crate or its workflow -> A")
             continue
+        if any(matches(path, p) for p in interface):
+            if tier == TIER_C:
+                tier = TIER_B
+            reasons.append(f"{path}: interface_only -> B")
+            continue
         if any(matches(path, p) for p in parity):
             tier = TIER_A
             reasons.append(f"{path}: declared parity obligation -> A")
-            continue
-        if any(matches(path, p) for p in silent):
-            tier = TIER_A
-            reasons.append(f"{path}: SILENT parity obligation -> A")
             continue
         if any(matches(path, p) for p in deps) or path in BUILD_INPUTS:
             if tier == TIER_C:
@@ -188,6 +200,26 @@ def _resolve(root: Path, crate_dir: str, parts: list[str]) -> str | None:
     return best
 
 
+def overlapping_silent_exemptions(manifest: dict) -> list[tuple[str, str]]:
+    """silent_parity paths that an interface_only entry would exempt.
+
+    MALFORMED AUTHORITY, not something precedence resolves. A silent
+    obligation is one no static check can rediscover, so demoting it to
+    tier B removes the only thing standing between a changed default or a
+    changed fixture and a Metal backend that never re-qualifies. Ordering
+    makes the demotion not HAPPEN; this makes it not be EXPRESSIBLE.
+    """
+    silent = manifest_paths(manifest, "silent_parity_obligations")
+    interface = manifest_paths(manifest, "interface_only")
+    clashes = []
+    for s_path in silent:
+        probe = s_path[:-3] if s_path.endswith("/**") else s_path
+        for i_path in interface:
+            if matches(probe, i_path) or (i_path.endswith("/**") and matches(i_path[:-3], s_path)):
+                clashes.append((s_path, i_path))
+    return clashes
+
+
 def check(root: Path = REPO_ROOT) -> tuple[list[str], dict[str, int]]:
     """Referenced-but-undeclared paths. Empty list means complete."""
     manifest = load_manifest(root)
@@ -224,6 +256,14 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 def cmd_check(_args: argparse.Namespace) -> int:
     undeclared, hits = check()
+    clashes = overlapping_silent_exemptions(load_manifest())
+    if clashes:
+        print("MALFORMED MANIFEST: a silent parity obligation is also declared interface_only.")
+        print("A silent obligation is one no static check can rediscover; exempting it is the")
+        print("one error direction this manifest exists to make impossible.")
+        for s_path, i_path in clashes:
+            print(f"  {s_path}  exempted by  {i_path}")
+        return 1
     print(f"{len(hits)} upstream paths referenced by {METAL_CRATE}")
 
     # Print the silent class every time. Its members are invisible to the
@@ -312,6 +352,42 @@ def cmd_selftest(_args: argparse.Namespace) -> int:
     ok("silent parity is named as such in the reason",
        "SILENT" in classify(["crates/larql-compute/src/cpu/spin_pool.rs"], sil, deps)[1][0], True)
 
+    #     ...and the same path SHADOWED by a broad parity subtree, which
+    #     is the real manifest's shape: spin_pool.rs lives under cpu/**.
+    #     The synthetic case above cannot catch a precedence regression
+    #     because nothing there shadows it.
+    shadowed = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/cpu/**"]}],
+        "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+        "interface_only": [],
+    }
+    sh = classify(["crates/larql-compute/src/cpu/spin_pool.rs"], shadowed, deps)
+    ok("a shadowed silent path is still A", sh[0], TIER_A)
+    ok("a shadowed silent path keeps its SILENT identity", "SILENT" in sh[1][0], True)
+
+    #     Silent parity must NOT be exemptable, or a mis-edit demotes it
+    #     to B -- the one unsafe direction. Ordering makes that not
+    #     happen; overlapping_silent_exemptions makes it not expressible.
+    exempted = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/cpu/**"]}],
+        "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+        "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+    }
+    ok("interface_only cannot demote a silent obligation",
+       classify(["crates/larql-compute/src/cpu/spin_pool.rs"], exempted, deps)[0], TIER_A)
+    ok("...and the overlap is reported as malformed authority",
+       len(overlapping_silent_exemptions(exempted)), 1)
+    ok("a subtree exemption swallowing a silent file is also malformed",
+       len(overlapping_silent_exemptions({
+           "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+           "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/cpu/**"]}]})), 1)
+    ok("an ordinary parity exemption is still legal",
+       len(overlapping_silent_exemptions({
+           "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/options.rs"]}],
+           "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/cpu/kquant_gemv.rs"]}]})), 0)
+    ok("the SHIPPED manifest has no silent/interface overlap",
+       overlapping_silent_exemptions(load_manifest()), [])
+
     #     Regression controls on the SHIPPED manifest, for the two entries
     #     version 1 got wrong and the one it cited as its hard case.
     real, rdeps = load_manifest(), metal_workspace_deps()
@@ -329,6 +405,12 @@ def cmd_selftest(_args: argparse.Namespace) -> int:
     #     The structural half of the asymmetry: a file that does not exist
     #     yet, added inside a parity subtree, must default to A rather than
     #     fall through to the tier-B dependency rule.
+    real_spin = classify(["crates/larql-compute/src/cpu/spin_pool.rs"], real, rdeps)
+    ok("SHIPPED manifest: spin_pool.rs reason says SILENT, not ordinary parity",
+       "SILENT" in real_spin[1][0], True)
+    real_opts = classify(["crates/larql-compute/src/options.rs"], real, rdeps)
+    ok("SHIPPED manifest: options.rs reason says SILENT", "SILENT" in real_opts[1][0], True)
+
     ok("a NEW file in a parity subtree defaults to A",
        classify(["crates/larql-compute/src/cpu/ops/brand_new_kernel.rs"], real, rdeps)[0], TIER_A)
     ok("a NEW file in backend/ defaults to A",

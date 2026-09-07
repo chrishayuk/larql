@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "status": "DESIGN \u2014 declared and checkable, but NOT yet wired to any workflow trigger (CI-E2-D). All five version-1 needs_review entries resolved 2026-09-07.",
   "note": "Which upstream surfaces can invalidate which claim about the Metal backend. This is a DECLARATION, not an inference from directory ancestry. scripts/metal_tier.py checks that it stays COMPLETE with respect to what the Metal crate actually references, so a new parity dependency cannot be added without either declaring it or failing the check.",
   "the_asymmetry": "A file placed in interface_only when it is really behavioural is UNSAFE \u2014 Metal would compile against changed numerics and never re-qualify. A file placed in parity_obligations when it is really structural is merely EXPENSIVE. So anything uncertain belongs in parity_obligations, and entries carrying `needs_review` are there by that default rather than by a positive judgement. Version 2 applies this structurally as well as per-entry: parity subtrees stay WHOLE and exemptions are named files, so a file added to cpu/ or backend/ tomorrow defaults to tier A instead of falling through to tier B.",
@@ -140,6 +140,19 @@
   },
   "known_limits": {
     "file_granularity": "Classification is per FILE, and a module root is one file. crates/larql-compute/src/cpu/mod.rs carries both `pub mod` declarations, which are inert for Metal, and the `pub mod q4 { pub use super::ops::... }` re-export block, which decides WHICH implementation a Metal reference resolves to. A five-line `pub mod` addition therefore costs tier A. That is the safe direction and it is a real floor: #420 stays tier A after every version-2 exemption, not because of kquant_gemv.rs but because it added a line to that module root. Going below file granularity is a different and much harder design; do not paper over it by exempting a module root.",
-    "silent_class_is_unverifiable": "By construction. `metal_tier.py check` lists silent_parity_obligations and cannot verify them \u2014 spin_pool.rs has zero references and is tier A. The class is a standing human commitment, not a derived fact."
+    "silent_class_is_unverifiable": "By construction. `metal_tier.py check` lists silent_parity_obligations and cannot verify them \u2014 spin_pool.rs has zero references and is tier A. The class is a standing human commitment, not a derived fact.",
+    "ordering_is_not_an_invariant": "Recorded because it was nearly a real defect: in version 2, interface_only was tested FIRST, so an interface_only entry overlapping a silent path would have demoted it to tier B \u2014 the one unsafe direction the manifest claims is impossible. No such overlap existed, so nothing was wrong in practice and no test would have caught it. Both the ordering and the invariant now exist, and the invariant is the part that survives a refactor."
+  },
+  "the_precedence": {
+    "order": [
+      "silent_parity_obligations",
+      "the Metal crate and its own workflow",
+      "interface_only",
+      "parity_obligations",
+      "cargo dependency floor"
+    ],
+    "why_silent_is_first": "Its members live INSIDE broad parity subtrees \u2014 spin_pool.rs is under cpu/** \u2014 so testing ordinary parity first would swallow them. The tier would still be A, but the reason would read as ordinary parity and the class would lose the identity it exists to carry.",
+    "why_interface_stays_above_parity": "interface_only is an EXEMPTION from ordinary parity: it is how the named kquant_gemv.rs and backend/{capability,factory}.rs escape their enclosing subtrees. Moving it below parity would make every exemption dead.",
+    "the_invariant": "silent_parity_obligations and interface_only MAY NEVER OVERLAP. Precedence already means an overlap could not demote anything, but an invariant that holds only because of evaluation order is one refactor from not holding. `metal_tier.py check` refuses the overlap outright and calls it malformed authority: a silent obligation is one no static check can rediscover, so exempting it removes the only thing between a changed default or a changed fixture and a Metal backend that never re-qualifies."
   }
 }

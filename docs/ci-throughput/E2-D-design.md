@@ -180,6 +180,28 @@ at `test_fixtures.rs` will reason "nothing imports it, it is test
 scaffolding, it is structural" and demote it. The class name and its
 `do_not_simplify` note exist to stop that.
 
+### Precedence, and an invariant that does not depend on it
+
+Classification order is: **silent parity → the Metal crate and its
+workflow → `interface_only` → ordinary parity → the dependency floor.**
+
+Silent parity is first because its members live *inside* broad parity
+subtrees — `spin_pool.rs` is under `cpu/**` — so testing ordinary parity
+first would swallow them. The tier would still be A, but the reason would
+read as ordinary parity and the class would lose the identity it exists
+to carry. `interface_only` stays above ordinary parity because that is
+how the named exemptions escape their enclosing subtrees.
+
+**Ordering is not the safety property.** In version 2 `interface_only`
+was tested first, so an entry overlapping a silent path would have
+demoted it to tier B — the one unsafe direction. No such overlap existed,
+so nothing was wrong in practice and no test would have caught it. An
+invariant that holds only because of evaluation order is one refactor
+from not holding, so `metal_tier.py check` now **refuses the overlap
+outright** and calls it malformed authority. Four controls cover it,
+including one on the shipped manifest and one asserting the demotion is
+impossible even when the overlap is constructed deliberately.
+
 ### The asymmetry, applied structurally
 
 Parity subtrees stay **whole** and exemptions are **named files**. A file
