@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "status": "DESIGN — declared and checkable, but NOT yet wired to any workflow trigger (CI-E2-D)",
+  "note": "Which upstream surfaces can invalidate which claim about the Metal backend. This is a DECLARATION, not an inference from directory ancestry. scripts/metal_tier.py checks that it stays COMPLETE with respect to what the Metal crate actually references, so a new parity dependency cannot be added without either declaring it or failing the check.",
+  "the_asymmetry": "A file placed in interface_only when it is really behavioural is UNSAFE — Metal would compile against changed numerics and never re-qualify. A file placed in parity_obligations when it is really structural is merely EXPENSIVE. So anything uncertain belongs in parity_obligations, and entries carrying `needs_review` are there by that default rather than by a positive judgement.",
+  "parity_obligations": [
+    {
+      "id": "cpu-quant-kernels",
+      "paths": ["crates/larql-compute/src/cpu/ops/**"],
+      "why": "Metal's kernel tests import these as the NUMERICAL reference — 72 references to cpu::ops::q4_common alone, plus moe, geglu, q8_matvec, outer_combine. A change here changes what the Metal kernels are required to reproduce.",
+      "witnesses": [
+        "tests/test_kernel_q4k_matmul.rs",
+        "tests/test_kernel_q4k_ffn_gate_up.rs",
+        "tests/test_kernel_moe_router.rs",
+        "tests/test_kernel_q6k_geglu_down.rs"
+      ],
+      "confidence": "observed"
+    },
+    {
+      "id": "cpu-other",
+      "paths": ["crates/larql-compute/src/cpu/**"],
+      "why": "Metal references `larql_compute::cpu` through brace and type imports that text extraction truncates, so the subtree is declared whole rather than guessed at leaf level.",
+      "confidence": "needs_review",
+      "review_question": "Which of cpu/{kquant_gemv,nvfp4_gemv,spin_pool}.rs are reachable from an entry point a Metal test uses as a reference? kquant_gemv is currently reached only from cpu/mod.rs and consumed by larql-vindex, not by Metal."
+    },
+    {
+      "id": "attention-math",
+      "paths": ["crates/larql-compute/src/attention/**"],
+      "why": "rope (30 references) and softmax are compared against directly by the Metal kernel tests.",
+      "witnesses": ["tests/test_kernel_rope.rs", "tests/test_kernel_rope_at_pos.rs", "tests/test_lowering_attention_parity.rs"],
+      "confidence": "observed"
+    },
+    {
+      "id": "model-quant-formats",
+      "paths": ["crates/larql-models/src/quant/**"],
+      "why": "ggml, mxfp4, nvfp4, fp4 and half are the on-disk and in-register encodings the Metal kernels decode. A change to an encoder changes what every quant kernel must decode.",
+      "witnesses": ["tests/test_kernel_moe_g_mxfp4.rs", "tests/test_lowering_nvfp4_fusion.rs"],
+      "confidence": "observed"
+    },
+    {
+      "id": "forward-and-ffn",
+      "paths": [
+        "crates/larql-compute/src/forward/**",
+        "crates/larql-compute/src/ffn/**",
+        "crates/larql-compute/src/kquant_forward/**",
+        "crates/larql-compute/src/pipeline/**",
+        "crates/larql-compute/src/pipeline_layer/**",
+        "crates/larql-compute/src/kv_dispatch/**",
+        "crates/larql-compute/src/moe_route_observe.rs"
+      ],
+      "why": "The composition Metal's lowering must reproduce end to end, not merely link against.",
+      "confidence": "needs_review",
+      "review_question": "pipeline and pipeline_layer are referenced 13 times combined but it is not established whether Metal tests compare RESULTS through them or only construct them."
+    },
+    {
+      "id": "backend-traits-with-bodies",
+      "paths": ["crates/larql-compute/src/backend/**"],
+      "why": "Nominally the trait boundary, and matmul.rs is `pub trait MatMul` — but every file here carries arithmetic, including default method bodies a Metal impl can inherit. Declared as parity by the asymmetry above, not by a positive finding.",
+      "confidence": "needs_review",
+      "review_question": "Are capability.rs and factory.rs purely structural? If so they move to interface_only and this obligation narrows to decode/helpers/matmul/quant_matvec."
+    }
+  ],
+  "interface_only": [
+    {
+      "id": "options-and-handles",
+      "paths": [
+        "crates/larql-compute/src/options.rs",
+        "crates/larql-compute/src/state_handle.rs",
+        "crates/larql-compute/src/async_compute_backend/**"
+      ],
+      "why": "Configuration and handle types. A change here breaks the Metal COMPILE, which tier B catches; it does not change a number a Metal kernel must reproduce.",
+      "confidence": "needs_review"
+    },
+    {
+      "id": "test-fixtures",
+      "paths": [
+        "crates/larql-compute/src/test_fixtures.rs",
+        "crates/larql-models/src/test_fixtures.rs"
+      ],
+      "why": "Fixture constructors used by Metal's own tests. A change breaks the test build, which tier B catches by compiling --all-targets.",
+      "confidence": "needs_review",
+      "review_question": "A fixture that silently changes its DATA rather than its signature would change what the Metal tests assert without breaking the compile. That is a parity obligation wearing an interface's clothes, and it is the most likely single hole in this manifest."
+    }
+  ]
+}

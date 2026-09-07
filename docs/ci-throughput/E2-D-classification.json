@@ -1,0 +1,300 @@
+{
+  "record": "CI-E2-D classification of pull requests #415-#449, replayed against the declared manifest",
+  "classified_at": "2026-09-07",
+  "manifest": "crates/larql-compute-metal/parity-obligations.json",
+  "classifier": "scripts/metal_tier.py",
+  "caveat": "Paths are replayed against TODAY's tree. A file that moved since a pull request landed classifies by where it lives now, not where it lived then. The sample is indicative of the trigger MIX, not an audit of past runs.",
+  "sample": {
+    "pull_requests_with_file_data": 35,
+    "trigger_the_metal_gate_today": 18,
+    "of_those_touch_a_metal_file": 6,
+    "of_those_upstream_only": 12
+  },
+  "under_e2d": {
+    "A": 7,
+    "B": 11,
+    "C": 0
+  },
+  "rows": [
+    {
+      "pr": 449,
+      "files": 2,
+      "triggers_today": true,
+      "touches_metal": true,
+      "tier": "A",
+      "first_reason": "crates/larql-compute-metal/src/moe_dispatch/dispatch/tests.rs: Metal crate or its workflow -> A"
+    },
+    {
+      "pr": 448,
+      "files": 1,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 447,
+      "files": 19,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 446,
+      "files": 1,
+      "triggers_today": true,
+      "touches_metal": true,
+      "tier": "A",
+      "first_reason": "crates/larql-compute-metal/coverage-policy.json: Metal crate or its workflow -> A"
+    },
+    {
+      "pr": 445,
+      "files": 4,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 444,
+      "files": 96,
+      "triggers_today": true,
+      "touches_metal": true,
+      "tier": "A",
+      "first_reason": "crates/larql-compute-metal/src/kernels/ffn.rs: Metal crate or its workflow -> A"
+    },
+    {
+      "pr": 443,
+      "files": 1,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 442,
+      "files": 100,
+      "triggers_today": true,
+      "touches_metal": true,
+      "tier": "A",
+      "first_reason": "crates/larql-compute-metal/coverage-policy.json: Metal crate or its workflow -> A"
+    },
+    {
+      "pr": 441,
+      "files": 44,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 440,
+      "files": 39,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 439,
+      "files": 68,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/architectures/gemma3.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 438,
+      "files": 7,
+      "triggers_today": true,
+      "touches_metal": true,
+      "tier": "A",
+      "first_reason": "crates/larql-compute-metal/benches/matmul.rs: Metal crate or its workflow -> A"
+    },
+    {
+      "pr": 437,
+      "files": 1,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 436,
+      "files": 1,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 435,
+      "files": 10,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/config/residual_topology.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 434,
+      "files": 22,
+      "triggers_today": true,
+      "touches_metal": true,
+      "tier": "A",
+      "first_reason": ".github/workflows/larql-compute-metal.yml: Metal crate or its workflow -> A"
+    },
+    {
+      "pr": 433,
+      "files": 23,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 432,
+      "files": 14,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 431,
+      "files": 50,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/architectures/gemma3.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 430,
+      "files": 23,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/architectures/gemma3.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 429,
+      "files": 42,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/architectures/gemma3.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 428,
+      "files": 43,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "Cargo.lock: dependency or build input -> B"
+    },
+    {
+      "pr": 427,
+      "files": 4,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 426,
+      "files": 1,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 425,
+      "files": 36,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "Cargo.lock: dependency or build input -> B"
+    },
+    {
+      "pr": 424,
+      "files": 44,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/config/residual_topology.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 423,
+      "files": 10,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 422,
+      "files": 24,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "Cargo.lock: dependency or build input -> B"
+    },
+    {
+      "pr": 421,
+      "files": 2,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 420,
+      "files": 38,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "A",
+      "first_reason": "crates/larql-compute/src/cpu/kquant_gemv.rs: declared parity obligation -> A"
+    },
+    {
+      "pr": 419,
+      "files": 36,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 418,
+      "files": 65,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 417,
+      "files": 19,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/config/residual_topology.rs: dependency or build input -> B"
+    },
+    {
+      "pr": 416,
+      "files": 1,
+      "triggers_today": false,
+      "touches_metal": false,
+      "tier": "C",
+      "first_reason": null
+    },
+    {
+      "pr": 415,
+      "files": 14,
+      "triggers_today": true,
+      "touches_metal": false,
+      "tier": "B",
+      "first_reason": "crates/larql-models/src/architectures/kimi_k3.rs: dependency or build input -> B"
+    }
+  ]
+}
