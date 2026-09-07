@@ -45,7 +45,7 @@
     "stream_conditionality_from_upstream": "`MXFP4PackedCompressor.compression_param_names` adds `weight_zero_point` when the WEIGHTS are asymmetric, and `input_global_scale` when a non-dynamic INPUT-ACTIVATION scheme requires it \u2014 the latter gated on `getattr_chain(scheme, \"input_activations.dynamic\", True)`, which never consults `weights.dynamic`. K3 is symmetric and declares `input_activations: null`, so the chain falls to its default and neither auxiliary stream is required. **`weights.dynamic: false` is a separate weight-quantization fact and explains neither.** The conclusion the operand plane needs still holds: the two absent streams are absent because the scheme does not require them, not because the checkpoint forgot an operand."
   },
   "THE_FIVE_CLUSTER_AUTHORITY_MAP": {
-    "method": "each cluster answers the same two questions \u2014 what must it REACH, and what must it NOT control \u2014 so that all 14 can eventually retire without pretending they are one authority. One cell is deliberately OPEN: a decomposition that closes every cell on the first attempt has usually forced a leaf into a neighbour.",
+    "method": "each cluster answers the same two questions \u2014 what must it REACH, and what must it NOT control \u2014 so that all 14 can eventually retire without pretending they are one authority. One cell was published OPEN and closed only by tracing the library; a decomposition that closes every cell on the first attempt has usually forced a leaf into a neighbour.",
     "1_codec_identity_and_decode_arithmetic": {
       "leaves": [
         "format (x2)",
@@ -90,19 +90,19 @@
       "must_reach": "artifact/storage lifecycle state \u2014 that the shipped tensors ARE compressed rather than carrying a recipe awaiting application.",
       "must_NOT_control": "FP4 arithmetic. A checkpoint declaring `frozen` or `calibration` with these same config groups is a different artifact and needs a different answer."
     },
-    "3_weights_dynamic_REOPENED": {
+    "3_static_weight_qparam_representation": {
       "leaves": [
         "dynamic"
       ],
       "count": 1,
-      "status": "**REOPENED \u2014 this document originally called it `activation_state` and that was wrong.** See the reconnaissance document's `corrections`.",
-      "must_reach": "NOT YET ESTABLISHED. Upstream defines `dynamic: false` as `the quantization parameters generated are static`, i.e. the weight scales were computed at export and stored. Candidate homes \u2014 static weight-qparam/export state, artifact representation metadata, the `observer` provenance plane, or a precondition on the estate beside `quantization_status` \u2014 are recorded in the reconnaissance and none is selected.",
-      "must_NOT_control": "activation or input representation semantics, which is precisely the authority this document first borrowed for it. `input_activations` is a different leaf and is null here.",
-      "consequence": "the cluster count may be five or six. The map is published with an open cell rather than a tidy one."
+      "status": "reopened, then CLOSED by a trace of the library rather than by its docstring \u2014 see the reconnaissance document.",
+      "must_reach": "representation/storage semantics: the precondition under which a `weight_scale` operand EXISTS. `dynamic: false` means the scales were computed once at export and are stored, which is why the estate carries a scale stream at all.",
+      "must_NOT_control": "activation or input representation semantics (the authority this document first borrowed for it), and not exporter provenance either \u2014 unlike `observer`, changing it changes what the artifact contains and what the forward pass does.",
+      "the_evidence": "`initialize_qparams` returns immediately when `dynamic is True`, so no scale parameter is created and none is persisted; `forward` reads a stored scale only in the static branch; and `MXFP4PackedCompressor.can_compress` never consults `dynamic`, so it is not an admission precondition."
     }
   },
   "COUNT_STILL_NOT_FROZEN": {
-    "position": "unchanged by the oracle, and further from frozen than this document first suggested. The oracle settled cluster 1's arithmetic; it said nothing about clusters 2, 4 and 5, and cluster 3's authority is now reopened. `24 -> N` cannot be stated until that cell closes.",
+    "position": "the map now closes at five authorities, with `weights.dynamic` in the representation/storage cell. That does NOT make `24 -> 10` frozen: it makes it statable. Whether scope, provenance and lifecycle acquire honest homes in this transition is still unmeasured, and the forecast belongs in the freeze.",
     "if_only_the_codec_cluster_and_perhaps_lifecycle_retire": "freeze the smaller movement and leave scope, activation state and provenance to explicit metadata/provenance transitions.",
     "if_all_five_can_be_represented_honestly_in_one_coherent_compressed_artifact_transition": "24 -> 10 becomes earned rather than assumed.",
     "the_outcome_to_avoid": "a 6 -> 0 operand closure and a 24 -> 10 count achieved by making every quantization leaf disappear behind `MXFP4 supported`. The decomposition above exists to make that impossible to do accidentally."
@@ -112,5 +112,11 @@
     "extend the fixture beyond one w1: real w2 and w3, from DIFFERENT experts, at boundary blocks rather than block zero, and a slice crossing a row boundary",
     "decide the binding: how `weight_packed`/`weight_scale` per-expert pairs become planned operands, and whether that is 5,376 operands or 2,688 with an auxiliary stream",
     "then, and only then, the freeze"
-  ]
+  ],
+  "ANTI_CHEAT_CONTROLS_FOR_THE_FREEZE": {
+    "observer_cannot_retire_from_codec_support": "`observer: \"minmax\"` records how the exporter chose the scales and has no decode consequence. It may only retire if it acquires a truthful provenance home.",
+    "weights_dynamic_must_not_be_retired_by_activation_state_handling": "a WITNESSED historical failure mode on this very branch, not a hypothetical mutant \u2014 this decomposition made exactly that error and corrected it. Its home is representation/storage.",
+    "scope_leaves_cannot_select_tensor_representation": "`targets` and `ignore` describe the exporter's selection policy; the stored estate decides an individual operand's representation.",
+    "topk_method_remains_untouched": "fenced out of this rung entirely."
+  }
 }

@@ -52,7 +52,7 @@
         "#101 weights.dynamic = false"
       ],
       "count": 1,
-      "status": "**REOPENED.** This reconnaissance first filed it as `activation_quantisation` and that was WRONG \u2014 see `corrections`. Its authority is not yet established, and forcing it into one of the other four to keep the count at five would be exactly the error the decomposition exists to prevent.",
+      "status": "**REOPENED, then CLOSED by a trace of compressed-tensors 0.18.0 \u2014 not by the docstring.** The question asked was narrow: if an otherwise equivalent scheme had `weights.dynamic=true`, what changes in initialization, admission, persistent streams, decompression and forward execution?",
       "what_upstream_says_it_means": "`QuantizationArgs.dynamic`: True = every quantization parameter is generated on the fly; False = the parameters generated are STATIC. So `weights.dynamic: false` says the weight scales were computed once at export and are stored. It says nothing about activations.",
       "candidate_homes_none_selected": [
         "static weight-qparam / export-procedure state",
@@ -60,7 +60,23 @@
         "the same provenance plane as `observer` \u2014 `dynamic` says the scales are static, `observer` says how those static scales were chosen",
         "a precondition on the ESTATE alongside `quantization_status`: were it true, the scales would not be stored at all and the operand set would differ"
       ],
-      "why_it_is_left_open": "the cluster count may still be five, or it may become six. That is precisely why 24 -> N is not frozen."
+      "why_it_is_left_open": "the cluster count may still be five, or it may become six. That is precisely why 24 -> N is not frozen.",
+      "the_trace": {
+        "initialization": "`quantization/lifecycle/initialize.py::initialize_qparams` opens with `if dynamic is True: return` \u2014 **no `weight_scale` parameter is created at all**. The scale does not exist to be compressed.",
+        "admission": "`MXFP4PackedCompressor.can_compress` checks the module type, `num_bits == 4`, `type == float` and `group_size == 32`. It does **NOT** consult `dynamic`. So MXFP4 does not reject a dynamic weight scheme at admission \u2014 the first of the three candidate answers is FALSIFIED.",
+        "legality": "`QuantizationArgs`'s validator permits dynamic quantisation for the TOKEN, TENSOR, TENSOR_GROUP and GROUP strategies. K3 declares GROUP, so `dynamic=true` would have been legal here. This leaf is a real choice, not a constant.",
+        "persistent_streams": "follows from initialization: with no `weight_scale` parameter there is no scale stream to persist. **The stored representation differs** \u2014 the second candidate answer is CONFIRMED.",
+        "forward_execution": "`lifecycle/forward.py`: `if args.dynamic in (True, LOCAL): scale, zero_point = compute_dynamic_scales_and_zp(...)` else `scale = getattr(module, f\"{base_name}_scale\")`. Execution reads a STORED scale only in the static case.",
+        "the_third_candidate_answer": "FALSIFIED. It is not the case that only calibration or forward behaviour changes while the persisted representation stays identical. The persisted representation is exactly what changes."
+      },
+      "verdict": "**`weights.dynamic` belongs to REPRESENTATION / STORAGE semantics.** It is the precondition under which a `weight_scale` operand exists at all: `false` means the scales were computed once and are stored, and the estate carries them; `true` means no scale is ever created, nothing is persisted, and the forward pass derives them per call. That is a fact about what the artifact CONTAINS, which is the operand plane's own business.",
+      "what_it_is_therefore_NOT": {
+        "not_exporter_provenance": "unlike `observer`, changing it changes what the checkpoint contains and what the forward pass does.",
+        "not_lifecycle_state": "`quantization_status: compressed` says where the artifact sits in the quantisation lifecycle; `dynamic: false` says whether the qparams are fixed or recomputed. Adjacent, not the same.",
+        "not_activation_state": "the error this document made and corrected. `input_activations` is a different leaf and is null here."
+      },
+      "a_coupling_worth_recording": "upstream FORCES `observer = None` when `dynamic is True` (with a warning), and defaults it to `memoryless_minmax` otherwise. So `observer: \"minmax\"` on K3 is itself corroborating evidence that the weights are static. The two leaves are related and still distinct: `dynamic` decides WHETHER static qparams exist, `observer` decides HOW they were chosen given that they do. A decomposition that merged them would lose the first question.",
+      "consequence_for_the_count": "the cluster map closes at FIVE authorities after all \u2014 but with `weights.dynamic` in the representation/storage cell rather than an activation one, which is a different retirement path and a different anti-cheat control. It may legitimately retire under this rung, because the representation plane genuinely governs it; it must never retire via activation-state handling."
     }
   },
   "F2_THE_DECLARED_SCOPE_DOES_NOT_DECIDE_THE_ESTATE": {
