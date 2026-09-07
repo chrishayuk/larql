@@ -113,38 +113,68 @@ fn every_codec_declares_its_extents_from_the_base_up_and_refuses_past_them() {
 
 /// Which codecs are progressive, and what the terminal ones still promise.
 ///
-/// A terminal codec declares no radius — its reconstruction error is
-/// measured per encoder and per tensor, and a number in the certificate
-/// would promote one measurement to a property of the format. A
-/// progressive one MUST declare one per extent, because a caller choosing
-/// a depth is choosing a fidelity and has nothing else to choose by.
+/// What a codec may declare follows from the REFERENT, not from how many
+/// extents it has.
+///
+/// A certificate bounds decoded values against the typed logical source
+/// tensor presented at the representation boundary. So a codec that
+/// carries its source losslessly can honestly say `0.0` — the identity,
+/// or a widening that loses nothing, or entropy coding that is
+/// byte-identical once inflated. A codec that FITS its source can say
+/// nothing: the error belongs to the instance that was encoded, and a
+/// number in the certificate would promote one measurement to a property
+/// of the format. Only an attestation can supply that.
+///
+/// The old rule here was "a single-extent codec declares no radius",
+/// which conflated the two questions: it is not the extent count that
+/// decides, it is whether anything was thrown away.
 #[test]
-fn only_the_progressive_codec_declares_a_radius_and_it_declares_one_per_extent() {
+fn only_a_lossless_carrier_declares_a_radius_and_a_progressive_one_declares_one_per_extent() {
+    // Lossless carriers of their own typed logical source.
+    const LOSSLESS: [&str; 4] = ["BF16", "F16", "F32", "BF16_ZLIB"];
+    // Codecs that fit their source, and so certify nothing without an
+    // attestation for the instance.
+    const FITTED: [&str; 6] = ["Q4_K", "Q6_K", "Q8_0", "NVFP4", "MXFP4", "VQ8_SHARED"];
+
     let progressive: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| c.extents().len() > 1)
         .map(|c| c.encoding_label())
         .collect();
     assert_eq!(progressive, ["F32_PLANES"]);
+
     for codec in builtin() {
         let label = codec.encoding_label();
         let extents = codec.extents();
-        if extents.len() == 1 {
+        if extents.len() > 1 {
             assert!(
-                extents[0].radius.is_none(),
-                "{label}: no radius is declared, only measured"
+                extents.iter().all(|c| c.radius.is_some()),
+                "{label}: an extent without a radius cannot be chosen by fidelity"
+            );
+            assert_eq!(
+                extents.last().unwrap().radius.as_ref().unwrap().radius(),
+                0.0,
+                "{label}: the terminal extent reconstructs its source exactly"
             );
             continue;
         }
-        assert!(
-            extents.iter().all(|c| c.radius.is_some()),
-            "{label}: an extent without a radius cannot be chosen by fidelity"
-        );
-        assert_eq!(
-            extents.last().unwrap().radius.as_ref().unwrap().radius(),
-            0.0,
-            "{label}: the terminal extent reconstructs exactly"
-        );
+        let radius = extents[0].radius.as_ref().map(|r| r.radius());
+        if LOSSLESS.contains(&label) {
+            assert_eq!(
+                radius,
+                Some(0.0),
+                "{label}: a lossless carrier states 0.0 rather than declining to state"
+            );
+        } else {
+            assert!(
+                FITTED.contains(&label),
+                "{label}: every shipped codec is a lossless carrier or a fitted one;                  a new one must say which"
+            );
+            assert_eq!(
+                radius, None,
+                "{label}: a fitted codec's error is measured per instance, not declared"
+            );
+        }
     }
 }
 

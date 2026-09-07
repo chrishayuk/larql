@@ -6,6 +6,7 @@ use std::ops::Range;
 use super::super::capability::{AccessGranularity, CodecCapabilities};
 use super::super::error::CodecError;
 use super::super::extent::{ExtentCertificate, RepresentationExtent, BITS_PER_BYTE};
+use super::super::fidelity::FidelityCertificate;
 use super::super::geometry::RowGeometry;
 use super::super::residency::{Acceleration, ResidencyProfile};
 use super::super::streams::{CodecOperands, StreamSpec, VALUES};
@@ -120,7 +121,17 @@ impl RepresentationCodec for FloatCodec {
     }
 
     fn extents(&self) -> Vec<ExtentCertificate> {
-        vec![ExtentCertificate::terminal(self.bits_per_weight())]
+        // `0.0` against the TYPED LOGICAL SOURCE: f32 stored as f32 is the
+        // identity, and f16/bf16 stored as themselves are lossless
+        // carriers whose values widen to f32 exactly. None of the three
+        // is claiming to be a good approximation of some wider tensor
+        // upstream — the referent is the source presented at the
+        // representation boundary, at the dtype it was presented in.
+        vec![ExtentCertificate::certified(
+            0,
+            self.bits_per_weight(),
+            FidelityCertificate::relative_rms(0.0).expect("zero is a finite, non-negative radius"),
+        )]
     }
 
     fn stored_bytes(

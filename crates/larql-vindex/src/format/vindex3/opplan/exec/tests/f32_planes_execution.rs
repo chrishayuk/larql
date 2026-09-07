@@ -275,8 +275,8 @@ fn the_pin_takes_the_depth_the_budget_and_the_floor_leave_it() {
     let (plan, store) = plan_and_store(dir.path());
     assert!(!planed.is_empty());
 
-    // A — nothing pressing, exact reconstruction required: every
-    // progressive pin is on the whole artifact.
+    // A — nothing pressing, the complete stored representation
+    // required: every progressive pin is on the whole artifact.
     let generous = ResidencyBudget::UNBOUNDED;
     let (whole_records, whole) = select(&plan, &store, &generous).expect("nothing to refuse");
     let depths = pinned_depths(&whole_records);
@@ -292,13 +292,14 @@ fn the_pin_takes_the_depth_the_budget_and_the_floor_leave_it() {
     let tight = ResidencyBudget::UNBOUNDED.with_prepare_bytes(whole.read_to_prepare * 3 / 4);
     let refusal = select(&plan, &store, &tight).expect_err("the budget cannot be met exactly");
     assert!(
-        refusal.contains("preparation opens") && refusal.contains("exact reconstruction"),
+        refusal.contains("preparation opens")
+            && refusal.contains("the complete stored representation"),
         "{refusal}"
     );
 
     // C — the same budget, with a floor that admits a shallower extent:
     // now the pin moves, and only as far as it had to.
-    let relaxed = tight.with_fidelity(RepresentationFloor::RelativeRms(5e-3));
+    let relaxed = tight.with_fidelity(RepresentationFloor::Within(5e-3));
     let (shallow_records, shallow) = select(&plan, &store, &relaxed).expect("a floor with room");
     let moved = pinned_depths(&shallow_records);
     assert!(
@@ -344,7 +345,7 @@ fn a_floor_finer_than_any_shallow_extent_leaves_only_the_terminal_one() {
     // qualifies and the preparation cannot shrink.
     let budget = ResidencyBudget::UNBOUNDED
         .with_prepare_bytes(whole.read_to_prepare * 3 / 4)
-        .with_fidelity(RepresentationFloor::RelativeRms(1e-9));
+        .with_fidelity(RepresentationFloor::Within(1e-9));
     let refusal = select(&plan, &store, &budget).expect_err("no extent is fine enough");
     assert!(refusal.contains("relative RMS at or under"), "{refusal}");
 }

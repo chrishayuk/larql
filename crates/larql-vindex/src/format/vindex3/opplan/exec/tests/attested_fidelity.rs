@@ -183,7 +183,7 @@ fn a_floor_is_met_or_missed_by_the_composition_and_not_by_either_half() {
     assert_eq!(evidence.count(), 1, "the parent is attested and verified");
 
     let key = (built.address(), 0);
-    let floor = RepresentationFloor::RelativeRms(FLOOR);
+    let floor = RepresentationFloor::Within(FLOOR);
     // A depth the options are NOT at, so `admits` cannot wave them
     // through as "terminal" and actually has to judge the radius.
     let terminal = RepresentationExtent::BASE;
