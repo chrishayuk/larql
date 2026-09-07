@@ -71,8 +71,12 @@ use super::auxiliary_references::OperandAddress;
 use super::represent::codec::{DomainId, FidelityCertificate, MetricId, SemanticId};
 use crate::error::VindexError;
 
+pub mod tuple;
+
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_tuple;
 
 /// The schema this build implements. A table stamped with anything else
 /// is refused rather than read optimistically: an attestation is a
