@@ -77,6 +77,7 @@ pub mod assess;
 pub mod authority;
 pub mod bind;
 pub mod candidate;
+pub mod coexecution;
 pub mod evidence_bank;
 pub mod footprint;
 pub mod graph;
