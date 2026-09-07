@@ -66,6 +66,7 @@ fn component_error_alone_does_not_support_a_quality_claim() {
     assert_eq!(r.quality_proven_by(), None);
 
     let gate = QualityGate {
+        require_model_activations: None,
         id: "kimi-logit-v1".into(),
         positions_min: 512,
         kl_p99_max: 1e-3,
@@ -79,6 +80,7 @@ fn component_error_alone_does_not_support_a_quality_claim() {
         route_mixture_mass_max: None,
     };
     let bank = QualityBank {
+        activations: None,
         positions: 19,
         logits: LogitEvidence {
             kl_p50: 1e-5,
@@ -209,6 +211,7 @@ fn promotable_requires_the_ladder_quality_and_throughput_together() {
     let passing = QualityEvidence {
         gate: kimi_logit_v1(),
         bank: QualityBank {
+            activations: None,
             positions: 8192,
             logits: LogitEvidence {
                 kl_p50: 1e-6,

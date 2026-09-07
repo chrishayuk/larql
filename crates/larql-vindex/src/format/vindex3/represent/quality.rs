@@ -80,6 +80,16 @@ pub struct QualityGate {
     /// every claim that ever cited it, so it arrives with a new id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub covered_mass_min: Option<f64>,
+    /// Whether this gate requires the bank's numbers to have been
+    /// measured over the model's OWN activations.
+    ///
+    /// `None` means the gate does not judge the substrate — appropriate
+    /// for a mechanism gate. `Some(true)` means a synthetic or unstated
+    /// substrate fails, which is what any gate carrying a MAGNITUDE must
+    /// set. There is deliberately no `Some(false)`-means-forbidden case:
+    /// a gate never demands a synthetic substrate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_model_activations: Option<bool>,
 }
 
 /// What the bank measured about the output distribution.
@@ -206,6 +216,12 @@ pub struct QualityBank {
     /// by gates that ask for it — see [`kimi_logit_v2`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_covered_mass: Option<f64>,
+    /// **Where the activations behind every number above came from.**
+    ///
+    /// Optional so older records deserialize, but absence is refused by
+    /// any gate that asks — see [`Criterion::ActivationAuthority`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activations: Option<super::activation::ActivationSource>,
     /// **How close the top-10 orderings that changed actually were.**
     ///
     /// The baseline's rank-10-minus-rank-11 logit gap at each position
@@ -269,6 +285,13 @@ pub enum Criterion {
     /// gets `None` must fail rather than assume the truncation was
     /// wide enough.
     CoveredMass,
+    /// The bank did not say where its activations came from, or said
+    /// they were synthetic. A gate that asks for model activations and
+    /// gets either must fail: a synthetic substrate may prove mechanism
+    /// and fire controls, never a magnitude, and an unstated one is
+    /// indistinguishable from a synthetic one. See
+    /// [`super::activation`].
+    ActivationAuthority,
 }
 
 impl Criterion {
@@ -283,6 +306,7 @@ impl Criterion {
             Criterion::TopKDisplacement => "top10_mass_displaced",
             Criterion::RouteDisplacement => "route_mixture_mass",
             Criterion::CoveredMass => "min_covered_mass",
+            Criterion::ActivationAuthority => "activations",
         }
     }
 }
@@ -410,6 +434,13 @@ impl QualityGate {
                 )),
                 Some(got) if got <= limit => {}
                 Some(got) => failures.push((criterion, format!("{what} {got:.4} > {limit:.4}"))),
+            }
+        }
+        if self.require_model_activations == Some(true) {
+            if let Some(refusal) =
+                super::activation::refuse_unless_model_execution(bank.activations.as_ref())
+            {
+                failures.push((Criterion::ActivationAuthority, refusal.to_string()));
             }
         }
         if let Some(required) = self.covered_mass_min {
@@ -676,6 +707,13 @@ pub fn kimi_logit_v1() -> QualityGate {
         route_flip_max: Some(82),
         // v1 does not ask about coverage. See `kimi_logit_v2`.
         covered_mass_min: None,
+        // Nor about the substrate. These gates predate
+        // ACTIVATION-AUTHORITY-1; their banks were real, but the record
+        // does not SAY so, and a gate is not permitted to assume it.
+        // A new gate id is required to start judging it — changing a
+        // threshold under an existing id is what the id exists to
+        // prevent.
+        require_model_activations: None,
         // Nor about consequence. See `kimi_logit_v3`.
         top1_mass_displaced_max: None,
         top10_mass_displaced_p99_max: None,
@@ -710,6 +748,7 @@ pub fn kimi_logit_v2() -> QualityGate {
     QualityGate {
         id: "kimi-logit-v2".into(),
         covered_mass_min: Some(0.60),
+        require_model_activations: None,
         ..kimi_logit_v1()
     }
 }
@@ -807,6 +846,7 @@ pub fn kimi_logit_balanced_v1() -> QualityGate {
         id: "kimi-logit-balanced-v1".into(),
         kl_p99_max: 3.5e-3,
         covered_mass_min: Some(0.55),
+        require_model_activations: None,
         top1_mass_displaced_max: Some(0.12),
         top10_mass_displaced_p99_max: Some(0.12),
         ..kimi_logit_v3()

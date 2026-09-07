@@ -102,6 +102,7 @@ fn dist(p99: f64) -> Option<Distribution> {
 
 fn observation(kl_p99: f64) -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,

@@ -347,6 +347,8 @@ pub struct BankBuilder {
     top1_margins: Vec<f64>,
     top1_candidate_margins: Vec<f64>,
     top1_masses: Vec<f64>,
+    /// Set by [`BankBuilder::activations`]; `None` until stated.
+    activations: Option<super::activation::ActivationSource>,
 }
 
 impl BankBuilder {
@@ -448,9 +450,20 @@ impl BankBuilder {
         sorted[rank.min(sorted.len()) - 1]
     }
 
+    /// State where this bank's activations came from.
+    ///
+    /// Not defaulted: a builder that never says leaves `None`, and any
+    /// gate carrying a magnitude then refuses the bank by name rather
+    /// than assuming it was real.
+    pub fn activations(mut self, source: super::activation::ActivationSource) -> Self {
+        self.activations = Some(source);
+        self
+    }
+
     pub fn finish(mut self) -> QualityBank {
         self.kls.sort_by(f64::total_cmp);
         QualityBank {
+            activations: self.activations.take(),
             positions: self.kls.len() as u64,
             logits: LogitEvidence {
                 kl_p50: Self::percentile(&self.kls, 0.50),

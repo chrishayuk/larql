@@ -31,6 +31,7 @@ fn dist(p99: f64, max: f64) -> Option<Distribution> {
 /// positions. `kimi_full4-selection-8192_report.json`.
 fn four_family_selection() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
@@ -63,6 +64,7 @@ fn four_family_selection() -> QualityBank {
 /// `kimi_full4-heldout-8192_report.json`.
 fn four_family_heldout() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p99: 2.6174e-3,
@@ -88,6 +90,7 @@ fn four_family_heldout() -> QualityBank {
 /// (2048/163840). Every CEILING is perfect. Only a floor catches it.
 fn flat_instrument() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,

@@ -141,6 +141,7 @@ fn intent(scale: EvidenceScale) -> MeasurementIntent {
 
 fn observation() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
