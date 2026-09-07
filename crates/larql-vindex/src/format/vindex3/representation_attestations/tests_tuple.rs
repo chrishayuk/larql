@@ -85,7 +85,11 @@ fn an_attestation_that_still_describes_the_operand_is_bound() {
     let operand = address();
     let status = table.status_of(&subject(&operand, &SHAPE), &recognising());
     assert!(matches!(status, AttestationStatus::Bound(_)));
-    assert!(status.unavailable_because(&recognising()).is_none());
+    // Bound, and therefore still unavailable: step 4 made the payload
+    // check part of the binding, so the tuple holding is no longer the
+    // end of the story.
+    let why = status.unavailable_because(&recognising()).unwrap();
+    assert!(why.contains("payload has not been checked"), "{why}");
     assert_eq!(status.attestation().unwrap().claimed().radius(), 0.031);
 }
 

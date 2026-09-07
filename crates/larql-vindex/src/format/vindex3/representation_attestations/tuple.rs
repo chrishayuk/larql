@@ -37,6 +37,7 @@
 
 use std::collections::BTreeMap;
 
+use super::super::represent::codec::FidelityCertificate;
 use super::recognition::{gap, RecognisedMethods, RecognitionGap};
 use super::{AttestationTable, JudgedAttestation};
 use crate::format::vindex3::auxiliary_references::OperandAddress;
@@ -105,6 +106,15 @@ pub enum StalenessCause {
         attested: String,
         found: String,
     },
+    /// The bytes are not the bytes that were measured.
+    ///
+    /// The one cause that cannot be raised by the tuple check: the
+    /// container holds no per-tensor digest, so this is decided at
+    /// preparation against the payload itself.
+    ContentDigest {
+        attested: String,
+        found: String,
+    },
     /// Only ever raised when the caller supplied an expectation.
     SourceDigest {
         attested: String,
@@ -142,6 +152,10 @@ impl StalenessCause {
             } => format!(
                 "its dependency `{name}` was `{attested}` when the error was measured and is now \
                  `{found}`; the measurement is about the pair, not about the codes alone"
+            ),
+            Self::ContentDigest { attested, found } => format!(
+                "its bytes hash to `{found}` and it was measured on `{attested}`; the operand was \
+                 re-encoded, or the payload is not the one the attestation is about"
             ),
             Self::SourceDigest { attested, expected } => format!(
                 "it was measured against source `{attested}` and the caller expects `{expected}`"
@@ -186,7 +200,13 @@ pub enum AttestationStatus<'a> {
     /// The tuple holds and the authority is recognised. NOT yet a usable
     /// guarantee: the content digest still has to match, which needs the
     /// bytes.
+    ///
+    /// A separate state from [`Verified`](Self::Verified) so that "we
+    /// have not looked at the payload yet" can never be mistaken for "the
+    /// payload is right". Only `Verified` hands over a certificate.
     Bound(&'a JudgedAttestation),
+    /// Everything checked: the tuple, the authority, and the bytes.
+    Verified(&'a JudgedAttestation),
 }
 
 impl AttestationStatus<'_> {
@@ -196,7 +216,50 @@ impl AttestationStatus<'_> {
             Self::Absent { .. } => None,
             Self::Stale { attestation, .. } => Some(attestation),
             Self::Unrecognised { attestation, .. } => Some(attestation),
-            Self::Bound(attestation) => Some(attestation),
+            Self::Bound(attestation) | Self::Verified(attestation) => Some(attestation),
+        }
+    }
+
+    /// The certificate a caller may actually rely on.
+    ///
+    /// `Some` only when everything has been checked. A `Bound` status
+    /// returns `None` — not because anything is wrong with it, but
+    /// because its payload has not been looked at, and handing over a
+    /// radius at that point would be the whole plane's failure in one
+    /// method.
+    pub fn certificate(&self) -> Option<&FidelityCertificate> {
+        match self {
+            Self::Verified(attestation) => Some(attestation.claimed()),
+            _ => None,
+        }
+    }
+
+    /// Stage two: check the attested content digest against the bytes.
+    ///
+    /// Called at preparation, where the payload is being read anyway, so
+    /// the check costs a hash and not a second load. A mismatch demotes
+    /// the status to [`Stale`](Self::Stale) — an attestation about bytes
+    /// that are no longer there has expired in the most literal way
+    /// available.
+    ///
+    /// Every other status passes through untouched: bytes cannot rescue
+    /// an attestation nobody wrote, cannot un-expire a stale one, and
+    /// cannot make an unrecognised authority recognised.
+    pub fn verified_against(self, bytes: &[u8]) -> Self {
+        let Self::Bound(attestation) = self else {
+            return self;
+        };
+        let found = super::content_digest(bytes);
+        if found == attestation.binding.content_digest {
+            Self::Verified(attestation)
+        } else {
+            Self::Stale {
+                attestation,
+                cause: StalenessCause::ContentDigest {
+                    attested: attestation.binding.content_digest.clone(),
+                    found,
+                },
+            }
         }
     }
 
@@ -219,7 +282,12 @@ impl AttestationStatus<'_> {
                 "its attestation is unrecognised: {}",
                 gap.describe(recognised)
             )),
-            Self::Bound(_) => None,
+            Self::Bound(_) => Some(
+                "its attestation is bound but its payload has not been checked; a guarantee is \
+                 not available until the bytes are"
+                    .to_string(),
+            ),
+            Self::Verified(_) => None,
         }
     }
 }

@@ -77,9 +77,26 @@ pub mod tuple;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_digest;
+#[cfg(test)]
 mod tests_recognition;
 #[cfg(test)]
 mod tests_tuple;
+
+/// The digest of an operand's stored content, as an attestation states
+/// it: `sha256:<lowercase hex>`.
+///
+/// Prefixed, unlike the container's own `payload_sha256`, because that
+/// field names its algorithm and this one does not. An attestation
+/// outlives the build that wrote it, and a bare hex string that turns out
+/// to be some other algorithm is unfalsifiable — it simply never matches,
+/// and nobody can tell that from a tampered payload.
+pub fn content_digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("sha256:{:x}", hasher.finalize())
+}
 
 /// The schema this build implements. A table stamped with anything else
 /// is refused rather than read optimistically: an attestation is a

@@ -111,10 +111,14 @@ fn the_same_attestation_is_usable_or_not_purely_by_recognition() {
         table.status_of(&subject, &recognised),
         AttestationStatus::Bound(_)
     ));
-    assert!(table
+    // Recognised, so the only thing left between it and a guarantee is
+    // its payload — which this test deliberately does not supply, because
+    // it is about recognition and nothing else.
+    let why = table
         .status_of(&subject, &recognised)
         .unavailable_because(&recognised)
-        .is_none());
+        .unwrap();
+    assert!(why.contains("payload has not been checked"), "{why}");
 
     let stranger = RecognisedMethods::none()
         .with_authority("someone-else")
