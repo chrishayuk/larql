@@ -103,6 +103,24 @@ pub struct OperandStore {
     /// because the store is what resolves one: a codec asks for a
     /// dependency by name and never learns where it came from.
     references: crate::format::vindex3::auxiliary_references::ReferenceTable,
+    /// What this container measures about its own representations.
+    ///
+    /// Empty for every container written before attestation existed,
+    /// which is every container this build has ever read — so an empty
+    /// table is the normal case and means "nothing measured", never "the
+    /// file failed to load". A table the index NAMES and the container
+    /// does not hold is a refusal at open, on the same terms as the
+    /// reference table beside it.
+    attestations: crate::format::vindex3::representation_attestations::AttestationTable,
+    /// Whose measurements this build is willing to act on.
+    ///
+    /// [`RecognisedMethods::none`] by default, which is what a build that
+    /// has qualified no measurement should say: an attestation is carried
+    /// and checked either way, but an unrecognised one leaves the
+    /// guarantee unavailable rather than optimistic. Recognition is a
+    /// TRUST decision and belongs to the caller, not to the container
+    /// making the claim about itself.
+    recognised: crate::format::vindex3::representation_attestations::recognition::RecognisedMethods,
     /// Which objects this store has actually resolved an operand out of.
     ///
     /// The consumption half of the residency ledger. `load_count` says
@@ -343,9 +361,23 @@ impl OperandStore {
             }
             None => crate::format::vindex3::auxiliary_references::ReferenceTable::empty(),
         };
+        // The attestation table, on the same terms as the reference table
+        // above: named-but-absent is a refusal here rather than a silent
+        // loss of every guarantee at the first floor that needed one.
+        let attestations = match &inspection.index.representation_attestations {
+            Some(name) => {
+                crate::format::vindex3::representation_attestations::RepresentationAttestations::read(
+                    root, name,
+                )?
+            }
+            None => crate::format::vindex3::representation_attestations::AttestationTable::empty(),
+        };
         Ok(Self {
             registry: CodecRegistry::builtin(),
             references,
+            attestations,
+            recognised:
+                crate::format::vindex3::representation_attestations::recognition::RecognisedMethods::none(),
             mapped: std::sync::Mutex::new(BTreeMap::new()),
             regions: std::sync::atomic::AtomicUsize::new(0),
             segments,
@@ -371,6 +403,17 @@ impl OperandStore {
     /// codec absent from it is refused everywhere.
     pub fn with_registry(mut self, registry: &'static CodecRegistry) -> Self {
         self.registry = registry;
+        self
+    }
+
+    /// The same store, acting on measurements from these authorities and
+    /// methods. Trust is the caller's to declare — a container cannot
+    /// make itself believed by attesting more loudly.
+    pub fn with_recognised(
+        mut self,
+        recognised: crate::format::vindex3::representation_attestations::recognition::RecognisedMethods,
+    ) -> Self {
+        self.recognised = recognised;
         self
     }
 
@@ -587,6 +630,20 @@ impl OperandStore {
     /// walks, and what a decode resolves through.
     pub fn references(&self) -> &crate::format::vindex3::auxiliary_references::ReferenceTable {
         &self.references
+    }
+
+    /// What this container measures about its own representations.
+    pub fn attestations(
+        &self,
+    ) -> &crate::format::vindex3::representation_attestations::AttestationTable {
+        &self.attestations
+    }
+
+    /// Whose measurements this build acts on.
+    pub fn recognised(
+        &self,
+    ) -> &crate::format::vindex3::representation_attestations::recognition::RecognisedMethods {
+        &self.recognised
     }
 
     /// Every dependency `operand`'s codec requires at `extent`, resolved:

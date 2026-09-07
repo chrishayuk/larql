@@ -21,6 +21,10 @@ pub const WEIGHT_MANIFEST_JSON: &str = "weight_manifest.json";
 /// codec's named dependency. Absent from every container that declares
 /// none — see `vindex3::auxiliary_references`.
 pub const AUXILIARY_REFERENCES_JSON: &str = "auxiliary_references.json";
+/// Where a container states what its represented operands ACHIEVED, as
+/// opposed to what their codecs guarantee. Absent from every container
+/// that attests nothing — see `vindex3::representation_attestations`.
+pub const REPRESENTATION_ATTESTATIONS_JSON: &str = "representation_attestations.json";
 pub const KNN_STORE_BIN: &str = "knn_store.bin";
 pub const MODEL_WEIGHTS_BIN: &str = "model_weights.bin";
 

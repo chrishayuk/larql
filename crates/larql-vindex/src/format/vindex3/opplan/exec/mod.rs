@@ -20,6 +20,7 @@
 
 pub mod accounting;
 pub mod attention_residual;
+pub mod attested_fidelity;
 pub mod backend;
 pub mod continuation;
 pub mod controls;
@@ -28,6 +29,7 @@ pub mod cpu;
 pub mod decode;
 pub mod device;
 mod experts;
+pub mod fidelity_carriage;
 pub mod gated_delta;
 pub mod hyper_connection;
 pub mod kda;

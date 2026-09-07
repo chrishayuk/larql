@@ -1423,6 +1423,13 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
             .realization
             .with_access(budget.expert_access);
     }
+    // The floor gates SELECTION, so it is asked about what was selected
+    // — here, before any budget pressure — and not only about the
+    // shallower extents the loop below considers moving to.
+    super::fidelity_carriage::enforce_floor(
+        selected.iter().map(|(record, _)| record),
+        budget.fidelity,
+    )?;
     let geometry = BlockGeometry::executor();
     let stored_len = |op: &OperandRef| store.stored_len(op);
     let mut switches: Vec<String> = Vec::new();
@@ -1432,6 +1439,14 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
         let ledger = ResourceLedger::aggregate(&priced);
         let deficit = budget.deficit(&ledger);
         if deficit.is_zero() {
+            // No second floor check here, deliberately. The initial
+            // selection was enforced above, and the ONLY assignment to
+            // `extent.selected` after it takes its extent from
+            // `shallowest_saving`, which already filters candidates by
+            // `fidelity.admits`. Reselection is therefore enforced at the
+            // point of choice, and a re-check on the way out could never
+            // fire — a refusal that cannot happen is not a guarantee, it
+            // is decoration, and this plane exists to remove those.
             return Ok(records);
         }
         // Preparation overruns are answered by reading LESS of an
@@ -1644,11 +1659,14 @@ fn select_records<B: PlanBackend + ?Sized>(
             Err(refusal) => refusals.push(*refusal),
         }
     }
-    if refusals.is_empty() {
-        Ok(records)
-    } else {
-        Err(VindexError::Parse(SelectionRefusals(refusals).to_string()))
+    if !refusals.is_empty() {
+        return Err(VindexError::Parse(SelectionRefusals(refusals).to_string()));
     }
+    // The floor gates selection, so the certificate it judges has to be
+    // the derived one BEFORE anything consults it. Refusals first: a
+    // plan that is already refused should not pay for verification.
+    super::fidelity_carriage::compose_extent_certificates(&mut records, store)?;
+    Ok(records)
 }
 
 /// The largest saving in bytes-opened any record can make by taking a

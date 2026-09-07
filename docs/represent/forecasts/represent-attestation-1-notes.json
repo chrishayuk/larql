@@ -1,0 +1,51 @@
+{
+  "programme": "represent-plugin-planes",
+  "wave": "REPRESENT-ATTESTATION-1",
+  "status": "IN PROGRESS — steps 1-3 of 7 done. This file accumulates findings AS THEY OCCUR rather than being written at the close, so that a finding is durable at the moment it is made and cannot be smoothed over by what comes after.",
+  "answers": "docs/represent/forecasts/represent-attestation-1.json, frozen `b2aee30c` before any implementation, plus the user's B3 scope addendum",
+
+  "steps_done": {
+    "1": "The versioned `representation_attestations` sidecar and its record type, with the full binding tuple. Judging produces a real `FidelityCertificate`, so an attested claim and a declared claim compose through one algebra.",
+    "2": "The tuple check: metadata-only, pre-I/O, every container-checkable staleness cause refused by name.",
+    "3": "Authority and method recognition, with unrecognised refused distinctly from absent and from stale."
+  },
+
+  "findings": {
+    "ATT1-N1": {
+      "title": "Two of the six staleness causes are NOT container-checkable.",
+      "against": "Witness X3, which asked for six causes refused by name.",
+      "evidence": "`index.rs:154` states it outright: once encoded, the source checkpoint disappears as an authority. An artifact therefore holds neither the source tensor it was fitted to nor the recipe that produced it, so a container cannot say either has changed.",
+      "resolution": "They are carried as IDENTITY and compared only when a caller who HAS them supplies the expectation — a re-encode pipeline, a qualification harness, an external verifier holding the checkpoint. Recording them uncheckably is not decoration: it is what lets a verifier outside this process do the check this process cannot.",
+      "guard": "The test asserts BOTH halves — refused when an expectation is supplied, silent when none is — because a field only ever checked when nobody supplies it is exactly how an unverifiable claim quietly becomes a decorative one.",
+      "scored": "X3 is met in a narrower form than the freeze implied. Recorded as movement, not designed away."
+    },
+    "ATT1-N2": {
+      "title": "A SECOND process-global test instrument races, in the same class as PR1-N5.",
+      "observed": "`weights::staged_tests::the_counters_only_move_for_mapped_images` failed once during the step-3 gate run — `staged_bytes()` read 49436 where `before + 4096` was 41004, a foreign 8432 bytes staged between the two reads. Green on the immediately following full-suite run.",
+      "structural_cause_not_just_a_rerun": "`STAGED_BYTES` and `STAGED_IMAGES` (`weights/staged.rs:116-118`) are process-global `AtomicU64`s. The test reads an exact delta under `#[serial]`, which serialises it only against OTHER `#[serial]` tests — not against the binary. `opplan/exec/experts.rs` and `opplan/exec/weights/mod.rs` both reach `StagedF32::stage` with ZERO serial annotations, so any test exercising those paths concurrently moves the counters underneath this assertion.",
+      "not_caused_by_this_wave": "ATTESTATION-1 stages no f32 images. Adding 17 tests to the binary changed thread interleaving, which is what surfaced it. The argument is structural rather than a re-run: the statics, the two unserialised increment sites, and the absence of any staging in this wave's code.",
+      "handling": "Recorded, NOT fixed here and NOT worked around. Relocating the test into its own binary would make the assertion pass while leaving the process-global instrumentation defect intact — the same reasoning that produced the documented waiver for PR1-N5 in PROGRESSIVE-1.",
+      "consequence": "The debt named as D1/D3 in the freeze now has a second instrument behind it. Execution-scoped accounting is owed before any further qualified performance claim, and 'the stage ledger' is no longer the only process-global instrument that cannot support one."
+    }
+  },
+
+  "design_decisions_worth_recording": {
+    "nothing_is_recognised_by_default": "`RecognisedMethods::none()` is the default. No encoder in this build produces attestations, so this build has qualified no authority and no method. A convenience default — recognising anything calling itself `larql-encoder`, say — would mean any file claiming that name could assert any radius it liked, defeating the plane with its own default. The deliberate cost: an artifact full of attestations is unusable until a caller states whose measurements it accepts.",
+    "recognition_is_exact_including_version": "`measured-rms@1` says nothing about `@2`. A method version exists because the measurement changed, and accepting any version of a known name would honour a definition nobody read. The refusal is useful about it — being told 'you have that method at version 1' is more actionable than 'unknown method'.",
+    "staleness_before_recognition": "When an attestation is both stale and unrecognised, staleness is reported. Staleness is a fact about the container and holds for every reader; unrecognition is a fact about THIS build. Reporting recognition first would send an operator to configure trust, after which they would discover the attestation had expired anyway. A judgement call, so it is asserted by a test rather than left to whichever check runs first.",
+    "the_claimed_radius_is_behind_an_accessor": "Not a public field. A caller reaching past recognition straight to the number is precisely the presence-implies-trust failure this plane exists to prevent, and a method call is easier to catch in review than a field access.",
+    "a_named_table_the_container_lacks_is_a_refusal": "Not an empty table. Reading a missing attestation file as 'nothing attested' would turn a packaging mistake into a quiet loss of every guarantee."
+  },
+
+  "test_quality_corrections": {
+    "coincidental_assertion": "An assertion that a staleness message contained no `0` was pinning a coincidence — it would have failed the moment someone put the operand address `block.0` into the message. A correct change failing a test is worse than no test. Now asserts the refusal does not hand over the specific radius it is refusing.",
+    "unread_refusal_messages": "`tuple.rs` was at 88% because only one of seven `describe()` arms was ever called. Those are user-facing refusal messages, and an unread one is one nobody can act on. All seven are now exercised and asserted to name both sides of their comparison — 88% to 100% by testing the gap rather than waiving it."
+  },
+
+  "remaining": {
+    "4": "The digest check at preparation, with the tamper arm and its untampered control.",
+    "5": "B3: the derived certificate reaching `ExtentOption`, with the regression witness that must FAIL against the pre-wave tree.",
+    "6": "The decisive witness — attestation alone passes, plus a shallow codebook fails, plus a deeper codebook passes.",
+    "7": "The out-of-tree provider acceptance test."
+  }
+}

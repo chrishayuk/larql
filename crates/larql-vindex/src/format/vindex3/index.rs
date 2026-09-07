@@ -138,6 +138,16 @@ pub struct Vindex3Index {
     /// hold is a refusal, not an empty table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auxiliary_references: Option<String>,
+    /// Filename of the representation attestation table
+    /// ([`super::representation_attestations::RepresentationAttestations`]),
+    /// relative to the root: what each represented operand instance
+    /// ACHIEVED at an extent, as measured, as opposed to what its codec's
+    /// scheme guarantees. Absent on every container that attests nothing
+    /// — and absence means the guarantee is UNAVAILABLE, never that the
+    /// error is zero. A table this names and the container does not hold
+    /// is a refusal, not an empty table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub representation_attestations: Option<String>,
     /// Representation directory: representation id
     /// (`{object_id}@{encoding}`) → where its bytes physically live.
     /// Graph edges and objects never reference source tensor names — once
@@ -227,6 +237,7 @@ impl Vindex3Index {
             moe_manifest: Some(moe_manifest.into()),
             system_graph: None,
             auxiliary_references: None,
+            representation_attestations: None,
             representations: BTreeMap::new(),
             profiles: vec![Profile::exact()],
             variants: VariantCatalogue::new(),

@@ -11,6 +11,7 @@
 
 mod accounting;
 mod attention_kv_parity;
+mod attested_fidelity;
 mod attn_res_2a_decode;
 mod attn_res_2b_batch;
 mod attn_res_2b_controls;
@@ -20,6 +21,7 @@ mod bf16_gemv_bench;
 mod bf16_residency;
 mod bf16_zlib_execution;
 mod compact_consumption;
+mod composed_floor;
 mod continuation;
 mod controls;
 mod coverage_backend_decode;

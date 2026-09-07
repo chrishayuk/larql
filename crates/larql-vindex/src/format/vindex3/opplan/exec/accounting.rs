@@ -358,22 +358,64 @@ pub struct ResidencyBudget {
 /// What execution requires of a representation's reconstruction.
 ///
 /// A quality REQUIREMENT, stated without naming a codec or a depth, so a
-/// plan can carry it and any representation can answer it. It bounds which
-/// extents a pin may take; it says nothing about how lossy the stored
-/// representation is against the checkpoint it came from, which is the
-/// graph's `Fidelity` and a different question.
+/// plan can carry it and any representation can answer it.
+///
+/// # Two questions one word used to answer
+///
+/// The variant now called [`Self::TerminalExtent`] was called `Exact`,
+/// and it has ALWAYS meant "the deepest extent this codec declares" —
+/// `admits` returned true for the terminal extent and false for
+/// everything else, without ever consulting a radius. For a lossless
+/// progressive codec the two readings coincide, so the name was
+/// harmless. For a lossy one they are not the same claim at all:
+/// `VQ8_SHARED`'s terminal extent is every byte the artifact holds AND
+/// an unbounded error against the tensor it was fitted to. Left alone,
+/// this build would eventually print "exact reconstruction" while
+/// planning terminal Q4 or VQ data, possessing no such guarantee.
+///
+/// So the two questions are separated, and neither answers the other:
+///
+/// * **How much of the artifact must be read?** — [`Self::TerminalExtent`].
+///   A STRUCTURAL requirement. It makes no claim about error, because
+///   reading every stored byte says nothing about what encoding those
+///   bytes cost.
+/// * **How close must the result be to the source?** —
+///   [`Self::CertifiedExact`] and [`Self::Within`]. EVIDENCE
+///   requirements, met only by a certificate in a compatible metric and
+///   domain. Neither is satisfied by being terminal: an operand with no
+///   certificate has no error claim, and the whole point of this plane
+///   is that an absent claim is unavailable rather than optimistic.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RepresentationFloor {
-    /// Only an extent that reconstructs the stored representation
-    /// exactly: everything the artifact holds is read. The default, so a
-    /// plan that asks for nothing gets no silent quality change — and a
-    /// budget it cannot meet refuses rather than degrading.
+    /// The codec's COMPLETE stored representation: every plane the
+    /// artifact holds is read, and no extent short of the terminal one
+    /// will do.
+    ///
+    /// The default, so a plan that asks for nothing gets no silent
+    /// quality change and a budget it cannot meet refuses rather than
+    /// degrading. It states NO source-error claim: a terminal VQ or
+    /// K-quant extent satisfies this floor and is still lossy against
+    /// the checkpoint it came from.
     #[default]
-    Exact,
-    /// Any extent whose certificate declares a relative RMS at or under
-    /// this bound. An extent that declares no radius is admissible only
-    /// as the terminal one: an undeclared error is not a small one.
-    RelativeRms(f64),
+    TerminalExtent,
+    /// A verified, compatible certificate whose radius is `0.0` — the
+    /// exact reconstruction's honest answer, stated rather than assumed.
+    ///
+    /// Deliberately NOT satisfied by the terminal extent as such. A
+    /// codec that reconstructs its source exactly can say so
+    /// (`F32_PLANES` certifies `0.0` at its terminal depth); one that
+    /// cannot is refused, which is the entire difference between this
+    /// and [`Self::TerminalExtent`].
+    CertifiedExact,
+    /// A verified, composed certificate at or under this bound.
+    ///
+    /// The radius judged here is the one the planner DERIVED — the
+    /// attested claim where a measurement was verified, the codec's
+    /// declaration otherwise, composed with the certificates of the
+    /// dependency extents actually selected. An extent that declares no
+    /// radius does not satisfy it at any depth: an undeclared error is
+    /// not a small one.
+    Within(f64),
 }
 
 impl RepresentationFloor {
@@ -384,27 +426,32 @@ impl RepresentationFloor {
         option: &super::realization::ExtentOption,
         terminal: super::super::super::represent::codec::RepresentationExtent,
     ) -> bool {
-        if option.certificate.extent == terminal {
-            return true;
-        }
         match self {
-            Self::Exact => false,
-            // v1 compares like with like: a bound stated in another
-            // metric or over another domain does not satisfy this floor,
-            // and is not converted into one that would.
-            Self::RelativeRms(bound) => option.certificate.radius.as_ref().is_some_and(|r| {
-                *r.metric() == super::super::super::represent::codec::MetricId::relative_rms()
-                    && *r.domain()
-                        == super::super::super::represent::codec::DomainId::finite_normals()
-                    && r.radius() <= bound
-            }),
+            Self::TerminalExtent => option.certificate.extent == terminal,
+            Self::CertifiedExact => self.certified_within(option, 0.0),
+            Self::Within(bound) => self.certified_within(option, bound),
         }
+    }
+
+    /// A certificate in THIS build's metric and domain, at or under
+    /// `bound`.
+    ///
+    /// v1 compares like with like: a bound stated in another metric or
+    /// over another domain does not satisfy this floor, and is not
+    /// converted into one that would.
+    fn certified_within(self, option: &super::realization::ExtentOption, bound: f64) -> bool {
+        option.certificate.radius.as_ref().is_some_and(|r| {
+            *r.metric() == super::super::super::represent::codec::MetricId::relative_rms()
+                && *r.domain() == super::super::super::represent::codec::DomainId::finite_normals()
+                && r.radius() <= bound
+        })
     }
 
     pub fn describe(self) -> String {
         match self {
-            Self::Exact => "exact reconstruction".to_string(),
-            Self::RelativeRms(bound) => format!("relative RMS at or under {bound:.3e}"),
+            Self::TerminalExtent => "the complete stored representation".to_string(),
+            Self::CertifiedExact => "a certified exact reconstruction (radius 0.0)".to_string(),
+            Self::Within(bound) => format!("relative RMS at or under {bound:.3e}"),
         }
     }
 }
@@ -433,7 +480,7 @@ impl ResidencyBudget {
         throughput: None,
         expert_access: super::realization::MappedAccess::Demand,
         prepare_bytes: None,
-        fidelity: RepresentationFloor::Exact,
+        fidelity: RepresentationFloor::TerminalExtent,
     };
 
     /// This machine's physical memory as the budget, read from the OS;
@@ -444,7 +491,7 @@ impl ResidencyBudget {
             throughput: None,
             expert_access: super::realization::MappedAccess::Demand,
             prepare_bytes: None,
-            fidelity: RepresentationFloor::Exact,
+            fidelity: RepresentationFloor::TerminalExtent,
         }
     }
 
@@ -454,7 +501,7 @@ impl ResidencyBudget {
             throughput: None,
             expert_access: super::realization::MappedAccess::Demand,
             prepare_bytes: None,
-            fidelity: RepresentationFloor::Exact,
+            fidelity: RepresentationFloor::TerminalExtent,
         }
     }
 
