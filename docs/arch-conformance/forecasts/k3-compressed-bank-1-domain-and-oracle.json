@@ -1,0 +1,100 @@
+{
+  "artifact_kind": "domain decomposition + decode-oracle result (evidence; still NOTHING frozen)",
+  "rung": "K3-COMPRESSED-BANK-1",
+  "written": "2026-09-07",
+  "base": "`1ae057d1`",
+  "follows": "docs/arch-conformance/forecasts/k3-compressed-bank-1-reconnaissance.json",
+
+  "THE_DECODE_ORACLE_RESULT": {
+    "headline": "**LARQL's existing MXFP4 codec and compressed-tensors' `mxfp4-pack-quantized` are the SAME codec arithmetic — bit-identical on real K3 bytes.** What differs is the container/binding dialect, not the decode.",
+    "adjudicator": "compressed-tensors 0.18.0, its own unmodified functions: `compressors.nvfp4.helpers.unpack_fp4_from_uint8` and `compressors.mx_utils.decompress_mx_scale`, with torch 2.14.0 / transformers 5.16.1 in a clean venv built for this purpose.",
+    "subject": "the real checkpoint's bytes, fetched by HTTP range request at the offsets the committed header fixture names: `layers.3.block_sparse_moe.experts.0.w1.weight_packed` rows 0-1 (3,584 bytes) and the matching `weight_scale` rows (224 bytes).",
+    "result": {
+      "elements_compared": 7168,
+      "bit_identical": true,
+      "max_abs_difference": 0.0,
+      "value_range": "-0.093750 .. 0.093750",
+      "first_eight": "0.03125, -0.046875, 0.0, 0.015625, 0.0078125, 0.03125, 0.015625, 0.0078125"
+    },
+    "what_matched": [
+      "E2M1 value table [0, 0.5, 1, 1.5, 2, 3, 4, 6] with the sign in bit 3 — upstream's `kE2M1ToFloat` and LARQL's `MXFP4_TABLE` agree element for element",
+      "adjacent-pair packing, LOW nibble first: upstream `low = a & 0x0F` / `high = (a & 0xF0) >> 4` interleaved as `stack((low, high)).flatten()`; LARQL `output[2b] = TABLE[lo]`, `output[2b+1] = TABLE[hi]`",
+      "group size 32 along K, per row",
+      "E8M0 scale: upstream `2.0 ** (uint8 - 127)`; LARQL `f32::from_bits((byte as u32) << 23)`, which IS 2^(byte-127) for an IEEE-754 f32 with zero mantissa",
+      "the scale MULTIPLIES the dequantised code"
+    ],
+    "controls_every_wrong_reading_is_RED": {
+      "split_half_packing_instead_of_adjacent_pair": "max|delta| 0.140625",
+      "nibble_reversal": "0.125000",
+      "E8M0_read_as_a_linear_uint8": "725.91",
+      "exponent_bias_off_by_one": "0.093750",
+      "group_index_off_by_one": "0.125000",
+      "scale_divided_instead_of_multiplied": "767.95",
+      "note": "six wrong readings, six non-zero deltas, on 7,168 real elements. The bit-identity above is therefore a measurement and not a coincidence of a fixture that could not tell the difference."
+    },
+    "the_consequence": "reuse the codec. Inventing a second `CodecIdentity` because the container says `mxfp4-pack-quantized` would be the wrong abstraction: the codec SEMANTICS are the same and the BINDING dialect is different. What K3 needs is a binding — `weight_packed`/`weight_scale` as two separate per-expert safetensors entries — against the same decode.",
+    "what_the_two_dialects_actually_differ_in": {
+      "GPT-OSS (what LARQL implements today)": "`*_blocks` / `*_scales`, one FUSED tensor per projection over all experts, shaped [experts, rows, k/32, 16] and [experts, rows, k/32]",
+      "K3 / compressed-tensors": "`weight_packed` / `weight_scale`, one tensor per expert per matrix, shaped [rows, k/2] and [rows, k/32]",
+      "so": "same bytes per group, same order within a group, different tensor granularity and different declared shape. That is a binding question, which `bind_packed` and the operand plane already exist to answer."
+    },
+    "TWO_FACTS_THIS_CHECKPOINT_CANNOT_WITNESS": {
+      "the_E8M0_edge_codes": "LARQL's `e8m0_to_f32` returns 0.0 for byte 0x00 and NaN for 0xFF; upstream returns 2^-127 and 2^128 respectively. **A real divergence** — and K3's scales all lie in 120-121, so it is NOT exercised here and must NOT be claimed either way from this checkpoint. It needs its own fixture or an explicit deferral.",
+      "padding": "3584 and 3072 are both divisible by 32 and by 2, so no group is partial and no row is padded. Padding semantics are UNWITNESSED by K3 — marked unwitnessed, never passed. If the existing codec has an independent padded fixture that contract can be borrowed; otherwise this rung makes no padding claim.",
+      "why_recorded_here": "both are the shape of defect that a bit-identical headline invites a reader to assume away."
+    },
+    "stream_conditionality_from_upstream": "`MXFP4PackedCompressor.compression_param_names` declares exactly `('weight_packed', 'weight_scale')`, adding `weight_zero_point` only when `weights.symmetric` is false and `input_global_scale` only when `input_activations.dynamic` is false. K3 declares `symmetric: true` and `dynamic: false` with `input_activations: null`. **So the two absent streams are absent because this scheme does not require them, not because the checkpoint forgot an operand** — a distinction the operand plane would otherwise have to guess at."
+  },
+
+  "THE_FIVE_CLUSTER_AUTHORITY_MAP": {
+    "method": "each cluster answers the same two questions — what must it REACH, and what must it NOT control — so that all 14 can eventually retire without pretending they are one authority.",
+    "1_codec_identity_and_decode_arithmetic": {
+      "leaves": ["format (x2)", "quant_method", "num_bits", "type", "symmetric", "strategy", "group_size", "scale_dtype"],
+      "count": 9,
+      "must_reach": "the operand's representation declaration and its decode validation — the `CodecIdentity` (family, revision, geometry) the container records, and the stored-bytes arithmetic that refuses an operand whose size disagrees with its declared geometry.",
+      "must_NOT_control": "tensor scope. Which operands are compressed is decided elsewhere (cluster 2 does not decide it either — see the estate rule).",
+      "status_after_the_oracle": "the arithmetic is settled and matches an existing codec. This is the cluster a codec earns."
+    },
+    "2_scope": {
+      "leaves": ["ignore", "targets"],
+      "count": 2,
+      "must_reach": "a recorded compression-SCOPE declaration — the exporter's selection policy, carried as provenance.",
+      "must_NOT_control": "which actual tensors are decoded. Reconnaissance falsified the reconstructed predicate: `routed_expert_{down,up}_proj` and the two residual projections are `nn.Linear`, unignored, and uncompressed.",
+      "the_distinction_to_freeze_later": "`targets` and `ignore` describe the exporter's selection POLICY; the **stored estate determines the representation of an individual operand**. This is not `infer architecture from tensor names`: for LatentMoE, tensor presence could not legitimately decide which computation the model means, whereas here the stored object necessarily decides whether a given weight is BF16 or packed+scale — because the declared target language demonstrably does not uniquely determine it.",
+      "explicitly_rejected": "any attempt to turn `targets: [\"Linear\"]` plus the regexes into a reconstructed predicate over tensor names."
+    },
+    "3_activation_state": {
+      "leaves": ["dynamic"],
+      "count": 1,
+      "must_reach": "activation/input representation semantics, if this schema has any. Corroborated by `input_activations: null` and `output_activations: null`, and by upstream's own rule that `input_global_scale` appears only when `dynamic` is false.",
+      "must_NOT_control": "weight decoding. `dynamic` would still mean something under a codec this build did implement, and would still mean something if the weights were not compressed at all."
+    },
+    "4_exporter_provenance": {
+      "leaves": ["observer"],
+      "count": 1,
+      "must_reach": "exporter provenance ONLY — a record of how the scales were chosen at export.",
+      "must_NOT_control": "execution or decode. A checkpoint quantised with a different observer decodes by identical arithmetic.",
+      "the_hazard": "this is the leaf a codec would silence for free. Its honest grade is closer to training-only, like `router_aux_loss_coef`."
+    },
+    "5_lifecycle_state": {
+      "leaves": ["quantization_status"],
+      "count": 1,
+      "must_reach": "artifact/storage lifecycle state — that the shipped tensors ARE compressed rather than carrying a recipe awaiting application.",
+      "must_NOT_control": "FP4 arithmetic. A checkpoint declaring `frozen` or `calibration` with these same config groups is a different artifact and needs a different answer."
+    }
+  },
+
+  "COUNT_STILL_NOT_FROZEN": {
+    "position": "unchanged by the oracle. The oracle settled cluster 1's arithmetic; it said nothing about whether clusters 2-5 acquire homes in this transition.",
+    "if_only_the_codec_cluster_and_perhaps_lifecycle_retire": "freeze the smaller movement and leave scope, activation state and provenance to explicit metadata/provenance transitions.",
+    "if_all_five_can_be_represented_honestly_in_one_coherent_compressed_artifact_transition": "24 -> 10 becomes earned rather than assumed.",
+    "the_outcome_to_avoid": "a 6 -> 0 operand closure and a 24 -> 10 count achieved by making every quantization leaf disappear behind `MXFP4 supported`. The decomposition above exists to make that impossible to do accidentally."
+  },
+
+  "next": [
+    "promote the adjudication venv to a reproducible oracle under `tools/oracles/` — it must not depend on a scratch venv, and this machine's shared environment is provably broken (torchvision/torch/transformers mutually incompatible), which is itself the argument",
+    "extend the fixture beyond one w1: real w2 and w3, from DIFFERENT experts, at boundary blocks rather than block zero, and a slice crossing a row boundary",
+    "decide the binding: how `weight_packed`/`weight_scale` per-expert pairs become planned operands, and whether that is 5,376 operands or 2,688 with an auxiliary stream",
+    "then, and only then, the freeze"
+  ]
+}
