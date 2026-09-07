@@ -1653,6 +1653,9 @@ fn select_records<B: PlanBackend + ?Sized>(
                     selection,
                     extent,
                     dependencies,
+                    // Filled in by the carriage pass below, which is the
+                    // only thing that reads a payload to verify a claim.
+                    verified_bytes: 0,
                 },
                 facts,
             )),

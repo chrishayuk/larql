@@ -137,13 +137,37 @@ fn recognition_admits_within_and_its_absence_refuses() {
         "the pin spent the depth the measurement paid for"
     );
 
-    // THE CONTROL: recognise nobody. The declared 0.004 stands, composes
-    // to 0.006, and the shallow extent is no longer admissible — so the
-    // budget has nothing it may give up.
-    let refusal = built
-        .select(with_providers(), RecognisedMethods::none(), &budget)
-        .expect_err("an unrecognised measurement must not be acted on");
-    assert!(refusal.contains("preparation opens"), "{refusal}");
+    // THE CONTROL: recognise nobody. Its budget is derived from its OWN
+    // unpressed run, because since D1 verification is REAL I/O: the
+    // recognised arm reads the payloads it hashes and the unrecognised
+    // arm does not, so a budget taken from one is slack in the other and
+    // the arms would differ in preparation cost rather than in fidelity
+    // policy. Pressed by the same saving, the declared 0.004 stands,
+    // composes to 0.006, and the shallow extent is no longer admissible.
+    let (unrecognised_whole, unrecognised_ledger) = built
+        .select(
+            with_providers(),
+            RecognisedMethods::none(),
+            &ResidencyBudget::UNBOUNDED.with_fidelity(RepresentationFloor::TerminalExtent),
+        )
+        .expect("unpressed");
+    assert_eq!(
+        unrecognised_ledger.prepare_reads.attestation_verification, 0,
+        "an unrecognised claim is refused from metadata and reads nothing"
+    );
+    let control = pressing(
+        unrecognised_ledger.read_to_prepare,
+        one_owner_saving(&unrecognised_whole),
+        RepresentationFloor::Within(FLOOR),
+    );
+    let refused = built
+        .select(with_providers(), RecognisedMethods::none(), &control)
+        .is_err();
+    assert!(
+        refused,
+        "an unrecognised measurement must not be acted on, so the budget has nothing \
+         it may give up"
+    );
 }
 
 /// **Verification is a second gate, and the payload is the only thing
