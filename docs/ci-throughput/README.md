@@ -1,4 +1,4 @@
-# CI throughput — E1
+# CI throughput — E1, E2
 
 An experiment, not a cleanup. The question is whether three specific CI
 changes move measured wall clock, and by how much, so that afterwards the
@@ -112,10 +112,100 @@ to `INVALID COMPARISON`. And scoring the baseline against itself falsifies
 all four mechanisms, which is the evidence that the forecast is not
 already satisfied by doing nothing.
 
-## Not in E1
+## E1's verdict (2026-09-07)
 
-vcpkg binary caching and `sccache` are E2, deliberately held back so that
-a change in these numbers is attributable to c1–c3 and nothing else. The
+`E1-verdict.json`, frozen as delivered, against `after-e1.json`
+(12 attempts / 6 branches, `--since 2026-09-07`):
+
+```
+C1  cancel superseded PR runs    P1  931.6 -> 26.9 min  (-97%)        HELD
+C2  macOS scheduling contention  P2  queued.macos      (-79%)         HELD
+                                 P3  executed.macos    (-70%)    FALSIFIED
+                                 VERDICT: INVALID COMPARISON
+C3  VINDEX benches Linux-only    P4  29.7 -> 21.8 min p50            HELD
+SYSTEM                           P5  merge-ready 61.4 -> 40.8 p50    HELD
+```
+
+C2's refusal was correct behaviour and fired for the wrong reason: P2 and
+P3 name **extensive** totals, and 12 attempts against 33 contributes
+-63.6% before any effect exists, so P3 could not have held. C2 is
+**unadjudicated, not refuted**. `E1-postmortem.md` carries the post-hoc
+diagnostic and is explicitly not a new verdict; E1 itself is not
+re-scored.
+
+## E2-0 — what the instrument learned
+
+The defect was in the measurement, so the measurement was fixed:
+
+- every extensive metric gained an intensive companion —
+  `queued_per_attempt.<os>`, `executed_per_attempt.<os>`;
+- `score_prediction` **refuses** an extensive metric whose two samples
+  differ in attempt count, returning `UNSCOREABLE` and naming the
+  per-attempt metric to use instead;
+- `workflow_share.<workflow>` makes composition scoreable, which is what
+  P3 was reaching for;
+- `workflow_exec_max.<workflow>` measures a gate's wall clock over
+  **successful runs only**, so cancelling more runs cannot read as a
+  faster gate;
+- `selftest` asserts the guard fires at unequal n, does **not** fire at
+  equal n, and that every forecast frozen from E2 onward names only
+  intensive metrics.
+
+Re-running `adjudicate` on E1 today returns `UNSCOREABLE` for **both C1
+and C2** — P1 also names a total (`superseded_exec_total`) — where the
+frozen verdict read HELD and INVALID COMPARISON. That is not a retraction
+of C1: its intensive companion `superseded_exec_mean` moves -92%
+(28m14s -> 2m15s per attempt), so cancellation is established on a metric
+the guard accepts. C2's companion moves only -16.6%, which is
+inconclusive. The guard refuses by NAME, not by substance, and the
+substance differs between the two.
+
+`E1-verdict.json` is not regenerated; it records the verdict as
+delivered.
+
+## E2-A — one piece of evidence, once
+
+`E2-contract.json`, frozen 2026-09-07. Baseline: `after-e1.json` for the
+system metrics, `metal-gate-baseline.json` (40 attempts, 34
+successful Metal runs spanning 47.0-68.7 min, p50 56.6) for the Metal
+gate itself.
+
+The mechanism, measured on run 34098337888 (#449): `cargo test --tests`
+selects every target with `test = true`, and a lib has it by default, so
+the job ran 1 binary under `--lib`, then 69 under `--tests` **including
+`src/lib.rs` again**, then the same 69 instrumented. The 530-test lib
+suite executed three times; the 68 integration binaries twice; 2061s of a
+3565s job was duplicate execution.
+
+So the coverage run — which already runs the same 69 binaries serially
+and fails on a failing test — becomes authoritative, the two plain passes
+are deleted, and a small ordinary-profile witness keeps the one signal
+that would otherwise be lost. `bench-regress` leaves the pull-request
+path until PERF-QUAL-2 qualifies it.
+
+Outcomes live in `E2-A-qualification.json` (machine-readable) and
+`E2-A-execution-notes.md` (the reading). The contract itself is frozen
+and is not edited by qualification.
+
+Five predictions (A1–A5) plus five **structural** falsifiers (S1–S5) that
+this instrument cannot score and which are checked by hand: the same 69
+binaries still execute, a deliberately failing test reds the gate, a
+deliberately violated coverage policy reds the gate, the smoke witness
+runs in the ordinary profile, and no `pull_request` benchmark job
+remains.
+
+## Still not done
+
+`sccache` and vcpkg binary caching are deliberately later than they were
+in the original plan: measurement says compilation here is tens of
+seconds (cold `cargo check --all-targets` 26.1s, plain test build 21.8s)
+against tens of minutes of test execution. Caching a 22-second build
+before removing a 34-minute duplicate execution optimises the wrong
+denominator.
+
+E2-D — tiered Metal triggers — is next after E2-A is scored, not
+alongside it: it deliberately changes
+`workflow_share.larql-compute-metal`, which is A5's validity gate. The
 five remaining ungated `cargo test --benches` steps (`larql-boundary`,
 `larql-core`, `larql-kv`, `larql-lql`, `larql-models`) and an actionlint
-gate are also held back for the same reason.
+gate stay held back.
