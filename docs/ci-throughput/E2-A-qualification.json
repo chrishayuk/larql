@@ -1,0 +1,95 @@
+{
+  "experiment": "E2-A",
+  "record": "structural qualification (S1-S5)",
+  "qualified_at": "2026-09-07",
+  "scope": "This file records OUTCOMES. It is not the forecast; E2-contract.json is frozen and is not edited by qualification.",
+  "why_this_is_not_optional": "CI-E2-A changes what a green Metal check means. A green run is consistent with a gate that cannot fail at all, so the claim that the cheaper gate still reds needs runs that actually go red, for the stated reason and no other.",
+  "method_note": "The two perturbation runs were dispatched via workflow_dispatch on throwaway branches, NOT opened as pull requests. ci_throughput.py collects on event=pull_request, so a throwaway PR would have injected two deliberately-broken attempts into the very population A1, A3 and A4 are measured over.",
+  "controls": [
+    {
+      "id": "S1",
+      "claim": "the same 69 test binaries are still executed",
+      "established": true,
+      "evidence": {
+        "run_id": 34153296231,
+        "branch": "ci-e2",
+        "sha": "b369d21a",
+        "event": "pull_request",
+        "observation": "69 `Running` lines in the authoritative step, matching the 69 the pre-change `--tests` step executed on run 34098337888. `unittests src/lib.rs` appears ONCE where it previously appeared three times across the job."
+      }
+    },
+    {
+      "id": "S2",
+      "claim": "a deliberately failing test reds the combined gate",
+      "established": true,
+      "evidence": {
+        "run_id": 34155283543,
+        "branch": "ci-e2-qual-s2",
+        "sha": "c26468ba",
+        "event": "workflow_dispatch",
+        "perturbation": "crates/larql-compute-metal/tests/aa_s2_qualification.rs — one integration test asserting on an environment variable that is never set. Deliberately outside backend::tests:: so the ordinary-profile smoke could not be what failed.",
+        "failing_step": "11. Test estate + coverage policy (authoritative)",
+        "step_seconds": 798,
+        "smoke_step": "9. Ordinary-profile execution witness: 57s SUCCESS, `smoke tests executed: 7 (floor 5)`",
+        "observation": "test s2_qualification_this_test_must_fail ... FAILED; test result: FAILED. 0 passed; 1 failed; make: *** [larql-compute-metal-coverage-summary] Error 101",
+        "reverted": "branch deleted; never merged"
+      }
+    },
+    {
+      "id": "S3",
+      "claim": "a deliberately violated coverage policy reds the gate",
+      "established": true,
+      "evidence": {
+        "run_id": 34153560202,
+        "branch": "ci-e2-qual-s3",
+        "sha": "0a7ff7d1",
+        "event": "workflow_dispatch",
+        "perturbation": "coverage-policy.json — lowering/stack.rs raised from its recorded baseline of 86 to 95, above the 86.63 it measures.",
+        "failing_step": "11. Test estate + coverage policy (authoritative)",
+        "step_seconds": 1356,
+        "smoke_step": "9. Ordinary-profile execution witness: 51s SUCCESS, `smoke tests executed: 7 (floor 5)`",
+        "observation": "0 test binaries failed, 70 passed; TOTAL 95.46% cleared --fail-under-lines 90; then `Coverage policy failed: crates/larql-compute-metal/src/lowering/stack.rs: lines 86.63% below minimum 95.00%`, make Error 1 -> Error 2.",
+        "separation": "S2 and S3 fail the SAME step for different reasons. S3 proves the coverage half can refuse on its own, which S2 does not establish: in S2 the tests never finished, so the policy checker never ran.",
+        "reverted": "branch deleted; never merged"
+      }
+    },
+    {
+      "id": "S4",
+      "claim": "the ordinary-profile witness actually runs, in the ordinary profile",
+      "established": true,
+      "evidence": {
+        "run_id": 34153296231,
+        "observation": "`smoke tests executed: 7 (floor 5)`, and the binary path is target/debug/deps/larql_compute_metal-*, NOT target/llvm-cov-target/. Reproduced on both control runs.",
+        "not_yet_established": "That a filter matching nothing FAILS the step has been verified only by running the shell logic against synthetic logs (7 -> pass, 0 -> fail), not on a runner. The floor's success path is proven; its failure path is not."
+      }
+    },
+    {
+      "id": "S5",
+      "claim": "no pull_request benchmark job remains",
+      "established": true,
+      "evidence": {
+        "run_id": 34153296231,
+        "observation": "bench-regress.yml has no pull_request key, and no bench-regress check appears among PR #450's 13 checks."
+      }
+    }
+  ],
+  "attempts_that_established_nothing": [
+    {
+      "run_id": 34153558202,
+      "control": "S2",
+      "failing_step": "8. Clippy (no-deps)",
+      "step_seconds": 14,
+      "why_it_proved_nothing": "The perturbation was `assert!(false, ..)`, which trips clippy::assertions_on_constants under -D warnings. The job died at lint and steps 9-11 were SKIPPED, so the run says nothing about whether the authoritative step can fail. A red run at the wrong step resembles qualification and is not.",
+      "recorded_because": "A qualification record that lists only the run that worked would misrepresent what was tested."
+    },
+    {
+      "run_id": 34155142711,
+      "control": "S2",
+      "failing_step": "6. Format check",
+      "step_seconds": 9,
+      "why_it_proved_nothing": "Same: the replacement perturbation was not rustfmt-clean, so the job died before the step under test. Avoidable — `cargo fmt --check` needs no compilation and was run locally before the third attempt."
+    }
+  ],
+  "incidental_finding": "Both failed attempts were stopped by cheap early gates (14s and 9s) before reaching the expensive one. Two deliberately broken commits never reached the test estate because lint and formatting caught them first. Total macOS cost of the qualification: one full estate run (S3, 24.7 min), one partial (S2, 15.4 min), and ~2 min of early-gate rejections.",
+  "outstanding": "S4's failure path (a smoke filter that selects nothing must red the step) is verified only off-runner. Worth a third dispatch if the floor is ever relied on to catch a real rename."
+}

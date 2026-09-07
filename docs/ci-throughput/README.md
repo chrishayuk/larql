@@ -183,6 +183,10 @@ are deleted, and a small ordinary-profile witness keeps the one signal
 that would otherwise be lost. `bench-regress` leaves the pull-request
 path until PERF-QUAL-2 qualifies it.
 
+Outcomes live in `E2-A-qualification.json` (machine-readable) and
+`E2-A-execution-notes.md` (the reading). The contract itself is frozen
+and is not edited by qualification.
+
 Five predictions (A1–A5) plus five **structural** falsifiers (S1–S5) that
 this instrument cannot score and which are checked by hand: the same 69
 binaries still execute, a deliberately failing test reds the gate, a
