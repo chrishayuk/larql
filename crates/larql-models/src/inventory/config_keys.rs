@@ -122,6 +122,14 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // `hidden_act: "situ"` names, read into `ModelConfig` beside it.
     "activation_situ_beta",
     "activation_situ_linear_beta",
+    // The latent routed branch (K3-LATENTMOE-1): where the ROUTED experts
+    // run, and whether their weighted aggregate is normalised before it
+    // returns to the residual width. Both read into `ModelConfig` by
+    // `parse_model_config`, and both kept as `Option` there — the width's
+    // PRESENCE selects the form, so `null` and absent must stay
+    // distinguishable from `0`.
+    "routed_expert_hidden_size",
+    "latent_moe_use_norm",
     "norm_topk_prob",
     // MLA
     "kv_lora_rank",

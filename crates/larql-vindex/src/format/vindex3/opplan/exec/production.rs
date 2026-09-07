@@ -461,7 +461,16 @@ pub(super) const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVE
 /// input choice. Every conditioning operand must be present.
 pub(super) fn router_input(call: &RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
     if call.router_kind != MoeRouterKind::Gemma4Hybrid {
-        return Ok(call.x.to_vec());
+        // `router_input`, not `x`. Until K3-LATENTMOE-1 these were the
+        // same vector for every non-Gemma-4 family, so reading `x` here
+        // was indistinguishable from honouring the field — the seam was
+        // declared and not carried, and nothing could tell. A latent
+        // routed branch hands the experts a projection of the block
+        // input and the router the block input itself, and taking `x`
+        // here would route on the bottleneck: a different model, and one
+        // no shape check can see, since the router matrix would simply
+        // be applied to a vector of the wrong width.
+        return Ok(call.router_input.unwrap_or(call.x).to_vec());
     }
     let missing = |what: &str| {
         VindexError::Parse(format!(
@@ -1086,7 +1095,13 @@ impl PlanBackend for ProductionBackend {
         let selected = {
             let _stage = stage(Stage::Router);
             let routed_input = router_input(&call)?;
-            let mut logits = matmul_vec(&routed_input, call.router, call.experts, call.hidden);
+            // The router's `k` is the width of what it READS, which is
+            // not `call.hidden` once the experts run behind a bottleneck:
+            // `call.hidden` is then the latent width, while the router
+            // still projects from the block input. Taking it from the
+            // vector itself keeps the two impossible to desync.
+            let k = routed_input.len();
+            let mut logits = matmul_vec(&routed_input, call.router, call.experts, k);
             select_experts(&call, &mut logits)?
         };
         routing_trace::record(&selected);

@@ -585,6 +585,27 @@ pub struct MoeExecution {
     pub shared_expert_gate: Option<crate::config::SharedExpertGateSpec>,
     /// A dense MLP summed with the expert block every layer (Gemma 4 A4B).
     pub hybrid: bool,
+    /// Where the ROUTED experts run: at `hidden_size`, or behind a
+    /// bottleneck of their own width (Kimi-K3's
+    /// `routed_expert_hidden_size`).
+    ///
+    /// This is the authority every routed expert-bank shape is sized
+    /// from. It is not a hint that a wrapper operand exists: the form is
+    /// declared by config, and a checkpoint shipping wrapper tensors
+    /// under [`RoutedExpertForm::Uniform`](crate::config::RoutedExpertForm::Uniform)
+    /// fails operand closure rather than being re-read as latent.
+    ///
+    /// The router and the shared experts are deliberately NOT sized from
+    /// this — both read the un-projected block input at `hidden_size`,
+    /// and the shared branch is summed only after the up-projection.
+    #[serde(default, skip_serializing_if = "is_uniform_routed_form")]
+    pub routed_expert_form: crate::config::RoutedExpertForm,
+}
+
+/// Serde skip predicate: the uniform form is the overwhelming default,
+/// and omitting it keeps every non-latent container byte-unchanged.
+fn is_uniform_routed_form(form: &crate::config::RoutedExpertForm) -> bool {
+    !form.is_latent()
 }
 
 /// Multi-Latent Attention geometry, resolved once from the architecture.
@@ -737,6 +758,74 @@ fn direct_query() -> crate::config::MlaQueryForm {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A routed block with no bottleneck, for the serialisation arms
+    /// below. Every other field is arbitrary and unread by them.
+    fn uniform_moe() -> MoeExecution {
+        MoeExecution {
+            branch_scale: None,
+            dense_prefix_layers: None,
+            experts: 8,
+            top_k: 2,
+            expert_intermediate_size: 64,
+            router_kind: crate::config::MoeRouterKind::TopKSoftmax,
+            routing_policy: crate::config::ExpertRoutingPolicy::NormalisedOverSelected,
+            router_bias: false,
+            expert_format: crate::config::ExpertFormat::PerExpert,
+            gate_up_layout: None,
+            shared_experts: 0,
+            shared_expert_intermediate_size: None,
+            shared_expert_gate: None,
+            hybrid: false,
+            routed_expert_form: crate::config::RoutedExpertForm::Uniform,
+        }
+    }
+
+    /// **A routed block that declares no bottleneck serialises exactly
+    /// as it did before the latent form existed.**
+    ///
+    /// The skip predicate is the whole reason for this: `Uniform` is the
+    /// overwhelming default, and a container that started carrying
+    /// `routed_expert_form: "Uniform"` on every MoE row would make every
+    /// stored plan differ from its predecessor for a fact none of them
+    /// declares. Measured on the conformance corpus, this is what keeps
+    /// 108 of 109 rows byte-identical apart from the semantics stamp.
+    ///
+    /// The latent arm beside it is what stops this from having been
+    /// implemented as "never write the field": a declared bottleneck
+    /// must appear, or the container would silently lose it.
+    #[test]
+    fn a_routed_block_without_a_bottleneck_serialises_as_it_always_did() {
+        let uniform = serde_json::to_value(uniform_moe()).expect("serialises");
+        assert!(
+            uniform.get("routed_expert_form").is_none(),
+            "the uniform form must add nothing to the container: {uniform}"
+        );
+
+        let mut latent = uniform_moe();
+        latent.routed_expert_form = crate::config::RoutedExpertForm::Latent {
+            width: 3584,
+            norm: Some(crate::config::LatentNormSpec { eps: 1e-5 }),
+        };
+        let encoded = serde_json::to_value(latent).expect("serialises");
+        assert!(
+            encoded.get("routed_expert_form").is_some(),
+            "a declared bottleneck must reach the container: {encoded}"
+        );
+        assert_eq!(
+            serde_json::from_value::<MoeExecution>(encoded).expect("reads back"),
+            latent,
+            "and must round-trip unchanged"
+        );
+
+        // The absent field reads back as the uniform form, so a
+        // container written before this rung is not a container that
+        // declares something unknown.
+        assert_eq!(
+            serde_json::from_value::<MoeExecution>(uniform).expect("reads back"),
+            uniform_moe()
+        );
+    }
 
     /// **The recurrent state dtype round-trips, and refuses what it
     /// does not represent.**

@@ -39,9 +39,9 @@ use super::{
     AttentionOp, AttentionResidualExitOp, AttentionResidualLayerOp, AttnResSiteOp, ClosureDefect,
     ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp, GateOp, GatedDeltaOp, HcSiteOp,
     HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp, KdaOp, KdaOutputGate,
-    LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp,
-    OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp,
-    SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
+    LatentBranchOp, LatentNormOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp,
+    MlaQueryProjection, NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp,
+    RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -129,6 +129,42 @@ const MLA_Q_LORA_UNDECLARED: &str =
 const MLA_Q_PROJ_UNDER_Q_LORA: &str =
     "a dense MLA query projection (the component declares `q_lora_rank`, so its query is \
      q_a_proj -> q_a_layernorm -> q_b_proj)";
+/// A latent-wrapper operand on a component that declares no
+/// `routed_expert_hidden_size`. The wrapper's spellings are distinctive,
+/// but the expert bank's stored width IS the quantity the declaration
+/// decides — so a build willing to read the form off the operands would
+/// be deciding it from the very thing it is meant to be judging, and a
+/// checkpoint carrying one stray tensor would execute as a different
+/// model (K3-LATENTMOE-1).
+const MOE_LATENT_BRANCH_UNDECLARED: &str =
+    "a latent routed branch (the routed-FFN judgment declares no `routed_expert_hidden_size`, \
+     so the experts run at the component's hidden width)";
+/// The same refusal for the norm, whose reason is one step further on:
+/// there is no aggregate to normalise because there is no bottleneck to
+/// aggregate inside.
+const MOE_LATENT_NORM_WITHOUT_BRANCH: &str =
+    "a latent routed branch (the routed-FFN judgment declares no `routed_expert_hidden_size`, \
+     so there is no aggregate to normalise)";
+/// `routed_expert_norm` under a declared branch whose flag is off. A
+/// different refusal from the one above and deliberately worded so: the
+/// bottleneck exists, and the checkpoint's own flag says the aggregate
+/// reaches the up-projection unnormalised.
+const MOE_LATENT_NORM_UNDER_FALSE_FLAG: &str =
+    "a norm on the latent routed aggregate (the judgment declares `latent_moe_use_norm` false, \
+     so the aggregate reaches the up-projection unnormalised)";
+/// A declared latent width the routed branch cannot be built from. The
+/// form is selected by PRESENCE — the reference tests `is not None` —
+/// so a zero is a declared bottleneck of no width, and demoting it to
+/// the uniform form would execute a different model than the checkpoint
+/// declares.
+fn moe_latent_width_degenerate(width: usize) -> String {
+    format!(
+        "declares a latent routed branch of width {width} (`routed_expert_hidden_size`): the \
+         routed experts, their bank and both wrapper projections would all be sized from it. \
+         The declaration selects the form by PRESENCE, so this is a bottleneck of no width and \
+         not the uniform form"
+    )
+}
 /// The primitive the exit pair implies on a component that declares no
 /// block size.
 const ATTN_RES_EXIT_WITHOUT_DECLARATION: &str =
@@ -400,6 +436,20 @@ pub fn plan_component_ops(
                 )));
             }
         }
+    }
+    // The ROUTED experts' own width, when the component declares a
+    // bottleneck for them. Refused here for the same reason the per-layer
+    // dense widths are: before any operand is shaped against it, and
+    // naming the declaration rather than the first tensor that cannot
+    // satisfy it.
+    if let Some(width) = ffn_surface
+        .and_then(|f| f.moe)
+        .and_then(|m| m.degenerate_latent_width())
+    {
+        defects.push(ClosureDefect::FfnWidthDeclaration {
+            component: component.id.clone(),
+            detail: moe_latent_width_degenerate(width),
+        });
     }
     // The width a layer's FFN op runs at: the declared per-layer value
     // when the container carries one, else the component's dense width.
@@ -1133,6 +1183,20 @@ pub fn plan_component_ops(
                         weight: operand(&stack_id, get(OperandRole::SharedExpertBranchGate)),
                     }),
                 });
+                // The latent wrapper, paired with `required_roles` and
+                // `absent_op` the same way the shared branch is: `Some`
+                // here exactly when the surface declares the form, so the
+                // op cannot carry a bottleneck the closure pass did not
+                // admit operands for — nor miss one it did.
+                let latent = moe.latent.map(|l| LatentBranchOp {
+                    width: l.width,
+                    down: operand(&stack_id, get(OperandRole::MoeLatentDownProj)),
+                    up: operand(&stack_id, get(OperandRole::MoeLatentUpProj)),
+                    norm: l.norm.map(|n| LatentNormOp {
+                        weight: operand(&stack_id, get(OperandRole::MoeLatentNorm)),
+                        eps: n.eps,
+                    }),
+                });
                 let routed = RoutedFfnOp {
                     experts: moe.experts,
                     top_k: moe.top_k,
@@ -1150,6 +1214,7 @@ pub fn plan_component_ops(
                         .then(|| operand(&stack_id, get(OperandRole::MoeRouterBias))),
                     bank,
                     shared,
+                    latent,
                     router_scale: gemma4_router
                         .then(|| operand(&stack_id, get(OperandRole::MoeRouterScale))),
                     router_per_expert_scale: gemma4_router
@@ -1969,6 +2034,20 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
                 roles.push(OperandRole::ExpertGateUpScales);
                 roles.push(OperandRole::ExpertDownScales);
             }
+            // The latent wrapper, required by the DECLARATION and never
+            // by the presence of its own tensors. Down and up always,
+            // because a bottleneck the experts run behind has to be
+            // entered and left; the norm only when the form carries one,
+            // which is why the form nests it. `absent_op` refuses all
+            // three where no latent form is declared, so the rule holds
+            // from both sides.
+            if let Some(latent) = moe.latent {
+                roles.push(OperandRole::MoeLatentDownProj);
+                roles.push(OperandRole::MoeLatentUpProj);
+                if latent.norm.is_some() {
+                    roles.push(OperandRole::MoeLatentNorm);
+                }
+            }
             // Gemma 4's router conditions its input and its selected
             // weights with two learned scales; the kind implies both.
             if moe.router_kind == MoeRouterKind::Gemma4Hybrid {
@@ -2192,6 +2271,31 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
                 .is_some_and(|m| m.shared_experts == 0 || m.shared_expert_gate.is_none()) =>
         {
             Some("a gate on the shared-expert branch (the judgment declares none, so the branch is summed unscaled)")
+        }
+        // The latent wrapper, refused from the other side. The
+        // declaration chooses the form; a shipped
+        // `routed_expert_down_proj` may CONFIRM it and must never select
+        // it, or a checkpoint carrying a stray wrapper tensor would be
+        // executed as a different model — the experts behind a bottleneck
+        // that its config never declared.
+        OperandRole::MoeLatentDownProj | OperandRole::MoeLatentUpProj
+            if ops.moe.is_some_and(|m| m.latent.is_none()) =>
+        {
+            Some(MOE_LATENT_BRANCH_UNDECLARED)
+        }
+        // Nested exactly as the reference nests it: no wrapper means no
+        // norm to speak of, and a wrapper without `latent_moe_use_norm`
+        // means the aggregate goes to the up-projection unnormalised.
+        // Two different reasons, one refusal, and the message says which.
+        OperandRole::MoeLatentNorm if ops.moe.is_some_and(|m| m.latent.is_none()) => {
+            Some(MOE_LATENT_NORM_WITHOUT_BRANCH)
+        }
+        OperandRole::MoeLatentNorm
+            if ops
+                .moe
+                .is_some_and(|m| m.latent.is_some_and(|l| l.norm.is_none())) =>
+        {
+            Some(MOE_LATENT_NORM_UNDER_FALSE_FLAG)
         }
         OperandRole::ExpertGateUpScales | OperandRole::ExpertDownScales
             if ops
@@ -2515,12 +2619,21 @@ fn expected_shape(
         // (the operand is refused by `absent_op` before this is asked).
         OperandRole::MoeRouterWeight => Some(vec![moe?.experts, hidden]),
         OperandRole::MoeRouterBias => Some(vec![moe?.experts]),
+        // The latent wrapper. Both projections cross BETWEEN the two
+        // widths, so each names `hidden` on one axis and the latent width
+        // on the other — which is what makes them the only routed
+        // operands whose contract needs both. `None` when the component
+        // declares no latent form: there is then no contract to state,
+        // and the operand is refused by name before this is asked.
+        OperandRole::MoeLatentDownProj => Some(vec![moe?.latent?.width, hidden]),
+        OperandRole::MoeLatentNorm => Some(vec![moe?.latent?.width]),
+        OperandRole::MoeLatentUpProj => Some(vec![hidden, moe?.latent?.width]),
         OperandRole::ExpertGateUp => {
             let m = moe?;
             Some(packed_shape(
                 m,
                 FUSED_BRANCHES * m.expert_intermediate_size,
-                hidden,
+                m.routed_expert_input_width(hidden),
             ))
         }
         OperandRole::ExpertGateUpScales => {
@@ -2528,7 +2641,7 @@ fn expected_shape(
             Some(scales_shape(
                 m,
                 FUSED_BRANCHES * m.expert_intermediate_size,
-                hidden,
+                m.routed_expert_input_width(hidden),
             ))
         }
         OperandRole::ExpertGateUpBias => {
@@ -2537,20 +2650,41 @@ fn expected_shape(
         }
         OperandRole::ExpertDown => {
             let m = moe?;
-            Some(packed_shape(m, hidden, m.expert_intermediate_size))
+            Some(packed_shape(
+                m,
+                m.routed_expert_input_width(hidden),
+                m.expert_intermediate_size,
+            ))
         }
         OperandRole::ExpertDownScales => {
             let m = moe?;
-            Some(scales_shape(m, hidden, m.expert_intermediate_size))
+            Some(scales_shape(
+                m,
+                m.routed_expert_input_width(hidden),
+                m.expert_intermediate_size,
+            ))
         }
-        OperandRole::ExpertDownBias => Some(vec![moe?.experts, hidden]),
+        OperandRole::ExpertDownBias => {
+            let m = moe?;
+            Some(vec![m.experts, m.routed_expert_input_width(hidden)])
+        }
         // `ExpertFormat::PerExpert`: one `[inter, hidden]` gate/up and one
         // `[hidden, inter]` down PER EXPERT — the index carried on the role
         // picks which expert's operand this is, not which shape.
         OperandRole::PerExpertGate(_) | OperandRole::PerExpertUp(_) => {
-            Some(vec![moe?.expert_intermediate_size, hidden])
+            let m = moe?;
+            Some(vec![
+                m.expert_intermediate_size,
+                m.routed_expert_input_width(hidden),
+            ])
         }
-        OperandRole::PerExpertDown(_) => Some(vec![hidden, moe?.expert_intermediate_size]),
+        OperandRole::PerExpertDown(_) => {
+            let m = moe?;
+            Some(vec![
+                m.routed_expert_input_width(hidden),
+                m.expert_intermediate_size,
+            ])
+        }
         // Always-active shared expert(s): the same gated-FFN shape as a
         // routed expert, at the width the judgment declares. Sized from
         // `shared_expert_intermediate_size` and NOT re-derived here —
@@ -2658,6 +2792,7 @@ fn scales_shape(moe: &MoeSurface, rows: usize, k: usize) -> Vec<usize> {
 /// separately).
 #[cfg(test)]
 mod tests {
+    use super::super::super::graph::surface::MoeLatent;
     use super::*;
 
     fn base_ops() -> LayerOps {
@@ -2705,6 +2840,7 @@ mod tests {
             shared_expert_intermediate_size: None,
             shared_expert_gate: None,
             hybrid: false,
+            latent: None,
         }
     }
 
@@ -3012,6 +3148,132 @@ mod tests {
         assert_eq!(
             expected_shape(OperandRole::ExpertDownScales, &g, Some(&m)),
             Some(scales_shape(&m, g.hidden, m.expert_intermediate_size))
+        );
+    }
+
+    /// **K3-LATENTMOE-1, D8 — the single width authority, and the reason
+    /// this test exists at all.**
+    ///
+    /// A latent width can be made to look carried by giving it a home on
+    /// the surface. That moves a blocker count and changes nothing: the
+    /// expert bank would still be sized from the component's `hidden`,
+    /// so the op plan would refuse K3's real bank on shape while the plan
+    /// reported the width as carried. That is HOLLOW CARRIAGE — the plan
+    /// claiming a fact the operand plane contradicts — and it is the
+    /// specific failure this rung was frozen to avoid.
+    ///
+    /// So every routed-bank contract is checked against the DECLARED
+    /// latent width, and each assertion is paired with a negative arm
+    /// proving it would have failed had that consumer kept reading
+    /// `hidden`. Without those `assert_ne!`s the test would pass just as
+    /// happily against the old code.
+    ///
+    /// `ExpertDownBias` is here although D8's enumeration omitted it: its
+    /// contract describes the same latent output axis, and reconnaissance
+    /// missed it only because K3 ships no expert bias operand. Recorded
+    /// as a deviation in the execution notes.
+    #[test]
+    fn every_routed_bank_contract_reads_the_declared_latent_width() {
+        let g = base_geometry(None);
+        let mut m = moe(MoeRouterKind::TopKSoftmax, true, ExpertFormat::PackedMxfp4);
+        // Hostile on purpose, exactly as the oracle's geometry is: the
+        // latent width is neither `hidden` nor `hidden / 2` nor the
+        // expert intermediate width, so no accidental derivation passes.
+        let latent = 40;
+        assert_ne!(latent, g.hidden);
+        assert_ne!(latent, g.hidden / 2);
+        assert_ne!(latent, m.expert_intermediate_size);
+        m.latent = Some(MoeLatent {
+            width: latent,
+            norm: None,
+        });
+
+        // The authority itself, and the uniform form it must fall back to.
+        assert_eq!(m.routed_expert_input_width(g.hidden), latent);
+        assert_eq!(
+            moe(MoeRouterKind::TopKSoftmax, true, ExpertFormat::PackedMxfp4)
+                .routed_expert_input_width(g.hidden),
+            g.hidden,
+            "no declaration must still size the bank from hidden"
+        );
+
+        let inter = m.expert_intermediate_size;
+        let fused = FUSED_BRANCHES * inter;
+
+        // Packed gate/up and its scales: the `k` axis is the experts'
+        // INPUT width. Packed down and its scales: the ROW axis is the
+        // output width.
+        for (role, want, hidden_arm) in [
+            (
+                OperandRole::ExpertGateUp,
+                packed_shape(&m, fused, latent),
+                packed_shape(&m, fused, g.hidden),
+            ),
+            (
+                OperandRole::ExpertGateUpScales,
+                scales_shape(&m, fused, latent),
+                scales_shape(&m, fused, g.hidden),
+            ),
+            (
+                OperandRole::ExpertDown,
+                packed_shape(&m, latent, inter),
+                packed_shape(&m, g.hidden, inter),
+            ),
+            (
+                OperandRole::ExpertDownScales,
+                scales_shape(&m, latent, inter),
+                scales_shape(&m, g.hidden, inter),
+            ),
+        ] {
+            let got = expected_shape(role, &g, Some(&m));
+            assert_eq!(got, Some(want), "{role:?} must size from the latent width");
+            assert_ne!(
+                got,
+                Some(hidden_arm),
+                "{role:?} would have passed on `hidden` too — the arm proves nothing"
+            );
+        }
+
+        // Per-expert storage reaches the same axes by a different route,
+        // and must not be able to disagree with the packed one.
+        assert_eq!(
+            expected_shape(OperandRole::PerExpertGate(0), &g, Some(&m)),
+            Some(vec![inter, latent])
+        );
+        assert_eq!(
+            expected_shape(OperandRole::PerExpertUp(3), &g, Some(&m)),
+            Some(vec![inter, latent])
+        );
+        assert_eq!(
+            expected_shape(OperandRole::PerExpertDown(7), &g, Some(&m)),
+            Some(vec![latent, inter])
+        );
+        assert_ne!(
+            expected_shape(OperandRole::PerExpertDown(7), &g, Some(&m)),
+            Some(vec![g.hidden, inter])
+        );
+
+        // D8's missing consumer. Same latent output axis as `ExpertDown`.
+        assert_eq!(
+            expected_shape(OperandRole::ExpertDownBias, &g, Some(&m)),
+            Some(vec![m.experts, latent])
+        );
+        assert_ne!(
+            expected_shape(OperandRole::ExpertDownBias, &g, Some(&m)),
+            Some(vec![m.experts, g.hidden])
+        );
+
+        // And the two that must NOT move: the router reads the
+        // un-projected block input, and the gate/up bias indexes the
+        // fused intermediate rows, not the input width.
+        assert_eq!(
+            expected_shape(OperandRole::MoeRouterWeight, &g, Some(&m)),
+            Some(vec![m.experts, g.hidden]),
+            "the router reads hidden — routing on the latent is a different model"
+        );
+        assert_eq!(
+            expected_shape(OperandRole::ExpertGateUpBias, &g, Some(&m)),
+            Some(vec![m.experts, fused])
         );
     }
 

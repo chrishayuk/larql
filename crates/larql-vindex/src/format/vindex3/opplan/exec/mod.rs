@@ -28,6 +28,7 @@ pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
 pub mod device;
+pub mod device_refusal;
 mod experts;
 pub mod fidelity_carriage;
 pub mod gated_delta;

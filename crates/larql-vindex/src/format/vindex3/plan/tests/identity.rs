@@ -102,7 +102,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 21);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 22);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -474,6 +474,141 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         disagreeing.admissible,
         "the PLAN stage judges config leaves, not operands: {:?}",
         disagreeing.summary
+    );
+
+    // Version 22's verdict (K3-LATENTMOE-1): a routed estate declaring
+    // `routed_expert_hidden_size` and `latent_moe_use_norm` is
+    // ADMISSIBLE, where at version 21 the same estate was blocked by two
+    // Unknown findings — both leaves read by nothing in any registered
+    // parser. They are now carried to the latent branch's width and its
+    // norm, and the width is what the routed bank's shapes are built
+    // from.
+    //
+    // Two controls, and each answers a different way this could have
+    // been implemented wrongly. The routed estate declaring NEITHER leaf
+    // is admissible at both versions — so this is not "a routed MoE now
+    // passes". And a component with no routed block at all that declares
+    // the width anyway stays BLOCKED: the leaf reaches no branch there,
+    // the probe says so, and the finding is the honest one. A build that
+    // admitted the third arm would have implemented this as "stop
+    // reading these keys".
+    // The fixture's three widths, named because the RELATIONSHIP between
+    // them is what the arms depend on: the declared bottleneck must be
+    // neither the hidden width nor half of it, or a build deriving the
+    // width instead of reading it would pass.
+    const LM_HIDDEN: usize = 64;
+    const LM_LATENT: usize = 40;
+    const LM_EXPERT_INTER: usize = 16;
+    assert_ne!(LM_LATENT, LM_HIDDEN);
+    assert_ne!(LM_LATENT, LM_HIDDEN / 2);
+    assert_ne!(LM_LATENT, LM_EXPERT_INTER);
+    let latent_moe_stack = |declare: bool, routed: bool| -> SystemPlan {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = serde_json::json!({
+            "architectures": ["KimiLinearForCausalLM"],
+            "torch_dtype": "bfloat16",
+            "model_type": "kimi_linear",
+            "hidden_size": LM_HIDDEN,
+            "num_hidden_layers": 1,
+            "intermediate_size": 256,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "head_dim": 8,
+            "vocab_size": 128,
+            "rms_norm_eps": 1e-5,
+            "rope_theta": 10000.0,
+            "linear_attn_config": { "kda_layers": [], "full_attn_layers": [1] },
+        });
+        if declare {
+            config["routed_expert_hidden_size"] = serde_json::json!(LM_LATENT);
+            config["latent_moe_use_norm"] = serde_json::json!(true);
+        }
+        let mut tensors: Vec<(&str, &[usize])> = vec![
+            ("model.embed_tokens.weight", &[128, 64]),
+            ("model.norm.weight", &[64]),
+            ("lm_head.weight", &[128, 64]),
+            ("model.layers.0.self_attn.q_proj.weight", &[64, 64]),
+            ("model.layers.0.self_attn.k_proj.weight", &[16, 64]),
+            ("model.layers.0.self_attn.v_proj.weight", &[16, 64]),
+            ("model.layers.0.self_attn.o_proj.weight", &[64, 64]),
+            ("model.layers.0.input_layernorm.weight", &[64]),
+            ("model.layers.0.post_attention_layernorm.weight", &[64]),
+        ];
+        if routed {
+            config["num_experts"] = serde_json::json!(2);
+            config["num_experts_per_token"] = serde_json::json!(1);
+            config["moe_intermediate_size"] = serde_json::json!(LM_EXPERT_INTER);
+            config["first_k_dense_replace"] = serde_json::json!(0);
+            tensors.extend([
+                (
+                    "model.layers.0.block_sparse_moe.gate.weight",
+                    &[2, LM_HIDDEN][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.routed_expert_down_proj.weight",
+                    &[LM_LATENT, LM_HIDDEN][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.routed_expert_norm.weight",
+                    &[LM_LATENT][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.routed_expert_up_proj.weight",
+                    &[LM_HIDDEN, LM_LATENT][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.experts.0.w1.weight",
+                    &[LM_EXPERT_INTER, LM_LATENT][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.experts.0.w3.weight",
+                    &[LM_EXPERT_INTER, LM_LATENT][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.experts.0.w2.weight",
+                    &[LM_LATENT, LM_EXPERT_INTER][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.experts.1.w1.weight",
+                    &[LM_EXPERT_INTER, LM_LATENT][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.experts.1.w3.weight",
+                    &[LM_EXPERT_INTER, LM_LATENT][..],
+                ),
+                (
+                    "model.layers.0.block_sparse_moe.experts.1.w2.weight",
+                    &[LM_LATENT, LM_EXPERT_INTER][..],
+                ),
+            ]);
+        } else {
+            tensors.extend([
+                ("model.layers.0.mlp.gate_proj.weight", &[256, 64][..]),
+                ("model.layers.0.mlp.up_proj.weight", &[256, 64][..]),
+                ("model.layers.0.mlp.down_proj.weight", &[64, 256][..]),
+            ]);
+        }
+        let inventory = custom_artifact(dir.path(), &config, &tensors);
+        plan_system(&[(ARTIFACT.to_string(), inventory)])
+    };
+    let latent_declared = latent_moe_stack(true, true);
+    assert!(
+        latent_declared.admissible,
+        "a declared latent routed branch is carried at semantics 22: {:?}",
+        latent_declared.summary
+    );
+    let latent_undeclared = latent_moe_stack(false, true);
+    assert!(
+        latent_undeclared.admissible,
+        "an ordinary routed estate is admissible at both versions: {:?}",
+        latent_undeclared.summary
+    );
+    let latent_without_a_branch = latent_moe_stack(true, false);
+    assert!(
+        !latent_without_a_branch.admissible,
+        "a latent width declared on a component with no routed block reaches nothing \
+         and must stay blocked: {:?}",
+        latent_without_a_branch.summary
     );
 
     let complete = attn_res_stack(true);

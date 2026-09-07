@@ -84,6 +84,7 @@ fn routed_layer() -> LayerFfn {
             }),
         },
         shared: None,
+        latent: None,
         router_scale: None,
         router_per_expert_scale: None,
         router_norm_eps: None,

@@ -385,6 +385,13 @@ mod tests {
             "enable_moe_block",
             "top_k_experts",
             "moe_intermediate_size",
+            // K3-LATENTMOE-1: both reach the surface through
+            // `MoeExecution.routed_expert_form` — the width as the
+            // variant that selects the latent branch, the flag as the
+            // norm nested inside it. Carried as a FORM rather than two
+            // fields, so a norm without a width cannot be expressed.
+            "routed_expert_hidden_size",
+            "latent_moe_use_norm",
         ];
         // Read only to RESOLVE another field that IS carried, and
         // deliberately not persisted itself: persisting both the input and

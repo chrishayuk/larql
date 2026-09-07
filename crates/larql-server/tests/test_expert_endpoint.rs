@@ -94,6 +94,8 @@ impl TestMoeArch {
                 moe_intermediate_size: Some(INTER),
                 swiglu_limit: None,
                 norm_topk_prob: None,
+                routed_expert_hidden_size: None,
+                latent_moe_use_norm: None,
                 kv_lora_rank: None,
                 q_lora_rank: None,
                 qk_nope_head_dim: None,

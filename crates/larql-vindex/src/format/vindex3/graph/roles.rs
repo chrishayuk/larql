@@ -245,6 +245,24 @@ pub enum OperandRole {
     ExpertDown,
     ExpertDownScales,
     ExpertDownBias,
+    /// Kimi-K3's latent routed branch: the bottleneck the ROUTED experts
+    /// live behind. `routed_expert_down_proj` `[latent, hidden]` takes the
+    /// block input to the routed width, the optional `routed_expert_norm`
+    /// `[latent]` normalises the weighted aggregate, and
+    /// `routed_expert_up_proj` `[hidden, latent]` returns it.
+    ///
+    /// These are DENSE per-layer operands, not expert-bank ones: there is
+    /// one of each per routed layer regardless of expert count, and they
+    /// wrap the bank rather than living inside it.
+    ///
+    /// Required exactly when the component declares the latent form —
+    /// down and up always, the norm iff the form carries one. Shipped
+    /// without that declaration they are refused BY NAME: a
+    /// `routed_expert_down_proj` may confirm the form, it must never
+    /// select it.
+    MoeLatentDownProj,
+    MoeLatentNorm,
+    MoeLatentUpProj,
     /// Gemma 4's hybrid block (a dense MLP AND a routed expert block in
     /// one layer, outputs summed). The router's learned input scale
     /// `[hidden]` (applied after a scale-less RMS norm of the residual)
@@ -611,6 +629,23 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
     (
         "block_sparse_moe.shared_experts.down_proj.weight",
         OperandRole::SharedExpertDown,
+    ),
+    // Kimi-K3's latent routed branch, under the same component as the
+    // router and the shared experts — and deliberately NOT under
+    // `block_sparse_moe.experts.`, because these wrap the bank rather
+    // than belonging to it: one of each per routed layer, whatever the
+    // expert count.
+    (
+        "block_sparse_moe.routed_expert_down_proj.weight",
+        OperandRole::MoeLatentDownProj,
+    ),
+    (
+        "block_sparse_moe.routed_expert_norm.weight",
+        OperandRole::MoeLatentNorm,
+    ),
+    (
+        "block_sparse_moe.routed_expert_up_proj.weight",
+        OperandRole::MoeLatentUpProj,
     ),
     // Qwen MoE: the branch is singular (`shared_expert`) where the
     // DeepSeek/Kimi lineage spells it `shared_experts`, and it carries a

@@ -755,6 +755,134 @@ fn zero_selects_the_form_here_and_becomes_one_over_in_situ() {
     }
 }
 
+// ── RoutedExpertForm — the latent routed branch (K3-LATENTMOE-1) ─────
+
+/// An architecture over the default config, declaring one latent branch.
+fn arch_with_latent(width: Option<usize>, use_norm: Option<bool>) -> DefaultsArch {
+    let mut config = base_config();
+    config.routed_expert_hidden_size = width;
+    config.latent_moe_use_norm = use_norm;
+    DefaultsArch(config)
+}
+
+#[test]
+fn an_undeclared_routed_expert_width_is_the_uniform_form() {
+    assert_eq!(
+        arch_with_latent(None, None).routed_expert_form(),
+        RoutedExpertForm::Uniform,
+        "absence is the reference's own default (`use_latent_moe = ... is not None`)"
+    );
+}
+
+#[test]
+fn a_declared_routed_expert_width_selects_the_latent_form() {
+    let form = arch_with_latent(Some(3584), Some(true)).routed_expert_form();
+    assert!(form.is_latent());
+    let RoutedExpertForm::Latent { width, norm } = form else {
+        panic!("expected the latent form, got {form:?}");
+    };
+    assert_eq!(width, 3584);
+    assert!(norm.is_some(), "the flag is true, so the branch normalises");
+}
+
+/// **Four adjacent leaves of one config, three different rules.**
+///
+/// The subject is the parser architecture itself, not any one leaf:
+/// adjacent config leaves do not share truthiness semantics merely
+/// because they sit beside one another, and the risk is a shared
+/// intuition rather than a shared identifier. So all four are pinned in
+/// ONE place, where a reader meets every rule at once:
+///
+/// ```text
+/// activation_situ_beta      = 0     -> 1.0                    `beta or 1.0`
+/// q_lora_rank               = 0     -> the form, then refused  `is not None`
+/// routed_expert_hidden_size = 0     -> the form, then refused  `is not None`
+/// latent_moe_use_norm       = null  -> false, no norm          plain truthiness
+/// ```
+///
+/// The last is the one a reader is most likely to get wrong by analogy
+/// with the leaf directly above it: `routed_expert_hidden_size` and
+/// `latent_moe_use_norm` are declared side by side in the SAME config and
+/// treat `null` differently, because the reference reads one with `is not
+/// None` and consumes the other in a plain `if`.
+#[test]
+fn zero_and_null_are_read_leaf_by_leaf_not_by_neighbourhood() {
+    // `0 is not None`: a declared zero SELECTS the latent form, and the
+    // degenerate geometry it then describes is refused downstream by
+    // name rather than demoted to the uniform form here.
+    let zero = arch_with_latent(Some(0), Some(true)).routed_expert_form();
+    assert!(
+        zero.is_latent(),
+        "`0 is not None`: a declared zero selects the latent branch"
+    );
+    let RoutedExpertForm::Latent { width, .. } = zero else {
+        unreachable!("asserted latent immediately above")
+    };
+    assert_eq!(width, 0, "and the width is carried verbatim, not repaired");
+
+    // `null` is absent, for THIS leaf.
+    assert_eq!(
+        arch_with_latent(None, Some(true)).routed_expert_form(),
+        RoutedExpertForm::Uniform,
+        "a null width is the same answer as an absent one"
+    );
+
+    // And for the leaf beside it, `null` is falsy — read by a
+    // `getattr(..., False)` consumed by a plain `if`, so absent, null and
+    // false are one program and differ only in what the plan reports as
+    // declared.
+    for flag in [None, Some(false)] {
+        let form = arch_with_latent(Some(3584), flag).routed_expert_form();
+        let RoutedExpertForm::Latent { norm, .. } = form else {
+            panic!("the width still selects the form, whatever the flag says");
+        };
+        assert!(
+            norm.is_none(),
+            "latent_moe_use_norm {flag:?} must build no norm"
+        );
+    }
+
+    // The two rules already pinned, restated here so the four sit
+    // together: zero selects a form on one leaf and becomes one on
+    // another, in the same checkpoint.
+    assert!(arch_with_q_lora(Some(0)).mla_query_form().is_low_rank());
+    let mut config = base_config();
+    config.hidden_act = Some("situ".to_string());
+    config.activation_situ_beta = Some(0.0);
+    match DefaultsArch(config).expert_gate_policy() {
+        ExpertGatePolicy::SituGlu { beta, .. } => assert_eq!(beta, 1.0),
+        other => panic!("expected a SiTU policy, got {other:?}"),
+    }
+}
+
+/// The norm's epsilon is the LAYER's, and this inverts what the two K3
+/// rungs before it established: `q_a_layernorm` and `kv_a_layernorm` run
+/// at `KimiRMSNorm`'s class default because their constructor passes no
+/// override, and `routed_expert_norm`'s passes one.
+///
+/// Pinned against `mla_q_a_norm_eps` in the same test, because the defect
+/// this guards against is generalising the previous result — and a build
+/// that did so would still pass every test that looked at this leaf
+/// alone.
+#[test]
+fn the_routed_expert_norm_runs_at_the_layer_epsilon_not_the_class_default() {
+    let arch = arch_with_latent(Some(3584), Some(true));
+    let RoutedExpertForm::Latent { norm, .. } = arch.routed_expert_form() else {
+        panic!("the width selects the form");
+    };
+    let eps = norm.expect("the flag declares a norm").eps;
+    assert_eq!(
+        eps,
+        arch.norm_eps() as f64,
+        "the reference passes `eps=config.rms_norm_eps` explicitly"
+    );
+    assert_ne!(
+        Some(eps),
+        arch.mla_q_a_norm_eps(),
+        "the neighbouring low-rank norm's epsilon is a DIFFERENT authority"
+    );
+}
+
 /// The epsilon is the family's, not the config's and not the KV norm's.
 ///
 /// The default is `None` — unjudged — and it reaches the form as a

@@ -344,6 +344,17 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let router_activation = ROUTER_ACTIVATION_KEYS
         .iter()
         .find_map(|key| text_config[*key].as_str().map(str::to_string));
+    // Kimi-K3's latent routed branch. PRESENCE selects the form, so this
+    // stays an Option all the way through: `0` is a declared (degenerate)
+    // width that closure refuses by name, and `null` is the same answer
+    // as absent, matching the reference's `is not None`.
+    let routed_expert_hidden_size = text_config["routed_expert_hidden_size"]
+        .as_u64()
+        .map(|v| v as usize);
+    // Truthiness, not presence — the reference reads this with a
+    // `getattr(..., False)` consumed by a plain `if`. Kept as an Option
+    // so the plan can still report whether the checkpoint said anything.
+    let latent_moe_use_norm = text_config["latent_moe_use_norm"].as_bool();
     // Declared MoE facts carried verbatim so the plan can judge them.
     // Reading them is not endorsing them: a key nothing reads grades
     // "read by nothing in any registered parser" and blocks with no
@@ -780,6 +791,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         moe_intermediate_size,
         swiglu_limit,
         norm_topk_prob,
+        routed_expert_hidden_size,
+        latent_moe_use_norm,
         router_activation,
         routed_scaling_factor,
         expert_groups,
