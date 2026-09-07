@@ -1,0 +1,1054 @@
+{
+  "collected_at": "2026-09-07T18:34:43.286241+00:00",
+  "repo": "chrishayuk/larql",
+  "query": {
+    "since": "2026-08-25",
+    "until": null,
+    "max_prs": 40,
+    "branch": null,
+    "pruned_to_workflow": "larql-compute-metal",
+    "pruning_note": "Collected as a full snapshot, then pruned to larql-compute-metal runs. This file exists to baseline ONE metric \u2014 workflow_exec_max.larql-compute-metal.p50 \u2014 and the other workflows' jobs are 1MB of bytes no prediction reads. Pruning is lossless for that metric: attempts drop from 65 to 40 because an attempt with no Metal run contributes nothing to it, and the value is unchanged. Do not read any OTHER metric out of this file; use after-e1.json."
+  },
+  "runs": [
+    {
+      "id": 34098337888,
+      "workflow": "larql-compute-metal",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:03:03Z",
+          "completed_at": "2026-09-07T09:02:28Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813309,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T02:54:22Z",
+          "started_at": "2026-09-07T02:54:39Z",
+          "completed_at": "2026-09-07T03:53:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623086,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:42Z",
+          "completed_at": "2026-09-07T02:54:21Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113371,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:51:35Z",
+          "started_at": "2026-09-07T01:13:16Z",
+          "completed_at": "2026-09-07T02:08:52Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751713,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:07:21Z",
+          "completed_at": "2026-09-07T00:51:35Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070137270,
+      "workflow": "larql-compute-metal",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:32Z",
+          "started_at": "2026-09-07T00:38:21Z",
+          "completed_at": "2026-09-07T01:31:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34065240055,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-latentmoe-1",
+      "sha": "3c79e2044116588882436ae2c2d2586c1258687a",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-06T22:51:51Z",
+      "run_started_at": "2026-09-06T22:51:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-06T22:51:52Z",
+          "started_at": "2026-09-06T23:02:35Z",
+          "completed_at": "2026-09-06T23:59:12Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34040777310,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-rep-gate-1",
+      "sha": "2ddb7476ce6372e8cb05e8b7e00fdd99d3ed8010",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T14:57:29Z",
+      "run_started_at": "2026-09-06T14:57:29Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T14:57:29Z",
+          "started_at": "2026-09-06T16:07:00Z",
+          "completed_at": "2026-09-06T17:15:41Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34040694520,
+      "workflow": "larql-compute-metal",
+      "branch": "ci/bench-same-runner-qualification",
+      "sha": "f42f6852f12ed0cd596cb5094af852c6a7453d08",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T14:55:47Z",
+      "run_started_at": "2026-09-06T14:55:47Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T14:55:47Z",
+          "started_at": "2026-09-06T15:28:29Z",
+          "completed_at": "2026-09-06T16:23:25Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34034845098,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-attnres-1-lift",
+      "sha": "515e2a77dc04a98e9ae3f0a235615bdece7df75a",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T13:01:44Z",
+      "run_started_at": "2026-09-06T13:01:44Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T13:01:45Z",
+          "started_at": "2026-09-06T13:11:37Z",
+          "completed_at": "2026-09-06T14:18:00Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34032689240,
+      "workflow": "larql-compute-metal",
+      "branch": "ci-pr-throughput",
+      "sha": "dd6a6fe854a9c78431e57852bf2c698e4436c27f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T12:18:03Z",
+      "run_started_at": "2026-09-06T12:18:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T12:18:04Z",
+          "started_at": "2026-09-06T12:33:09Z",
+          "completed_at": "2026-09-06T13:30:09Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34032593979,
+      "workflow": "larql-compute-metal",
+      "branch": "ci-pr-throughput",
+      "sha": "4a583ed12c26fdf39d6e4fe3c2a69a84b7fafe81",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-06T12:16:01Z",
+      "run_started_at": "2026-09-06T12:16:01Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-06T12:16:02Z",
+          "started_at": "2026-09-06T12:16:02Z",
+          "completed_at": "2026-09-06T12:18:03Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34027023563,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-attnres-1-2b",
+      "sha": "4409cee22d515e6ade2f3faa8820b16e067bd637",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T10:17:49Z",
+      "run_started_at": "2026-09-06T10:17:49Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T10:17:50Z",
+          "started_at": "2026-09-06T10:44:35Z",
+          "completed_at": "2026-09-06T11:42:18Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34026734090,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-attnres-1",
+      "sha": "26b661da81836d6ac5833e830e26cd36b5811262",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T10:11:37Z",
+      "run_started_at": "2026-09-06T10:11:37Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T10:11:37Z",
+          "started_at": "2026-09-06T10:13:37Z",
+          "completed_at": "2026-09-06T11:10:29Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34002076153,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-attnres-1",
+      "sha": "5f4eda0316d1aeb983af2f72dcc6586f4cfaae7c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T00:44:27Z",
+      "run_started_at": "2026-09-06T00:44:27Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T00:44:27Z",
+          "started_at": "2026-09-06T00:58:05Z",
+          "completed_at": "2026-09-06T01:59:33Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34002001983,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-attnres-1",
+      "sha": "5f2792a5e07cb149f8f98e90f0f2641b3e9b2508",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T00:42:39Z",
+      "run_started_at": "2026-09-06T00:42:39Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T00:42:40Z",
+          "started_at": "2026-09-06T00:51:06Z",
+          "completed_at": "2026-09-06T01:55:28Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34004725869,
+      "workflow": "larql-compute-metal",
+      "branch": "e30-static-shard-runtime",
+      "sha": "edd01b3a0074393e1b569c13ef7783e988fd0bb2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T01:45:45Z",
+      "run_started_at": "2026-09-06T01:45:45Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T01:45:46Z",
+          "started_at": "2026-09-06T02:13:51Z",
+          "completed_at": "2026-09-06T03:05:52Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34002225588,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-residency-vertical",
+      "sha": "1a7d668656c90c5eae789b55ee1792d4d2ab883d",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-06T00:47:52Z",
+      "run_started_at": "2026-09-06T00:47:52Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-06T00:47:53Z",
+          "started_at": "2026-09-06T01:43:55Z",
+          "completed_at": "2026-09-06T02:37:58Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33994763628,
+      "workflow": "larql-compute-metal",
+      "branch": "represent-rung3",
+      "sha": "82888431e556ede77e9cb5ba2c2556b3bd0836fc",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T22:02:39Z",
+      "run_started_at": "2026-09-05T22:02:39Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T22:02:40Z",
+          "started_at": "2026-09-05T22:02:46Z",
+          "completed_at": "2026-09-05T23:05:12Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33983292853,
+      "workflow": "larql-compute-metal",
+      "branch": "represent-rung3",
+      "sha": "a97283d95195a797c63c227a641badf6dba16648",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T18:11:48Z",
+      "run_started_at": "2026-09-05T18:11:48Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T18:11:48Z",
+          "started_at": "2026-09-05T18:53:40Z",
+          "completed_at": "2026-09-05T19:59:32Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33981504704,
+      "workflow": "larql-compute-metal",
+      "branch": "represent-rung3",
+      "sha": "58bfaa8f63bd336936df2e7ad863855a068320af",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T17:36:49Z",
+      "run_started_at": "2026-09-05T17:36:49Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T17:36:49Z",
+          "started_at": "2026-09-05T17:38:39Z",
+          "completed_at": "2026-09-05T18:35:39Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33978351345,
+      "workflow": "larql-compute-metal",
+      "branch": "wave19-sinkhorn-traversal",
+      "sha": "f12a611d6d817c030f5ffa81ccf05e31329eeafa",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T16:35:36Z",
+      "run_started_at": "2026-09-05T16:35:36Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T16:35:37Z",
+          "started_at": "2026-09-05T16:36:58Z",
+          "completed_at": "2026-09-05T17:34:16Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33976559812,
+      "workflow": "larql-compute-metal",
+      "branch": "wave19-sinkhorn-traversal",
+      "sha": "406df4f18a9f5a65c55595dda39b4c6e4cac7427",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T16:01:22Z",
+      "run_started_at": "2026-09-05T16:01:22Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T16:01:22Z",
+          "started_at": "2026-09-05T16:02:54Z",
+          "completed_at": "2026-09-05T16:55:42Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33964736439,
+      "workflow": "larql-compute-metal",
+      "branch": "represent-entropy-bf16",
+      "sha": "ee08b35e2fa73ab7b5c3d0ccdd43fb726e1625ed",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T11:58:21Z",
+      "run_started_at": "2026-09-05T11:58:21Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T11:58:21Z",
+          "started_at": "2026-09-05T12:09:21Z",
+          "completed_at": "2026-09-05T12:56:43Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33962379822,
+      "workflow": "larql-compute-metal",
+      "branch": "represent-entropy-bf16",
+      "sha": "49d264c3d7f6d2f7d96456678565525c33759e88",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T11:05:19Z",
+      "run_started_at": "2026-09-05T11:05:19Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T11:05:20Z",
+          "started_at": "2026-09-05T11:07:36Z",
+          "completed_at": "2026-09-05T12:03:29Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33939903832,
+      "workflow": "larql-compute-metal",
+      "branch": "pareto-1/instrument-v2",
+      "sha": "25c9d7157debf151b19c25d8a8dd265f4ca3fa91",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T02:43:59Z",
+      "run_started_at": "2026-09-05T02:43:59Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T02:43:59Z",
+          "started_at": "2026-09-05T02:44:06Z",
+          "completed_at": "2026-09-05T03:37:45Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33933693457,
+      "workflow": "larql-compute-metal",
+      "branch": "pareto-1/instrument-v2",
+      "sha": "915202fbc32e33fd4467d0adadd0e29f039d2dbc",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T00:39:26Z",
+      "run_started_at": "2026-09-05T00:39:26Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T00:39:27Z",
+          "started_at": "2026-09-05T00:56:02Z",
+          "completed_at": "2026-09-05T01:43:00Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33933561639,
+      "workflow": "larql-compute-metal",
+      "branch": "pareto-1/instrument-v2",
+      "sha": "7d142b8cc5aa36c724280b83beff0eaf90a14b0d",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T00:37:02Z",
+      "run_started_at": "2026-09-05T00:37:02Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T00:37:03Z",
+          "started_at": "2026-09-05T00:48:07Z",
+          "completed_at": "2026-09-05T01:43:42Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33934307328,
+      "workflow": "larql-compute-metal",
+      "branch": "wave18-hyper-connection-addressability",
+      "sha": "db66f01b8bac2019d6024b70813453bb5c939d99",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-05T00:50:54Z",
+      "run_started_at": "2026-09-05T00:50:54Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-05T00:50:54Z",
+          "started_at": "2026-09-05T01:25:44Z",
+          "completed_at": "2026-09-05T02:17:36Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33930594995,
+      "workflow": "larql-compute-metal",
+      "branch": "wave18-hyper-connection-addressability",
+      "sha": "4b8d52e1a1f4324cabba9b470024fbb353c8c768",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-04T23:44:10Z",
+      "run_started_at": "2026-09-04T23:44:10Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-04T23:44:10Z",
+          "started_at": "2026-09-04T23:44:19Z",
+          "completed_at": "2026-09-05T00:45:33Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33904473111,
+      "workflow": "larql-compute-metal",
+      "branch": "k3-arch-1",
+      "sha": "028bfc7826ac1f464dab7b812c0e08d023acd233",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-04T18:10:34Z",
+      "run_started_at": "2026-09-04T18:10:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-04T18:10:35Z",
+          "started_at": "2026-09-04T18:12:27Z",
+          "completed_at": "2026-09-04T19:06:49Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33903041583,
+      "workflow": "larql-compute-metal",
+      "branch": "wave17-hyper-connection-execution",
+      "sha": "446197d5be82f8635c5e59a6dac52d53863ce02c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-04T17:54:23Z",
+      "run_started_at": "2026-09-04T17:54:23Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-04T17:54:23Z",
+          "started_at": "2026-09-04T17:59:15Z",
+          "completed_at": "2026-09-04T18:58:51Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33818318776,
+      "workflow": "larql-compute-metal",
+      "branch": "fix/ggml-type-ids",
+      "sha": "5c90d6cbdb3170dd1a1336bae010a00d28ca92b5",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T23:36:23Z",
+      "run_started_at": "2026-09-03T23:36:23Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T23:36:23Z",
+          "started_at": "2026-09-03T23:36:26Z",
+          "completed_at": "2026-09-04T00:37:05Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33808025616,
+      "workflow": "larql-compute-metal",
+      "branch": "wave10-qwen-moe-shared-expert",
+      "sha": "6348b81f2c109d2f003ee5e5337583e230ee902c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T21:27:16Z",
+      "run_started_at": "2026-09-03T21:27:16Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T21:27:17Z",
+          "started_at": "2026-09-03T21:27:18Z",
+          "completed_at": "2026-09-03T22:16:11Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33798047145,
+      "workflow": "larql-compute-metal",
+      "branch": "wave10-qwen-moe-shared-expert",
+      "sha": "d5d1e4bf2895219b2b6c9923c3e362c8aa79ff37",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T19:42:56Z",
+      "run_started_at": "2026-09-03T19:42:56Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T19:42:57Z",
+          "started_at": "2026-09-03T19:43:03Z",
+          "completed_at": "2026-09-03T20:46:36Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33762767315,
+      "workflow": "larql-compute-metal",
+      "branch": "fix/ci-no-stale-target-cache",
+      "sha": "a20916bb9d7e3a31d4ebb653dc7e80be82f4119f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T13:43:51Z",
+      "run_started_at": "2026-09-03T13:43:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T13:43:52Z",
+          "started_at": "2026-09-03T13:43:59Z",
+          "completed_at": "2026-09-03T14:34:41Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33756780551,
+      "workflow": "larql-compute-metal",
+      "branch": "fix/ci-no-stale-target-cache",
+      "sha": "7cff6a3303da42722eb8a3880297af55dacaaadd",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T12:42:49Z",
+      "run_started_at": "2026-09-03T12:42:49Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T12:42:51Z",
+          "started_at": "2026-09-03T12:43:34Z",
+          "completed_at": "2026-09-03T13:32:24Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33745737639,
+      "workflow": "larql-compute-metal",
+      "branch": "wave9-vestigial-pair",
+      "sha": "5077bf1a9f92d52225c7e893f4cc5772f4042d4b",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T10:42:19Z",
+      "run_started_at": "2026-09-03T10:42:19Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T10:42:19Z",
+          "started_at": "2026-09-03T10:46:21Z",
+          "completed_at": "2026-09-03T11:35:30Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33738473638,
+      "workflow": "larql-compute-metal",
+      "branch": "wave8-partial-rotary-factor",
+      "sha": "4ab796fc71b4b0a0b6a8e6b4dd86cf771bae7d58",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T09:22:29Z",
+      "run_started_at": "2026-09-03T09:22:29Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T09:22:29Z",
+          "started_at": "2026-09-03T09:30:37Z",
+          "completed_at": "2026-09-03T10:32:58Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 33736336384,
+      "workflow": "larql-compute-metal",
+      "branch": "wave8-partial-rotary-factor",
+      "sha": "b40c322cf06382ea037392d0861209e6a0dbdb20",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-03T08:59:16Z",
+      "run_started_at": "2026-09-03T08:59:16Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-03T08:59:17Z",
+          "started_at": "2026-09-03T09:16:48Z",
+          "completed_at": "2026-09-03T10:13:09Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    }
+  ]
+}

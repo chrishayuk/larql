@@ -1,0 +1,80 @@
+{
+  "experiment": "E1",
+  "adjudicated_at": "2026-09-07",
+  "status": "FROZEN \u2014 this file records the verdict as delivered and is not regenerated",
+  "provenance": {
+    "instrument": "scripts/ci_throughput.py",
+    "instrument_sha": "beb82d65",
+    "instrument_note": "Produced by the instrument as it stood BEFORE the CI-E2-0 fix. Re-running `adjudicate` against today's instrument returns UNSCOREABLE for BOTH C1 and C2, because P1 and P2/P3 all name extensive totals and the guard added in E2-0 refuses those across samples of different size. C1's finding is unaffected in substance \u2014 its intensive companion superseded_exec_mean moves -92% \u2014 while C2's companion moves only -16.6% and is inconclusive. This file keeps the wording the frozen forecast was actually scored with. Do NOT regenerate it.",
+    "before": "docs/ci-throughput/before-e1.json",
+    "after": "docs/ci-throughput/after-e1.json",
+    "forecast": "docs/ci-throughput/E1-forecast.json",
+    "command": "scripts/ci_throughput.py adjudicate --forecast docs/ci-throughput/E1-forecast.json --before docs/ci-throughput/before-e1.json --after docs/ci-throughput/after-e1.json"
+  },
+  "c2_note": "INVALID COMPARISON \u2014 metric-design defect discovered. The refusal is correct and it is the designed behaviour, but it fired on SAMPLE SIZE (12 attempts against 33, a -63.6% floor on any extensive total) rather than on the composition change P3 was written to catch. C2 is UNADJUDICATED, not refuted. See E1-postmortem.md for the post-hoc diagnostic, which is explicitly not a new E1 verdict.",
+  "mechanisms": {
+    "c1": "HELD",
+    "c2": "INVALID COMPARISON",
+    "c3": "HELD",
+    "system": "HELD"
+  },
+  "predictions": [
+    {
+      "id": "P1",
+      "mechanism": "c1",
+      "kind": "effect",
+      "metric": "superseded_exec_total",
+      "before": 931.65,
+      "after": 26.933333333333334,
+      "delta_pct": -97.10907171863539,
+      "verdict": "HELD",
+      "claim": "superseded_exec_total falls from 931.6 min to <= 300 min"
+    },
+    {
+      "id": "P2",
+      "mechanism": "c2",
+      "kind": "effect",
+      "metric": "queued.macos",
+      "before": 4526.616666666667,
+      "after": 961.75,
+      "delta_pct": -78.75344720302508,
+      "verdict": "HELD",
+      "claim": "total macOS queued runner-minutes fall by 30-55%"
+    },
+    {
+      "id": "P3",
+      "mechanism": "c2",
+      "kind": "validity",
+      "metric": "executed.macos",
+      "before": 3034.9166666666665,
+      "after": 920.6166666666667,
+      "delta_pct": -69.66583376808808,
+      "verdict": "FALSIFIED",
+      "claim": "macOS EXECUTED runner-minutes fall by no more than 10%"
+    },
+    {
+      "id": "P4",
+      "mechanism": "c3",
+      "kind": "effect",
+      "metric": "windows_vindex_exec.p50",
+      "before": 29.683333333333334,
+      "after": 21.766666666666666,
+      "delta_pct": -26.67040988208872,
+      "verdict": "HELD",
+      "claim": "vindex Windows execution p50 falls from 29m41s to 20-24 min"
+    },
+    {
+      "id": "P5",
+      "mechanism": "system",
+      "kind": "effect",
+      "metric": "merge_ready.p50",
+      "before": 61.38333333333333,
+      "after": 40.80833333333333,
+      "delta_pct": -33.51887048601684,
+      "verdict": "HELD",
+      "claim": "merge-ready p50 falls from 61m23s to 30-45 min"
+    }
+  ],
+  "before_attempts": 33,
+  "after_attempts": 12
+}

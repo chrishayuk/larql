@@ -231,6 +231,28 @@ jobs:
       - name: Check documentation code references
         run: python3 scripts/check_doc_references.py --strict
 
+  ci-instrument:
+    name: ci throughput instrument
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # scripts/ci_throughput.py adjudicates the CI experiments that decide
+      # what this repository's CI looks like, and until 2026-09-07 its
+      # `selftest` -- the thing that proves each verdict is reachable and
+      # each metric definition is right -- ran only when someone remembered
+      # to type it. E1 shipped a forecast whose validity gate could not
+      # pass; the selftest now carries the control that catches that class
+      # (an extensive metric scored across samples of different size must
+      # be REFUSED, and must still be scoreable at equal n). A checker
+      # nobody runs is not a check.
+      #
+      # No network: `selftest` builds synthetic runs with known answers and
+      # never calls the API. Seconds on Linux.
+      - name: Instrument selftest
+        run: python3 scripts/ci_throughput.py selftest
+
   proto-lint:
     name: buf lint
     runs-on: ubuntu-latest

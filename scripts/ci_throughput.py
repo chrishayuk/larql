@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+FORECAST_DIR = REPO_ROOT / "docs" / "ci-throughput"
 
 PER_PAGE = 100
 MAX_PAGES = 50
@@ -78,6 +79,116 @@ OS_LABEL_MARKERS = (
     ("macOS", "macos"),
 )
 OS_ORDER = ("linux", "windows", "macos", "unknown")
+
+# Metric KIND, declared once here rather than inferred at scoring time.
+#
+# An EXTENSIVE metric's value scales with how many attempts are in the
+# sample: totals of runner-minutes, counts of jobs. An INTENSIVE one does
+# not: percentiles, per-attempt means.
+#
+# This distinction is not decoration. E1 froze two extensive metrics
+# (`queued.macos`, `executed.macos`) and collected 12 attempts against a
+# 33-attempt baseline. A 12/33 ratio moves any per-attempt-flat total by
+# -63.6% BEFORE any effect exists, so E1's P3 could not have returned
+# HELD and its P2 could not have returned FALSIFIED. The adjudicator
+# reported `INVALID COMPARISON` for the mechanism, which was the designed
+# refusal — but it fired on sample size, not on the composition change P3
+# was written to catch, and the mechanism came back unadjudicated rather
+# than refuted.
+#
+# So: every extensive metric gets an intensive companion (`*_per_attempt`),
+# and `score_prediction` REFUSES an extensive metric whose two samples
+# differ in attempt count. A forecast that wants to score runner-minutes
+# across unlike samples must name the per-attempt metric.
+METRIC_EXTENSIVE = "extensive"
+METRIC_INTENSIVE = "intensive"
+
+# Prefixes/names that flatten_metrics() emits in extensive form. The
+# per-attempt companions are derived from these, so the two can never
+# drift apart.
+EXTENSIVE_OS_BUCKETS = ("queued", "executed")
+EXTENSIVE_SCALAR_METRICS = ("superseded_exec_total",)
+PER_ATTEMPT_SUFFIX = "_per_attempt"
+
+
+# Metric families whose name carries a workflow, e.g.
+# `workflow_exec_max.larql-compute-metal.p50`. Their names only exist once
+# that workflow appears in a snapshot, so a forecast that mentions one has
+# to be validated by SHAPE plus a separate check that the workflow is real.
+WORKFLOW_SCOPED_FAMILIES = ("workflow_exec_max", "workflow_share")
+PROBE_WORKFLOW = "<workflow>"
+
+
+def metric_shape(name: str) -> str:
+    """A workflow-scoped metric name with the workflow replaced by a probe.
+
+    `workflow_exec_max.larql-compute-metal.p50` -> `workflow_exec_max.<workflow>.p50`
+    `workflow_share.bench-regress`              -> `workflow_share.<workflow>`
+
+    Anything else is returned unchanged. rsplit, not split, because a
+    workflow name may contain a dot; the STAT never does.
+    """
+    for family in WORKFLOW_SCOPED_FAMILIES:
+        prefix = f"{family}."
+        if not name.startswith(prefix):
+            continue
+        remainder = name[len(prefix):]
+        if family == "workflow_share":
+            return f"{family}.{PROBE_WORKFLOW}"
+        workflow, _, stat = remainder.rpartition(".")
+        return f"{family}.{PROBE_WORKFLOW}.{stat}" if workflow else name
+    return name
+
+
+# Metric families that are NOT durations. Printing a share as "0.5 min"
+# is the unit error this whole programme exists to avoid making.
+DIMENSIONLESS_FAMILIES = ("workflow_share",)
+
+
+def metric_unit(name: str) -> str:
+    return "" if name.split(".", 1)[0] in DIMENSIONLESS_FAMILIES else " min"
+
+
+def metric_workflow(name: str) -> str | None:
+    """The workflow a workflow-scoped metric names, or None."""
+    for family in WORKFLOW_SCOPED_FAMILIES:
+        prefix = f"{family}."
+        if not name.startswith(prefix):
+            continue
+        remainder = name[len(prefix):]
+        if family == "workflow_share":
+            return remainder
+        workflow, _, _stat = remainder.rpartition(".")
+        return workflow or None
+    return None
+
+
+# The intensive companion of each extensive SCALAR. The OS buckets derive
+# theirs by suffix; this table covers the ones that do not, so a refusal can
+# never point at a metric the instrument does not produce. `selftest`
+# asserts every extensive metric has a companion and that the companion is
+# itself produced and intensive.
+INTENSIVE_COMPANIONS = {"superseded_exec_total": "superseded_exec_mean"}
+
+
+def intensive_companion(name: str) -> str | None:
+    """The metric to score instead, when `name` is extensive."""
+    if name in INTENSIVE_COMPANIONS:
+        return INTENSIVE_COMPANIONS[name]
+    stem, dot, rest = name.partition(".")
+    if stem in EXTENSIVE_OS_BUCKETS and dot:
+        return f"{stem}{PER_ATTEMPT_SUFFIX}.{rest}"
+    return None
+
+
+def metric_kind(name: str) -> str:
+    """extensive | intensive, for any name flatten_metrics() produces."""
+    stem = name.split(".", 1)[0]
+    if stem.endswith(PER_ATTEMPT_SUFFIX):
+        return METRIC_INTENSIVE
+    if stem in EXTENSIVE_OS_BUCKETS or name in EXTENSIVE_SCALAR_METRICS:
+        return METRIC_EXTENSIVE
+    return METRIC_INTENSIVE
 
 TERMINAL_SUCCESS = "success"
 TERMINAL_CANCELLED = "cancelled"
@@ -261,6 +372,10 @@ class AttemptMetrics:
     complete: bool = True
     macos_queue_max: float | None = None
     windows_vindex_exec: float | None = None
+    # Longest single job execution per workflow, within this attempt. Wall
+    # clock for the workflow, not its runner-minute cost, because the claims
+    # it scores are about how long a gate makes a pull request wait.
+    workflow_exec_max: dict[str, float] = field(default_factory=dict)
     superseded_exec: float = 0.0
     queued_by_os: dict[str, float] = field(default_factory=dict)
     executed_by_os: dict[str, float] = field(default_factory=dict)
@@ -348,6 +463,17 @@ def analyse(
                         # is waste; the rest was legitimate work at the time.
                         overlap = seconds_between(max(started or next_start, next_start), completed)
                         metrics.superseded_exec += overlap or 0.0
+                    # SUCCEEDED runs only. A run cancelled by the
+                    # supersede rule stops mid-suite, so counting it would
+                    # let more cancellation masquerade as a faster gate —
+                    # the metric would be measuring c1, not the gate.
+                    if run["conclusion"] == TERMINAL_SUCCESS:
+                        workflow = run["workflow"] or "?"
+                        metrics.workflow_exec_max[workflow] = max(
+                            metrics.workflow_exec_max.get(workflow, 0.0), executed)
+                    # E1's forecast names this OS-scoped special case, so it
+                    # stays; workflow_exec_max is the general form and the one
+                    # new forecasts should use.
                     if run["workflow"] == "larql-vindex" and os_name == "windows":
                         metrics.windows_vindex_exec = max(metrics.windows_vindex_exec or 0.0, executed)
 
@@ -387,6 +513,28 @@ def aggregate(rows: Sequence[AttemptMetrics], percentiles: Sequence[int]) -> dic
         out[label] = {f"p{p}": percentile(values, p) for p in percentiles}
         out[label]["n"] = len(values)
 
+    # Composition, as a scoreable number rather than only a printed line.
+    # A per-attempt runner-minute figure is intensive in the SAMPLE SIZE but
+    # not in the MIX: if a later window triggers the expensive macOS gate on
+    # half as many pull requests, macOS minutes fall without anything having
+    # been made faster. E1's P3 tried to catch that with an extensive total
+    # and could not. This is the metric that can.
+    out["workflow_share"] = {}
+    if rows:
+        present: dict[str, int] = defaultdict(int)
+        for row in rows:
+            for workflow in row.workflows:
+                present[workflow] += 1
+        out["workflow_share"] = {w: c / len(rows) for w, c in present.items()}
+
+    workflows = sorted({w for r in rows for w in r.workflow_exec_max})
+    out["workflow_exec_max"] = {}
+    for workflow in workflows:
+        values = [r.workflow_exec_max[workflow] for r in rows if workflow in r.workflow_exec_max]
+        entry = {f"p{p}": percentile(values, p) for p in percentiles}
+        entry["n"] = len(values)
+        out["workflow_exec_max"][workflow] = entry
+
     out["superseded_exec_total"] = sum(r.superseded_exec for r in rows)
     out["superseded_exec_mean"] = statistics.fmean([r.superseded_exec for r in rows]) if rows else None
     for bucket, attr in (("queued_by_os", "queued_by_os"), ("executed_by_os", "executed_by_os")):
@@ -395,6 +543,12 @@ def aggregate(rows: Sequence[AttemptMetrics], percentiles: Sequence[int]) -> dic
             for os_name, value in getattr(row, attr).items():
                 totals[os_name] += value
         out[bucket] = dict(totals)
+        # The intensive companion. Derived from the same totals so the two
+        # cannot disagree, and defined only when there is a sample to
+        # divide by.
+        out[f"{bucket}_per_attempt"] = (
+            {os_name: value / len(rows) for os_name, value in totals.items()} if rows else {}
+        )
     return out
 
 
@@ -434,12 +588,21 @@ def print_table(before: dict | None, after: dict, percentiles: Sequence[int]) ->
     row("superseded exec (total)", (before or {}).get("superseded_exec_total"), after.get("superseded_exec_total"), fmt_minutes)
 
     print()
-    for bucket, title in (("queued_by_os", "queued runner-minutes"), ("executed_by_os", "executed runner-minutes")):
-        print(f"{title}:")
-        names = sorted(set((before or {}).get(bucket, {})) | set(after.get(bucket, {})), key=lambda n: OS_ORDER.index(n) if n in OS_ORDER else 99)
-        for name in names:
-            row(f"  {name}", (before or {}).get(bucket, {}).get(name), after.get(bucket, {}).get(name), fmt_minutes)
-        print()
+    # Totals first, then the same quantities per attempt. Only the second
+    # block is comparable when the two periods hold different numbers of
+    # pull requests, which is why both are printed side by side and never
+    # one without the other.
+    for suffix, title_suffix in (("", " (TOTAL — comparable only at equal n)"),
+                                 (PER_ATTEMPT_SUFFIX, " per attempt")):
+        for bucket, title in (("queued_by_os", "queued runner-minutes"),
+                              ("executed_by_os", "executed runner-minutes")):
+            key = f"{bucket}{suffix}"
+            print(f"{title}{title_suffix}:")
+            names = sorted(set((before or {}).get(key, {})) | set(after.get(key, {})),
+                           key=lambda n: OS_ORDER.index(n) if n in OS_ORDER else 99)
+            for name in names:
+                row(f"  {name}", (before or {}).get(key, {}).get(name), after.get(key, {}).get(name), fmt_minutes)
+            print()
 
 
 def report(args: argparse.Namespace) -> int:
@@ -500,11 +663,34 @@ def report(args: argparse.Namespace) -> int:
 # Everything the adjudicator compares is in MINUTES. The aggregates carry
 # seconds internally; converting once, here, keeps the frozen thresholds in
 # one unit and out of reach of a scoring-time reinterpretation.
+# The mechanism name reserved for "the tranche as a whole".
+SYSTEM_MECHANISM = "system"
+
 VERDICT_HELD = "HELD"
 VERDICT_PARTIAL = "PARTIAL"
 VERDICT_FALSIFIED = "FALSIFIED"
 VERDICT_INVALID = "INVALID COMPARISON"
 VERDICT_NO_DATA = "NO DATA"
+# Distinct from NO DATA: the metric exists on both sides and is perfectly
+# well defined, but comparing it across samples of different size answers a
+# question about sample size rather than about the intervention.
+VERDICT_UNSCOREABLE = "UNSCOREABLE"
+
+
+@dataclass(frozen=True)
+class Sample:
+    """A flat metric table plus the sample size that produced it.
+
+    The attempt count travels WITH the metrics because the parity check is
+    not optional: a scorer that has to remember to look it up separately is
+    a scorer that will one day forget.
+    """
+
+    metrics: dict[str, float | None]
+    attempts: int
+
+    def get(self, name: str) -> float | None:
+        return self.metrics.get(name)
 
 OPERATORS = {
     "lt": lambda a, b: a < b,
@@ -524,12 +710,23 @@ def flatten_metrics(agg: dict) -> dict[str, float | None]:
             if stat == "n":
                 continue
             out[f"{key}.{stat}"] = None if value is None else value / SECONDS_PER_MINUTE
+    # A share is a fraction, not a duration: it is NOT divided by
+    # SECONDS_PER_MINUTE, so a threshold on it reads as a share.
+    for workflow, share in (agg.get("workflow_share") or {}).items():
+        out[f"workflow_share.{workflow}"] = share
+    for workflow, stats in (agg.get("workflow_exec_max") or {}).items():
+        for stat, value in stats.items():
+            if stat == "n":
+                continue
+            out[f"workflow_exec_max.{workflow}.{stat}"] = None if value is None else value / SECONDS_PER_MINUTE
     for key in ("superseded_exec_total", "superseded_exec_mean"):
         value = agg.get(key)
         out[key] = None if value is None else value / SECONDS_PER_MINUTE
-    for bucket, prefix in (("queued_by_os", "queued"), ("executed_by_os", "executed")):
-        for os_name, value in (agg.get(bucket) or {}).items():
-            out[f"{prefix}.{os_name}"] = value / SECONDS_PER_MINUTE
+    for bucket in EXTENSIVE_OS_BUCKETS:
+        for os_name, value in (agg.get(f"{bucket}_by_os") or {}).items():
+            out[f"{bucket}.{os_name}"] = value / SECONDS_PER_MINUTE
+        for os_name, value in (agg.get(f"{bucket}_by_os_per_attempt") or {}).items():
+            out[f"{bucket}{PER_ATTEMPT_SUFFIX}.{os_name}"] = value / SECONDS_PER_MINUTE
     # merge_ready.p50 is the common shorthand; keep the full path too.
     return out
 
@@ -557,13 +754,32 @@ def evaluate_conditions(conditions: dict, after: float | None, before: float | N
     return True
 
 
-def score_prediction(pred: dict, before: dict, after: dict) -> dict:
+def sample_size_bias_pct(before: Sample, after: Sample) -> float | None:
+    """The movement an EXTENSIVE metric shows from sample size alone.
+
+    Exactly (n_after / n_before - 1) for a metric that is flat per attempt.
+    Reported so a reader can see how much of a delta was bought and paid
+    for before the intervention was considered.
+    """
+    if not before.attempts:
+        return None
+    return (after.attempts - before.attempts) / before.attempts * 100.0
+
+
+def score_prediction(pred: dict, before: Sample, after: Sample) -> dict:
     metric = pred["metric"]
+    kind = metric_kind(metric)
     b, a = before.get(metric), after.get(metric)
     held = evaluate_conditions(pred.get("held_if", {}), a, b)
     falsified = evaluate_conditions(pred.get("falsified_if", {}), a, b)
+    bias = sample_size_bias_pct(before, after)
+    unequal = before.attempts != after.attempts
     if a is None:
         verdict = VERDICT_NO_DATA
+    elif kind == METRIC_EXTENSIVE and unequal:
+        # Refuse rather than report. See METRIC_EXTENSIVE above: this is the
+        # E1 C2 defect, and the only correct answer is to name it.
+        verdict = VERDICT_UNSCOREABLE
     elif falsified:
         verdict = VERDICT_FALSIFIED
     elif held:
@@ -571,12 +787,27 @@ def score_prediction(pred: dict, before: dict, after: dict) -> dict:
     else:
         verdict = VERDICT_PARTIAL
     delta = None if (b in (None, 0) or a is None) else (a - b) / b * 100.0
-    return {"id": pred["id"], "mechanism": pred["mechanism"], "kind": pred.get("kind", "effect"),
-            "metric": metric, "before": b, "after": a, "delta_pct": delta,
-            "verdict": verdict, "claim": pred.get("claim", "")}
+    scored = {"id": pred["id"], "mechanism": pred["mechanism"], "kind": pred.get("kind", "effect"),
+              "metric": metric, "metric_kind": kind, "before": b, "after": a, "delta_pct": delta,
+              "verdict": verdict, "claim": pred.get("claim", "")}
+    if verdict == VERDICT_UNSCOREABLE:
+        companion = intensive_companion(metric)
+        remedy = f"Score {companion} instead." if companion else (
+            "This metric has no intensive companion; compare equal-sized samples.")
+        scored["unscoreable_because"] = (
+            f"{metric} is {METRIC_EXTENSIVE}; n_before={before.attempts} n_after={after.attempts} "
+            f"contributes {bias:+.1f}% before any effect. {remedy}"
+        )
+        scored["intensive_companion"] = companion
+    return scored
 
 
 def mechanism_verdict(scored: Sequence[dict]) -> str:
+    # An unscoreable prediction is not a failed one. If the mechanism's
+    # validity gate cannot be evaluated, nothing downstream of it can be
+    # either, and saying so beats inventing a verdict.
+    if any(s["verdict"] == VERDICT_UNSCOREABLE for s in scored):
+        return VERDICT_UNSCOREABLE
     validity = [s for s in scored if s["kind"] == "validity"]
     if any(s["verdict"] in (VERDICT_FALSIFIED, VERDICT_PARTIAL) for s in validity):
         return VERDICT_INVALID
@@ -598,8 +829,8 @@ def adjudicate(args: argparse.Namespace) -> int:
 
     before_rows = analyse(json.loads(Path(args.before).read_text()), informational, None, args.require_complete)
     after_rows = analyse(json.loads(Path(args.after).read_text()), informational, None, args.require_complete)
-    before = flatten_metrics(aggregate(before_rows, percentiles))
-    after = flatten_metrics(aggregate(after_rows, percentiles))
+    before = Sample(flatten_metrics(aggregate(before_rows, percentiles)), len(before_rows))
+    after = Sample(flatten_metrics(aggregate(after_rows, percentiles)), len(after_rows))
 
     scored = [score_prediction(p, before, after) for p in forecast["predictions"]]
     by_mech: dict[str, list[dict]] = defaultdict(list)
@@ -607,32 +838,52 @@ def adjudicate(args: argparse.Namespace) -> int:
         by_mech[s["mechanism"]].append(s)
 
     names = forecast.get("mechanisms", {})
-    order = [m for m in ("c1", "c2", "c3", "system") if m in by_mech] +             [m for m in by_mech if m not in ("c1", "c2", "c3", "system")]
+    # Forecast order, with the whole-tranche mechanism last: a system
+    # verdict reads as a summary, and a summary printed first invites
+    # skipping the per-mechanism causal information underneath it.
+    declared = list(forecast.get("mechanisms", {}))
+    ranked = [m for m in declared if m in by_mech and m != SYSTEM_MECHANISM]
+    ranked += [m for m in by_mech if m not in declared and m != SYSTEM_MECHANISM]
+    if SYSTEM_MECHANISM in by_mech:
+        ranked.append(SYSTEM_MECHANISM)
+    order = ranked
 
-    print(f"E1 adjudication — before n={len(before_rows)} attempts, after n={len(after_rows)} attempts")
+    experiment = forecast.get("experiment", "?")
+    print(f"{experiment} adjudication — before n={before.attempts} attempts, after n={after.attempts} attempts")
+    bias = sample_size_bias_pct(before, after)
+    if bias is not None and before.attempts != after.attempts:
+        print(f"  sample sizes differ: any EXTENSIVE metric carries {bias:+.1f}% from that alone,")
+        print(f"  so extensive predictions are refused rather than scored")
     print()
     results = {}
     for mech in order:
         entries = by_mech[mech]
         verdict = mechanism_verdict(entries)
         results[mech] = verdict
-        label = "SYSTEM" if mech == "system" else mech.upper()
+        label = "SYSTEM" if mech == SYSTEM_MECHANISM else mech.upper()
         print(f"{label}  {names.get(mech, '')}")
         for s in entries:
             delta = "-" if s["delta_pct"] is None else f"{s['delta_pct']:+.0f}%"
-            b = "-" if s["before"] is None else f"{s['before']:.1f}"
-            a = "-" if s["after"] is None else f"{s['after']:.1f}"
+            places = 1 if metric_unit(s["metric"]) else 3
+            b = "-" if s["before"] is None else f"{s['before']:.{places}f}"
+            a = "-" if s["after"] is None else f"{s['after']:.{places}f}"
             kind = " (validity)" if s["kind"] == "validity" else ""
-            print(f"  {s['id']}{kind}  {s['metric']}: {b} -> {a} min  ({delta})   {s['verdict']}")
+            unit = metric_unit(s["metric"])
+            print(f"  {s['id']}{kind}  {s['metric']}: {b} -> {a}{unit}  ({delta})   {s['verdict']}")
+            if s.get("unscoreable_because"):
+                print(f"       {s['unscoreable_because']}")
         print(f"  VERDICT: {verdict}")
         if verdict == VERDICT_INVALID:
             print("  the validity gate failed: this mechanism's effect predictions are NOT interpreted")
+        if verdict == VERDICT_UNSCOREABLE:
+            print("  this mechanism's forecast names a metric these two samples cannot compare")
         print()
 
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(
-            {"mechanisms": results, "predictions": scored,
-             "before_attempts": len(before_rows), "after_attempts": len(after_rows)}, indent=2) + "\n")
+            {"experiment": experiment, "mechanisms": results, "predictions": scored,
+             "before_attempts": before.attempts, "after_attempts": after.attempts,
+             "sample_size_bias_pct": bias}, indent=2) + "\n")
     return 0
 
 
@@ -678,6 +929,19 @@ def selftest(_args: argparse.Namespace) -> int:
     check("queued linux", rows[0].queued_by_os["linux"], 60.0)
     check("executed macos", rows[0].executed_by_os["macos"], 60.0)
 
+    # 1b. the per-attempt companion is the total divided by the attempt
+    #     count — checked on two attempts so the divisor is not 1.
+    two = {"runs": [
+        _run("quality", "aaa", [_job(T(0), T(20), T(21), ["macos-14"])], branch="pr-1"),
+        _run("quality", "bbb", [_job(T(30), T(40), T(50), ["macos-14"])], branch="pr-2"),
+    ]}
+    agg2 = aggregate(analyse(two, DEFAULT_INFORMATIONAL, None, True), DEFAULT_PERCENTILES)
+    check("two attempts aggregated", agg2["attempts"], 2)
+    check("queued macos total", agg2["queued_by_os"]["macos"], 30 * 60.0)
+    check("queued macos per attempt", agg2["queued_by_os_per_attempt"]["macos"], 15 * 60.0)
+    check("per-attempt is empty with no attempts",
+          aggregate([], DEFAULT_PERCENTILES)["queued_by_os_per_attempt"], {})
+
     # 2. merge-ready spans to the LAST blocking success; the informational
     #    workflow is excluded even when it finishes last and fails.
     snap = {"runs": [
@@ -718,42 +982,186 @@ def selftest(_args: argparse.Namespace) -> int:
                 "held_if": {"delta_pct": {"lte": -30}}, "falsified_if": {"delta_pct": {"gt": -20}}}
     p_valid = {"id": "PV", "mechanism": "c2", "kind": "validity", "metric": "executed.macos",
                "held_if": {"delta_pct": {"gte": -10}}, "falsified_if": {"delta_pct": {"lt": -20}}}
-    base = {"queued.macos": 4526.6, "executed.macos": 3034.9}
+    N = 20      # equal sample sizes, so the parity guard stays out of the way
+    base = Sample({"queued.macos": 4526.6, "executed.macos": 3034.9}, N)
 
-    good = {"queued.macos": 2263.3, "executed.macos": 2882.2}   # -50% queue, -5% exec
+    good = Sample({"queued.macos": 2263.3, "executed.macos": 2882.2}, N)   # -50% queue, -5% exec
     check("effect HELD", score_prediction(p_effect, base, good)["verdict"], VERDICT_HELD)
     check("validity HELD", score_prediction(p_valid, base, good)["verdict"], VERDICT_HELD)
     check("c2 verdict when both hold",
           mechanism_verdict([score_prediction(p_effect, base, good), score_prediction(p_valid, base, good)]),
           VERDICT_HELD)
 
-    flat = {"queued.macos": 4300.0, "executed.macos": 2950.0}    # -5% queue
+    flat = Sample({"queued.macos": 4300.0, "executed.macos": 2950.0}, N)   # -5% queue
     check("effect FALSIFIED", score_prediction(p_effect, base, flat)["verdict"], VERDICT_FALSIFIED)
 
-    # The control that matters: a spectacular queue drop that is really just a
-    # thinner AFTER sample must NOT be readable as an effect.
-    thin = {"queued.macos": 1000.0, "executed.macos": 1500.0}    # -78% queue, -51% exec
-    check("effect looks HELD on a thin sample", score_prediction(p_effect, base, thin)["verdict"], VERDICT_HELD)
-    check("validity FALSIFIED on a thin sample", score_prediction(p_valid, base, thin)["verdict"], VERDICT_FALSIFIED)
+    # At EQUAL n, a queue drop alongside an execution collapse is a real
+    # composition change, and the validity gate must veto the effect.
+    shifted = Sample({"queued.macos": 1000.0, "executed.macos": 1500.0}, N)  # -78% queue, -51% exec
+    check("effect looks HELD under a composition shift",
+          score_prediction(p_effect, base, shifted)["verdict"], VERDICT_HELD)
+    check("validity FALSIFIED under a composition shift",
+          score_prediction(p_valid, base, shifted)["verdict"], VERDICT_FALSIFIED)
     check("c2 verdict is vetoed by validity",
-          mechanism_verdict([score_prediction(p_effect, base, thin), score_prediction(p_valid, base, thin)]),
+          mechanism_verdict([score_prediction(p_effect, base, shifted), score_prediction(p_valid, base, shifted)]),
           VERDICT_INVALID)
 
-    check("missing metric yields NO DATA", score_prediction(p_effect, base, {})["verdict"], VERDICT_NO_DATA)
+    check("missing metric yields NO DATA", score_prediction(p_effect, base, Sample({}, N))["verdict"], VERDICT_NO_DATA)
 
-    # 4b. the shipped forecast must be scoreable: every condition parses and
-    #     every metric name is one flatten_metrics actually produces.
-    forecast_path = REPO_ROOT / "docs" / "ci-throughput" / "E1-forecast.json"
-    if forecast_path.exists():
+    # 4a. the E1 C2 defect, as a regression test. The SAME numbers that score
+    #     HELD/FALSIFIED above must be refused once the samples differ in
+    #     size, because then they are a statement about n and not about the
+    #     intervention. Both directions are checked: the guard must fire
+    #     here and must NOT fire at equal n (above), or it is not a gate.
+    thin = Sample({"queued.macos": 1000.0, "executed.macos": 1500.0}, N // 2)
+    check("extensive effect is UNSCOREABLE at unequal n",
+          score_prediction(p_effect, base, thin)["verdict"], VERDICT_UNSCOREABLE)
+    check("extensive validity is UNSCOREABLE at unequal n",
+          score_prediction(p_valid, base, thin)["verdict"], VERDICT_UNSCOREABLE)
+    check("mechanism is UNSCOREABLE, not INVALID, when the metric is the problem",
+          mechanism_verdict([score_prediction(p_effect, base, thin), score_prediction(p_valid, base, thin)]),
+          VERDICT_UNSCOREABLE)
+    check("the refusal names the per-attempt metric to use instead",
+          "queued_per_attempt.macos" in score_prediction(p_effect, base, thin)["unscoreable_because"], True)
+    check("the refusal names superseded_exec_MEAN, which exists",
+          intensive_companion("superseded_exec_total"), "superseded_exec_mean")
+
+    # E1's real numbers: 12 attempts against 33 is -63.6% before any effect.
+    check("E1's sample-size bias is reported",
+          round(sample_size_bias_pct(Sample({}, 33), Sample({}, 12)), 1), -63.6)
+
+    # 4c. an INTENSIVE metric is scoreable across unlike samples — that is
+    #     the whole point of having the companion.
+    p_intensive = {"id": "PI", "mechanism": "c2", "kind": "effect",
+                   "metric": "queued_per_attempt.macos",
+                   "held_if": {"delta_pct": {"lte": -30}}, "falsified_if": {"delta_pct": {"gt": -20}}}
+    b_int = Sample({"queued_per_attempt.macos": 137.2}, 33)
+    a_int = Sample({"queued_per_attempt.macos": 80.1}, 12)
+    check("intensive metric scores across unlike samples",
+          score_prediction(p_intensive, b_int, a_int)["verdict"], VERDICT_HELD)
+
+    # 4d. declaration fate: every metric the instrument produces has a kind,
+    #     and the per-attempt companions exist for every extensive bucket.
+    produced = set(flatten_metrics(aggregate([
+        AttemptMetrics(branch="b", sha="s", workflows=[PROBE_WORKFLOW],
+                       queued_by_os={"macos": 1.0}, executed_by_os={"macos": 1.0},
+                       workflow_exec_max={PROBE_WORKFLOW: 60.0})
+    ], DEFAULT_PERCENTILES)))
+    check("every extensive metric has a per-attempt companion",
+          all(f"{b}{PER_ATTEMPT_SUFFIX}.macos" in produced
+              for b in EXTENSIVE_OS_BUCKETS), True)
+    check("metric_kind classifies every produced metric",
+          {metric_kind(m) for m in produced} <= {METRIC_EXTENSIVE, METRIC_INTENSIVE}, True)
+    #     Declaration fate: every extensive metric the instrument produces
+    #     must have a companion, that companion must itself be produced, and
+    #     it must be intensive. Without this a refusal can name a metric
+    #     that does not exist — as it did for superseded_exec_total.
+    extensive_produced = [m for m in produced if metric_kind(m) == METRIC_EXTENSIVE]
+    check("there are extensive metrics to check", len(extensive_produced) > 0, True)
+    check("every extensive metric has a companion",
+          all(intensive_companion(m) for m in extensive_produced), True)
+    check("every companion is itself produced",
+          all(intensive_companion(m) in produced for m in extensive_produced), True)
+    check("every companion is intensive",
+          {metric_kind(intensive_companion(m)) for m in extensive_produced}, {METRIC_INTENSIVE})
+    check("queued.macos is extensive", metric_kind("queued.macos"), METRIC_EXTENSIVE)
+    check("queued_per_attempt.macos is intensive",
+          metric_kind("queued_per_attempt.macos"), METRIC_INTENSIVE)
+    check("merge_ready.p50 is intensive", metric_kind("merge_ready.p50"), METRIC_INTENSIVE)
+    check("superseded_exec_total is extensive",
+          metric_kind("superseded_exec_total"), METRIC_EXTENSIVE)
+    check("superseded_exec_mean is intensive",
+          metric_kind("superseded_exec_mean"), METRIC_INTENSIVE)
+    check("workflow_exec_max is intensive",
+          metric_kind("workflow_exec_max.larql-compute-metal.p50"), METRIC_INTENSIVE)
+    check("workflow_share is intensive",
+          metric_kind("workflow_share.larql-compute-metal"), METRIC_INTENSIVE)
+    check("metric_shape abstracts the workflow out of an exec metric",
+          metric_shape("workflow_exec_max.larql-compute-metal.p50"),
+          f"workflow_exec_max.{PROBE_WORKFLOW}.p50")
+    check("metric_shape abstracts the workflow out of a share",
+          metric_shape("workflow_share.bench-regress"), f"workflow_share.{PROBE_WORKFLOW}")
+    check("metric_shape survives a dot in a workflow name",
+          metric_shape("workflow_exec_max.a.b.p95"), f"workflow_exec_max.{PROBE_WORKFLOW}.p95")
+    check("metric_workflow recovers the name", metric_workflow("workflow_exec_max.a.b.p95"), "a.b")
+    check("metric_shape leaves an unscoped metric alone",
+          metric_shape("merge_ready.p50"), "merge_ready.p50")
+    check("metric_workflow is None for an unscoped metric",
+          metric_workflow("merge_ready.p50"), None)
+
+    # 4e. workflow_exec_max picks the LONGEST job in the workflow, per
+    #     attempt, and is a percentile across attempts — so it survives a
+    #     change in how many pull requests the window holds.
+    wf_snap = {"runs": [
+        _run("larql-compute-metal", "aaa", [
+            _job(T(0), T(1), T(11), ["macos-14"]),
+            _job(T(0), T(1), T(31), ["macos-14"]),
+        ], branch="pr-1"),
+        _run("larql-compute-metal", "bbb", [_job(T(0), T(1), T(21), ["macos-14"])], branch="pr-2"),
+    ]}
+    wf_agg = aggregate(analyse(wf_snap, DEFAULT_INFORMATIONAL, None, True), DEFAULT_PERCENTILES)
+    check("workflow_exec_max takes the longest job",
+          wf_agg["workflow_exec_max"]["larql-compute-metal"]["p50"], 25 * 60.0)
+    check("workflow_exec_max is flattened in minutes",
+          flatten_metrics(wf_agg)["workflow_exec_max.larql-compute-metal.p50"], 25.0)
+
+    #     Share counts attempts the workflow RAN on, success or not, because
+    #     it describes what triggered, not what passed.
+    share_snap = {"runs": wf_snap["runs"] + [
+        _run("quality", "ccc", [_job(T(0), T(1), T(6), ["ubuntu-latest"])], branch="pr-3")]}
+    share_agg = aggregate(analyse(share_snap, DEFAULT_INFORMATIONAL, None, True), DEFAULT_PERCENTILES)
+    check("workflow_share counts attempts, not runs",
+          round(share_agg["workflow_share"]["larql-compute-metal"], 4), round(2 / 3, 4))
+    check("workflow_share is a fraction, not minutes",
+          round(flatten_metrics(share_agg)["workflow_share.larql-compute-metal"], 4), round(2 / 3, 4))
+
+    #     Control: a CANCELLED run must not enter the metric, or cancelling
+    #     more runs would read as a faster gate.
+    wf_snap["runs"][1] = _run("larql-compute-metal", "bbb",
+                              [_job(T(0), T(1), T(4), ["macos-14"], TERMINAL_CANCELLED)],
+                              conclusion=TERMINAL_CANCELLED, branch="pr-2")
+    wf_agg2 = aggregate(analyse(wf_snap, DEFAULT_INFORMATIONAL, None, True), DEFAULT_PERCENTILES)
+    check("a cancelled run is excluded from workflow_exec_max",
+          wf_agg2["workflow_exec_max"]["larql-compute-metal"]["n"], 1)
+    check("the surviving successful attempt sets the value",
+          wf_agg2["workflow_exec_max"]["larql-compute-metal"]["p50"], 30 * 60.0)
+
+    # 4b. every shipped forecast must be scoreable: every condition parses
+    #     and every metric name is one flatten_metrics actually produces.
+    #     Forecasts frozen from E2 onward must additionally name only
+    #     INTENSIVE metrics, so the E1 C2 defect cannot recur by copy-paste.
+    for forecast_path, intensive_only in (
+        (FORECAST_DIR / "E1-forecast.json", False),
+        (FORECAST_DIR / "E2-contract.json", True),
+    ):
+        if not forecast_path.exists():
+            continue
         forecast = json.loads(forecast_path.read_text())
-        known = set(flatten_metrics(aggregate([
-            AttemptMetrics(branch="b", sha="s", queued_by_os={"macos": 1.0}, executed_by_os={"macos": 1.0})
-        ], DEFAULT_PERCENTILES)))
+        label = forecast.get("experiment", forecast_path.stem)
+        snapshot_workflows: set[str] = set()
+        for snapshot_key in ("primary_snapshot", "metal_gate_snapshot", "baseline_snapshot"):
+            snapshot_path = forecast.get("baseline", {}).get(snapshot_key) or forecast.get(
+                "frozen_against", {}).get(snapshot_key)
+            if snapshot_path and (REPO_ROOT / snapshot_path).exists():
+                snap = json.loads((REPO_ROOT / snapshot_path).read_text())
+                snapshot_workflows |= {r.get("workflow") for r in snap.get("runs", [])}
         for pred in forecast["predictions"]:
-            check(f"{pred['id']} metric is produced", pred["metric"] in known, True)
+            # SHAPE, because a workflow-scoped name exists only once that
+            # workflow is in a snapshot...
+            check(f"{label} {pred['id']} metric is produced",
+                  metric_shape(pred["metric"]) in produced, True)
+            # ...and then the workflow itself must be one the baseline
+            # actually contains, or the prediction is unscoreable by name.
+            workflow = metric_workflow(pred["metric"])
+            if workflow is not None and snapshot_workflows:
+                check(f"{label} {pred['id']} names a workflow the baseline contains",
+                      workflow in snapshot_workflows, True)
+            if intensive_only:
+                check(f"{label} {pred['id']} names an intensive metric",
+                      metric_kind(pred["metric"]), METRIC_INTENSIVE)
             for conditions in (pred.get("held_if", {}), pred.get("falsified_if", {})):
                 evaluate_conditions(conditions, 1.0, 2.0)   # raises on an unknown field/operator
-        check("forecast conditions all parse", True, True)
+        check(f"{label} conditions all parse", True, True)
 
     # 5. percentile is defined at n == 1 and interpolates at n == 2.
     check("percentile n=1", percentile([7.0], 95), 7.0)
