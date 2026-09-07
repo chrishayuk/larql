@@ -127,6 +127,33 @@ pub fn staged_images() -> u64 {
     STAGED_IMAGES.load(Ordering::Relaxed)
 }
 
+thread_local! {
+    /// The same two tallies, for THIS thread's stagings alone.
+    ///
+    /// [`staged_bytes`] and [`staged_images`] answer for the process,
+    /// which is what a residency report wants and what makes them
+    /// useless for a claim about one caller's own writes: any thread
+    /// staging anything moves them.
+    ///
+    /// A thread-scoped tally is sound here for a specific reason, not as
+    /// a general habit. [`StagedF32::stage`] writes and maps on the
+    /// thread that called it and hands nothing to a worker, so the
+    /// stagings attributable to a caller are exactly the stagings its
+    /// own thread performed. If that ever stops being true, this pair
+    /// stops meaning what its name says and must move with it.
+    static STAGED_HERE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// Bytes staged to the arena by the calling thread.
+pub fn staged_bytes_on_this_thread() -> u64 {
+    STAGED_HERE.with(|c| c.get().0)
+}
+
+/// f32 images staged to the arena by the calling thread.
+pub fn staged_images_on_this_thread() -> u64 {
+    STAGED_HERE.with(|c| c.get().1)
+}
+
 #[derive(Debug)]
 pub(super) struct Arena {
     pub(super) file: std::fs::File,
@@ -264,6 +291,10 @@ impl StagedF32 {
         .map_err(|e| VindexError::Parse(format!("f32 staging map failed: {e}")))?;
         STAGED_BYTES.fetch_add(bytes as u64, Ordering::Relaxed);
         STAGED_IMAGES.fetch_add(1, Ordering::Relaxed);
+        STAGED_HERE.with(|c| {
+            let (b, i) = c.get();
+            c.set((b + bytes as u64, i + 1));
+        });
         Ok(Self(Inner::Mapped {
             map,
             elements: values.len(),

@@ -8,8 +8,8 @@
 //! claim the tests check.
 
 use super::staged::{
-    staged_bytes, staged_images, StagedF32, DEFAULT_STAGE_MIN_BYTES, STAGE_ENV,
-    STAGE_MIN_BYTES_ENV, STAGE_OFF,
+    staged_bytes, staged_bytes_on_this_thread, staged_images, staged_images_on_this_thread,
+    StagedF32, DEFAULT_STAGE_MIN_BYTES, STAGE_ENV, STAGE_MIN_BYTES_ENV, STAGE_OFF,
 };
 use serial_test::serial;
 
@@ -196,23 +196,79 @@ fn an_odd_length_image_keeps_its_last_element() {
     assert_eq!(bits(&staged), bits(&values));
 }
 
+/// "Only" is a claim about writes this caller owns, so it is asserted on
+/// the thread-scoped tally.
+///
+/// It used to be asserted on `staged_bytes()`/`staged_images()`, which
+/// answer for the whole process: every f32 staging anywhere in this
+/// binary moves them, and `#[serial]` orders the `#[serial]` tests
+/// against each other and nothing against the rest. That read 29900
+/// against an expected 28876 — one foreign 1024-byte image — about once
+/// in twenty runs of the suite.
+///
+/// The process counters are still asserted, at the strength they can
+/// carry under concurrency: they must move by AT LEAST this test's own
+/// contribution, never by exactly it.
 #[test]
 #[serial]
 fn the_counters_only_move_for_mapped_images() {
-    let before_bytes = staged_bytes();
-    let before_images = staged_images();
+    let before_bytes = staged_bytes_on_this_thread();
+    let before_images = staged_images_on_this_thread();
+    let before_process = staged_bytes();
+    let before_process_images = staged_images();
+
     let small = with_env(false, Some(DEFAULT_STAGE_MIN_BYTES), || {
         StagedF32::stage(adversarial(4))
     })
     .expect("staging");
     assert!(!small.is_mapped());
-    assert_eq!(staged_bytes(), before_bytes);
-    assert_eq!(staged_images(), before_images);
+    assert_eq!(staged_bytes_on_this_thread(), before_bytes);
+    assert_eq!(staged_images_on_this_thread(), before_images);
 
     let big = with_env(false, Some(1024), || StagedF32::stage(adversarial(1024))).expect("staging");
     assert!(big.is_mapped());
-    assert_eq!(staged_bytes(), before_bytes + 4096);
-    assert_eq!(staged_images(), before_images + 1);
+    assert_eq!(staged_bytes_on_this_thread(), before_bytes + 4096);
+    assert_eq!(staged_images_on_this_thread(), before_images + 1);
+
+    // The thread tally is not a private counter that only this test can
+    // move: the same staging reaches the process report.
+    assert!(staged_bytes() >= before_process + 4096);
+    assert!(staged_images() > before_process_images);
+}
+
+/// The witness that the tally above is scoped rather than merely quiet:
+/// another thread stages while this one does, and only this thread's
+/// images are counted here.
+///
+/// Run against the process counters, the first assertion below reads
+/// 4096 too high — which is the failure the suite was seeing, made
+/// deterministic.
+#[test]
+#[serial]
+fn a_thread_tally_ignores_another_threads_staging() {
+    let before = staged_bytes_on_this_thread();
+    let before_images = staged_images_on_this_thread();
+    let before_process = staged_bytes();
+
+    let foreign = std::thread::spawn(|| {
+        let staged =
+            with_env(false, Some(1024), || StagedF32::stage(adversarial(1024))).expect("staging");
+        assert!(staged.is_mapped());
+        // The foreign thread sees its own staging, and only its own.
+        assert_eq!(staged_bytes_on_this_thread(), 4096);
+        assert_eq!(staged_images_on_this_thread(), 1);
+    });
+    foreign.join().expect("foreign staging thread");
+
+    // Nothing landed on this thread's tally.
+    assert_eq!(staged_bytes_on_this_thread(), before);
+    assert_eq!(staged_images_on_this_thread(), before_images);
+    // And the traffic was real, so this is not passing by nothing having
+    // happened: the process report took the foreign image.
+    assert!(
+        staged_bytes() >= before_process + 4096,
+        "the foreign staging must reach the process report"
+    );
 }
 
 #[test]
