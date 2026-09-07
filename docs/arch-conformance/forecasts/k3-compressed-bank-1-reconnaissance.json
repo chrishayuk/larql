@@ -5,7 +5,6 @@
   "written": "2026-09-07",
   "base": "`1ae057d1`. The K3 row is read from a fresh sweep at semantics 22 (`_conformance/latentmoe-candidate3`), the estate from the committed two-layer header fixture, and the declarations from the checkpoint's own `config.json` fetched during this reconnaissance.",
   "question_this_answers_first": "What do the 14 `quantization_config` findings actually represent, and how many independent authorities are hiding inside that count? Explicitly NOT starting from `MXFP4 support`.",
-
   "F1_the_14_findings_are_at_least_five_authorities": {
     "verdict": "the count does NOT collapse to one representation dialect. Enumerated individually before any clustering:",
     "codec_identity_and_decode_arithmetic": {
@@ -24,36 +23,51 @@
       "what_it_governs": "how the six stored spellings decode. This is the only cluster whose retirement a codec earns."
     },
     "scope_which_tensors_are_compressed": {
-      "leaves": ["#112 ignore = 6 regexes", "#98 config_groups.group_0.targets = [\"Linear\"]"],
+      "leaves": [
+        "#112 ignore = 6 regexes",
+        "#98 config_groups.group_0.targets = [\"Linear\"]"
+      ],
       "count": 2,
-      "what_it_governs": "which modules were compressed at export. See F2 — it does NOT decide the estate, which is the single most consequential finding here."
-    },
-    "activation_quantisation": {
-      "leaves": ["#101 weights.dynamic = false"],
-      "count": 1,
-      "what_it_governs": "that the WEIGHTS are statically quantised and nothing about activations. Corroborated by `input_activations: null` and `output_activations: null`, which the plan does not surface because a null-valued key already grades as a declared absence (semantics 5).",
-      "note": "a different authority from the codec: `dynamic` would still mean something under a codec this build did implement."
+      "what_it_governs": "which modules were compressed at export. See F2 \u2014 it does NOT decide the estate, which is the single most consequential finding here."
     },
     "exporter_provenance_inert_to_decode": {
-      "leaves": ["#104 weights.observer = \"minmax\""],
+      "leaves": [
+        "#104 weights.observer = \"minmax\""
+      ],
       "count": 1,
-      "what_it_governs": "how the exporter CHOSE the scales. It has no decode consequence whatever — a checkpoint quantised with a different observer decodes by the same arithmetic.",
-      "the_hazard": "this is the leaf most likely to be silenced merely because the six packed tensors became decodable. Retiring it as `representable` on the strength of a codec would be exactly the failure this reconnaissance was told to avoid. Its honest grade is closer to `training_only` — a record of the export procedure, like `router_aux_loss_coef`."
+      "what_it_governs": "how the exporter CHOSE the scales. It has no decode consequence whatever \u2014 a checkpoint quantised with a different observer decodes by the same arithmetic.",
+      "the_hazard": "this is the leaf most likely to be silenced merely because the six packed tensors became decodable. Retiring it as `representable` on the strength of a codec would be exactly the failure this reconnaissance was told to avoid. Its honest grade is closer to `training_only` \u2014 a record of the export procedure, like `router_aux_loss_coef`."
     },
     "lifecycle_state": {
-      "leaves": ["#115 quantization_status = \"compressed\""],
+      "leaves": [
+        "#115 quantization_status = \"compressed\""
+      ],
       "count": 1,
       "what_it_governs": "that the shipped tensors are in compressed form rather than a quantisation recipe awaiting application. It is a PRECONDITION on the estate, not a decode parameter, and a checkpoint declaring `frozen` or `calibration` with the same config groups would need a different answer.",
       "note": "unclear whether this earns a home or an inert grade; it must not be assumed to ride along with the codec."
     },
-    "consequence_for_the_forecast": "9 of the 14 are one authority; the other 5 are four more. Any forecast of `24 -> 10` is a claim that ALL FIVE clusters acquire a home in one transition, which is a much stronger claim than `the bank decodes`. See F8."
+    "consequence_for_the_forecast": "9 of the 14 are one authority; 4 more are three further authorities; and 1 \u2014 `weights.dynamic` \u2014 has no established authority yet. Any forecast of `24 -> 10` is a claim that EVERY cluster acquires a home in one transition, which is a much stronger claim than `the bank decodes`, and it cannot even be stated until the reopened cluster is settled.",
+    "weights_dynamic_AUTHORITY_REOPENED": {
+      "leaves": [
+        "#101 weights.dynamic = false"
+      ],
+      "count": 1,
+      "status": "**REOPENED.** This reconnaissance first filed it as `activation_quantisation` and that was WRONG \u2014 see `corrections`. Its authority is not yet established, and forcing it into one of the other four to keep the count at five would be exactly the error the decomposition exists to prevent.",
+      "what_upstream_says_it_means": "`QuantizationArgs.dynamic`: True = every quantization parameter is generated on the fly; False = the parameters generated are STATIC. So `weights.dynamic: false` says the weight scales were computed once at export and are stored. It says nothing about activations.",
+      "candidate_homes_none_selected": [
+        "static weight-qparam / export-procedure state",
+        "artifact representation metadata",
+        "the same provenance plane as `observer` \u2014 `dynamic` says the scales are static, `observer` says how those static scales were chosen",
+        "a precondition on the ESTATE alongside `quantization_status`: were it true, the scales would not be stored at all and the operand set would differ"
+      ],
+      "why_it_is_left_open": "the cluster count may still be five, or it may become six. That is precisely why 24 -> N is not frozen."
+    }
   },
-
   "F2_THE_DECLARED_SCOPE_DOES_NOT_DECIDE_THE_ESTATE": {
     "verdict": "**`ignore` + `targets` is not a decidable predicate over the tensor names.** Measured against the real two-layer estate (5,421 tensors).",
     "what_was_measured": [
-      "5,376 tensors carry `weight_packed`/`weight_scale`, and ZERO of them sit outside `block_sparse_moe.experts.` — the compressed set is exactly the routed bank.",
-      "the 6 declared `ignore` regexes match 28 names, and none of them is compressed — consistent so far.",
+      "5,376 tensors carry `weight_packed`/`weight_scale`, and ZERO of them sit outside `block_sparse_moe.experts.` \u2014 the compressed set is exactly the routed bank.",
+      "the 6 declared `ignore` regexes match 28 names, and none of them is compressed \u2014 consistent so far.",
       "BUT: seven non-ignored 2-D tensors are NOT compressed, and three of those are `nn.Linear` modules in the checkpoint's own modeling code."
     ],
     "the_three_that_break_it": {
@@ -63,9 +77,8 @@
     },
     "what_is_NOT_known": "why the wrapper and residual projections escaped. Candidates, none verified: the exporter's effective ignore list differed from the serialised one; compressed-tensors resolves `targets` against something other than the module class alone; or those modules postdate the compression pass. Reconnaissance records the fact and does not guess the cause.",
     "the_consequence_that_matters": "LARQL cannot use `ignore`/`targets` to decide which operands are compressed, because on this checkpoint they do not. **The ESTATE (the `weight_packed`/`weight_scale` suffixes) is the operative authority for WHICH tensors are compressed; the config is the authority for HOW they decode.**",
-    "why_this_is_not_a_contradiction_of_the_LatentMoE_rule": "K3-LATENTMOE-1 established that identity is DECLARED and never inferred from operands. That rule is about a fact the declaration determines — the latent form — where a tensor may only confirm. Here the declaration provably does not determine the extent: two `nn.Linear` families satisfy the stated predicate and are not compressed. A rule that insisted on config authority would refuse the real checkpoint. The two facts live on different planes and each takes its authority from the plane that actually decides it — which is the same lesson the GLM FP8 work reached from the other side, where the scale grid and not the global `weight_block_size` was correct."
+    "why_this_is_not_a_contradiction_of_the_LatentMoE_rule": "K3-LATENTMOE-1 established that identity is DECLARED and never inferred from operands. That rule is about a fact the declaration determines \u2014 the latent form \u2014 where a tensor may only confirm. Here the declaration provably does not determine the extent: two `nn.Linear` families satisfy the stated predicate and are not compressed. A rule that insisted on config authority would refuse the real checkpoint. The two facts live on different planes and each takes its authority from the plane that actually decides it \u2014 which is the same lesson the GLM FP8 work reached from the other side, where the scale grid and not the global `weight_block_size` was correct."
   },
-
   "F3_THE_NAME_DOES_NOT_DETERMINE_THE_DECODE": {
     "verdict": "`mxfp4-pack-quantized` and LARQL's existing MXFP4 codec are **shape-indistinguishable**. Nothing measured so far can separate them, and the shapes never will.",
     "the_arithmetic": {
@@ -73,7 +86,7 @@
       "w2": "logical [latent 3584, moe_intermediate 3072]; packed U8 [3584, 1536] = 3072/2; scale U8 [3584, 96] = 3072/32.",
       "so": "two 4-bit elements per byte, one scale per 32 elements along the K axis, per row. Exactly the group geometry `group_size: 32` declares, and exactly LARQL's `MXFP4_GROUP_ELEMS = 32` / `MXFP4_GROUP_BYTES = 16`."
     },
-    "why_that_settles_nothing": "LARQL's codec was transcribed from GPT-OSS's `*_blocks`/`*_scales` dialect, where byte b holds elements 2b (lo nibble) and 2b+1 (hi). A split-half packing — byte j holding elements j and j + 16, which is the convention LARQL's own `WeightSlice::Q4` documents — produces the SAME k/2 bytes and the SAME k/32 scales. The stored shapes are identical under both. Only real bytes compared against the authoritative decoder can separate them.",
+    "why_that_settles_nothing": "LARQL's codec was transcribed from GPT-OSS's `*_blocks`/`*_scales` dialect, where byte b holds elements 2b (lo nibble) and 2b+1 (hi). A split-half packing \u2014 byte j holding elements j and j + 16, which is the convention LARQL's own `WeightSlice::Q4` documents \u2014 produces the SAME k/2 bytes and the SAME k/32 scales. The stored shapes are identical under both. Only real bytes compared against the authoritative decoder can separate them.",
     "the_falsifier_this_rung_must_carry": "**a representation name or metadata string does not determine decode arithmetic.** The GLM `weight_scale_inv` finding is the precedent: a name that meant the reciprocal of what it said. Here the risk is sharper, because LARQL already HAS a codec called MXFP4 and adopting it on the strength of the label would be a one-line change that is either exactly right or silently wrong with every shape closing.",
     "what_is_still_unknown": [
       "nibble order within a byte (adjacent pair vs split half)",
@@ -82,37 +95,33 @@
       "whether `type: \"float\"` + `num_bits: 4` is e2m1 specifically, or another 4-bit float layout"
     ]
   },
-
   "F4_the_geometry_confirmed_against_the_real_header": {
-    "no_padding": "3584 and 3072 are both divisible by 32 and by 2, so no group is partial and no row is padded. A dialect question that would otherwise need answering does not arise on K3 — and therefore CANNOT be witnessed on K3 either, which the fixture design must account for.",
-    "orientation": "w1/w3 and w2 use the SAME storage convention — row-major with groups along the contiguous (K) axis. The transpose between them is in the LOGICAL shape, not in the packing, so one codec serves all three.",
+    "no_padding": "3584 and 3072 are both divisible by 32 and by 2, so no group is partial and no row is padded. A dialect question that would otherwise need answering does not arise on K3 \u2014 and therefore CANNOT be witnessed on K3 either, which the fixture design must account for.",
+    "orientation": "w1/w3 and w2 use the SAME storage convention \u2014 row-major with groups along the contiguous (K) axis. The transpose between them is in the LOGICAL shape, not in the packing, so one codec serves all three.",
     "per_expert": "one packed and one scale tensor per matrix per expert: 896 experts x 3 matrices x 2 streams = 5,376 tensors on the one routed layer of the fixture. The bank is per-expert (`ExpertFormat::PerExpert`), not a fused `[experts, rows, k]` block.",
-    "scales_are_not_linear": "the 224 real scale bytes read for expert 0's w1 all lie in 120-121. Under E8M0 (value = 2^(s-127)) that is 2^-7 and 2^-6, which is the right order for BF16 weights of magnitude ~0.01-0.09. A raw uint8 linear scale would have to be ~1. **Consistent with E8M0 and inconsistent with a linear uint8 scale** — the first decode fact this reconnaissance can actually assert."
+    "scales_are_not_linear": "the 224 real scale bytes read for expert 0's w1 all lie in 120-121. Under E8M0 (value = 2^(s-127)) that is 2^-7 and 2^-6, which is the right order for BF16 weights of magnitude ~0.01-0.09. A raw uint8 linear scale would have to be ~1. **Consistent with E8M0 and inconsistent with a linear uint8 scale** \u2014 the first decode fact this reconnaissance can actually assert."
   },
-
   "F5_the_decode_oracle_is_buildable_without_the_checkpoint": {
     "demonstrated": "HTTP range requests against the real shard return exactly the bytes wanted: the 8-byte safetensors length prefix (header JSON 817,608 bytes, data at 817,616), then 3,584 bytes of `layers.3...experts.0.w1.weight_packed` (two rows) and 224 bytes of its `weight_scale` (the matching two rows). Both HTTP 206.",
-    "why_it_matters": "the oracle needs real bytes and the checkpoint is 96 shards. It does not need the checkpoint — it needs a few kilobytes at chosen offsets, which the committed header fixture already names.",
+    "why_it_matters": "the oracle needs real bytes and the checkpoint is 96 shards. It does not need the checkpoint \u2014 it needs a few kilobytes at chosen offsets, which the committed header fixture already names.",
     "first_bytes_on_the_record": {
       "packed": "d4 20 41 12 1c 40 b0 8a 42 92 19 21 6b 0b b2 83",
       "scale": "79 79 79 79 78 79 79 79 78 78 78 79 78 78 79 79",
-      "nibble_histograms": "lo and hi nibbles have near-identical distributions over the first row, smooth across the sign bit with the extreme codes (7, 15 = +/-6.0) rare. Exactly what a minmax-scaled e2m1 group looks like — and exactly why the histogram cannot discriminate the two packings."
+      "nibble_histograms": "lo and hi nibbles have near-identical distributions over the first row, smooth across the sign bit with the extreme codes (7, 15 = +/-6.0) rare. Exactly what a minmax-scaled e2m1 group looks like \u2014 and exactly why the histogram cannot discriminate the two packings."
     },
     "the_checkpoint_ships_no_decoder": "`modeling_kimi_linear.py` contains no dequantisation, no `weight_packed` reference, no unpacking. compressed-tensors owns the decode, so the oracle must be traced from that library and not from the model repository."
   },
-
   "F6_decode_support_and_direct_execution_are_different_claims": {
     "minimal_semantic_closure": "compressed bank -> codec decodes correctly -> the reference/interpreter executor runs it.",
     "performance_target": "compressed bank -> a direct packed matvec or grouped expert kernel.",
     "position": "these must not be conflated, and K3 closure should not be made to depend on an optimised MXFP4 expert kernel unless the REPRESENT contract genuinely requires one. Correct-on-arrival, fast-later. The existing `RepresentationCapabilities` already distinguishes what a codec can be ASKED for from what a backend implements, which is where the distinction should be carried."
   },
-
   "F7_the_REPRESENT_contract_probably_suffices_and_this_must_be_falsified": {
     "what_the_trait_already_has": [
-      "`streams()` — several streams per operand, which is how the existing MXFP4 codec already carries VALUES + GROUP_SCALES",
-      "`stored_bytes(shape, extent, tensor)` — tensor-local geometry derived from the operand's own shape",
-      "`extents()` / `ExtentCertificate` — extent semantics",
-      "`bind_packed` — streams in one row versus stored apart, which is what `weight_packed`/`weight_scale` as SEPARATE safetensors entries needs"
+      "`streams()` \u2014 several streams per operand, which is how the existing MXFP4 codec already carries VALUES + GROUP_SCALES",
+      "`stored_bytes(shape, extent, tensor)` \u2014 tensor-local geometry derived from the operand's own shape",
+      "`extents()` / `ExtentCertificate` \u2014 extent semantics",
+      "`bind_packed` \u2014 streams in one row versus stored apart, which is what `weight_packed`/`weight_scale` as SEPARATE safetensors entries needs"
     ],
     "the_expectation": "no new contract dimension. The open question is narrower and sharper: **is `mxfp4-pack-quantized` a NEW CodecIdentity, or the existing one under a different label?** `CodecIdentity` already carries family, revision and geometry, so a dialect difference is a distinct identity rather than a missing contract.",
     "what_would_falsify_it": [
@@ -121,31 +130,36 @@
       "auxiliary scales beyond the two streams",
       "direct-kernel optionality that the capabilities type cannot express"
     ],
-    "the_rule": "if the codec trait needs modifying, that is a FINDING of this rung and gets its own transition — not something slipped into the implementation."
+    "the_rule": "if the codec trait needs modifying, that is a FINDING of this rung and gets its own transition \u2014 not something slipped into the implementation."
   },
-
   "F8_what_the_operand_plane_can_and_cannot_promise": {
     "the_durable_claim": "**distinct unaddressed spellings 6 -> 0**, and the remaining K3 unaddressed set exactly EMPTY for the expert bank.",
     "the_claim_to_withhold": "`unclassified 5376 -> N`. Whether the 5,376 tensors become 5,376 represented operands, or 2,688 logical operands each with one auxiliary stream, is a REPRESENT modelling decision this reconnaissance has not made. Freezing the arithmetic before that decision would pin a guess.",
     "the_regression_gate": "if any ordinary architecture operand appears in the unaddressed set while this rung is in flight, the rung FAILS. The set is asserted as a set in `k3_representable::k3_estate_reports_every_unaddressed_spelling`, which is what makes the boundary sharp."
   },
-
   "F9_the_blocker_count_is_not_yet_forecastable": {
     "the_tempting_number": "24 -> 10, on the grounds that 14 findings are `quantization_config`.",
-    "why_it_is_premature": "F1 shows the 14 are at least five authorities. A codec earns the 9 codec leaves. It does NOT earn `observer` (exporter provenance, no decode consequence), and it is not obvious that it earns `quantization_status`, `dynamic`, `ignore` or `targets` — the last two of which describe a scope the config does not in fact decide (F2).",
+    "why_it_is_premature": "F1 shows the 14 are at least five authorities. A codec earns the 9 codec leaves. It does NOT earn `observer` (exporter provenance, no decode consequence), and it is not obvious that it earns `quantization_status`, `dynamic`, `ignore` or `targets` \u2014 the last two of which describe a scope the config does not in fact decide (F2).",
     "the_honest_range": "24 -> 15 if only the codec cluster retires; 24 -> 10 if all five clusters find homes. Both are defensible before measurement and neither should be frozen now.",
     "the_criterion_that_matters": "not `14 blockers disappeared`. It is that **every retired finding acquired a concrete representation or execution authority, and nothing was silenced merely because the six packed tensors became decodable.**",
     "the_other_ten_blockers": "3 multimodal container leaves (`ignore_index`, `image_placeholder`, `media_placeholder_token_id`), 6 HF boilerplate (`add_cross_attention`, `is_decoder`, `tf_legacy_loss`, `tie_encoder_decoder`, `torchscript`, `use_bfloat16`), and `topk_method`. Enumerated so the residue after this rung is known in advance rather than discovered."
   },
-
   "F10_topk_method_is_fenced_out": "`topk_method: \"noaux_tc\"` (#134) is NOT this rung's and K3 keeps it. After compressed-bank closure it should be the only remaining text-side SEMANTIC blocker, which is what makes the subsequent router rung clean.",
-
   "what_this_reconnaissance_did_not_do": [
     "trace compressed-tensors' decoder. That is the next step and the oracle depends on it.",
     "decide the nibble order, the scale direction, or whether the existing MXFP4 codec can be reused. F3 exists to keep those open.",
     "decide how many represented operands the 5,376 tensors become.",
-    "freeze anything. No forecast, no properties, no falsifiers — this artifact is evidence."
+    "freeze anything. No forecast, no properties, no falsifiers \u2014 this artifact is evidence."
   ],
-
-  "next": "domain decomposition of the five clusters into what each would have to reach, then the external decode oracle (compressed-tensors' own implementation, on the real bytes named in F5, with mutants for nibble order, scale direction, block width, scale index, orientation and padding), then the freeze."
+  "next": "domain decomposition of the five clusters into what each would have to reach, then the external decode oracle (compressed-tensors' own implementation, on the real bytes named in F5, with mutants for nibble order, scale direction, block width, scale index, orientation and padding), then the freeze.",
+  "corrections": {
+    "correction_1_the_two_dynamic_fields_are_different_leaves": {
+      "what_was_wrong": "this document originally clustered `#101 weights.dynamic = false` as `activation_quantisation`, and the companion oracle document then explained the absence of upstream's `input_global_scale` stream by it. Both borrowed the authority of a DIFFERENT leaf.",
+      "the_fact": "`MXFP4PackedCompressor.compression_param_names` gates `input_global_scale` on `getattr_chain(scheme, \"input_activations.dynamic\", True)` \u2014 the INPUT-ACTIVATION scheme's `dynamic`, with default True \u2014 and never consults `weights.dynamic` at all. K3 declares `input_activations: null`, so the chain falls to that default and the stream is not required. `weights.dynamic: false` is a separate weight-quantization fact.",
+      "what_survives": "the operand-plane conclusion is unchanged and correct: neither auxiliary stream is required by this scheme, so their absence is not a checkpoint that forgot an operand. Only the reason was wrong.",
+      "what_does_not": "the cluster assignment. `weights.dynamic` is reopened above rather than relabelled.",
+      "how_it_was_caught": "review of the evidence BEFORE the freeze was written, which is the entire reason the oracle and the decomposition are separate artifacts that land before any preregistration. A beautifully preregistered wrong authority is the failure this ordering exists to prevent.",
+      "recorded_not_edited_away": "the wrong clustering is named here rather than quietly replaced, on the same principle the LatentMoE oracle notes used when measurement contradicted its own freeze."
+    }
+  }
 }
