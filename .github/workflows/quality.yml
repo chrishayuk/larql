@@ -267,6 +267,22 @@ jobs:
       - name: Parity-obligation manifest is complete
         run: python3 scripts/metal_tier.py check
 
+      # The conformance sweep's cached plans are the evidence every
+      # architecture verdict in `docs/arch-conformance` is derived from,
+      # and a cache outlives the planner that wrote it. Until this guard
+      # existed nothing in `arch_sweep.py` read the recorded
+      # `PLANNER_SEMANTICS_VERSION`, so a semantics-16 cache beside a
+      # semantics-22 planner was indistinguishable from current evidence:
+      # every row parsed and every field the readers touch was present.
+      #
+      # No network and no planner: `selftest` builds caches with known
+      # answers and checks the guard against them, including the control
+      # that matters — a row complete in every respect and one version
+      # behind must refuse, and the same row at the current version must
+      # not.
+      - name: Conformance evidence guard selftest
+        run: python3 scripts/conformance_evidence.py selftest
+
   proto-lint:
     name: buf lint
     runs-on: ubuntu-latest
