@@ -303,6 +303,7 @@ fn recorded() -> SearchSnapshot {
             ),
             ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
             standing_intent: intent(EvidenceScale::Authority),
+            protocol: None,
         },
         SearchFacts {
             graph,

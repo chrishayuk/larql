@@ -190,6 +190,7 @@ fn snapshot(root: ResolvedState, measurements: MeasurementRegistry) -> SearchSna
             ),
             ranking: semantics(),
             standing_intent: intent(EvidenceScale::Authority),
+            protocol: None,
         },
         SearchFacts {
             graph: RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, root),

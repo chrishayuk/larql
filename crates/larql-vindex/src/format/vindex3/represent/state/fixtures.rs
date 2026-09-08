@@ -29,6 +29,7 @@ use super::super::compiler::SourceIdentity;
 use super::super::diagnostic::DiagnosticPolicy;
 use super::super::execution_cost::ExecutionCostModel;
 use super::super::map::{Exception, PrecisionMap};
+use super::super::measure::TEACHER_FORCED_TWO_ARM;
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::nvfp4_pack::DTYPE_NVFP4;
 use super::super::policy::Role;
@@ -208,7 +209,17 @@ pub fn config() -> SearchConfig {
         semantics: semantics(),
         ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
         standing_intent: standing_intent(),
+        protocol: Some(protocol()),
     }
+}
+
+/// The declarations the record's standing intent stands for.
+///
+/// The bank and instrument are the same values `standing_intent` is
+/// built from — one authority, so the record cannot describe a protocol
+/// it does not search under.
+pub fn protocol() -> MeasurementProtocol {
+    MeasurementProtocol::new(selection_bank(), instrument(), TEACHER_FORCED_TWO_ARM)
 }
 
 /// The experiment the record's next run would be.

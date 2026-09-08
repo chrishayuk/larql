@@ -277,6 +277,7 @@ fn build(
             ),
             ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
             standing_intent: fixtures::standing_intent(),
+            protocol: None,
         },
         SearchFacts {
             graph: RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, root),
