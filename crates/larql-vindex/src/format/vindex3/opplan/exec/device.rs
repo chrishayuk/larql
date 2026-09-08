@@ -62,6 +62,7 @@ use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
 use ndarray::ArrayView2;
 use rayon::prelude::*;
 
+use super::lowering::LoweringIdentity;
 use super::production::unsupported_activation;
 use super::realization::{
     class_of, common_selection, resident_profile, RealizationBackend, RealizationForm,
@@ -69,6 +70,11 @@ use super::realization::{
 };
 use crate::format::vindex3::opplan::planned::PlannedOperand;
 use larql_compute::ffn::gelu_tanh;
+
+/// The provider's family ([`PlanBackend::identity`]): the plan's matrix
+/// work on an injected [`MatMul`] device, production CPU glue between.
+pub const IDENTITY_FAMILY: &str = "device-matmul";
+pub const IDENTITY_REVISION: u32 = 1;
 
 /// One MXFP4 matrix as the device trait consumes it:
 /// `(packed, scales, n, k)`.
@@ -344,6 +350,17 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
 impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    /// One identity for every instance, whatever device was injected and
+    /// whatever format table it was built with: the PROVIDER is the plan's
+    /// matrix work over a `MatMul` device with production glue, and that
+    /// is what a pin will hold it to. The device and the per-class formats
+    /// are configuration — the format is already pinned in the
+    /// realization form, and the device is the caller's to name in
+    /// [`Self::name`].
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
     }
 
     fn dispatch_stats(&self) -> Option<DispatchStats> {

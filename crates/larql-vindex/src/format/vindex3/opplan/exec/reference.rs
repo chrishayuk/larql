@@ -27,6 +27,7 @@ use super::kernels::{
     partial_rotary_frequencies, partial_rotary_slice, rope_rotate, rope_rotate_scaled, sigmoid,
     softcap, softmax, softmax_with_sink, yarn_frequencies, FusedHalf, GateMutation,
 };
+use super::lowering::LoweringIdentity;
 use crate::error::VindexError;
 use larql_models::config::NormType;
 use larql_models::config::{PositionPolicy, RotaryFrequencyBasis};
@@ -34,6 +35,12 @@ use rayon::prelude::*;
 
 /// Name reported by [`PlanBackend::name`].
 const NAME: &str = "reference-f32";
+/// The provider's family ([`PlanBackend::identity`]): the literal f32
+/// transcription that defines correctness. Its revision moves only if the
+/// transcription itself is corrected — which is a change to what every
+/// other provider is judged against, and is recorded as one.
+pub const IDENTITY_FAMILY: &str = "reference";
+pub const IDENTITY_REVISION: u32 = 1;
 
 /// Naive f32 realisation of every plan operation.
 #[derive(Debug, Default, Clone, Copy)]
@@ -671,6 +678,10 @@ fn add_in_place(x: &mut [f32], b: &[f32]) {
 impl PlanBackend for ReferenceBackend {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
     }
 
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {

@@ -1,0 +1,57 @@
+{
+  "programme": "LOWERING-PLUGIN-1",
+  "forecast": "lowering-plugin-1.json (frozen 2026-09-08, PR #464)",
+  "rule": "The forecast is not edited. Every deviation, measurement and surprise is written here with its reason.",
+  "waves": {
+    "L1": {
+      "name": "lowering identity",
+      "status": "built and held",
+      "branch": "lowering-l1",
+      "base": "a03efc29 (main; #461, #462 and #464 open beside it, none required)",
+      "date": "2026-09-09",
+      "what_landed": [
+        "`exec/lowering.rs`: `LoweringIdentity { family: String, revision: u32 }` — Eq/Ord/Hash/serde, `validate()` refusing an empty or blank family, a family outside `[A-Za-z0-9_-]`, and revision 0 (the unstated value); Display `family/vN`.",
+        "`PlanBackend::identity() -> LoweringIdentity` is REQUIRED — no default, nothing derived from `name()`. `name()` stays, documented as presentation.",
+        "In-tree identities: `reference/v1`, `cpu-production/v1`, `device-matmul/v1`, each a pair of `pub const`s beside the provider's `NAME`.",
+        "Every implementor in the workspace states one: three providers, three test backends (`test-recording`, `test-perturbed`, `test-refusing`). `cargo check --workspace --all-targets` is the proof there is no fourth provider hiding behind a cfg."
+      ],
+      "witnesses": {
+        "every_in_tree_provider_states_a_valid_distinct_identity": "exec/tests/lowering_identity.rs — valid, revision 1, three distinct families in the expected order",
+        "identity_is_the_providers_not_its_configurations": "same file — two device instances with different names and format tables share one identity; two production instances agree",
+        "identity_is_authority_and_name_is_presentation": "same file — the control: one name over two identities differ, one identity under two names agree, a revision bump is a different identity under the same name, and the trait object returns what the provider stated",
+        "an_unkeyable_identity_is_refused_before_anything_relies_on_it": "same file, plus `lowering::tests` for the refusal texts"
+      },
+      "required_at_end_of_L1": {
+        "PlanBackend::identity_exists": true,
+        "every_in_tree_backend_has_stable_family_and_revision": true,
+        "identity_not_inferred_from_name": "true — required method, no default; the control test varies the two independently",
+        "duplicate_or_invalid_identities_testable": "true — `validate()`, and the distinctness assertion over the in-tree set (a duplicate fails it; a registry refusing duplicates is L2)",
+        "selection_changes": 0,
+        "accounting_changes": 0,
+        "execution_changes": 0,
+        "codec_api_changes": 0,
+        "kernel_plane_files": 32
+      },
+      "evidence_for_the_zeros": "The diff touches `backend.rs` (trait method and its doc), `lowering.rs` (new), and one `identity()` plus two constants in each of `reference.rs`, `production.rs`, `device.rs`; no file under `represent/`, no `select`, no `prepared.rs`, no `accounting.rs`. `cargo test -p larql-vindex --lib`: 4638 passed, 0 failed, 7 ignored — the same suite as base plus the six new tests, with no existing assertion changed.",
+      "measurement_correction": {
+        "what": "The inventory (#462) reported the kernel-plane file count as 33 'unchanged since 2026-09-05'. Measured with the inventory's own method on main `a03efc29` the count is 32; the 33 was taken in the #461 worktree, where the new FP8 codec file names `PhysicalProjectionPlan::FusedFp8Block`. So the honest baseline is 32 on main and 33 once #461 merges, and L1 adds none: 32 on this branch.",
+        "consequence_for_F3": "F3's prediction is unchanged in meaning — the count does not move through L1–L5 — and is read against whichever base the wave branches from: 32 without #461, 33 with it. Written here rather than in the forecast, per its immutability clause.",
+        "method": "non-test `.rs` files under `opplan/exec/` and `represent/` containing `<Enum>::` for any of the five kernel-plane enums; `grep -rl` then exclude `/tests/`, `_tests.rs`, `tests.rs`."
+      },
+      "observations_for_later_waves": [
+        "Device identity is the provider's, not the injected device's: `DevicePlanBackend<MetalBackend>` and `DevicePlanBackend<CpuBackend>` both answer `device-matmul/v1`. L2 must decide whether a registry entry is per provider type or per (provider, injected device); L4 must decide whether a pin that recorded `device-matmul/v1` is invalidated when the injected device changes — today the realization FORM pins the resident format, and nothing pins the device. Raised here, not resolved.",
+        "`identity()` returns an owned value on every call (String family), mirroring `CodecIdentity`. Fine at preparation; if L4 needs it per token, intern it then.",
+        "The `metal-lowered` driver (2,890 lines, CLI) has no `PlanBackend` and therefore no identity — as the inventory recorded. Untouched by design; it is F1's subject.",
+        "Nothing dispatches on identity yet. The 'authority' claim at L1 is structural (required, independent of name); it becomes operational at L2 and L4."
+      ],
+      "gates_run": [
+        "cargo fmt --all",
+        "cargo check --workspace --all-targets",
+        "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+        "cargo test -p larql-vindex --lib (4638 passed)",
+        "cargo test -p larql-vindex --no-run (integration targets compile against the exported trait)"
+      ],
+      "deviations_from_forecast": "None in scope. One measurement correction, recorded above."
+    }
+  }
+}

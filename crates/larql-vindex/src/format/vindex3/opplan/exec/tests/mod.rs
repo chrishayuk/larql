@@ -58,6 +58,7 @@ mod kimi_moe_real;
 mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_two_layer;
+mod lowering_identity;
 mod mamba2_exec;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod mla_metal;
