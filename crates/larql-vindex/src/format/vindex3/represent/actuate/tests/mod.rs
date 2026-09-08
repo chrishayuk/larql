@@ -18,6 +18,7 @@
 //! The first alone would pass on a bridge that faithfully carried a
 //! record's fields into a request for the wrong experiment.
 
+mod executor;
 mod prepare;
 mod request;
 
@@ -35,7 +36,13 @@ fn ready_record(dir: &std::path::Path) -> SearchSnapshot {
         .build()
 }
 
-/// The same record with a protocol of the caller's choosing.
+/// A record that DECLARES one protocol and SEARCHES under another —
+/// the inconsistency a record must be refused for.
+fn record_declaring(dir: &std::path::Path, protocol: MeasurementProtocol) -> SearchSnapshot {
+    PricedRecord::new(dir).with_protocol_only(protocol).build()
+}
+
+/// A record that declares a protocol and searches under it.
 fn record_with(dir: &std::path::Path, protocol: MeasurementProtocol) -> SearchSnapshot {
     PricedRecord::new(dir).with_protocol(protocol).build()
 }

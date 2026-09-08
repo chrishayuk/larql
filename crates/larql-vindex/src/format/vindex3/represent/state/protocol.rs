@@ -67,6 +67,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::super::measurement::EvidenceScale;
 use super::candidate::MeasurementIntent;
 use super::evidence_bank::{EvidenceBank, EvidenceBankId};
 use super::instrument::{InstrumentSemantics, InstrumentSemanticsId};
@@ -179,6 +180,18 @@ impl MeasurementProtocol {
             });
         }
         Ok(())
+    }
+
+    /// **The standing intent these declarations stand behind.**
+    ///
+    /// Derived rather than supplied, so a record built from a protocol
+    /// cannot describe one experiment and search under another. The
+    /// scale is the caller's because it is the one part of an intent
+    /// that is not a declaration — it is a claim about how much evidence
+    /// a reading carries, and the same corpus and instrument serve both
+    /// scales.
+    pub fn intent(&self, scale: EvidenceScale) -> MeasurementIntent {
+        MeasurementIntent::new(self.bank.id(), scale, self.instrument.id())
     }
 
     /// **How many samples a run consumes**, from the declaration rather

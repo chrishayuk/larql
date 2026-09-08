@@ -10,7 +10,7 @@ use super::super::super::state::key::MeasurementKey;
 use super::super::super::state::protocol::{MeasurementProtocol, ProtocolMismatch};
 use super::super::MeasurementRequest;
 use super::super::RequestRefusal;
-use super::{fixtures, glimmer, ready, ready_record, record_with, PricedRecord};
+use super::{fixtures, glimmer, ready, ready_record, record_declaring, PricedRecord};
 
 /// **P2.** The four-part key is reconstructible from the request alone —
 /// no record, no arguments, the layout policy resolved from the name the
@@ -79,7 +79,7 @@ fn a_protocol_that_does_not_cover_the_experiment_is_refused() {
         (0..32).map(|i| format!("seq-{i:03}")),
         32,
     );
-    let snapshot = record_with(
+    let snapshot = record_declaring(
         dir.path(),
         MeasurementProtocol::new(sliced, fixtures::instrument(), "teacher-forced-two-arm/v1"),
     );

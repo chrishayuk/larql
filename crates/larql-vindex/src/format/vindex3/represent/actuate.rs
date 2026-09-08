@@ -81,11 +81,20 @@
 //!   *the run proved nothing*, and neither is a verdict on the
 //!   representation.
 
+pub mod artifacts;
+pub mod executor;
 pub mod prepare;
 pub mod request;
+pub mod teacher_forced;
 
+pub use artifacts::DeclaredArtifacts;
+pub use executor::{
+    verify_container, ArtifactLocator, ExecutionRefusal, ExecutorRegistry, ExperimentExecutor,
+    LocatorRefusal, Misdirected, Observed,
+};
 pub use prepare::{PreparedExperiment, Ready};
 pub use request::{MeasurementRequest, RequestRefusal};
+pub use teacher_forced::TeacherForcedExecutor;
 
 #[cfg(test)]
 mod tests;

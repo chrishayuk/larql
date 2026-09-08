@@ -344,6 +344,7 @@ pub struct PricedRecord {
     accounting_from: Option<std::path::PathBuf>,
     distinct_edits: bool,
     protocol: Option<MeasurementProtocol>,
+    intent: Option<MeasurementIntent>,
     gate: QualityGate,
 }
 
@@ -358,6 +359,7 @@ impl PricedRecord {
             accounting_from: None,
             distinct_edits: false,
             protocol: None,
+            intent: None,
             gate: kimi_logit_balanced_v1(),
         }
     }
@@ -403,8 +405,20 @@ impl PricedRecord {
         self
     }
 
-    /// Carry the declarations the standing intent's digests stand for.
+    /// Carry the declarations the standing intent's digests stand for,
+    /// AND search under them — the consistent case, and what a real
+    /// record must always be.
     pub fn with_protocol(mut self, protocol: MeasurementProtocol) -> Self {
+        self.intent = Some(protocol.intent(EvidenceScale::Authority));
+        self.protocol = Some(protocol);
+        self
+    }
+
+    /// Carry declarations while searching under the FIXTURE's intent —
+    /// the inconsistent case, which a record must be refused for. It has
+    /// no legitimate use outside a test that asserts the refusal, which
+    /// is why it is a separate call rather than an argument.
+    pub fn with_protocol_only(mut self, protocol: MeasurementProtocol) -> Self {
         self.protocol = Some(protocol);
         self
     }
@@ -526,7 +540,7 @@ impl PricedRecord {
                     &self.layout,
                 ),
                 ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
-                standing_intent: standing_intent(),
+                standing_intent: self.intent.unwrap_or_else(standing_intent),
                 protocol: self.protocol,
             },
             SearchFacts {
