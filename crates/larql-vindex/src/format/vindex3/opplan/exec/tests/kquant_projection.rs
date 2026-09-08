@@ -66,7 +66,10 @@ fn spec(encoding: &str) -> RepresentSpec {
 
 /// The dense fixture, encoded, then compiled to `codec`. Returns the
 /// source and the compiled container.
-fn compiled(tmp: &tempfile::TempDir, codec: KQuant) -> (std::path::PathBuf, std::path::PathBuf) {
+pub(super) fn compiled(
+    tmp: &tempfile::TempDir,
+    codec: KQuant,
+) -> (std::path::PathBuf, std::path::PathBuf) {
     let checkpoint = tmp.path().join("ckpt");
     std::fs::create_dir_all(&checkpoint).unwrap();
     let src = tmp.path().join("src.vindex3");
@@ -79,7 +82,7 @@ fn compiled(tmp: &tempfile::TempDir, codec: KQuant) -> (std::path::PathBuf, std:
 
 /// The first two-dimensional tensor stored as `codec` in the compiled
 /// container, as an operand reference.
-fn a_stored_matrix(out: &std::path::Path, codec: KQuant) -> OperandRef {
+pub(super) fn a_stored_matrix(out: &std::path::Path, codec: KQuant) -> OperandRef {
     let index: Vindex3Index =
         serde_json::from_str(&std::fs::read_to_string(out.join(INDEX_JSON)).unwrap()).unwrap();
     let entry = index
@@ -101,7 +104,7 @@ fn a_stored_matrix(out: &std::path::Path, codec: KQuant) -> OperandRef {
     }
 }
 
-fn open(out: &std::path::Path, codec: KQuant) -> OperandStore {
+pub(super) fn open(out: &std::path::Path, codec: KQuant) -> OperandStore {
     let inspection = inspect_container(out, false).unwrap();
     OperandStore::open_for(
         out,
