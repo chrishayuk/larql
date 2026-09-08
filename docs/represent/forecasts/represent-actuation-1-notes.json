@@ -1,0 +1,89 @@
+{
+  "programme": "represent-optimizer",
+  "wave": "REPRESENT-ACTUATION-1 (stage 5b)",
+  "status": "COMPLETE — steps 1-5 of 5 done. This file accumulates findings AS THEY OCCUR rather than being written at the close, so a finding is durable at the moment it is made and cannot be smoothed over by what comes after.",
+  "answers": "docs/represent/forecasts/represent-actuation-1.json, frozen `11069885` before any implementation",
+
+  "steps_done": {
+    "1": "`MeasurementProtocol` — the declarations the standing intent's digests stand for, self-checking against the intent AND against a key, carried by the record as an optional fact.",
+    "2": "`MeasurementRequest` — construct-or-refuse, attesting to its key by resolving the candidate map over the record's own surface under the record's own layout policy.",
+    "3": "`PreparedExperiment::of(snapshot)` — four answers, derived from the record and nothing else.",
+    "4": "The executor seam — `ExperimentExecutor` selected by procedure name, `ArtifactLocator` for where things are, `DeclaredArtifacts` as the first locator, and a procedure-neutral `Observed`.",
+    "5": "`TeacherForcedExecutor` — the first registered procedure, as an adapter over the existing runner."
+  },
+
+  "predictions_scored": {
+    "P1": "MET. One optional `SearchConfig::protocol` field, refused by name when absent, with no change to `MeasurementKey`, `MeasurementIntent` or `NextExperiment` and no digest moved. The whole read path still answers on a record that carries no protocol — asserted by `a_record_that_names_its_protocol_only_by_digest_refuses_and_says_so`, which calls `next_experiment` successfully on the same record it then fails to prepare.",
+    "P2": "MET, and stronger than forecast. `derived_key` re-derives the four-part key from the request alone with NO arguments, because the layout policy is resolved from the name the request carries. The forecast assumed a layout would have to be passed in.",
+    "P3": "MET. No type in `actuate/` mentions a device, backend, kernel, lowering target or store id. The one place a container path appears is `ArtifactLocator`, and it appears as a return value.",
+    "P4": "MET, and each of the three is observably different from the adapter's default rather than merely sourced differently — `kimi-logit-balanced-v1` vs `kimi-logit-v3`, 256 vs 32 sequences, `exp-<digest>` vs `q2a`.",
+    "P5": "MET, with one honest narrowing recorded as ACT1-N3: two of the three artifacts are checked and the third cannot be, and the module says which.",
+    "P6": "MET. Nothing in `actuate/` writes to `SearchFacts`; `preparing_twice_gives_the_same_request_and_changes_nothing` asserts the registry is untouched after two preparations."
+  },
+
+  "findings": {
+    "ACT1-N1": {
+      "title": "The applied set — the only fact that says HOW a state is reached — was dropped between `Candidate` and `Assessment`.",
+      "against": "The freeze's B2, which said the state was the one recoverable part of a key.",
+      "evidence": "`Candidate::applied` exists and `Assessment::of` did not copy it, so `MeasurementOpportunity` — what `next_experiment` returns — carried `child_state` (a one-way digest) and no route to it. Building the overlay needs the MAP, and the map is `base_map` plus an applied set.",
+      "consequence": "B2 was right that the state is recoverable IN PRINCIPLE and wrong that the selection carried what recovery needs. The selected experiment was nameable and not performable, and nothing failed — because nothing had ever tried to build one.",
+      "resolution": "`Assessment` carries `applied`, copied from the candidate, never re-derived from the action. It is an ingredient like every other field on that type, and the type is not serialised, so the stored-form anti-cheat is unaffected.",
+      "scored": "Movement inside the wave's shape, not a redesign. It is the cheapest possible instance of the wave's whole thesis: a read path can look complete while carrying nothing an actuator can use, and only trying to actuate it finds out."
+    },
+
+    "ACT1-N2": {
+      "title": "The gate gap 5a-0 named is wider than a wrong default — a build can REDEFINE a gate the record names.",
+      "observed": "`gate_by_id` resolves four gates by id, and `SearchConfig::gate` stores a whole `QualityGate` with its thresholds. Those are two authorities for one name. A record carrying `kimi-logit-balanced-v1` with the thresholds of the day it was written, replayed against a build whose `kimi_logit_balanced_v1()` has moved, would be JUDGED under the current definition while claiming the recorded one.",
+      "why_it_is_not_hypothetical": "`quality.rs` documents exactly this movement for v1 to v3: 'v3 sets none, because the counts were measured and found unable to separate a coin flip from an overturned decision'. Gates in this programme change, and they change by having a new id — but nothing enforced that, and the `debug_assert_eq!` inside `gate_by_id` only checks that a gate answers to its own name, not that the record agrees with it.",
+      "resolution": "`RequestRefusal::GateRedefined`. Preparation resolves the record's gate id and refuses unless the resolved gate EQUALS the one the record carries. Caught before the run rather than reported after it by `Inadmissible::GateMismatch`, which could only ever say so once the instrument time had been spent.",
+      "scored": "An unforecast refusal, found by writing the mapping rather than by reasoning about it. It is the same class as the `NullArmNotZero` variant the 5a-0b conservation inventory found by walking the harness assertion by assertion."
+    },
+
+    "ACT1-N3": {
+      "title": "Two of the three located artifacts can be checked against the record; the third cannot, and it is the one that matters most.",
+      "checkable": "A container states its own identity (`read_source_identity`), and a corpus's `manifest.json` digests to the input the bank id was computed over. Both are verified on every answer, not at registration, because either can be replaced under a path between one experiment and the next.",
+      "not_checkable_here": "A compiled overlay carries no identity a locator can read. Establishing that the bytes on disk present the state the key names means opening them under the same layout and accounting authority the record declares — the executor's bind step, and for admissibility stage 6's.",
+      "handling": "Recorded rather than papered over: `candidate` looks up by state id and refuses `NotBuilt` when absent, and `artifacts.rs` says in its own module doc which of the three it has verified and which it has not. A locator that returned an overlay path with an implied claim of correctness would be the presence-implies-trust failure ATTESTATION-1 named one plane down.",
+      "consequence_for_stage_6": "The 'does this artifact constitute the measurement named by this key' question therefore has a real job to do at ingestion and is not a formality the bridge already answered."
+    },
+
+    "ACT1-N4": {
+      "title": "The seam needs its own falsifier, distinct from the request's.",
+      "observed": "The wave's headline falsifier is about PREPARATION — a request may not misstate its experiment. Writing the registry made it obvious that the guarantee stops at the trait boundary: an executor is free to return an observation of anything, and a bridge that carefully constructed a truthful request and then accepted an answer about a different state would have bought nothing.",
+      "resolution": "`Observed` carries the key it is an observation OF, and `ExecutorRegistry::execute` refuses `ObservedAnotherExperiment` when that is not the key it handed over. The test asserts BOTH directions — a lying stub refused, an honest one accepted — because a check that refuses everything is indistinguishable from a check that works.",
+      "scored": "Not in the freeze. Recorded as an addition the freeze should have anticipated: every place an identity crosses an abstraction boundary in this programme has needed the same check, and this was the first boundary where the identity left the crate's own control."
+    },
+
+    "ACT1-N5": {
+      "title": "`MeasurementProtocol::procedure` and `InstrumentSemantics::procedure` are two claims in two namespaces, and no mapping between them has been earned.",
+      "the_two": "`q2a-teacher-forced/baseline-vs-overlay` is what a reading MEANS and is inside the instrument digest. `teacher-forced-two-arm/v1` is what this build must PERFORM and is in no digest.",
+      "decision": "They are separate fields with NO cross-check asserted. Inventing one — 'a q2a instrument implies the teacher-forced procedure' — would be a claim about instruments this programme has no evidence for, and it would be invisible the first time it was wrong.",
+      "guard": "`the_executable_procedure_is_not_the_instrument_s_procedure` asserts that renaming what the build performs does not move the instrument digest, so the independence is a tested property rather than an accident.",
+      "when_this_should_change": "When a second procedure exists and something has to decide which one an instrument's declared procedure implies. That is a registration with its own evidence, not a string comparison."
+    },
+
+    "ACT1-N6": {
+      "title": "`RequestRefusal::UnresolvableLayout` is unreachable through the record-derived path, and is kept anyway.",
+      "observed": "`PreparedExperiment::of` calls `next_experiment`, which builds a price table, which resolves the layout policy first. A record naming a policy this build lacks therefore answers `NotSelectable` and never reaches preparation.",
+      "why_kept": "It IS reachable through `MeasurementRequest::of`, which a caller holding several already-authorised keys — an `ExecutionBatch` — uses directly. A refusal that only one of two doors can produce is still a refusal that door needs.",
+      "guard": "`a_layout_policy_this_build_does_not_implement_is_refused_by_name` goes through that door explicitly and says in its own comment why it does not use the other one, so a later reader does not 'simplify' it into a test that silently asserts `NotSelectable` instead."
+    }
+  },
+
+  "design_decisions_worth_recording": {
+    "construct_or_refuse_rather_than_a_check_method": "`MeasurementRequest` has private fields and no field constructor. A `validate()` a caller may forget to call is not an invariant; the only way to hold one is `of`, which resolves the map and compares. `attests_to_its_key` exists for a request that has travelled — over a queue, out of a file — and is a re-check, not the enforcement.",
+    "the_leading_route_and_not_any_route": "Several realizations reach one physical state and share one experiment, so which route the request is built from cannot change what is measured. It changes which provenance the run is attributed to, so preparation takes the route the policy ranked first rather than picking one — a bridge that reordered what it was handed would be overruling the ranking layer from below.",
+    "two_doors_stated_openly": "`PreparedExperiment::of(record)` is the authorised path; `MeasurementRequest::of(record, key, applied)` restates a key a caller already holds. The second is not a selection back door and could not be one — it refuses unless the map presents that key's state — but the distinction is documented rather than left for a reader to infer, because 'choosing stays the policy's business, truthfulness is this layer's' is the whole boundary.",
+    "the_label_is_derived_and_not_carried": "`TeacherForcedRequest::label` is documented as the one field that is not a control. Deriving it from the key rather than carrying it keeps that true and has a side benefit worth stating: a sweep's reports become named by the experiment they measured instead of by whatever `LARQL_Q2A_LABEL` was last set to.",
+    "instructed_everywhere_performed_somewhere": "The non-Metal build instructs first and then refuses. The mapping is the whole content of step 5, and putting it behind the same cfg as the instrument would mean it was only ever compiled on the one machine that cannot run CI.",
+    "observed_is_deliberately_thin": "It carries the key, the reading, what the run verified, and a provenance line. No verdict, no artifact identity, no physical observations, no completion status beyond the refusal type. Stage 6 should decide what a `MeasurementArtifact` must hold from what ingestion needs, not inherit a shape chosen here for convenience.",
+    "the_record_builder_moved_rather_than_being_copied": "Two modules now need 'the record that can actually answer'. `state/tests/container.rs` already argues that one fixture beats three ideas of what a container is; the same argument applies one level up, so the priced-record builder moved from the view's tests into `state/fixtures` and both read the same one."
+  },
+
+  "what_is_still_owed": {
+    "stage_6": "An immutable measurement artifact, and an ingestion step that asks whether it constitutes the measurement its key names before anything enters `SearchFacts`. ACT1-N3 says why that question is real and not already answered.",
+    "stage_7": "The loop. It should be small — reload, derive, execute, ingest, repeat — and contain almost no intelligence, which is the point.",
+    "the_overlay_build": "Nothing yet turns `MeasurementRequest::candidate_map` into compiled bytes. `LocatorRefusal::NotBuilt` names the map to build, which makes the gap actionable and does not close it.",
+    "a_second_procedure": "The registry, the by-name resolution and ACT1-N5's independence are all untested against an actual second procedure. One executor is a registry with no evidence that the seam generalises."
+  }
+}
