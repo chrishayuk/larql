@@ -255,12 +255,6 @@ impl From<LocatorRefusal> for ExecutionRefusal {
     }
 }
 
-impl From<MeasurementRefusal> for ExecutionRefusal {
-    fn from(r: MeasurementRefusal) -> Self {
-        Self::Measurement(r)
-    }
-}
-
 /// **Something that performs one named procedure.**
 ///
 /// It executes the question it was handed. It does not pick another

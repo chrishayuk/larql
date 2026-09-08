@@ -214,3 +214,31 @@ fn applied_of(snapshot: &super::SearchSnapshot) -> BTreeSet<String> {
         .applied
         .clone()
 }
+
+/// A record judged by a gate this build has never heard of is refused
+/// naming the gate, and distinctly from one whose gate has merely moved.
+/// A reader told "unresolvable" goes looking for an implementation; one
+/// told "redefined" goes looking at a diff.
+#[test]
+fn a_record_naming_a_gate_this_build_does_not_implement_is_refused() {
+    let dir = glimmer();
+    let mut unknown = kimi_logit_balanced_v1();
+    unknown.id = "a-gate-from-another-programme/v1".into();
+    let snapshot = PricedRecord::new(dir.path())
+        .with_protocol(fixtures::protocol())
+        .gate(unknown)
+        .build();
+
+    let refusal = match super::PreparedExperiment::of(&snapshot) {
+        super::PreparedExperiment::NotPreparable(r) => r,
+        other => panic!("expected a gate refusal: {other:?}"),
+    };
+    let RequestRefusal::UnresolvableGate { named, detail } = &refusal else {
+        panic!("this build cannot resolve it at all: {refusal:?}");
+    };
+    assert_eq!(named, "a-gate-from-another-programme/v1");
+    assert!(
+        !detail.is_empty(),
+        "the resolver's own message must survive"
+    );
+}

@@ -151,3 +151,65 @@ fn preparing_twice_gives_the_same_request_and_changes_nothing() {
         "the bridge must not write to the scientific record"
     );
 }
+
+/// Two edits that resolve DIFFERENTLY give the policy more than one
+/// opportunity to order, and the count it ordered reaches the answer —
+/// so a reader can tell "there was nothing to choose between" from "this
+/// was chosen over others".
+#[test]
+fn a_record_with_several_opportunities_reports_how_many_were_ordered() {
+    let dir = glimmer();
+    let snapshot = PricedRecord::new(dir.path())
+        .with_protocol(fixtures::protocol())
+        .distinct_edits()
+        .build();
+    let prepared = ready(&snapshot);
+
+    assert!(
+        prepared.considered > 1,
+        "two edits resolving differently are two opportunities: {}",
+        prepared.considered
+    );
+    assert_eq!(prepared.routes, 1, "and each is reached one way");
+    // The request is still for the experiment the policy chose.
+    assert_eq!(
+        prepared.request.key(),
+        &snapshot
+            .next_experiment()
+            .expect("prices")
+            .opportunity()
+            .expect("not exhausted")
+            .key
+    );
+    assert!(prepared.request.attests_to_its_key().is_ok());
+    // And `request()` reaches it on a Ready, which is the arm a caller
+    // holding the enum actually uses.
+    let answer = PreparedExperiment::of(&snapshot);
+    assert!(answer.is_ready());
+    assert_eq!(answer.request(), Some(&prepared.request));
+}
+
+/// With every declared edit already applied there is no move left, and
+/// the record says so rather than refusing. Nothing to measure is an
+/// answer; it is not a failure to answer.
+#[test]
+fn a_record_with_every_edit_applied_is_exhausted() {
+    let dir = glimmer();
+    let snapshot = PricedRecord::new(dir.path())
+        .with_protocol(fixtures::protocol())
+        .applied(
+            ["compile-all", "compile-all-by-another-name"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        )
+        .build();
+
+    let answer = PreparedExperiment::of(&snapshot);
+    assert!(
+        matches!(answer, PreparedExperiment::Exhausted),
+        "every move is applied: {answer:?}"
+    );
+    assert!(!answer.is_ready());
+    assert!(answer.request().is_none());
+}

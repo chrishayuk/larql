@@ -446,3 +446,90 @@ fn a_build_without_the_instrument_refuses_after_instructing() {
     assert!(said.contains("gpu"), "{said}");
     assert!(said.contains(TEACHER_FORCED_TWO_ARM), "{said}");
 }
+
+/// A locator that was told nothing refuses by IDENTITY, not by path —
+/// there is no path to name, and the identity is what a caller would
+/// have to go and find.
+#[test]
+fn a_locator_that_holds_nothing_refuses_naming_the_identity_it_lacks() {
+    let dir = glimmer();
+    let (_corpus_dir, bank) = corpus();
+    let snapshot = record(dir.path(), bank);
+    let request = ready(&snapshot).request;
+    let nothing = DeclaredArtifacts::new();
+
+    let LocatorRefusal::NotHeld { what, identity } = nothing
+        .container(&request)
+        .expect_err("no container was declared")
+    else {
+        panic!("nothing is held, so nothing can be wrong with it");
+    };
+    assert_eq!(what, "container");
+    assert_eq!(identity, request.model().semantic_digest());
+
+    let LocatorRefusal::NotHeld { what, identity } = nothing
+        .corpus(&request)
+        .expect_err("no corpus was declared")
+    else {
+        panic!("nothing is held, so nothing can be wrong with it");
+    };
+    assert_eq!(what, "quality bank");
+    assert_eq!(identity, request.bank().id().to_string());
+}
+
+/// A directory that is not a container at all is refused by the same
+/// check that refuses the wrong container, carrying the read's own
+/// message — so "there is nothing there" and "that is something else"
+/// are one question with two answers rather than two code paths.
+#[test]
+fn a_path_that_is_not_a_container_is_refused_with_the_reads_own_message() {
+    let dir = glimmer();
+    let (corpus_dir, bank) = corpus();
+    let snapshot = record(dir.path(), bank);
+    let request = ready(&snapshot).request;
+
+    let empty = tempfile::tempdir().expect("an empty dir");
+    let artifacts = DeclaredArtifacts::new()
+        .container_at(empty.path())
+        .corpus_at(corpus_dir.path());
+    let LocatorRefusal::NotWhatItClaims { what, path, detail } = artifacts
+        .container(&request)
+        .expect_err("there is no index there")
+    else {
+        panic!("it cannot identify itself, so it is not what it claims");
+    };
+    assert_eq!(what, "container");
+    assert_eq!(path, empty.path().display().to_string());
+    assert!(!detail.is_empty(), "the read's own message must survive");
+}
+
+/// A bank declaring no samples has no positions, and a gate judging on
+/// tail statistics would be reading an empty distribution. Refused at
+/// the DECLARATION rather than at the instruction derived from it, so
+/// the message names what is actually wrong.
+#[test]
+fn a_bank_declaring_no_samples_cannot_instruct_a_run() {
+    let dir = glimmer();
+    let empty_bank = EvidenceBank::new(
+        "kimi-teacher-forced/v1",
+        hash_bytes(b"{}"),
+        Vec::<String>::new(),
+        32,
+    );
+    assert_eq!(empty_bank.positions(), 0);
+    let snapshot = record(dir.path(), empty_bank);
+    let request = ready(&snapshot).request;
+    assert_eq!(request.sequences(), 0);
+
+    // Nothing is declared to be anywhere: the declaration is refused
+    // before any artifact is located, so a caller is not sent looking
+    // for files that would not have helped.
+    let ExecutionRefusal::NotInstructable { procedure, detail } = TeacherForcedExecutor
+        .instruct(&request, &DeclaredArtifacts::new())
+        .expect_err("a run over no samples measures nothing")
+    else {
+        panic!("the declaration is what cannot be instructed");
+    };
+    assert_eq!(procedure, TEACHER_FORCED_TWO_ARM);
+    assert!(detail.contains("no samples"), "{detail}");
+}
