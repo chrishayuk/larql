@@ -9,16 +9,18 @@ use super::super::accounting::{
 };
 use super::super::backend::{MatrixClass, WeightFormat};
 use super::super::cpu::ledger::{ledger, thread_projection_calls};
-use super::super::cpu::physical::PhysicalProjectionPlan;
+use super::super::cpu::physical::{KQuantExecution, PhysicalProjectionPlan};
 use super::super::operands::OperandStore;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
-use super::super::production::ProductionBackend;
+use super::super::production::{select_cpu, ProductionBackend};
 use super::super::realization::{
-    ExtentPin, RealizationForm, RealizationId, RealizationRecord, Selection, SelectionReason,
+    ExtentPin, RealizationForm, RealizationId, RealizationRecord, RepresentationFacts, Selection,
+    SelectionReason,
 };
 use super::super::weights::{load_weight, DEVICE_PAGE_ALIGN};
 use super::super::{execute_prepared_streaming, PlaneEvent};
 use super::bf16_zlib_execution::{transcode, Transcode};
+use super::kquant_projection::{a_stored_matrix, compiled, open as open_pack};
 use crate::format::vindex3::fixtures::{
     dense_f32_model, dense_f32_model_with, encode_fixture_container, HeadStorage,
 };
@@ -29,6 +31,7 @@ use crate::format::vindex3::represent::codec::codecs::{float, kquant, mxfp4, nvf
 use crate::format::vindex3::represent::codec::{
     CodecRegistry, RepresentationExtent, ResidencyProfile,
 };
+use crate::format::vindex3::represent::kquant::Q6_K;
 
 const F32_WIDTH: u64 = std::mem::size_of::<f32>() as u64;
 const BF16_WIDTH: u64 = std::mem::size_of::<u16>() as u64;
@@ -145,6 +148,7 @@ fn an_ffn_projection(plan: &ComponentOpPlan) -> OperandRef {
 /// re-priced under a MUTATED geometry, and the reconciliation must break —
 /// otherwise the comparison would be reading the declaration twice.
 #[test]
+#[serial_test::serial]
 fn every_resident_form_reconciles_with_its_declaration_and_a_mutated_geometry_breaks_it() {
     let f = fixture(dense_f32_model, None);
     let op = an_ffn_projection(&f.plan);
@@ -213,6 +217,121 @@ fn every_resident_form_reconciles_with_its_declaration_and_a_mutated_geometry_br
             "{format:?}: a mutated block geometry must break exactly the forms it prices"
         );
     }
+
+    // ── And one real Direct case, on a container that can hold one ────
+    //
+    // Every form above is either priced from the executor's geometry or
+    // decoded to f32, so none of them reaches the branch that reads
+    // `selection.residency` for a pin that binds the STORED bytes in
+    // place. That branch is the entire reason residency had to become
+    // realization-scoped, so it is witnessed here at the same
+    // declaration-versus-object boundary: a genuinely compiled Q6_K
+    // pack, the pin taken from the production selector rather than
+    // written down, and the object the production loader bound.
+    let tmp = tempfile::tempdir().unwrap();
+    let (_src, pack) = compiled(&tmp, Q6_K);
+    let store = open_pack(&pack, Q6_K);
+    let packed = a_stored_matrix(&pack, Q6_K);
+    let packed_stored = |o: &OperandRef| store.stored_len(o);
+    let operation = Operation::Project(MatrixClass::FfnProjection);
+    let planned = PlannedOperand {
+        operand: packed.clone(),
+        operation,
+        access: operation.access(),
+        extent: RepresentationExtent::BASE,
+        layer: Some(0),
+        declared_representation: None,
+        logical_elements: packed.shape.iter().product(),
+    };
+    let facts = RepresentationFacts::resolve(&packed.dtype);
+
+    // SELECTION: one stored operand, two production answers.
+    let direct = select_cpu(&planned, &facts, KQuantExecution::Direct).unwrap();
+    let widened = select_cpu(&planned, &facts, KQuantExecution::Widen).unwrap();
+    assert_eq!(
+        direct.realization,
+        RealizationId::cpu(RealizationForm::Direct(PhysicalProjectionPlan::FusedKQuant)),
+        "the production selector pins the stored pack in place"
+    );
+    assert_eq!(
+        widened.realization,
+        RealizationId::cpu(RealizationForm::Decode(PhysicalProjectionPlan::BlasF32)),
+        "and widening the same operand decodes it"
+    );
+    // DECLARATION: the two pins do not describe the same residency.
+    assert!(
+        direct.residency.bytes_per_weight < widened.residency.bytes_per_weight,
+        "the pins declare {} and {} bytes per weight over identical stored bytes",
+        direct.residency.bytes_per_weight,
+        widened.residency.bytes_per_weight
+    );
+
+    let pinned = |selection: &Selection| RealizationRecord {
+        planned: planned.clone(),
+        representation: packed.dtype.clone(),
+        provider: None,
+        extent: ExtentPin::unknown(),
+        verified_bytes: 0,
+        dependencies: Vec::new(),
+        selection: selection.clone(),
+    };
+    let bind = |format| {
+        let loaded = load_weight((&store).into(), &packed, format)
+            .unwrap_or_else(|e| panic!("{format:?}: {e}"));
+        let observed = vec![Bound::one(&packed, &loaded)
+            .observed(operation, Some(0))
+            .unwrap()];
+        observed
+    };
+    let on_stored = bind(WeightFormat::KQuant);
+    let on_widened = bind(WeightFormat::F32);
+
+    // OBSERVATION: the genuine Direct declaration against the object the
+    // loader actually bound — the stored blocks, not a derivative.
+    let direct_rec = pinned(&direct);
+    let priced = expectations(std::slice::from_ref(&direct_rec), packed_stored, executor);
+    let ok = reconcile(&priced, &on_stored).expect("the Direct pin reconciles with what it bound");
+    assert_eq!(ok.matched, 1);
+    assert_eq!(ok.padding, 0, "stored blocks are bound exactly");
+    // A Direct pin is priced from its OWN declaration, so the executor's
+    // block geometry is not what holds this arm up.
+    reconcile(
+        &expectations(std::slice::from_ref(&direct_rec), packed_stored, mutated),
+        &on_stored,
+    )
+    .expect("a Direct pin is priced from its declaration, not the executor's geometry");
+
+    // MUTATION: move the Direct pin's residency and nothing else. The
+    // reconciliation must fail, and name the pin it failed for.
+    let mut tampered = direct_rec.clone();
+    tampered.selection.residency.bytes_per_weight *= 2.0;
+    let err = reconcile(
+        &expectations(std::slice::from_ref(&tampered), packed_stored, executor),
+        &on_stored,
+    )
+    .expect_err("a Direct declaration that doubled must not reconcile with the bound object")
+    .to_string();
+    assert!(err.contains(&packed.tensor), "{err}");
+    assert!(err.contains("cpu:direct/FusedKQuant"), "{err}");
+    assert!(
+        err.contains("the declaration and the loader disagree"),
+        "{err}"
+    );
+
+    // CONTROL: the decode pin on the same stored bytes is undisturbed by
+    // that mutation — it was a fact about one pin, not about the operand.
+    let decode_rec = pinned(&widened);
+    let ok = reconcile(
+        &expectations(std::slice::from_ref(&decode_rec), packed_stored, executor),
+        &on_widened,
+    )
+    .expect("the decode pin still reconciles");
+    assert_eq!(ok.matched, 1);
+    reconcile(
+        &expectations(std::slice::from_ref(&direct_rec), packed_stored, executor),
+        &on_stored,
+    )
+    .expect("and so does the un-tampered Direct pin");
 }
 
 #[test]
