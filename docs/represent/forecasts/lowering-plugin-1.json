@@ -1,0 +1,158 @@
+{
+  "programme": "LOWERING-PLUGIN-1",
+  "wave": "L1–L6, the first transition of the lowering plane: authority movement, not kernels",
+  "lane": "lowering",
+  "frozen": "2026-09-08",
+  "status": "FORECAST — frozen before implementation; the execution record goes in lowering-plugin-1-notes.json and this file is not edited",
+  "why": "REPRESENT can say 'here is a representation you have never heard of' through registration alone (v1 frozen at #459, closed over its consumers at #461). The realization side cannot say the same of a lowering provider: the seam exists (PlanBackend, selection from declared facts, the pin, the ledger) and the identity, the registry and the closure do not. This programme opens the plane the way the codec plane was opened — identity first, registry in front of candidate derivation, existing providers moved behind it without a number changing, identity carried in the pin, one hostile external provider — and deliberately leaves the kernel vocabulary closed until provider openness is proven.",
+  "baseline": {
+    "main": "a03efc29 (merge of PR #460)",
+    "codec_plane": "PR #461 / 983c62b9 — the registry closed over its consumers; the F8-class admission defect it fixed is the analogue F4 below predicts here",
+    "inventory": "PR #462 / 4b49a5e0 — docs/lowering-plane-inventory.md, measured 2026-09-08 with rung 3's method",
+    "facts": {
+      "kernel_plane_files": 33,
+      "kernel_plane_enums": ["PhysicalProjectionPlan", "WeightFormat", "WeightSlice", "WeightRows", "LoadedWeight"],
+      "realization_backend": ["Cpu", "Device"],
+      "acceleration_backend": ["Cpu"],
+      "plan_backend_impls_in_tree": ["ReferenceBackend", "ProductionBackend", "DevicePlanBackend<M: MatMul>"],
+      "exec_backend_arms": 18,
+      "provider_construction_sites_outside_vindex": 13,
+      "metal_lowered_lines_bypassing_seam": 2890,
+      "metal_lowering_lines_inside_core_exec": 1929,
+      "plan_backend_identity": "name() only — 'for diagnostics and parity reports, not dispatched on'"
+    }
+  },
+  "predecessors": [
+    "rung3-planned-realizations.json",
+    "rung3-execution-notes.json (3d-N3: the kernel-plane blocker measured at five enums across 33 files)",
+    "../../represent-v1-contract-index.md (§8 provider-identity carriage — the symmetry L4 claims; 'Not frozen in v1' — the plane this opens)",
+    "../../lowering-plane-inventory.md"
+  ],
+
+  "claim": "An execution/lowering provider that this build does not ship can be registered through exported API, derive realizations from declared representation facts, be selected and accounted before I/O, execute through the canonical interpreter, and invalidate prepared state when its provider identity disappears or changes revision — without adding a provider-specific branch to core semantics.",
+
+  "boundaries": {
+    "representation": "RepresentationCodec continues to answer what is stored and what guarantees it carries.",
+    "lowering": "Lowering providers answer how the already-planned graph is realized.",
+    "meaning": "exec/mod.rs remains the single interpreter of graph semantics.",
+    "kernel_vocabulary": "The five kernel-plane enums are NOT opened in this transition.",
+    "performance": "No throughput improvement is required.",
+    "progressive_codec": "Out of scope.",
+    "new_kernel": "Out of scope."
+  },
+
+  "waves": [
+    {
+      "id": "L1",
+      "name": "lowering identity",
+      "prediction": "Every PlanBackend has a versioned LoweringIdentity { family, revision }; diagnostic name remains non-authoritative.",
+      "must_not_change": "existing realization selection or execution",
+      "kernel_plane_files_after": 33
+    },
+    {
+      "id": "L2",
+      "name": "lowering registry",
+      "prediction": "A LoweringRegistry is a carried value rather than a hidden default; provider lookup replaces provider construction as authority.",
+      "must_not_change": "graph semantics",
+      "kernel_plane_files_after": 33
+    },
+    {
+      "id": "L3",
+      "name": "existing providers behind registry",
+      "prediction": "Reference, production CPU and device-over-MatMul produce realization records identical to baseline apart from the newly carried lowering identity.",
+      "primary_control": "byte-for-byte comparison after masking the additive identity field",
+      "kernel_plane_files_after": 33
+    },
+    {
+      "id": "L4",
+      "name": "provider identity in prepared state",
+      "prediction": "Every selected pin records both codec provider identity and lowering provider identity; loss or revision substitution of either invalidates preparation distinctly by name.",
+      "must_not_happen": "fallback to another lowering provider",
+      "kernel_plane_files_after": 33
+    },
+    {
+      "id": "L5",
+      "name": "hostile external provider",
+      "prediction": "An integration-test crate registers a lowering provider absent from production LARQL and reaches register -> candidates -> selection -> accounting -> binding -> execute without core naming its identity.",
+      "genericity_control": "scan production source for the external provider identity; a shipped provider is found by the same scanner as a positive control",
+      "kernel_plane_files_after": 33,
+      "note": "The external provider deliberately reuses an existing realization shape. That it CAN is the prediction; that it must is F3."
+    },
+    {
+      "id": "L6",
+      "name": "realization fidelity",
+      "prediction": "Numerical error introduced by an accelerated realization is carried separately from representation fidelity and composes only at the final guarantee boundary.",
+      "precondition": "L1-L5 held"
+    }
+  ],
+
+  "falsifiers": [
+    {
+      "id": "F1",
+      "name": "wrong seam granularity",
+      "statement": "If the 2,890-line whole-position Metal lowering cannot pass through PlanBackend without returning to the host between operations, the current per-operation trait is insufficient.",
+      "consequence": "Add a whole-step method to the contract, with the current per-operation methods as its default decomposition. Record this as a contract change rather than hiding it.",
+      "reading": "Discovering this is a successful result of the rung, not a failure of the programme. PlanBackend is not promised to survive unchanged."
+    },
+    {
+      "id": "F2",
+      "name": "device declaration leaks provider identity into codec",
+      "statement": "If a codec must name Metal, MLX or another concrete provider to make a device realization selectable, the abstraction is wrong.",
+      "frozen_design": "Capability form. A codec declares the REQUIREMENTS of a direct realization (what the kernel must address, what it may assume of the bytes); a lowering provider declares its CAPABILITIES; the registry matches them. A codec that names a concrete provider — 'I accelerate on Metal provider v3' — is a falsification of this wave, not a design alternative. This is the answer the codec plane already gave to the same question: a codec never names a backend.",
+      "witness": "AccelerationBackend loses its provider-naming arm in favour of a requirement; no codec source names a provider family (grep gate)"
+    },
+    {
+      "id": "F3",
+      "name": "kernel plane accidentally opened",
+      "statement": "If L1-L5 require a new PhysicalProjectionPlan, WeightFormat, WeightSlice, WeightRows or LoadedWeight variant, the transition has mixed provider authority with kernel extensibility.",
+      "expected": "33-file kernel-plane count stays 33 through L1-L5, measured with the inventory's method at every wave's merge",
+      "reading": "Opening WeightFormat or PhysicalProjectionPlan while introducing the registry is the temptation; the first external provider reuses an existing shape instead. Whether kernel vocabulary itself must become open is the question AFTER provider openness is proven."
+    },
+    {
+      "id": "F4",
+      "name": "hidden provider default survives",
+      "statement": "If an externally registered provider succeeds at selection but execution, loading or serving later consults a built-in/default backend, the wave fails.",
+      "analogue": "codec rung-3 F8 (three hidden built-in registries at execution) and the #461 admission-seam defect (one more at open)",
+      "candidates": "every ProductionBackend::new() in a non-test path outside the CLI — 13 construction sites at baseline"
+    }
+  ],
+
+  "invariants": [
+    "One interpreter defines model meaning for every lowering provider.",
+    "Provider selection occurs before operand payload I/O.",
+    "A selected realization is explicit and pinned; no silent fallback.",
+    "The ledger prices the realization actually selected.",
+    "Codec identity and lowering identity remain independent authorities.",
+    "Removing a provider invalidates historical preparation; it does not reinterpret it.",
+    "Registration is a value carried through the execution session, not a process-global truth.",
+    "Existing CPU/reference/device numerical behaviour is unchanged through L1-L4.",
+    "The transition does not require a new kernel or performance win."
+  ],
+
+  "success": {
+    "architectural": "An external lowering provider reaches execution through registration alone.",
+    "closure": "No production path capable of executing a provider bypasses lowering identity/registry/pin/accounting.",
+    "non_regression": "Existing provider selection and numerical execution remain unchanged.",
+    "not_required": [
+      "Metal-lowered fully migrated",
+      "new kernel resident forms",
+      "MLX provider",
+      "GGUF export provider",
+      "remote FFN provider",
+      "progressive production codec"
+    ]
+  },
+
+  "sequence_after": "L1–L5 → optimizer actuation → production progressive codec: one artifact with several physical extents, several lowering providers, and the optimizer deciding both how much representation and how to realize it.",
+
+  "gates_before_each_push": [
+    "cargo fmt --all --check last",
+    "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+    "cargo test -p larql-vindex (every suite; count the lib line)",
+    "cargo check --workspace --all-targets (a trait method change reaches every backend)",
+    "the kernel-plane file count, measured with the inventory's method, reported in the wave's notes",
+    "scripts/check_contract_index.py and scripts/check_doc_links.py"
+  ],
+
+  "immutability": "Frozen at its commit. Per-wave falsifications go in lowering-plugin-1-notes.json; if the design above must change during a wave, the change is written there with the reason and this file is not edited."
+}
