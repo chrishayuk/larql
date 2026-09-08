@@ -351,6 +351,7 @@ fn two_realizations_of_one_state_are_separated_by_the_realization_tie_break() {
 
     let assessment = |r: &ResolvedState| Assessment {
         action: Action::new("+V"),
+        applied: BTreeSet::from(["V".to_string()]),
         parent_state: a.physical_id().clone(),
         child_state: r.physical_id().clone(),
         child_realization: r.realization_id().clone(),

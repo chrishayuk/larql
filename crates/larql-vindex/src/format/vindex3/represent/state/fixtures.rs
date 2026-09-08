@@ -25,7 +25,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::compiler::SourceIdentity;
+use super::super::compiler::{read_source_identity, SourceIdentity};
 use super::super::diagnostic::DiagnosticPolicy;
 use super::super::execution_cost::ExecutionCostModel;
 use super::super::map::{Exception, PrecisionMap};
@@ -34,10 +34,11 @@ use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::nvfp4_pack::DTYPE_NVFP4;
 use super::super::policy::Role;
 use super::super::quality::{
-    kimi_logit_balanced_v1, Distribution, LogitEvidence, QualityBank, RoutingEvidence,
+    kimi_logit_balanced_v1, Distribution, LogitEvidence, QualityBank, QualityGate, RoutingEvidence,
 };
 use super::super::search_evidence::SearchCalibrationRegistry;
-use super::resolved::PACK_LAYOUT_ADMISSION;
+use super::accounting::read_source_storage;
+use super::resolved::{layout_admission, PACK_LAYOUT_ADMISSION};
 use super::*;
 
 // ---------------------------------------------------------------- fixtures
@@ -317,4 +318,227 @@ pub fn rung5_with_diagnostic_on_s1() -> SearchSnapshot {
         )
         .expect("record");
     snapshot(base.graph().clone(), measurements)
+}
+
+// ------------------------------------------------ a record over a real container
+
+/// **A search record over a REAL encoded container.**
+///
+/// Every fact traces to the container's own sealed authority: the
+/// surface is what it stores, the model identity is read from its index,
+/// and the accounting facts are read through the segment digests that
+/// identity seals. Nothing derived is stored — no bind, no price table,
+/// no footprint, no ranking.
+///
+/// Lives here and not beside one test module for the reason
+/// `state/tests/container.rs` already gives about containers: several
+/// modules now need "the record that can actually answer", and three
+/// builders would be three ideas of what such a record is. The stage-4
+/// view tests and the stage-5b actuation tests read the same one.
+pub struct PricedRecord {
+    container: std::path::PathBuf,
+    applied: BTreeSet<String>,
+    layout: String,
+    accounting: String,
+    shape: Vec<usize>,
+    accounting_from: Option<std::path::PathBuf>,
+    distinct_edits: bool,
+    protocol: Option<MeasurementProtocol>,
+    gate: QualityGate,
+}
+
+impl PricedRecord {
+    pub fn new(container: &std::path::Path) -> Self {
+        Self {
+            container: container.to_path_buf(),
+            applied: BTreeSet::new(),
+            layout: PACK_LAYOUT_ADMISSION.to_string(),
+            accounting: "logical-bytes/v1".to_string(),
+            shape: vec![64, 64],
+            accounting_from: None,
+            distinct_edits: false,
+            protocol: None,
+            gate: kimi_logit_balanced_v1(),
+        }
+    }
+
+    /// The applied set the record's next question is asked FROM.
+    pub fn applied(mut self, applied: BTreeSet<String>) -> Self {
+        self.applied = applied;
+        self
+    }
+
+    /// The layout policy the record declares. Whatever is named here is
+    /// what state resolution and price-table construction must both
+    /// resolve to; nothing may fall back to this build's favourite.
+    pub fn layout(mut self, declared: &str) -> Self {
+        self.layout = declared.to_string();
+        self
+    }
+
+    /// The physical accounting procedure the record declares.
+    pub fn accounting(mut self, declared: &str) -> Self {
+        self.accounting = declared.to_string();
+        self
+    }
+
+    /// The surface's tensor shape — it decides whether the pack layout
+    /// can hold the tensor, which is what makes the declared layout
+    /// policy observable.
+    pub fn shape(mut self, shape: Vec<usize>) -> Self {
+        self.shape = shape;
+        self
+    }
+
+    /// Read the accounting facts from ANOTHER container.
+    pub fn accounting_from(mut self, other: &std::path::Path) -> Self {
+        self.accounting_from = Some(other.to_path_buf());
+        self
+    }
+
+    /// Give the two edits different resolutions, so the policy has more
+    /// than one opportunity to order rather than two routes to one.
+    pub fn distinct_edits(mut self) -> Self {
+        self.distinct_edits = true;
+        self
+    }
+
+    /// Carry the declarations the standing intent's digests stand for.
+    pub fn with_protocol(mut self, protocol: MeasurementProtocol) -> Self {
+        self.protocol = Some(protocol);
+        self
+    }
+
+    /// The behavioural contract the record's conclusions are drawn
+    /// against. Supplied so a test can carry a gate whose id this build
+    /// implements and whose thresholds have moved — the case a run must
+    /// refuse rather than judge under whichever definition it compiled.
+    pub fn gate(mut self, gate: QualityGate) -> Self {
+        self.gate = gate;
+        self
+    }
+
+    pub fn build(self) -> SearchSnapshot {
+        let model = read_source_identity(&self.container).expect("identity");
+        let facts_root = self
+            .accounting_from
+            .unwrap_or_else(|| self.container.clone());
+        let facts_model = read_source_identity(&facts_root).expect("identity");
+        let accounting = read_source_storage(&facts_root, &facts_model).expect("storage facts");
+        let priced = read_source_storage(&self.container, &model).expect("storage facts");
+
+        // The container's own tensors, at an NVFP4-admissible shape.
+        let surface = TensorSurface::new(priced.tensors().map(|(id, _)| {
+            SurfaceTensor::new(
+                &id.object,
+                &id.tensor,
+                Role::DecoderLinear,
+                self.shape.clone(),
+            )
+        }))
+        .expect("one entry per stored tensor");
+
+        // The role is in the map's domain and a blanket exception
+        // protects it, so the base state presents source bytes
+        // throughout. Each edit lifts that protection, which is the
+        // direction the objective wants.
+        let compile_everything = || Exception {
+            projection: None,
+            layers: None,
+            encoding: Some(DTYPE_NVFP4.into()),
+        };
+        let base_map = PrecisionMap {
+            name: "protect-everything".into(),
+            encoding: DTYPE_NVFP4.into(),
+            roles: vec!["decoder-linear".into()],
+            exceptions: vec![Exception {
+                projection: None,
+                layers: None,
+                encoding: None,
+            }],
+        };
+        // Two edits that resolve identically: one physical state reached
+        // by two routes, which is the case `MeasurementOpportunity`
+        // exists for — two realizations, ONE experiment.
+        let second = match self.distinct_edits {
+            // Compiles only the q projections, so it resolves to a
+            // different physical state and the policy has two
+            // opportunities to order rather than two routes to one.
+            true => Exception {
+                projection: Some("q_proj".into()),
+                layers: None,
+                encoding: Some(DTYPE_NVFP4.into()),
+            },
+            false => compile_everything(),
+        };
+        let vocabulary = ActionVocabulary::new([
+            MapEdit::new("compile-all", compile_everything()),
+            MapEdit::new("compile-all-by-another-name", second),
+        ])
+        .expect("distinct names");
+
+        // The root: the base map resolved, priced by the same procedure
+        // the record declares. A writer may compute; the record stores
+        // only the resulting node.
+        let layout = layout_admission(PACK_LAYOUT_ADMISSION).expect("this build implements it");
+        let root_state = RepresentationState::resolve(&model, &surface, &base_map, layout);
+        let root_bytes = priced
+            .bind(&model, &surface)
+            .ok()
+            .and_then(|bound| {
+                SurfaceFootprint::new(
+                    &bound,
+                    &surface,
+                    layout,
+                    &PackCompiledBytes,
+                    &[DTYPE_NVFP4.to_string()],
+                )
+                .ok()
+                .map(|f| f.logical_bytes(&root_state))
+            })
+            .unwrap_or_else(|| {
+                // A shape the pack cannot hold prices as source
+                // throughout, which is what the base map presents anyway.
+                LogicalBytes::new(priced.tensors().map(|(_, f)| f.logical_bytes.get()).sum())
+            });
+        let root = ResolvedState::new(root_state.clone(), root_bytes);
+
+        SearchSnapshot::new(
+            SearchSpace {
+                surface,
+                base_map,
+                vocabulary,
+                applied: self.applied,
+            },
+            SearchConfig {
+                objective: Objective::MinimiseLogicalBytes,
+                gate: self.gate,
+                tail_support: TailSupportPolicy::route_cal_1(),
+                calibrations: SearchCalibrationRegistry::default(),
+                diagnostic_policy: DiagnosticPolicy::bs2_kimi_v1(),
+                semantics: SearchSemantics::new(
+                    "exchange-1-out-1-in/v1",
+                    "ruling-1-three-prunes/v1",
+                    "search-evidence-ladder/v1",
+                    "kimi-balanced-v1-authority-only/v1",
+                    "physical-prize-first/v1",
+                    &self.accounting,
+                    &self.layout,
+                ),
+                ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
+                standing_intent: standing_intent(),
+                protocol: self.protocol,
+            },
+            SearchFacts {
+                graph: RepresentationStateGraph::new(
+                    TransitionPolicy::StrictlyImprovingPhysical,
+                    root,
+                ),
+                measurements: MeasurementRegistry::default(),
+                byte_ledgers: BTreeMap::new(),
+                execution_cost: ExecutionCostModel::new(Vec::new()),
+                accounting: Some(accounting),
+            },
+        )
+    }
 }
