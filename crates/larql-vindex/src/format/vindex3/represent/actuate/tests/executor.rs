@@ -89,6 +89,9 @@ fn the_registry_resolves_by_procedure_and_names_what_it_has() {
 
 /// A stub that claims a procedure and answers about whatever key it was
 /// built with — the two ways the seam can be attacked.
+///
+/// Its note names the procedure it answers to, so a test can prove WHICH
+/// executor ran and not merely that one did.
 struct Stub {
     procedure: String,
     answers_about: Option<MeasurementKey>,
@@ -111,7 +114,7 @@ impl ExperimentExecutor for Stub {
                 .unwrap_or_else(|| request.key().clone()),
             observation: fixtures::authority_reading(0.0, 0),
             verified: Default::default(),
-            execution_note: "a stub".into(),
+            execution_note: format!("stub answering to {}", self.procedure),
         })
     }
 }
@@ -130,6 +133,83 @@ fn two_executors_claiming_one_procedure_are_refused() {
         panic!("which one ran would depend on registration order");
     };
     assert!(refusal.to_string().contains(TEACHER_FORCED_TWO_ARM));
+}
+
+/// Two procedures, two executors, and the named one runs — in both
+/// registration orders, because an order-dependent answer is exactly what
+/// the duplicate-claim refusal above exists to prevent and a single
+/// registered executor cannot witness.
+///
+/// **This proves registry DISPATCH and nothing more.** It does not touch
+/// ACT1-N5, which stays open: no semantic relationship between an
+/// instrument's declared procedure and an execution procedure is claimed
+/// or tested here, and two stubs could not establish one.
+#[test]
+fn two_distinct_procedures_dispatch_by_name_in_either_registration_order() {
+    const ALPHA: &str = "alpha-procedure/v1";
+    const BETA: &str = "beta-procedure/v1";
+
+    let dir = glimmer();
+    let declaring = |procedure: &str| {
+        record_with(
+            dir.path(),
+            MeasurementProtocol::new(
+                fixtures::selection_bank(),
+                fixtures::instrument(),
+                procedure,
+            ),
+        )
+    };
+    let alpha_record = declaring(ALPHA);
+    let beta_record = declaring(BETA);
+    let alpha_request = ready(&alpha_record).request;
+    let beta_request = ready(&beta_record).request;
+    assert_eq!(alpha_request.procedure(), ALPHA);
+    assert_eq!(beta_request.procedure(), BETA);
+
+    let alpha = Stub {
+        procedure: ALPHA.into(),
+        answers_about: None,
+    };
+    let beta = Stub {
+        procedure: BETA.into(),
+        answers_about: None,
+    };
+    // Nothing is declared to be anywhere: dispatch happens before an
+    // executor consults a locator, and these stubs never do.
+    let nowhere = DeclaredArtifacts::new();
+
+    let orders: [[&dyn ExperimentExecutor; 2]; 2] = [[&alpha, &beta], [&beta, &alpha]];
+    for order in orders {
+        let registry = ExecutorRegistry::new(order).expect("two procedures, two executors");
+        assert_eq!(
+            registry.implemented(),
+            vec![ALPHA.to_string(), BETA.to_string()]
+        );
+
+        for (request, expected) in [(&alpha_request, ALPHA), (&beta_request, BETA)] {
+            let observed = registry
+                .execute(request, &nowhere)
+                .expect("the procedure the record declares is implemented");
+            assert!(
+                observed.execution_note.contains(expected),
+                "the executor for `{expected}` should have run: {}",
+                observed.execution_note
+            );
+            assert_eq!(&observed.key, request.key());
+        }
+
+        // And with two registered, the refusal for a third names both —
+        // so the list is a list and not the single entry a one-executor
+        // registry could not tell apart from one.
+        let Err(refusal) = registry.for_procedure("gamma-procedure/v1") else {
+            panic!("this build performs neither of those");
+        };
+        let ExecutionRefusal::NoSuchProcedure { implemented, .. } = &refusal else {
+            panic!("{refusal:?}");
+        };
+        assert_eq!(implemented, &vec![ALPHA.to_string(), BETA.to_string()]);
+    }
 }
 
 /// **The seam's own falsifier.** A request that cannot misstate its

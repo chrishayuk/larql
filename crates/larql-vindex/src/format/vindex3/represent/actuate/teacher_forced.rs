@@ -44,6 +44,40 @@
 //! nobody checks. The build that cannot perform the procedure still
 //! instructs first and then refuses, so a malformed request is reported
 //! as malformed rather than as a missing backend.
+//!
+//! # What is COMPILED and what is WITNESSED
+//!
+//! State it plainly, because the difference is evidentiary and the code
+//! looks the same either way:
+//!
+//! ```text
+//! instruct()                    tested on every build
+//! execute(), non-Metal arm      tested; instructs, then refuses
+//! execute(), Metal arm          COMPILES; NEVER RUN
+//! ```
+//!
+//! The Metal arm reaches `measure::run` and has no witness. Running it
+//! needs a real container, a real exported corpus and a compiled overlay
+//! at once, and none of those is a fixture. So this module claims that
+//! an authorised experiment can be turned into an instruction and handed
+//! to the procedure; it does **not** claim that any measurement has been
+//! caused through it.
+//!
+//! The stronger reading to avoid is the one the seam's own check invites.
+//!
+//! ```text
+//! the executor returned the requested key
+//!         does NOT mean
+//! the candidate bytes were independently proven to present the state
+//! that key names
+//! ```
+//!
+//! The second is not established anywhere yet: a compiled overlay carries
+//! no identity a locator can read, so `ArtifactLocator::candidate`
+//! resolves one by state id and verifies nothing about its contents.
+//! Establishing it means opening those bytes under the record's own
+//! layout and accounting authority — the bind step, and for admissibility
+//! stage 6's.
 
 use super::super::measure::{
     self, MeasurementProcedure, TeacherForcedRequest, TEACHER_FORCED_TWO_ARM,
