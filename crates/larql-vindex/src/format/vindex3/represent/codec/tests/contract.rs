@@ -134,7 +134,17 @@ fn only_a_lossless_carrier_declares_a_radius_and_a_progressive_one_declares_one_
     const LOSSLESS: [&str; 4] = ["BF16", "F16", "F32", "BF16_ZLIB"];
     // Codecs that fit their source, and so certify nothing without an
     // attestation for the instance.
-    const FITTED: [&str; 6] = ["Q4_K", "Q6_K", "Q8_0", "NVFP4", "MXFP4", "VQ8_SHARED"];
+    const FITTED: [&str; 9] = [
+        "Q4_K",
+        "Q6_K",
+        "Q8_0",
+        "NVFP4",
+        "MXFP4",
+        "VQ8_SHARED",
+        "F8_E4M3",
+        "Q5_K",
+        "Q3_K",
+    ];
 
     let progressive: Vec<&str> = builtin()
         .into_iter()
@@ -258,12 +268,10 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         // in the bound operand, not the format — so this cannot name one.
         // `every_acceleration_...` checks the family membership directly.
         WeightFormat::KQuant => None,
-        // A SOURCE format, not a REPRESENT target: fine-grained FP8
-        // arrives in the checkpoint and this build never compiles a
-        // tensor into it, so no `represent` codec answers to it. `None`
-        // here is that fact, not an omission — if a codec ever emits
-        // FP8, this arm names it and the assertion above starts applying.
-        WeightFormat::Fp8Block => None,
+        // The checkpoint's own fine-grained FP8, executed in place: the
+        // codec that answers to it is the one registered under the
+        // safetensors dtype the encoder carries through.
+        WeightFormat::Fp8Block => Some("F8_E4M3"),
     }
 }
 
@@ -316,21 +324,34 @@ fn codecs_with_no_direct_cpu_realization_say_so_rather_than_claim_one() {
         .filter(|c| c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    // K-quants gained a direct CPU realization (FusedKQuant); the
+    // K-quants with a kernel gained a direct CPU realization
+    // (FusedKQuant); Q5_K and Q3_K have no kernel and say so; the
     // entropy-coded codec registers none, and neither do the progressive
     // or the codebook-dependent ones — deliberately, so an extent and a
     // dependency can each be shown to work without any kernel knowing
-    // they exist.
+    // they exist. Fine-grained FP8 is the dependency-bearing codec WITH
+    // a kernel: the grid is retained beside the codes it scales.
     assert_eq!(
         without,
-        ["F16", "MXFP4", "BF16_ZLIB", "F32_PLANES", "VQ8_SHARED"]
+        [
+            "F16",
+            "MXFP4",
+            "BF16_ZLIB",
+            "F32_PLANES",
+            "VQ8_SHARED",
+            "Q5_K",
+            "Q3_K"
+        ]
     );
     let with: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| !c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    assert_eq!(with, ["BF16", "F32", "Q4_K", "Q6_K", "Q8_0", "NVFP4"]);
+    assert_eq!(
+        with,
+        ["BF16", "F32", "Q4_K", "Q6_K", "Q8_0", "NVFP4", "F8_E4M3"]
+    );
 }
 
 #[test]

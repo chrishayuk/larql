@@ -8,12 +8,14 @@ mod auxiliary;
 mod baseline;
 mod bf16_zlib;
 mod capability;
+mod closure;
 mod composition;
 mod contract;
 mod decode;
 mod f32_planes;
 mod fidelity;
 mod fixtures;
+mod fp8_block;
 mod geometry;
 mod lyrw2;
 mod ranges;
@@ -25,7 +27,8 @@ mod vq8_shared;
 use super::codecs::bf16_zlib::BF16_ZLIB;
 use super::codecs::f32_planes::{F32PlanesCodec, F32_PLANES};
 use super::codecs::float::{BF16, F16, F32};
-use super::codecs::kquant::{Q4_K, Q6_K, Q8_0};
+use super::codecs::fp8_block::{DTYPE_FP8_BLOCK, FP8_BLOCK, SCALES as FP8_SCALES};
+use super::codecs::kquant::{KQuantCodec, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0};
 use super::codecs::mxfp4::{DTYPE_MXFP4, MXFP4};
 use super::codecs::nvfp4::NVFP4;
 use super::codecs::vq8_shared::{
@@ -38,6 +41,7 @@ use super::*;
 use crate::format::vindex3::fixtures::encode_bf16_zlib;
 use crate::format::vindex3::opplan::exec::weights::{quantize_mxfp4, LoadedWeight};
 use crate::format::vindex3::represent::nvfp4_pack::{encode as encode_nvfp4, PackLayout};
+use larql_models::quant::fp8::f32_to_e4m3;
 use larql_models::quant::half::{encode_bf16, encode_f16};
 use larql_models::quant::mxfp4::{MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS};
 
@@ -84,6 +88,68 @@ pub(super) fn vq_codebook() -> Vec<f32> {
 
 pub(super) fn builtin() -> Vec<&'static dyn RepresentationCodec> {
     CodecRegistry::builtin().codecs().collect()
+}
+
+/// The FP8 fixture's scale grid over `[ROWS, K]`: one tile row per matrix
+/// row and four tile columns, so the grid is non-square and a transposed
+/// scale index is visible.
+pub(super) const FP8_SCALE_ROWS: usize = ROWS;
+pub(super) const FP8_SCALE_COLS: usize = 4;
+
+pub(super) fn fp8_scales() -> Vec<f32> {
+    (0..FP8_SCALE_ROWS * FP8_SCALE_COLS)
+        .map(|i| 0.0625 * (1 + i % 5) as f32)
+        .collect()
+}
+
+/// The ramp quantised against [`fp8_scales`]: each value divided by its
+/// tile's scale before encoding, so decoding recovers it to E4M3
+/// resolution rather than to noise.
+pub(super) fn fp8_codes(values: &[f32], scales: &[f32]) -> Vec<u8> {
+    let (block_rows, block_cols) = (ROWS / FP8_SCALE_ROWS, K / FP8_SCALE_COLS);
+    (0..ROWS * K)
+        .map(|i| {
+            let (r, c) = (i / K, i % K);
+            let s = scales[(r / block_rows) * FP8_SCALE_COLS + c / block_cols];
+            f32_to_e4m3(values[i] / s)
+        })
+        .collect()
+}
+
+/// Blocks for a K-quant this workspace decodes but cannot encode: a
+/// deterministic byte pattern with the f16 fields set to finite, ordinary
+/// magnitudes, so every decoder in the workspace reads the same finite
+/// values from them. Not a quantisation of anything — the fixture exists
+/// so range decode, stream binding and refusals can be exercised over the
+/// codec, and its decode is judged against the ggml dispatch, not a ramp.
+pub(super) fn synthetic_kquant_blocks(codec: &KQuantCodec) -> Vec<u8> {
+    let quant = codec.quant();
+    let blocks = ROWS * K / quant.elements_per_block;
+    let mut state = 0x9E37_79B9_u32.wrapping_add(quant.bytes_per_block as u32);
+    let mut out: Vec<u8> = (0..blocks * quant.bytes_per_block)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state >> 24) as u8
+        })
+        .collect();
+    let scale = encode_f16(&[0.015_625]);
+    let min = encode_f16(&[0.25]);
+    for block in out.chunks_exact_mut(quant.bytes_per_block) {
+        match quant.name {
+            // d at 0..2, dmin at 2..4.
+            "Q5_K" => {
+                block[..2].copy_from_slice(&scale);
+                block[2..4].copy_from_slice(&min);
+            }
+            // d at the tail.
+            "Q3_K" => {
+                let n = block.len();
+                block[n - 2..].copy_from_slice(&scale);
+            }
+            other => panic!("no synthetic layout for {other}"),
+        }
+    }
+    out
 }
 
 /// One encoded fixture: the bytes a container would hold, how they bind
@@ -146,20 +212,30 @@ pub(super) fn fixtures() -> Vec<Fixture> {
         packed(&F16, encode_f16(&values)),
         packed(&F32, f32_bytes),
     ];
-    for k in [Q4_K, Q6_K, Q8_0] {
+    for k in [&Q4_K, &Q6_K, &Q8_0] {
         let bytes = k.quant().encode(&values, TENSOR).expect("encodes");
-        out.push(Fixture {
-            codec: match k.quant().name {
-                "Q4_K" => &Q4_K,
-                "Q6_K" => &Q6_K,
-                _ => &Q8_0,
-            },
-            shape: shape.clone(),
-            buffers: vec![bytes],
-            packed: true,
-            auxiliaries: Vec::new(),
-        });
+        out.push(packed(k, bytes));
     }
+    // The two K-quants this build reads and does not write: their blocks
+    // are synthetic, because a fixture is what a container holds and no
+    // encoder here can produce one.
+    for k in [&Q5_K, &Q3_K] {
+        out.push(packed(k, synthetic_kquant_blocks(k)));
+    }
+    // The dependency-bearing PRODUCTION codec: E4M3 codes, and the scale
+    // grid they mean nothing without — resolved, as the loader hands it
+    // over once the container's reference table addresses it.
+    let scales = fp8_scales();
+    out.push(Fixture {
+        codec: &FP8_BLOCK,
+        shape: shape.clone(),
+        buffers: vec![fp8_codes(&values, &scales)],
+        // One stream, but not ONE PAYLOAD: the codes bind alone and mean
+        // nothing alone, so the packed path — bind, validate, decode from
+        // a single slice — is not a path this codec has.
+        packed: false,
+        auxiliaries: vec![(FP8_SCALES, vec![FP8_SCALE_ROWS, FP8_SCALE_COLS], scales)],
+    });
     let layout = PackLayout::derive(&shape, TENSOR).expect("layout");
     let matrix = larql_models::quant::nvfp4::quantize(&values, ROWS, K).expect("nvfp4");
     out.push(packed(
@@ -215,6 +291,7 @@ pub(super) fn fixtures() -> Vec<Fixture> {
     });
     assert_eq!(out.len(), builtin().len(), "one fixture per built-in codec");
     assert!(out.iter().any(|f| f.label() == DTYPE_MXFP4));
+    assert!(out.iter().any(|f| f.label() == DTYPE_FP8_BLOCK));
     out
 }
 

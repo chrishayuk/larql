@@ -302,11 +302,23 @@ impl CodecIdentity {
     /// is its OWN contract — `Q4_K` and `Q6_K` are different block
     /// layouts, and filing them under one family would let a reader that
     /// implements one accept the other's bytes on a revision match.
+    ///
+    /// The registry is a parameter, never the built-in default: this is
+    /// the gate a container's pack meets at open, and a store opened with
+    /// an external provider's registry must admit that provider's packs
+    /// here. A built-in default would have refused them before the
+    /// registry the store decodes through was ever consulted — the F8
+    /// falsifier, one seam further in.
+    pub fn admit_in(&self, registry: &super::codec::CodecRegistry) -> Result<(), VindexError> {
+        registry.admit(self).map(|_| ()).map_err(Into::into)
+    }
+
+    /// [`Self::admit_in`] against the built-in registry — a test's
+    /// shorthand, and test-only so no production path can reach a
+    /// registry that registration cannot.
+    #[cfg(test)]
     pub fn admit(&self) -> Result<(), VindexError> {
-        super::codec::CodecRegistry::builtin()
-            .admit(self)
-            .map(|_| ())
-            .map_err(Into::into)
+        self.admit_in(super::codec::CodecRegistry::builtin())
     }
 }
 

@@ -214,6 +214,7 @@ no core file names it.
 | negative | `losing_or_substituting_either_provider_invalidates_preparation` — `crates/larql-vindex/tests/external_attested_provider/main.rs` |
 | negative | `losing_the_dependencys_provider_invalidates_the_image_by_name` — `crates/larql-vindex/tests/external_auxiliary_provider.rs` |
 | negative | `a_provider_that_disappears_invalidates_the_preparation_rather_than_falling_back` — `…/exec/tests/accounting.rs` |
+| admission | `a_pack_under_the_external_identity_is_admitted_through_the_registry_the_store_opens_with` — `crates/larql-vindex/tests/external_codec_provider.rs` (refused by the built-in registry naming every family it knows; admitted by the registry the store is opened with; re-pointing re-runs the admission) |
 | genericity | `no_external_identity_or_role_appears_in_production_larql` — `crates/larql-vindex/tests/external_attested_provider/genericity.rs` |
 | scan control | `the_scan_would_have_found_an_identity_that_was_there` — same file (a shipped label *is* found by the same walk, so an empty result means "nothing there", not "nothing looked at") |
 | qualified by | PR #441 (`85b46061`), PR #447 (`202ffb7b`) |
@@ -267,6 +268,23 @@ And the physical semantics:
 | isolation | `verification_changes_preparation_reads_and_no_other_resource` — same file (stored footprint, residency, staging peak, per-token touch and device all unmoved) |
 | mutant | drop the `attestation_verification` term in `ResourceLedger::aggregate` (`…/exec/accounting.rs`) → four arms fail; the three zero-read arms stay green, which is the correct signature |
 | qualified by | PR #457 |
+
+---
+
+## Consumer closure — evidence, not a tenth contract
+
+The nine contracts say what a codec declares. These witnesses say that
+nothing in the executor is reachable *around* those declarations — the
+property "every codec uses the registry" stated as tests. They are listed
+so a kernel or a loader path added without a declaration goes red here.
+
+| | |
+|---|---|
+| closure | `every_direct_kernel_over_stored_bytes_is_declared_by_a_registered_codec` — `…/codec/tests/closure.rs` |
+| control | `the_fp8_kernel_is_declared_by_exactly_the_fp8_codec` — `…/codec/tests/closure.rs` |
+| production dependant | `selection_pins_the_fp8_kernel_and_retains_its_grid` — `…/exec/tests/fp8_carriage.rs` (the first `Retained` dependency lifetime in the tree) |
+| production dependant | `the_canonical_decode_is_the_reference_dequantisation_bit_for_bit` — `…/exec/tests/fp8_carriage.rs` |
+| declared, not spelled | `the_encoder_declares_the_scale_grid_as_the_codes_dependency` — `…/exec/tests/fp8_carriage.rs` |
 
 ---
 

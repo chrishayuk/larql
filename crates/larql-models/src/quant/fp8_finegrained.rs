@@ -286,6 +286,20 @@ pub fn is_scale_sibling(name: &str) -> bool {
     name.ends_with("_scale_inv")
 }
 
+/// The weight a scale sibling belongs to — [`scale_sibling_name`]
+/// inverted — or `None` for a name that is not a sibling at all.
+///
+/// This is the checkpoint's convention consumed ONCE, by the encoder
+/// that turns it into a declared reference in the container; nothing
+/// downstream of the container spells it. Like its inverse it decides
+/// only the name, never whether the weight exists.
+pub fn weight_of_scale_sibling(name: &str) -> Option<String> {
+    if let Some(stem) = name.strip_suffix(".weight_scale_inv") {
+        return Some(format!("{stem}.weight"));
+    }
+    name.strip_suffix("_scale_inv").map(str::to_string)
+}
+
 #[cfg(test)]
 #[path = "tests/fp8_finegrained.rs"]
 mod tests;

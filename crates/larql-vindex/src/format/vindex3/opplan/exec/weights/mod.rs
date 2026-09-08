@@ -22,6 +22,7 @@ use super::operands::{OperandSource, RawOperand, RepresentationSource};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
+use crate::format::vindex3::represent::codec::codecs::fp8_block::SCALES as FP8_SCALES;
 use crate::format::vindex3::represent::kquant::{self, KQuant};
 use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
 use crate::format::vindex3::represent::physical::WeightRegion;
@@ -476,39 +477,31 @@ impl LoadedWeight {
     }
 }
 
-/// Bind a fine-grained FP8 pair, with every disagreement between the two
-/// tensors refused rather than reconciled.
+/// Bind a fine-grained FP8 pair: the codes byte-for-byte, the scale grid
+/// as its own codec decoded it, and the tile DERIVED from the two shapes.
 ///
-/// The tile is DERIVED here, from the two shapes, and carried on the
-/// loaded weight. `quantization_config.weight_block_size` is not
-/// consulted: it is a whole-checkpoint summary, and the scheme permits
-/// per-tensor grids that contradict it.
+/// `quantization_config.weight_block_size` is not consulted: it is a
+/// whole-checkpoint summary, and the scheme permits per-tensor grids that
+/// contradict it. Nothing here reads a dtype name either — the grid
+/// arrives as values through the registry, so a grid stored under any
+/// registered representation binds, and one under none was refused by
+/// name before this ran.
 fn load_fp8_block(
     operand: &OperandRef,
     codes: RawOperand,
-    sibling: &str,
+    grid_tensor: &str,
     scale_shape: &[usize],
-    scales: RawOperand,
+    scales: Vec<f32>,
 ) -> Result<LoadedWeight, VindexError> {
     use larql_models::quant::fp8_finegrained::Fp8Grid;
 
     let refuse = |what: String| VindexError::Parse(what);
-    if scales.dtype != DTYPE_F32 {
-        // E8M0 scales (`float8_e8m0fnu`, stored as `U8`) are a real
-        // variant of this scheme and decode as `2^(byte-127)`. Refused
-        // rather than guessed: reading those bytes as f32 would not even
-        // have the right length, and reading them as scalars would be
-        // silently wrong by many orders of magnitude.
-        return Err(refuse(format!(
-            "operand `{}`: scale sibling `{sibling}` is `{}`, and this build reads only              F32 fine-grained FP8 scales",
-            operand.tensor, scales.dtype
-        )));
-    }
     let (rows, cols) = match operand.shape.as_slice() {
         [r, c] => (*r, *c),
         other => {
             return Err(refuse(format!(
-                "operand `{}` has shape {other:?}; fine-grained FP8 tiles a `[out, in]`                  matrix and has no reading of any other rank",
+                "operand `{}` has shape {other:?}; fine-grained FP8 tiles a `[out, in]` \
+                 matrix and has no reading of any other rank",
                 operand.tensor
             )))
         }
@@ -517,7 +510,8 @@ fn load_fp8_block(
         [r, c] => (*r, *c),
         other => {
             return Err(refuse(format!(
-                "operand `{}`: scale sibling `{sibling}` has shape {other:?}, which is not                  a two-dimensional grid",
+                "operand `{}`: scale grid `{grid_tensor}` has shape {other:?}, which is not \
+                 a two-dimensional grid",
                 operand.tensor
             )))
         }
@@ -539,21 +533,17 @@ fn load_fp8_block(
             codes.bytes.len()
         )));
     }
-    let values: Vec<f32> = scales
-        .bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
-    if values.len() != grid.scales() {
+    if scales.len() != grid.scales() {
         return Err(refuse(format!(
-            "operand `{}`: scale sibling `{sibling}` declares {scale_rows}x{scale_cols} but              its segment holds {} f32 values",
+            "operand `{}`: scale grid `{grid_tensor}` declares {scale_rows}x{scale_cols} but \
+             decodes to {} values",
             operand.tensor,
-            values.len()
+            scales.len()
         )));
     }
     Ok(LoadedWeight::Fp8Block {
         codes: AlignedBytes::from_bytes(&codes.bytes),
-        scales: values,
+        scales,
         block_rows,
         block_cols,
         scale_cols,
@@ -569,16 +559,47 @@ pub fn load_weight(
 ) -> Result<LoadedWeight, VindexError> {
     match format {
         WeightFormat::F32 => Ok(LoadedWeight::F32(StagedF32::stage(store.load(operand)?)?)),
-        // Fine-grained FP8 binds TWO container tensors: the E4M3 codes
-        // and the `weight_scale_inv` grid the checkpoint shipped beside
-        // them. Neither is widened — that is the point of the format on
-        // this programme, since a widened GLM-5.3-Flash would be 612 GB
-        // of a 306 GB checkpoint.
+        // Fine-grained FP8 binds TWO container objects: the E4M3 codes,
+        // and the scale grid the codec DECLARES as its dependency and the
+        // container's reference table ADDRESSES — never a name this
+        // loader spells. The codes are not widened — that is the point of
+        // the format on this programme, since a widened GLM-5.3-Flash
+        // would be 612 GB of a 306 GB checkpoint. The grid is decoded
+        // through its own codec: it is retained beside the codes, and
+        // its bytes are its own representation's business.
         WeightFormat::Fp8Block => {
             let raw = store.load_raw(operand)?;
-            let sibling = larql_models::quant::fp8_finegrained::scale_sibling_name(&operand.tensor);
-            let (scale_shape, scale_raw) = store.companion(operand, &sibling)?;
-            load_fp8_block(operand, raw, &sibling, &scale_shape, scale_raw)
+            let owner = crate::format::vindex3::auxiliary_references::OperandAddress::new(
+                &operand.object,
+                &operand.tensor,
+            );
+            let grid = store
+                .store()
+                .references()
+                .target(&owner, FP8_SCALES)
+                .cloned()
+                .ok_or_else(|| {
+                    VindexError::Parse(format!(
+                        "operand `{}`: the container declares no `{FP8_SCALES}` dependency for \
+                         it, and fine-grained FP8 codes mean nothing without their grid",
+                        operand.tensor
+                    ))
+                })?;
+            let scale_shape = store.store().stored_shape(&grid).ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "operand `{}`: its `{FP8_SCALES}` dependency {} is referenced and the \
+                     container holds no such tensor",
+                    operand.tensor,
+                    grid.describe()
+                ))
+            })?;
+            let scales = store.load(&OperandRef {
+                object: grid.object.clone(),
+                tensor: grid.tensor.clone(),
+                dtype: String::new(),
+                shape: scale_shape.clone(),
+            })?;
+            load_fp8_block(operand, raw, &grid.tensor, &scale_shape, scales)
         }
         WeightFormat::Q8 => {
             let in_dim = operand.shape.get(1).copied().ok_or_else(|| {

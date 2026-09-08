@@ -286,6 +286,25 @@ impl RealizationId {
         }
     }
 
+    /// Whether this realization keeps its codec's DEPENDENCIES resident
+    /// while serving — the fact a dependency pin's lifetime is set from.
+    ///
+    /// A realization over the STORED bytes reads what those bytes need on
+    /// every token: a direct kernel over FP8 codes multiplies by the scale
+    /// grid, a mapped bank executes in place. A realization that decodes
+    /// — to f32, to a re-quantised image, to a device's own form — is
+    /// finished with the dependency once the image exists.
+    pub fn retains_dependencies(self) -> bool {
+        match self.form {
+            RealizationForm::Direct(_) | RealizationForm::MappedStored { .. } => true,
+            RealizationForm::Decode(_)
+            | RealizationForm::Requantise(_)
+            | RealizationForm::SliceStored { .. }
+            | RealizationForm::DecodedGather
+            | RealizationForm::DeviceResident(_) => false,
+        }
+    }
+
     /// The access realization of a mapped form; every other form is
     /// brought in whole at binding and has none.
     pub fn access(self) -> MappedAccess {
@@ -508,6 +527,24 @@ pub struct RealizationRecord {
     /// observe rather than assert.
     pub verified_bytes: u64,
     pub dependencies: Vec<DependencyPin>,
+}
+
+impl RealizationRecord {
+    /// Pin another realization on this record, and let every dependency's
+    /// lifetime follow it: the lifetime is the realization's, so a re-pin
+    /// that left it standing would price the old realization's retention
+    /// against the new one's bytes.
+    pub fn repin(&mut self, realization: RealizationId) {
+        self.selection.realization = realization;
+        let lifetime = if realization.retains_dependencies() {
+            DependencyLifetime::Retained
+        } else {
+            DependencyLifetime::PreparationOnly
+        };
+        for dependency in &mut self.dependencies {
+            dependency.lifetime = lifetime;
+        }
+    }
 }
 
 /// What a realization does with a dependency once it has read it.

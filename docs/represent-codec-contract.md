@@ -247,3 +247,87 @@ across 33 files and is measured debt, not the next task), or any
 performance. The architecture phase has turned K3 failures from
 format-specific surprises into named missing realizations with physical
 costs; the next work binds a real K3 plan through this machinery.
+
+## Rung 4 — the registry closed over its consumers: FP8, Q5_K/Q3_K, and the admission seam
+
+Built after the v1 freeze and inside it: no invariant of the nine moved, and
+the change is what the freeze was for — a consumer that had been routed
+*around* the contract brought through it, with the evidence that nothing
+else still is.
+
+**Fine-grained FP8 was the conspicuous exception.** GLM-5.3-Flash's own
+bytes — 95.8 % of a 306 GiB checkpoint — had a loader, a `WeightSlice`, a
+resident format and a fused kernel (`FusedFp8Block`), and no codec. The
+loader spelled the checkpoint's sibling name, a `companion` accessor existed
+for that one format, the planner skipped the scale grid by its spelling, and
+the kernel was reachable only by a caller that already knew the answer:
+selection could not offer it, the reference oracle could not decode it, and
+an external provider could not have done what it did.
+
+It is now `F8_E4M3` (family `fp8-block`), the twelfth registered codec, and
+the first PRODUCTION codec whose bytes mean nothing on their own:
+
+| | |
+|---|---|
+| streams | one, the E4M3 codes |
+| dependency | the f32 scale grid, named `scales`, **another represented object** addressed by the container's reference table and decoded through its own codec |
+| tile | derived per tensor from the two shapes — never a config field, never a stream: a stream is bytes and the tile needs the grid's SHAPE, which is why the grid is a dependency and not a second stream (the VQ codebook's rule, met in production) |
+| certificate | codes at 8 bits/weight; the grid is the grid's own footprint. No radius: a fitted codec, like every quantiser here |
+| decode | bit-exact to `fp8_finegrained::dequantize_into`, the transcription of upstream's `Fp8Dequantize` |
+| direct realization | `FusedFp8Block`, declared, with the grid **retained** — the first pin in the tree whose dependency lifetime is `Retained`, priced by the ledger that had been waiting for one |
+
+Three things had to move for that to be one registration rather than a
+special case:
+
+- **The encoder declares the dependency.** The checkpoint's
+  `*.weight_scale_inv` convention is consumed exactly once, at encode, where
+  it becomes a row in the auxiliary reference table beside the segment it
+  describes. The planner's name-based skip is gone: a grid is skipped
+  because something *references* it, and an orphan is the unclassified
+  operand it always was. A container encoded before the encoder declared
+  dependencies migrates with `larql vindex3 references --declare`, which
+  applies the encoder's rule late to the headers on disk and refuses to
+  touch a table that already exists.
+- **The dependency lifetime is the realization's.** Every pin used to be
+  `PreparationOnly` because every realization decoded. A direct kernel over
+  codes keeps its dependency for every token, so the lifetime is set from
+  the pinned realization — and re-set by every re-pin, budget re-selection
+  included, through one method.
+- **The CPU policy ranks the stored FP8 bytes with the compiled packs.**
+  Executed in place, never widened: on GLM the alternative is 612 GB of a
+  306 GB checkpoint, which stays a candidate for the oracle.
+
+**Q5_K and Q3_K** fill the ~5.5 and ~3.4 bits-per-weight points the
+K-quant ladder skipped. This workspace decodes them (a GGUF import, a pack
+another tool wrote) and does not compile them, so the K-quant vocabulary now
+keeps two tables: `COMPILABLE`, what `vindex represent` can write, and
+`DECODABLE`, what the registry ships. Neither has a kernel, and neither
+declares one: the direct realization is declared only where the dispatch
+answers, and a test holds the declaration and the dispatch together over
+every member.
+
+**The admission seam.** `OperandStore::open` admitted a pack's declared
+identity against the built-in registry before `with_registry` could point
+the store anywhere else — the F8 falsifier one seam further in. The
+registry is now the constructor's parameter (`open_in`), re-pointing an
+opened store re-runs the admission, and `ExpertEncoding` prices a bank
+through the codec it *is* rather than a registry lookup. The witness is
+external: a pack under the provider's identity is refused by the built-in
+registry naming every family it does know, admitted by the provider's, and
+executes bit-exact to the control.
+
+**The closure.** Every direct CPU kernel over stored bytes is declared by a
+registered codec, and the executor's own re-quantised forms by none —
+checked over the plan enum, exhaustively, so a kernel added without a
+declaration is a red test rather than a privileged path
+(`codec/tests/closure.rs`).
+
+Fourteen codecs: BF16, F16, F32, Q4_K, Q6_K, Q8_0, NVFP4, MXFP4,
+BF16_ZLIB, F32_PLANES, VQ8_SHARED, F8_E4M3, Q5_K, Q3_K. Eight are the
+production estate, three forced the contract, and the last three arrived
+through it.
+
+Not claimed: a device realization of FP8 (a device backend still narrows
+only floats, and an FP8 operand under it is refused at load rather than at
+selection — the next thing to make honest), a Q5_K or Q3_K kernel, or any
+change to the lowering plane.

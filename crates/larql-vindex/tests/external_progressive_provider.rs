@@ -344,7 +344,8 @@ impl Container {
             .unwrap_or_else(|| panic!("the fixture must plan: {:?}", outcome.defects));
         let store = OperandStore::open(self.dir.path(), &inspection)
             .unwrap()
-            .with_registry(registry);
+            .with_registry(registry)
+            .unwrap();
         (plan, store)
     }
 

@@ -9,6 +9,7 @@
 pub mod bf16_zlib;
 pub mod f32_planes;
 pub mod float;
+pub mod fp8_block;
 pub mod kquant;
 pub mod lyrw2;
 pub mod mxfp4;

@@ -24,12 +24,13 @@ use larql_vindex::format::filenames::INDEX_JSON;
 use larql_vindex::format::vindex3::encode::segment::{
     read_segment_header, write_segment, PlannedTensor,
 };
+use larql_vindex::format::vindex3::encode::REPRESENTATION_ID_SEP;
 use larql_vindex::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
-use larql_vindex::format::vindex3::index::Vindex3Index;
+use larql_vindex::format::vindex3::index::{RepresentationEntry, Vindex3Index};
 use larql_vindex::format::vindex3::inspect::inspect_container;
 use larql_vindex::format::vindex3::opplan::exec::cpu::physical::PhysicalProjectionPlan;
 use larql_vindex::format::vindex3::opplan::exec::execute_plan;
-use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
+use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::realization::RealizationRecord;
@@ -281,7 +282,8 @@ impl Container {
             .expect("the dense fixture plans");
         let store = OperandStore::open(self.dir.path(), &inspection)
             .unwrap()
-            .with_registry(registry);
+            .with_registry(registry)
+            .unwrap();
         (plan, store)
     }
 
@@ -399,4 +401,149 @@ fn without_the_provider_the_candidate_is_refused_by_name_and_a_prepared_image_is
         .unwrap()
         .ensure_providers_in(CodecRegistry::builtin())
         .unwrap();
+}
+
+// ── The admission seam ───────────────────────────────────────────────
+
+/// A pack whose identity names a family only the provider registers is
+/// admitted by the registry the store is OPENED with, and refused — by
+/// family, naming the registered ones — by the built-in one.
+///
+/// Admission at open used to consult the built-in registry whatever the
+/// store was later re-pointed at, so a provider's own pack was refused
+/// before the provider's registry was ever asked: the F8 falsifier (three
+/// hidden built-in registries at execution) one seam further in, at
+/// open. Now the registry is the constructor's parameter, and re-pointing
+/// an opened store re-runs the admission against the new registry.
+#[test]
+fn a_pack_under_the_external_identity_is_admitted_through_the_registry_the_store_opens_with() {
+    let registry = registry_with_provider();
+    let candidate = Container::build(true);
+    let root = candidate.dir.path();
+
+    // Write the relabelled objects' bytes a second time as compiled packs
+    // under the provider's identity — a segment of their own that names
+    // the pack id, the `codec` entry `vindex represent` writes — so
+    // opening with a wanted encoding selects them and meets the admission
+    // gate the way a real pack does.
+    let index_path = root.join(INDEX_JSON);
+    let mut index: Vindex3Index =
+        serde_json::from_str(&std::fs::read_to_string(&index_path).unwrap()).unwrap();
+    let mut packs: Vec<(String, RepresentationEntry)> = Vec::new();
+    for entry in index.representations.values() {
+        if !candidate
+            .relabelled
+            .iter()
+            .any(|(object, _, _)| *object == entry.object)
+        {
+            continue;
+        }
+        let pack_id = format!("{}{REPRESENTATION_ID_SEP}{LABEL}", entry.object);
+        let source = root.join(&entry.segment);
+        let (header, payload_start) = read_segment_header(&source).unwrap();
+        let file = std::fs::read(&source).unwrap();
+        let payload = &file[payload_start as usize..];
+        let mut bytes_by_name = std::collections::BTreeMap::new();
+        let planned = header
+            .tensors
+            .iter()
+            .map(|t| {
+                bytes_by_name.insert(
+                    t.name.clone(),
+                    payload[t.offset as usize..(t.offset + t.len) as usize].to_vec(),
+                );
+                PlannedTensor {
+                    relative_name: t.name.clone(),
+                    source_name: t.name.clone(),
+                    dtype: t.dtype.clone(),
+                    shape: t.shape.clone(),
+                    len: t.len,
+                }
+            })
+            .collect();
+        let segment_key = format!("segments/{pack_id}");
+        let segment_rel = format!("{segment_key}.bin");
+        let written = write_segment(
+            &root.join(&segment_rel),
+            &pack_id,
+            planned,
+            |name, w, hash| {
+                let bytes = &bytes_by_name[name];
+                w.write_all(bytes).map_err(VindexError::Io)?;
+                hash(bytes);
+                Ok(bytes.len() as u64)
+            },
+        )
+        .unwrap();
+        let mut pack = entry.clone();
+        pack.encoding = LABEL.to_string();
+        pack.segment = segment_rel;
+        pack.tensor_count = written.tensor_count;
+        pack.payload_bytes = written.payload_bytes;
+        pack.payload_sha256 = written.payload_sha256;
+        pack.segment_sha256 = written.segment_sha256;
+        pack.codec = Some(ExternalF32.identity());
+        index.segments.insert(segment_key, 1);
+        packs.push((pack_id, pack));
+    }
+    assert!(!packs.is_empty(), "the relabelled objects carry packs");
+    index.representations.extend(packs);
+    std::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
+    let inspection = inspect_container(root, false).unwrap();
+    assert!(
+        inspection.defects.is_empty(),
+        "the packs are coherent with their segments: {:?}",
+        inspection.defects
+    );
+
+    // Through the built-in registry the pack is refused at open, by its
+    // family, and the refusal names every family that IS registered.
+    let refused =
+        OperandStore::open_for(root, &inspection, Some(LABEL), RepresentationSource::Stored)
+            .err()
+            .expect("the built-in registry knows no such family")
+            .to_string();
+    assert!(refused.contains("external-f32x"), "{refused}");
+    assert!(
+        refused.contains("nvfp4") && refused.contains("Q4_K"),
+        "the refusal names the registered families: {refused}"
+    );
+
+    // Through the provider's registry the same pack is admitted, selected
+    // as the stored representation, and executes bit-exact to the control.
+    let store = OperandStore::open_in(
+        root,
+        &inspection,
+        Some(LABEL),
+        RepresentationSource::Stored,
+        registry,
+    )
+    .expect("the provider's registry admits its own pack");
+    let stored: Vec<&str> = store
+        .selection()
+        .values()
+        .filter(|s| s.stored)
+        .map(|s| s.encoding.as_str())
+        .collect();
+    assert!(
+        !stored.is_empty() && stored.iter().all(|e| *e == LABEL),
+        "{stored:?}"
+    );
+    let plan = plan_component_ops(&inspection, root, "target")
+        .unwrap()
+        .plan
+        .expect("the dense fixture plans");
+    let trace = execute_plan(&plan, &store, &TOKENS, &ProductionBackend::new()).unwrap();
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+    let (control_logits, _) = Container::build(false).logits_and_hidden(registry);
+    assert_eq!(bits(&trace.logits.expect("a head")), control_logits);
+
+    // And an admitted store cannot be re-pointed at a registry that does
+    // not implement the contract its pack was written under.
+    let err = store
+        .with_registry(CodecRegistry::builtin())
+        .err()
+        .expect("re-pointing re-runs admission")
+        .to_string();
+    assert!(err.contains("external-f32x"), "{err}");
 }

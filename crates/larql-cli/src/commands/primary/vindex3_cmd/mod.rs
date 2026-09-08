@@ -28,6 +28,12 @@ pub enum Vindex3Command {
     /// Reconstruct and check a container solely from its own contents —
     /// no source checkpoint, no architecture registry (the G3 gate).
     Inspect(InspectArgs),
+    /// The dependencies a container declares between its own tensors —
+    /// today, the `scales` grid of every fine-grained FP8 weight. With
+    /// `--declare`, derive them from the segment headers and write the
+    /// table, for a container encoded before the encoder declared them;
+    /// the rule is the encoder's own, applied late.
+    References(ReferencesArgs),
     /// Prove source ≡ encoded (the G4 gate): four-authority semantic
     /// comparison plus per-representation byte equivalence, both ends
     /// re-hashed now. Exits non-zero on any disagreement.
@@ -489,6 +495,17 @@ pub struct InspectArgs {
 }
 
 #[derive(Args)]
+pub struct ReferencesArgs {
+    /// Container directory.
+    pub container: PathBuf,
+
+    /// Derive the table from the segment headers and write it. Refuses a
+    /// container that already declares one.
+    #[arg(long)]
+    pub declare: bool,
+}
+
+#[derive(Args)]
 pub struct PlanArgs {
     /// Checkpoint directories, inventory JSON files, or `hf://` repos
     /// (one per artifact).
@@ -509,6 +526,7 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
         Vindex3Command::Plan(args) => run_plan(args),
         Vindex3Command::Encode(args) => run_encode(args),
         Vindex3Command::Inspect(args) => run_inspect(args),
+        Vindex3Command::References(args) => run_references(args),
         Vindex3Command::Verify(args) => run_verify(args),
         Vindex3Command::Ops(args) => run_ops(args),
         Vindex3Command::Exec(args) => run_exec(args),
@@ -866,6 +884,34 @@ fn human_bytes(bytes: u64) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+fn run_references(args: ReferencesArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use larql_vindex::format::vindex3::auxiliary_references::AuxiliaryReferences;
+    if args.declare {
+        let declared = larql_vindex::format::vindex3::encode::declare_references(&args.container)?;
+        if declared == 0 {
+            println!("no dependency to declare; nothing written");
+        } else {
+            println!("declared {declared} reference(s)");
+        }
+        return Ok(());
+    }
+    let inspection =
+        larql_vindex::format::vindex3::inspect::inspect_container(&args.container, false)?;
+    let Some(name) = &inspection.index.auxiliary_references else {
+        println!("the container declares no dependencies");
+        return Ok(());
+    };
+    let table = AuxiliaryReferences::read(&args.container, name)?;
+    println!("{} reference(s) in {name}:", table.len());
+    for row in table.stored().references {
+        println!(
+            "  {}/{}  --{}-->  {}/{}",
+            row.owner.object, row.owner.tensor, row.auxiliary, row.target.object, row.target.tensor
+        );
+    }
+    Ok(())
 }
 
 fn run_inspect(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
