@@ -196,6 +196,49 @@
         ],
         "3_the_informational_mutants_run": "`cargo mutants --in-diff` on the PR reported three MISSED before the job was canceled at 45 minutes. One was L3's own: `<impl PlanBackend for Arc<T>>::prepare` replaced with an empty body SURVIVED, because `prepare` returns nothing and the new delegation test merely called it — coverage without a claim. Killed by giving the test double a counter and asserting the handle reached it, and verified by applying the mutant by hand and watching that assertion fail. The other two are pre-existing gaps in CLI report paths L3 happened to touch (`realizations::bind_and_reconcile`, `sensitivity::capture_moments`): each prints a report and returns `Ok(())`, and nothing asserts the printing, so a body replaced with `Ok(())` survives. Recorded rather than fixed — out of this wave's scope, and the check is informational."
       }
+    },
+    "L4": {
+      "name": "provider identity in prepared state",
+      "status": "design frozen before implementation",
+      "branch": "lowering-l4",
+      "base": "L3 (`lowering-l3`) on L2 (#466); rebased onto main once both merge",
+      "date": "2026-09-09",
+      "the_question": "Can the lowering decision survive preparation and be invalidated by the authority it was made against — without the prepared image owning the provider that would keep it alive?",
+      "rule": "The design below and the device-instance experiment's DECISION RULE are frozen before any code is written, so the experiment's answer cannot be chosen after seeing its result.",
+      "design_frozen_before_implementation": {
+        "the_pin_names_both_authorities": "`RealizationRecord.provider: Option<CodecIdentity>` becomes `codec_provider`, joined by `lowering_provider: LoweringIdentity`. The lowering one is NOT optional: a record exists because a provider selected it, and since L1 every provider states an identity. Two independent authorities, both named on the pin, neither derived from the other.",
+        "record_the_identity_not_the_provider": "The prepared image records what was decided; it does not hold `Arc<dyn PlanBackend>`. A prepared image that held its provider would keep a removed provider alive and could never be invalidated by its disappearance — that is resolution turned into possession, the contract defeated rather than kept.",
+        "lifetime": "Execution session/runtime holds `Arc<LoweringRegistry>` — current authority — beside the prepared image, which holds the historical decision. Before prepared state is USED, `PreparedOperands::ensure_lowerings_in(&LoweringRegistry)` asks whether that decision still stands. The shape is the codec plane's, with the registry carried rather than `&'static`.",
+        "one_judge_for_a_live_and_a_reloaded_pin": "`PreparedOperands::authorities() -> PinnedAuthorities { codecs, lowerings }` is a serializable value carrying both planes, and `ensure_providers_in` / `ensure_lowerings_in` delegate to it — so a pin that was serialized and reloaded is judged by exactly the code that judges a live one (control 7), and neither plane gets a second implementation.",
+        "no_fallback_and_no_reinterpretation": "A registry that holds SOME other provider is not an alternative. The refusal names the identity the pin recorded and every identity the registry holds; nothing re-selects, nothing widens, nothing substitutes a same-family provider at another revision.",
+        "distinct_by_plane": "A codec refusal names the representation whose provider moved; a lowering refusal names the lowering provider. Neither message can be mistaken for the other plane's (controls 5 and 6).",
+        "device_instance_stays_out_of_identity": "`LoweringIdentity` remains implementation semantics: `device-matmul/v1`, never `device-matmul-on-device-123/v1`. If the experiment below proves a configured environment is load-bearing for prepared state, it is named as a SECOND authority, not folded into the first."
+      },
+      "controls_frozen": [
+        "1 — same provider registered: prepared state remains valid",
+        "2 — provider removed: invalid, by name",
+        "3 — same family, different revision: invalid",
+        "4 — another provider available: STILL invalid; never a fallback",
+        "5 — codec valid, lowering invalid: fails specifically on the lowering plane",
+        "6 — lowering valid, codec invalid: fails specifically on the codec plane",
+        "7 — a serialized and reloaded pin retains both authorities and yields the same two verdicts"
+      ],
+      "device_instance_experiment": {
+        "question": "Same `LoweringIdentity`, different injected device/configuration — does any prepared state become invalid or semantically different?",
+        "why_it_must_be_asked_here": "L1 recorded that `DevicePlanBackend<MetalBackend>` and `DevicePlanBackend<CpuBackend>` both answer `device-matmul/v1`, and claimed that what the configuration changes is already pinned in the realization FORM. L4 is where that claim either holds or produces a second authority.",
+        "method": "Two `DevicePlanBackend` instances over the same injected `MatMul` (`CpuBackend`, so the experiment runs everywhere), differing only in the per-class `WeightFormats` table; both answer `device-matmul/v1`. Prepare an image with A, then execute it with B and compare bit-for-bit against executing it with A.",
+        "decision_rule": {
+          "if_the_image_refuses_or_computes_different_numbers_under_B": "a second authority exists. Name it separately — `ProviderBinding` / `EnvironmentIdentity`, what configured execution environment a preparation is tied to — and NEVER by putting hardware or configuration identity into `LoweringIdentity`.",
+          "if_the_image_computes_identically_under_B": "do not invent it. Record the negative result together with the experiment's limit: `CpuBackend`-as-device holds no device-resident buffers, so this cannot speak for a preparation whose storage lives on an injected Metal device.",
+          "either_way": "the result is written here before the wave is called held."
+        }
+      },
+      "out_of_scope": [
+        "selection changes of any kind",
+        "capability matching (F2's subject, not L4's)",
+        "Metal-lowered migration",
+        "any new kernel-plane variant — the count stays 33 (F3)"
+      ]
     }
   }
 }
