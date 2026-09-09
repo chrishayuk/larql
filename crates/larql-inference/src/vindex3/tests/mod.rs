@@ -896,3 +896,68 @@ fn overlaid_entry_points_are_bit_identical_when_empty_and_observe_edits() {
     let base_gate = effective.load(&gate).unwrap();
     assert_ne!(&base_gate[..gate.shape[1]], &vec![5.0; gate.shape[1]][..]);
 }
+
+/// LOWERING-PLUGIN-1, L3: the runtime — the path the server and LQL open
+/// through — resolves its provider from the registry it is handed, and
+/// constructs none.
+mod via_tests {
+    use std::path::Path;
+
+    use super::super::*;
+    use larql_vindex::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
+    use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+    use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+    use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
+
+    /// F4 through a production path. A registry that omits the
+    /// production provider, asked to open as it, is refused by identity
+    /// naming what the registry holds — and the container path does not
+    /// even exist, so the refusal provably happened before any I/O and no
+    /// provider was constructed underneath to answer anyway.
+    #[test]
+    fn a_registry_without_the_provider_refuses_before_touching_the_container() {
+        let without_production = LoweringRegistry::new()
+            .register(Box::new(ReferenceBackend::new()))
+            .unwrap();
+        let err = Vindex3Runtime::open_via(
+            Path::new("/definitely/not/a/container"),
+            "target",
+            &without_production,
+            &LoweringIdentity::cpu_production(),
+        )
+        .err()
+        .expect("refused")
+        .to_string();
+        assert!(err.contains("cpu-production/v1"), "{err}");
+        assert!(err.contains("registered: reference/v1"), "{err}");
+        assert!(
+            !err.contains("not/a/container") && !err.to_lowercase().contains("no such file"),
+            "the refusal is the registry's, not the filesystem's: {err}"
+        );
+    }
+
+    /// Through the shipped registry the runtime opens on the same
+    /// provider the direct constructor would have handed it, by identity
+    /// and by name, and prepares.
+    #[test]
+    fn the_shipped_registry_opens_the_production_provider_the_direct_path_did() {
+        let tmp = tempfile::tempdir().unwrap();
+        let checkpoint = tmp.path().join("ckpt");
+        std::fs::create_dir_all(&checkpoint).unwrap();
+        let container = tmp.path().join("out.vindex3");
+        encode_fixture_container(dense_f32_model, &checkpoint, &container, "target");
+
+        let via = Vindex3Runtime::open_via(
+            &container,
+            "target",
+            &LoweringRegistry::shipped(),
+            &LoweringIdentity::cpu_production(),
+        )
+        .expect("the shipped registry holds the production provider");
+        let direct = Vindex3Runtime::open(&container, "target", ProductionBackend::new()).unwrap();
+        assert_eq!(via.backend().identity(), direct.backend().identity());
+        assert_eq!(via.backend().name(), direct.backend().name());
+        assert_eq!(via.model_name(), direct.model_name());
+        via.prepare().expect("prepares through the shared provider");
+    }
+}

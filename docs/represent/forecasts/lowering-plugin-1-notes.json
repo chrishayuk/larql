@@ -105,7 +105,7 @@
     },
     "L3": {
       "name": "existing providers behind the registry",
-      "status": "fate table frozen before any replacement; implementation follows in this branch",
+      "status": "built and held",
       "branch": "lowering-l3",
       "base": "L2 (#466) on main 4e8147ef — the tree main will be once #466 merges; rebased onto that merge before the PR",
       "date": "2026-09-09",
@@ -145,7 +145,57 @@
         "kernel-plane files: 33",
         "no RealizationRecord schema change (L4); no capability work; no metal-lowered migration",
         "F4 through a production path: `Vindex3Runtime::open_via` with a registry missing `cpu-production/v1` refuses by identity naming the registered providers, before any I/O; and the CLI seam `with_lowerings` refuses the same way with the store's load count at zero"
-      ]
+      ],
+      "what_landed": [
+        "Registry entries are `SharedProvider = Arc<dyn PlanBackend + Send>`; `provider_shared(&id)` hands out a handle a runtime can own while the registry keeps holding it. `PlanBackend` is implemented for `Arc<T: PlanBackend + Send + ?Sized>` by delegating every method, provided ones included.",
+        "`LoweringIdentity::reference() / ::cpu_production() / ::device_matmul()` read the providers' own constants; no caller spells a family.",
+        "`Vindex3Runtime::open_via` / `open_with_via` resolve the provider FIRST and open the container second. Server (`load_v3_model`) and LQL (`bind`) open through them from `LoweringRegistry::shipped()` with `cpu-production/v1`; `V3Runtime` and `V3Model::runtime` are typed over `SharedProvider`.",
+        "CLI: `lowerings_for(ExecBackend) -> (LoweringRegistry, LoweringIdentity)` is the single composition site — the device arms register the provider they configure — `with_plan_backend` is compose-then-resolve, and `with_lowerings(&registry, &identity, visitor)` is the seam a test hands its own registry to. `realizations` (both sites) and `sensitivity` route through `lowerings_for`.",
+        "`execute_text` asks the shipped registry for `reference/v1`.",
+        "`crates/larql-vindex/tests/lowering_closure.rs` holds the fate table: the only non-test files constructing a provider are `lowering.rs` (`shipped()`), `device.rs` (glue) and `prepare.rs` (composition), with a control that the scan finds all three."
+      ],
+      "witnesses": {
+        "closure": "`only_the_fate_table_s_permitted_files_construct_a_provider` + control `the_scan_finds_each_permitted_site_constructing_a_provider` — larql-vindex/tests/lowering_closure.rs",
+        "F4_runtime_path": "`a_registry_without_the_provider_refuses_before_touching_the_container` — larql-inference/src/vindex3/tests/mod.rs: `open_via` on a container path that does not exist, with a registry holding only `reference/v1`, refuses naming `cpu-production/v1` and `registered: reference/v1`, and the message is the registry's, not the filesystem's — resolution provably precedes any I/O",
+        "runtime_positive_control": "`the_shipped_registry_opens_the_production_provider_the_direct_path_did` — same identity, same name, prepares",
+        "F4_cli_seam": "`the_seam_refuses_an_absent_provider_with_nothing_read` — larql-cli vindex3_cmd/tests/lowerings.rs: `with_lowerings` with a registry lacking production refuses by identity with the store's load count at 0; the shipped registry prepares and reads",
+        "cli_choices_unchanged": "`every_interpreted_backend_choice_resolves_to_its_provider_by_identity` — each interpreted `--backend` resolves to the identity and the provider NAME it constructed before, and composes exactly the shipped identities"
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "provider_construction_files_outside_vindex_non_test": {
+          "before": "3 files, 13 sites",
+          "after": "1 file (prepare.rs), 4 sites — all device configurations inside `lowerings_for`"
+        },
+        "provider_construction_files_inside_vindex_non_test": "2 — `lowering.rs` (shipped) and `device.rs` (glue), both `STAYS` in the fate table",
+        "existing_suites": "larql-vindex lib 4659 (unchanged), larql-lql lib 743, larql-server lib 591, larql-cli vindex3_cmd 58 (56 before + 2), external provider suites all pass; no existing assertion changed"
+      },
+      "observations_for_later_waves": [
+        "A provider must be `Send` to be shared: the `Arc<T>` delegation needs it for the trait's `Sync` supertrait to hold on the handle. Every in-tree provider is; an external one that is not would be refused at registration by the type system, which is the right place.",
+        "The runtime owns the RESOLVED provider, not the registry it resolved through; the registry is dropped after `open_via` in the server and LQL paths. L4's invalidation-by-name needs the runtime (or the prepared image) to hold what it resolved against — that is L4's first decision.",
+        "`lowerings_for` registers ONE device instance per invocation, chosen by the arm, so a process runs one device configuration at a time — the same shape the CLI already had. A caller wanting several device configurations resident at once needs distinct identities (L2's forced answer), which no CLI arm asks for today.",
+        "`sensitivity` now fails on a missing Metal device with the `--backend metal` arm's message rather than its own; one fewer place spells `metal-r3-f16`.",
+        "F4 held on both production seams without a finding — the class the forecast predicted did not appear, because the fate table was frozen first and the closure scan refuses a stray. The two examples that construct providers stay outside the gate."
+      ],
+      "deviations_from_forecast": "None. Selection, accounting, execution untouched (no file under `represent/`, no `select`, no `prepared.rs` beyond `load_via` from L2, no `accounting.rs`); kernel-plane count 33.",
+      "found_in_ci_after_the_local_gates_passed": {
+        "rule": "Written here rather than quietly fixed: two defects reached CI because the wave's own gate list was narrower than CI's, and the gate list is corrected below.",
+        "1_a_source_scan_guard_fired_correctly": "`larql-server/tests/test_capabilities.rs::backends_match_the_v3_binding` derives the advertised `runtime.backends` from what the V3 loader actually binds, by reading the loader's source for `ProductionBackend`. L3 made that loader RESOLVE `cpu-production/v1` from the carried registry instead of constructing a provider, so the guard did exactly its job. Re-derived against the new authority: it reads the identity the loader names, and treats `device_matmul` or `MetalBackend` as the Metal signal that would widen the list. The guard's meaning is unchanged; only the fact it reads moved, because the authority moved.",
+        "2_the_coverage_policy_caught_an_untested_claim": "`exec/backend.rs` fell 99.22% → 73.58% and `exec/lowering.rs` sat at 88.51%, both under the 90% per-file minimum. The uncovered code was L3's own `impl PlanBackend for Arc<T>` delegation, plus `LoweringIdentity::cpu_production()` / `::device_matmul()`, the registry's `Debug` and `is_empty`, and the `LoweringError::Invalid` conversion. Nothing inside larql-vindex exercised the delegation: the carried path BORROWS (`provider`) and only the inference runtime SHARES (`provider_shared`), which is another crate. So the wave's own design claim — 'a shared handle never falls back to a trait default the provider underneath overrides' — was stated in a doc comment and asserted nowhere.",
+        "fixed_by": [
+          "`a_shared_handle_is_the_provider_it_wraps` — a whole traversal through the `Arc` handle, bit-identical to the same provider called directly, plus `project`, `select`, `scale_row`, `prepare`, `dense_projector` and `dispatch_stats` asked of both and compared.",
+          "`a_shared_handle_never_falls_back_to_a_trait_default` — the test double now overrides two PROVIDED methods (`scale_row`, `dispatch_stats`) with answers no default produces, and both survive the trip through the handle; the borrowed form answers identically, so the two ways of holding one provider cannot disagree.",
+          "`the_identity_constructors_name_the_providers_they_stand_for` — each constructor equals the provider's own `identity()`, so a constant that moved without its constructor cannot pass.",
+          "`an_empty_registry_says_so_and_debug_lists_what_it_holds` — `is_empty`, the `Debug` listing in registration order, and the `Invalid` conversion carrying the parse error rather than re-wrapping it."
+        ],
+        "why_the_local_gates_missed_them": "The gate list ran `cargo test -p larql-server --lib`, which excludes `tests/` — where that guard lives — and never ran the coverage policy at all. Neither omission is CI's fault.",
+        "gate_list_corrected": [
+          "every dependent crate's FULL target set, not `--lib`: `cargo test -p larql-server -p larql-lql -p larql-inference -p larql-cli` (5,091 tests, 0 failed)",
+          "the coverage policy the vindex workflow runs: `cargo llvm-cov --package larql-vindex` then `scripts/check_coverage_policy.py coverage/larql-vindex/summary.json crates/larql-vindex/coverage-policy.json`",
+          "`cargo mutants --in-diff` is informational in CI but reads the wave's own diff: read what it MISSED before merging, and kill the ones that are the wave's."
+        ],
+        "3_the_informational_mutants_run": "`cargo mutants --in-diff` on the PR reported three MISSED before the job was canceled at 45 minutes. One was L3's own: `<impl PlanBackend for Arc<T>>::prepare` replaced with an empty body SURVIVED, because `prepare` returns nothing and the new delegation test merely called it — coverage without a claim. Killed by giving the test double a counter and asserting the handle reached it, and verified by applying the mutant by hand and watching that assertion fail. The other two are pre-existing gaps in CLI report paths L3 happened to touch (`realizations::bind_and_reconcile`, `sensitivity::capture_moments`): each prints a report and returns `Ok(())`, and nothing asserts the printing, so a body replaced with `Ok(())` survives. Recorded rather than fixed — out of this wave's scope, and the check is informational."
+      }
     }
   }
 }

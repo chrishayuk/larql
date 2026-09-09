@@ -90,7 +90,6 @@ use prepared::{
     PreparedOperands,
 };
 use rayon::prelude::*;
-use reference::ReferenceBackend;
 use weights::{load_weight, LoadedWeight};
 
 /// One plane of the traversal — the residual at a layer boundary, one
@@ -399,7 +398,15 @@ pub fn execute_text<'s>(
     store: impl Into<OperandSource<'s>>,
     tokens: &[u32],
 ) -> Result<ExecutionTrace, VindexError> {
-    execute_plan(plan, store.into(), tokens, &ReferenceBackend::new())
+    // The oracle by request, from the shipped registry — not by
+    // privileged construction (LOWERING-PLUGIN-1, L3).
+    execute_plan_via(
+        plan,
+        store.into(),
+        tokens,
+        &lowering::LoweringRegistry::shipped(),
+        &lowering::LoweringIdentity::reference(),
+    )
 }
 
 /// Execute a text-component plan over `tokens` on `backend`, tracing

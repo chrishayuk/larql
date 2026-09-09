@@ -10,8 +10,8 @@
 //! identities, and one identity under two names.
 
 use super::super::backend::{
-    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, NormCall,
-    PlanBackend, ProjectCall, RoutedFfnCall, WeightFormat, WeightFormats, WeightSlice,
+    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, DispatchStats, FfnCall,
+    NormCall, PlanBackend, ProjectCall, RoutedFfnCall, WeightFormat, WeightFormats, WeightSlice,
 };
 use super::super::device::DevicePlanBackend;
 use super::super::lowering::LoweringIdentity;
@@ -75,6 +75,31 @@ fn identity_is_the_providers_not_its_configurations() {
     assert_eq!(f32_device.identity().to_string(), "device-matmul/v1");
 }
 
+/// The identity constructors read the PROVIDERS' own constants, so no
+/// caller anywhere spells a family string (L3). Held against the
+/// providers themselves: a constant that moved without its constructor
+/// makes these disagree, which is the only way this could go wrong
+/// quietly.
+#[test]
+fn the_identity_constructors_name_the_providers_they_stand_for() {
+    assert_eq!(
+        LoweringIdentity::reference(),
+        ReferenceBackend::new().identity()
+    );
+    assert_eq!(
+        LoweringIdentity::cpu_production(),
+        ProductionBackend::new().identity()
+    );
+    assert_eq!(
+        LoweringIdentity::device_matmul(),
+        DevicePlanBackend::new(CpuBackend, "cpu-as-device", WeightFormat::F32).identity()
+    );
+    assert_eq!(
+        LoweringIdentity::cpu_production().to_string(),
+        "cpu-production/v1"
+    );
+}
+
 /// A backend that answers for another's arithmetic under a name and an
 /// identity of its own choosing — so the two fields can be varied
 /// independently, which is the only way to show one is not derived from
@@ -83,6 +108,11 @@ pub(super) struct Relabelled {
     inner: ReferenceBackend,
     name: &'static str,
     identity: LoweringIdentity,
+    /// How many times this provider was asked to place its operands.
+    /// `prepare` returns nothing, so a provider that records being asked
+    /// is the only way to see whether a shared handle delegated it or
+    /// swallowed it into the trait's empty default.
+    prepares: std::sync::atomic::AtomicUsize,
 }
 
 impl Relabelled {
@@ -91,7 +121,12 @@ impl Relabelled {
             inner: ReferenceBackend::new(),
             name,
             identity: LoweringIdentity::new(family, revision),
+            prepares: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    pub(super) fn prepares(&self) -> usize {
+        self.prepares.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -148,7 +183,38 @@ impl PlanBackend for Relabelled {
     fn residual_add(&self, acc: &mut [f32], delta: &[f32]) {
         self.inner.residual_add(acc, delta)
     }
+
+    // ── two PROVIDED methods, deliberately overridden ────────────────
+    //
+    // Everything above is a required method: a provider that did not
+    // implement it would not compile. These two have trait defaults, so
+    // they are the ones that can silently answer for a provider that
+    // meant to answer for itself — which is what L3's shared handle has
+    // to be shown not to do.
+
+    fn prepare(&self, weights: &[WeightSlice<'_>]) {
+        self.prepares
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.inner.prepare(weights);
+    }
+
+    fn scale_row(&self, row: &mut [f32], _scale: f32) {
+        row.fill(RELABELLED_MARK);
+    }
+
+    fn dispatch_stats(&self) -> Option<DispatchStats> {
+        Some(DispatchStats {
+            device_nanos: 0,
+            submissions: RELABELLED_SUBMISSIONS,
+        })
+    }
 }
+
+/// What [`Relabelled`]'s own `scale_row` writes, and what its own
+/// `dispatch_stats` reports. Distinctive on purpose: the trait's defaults
+/// produce neither.
+pub(super) const RELABELLED_MARK: f32 = -42.0;
+pub(super) const RELABELLED_SUBMISSIONS: u64 = 7;
 
 /// The control. One diagnostic name over two identities are two
 /// providers; one identity under two names is one provider. A field that

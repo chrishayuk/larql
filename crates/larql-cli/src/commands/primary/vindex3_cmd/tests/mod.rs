@@ -4,6 +4,7 @@ mod calibration_digest;
 mod decode;
 mod exec_resume;
 mod generate;
+mod lowerings;
 mod realizations;
 mod sizes;
 

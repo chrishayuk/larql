@@ -14,6 +14,9 @@ use std::path::Path;
 use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
+use larql_vindex::format::vindex3::opplan::exec::lowering::{
+    LoweringIdentity, LoweringRegistry, SharedProvider,
+};
 use larql_vindex::format::vindex3::opplan::exec::operands::{
     OperandOverrides, OperandSource, OperandStore, RepresentationSource,
 };
@@ -384,6 +387,46 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
             model_name: self.model_name,
             family: self.family,
         })
+    }
+}
+
+impl Vindex3Runtime<SharedProvider> {
+    /// [`open`](Self::open) on the provider `provider` names in
+    /// `lowerings` — the registry-carried path every production caller
+    /// opens through (LOWERING-PLUGIN-1, L3).
+    pub fn open_via(
+        container: &Path,
+        component: &str,
+        lowerings: &LoweringRegistry,
+        provider: &LoweringIdentity,
+    ) -> Result<Self, InferenceError> {
+        Self::open_with_via(
+            container,
+            component,
+            lowerings,
+            provider,
+            OpenPolicy::default(),
+        )
+    }
+
+    /// [`open_with`](Self::open_with) through a registry.
+    ///
+    /// The provider is resolved FIRST and the container opened second: a
+    /// provider the registry does not hold is refused by identity, naming
+    /// every provider it does hold, before any file is touched — so the
+    /// refusal is the same on a container that does not exist. Nothing
+    /// here constructs a provider the caller did not register.
+    pub fn open_with_via(
+        container: &Path,
+        component: &str,
+        lowerings: &LoweringRegistry,
+        provider: &LoweringIdentity,
+        policy: OpenPolicy,
+    ) -> Result<Self, InferenceError> {
+        let backend = lowerings
+            .provider_shared(provider)
+            .map_err(larql_vindex::error::VindexError::from)?;
+        Self::open_with(container, component, backend, policy)
     }
 }
 
