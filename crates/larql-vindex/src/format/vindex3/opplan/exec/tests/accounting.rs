@@ -52,6 +52,7 @@ impl Fixture {
         OperandStore::open(self.container.path(), &self.inspection)
             .unwrap()
             .with_registry(registry)
+            .unwrap()
     }
 }
 

@@ -10,8 +10,10 @@
 //!
 //! ```text
 //! checkpoint (F8_E4M3 + F32 grid)
-//!   -> encode_system -> OperandStore -> load_weight(Fp8Block)
-//!   -> WeightSlice -> WeightRows -> FusedFp8Block          the candidate
+//!   -> encode_system (declares `scales`) -> OperandStore
+//!   -> select: cpu:direct/FusedFp8Block, grid RETAINED
+//!   -> load_weight(Fp8Block) -> WeightSlice -> WeightRows -> FusedFp8Block
+//!                                                          the candidate
 //!
 //! the SAME source bytes -> fp8_finegrained::dequantize -> scalar dot
 //!                                                        the authority
@@ -19,24 +21,43 @@
 //!
 //! The authority reads the CHECKPOINT's bytes, not the container's, so
 //! the two arms share nothing downstream of the source file. A carriage
-//! defect — a dropped sibling, a transposed grid, a tile read off the
+//! defect — a dropped grid, a transposed grid, a tile read off the
 //! config — moves one and not the other.
+//!
+//! Since the format became a codec (`F8_E4M3`, family `fp8-block`), the
+//! grid is a DECLARED dependency the encoder writes into the reference
+//! table, the canonical decode is the registry's, and the kernel is
+//! reached by selection rather than by a caller that knew the answer.
+//! The tests below hold each of those.
 
+use crate::format::vindex3::auxiliary_references::OperandAddress;
 use crate::format::vindex3::encode::segment::read_segment_header;
 use crate::format::vindex3::fixtures::{dense_fp8_model, encode_fixture_container};
 use crate::format::vindex3::index::Vindex3Index;
 use crate::format::vindex3::inspect::inspect_container;
-use crate::format::vindex3::opplan::exec::backend::{WeightFormat, WeightSlice};
+use crate::format::vindex3::opplan::exec::backend::{PlanBackend, WeightFormat, WeightSlice};
 use crate::format::vindex3::opplan::exec::cpu::kernels::FusedFp8Block;
+use crate::format::vindex3::opplan::exec::cpu::physical::PhysicalProjectionPlan;
 use crate::format::vindex3::opplan::exec::cpu::projector::DenseProjector;
+use crate::format::vindex3::opplan::exec::execute_plan;
 use crate::format::vindex3::opplan::exec::operands::{
     OperandSource, OperandStore, RepresentationSource,
 };
+use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+use crate::format::vindex3::opplan::exec::production::ProductionBackend;
+use crate::format::vindex3::opplan::exec::realization::{
+    DependencyLifetime, RealizationForm, RealizationId, SelectionReason,
+};
+use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::exec::weights::{load_weight, LoadedWeight};
-use crate::format::vindex3::opplan::OperandRef;
+use crate::format::vindex3::opplan::{plan_component_ops, OperandRef};
+use crate::format::vindex3::represent::codec::codecs::fp8_block::{DTYPE_FP8_BLOCK, SCALES};
 use larql_models::quant::fp8_finegrained::{dequantize, Fp8Grid};
 
 const TARGET: &str = "0.mlp.gate_proj.weight";
+const COMPONENT: &str = "target";
+/// A prompt over the dense fixture's 128-token vocabulary.
+const TOKENS: [u32; 5] = [3, 17, 28, 0, 11];
 
 /// The container, and the checkpoint it came from.
 fn encoded(tmp: &tempfile::TempDir) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -58,7 +79,7 @@ fn fp8_operand(container: &std::path::Path) -> OperandRef {
         let Ok((header, _)) = read_segment_header(&container.join(&entry.segment)) else {
             continue;
         };
-        if let Some(t) = header.tensors.iter().find(|t| t.dtype == "F8_E4M3") {
+        if let Some(t) = header.tensors.iter().find(|t| t.dtype == DTYPE_FP8_BLOCK) {
             return OperandRef {
                 object: entry.object.clone(),
                 tensor: t.name.clone(),
@@ -77,6 +98,21 @@ fn open(container: &std::path::Path) -> OperandStore {
 
 /// The authority: the CHECKPOINT's own bytes, dequantised and dotted.
 fn from_the_checkpoint(checkpoint: &std::path::Path, x: &[f32]) -> Vec<f32> {
+    let (grid, w) = dequantised_from_the_checkpoint(checkpoint);
+    (0..grid.rows)
+        .map(|r| {
+            w[r * grid.cols..(r + 1) * grid.cols]
+                .iter()
+                .zip(x)
+                .map(|(a, b)| a * b)
+                .sum()
+        })
+        .collect()
+}
+
+/// The CHECKPOINT's own bytes, dequantised by the reference and nothing
+/// of this crate's — the values every container-side reading must equal.
+fn dequantised_from_the_checkpoint(checkpoint: &std::path::Path) -> (Fp8Grid, Vec<f32>) {
     let raw = std::fs::read(checkpoint.join("model-fp8.safetensors")).unwrap();
     let hlen = u64::from_le_bytes(raw[..8].try_into().unwrap()) as usize;
     let header: serde_json::Value = serde_json::from_slice(&raw[8..8 + hlen]).unwrap();
@@ -109,19 +145,14 @@ fn from_the_checkpoint(checkpoint: &std::path::Path, x: &[f32]) -> Vec<f32> {
         scale_cols: sshape[1],
     };
     let w = dequantize(codes, &scales, grid).unwrap();
-    (0..grid.rows)
-        .map(|r| {
-            w[r * grid.cols..(r + 1) * grid.cols]
-                .iter()
-                .zip(x)
-                .map(|(a, b)| a * b)
-                .sum()
-        })
-        .collect()
+    (grid, w)
 }
 
+/// The container DECLARES the grid as the codes' dependency: the encoder
+/// consumed the checkpoint's naming convention once and wrote a reference,
+/// and nothing downstream spells `weight_scale_inv`.
 #[test]
-fn the_encoder_carries_the_scale_sibling_beside_its_codes() {
+fn the_encoder_declares_the_scale_grid_as_the_codes_dependency() {
     let tmp = tempfile::tempdir().unwrap();
     let (_, container) = encoded(&tmp);
     let operand = fp8_operand(&container);
@@ -132,17 +163,172 @@ fn the_encoder_carries_the_scale_sibling_beside_its_codes() {
     );
 
     let store = open(&container);
-    let sibling = larql_models::quant::fp8_finegrained::scale_sibling_name(&operand.tensor);
-    let (shape, raw) = OperandSource::from(&store)
-        .companion(&operand, &sibling)
-        .expect("the scale sibling is in the same object as its codes");
-    assert_eq!(raw.dtype, "F32");
+    let owner = OperandAddress::new(&operand.object, &operand.tensor);
+    let grid = store
+        .references()
+        .target(&owner, SCALES)
+        .expect("the encoder declared the grid under the codec's name")
+        .clone();
+    assert_eq!(
+        grid.object, operand.object,
+        "the grid is in the codes' object"
+    );
+    assert!(
+        grid.tensor.ends_with("weight_scale_inv"),
+        "the reference addresses the checkpoint's grid, found `{}`",
+        grid.tensor
+    );
+    let shape = store
+        .stored_shape(&grid)
+        .expect("the container holds the grid");
     assert_eq!(shape.len(), 2, "the grid is two-dimensional");
+    let raw = store
+        .load_raw(&OperandRef {
+            object: grid.object.clone(),
+            tensor: grid.tensor.clone(),
+            dtype: String::new(),
+            shape: shape.clone(),
+        })
+        .unwrap();
+    assert_eq!(raw.dtype, "F32");
     assert_eq!(
         raw.bytes.len(),
         shape.iter().product::<usize>() * 4,
         "the grid's bytes match its declared shape"
     );
+    // And the only dependency: the codec requires one, the table declares one.
+    assert_eq!(store.references().auxiliaries_of(&owner).len(), 1);
+}
+
+/// The registry's canonical decode of the container's bytes IS the
+/// reference dequantisation of the checkpoint's — bit for bit.
+#[test]
+fn the_canonical_decode_is_the_reference_dequantisation_bit_for_bit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (checkpoint, container) = encoded(&tmp);
+    let operand = fp8_operand(&container);
+    let store = open(&container);
+    let decoded = store
+        .load(&operand)
+        .expect("the codec decodes through its dependency");
+    let (grid, want) = dequantised_from_the_checkpoint(&checkpoint);
+    assert_eq!(decoded.len(), grid.elements());
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+    assert_eq!(bits(&decoded), bits(&want));
+}
+
+fn with_prepared<B: PlanBackend>(
+    container: &std::path::Path,
+    backend: &B,
+    check: impl FnOnce(&PreparedOperands),
+) {
+    let inspection = inspect_container(container, false).unwrap();
+    let plan = plan_component_ops(&inspection, container, COMPONENT)
+        .unwrap()
+        .plan
+        .expect("the FP8 fixture plans");
+    let store = open(container);
+    let prepared = PreparedOperands::load(&plan, &store, backend, ExecutionSlice::Full)
+        .expect("the FP8 operand has an admissible realization");
+    check(&prepared);
+}
+
+/// Selection reaches the FP8 kernel from the codec's declaration — no
+/// privileged caller — and the pin RETAINS the grid, which is the
+/// dependency lifetime a direct kernel over codes has and the ledger
+/// prices. The reference oracle decodes the same operand and is finished
+/// with the grid once it has its image.
+#[test]
+fn selection_pins_the_fp8_kernel_and_retains_its_grid() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, container) = encoded(&tmp);
+    let operand = fp8_operand(&container);
+    let record_for = |prepared: &PreparedOperands| {
+        prepared
+            .realizations()
+            .iter()
+            .find(|r| r.planned.operand.tensor == operand.tensor)
+            .cloned()
+            .expect("the FP8 projection is planned")
+    };
+
+    with_prepared(&container, &ProductionBackend::new(), |prepared| {
+        let record = record_for(prepared);
+        assert_eq!(record.representation, DTYPE_FP8_BLOCK);
+        assert_eq!(
+            record.provider.as_ref().map(|p| p.family.as_str()),
+            Some("fp8-block")
+        );
+        assert_eq!(
+            record.selection.realization,
+            RealizationId::cpu(RealizationForm::Direct(
+                PhysicalProjectionPlan::FusedFp8Block
+            ))
+        );
+        assert_eq!(record.selection.reason, SelectionReason::DirectDeclared);
+        assert_eq!(record.dependencies.len(), 1, "one dependency: the grid");
+        let grid = &record.dependencies[0];
+        assert_eq!(grid.name, SCALES);
+        assert_eq!(grid.lifetime, DependencyLifetime::Retained);
+        assert_eq!(grid.label, "F32");
+        assert!(grid.elements > 1, "the grid is priced by its elements");
+    });
+
+    with_prepared(&container, &ReferenceBackend::new(), |prepared| {
+        let record = record_for(prepared);
+        assert_eq!(
+            record.selection.realization,
+            RealizationId::cpu(RealizationForm::Decode(PhysicalProjectionPlan::ScalarF32))
+        );
+        assert_eq!(record.selection.reason, SelectionReason::ReferenceOracle);
+        assert_eq!(
+            record.dependencies[0].lifetime,
+            DependencyLifetime::PreparationOnly,
+            "a decode is finished with the grid once it has an f32 image"
+        );
+    });
+}
+
+/// The whole forward through selection: the production backend runs the
+/// FP8 kernel over the stored codes, the reference decodes them, and the
+/// two agree on the same container — which neither could execute at all
+/// before the format was a codec.
+#[test]
+fn production_and_reference_agree_on_the_fp8_container_through_selection() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, container) = encoded(&tmp);
+    let inspection = inspect_container(&container, false).unwrap();
+    let plan = plan_component_ops(&inspection, &container, COMPONENT)
+        .unwrap()
+        .plan
+        .unwrap();
+    let store = open(&container);
+    let logits = |backend: &dyn PlanBackend| {
+        execute_plan(&plan, &store, &TOKENS, backend)
+            .expect("executes")
+            .logits
+            .expect("the dense fixture carries a head")
+    };
+    let production = logits(&ProductionBackend::new());
+    let reference = logits(&ReferenceBackend::new());
+    assert_eq!(production.len(), reference.len());
+    let scale = reference.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    let worst = production
+        .iter()
+        .zip(&reference)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        worst <= scale * 1e-4,
+        "production and reference disagree on the FP8 container: worst {worst:e} of {scale:e}"
+    );
+    let argmax = |v: &[f32]| {
+        v.iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|(i, _)| i)
+    };
+    assert_eq!(argmax(&production), argmax(&reference));
 }
 
 /// The whole path, against an authority that shares nothing with it below
@@ -304,4 +490,64 @@ fn declaring_an_fp8_activation_scheme_is_refused() {
         msg.contains("inadmissible"),
         "the refusal should name the plan, got: {msg}"
     );
+}
+
+/// A container encoded before the encoder declared dependencies holds the
+/// FP8 pair and no table. It is refused LOUDLY — the grid is an
+/// unclassified operand, so the plan does not close — and it migrates
+/// with the encoder's own rule applied late, after which it plans and
+/// executes exactly as a fresh encode does. The rule is never applied by
+/// a reader: a container that declares nothing depends on nothing.
+#[test]
+fn a_container_encoded_before_dependencies_were_declared_refuses_and_then_migrates() {
+    use crate::format::filenames::{AUXILIARY_REFERENCES_JSON, INDEX_JSON};
+    use crate::format::vindex3::encode::declare_references;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, container) = encoded(&tmp);
+    let operand = fp8_operand(&container);
+
+    // Undeclare: drop the table and the index's name for it, which is
+    // exactly what an older encoder left behind.
+    let index_path = container.join(INDEX_JSON);
+    let mut index: Vindex3Index =
+        serde_json::from_str(&std::fs::read_to_string(&index_path).unwrap()).unwrap();
+    assert!(
+        index.auxiliary_references.is_some(),
+        "a fresh encode declares"
+    );
+    index.auxiliary_references = None;
+    std::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
+    std::fs::remove_file(container.join(AUXILIARY_REFERENCES_JSON)).unwrap();
+
+    let inspection = inspect_container(&container, false).unwrap();
+    let outcome = plan_component_ops(&inspection, &container, COMPONENT).unwrap();
+    assert!(
+        outcome.plan.is_none() && !outcome.defects.is_empty(),
+        "an undeclared grid must not plan: {:?}",
+        outcome.defects
+    );
+    let listed: Vec<String> = outcome.defects.iter().map(|d| d.to_string()).collect();
+    assert!(
+        listed.iter().any(|d| d.contains("weight_scale_inv")),
+        "the defect names the orphaned grid: {listed:?}"
+    );
+    // And the decode has no dependency to resolve through.
+    let store = open(&container);
+    let err = store.load(&operand).unwrap_err().to_string();
+    assert!(err.contains(SCALES), "{err}");
+
+    // Migrate: the encoder's rule, applied to the headers on disk.
+    assert_eq!(declare_references(&container).unwrap(), 1);
+    let again = declare_references(&container).unwrap_err().to_string();
+    assert!(again.contains("already declares"), "{again}");
+
+    let inspection = inspect_container(&container, false).unwrap();
+    assert!(inspection.index.auxiliary_references.is_some());
+    let outcome = plan_component_ops(&inspection, &container, COMPONENT).unwrap();
+    assert!(outcome.plan.is_some(), "{:?}", outcome.defects);
+    let store = open(&container);
+    let (_, want) = dequantised_from_the_checkpoint(&tmp.path().join("ckpt"));
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+    assert_eq!(bits(&store.load(&operand).unwrap()), bits(&want));
 }

@@ -76,6 +76,7 @@ impl Built {
         let store = OperandStore::open(&self.container(), &inspection)
             .unwrap()
             .with_registry(registry)
+            .unwrap()
             .with_recognised(recognised);
         (plan, store)
     }

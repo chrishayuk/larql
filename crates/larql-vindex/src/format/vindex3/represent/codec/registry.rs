@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use super::codecs::{bf16_zlib, f32_planes, float, kquant, mxfp4, nvfp4, vq8_shared};
+use super::codecs::{bf16_zlib, f32_planes, float, fp8_block, kquant, mxfp4, nvfp4, vq8_shared};
 use super::error::CodecError;
 use super::RepresentationCodec;
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
@@ -57,6 +57,13 @@ impl CodecRegistry {
                 .and_then(|r| r.register(Box::new(bf16_zlib::BF16_ZLIB)))
                 .and_then(|r| r.register(Box::new(f32_planes::F32_PLANES)))
                 .and_then(|r| r.register(Box::new(vq8_shared::VQ8_SHARED)))
+                // The checkpoint-native FP8 estate, and the two K-quants
+                // this workspace decodes but does not yet compile —
+                // registered after the forcing codecs because that is the
+                // order they were admitted, and the order a refusal lists.
+                .and_then(|r| r.register(Box::new(fp8_block::FP8_BLOCK)))
+                .and_then(|r| r.register(Box::new(kquant::Q5_K)))
+                .and_then(|r| r.register(Box::new(kquant::Q3_K)))
                 .expect("the built-in codecs carry distinct labels and families")
         })
     }

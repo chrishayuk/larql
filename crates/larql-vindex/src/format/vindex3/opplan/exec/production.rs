@@ -865,6 +865,18 @@ pub(crate) fn select_cpu(
             KQuantExecution::Widen => pick(decode, SelectionReason::ArmPrefersDecode),
         };
     }
+    // The checkpoint's own fine-grained FP8 bytes, executed in place with
+    // their scale grid retained. Ranked with the compiled packs above and
+    // for the same reason: the stored bytes are the compact form, and the
+    // only alternative is a widened image — 612 GB of a 306 GB checkpoint
+    // on GLM-5.3-Flash — which stays a candidate for the oracle and is
+    // never the policy's choice.
+    if has(Direct(PhysicalProjectionPlan::FusedFp8Block)) {
+        return pick(
+            RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedFp8Block)),
+            SelectionReason::DirectDeclared,
+        );
+    }
     // The size policy is asked whether a bf16 image is worth keeping
     // compact — and the fact it is asked about is the codec DECLARING the
     // direct bf16 kernel, not a dtype the loader compared.

@@ -3,11 +3,15 @@
 //! One stream, because the scales ride inside the blocks; row-random,
 //! because the container refuses a row that is not a whole number of
 //! blocks, so every row starts on one. Directly realized on this
-//! executor by [`PhysicalProjectionPlan::FusedKQuant`], which runs the
-//! stored blocks in place through the codec's own kernel — a `stored`
-//! residency at the block's own bit width, not a decode to f32. The
-//! grouped Metal kernels that serve K-quant expert banks are a separate
-//! device realization, declared by the crate that owns them.
+//! executor by [`PhysicalProjectionPlan::FusedKQuant`] — for the members
+//! whose kernel exists — which runs the stored blocks in place through
+//! the codec's own kernel: a `stored` residency at the block's own bit
+//! width, not a decode to f32. `Q5_K` and `Q3_K` are registered with no
+//! direct realization: this workspace decodes them (a GGUF import, a
+//! pack another tool wrote) and does not yet run them in place, and a
+//! codec that said otherwise would pin a kernel that returns nothing.
+//! The grouped Metal kernels that serve K-quant expert banks are a
+//! separate device realization, declared by the crate that owns them.
 
 use std::ops::Range;
 
@@ -41,6 +45,12 @@ pub const Q6_K: KQuantCodec = KQuantCodec {
 };
 pub const Q8_0: KQuantCodec = KQuantCodec {
     quant: kquant::Q8_0,
+};
+pub const Q5_K: KQuantCodec = KQuantCodec {
+    quant: kquant::Q5_K,
+};
+pub const Q3_K: KQuantCodec = KQuantCodec {
+    quant: kquant::Q3_K,
 };
 
 impl KQuantCodec {
@@ -140,15 +150,24 @@ impl RepresentationCodec for KQuantCodec {
 
     fn accelerations(&self) -> Vec<Acceleration> {
         // The stored blocks are executed in place by the codec's own
-        // kernel — no decode, no re-quantise. One plan serves all three
-        // K-quants: the codec identity rides in the bound operand, not in
-        // the resident `WeightFormat`, so `WeightFormat::KQuant` names the
-        // family and the bytes name the member. `stored`, at the block's
-        // own bit width, because that is what the kernel touches.
+        // kernel — no decode, no re-quantise. One plan serves every
+        // K-quant with a kernel: the codec identity rides in the bound
+        // operand, not in the resident `WeightFormat`, so
+        // `WeightFormat::KQuant` names the family and the bytes name the
+        // member. `stored`, at the block's own bit width, because that is
+        // what the kernel touches.
+        //
+        // Declared only where [`KQuant::gemv`] answers — the one place
+        // that association lives — so a member without a kernel executes
+        // through decode, flagged, rather than pinning a realization that
+        // would refuse at the first token.
         //
         // Qualified end to end as PARETO-1's v3 arm: on Qwen3.8-27B the
         // direct path matched decode-then-f32-GEMV to 5 orders below the
         // pre-registered KL gate on all three K-quant anchors.
+        if !self.quant.has_direct_gemv() {
+            return Vec::new();
+        }
         vec![Acceleration::cpu(
             PhysicalProjectionPlan::FusedKQuant,
             ResidencyProfile::stored(self.quant.bits_per_weight()),

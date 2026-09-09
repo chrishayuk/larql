@@ -1418,10 +1418,11 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
     // The access policy is the budget's, not the candidate's: every mapped
     // pin executes under the one the caller declared.
     for (record, _) in &mut selected {
-        record.selection.realization = record
+        let under_policy = record
             .selection
             .realization
             .with_access(budget.expert_access);
+        record.repin(under_policy);
     }
     // The floor gates SELECTION, so it is asked about what was selected
     // — here, before any budget pressure — and not only about the
@@ -1518,7 +1519,7 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
             saving as f64 / 1e9
         ));
         record.selection.residency = realization_residency(facts, candidate);
-        record.selection.realization = candidate;
+        record.repin(candidate);
         record.selection.reason = SelectionReason::BudgetPolicy;
     }
 }
@@ -1643,22 +1644,38 @@ fn select_records<B: PlanBackend + ?Sized>(
         // declaration. The pin starts on the whole of it; a budget may
         // move it shallower, and nothing else may.
         let extent = extent_pin(registry, &label, &planned);
-        let dependencies = dependency_pins(registry, &label, &planned, extent.selected, store);
+        let mut dependencies = dependency_pins(registry, &label, &planned, extent.selected, store);
         match backend.select(&planned, &facts) {
-            Ok(selection) => records.push((
-                RealizationRecord {
-                    representation: label.to_string(),
-                    provider,
-                    planned,
-                    selection,
-                    extent,
-                    dependencies,
-                    // Filled in by the carriage pass below, which is the
-                    // only thing that reads a payload to verify a claim.
-                    verified_bytes: 0,
-                },
-                facts,
-            )),
+            Ok(selection) => {
+                // The lifetime is the REALIZATION's: a decode is finished
+                // with its dependency once it has an f32 image, and a
+                // direct kernel over the stored codes keeps it for every
+                // token. Decided here, after the pin, because nothing
+                // before the pin knows which.
+                let lifetime = if selection.realization.retains_dependencies() {
+                    DependencyLifetime::Retained
+                } else {
+                    DependencyLifetime::PreparationOnly
+                };
+                for dependency in &mut dependencies {
+                    dependency.lifetime = lifetime;
+                }
+                records.push((
+                    RealizationRecord {
+                        representation: label.to_string(),
+                        provider,
+                        planned,
+                        selection,
+                        extent,
+                        dependencies,
+                        // Filled in by the carriage pass below, which is
+                        // the only thing that reads a payload to verify a
+                        // claim.
+                        verified_bytes: 0,
+                    },
+                    facts,
+                ))
+            }
             Err(refusal) => refusals.push(*refusal),
         }
     }
@@ -1718,11 +1735,11 @@ fn shallowest_saving(
 /// What `planned`'s codec depends on at `extent`, as the container's
 /// reference table addresses it, priced from the container's record.
 ///
-/// The LIFETIME is the realization's: every realization this build ships
-/// decodes, and a decode is finished with its dependency once it has an
-/// f32 image, so every pin here is `PreparationOnly`. A direct kernel
-/// over codes would declare `Retained`, and the ledger already knows what
-/// that costs — which is the point of pricing it before anyone builds one.
+/// The LIFETIME is the realization's and is not known here: every pin
+/// starts `PreparationOnly` and [`select_records`] sets it from the
+/// realization the backend pinned. A direct kernel over codes — the FP8
+/// codes with their scale grid — retains its dependency, and the ledger
+/// prices exactly that.
 fn dependency_pins(
     registry: &CodecRegistry,
     label: &str,
