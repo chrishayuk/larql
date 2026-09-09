@@ -231,6 +231,17 @@ jobs:
       - name: Check documentation code references
         run: python3 scripts/check_doc_references.py --strict
 
+      # A contract index names the test that pins each frozen invariant, and
+      # that citation is exactly the kind that rots silently: renaming a test
+      # is a green refactor which leaves the freeze pointing at nothing, and
+      # nothing else in CI reads the index at all. The checker has existed
+      # since the v1 index landed and NOTHING RAN IT -- enforcement in
+      # principle only -- which is the state the optimizer index would have
+      # inherited. It checks existence and location; `cargo test` decides
+      # whether the contracts still hold.
+      - name: Contract indexes name tests that exist
+        run: python3 scripts/check_contract_index.py
+
   ci-instrument:
     name: ci throughput instrument
     runs-on: ubuntu-latest
