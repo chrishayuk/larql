@@ -229,6 +229,11 @@ alone: no core file names it.
 | execution seam | `a_pin_is_executed_by_the_provider_that_decided_it_or_not_at_all` — same file (the check available where no registry is: the executing provider is the one that pinned) |
 | configuration control | `one_identity_over_two_configurations_prepares_differently_and_executes_one_image_identically` — same file (one identity, two format tables: two preparations, but either instance means the same thing by a given one — why configuration is not a second authority) |
 | production path | `a_served_model_refuses_when_the_provider_that_pinned_it_is_gone` — `crates/larql-inference/src/vindex3/tests/mod.rs` (the served model, re-pointed at an authority without its provider, refuses at session and at prefill) |
+| lowering plugin | `an_external_provider_reaches_execution_through_registration_alone` — `crates/larql-vindex/tests/external_lowering_provider/main.rs` (register → candidates → selection → accounting → pin → preparation → authority validation → execute, for a provider this build does not ship; its logits are bit-identical to the oracle's) |
+| named, not merely available | `the_named_provider_is_reached_even_beside_an_equally_capable_one` — same file (a second, equally capable external provider is registered; the one the caller named runs and the sibling's dispatch counters stay at zero) |
+| instrument | `the_numbers_are_the_external_providers_own` — same file (a defect in its kernel moves the logits, so no shipped path answered underneath) |
+| lowering genericity | `no_external_provider_identity_appears_in_production_larql` — `crates/larql-vindex/tests/external_lowering_provider/genericity.rs` (neither external family, neither name, nor the type appears in any non-test source under `crates/*/src`) |
+| scan control | `the_scan_would_have_found_a_provider_that_was_there` — same file (the same walk finds `cpu-production`) |
 | qualified by | PR #441 (`85b46061`), PR #447 (`202ffb7b`) |
 
 ---
