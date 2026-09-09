@@ -25,6 +25,7 @@ use crate::format::vindex3::opplan::exec::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, NormCall,
     PlanBackend, ProjectCall, RoutedFfnCall, WeightSlice,
 };
+use crate::format::vindex3::opplan::exec::lowering::LoweringIdentity;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -58,6 +59,10 @@ impl RecordingBackend {
 impl PlanBackend for RecordingBackend {
     fn name(&self) -> &str {
         "recording"
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new("test-recording", 1)
     }
 
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {
@@ -123,6 +128,10 @@ struct PerturbedBackend(ReferenceBackend);
 impl PlanBackend for PerturbedBackend {
     fn name(&self) -> &str {
         "perturbed"
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new("test-perturbed", 1)
     }
 
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {

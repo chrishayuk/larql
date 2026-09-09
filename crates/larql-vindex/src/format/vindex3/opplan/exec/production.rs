@@ -48,6 +48,7 @@ use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, sigmoid, FusedHalf,
 };
+use super::lowering::LoweringIdentity;
 use super::prefetch;
 use super::realization::{
     class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
@@ -71,6 +72,12 @@ use rayon::prelude::*;
 
 /// Name reported by [`PlanBackend::name`].
 const NAME: &str = "production-larql-compute";
+/// The provider's family ([`PlanBackend::identity`]): the CPU executor
+/// over `larql-compute`'s kernels. Revision 1 is the arithmetic this
+/// module binds today; it moves when the same pin would compute a
+/// different number, never for a faster kernel computing the same one.
+pub const IDENTITY_FAMILY: &str = "cpu-production";
+pub const IDENTITY_REVISION: u32 = 1;
 
 /// `larql-compute` realisation of every plan operation.
 #[derive(Debug, Default, Clone, Copy)]
@@ -934,6 +941,10 @@ impl PlanBackend for ProductionBackend {
 
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
     }
 
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {

@@ -28,6 +28,7 @@ use larql_models::config::{
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::cpu::WeightRows;
+use super::lowering::LoweringIdentity;
 use super::quantise::SUM_BLOCK;
 use super::realization::{RepresentationFacts, Selection, SelectionRefusal};
 use crate::error::VindexError;
@@ -755,8 +756,18 @@ pub struct DispatchStats {
 }
 
 pub trait PlanBackend: Sync {
-    /// A name for diagnostics and parity reports. Not dispatched on.
+    /// A name for diagnostics and parity reports. Not dispatched on, and
+    /// not an identity: two instances of one provider may carry different
+    /// names (a device backend names its device and realisation), and the
+    /// name says nothing a registry or a pin can rely on.
     fn name(&self) -> &str;
+
+    /// **The provider's identity** — family and revision — which is the
+    /// authority a pin will record and a registry will key. Required, so
+    /// a provider that says nothing does not exist; never derived from
+    /// [`Self::name`]. See [`super::lowering`] for what the two fields
+    /// mean and when the revision moves.
+    fn identity(&self) -> LoweringIdentity;
 
     /// Cumulative device-dispatch accounting, when the backend keeps it.
     /// `None` for backends with no device to account for.

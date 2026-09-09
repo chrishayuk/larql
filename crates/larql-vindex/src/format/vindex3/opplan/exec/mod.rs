@@ -44,6 +44,7 @@ pub mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod kimi_source;
 pub mod kv;
+pub mod lowering;
 pub mod mamba2;
 pub mod mla;
 pub mod narrow;
