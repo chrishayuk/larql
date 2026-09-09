@@ -10,6 +10,7 @@
 //! handed in as the backend.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
@@ -138,6 +139,18 @@ pub struct Vindex3Runtime<B: PlanBackend> {
     plan: ComponentOpPlan,
     store: OperandStore,
     backend: B,
+    /// The lowering authority this runtime was opened through, when it
+    /// was opened through one (LOWERING-PLUGIN-1, L4).
+    ///
+    /// Shared, not owned by the prepared image: the image records which
+    /// provider decided its pins, and this says which providers exist
+    /// now. Keeping them apart is what makes invalidation possible — an
+    /// image that held its own provider would keep a removed one alive.
+    ///
+    /// `None` on the direct-backend path, which named no authority: a
+    /// caller that hands a provider in has declared nothing for the pins
+    /// to be checked against.
+    lowerings: Option<Arc<LoweringRegistry>>,
     model_name: String,
     family: String,
 }
@@ -170,6 +183,7 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
             plan,
             store,
             backend,
+            lowerings: None,
             model_name,
             family,
         })
@@ -383,6 +397,7 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
             plan: self.plan,
             store: self.store,
             backend: self.backend,
+            lowerings: self.lowerings,
             operands,
             model_name: self.model_name,
             family: self.family,
@@ -397,7 +412,7 @@ impl Vindex3Runtime<SharedProvider> {
     pub fn open_via(
         container: &Path,
         component: &str,
-        lowerings: &LoweringRegistry,
+        lowerings: Arc<LoweringRegistry>,
         provider: &LoweringIdentity,
     ) -> Result<Self, InferenceError> {
         Self::open_with_via(
@@ -416,17 +431,23 @@ impl Vindex3Runtime<SharedProvider> {
     /// every provider it does hold, before any file is touched — so the
     /// refusal is the same on a container that does not exist. Nothing
     /// here constructs a provider the caller did not register.
+    ///
+    /// The registry is kept, shared, as this runtime's current authority
+    /// (L4): the resolved provider answers calls, and the registry is
+    /// what a prepared image's pins are held against before every use.
     pub fn open_with_via(
         container: &Path,
         component: &str,
-        lowerings: &LoweringRegistry,
+        lowerings: Arc<LoweringRegistry>,
         provider: &LoweringIdentity,
         policy: OpenPolicy,
     ) -> Result<Self, InferenceError> {
         let backend = lowerings
             .provider_shared(provider)
             .map_err(larql_vindex::error::VindexError::from)?;
-        Self::open_with(container, component, backend, policy)
+        let mut runtime = Self::open_with(container, component, backend, policy)?;
+        runtime.lowerings = Some(lowerings);
+        Ok(runtime)
     }
 }
 
@@ -446,18 +467,40 @@ pub struct PreparedVindex3<B: PlanBackend> {
     plan: ComponentOpPlan,
     store: OperandStore,
     backend: B,
+    /// The current lowering authority — see
+    /// [`Vindex3Runtime::lowerings`](Vindex3Runtime).
+    lowerings: Option<Arc<LoweringRegistry>>,
     operands: PreparedOperands,
     model_name: String,
     family: String,
 }
 
 impl<B: PlanBackend> PreparedVindex3<B> {
+    /// Hold this image's historical decision against the current
+    /// authority, before anything executes on it (LOWERING-PLUGIN-1, L4).
+    ///
+    /// The image records which lowering provider qualified its pins; the
+    /// runtime carries which providers exist now. A provider that has
+    /// gone, or that is present only at another revision, invalidates the
+    /// preparation by name — another provider being available is not a
+    /// fallback, and nothing re-selects.
+    ///
+    /// A model opened on a directly handed provider named no authority,
+    /// and there is nothing to check it against.
+    fn ensure_current_lowerings(&self) -> Result<(), InferenceError> {
+        match &self.lowerings {
+            Some(registry) => Ok(self.operands.ensure_lowerings_in(registry)?),
+            None => Ok(()),
+        }
+    }
+
     /// Open an incremental session over the resident operands, with the
     /// caller's continuation state. Cheap: no operand touches disk.
     pub fn session_with_kv<'a>(
         &'a self,
         kv: &'a mut dyn KvState,
     ) -> Result<Vindex3Session<'a, B>, InferenceError> {
+        self.ensure_current_lowerings()?;
         Vindex3Session::over_prepared(&self.plan, &self.operands, &self.backend, kv)
     }
 
@@ -468,6 +511,7 @@ impl<B: PlanBackend> PreparedVindex3<B> {
         tokens: &[u32],
         kv: &mut dyn KvState,
     ) -> Result<Vec<f32>, InferenceError> {
+        self.ensure_current_lowerings()?;
         let out = prefill_prepared(&self.plan, &self.operands, tokens, &self.backend, kv)?;
         out.logits.ok_or_else(headless_prefill_error)
     }
@@ -512,5 +556,25 @@ impl<B: PlanBackend> PreparedVindex3<B> {
     /// head is present.
     pub fn operands(&self) -> &PreparedOperands {
         &self.operands
+    }
+
+    /// The lowering authority this model is held against, if it was
+    /// opened through one.
+    pub fn lowerings(&self) -> Option<&Arc<LoweringRegistry>> {
+        self.lowerings.as_ref()
+    }
+
+    /// The same model, held against another lowering authority — the
+    /// operand store's [`with_registry`](OperandStore::with_registry) for
+    /// the other plane (LOWERING-PLUGIN-1, L4).
+    ///
+    /// Not checked here: re-pointing is not an execution, and the pins
+    /// are judged in the one place that matters — before anything runs on
+    /// them. A model re-pointed at an authority that no longer holds the
+    /// provider its pins were made by refuses at its next use rather than
+    /// executing a decision that authority never made.
+    pub fn with_lowerings(mut self, lowerings: Arc<LoweringRegistry>) -> Self {
+        self.lowerings = Some(lowerings);
+        self
     }
 }

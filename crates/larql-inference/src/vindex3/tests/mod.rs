@@ -922,7 +922,7 @@ mod via_tests {
         let err = Vindex3Runtime::open_via(
             Path::new("/definitely/not/a/container"),
             "target",
-            &without_production,
+            std::sync::Arc::new(without_production),
             &LoweringIdentity::cpu_production(),
         )
         .err()
@@ -950,7 +950,7 @@ mod via_tests {
         let via = Vindex3Runtime::open_via(
             &container,
             "target",
-            &LoweringRegistry::shipped(),
+            std::sync::Arc::new(LoweringRegistry::shipped()),
             &LoweringIdentity::cpu_production(),
         )
         .expect("the shipped registry holds the production provider");
@@ -959,5 +959,78 @@ mod via_tests {
         assert_eq!(via.backend().name(), direct.backend().name());
         assert_eq!(via.model_name(), direct.model_name());
         via.prepare().expect("prepares through the shared provider");
+    }
+
+    /// LOWERING-PLUGIN-1, L4, through the production path that HOLDS
+    /// prepared state: a served model prepares once and answers requests
+    /// for the life of the process, so it is the one place where a pin
+    /// can outlive the authority that made it.
+    ///
+    /// The image records which provider decided its pins; the runtime
+    /// carries which providers exist now. Re-pointed at an authority
+    /// without that provider, the model refuses at its next use — every
+    /// use, sessions and batch prefill alike — naming the provider the
+    /// pins recorded and the ones on offer. The reference provider is
+    /// registered and perfectly able to execute this plan, and is not a
+    /// substitute for the provider that pinned it.
+    #[test]
+    fn a_served_model_refuses_when_the_provider_that_pinned_it_is_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let checkpoint = tmp.path().join("ckpt");
+        std::fs::create_dir_all(&checkpoint).unwrap();
+        let container = tmp.path().join("out.vindex3");
+        encode_fixture_container(dense_f32_model, &checkpoint, &container, "target");
+
+        let served = Vindex3Runtime::open_via(
+            &container,
+            "target",
+            std::sync::Arc::new(LoweringRegistry::shipped()),
+            &LoweringIdentity::cpu_production(),
+        )
+        .unwrap()
+        .prepare()
+        .unwrap();
+        assert!(served.lowerings().is_some(), "opened through an authority");
+
+        let tokens = [3u32, 17, 28];
+        let mut kv = RowKvState::default();
+        served
+            .session_with_kv(&mut kv)
+            .expect("the provider that pinned the image is still registered");
+        let mut kv = RowKvState::default();
+        served
+            .prefill_into(&tokens, &mut kv)
+            .expect("and batch prefill runs on it");
+
+        let stale = served.with_lowerings(std::sync::Arc::new(
+            LoweringRegistry::new()
+                .register(Box::new(ReferenceBackend::new()))
+                .unwrap(),
+        ));
+        for err in [
+            {
+                let mut kv = RowKvState::default();
+                stale
+                    .session_with_kv(&mut kv)
+                    .err()
+                    .expect("a session over a pin whose provider is gone is refused")
+                    .to_string()
+            },
+            {
+                let mut kv = RowKvState::default();
+                stale
+                    .prefill_into(&tokens, &mut kv)
+                    .expect_err("and so is a prefill")
+                    .to_string()
+            },
+        ] {
+            assert!(err.contains("cpu-production/v1"), "{err}");
+            assert!(err.contains("reference/v1"), "{err}");
+            assert!(err.contains("re-prepare"), "{err}");
+            assert!(
+                err.contains("no other provider stands in for it"),
+                "an available provider is not a fallback: {err}"
+            );
+        }
     }
 }

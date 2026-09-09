@@ -18,11 +18,13 @@
 //! bank sliced per expert from stored rows, a decoded table gathered per
 //! token, or a device backend's own resident form.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::backend::{MatrixClass, WeightFormat};
 use super::cpu::physical::PhysicalProjectionPlan;
+use super::lowering::{LoweringIdentity, LoweringRegistry};
+use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
 use crate::format::vindex3::opplan::OperandRef;
 use crate::format::vindex3::represent::codec::{
@@ -508,7 +510,24 @@ pub struct RealizationRecord {
     pub representation: String,
     /// The identity the stored label resolved to at preparation; `None`
     /// for a label no codec claims.
-    pub provider: Option<CodecIdentity>,
+    ///
+    /// The CODEC plane's authority: what the bytes are.
+    pub codec_provider: Option<CodecIdentity>,
+    /// The lowering provider that qualified this realization — the
+    /// LOWERING plane's authority: what implementation decided the pin
+    /// (LOWERING-PLUGIN-1, L4).
+    ///
+    /// Not optional, and not derived from the other: a record exists
+    /// because some provider selected it, and since L1 every provider
+    /// states an identity. The two authorities move independently — a
+    /// codec revision can change under an unchanged lowering and the
+    /// reverse — so the pin names both and invalidation says which.
+    ///
+    /// The provider's SEMANTIC identity, never its configuration: two
+    /// device providers built with different format tables share
+    /// `device-matmul/v1`, and what their configurations changed is
+    /// pinned in [`Selection::realization`] instead.
+    pub lowering_provider: LoweringIdentity,
     pub selection: Selection,
     /// How much of the stored representation this pin reads.
     ///
@@ -545,6 +564,107 @@ impl RealizationRecord {
             dependency.lifetime = lifetime;
         }
     }
+}
+
+/// The authorities a prepared image was pinned under, both planes, as a
+/// value that survives being written down.
+///
+/// Two independent authorities. The CODEC plane says what the stored
+/// bytes are, keyed by the representation label each pin read; the
+/// LOWERING plane says which implementation qualified the realization.
+/// Neither implies the other, so an image carries both and a refusal
+/// names which one moved.
+///
+/// Separated from [`PreparedOperands`](super::prepared::PreparedOperands)
+/// so that the SAME code judges a live image and one that was serialized
+/// and reloaded: an image is judged through the authorities it yields,
+/// and a reloaded record of those authorities yields the same two
+/// verdicts. Nothing here holds a codec or a provider — only what was
+/// decided — because an image that held its providers would keep a
+/// removed one alive and could never be invalidated by its
+/// disappearance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PinnedAuthorities {
+    /// Every representation the image pinned, once each, with the
+    /// identity its label resolved to at preparation. `None` is an
+    /// overlay edit's f32-space fact, never a label a loader judged for
+    /// itself.
+    pub codecs: Vec<(String, Option<CodecIdentity>)>,
+    /// Every lowering provider that qualified a pin, once each, in pin
+    /// order. One today — a prepared image is lowered by one provider —
+    /// and a list because nothing in the contract says it must stay one.
+    pub lowerings: Vec<LoweringIdentity>,
+}
+
+impl PinnedAuthorities {
+    /// Refuse an image whose codec authority has moved: a representation
+    /// that resolves to a different identity than it did at preparation,
+    /// or to none at all.
+    pub fn ensure_codecs_in(&self, registry: &CodecRegistry) -> Result<(), VindexError> {
+        let describe = |identity: &Option<CodecIdentity>| {
+            identity
+                .as_ref()
+                .map(|i| format!("{} r{}", i.family, i.revision))
+                .unwrap_or_else(|| "no registered codec".to_string())
+        };
+        for (label, prepared) in &self.codecs {
+            let now = registry.by_label(label).map(|c| c.identity());
+            if now != *prepared {
+                return Err(VindexError::Parse(format!(
+                    "representation `{label}` was prepared against {} and the registry now \
+                     offers {}; re-prepare rather than execute a pin whose provider changed",
+                    describe(prepared),
+                    describe(&now)
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse an image whose lowering authority has moved: the provider
+    /// that qualified a pin is not in `registry` under exactly the
+    /// identity the pin recorded.
+    ///
+    /// A family present at another revision is a different provider and
+    /// is refused; so is a registry full of perfectly good alternatives.
+    /// Nothing re-selects and nothing substitutes — the refusal names the
+    /// identity the pin recorded and every identity the registry holds,
+    /// and re-preparation is the only way forward.
+    pub fn ensure_lowerings_in(&self, registry: &LoweringRegistry) -> Result<(), VindexError> {
+        lowerings_stand_in(&self.lowerings, registry)
+    }
+}
+
+/// The lowering plane's judgment itself — see
+/// [`PinnedAuthorities::ensure_lowerings_in`], which is this over what was
+/// written down.
+///
+/// A free function so that a prepared image can ask the question without
+/// first building its codec half, and so that the live image and the
+/// reloaded record cannot drift into two judgments of one contract.
+pub(super) fn lowerings_stand_in(
+    pinned: &[LoweringIdentity],
+    registry: &LoweringRegistry,
+) -> Result<(), VindexError> {
+    for identity in pinned {
+        if registry.provider(identity).is_err() {
+            let held = registry.identities();
+            let held = if held.is_empty() {
+                "none".to_string()
+            } else {
+                held.iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(VindexError::Parse(format!(
+                "lowering provider `{identity}` qualified this preparation and the registry \
+                 now holds {held}; re-prepare rather than execute a pin whose provider is \
+                 gone — no other provider stands in for it"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// What a realization does with a dependency once it has read it.

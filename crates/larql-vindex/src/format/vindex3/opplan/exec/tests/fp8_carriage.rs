@@ -256,7 +256,7 @@ fn selection_pins_the_fp8_kernel_and_retains_its_grid() {
         let record = record_for(prepared);
         assert_eq!(record.representation, DTYPE_FP8_BLOCK);
         assert_eq!(
-            record.provider.as_ref().map(|p| p.family.as_str()),
+            record.codec_provider.as_ref().map(|p| p.family.as_str()),
             Some("fp8-block")
         );
         assert_eq!(

@@ -837,7 +837,7 @@ pub(crate) fn bind(
     let runtime = Vindex3Runtime::open_via(
         path,
         V3_COMPONENT,
-        &LoweringRegistry::shipped(),
+        std::sync::Arc::new(LoweringRegistry::shipped()),
         &LoweringIdentity::cpu_production(),
     )
     .map_err(|e| LqlError::exec("failed to open VINDEX3 container", e))?;

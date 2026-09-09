@@ -33,6 +33,7 @@ use crate::format::vindex3::opplan::exec::cpu::kernels::ScalarF32;
 use crate::format::vindex3::opplan::exec::cpu::physical::project_matrix;
 use crate::format::vindex3::opplan::exec::cpu::projector::{DenseProjector, WeightRows};
 use crate::format::vindex3::opplan::exec::cpu::{ledger, PhysicalProjectionPlan};
+use crate::format::vindex3::opplan::exec::lowering::LoweringIdentity;
 use crate::format::vindex3::opplan::exec::operands::{
     OperandSource, OperandStore, RepresentationSource,
 };
@@ -520,7 +521,8 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
         let record = RealizationRecord {
             planned: planned.clone(),
             representation: Q6_K.name.to_string(),
-            provider: facts.registered.as_ref().map(|r| r.identity.clone()),
+            codec_provider: facts.registered.as_ref().map(|r| r.identity.clone()),
+            lowering_provider: LoweringIdentity::cpu_production(),
             selection,
             extent: ExtentPin::unknown(),
             verified_bytes: 0,
