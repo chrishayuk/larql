@@ -1,8 +1,8 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
-**Stages 1 (a-d), 2, 3 and 3b landed on `main` in #409; stage 4 is on
-`worktree-optimizer-mcp-facade`, based on `origin/main` at `474a0392`.**
-Everything below stage 4 is design.
+**Stages 1 (a-d), 2, 3 and 3b landed on `main` in #409; stage 4 and 4b in
+#409 and #418; co-execution in #456; stage 5 (a and b) in ACTUATION-1.**
+Everything below stage 5 is design.
 
 The abstraction is not "quantization search". It is **evidence-
 constrained physical-plan search**, and it is the query optimiser the
@@ -1482,6 +1482,136 @@ the missing substrate truth made the existing transport answer.
 
 ---
 
+## 4j. Stage 5 — the authority to CAUSE an experiment (IMPLEMENTED)
+
+4b made the record able to say what should be measured next. Nothing
+could make it happen. The join was being crossed by a human reading a
+digest and setting six environment variables, and that is not a gap in
+convenience — it is the difference between an oracle for an agent and an
+optimiser.
+
+```text
+next_experiment()  →  MeasurementKey     four identities, no instructions
+measure::run()     ←  TeacherForcedRequest   instructions, no identity
+```
+
+### 5a — a run is instructed, not configured
+
+The precondition nobody had checked:
+
+> **A prepared experiment must not describe a run more precisely than the
+> executor can be instructed to perform.**
+
+The teacher-forced runner violated it in three places. Its gate was a
+literal, `kimi_logit_v3()`, while an optimiser record declares
+`kimi-logit-balanced-v1`; its slice was an environment variable read at
+the point of use; its label the same. Sealing those into an id would have
+attested to DECLARED INTENT and not to caused execution — the same
+declaration-versus-procedure gap 4b-c closed one plane up.
+
+So every control became a field, resolved by name and refused when
+unknown, and the environment form became an ADAPTER that builds one.
+5a-0b then turned the harness's assertions into typed refusals under an
+explicit conservation inventory, which found `NullArmNotZero` — the most
+dangerous condition in the set, and one the first pass of the vocabulary
+had missed. #456 added co-execution: batching execution without batching
+scientific identity.
+
+### 5b — the bridge, and what it may not do
+
+```text
+SearchSnapshot → next_experiment → MeasurementRequest → ExperimentExecutor
+                                          ↑                     ↑
+                             the record's protocol      by PROCEDURE name
+                                                        ArtifactLocator for
+                                                        where things are
+```
+
+> **It turns an experiment the optimiser has ALREADY SELECTED into a
+> request an executor can perform. It does not choose which experiments
+> should exist, it does not perform one, and it does not write to the
+> record.**
+
+and the falsifier:
+
+> **If preparing an experiment can change what is measured — the state,
+> the corpus, the scale, the instrument or the gate — the bridge is
+> wrong.**
+
+### Three of a key's four parts are one-way
+
+The reconnaissance changed the wave's shape before it started. Only the
+state is recoverable from the record — `map_for(base_map, applied)` then
+`resolve`. `EvidenceBankId` and `InstrumentSemanticsId` are digests of
+declarations the record did not carry, and `EvidenceBank::new` and
+`InstrumentSemantics::new` had **zero production call sites**: every
+construction in the tree was a test or the shared fixture.
+
+So `SearchConfig` carries a `MeasurementProtocol`, by the mechanism
+`SearchFacts::accounting` established — optional, defaulted, absence a
+fact rather than a fallback. It is self-checking, and this is where
+1c's stated limit finally closes: `instrument.rs` says a declaration can
+lie and the mitigation is construction rather than validation, because
+only one half was ever present at a time. Here both are, so the check is
+mandatory before anything is prepared.
+
+### Construct-or-refuse
+
+A request has private fields and no field constructor. `MeasurementRequest::of`
+resolves the candidate map over the record's own surface under the
+record's own layout policy and refuses unless the result is the physical
+state the key names. `derived_key` then re-derives the whole four-part key
+from the request alone, with no arguments — the layout policy resolved
+from the name the request carries — so a request that has travelled can
+be checked for what it is about without the record it came from.
+
+### What stage 5b found
+
+Three things, none of them forecast:
+
+- **The applied set was dropped between `Candidate` and `Assessment`.** A
+  ranked opportunity carried `child_state`, a one-way digest, and no route
+  to it — so the selected experiment was nameable and not buildable, and
+  nothing had failed because nothing had ever tried. The cheapest possible
+  instance of the wave's own thesis.
+- **A build can REDEFINE a gate a record names.** `gate_by_id` and
+  `SearchConfig::gate` are two authorities for one name, and `quality.rs`
+  documents gates changing (v3 dropped the counts). A record replayed
+  against a moved definition would be judged under the current thresholds
+  while claiming the recorded ones. Refused at preparation now, rather
+  than reported after the instrument time by `Inadmissible::GateMismatch`.
+- **The seam needs its own falsifier.** A truthful request buys nothing if
+  the executor may answer about a different experiment, so `Observed`
+  carries the key it is an observation OF and the registry refuses when
+  that is not the key it handed over.
+
+### Provider-neutral, and why the sequencing matters
+
+An executor is selected by the PROCEDURE the record declares — the same
+discipline as `layout_admission`, `compiled_bytes` and `gate_by_id` — and
+nothing in the bridge names a device, backend, kernel, lowering target or
+store id.
+
+That is a sequencing decision. The representation plane is already
+pluggable and the lowering plane is not yet equally open; an actuation
+bridge that learned `Cpu` or `Metal` would finish the autonomous
+optimiser by cementing precisely the lowering authority the codec work is
+dismantling. A new codec, extent, residency policy or lowering provider
+should enter the action space by declaring itself and be measured under
+the existing evidence contract, without the optimiser learning its name.
+
+### What 5b deliberately did not do
+
+No overlay build — the request says which map must be presented and which
+state it must resolve to, and a locator with nothing built refuses
+`NotBuilt` naming the map, because a build is exactly where a
+representation could come to differ from the one the key names. No
+ingestion, no loop, no batching (that is #456's, and batch width must not
+become a request field), no experiment-value policy, no MCTS, and no
+transport change.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -1579,8 +1709,12 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
 | 4b | The source identity the optimizer prices from (§4i) | **done** |
-| 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
-| 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
+| 5a | A run is instructed, not configured; co-execution (§4j) | **done** |
+| 5b | The actuation bridge — a selected experiment becomes a request (§4j) | **done** |
+| 6 | The measurement artifact, and ingestion that checks it names its key | |
+| 7 | The loop — reload, derive, execute, ingest, repeat | |
+| 8 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
+| 9 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 
 Provenance lives on **incoming edges**, not baked into the node:
 
@@ -1667,9 +1801,12 @@ effect on the future physical plan.
 1. **How an instrument declaration is bound to the runner.** 1c
    settled the *shape* of `InstrumentSemanticsId` and left the binding
    open: nothing forces the Q2a harness to build its declaration from
-   `TOP_N` rather than restating it. Until it does, a silent semantics
-   change is undetectable. The fix is a constructor at the call site,
-   not a validator here.
+   `TOP_N` rather than restating it. Half of this closed in 5b — a
+   record's declarations are now checked against the digests it searches
+   under, so a record cannot describe one protocol and run another. The
+   remaining half is the one 1c named: nothing yet forces the RUNNER's
+   `TOP_N` to be the truncation the declaration reports, and the fix is
+   still a constructor at the call site rather than a validator.
 2. **Where the DAG persists.** Evidence already lives in the experiments
    ledger; a second store risks two truths. Candidate: the DAG holds
    identities and edges and dereferences every measurement to the ledger
