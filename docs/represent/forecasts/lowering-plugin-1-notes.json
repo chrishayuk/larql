@@ -52,6 +52,56 @@
         "cargo test -p larql-vindex --no-run (integration targets compile against the exported trait)"
       ],
       "deviations_from_forecast": "None in scope. One measurement correction, recorded above."
+    },
+    "L2": {
+      "name": "lowering registry",
+      "status": "built and held",
+      "branch": "lowering-l2",
+      "base": "4e8147ef (main after #462, #464, #461, #465 merged in that order)",
+      "date": "2026-09-09",
+      "the_question": "Can lowering providers be registered and carried as explicit authority, without changing what any existing backend selects or executes? Yes, and the carried path is bit-identical to the direct one for both shipped providers.",
+      "what_landed": [
+        "`LoweringRegistry` in `exec/lowering.rs`: `register(Box<dyn PlanBackend + Send>)` keyed by identity, refusing an identity `validate()` refuses (`LoweringError::Invalid`) and one already taken (`Duplicate`); `provider(&LoweringIdentity)` or `Unregistered` naming every registered identity in registration order; `family(name)` for every revision of one family; `identities()`, `len()`, `is_empty()`.",
+        "`LoweringRegistry::shipped()`: the two providers that need no device (`reference/v1`, `cpu-production/v1`), built as a FRESH VALUE on every call. There is no static, no `builtin()`, and no path that consults a registry the caller did not hand it.",
+        "The carried path: `PreparedOperands::load_via(plan, store, &registry, &identity, slice)` and `execute_plan_via(plan, store, tokens, &registry, &identity)`. Each resolves the provider through the registry it was handed and refuses by identity before selection and before any byte; neither constructs a provider.",
+        "`Debug` for `dyn PlanBackend` (`provider NAME (family/vN)`) and for the registry (its identities), so a refusal or a test can say which provider it meant."
+      ],
+      "witnesses": {
+        "registered_is_discoverable_unregistered_is_refused_naming_the_registered": "exec/tests/lowering_registry.rs — `a_registered_provider_is_discoverable_and_an_unregistered_one_is_refused_naming_the_registered`",
+        "duplicate_refused_invalid_never_enters": "`a_duplicate_identity_is_refused_and_an_invalid_one_never_enters` — a scratch provider under the production identity is a duplicate too: the identity is keyed, not the type",
+        "revision_mismatch_is_a_distinct_provider": "`two_revisions_of_one_family_are_distinct_providers` — v1 and v2 coexist and answer separately; v3 is refused naming both",
+        "registry_order_has_no_effect": "`registration_order_has_no_effect_on_who_answers` — forward and reverse registration differ only in `identities()` order",
+        "value_not_default_and_one_instance_per_identity": "`the_shipped_registry_is_a_value_and_one_instance_per_identity`",
+        "F4_anti_cheat": "`the_carried_path_refuses_an_absent_provider_rather_than_constructing_one` — a registry holding only `reference/v1`, asked to prepare and to execute as `cpu-production/v1`, refuses both naming `registered: reference/v1`, and the store's load count stays 0: nothing underneath constructed `ProductionBackend` to answer anyway",
+        "positive_control": "`the_carried_path_executes_exactly_what_the_direct_path_executes` — through `shipped()`, logits and final hidden are bit-identical to `execute_plan` with the provider constructed directly, and the pinned realizations are the same list, for both shipped providers"
+      },
+      "L1_open_question_forced": {
+        "type_or_instance": "The registry holds one configured INSTANCE per identity: a provider is registered as the instance the caller built, and a second `DevicePlanBackend` under `device-matmul/v1` — another name, another format table — is a `Duplicate`, not an alternative. So identity is the provider's (type/semantic implementation), configuration is the registration's, and a caller wanting two differently configured device providers side by side needs two providers to name. This is the default the forecast's author expected; the registry forced it rather than us choosing it.",
+        "device_swap_invalidation": "Still open for L4. Nothing in L2 records which injected device stood behind `device-matmul/v1`; whether a pin is invalidated when the concrete device changes is the question L4 must answer, and the registry has not forced it."
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "kernel_plane_files_note": "33 with #461 merged, as the L1 notes predicted; L2 adds none.",
+        "provider_construction_sites_outside_vindex_non_test": 13,
+        "provider_construction_sites_inside_vindex_non_test": {
+          "count": 2,
+          "sites": [
+            "`exec/device.rs`: `glue: ProductionBackend::new()` — the device provider's own CPU glue, an internal part of that provider and not a fallback; stays",
+            "`exec/mod.rs`: `execute_text` runs `ReferenceBackend::new()` — a convenience entry that hard-codes the oracle; L3 routes it or retires it"
+          ]
+        },
+        "production_callers_of_the_registry": 0,
+        "production_callers_note": "By design: L2 introduces the registry and the carried path and moves no construction site. That the count is 0 is L2's boundary and L3's target — the 13 outside sites (`ExecBackend`'s arms, the runtime, the server, LQL) become lookups."
+      },
+      "F4_status": "Not falsified in L2's scope: the only path that takes a registry refuses rather than defaults. The class F4 predicts — a downstream path that consults a built-in provider after registration ostensibly worked — cannot appear until L3 puts the registry on the production paths, which is where to expect it.",
+      "gates_run": [
+        "cargo fmt --all",
+        "cargo check --workspace --all-targets",
+        "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+        "cargo test -p larql-vindex --lib (4659 passed: the merged-main suite of 4652 plus seven L2 tests)",
+        "cargo test -p larql-vindex --no-run"
+      ],
+      "deviations_from_forecast": "None. Selection, accounting and execution unchanged: the diff touches `lowering.rs`, one method in `backend.rs` (a Debug impl), one method each in `mod.rs` and `prepared.rs`, and tests."
     }
   }
 }
