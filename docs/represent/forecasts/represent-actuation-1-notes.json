@@ -87,6 +87,34 @@
       "resolution": "The corpus-mismatch test now asserts the detail names BOTH digests, and `overlay_for` is asserted in the positive direction as well as the negative — a mutant returning `None` unconditionally survived because only the absent case was checked. Both mutations were applied by hand to confirm they now fail exactly two tests, and that restoring the source makes them pass.",
       "the_run_did_not_finish": "The job was cancelled at 45m18s after testing roughly twenty of eighty-eight mutants. The remaining mutants are UNTESTED, and that is not evidence of their absence. The check is informational and structurally times out on a diff this size; earlier runs on smaller diffs completed in 6-32 minutes.",
       "scored": "The third unforecast finding to come from a gate rather than a reviewer, and the most interesting: it is the failure mode of the previous finding's fix."
+    },
+    "ACT1-N10": {
+      "title": "`attests_to_its_key` was unjustified surface, and a complete mutation pass is what proved it.",
+      "observed": "The full 88-mutant pass (32 min local, against CI's ~20 in 45) left two survivors. One replaced the entire body of `MeasurementRequest::attests_to_its_key` with `Ok(())` and nothing noticed.",
+      "why_nothing_noticed": "It cannot fail. `MeasurementRequest::of` is the only constructor, so an in-process request that would refuse its own attestation cannot be built. Its error arms were exactly the eight unreachable lines ACT1-N8 recorded, and a grep confirmed the method had ZERO production callers — only two test assertions.",
+      "the_criterion_applied": "The right response to a survivor is not automatically 'add a test'. Where the survivor sits on API with no consumer, it is evidence of unnecessary surface. Same disposition as the unused `From<MeasurementRefusal>` in ACT1-N8: deleted, not covered.",
+      "what_was_kept": "`derived_key` stays. It is the load-bearing primitive — it re-derives the whole four-part key from the request alone, with no arguments — and the two tests now compare it against `key()` directly, which is what the deleted method did in one line.",
+      "the_intent_is_not_lost": "The comparison belongs to whichever transition first lets a request cross a trust boundary — serde, a queue, a remote executor. It should arrive then, WITH the test that can fail it. That is recorded in the OPT-6 forecast rather than left as dead code here.",
+      "lineage": "ACT1-N8 said these arms were kept for a future caller and were 'likely stage 6's problem'. Subsequent review narrowed that: they are load-bearing only if the REQUEST travels, and if stage 6 keeps the shape `in-process request -> executor -> immutable artifact -> transport -> ingest`, it is the ARTIFACT that needs hostile round-trip tests. The complete mutation pass then settled it: no consumer today, so delete. Recorded as three steps rather than rewritten into one, because how the boundary became sharper is the useful part."
+    },
+    "ACT1-N11": {
+      "title": "Mutation testing reports the INACTIVE arm of every `#[cfg]`-split function as MISSED, in every configuration.",
+      "observed": "The second survivor was `TeacherForcedExecutor::execute -> Ok(Default::default())` at teacher_forced.rs:155 — inside the `#[cfg(all(feature = \"gpu\", target_os = \"macos\"))]` arm, which the default-feature test build does not compile. Re-running the same file under `--features gpu` gave the mirror image.",
+      "the_matrix": {
+        "note": "155 is the gpu arm, 188 the non-gpu arm. In each configuration the LIVE arm is caught or unviable and the DEAD arm is inert.",
+        "default_features": {
+          "line_155": "MISSED (inert — not compiled)",
+          "line_188": "caught"
+        },
+        "features_gpu": {
+          "line_155": "UNVIABLE",
+          "line_188": "MISSED (inert — not compiled)"
+        }
+      },
+      "the_tell": "`Observed` does not derive `Default`, so `Ok(Default::default())` CANNOT COMPILE where that arm is live — which is exactly why it comes back unviable under `--features gpu`. It was only ever 'viable' because cfg'd-out source is never type-checked. There is no configuration in which line 155 is a genuine survivor.",
+      "the_general_property": "This is not about this function. For ANY `#[cfg]`-split function in this workspace, a single mutation run will report the inactive arm as MISSED regardless of test quality, because the mutation is textual and the code is not compiled. A cfg-split function can never score clean in one run.",
+      "consequence_for_the_instrument": "It compounds the blind spot ACT1-N7 named. The Metal arm of the only registered executor is invisible to mutation testing in every configuration CI runs: the ubuntu leg has it cfg'd out, and the macos-14 leg is scoped to `-p larql-compute-metal` and never sees this file. Not a test gap — an instrument gap, and one that a reader of a green mutation run would not suspect.",
+      "not_fixed_here": "Both this and the 45-minute cap are instrument debt and belong to a CI transition of their own, not to a rung about actuation. Recorded so that transition starts from measured facts rather than from an impression."
     }
   },
   "design_decisions_worth_recording": {
@@ -103,6 +131,7 @@
     "stage_7": "The loop. It should be small — reload, derive, execute, ingest, repeat — and contain almost no intelligence, which is the point.",
     "the_overlay_build": "Nothing yet turns `MeasurementRequest::candidate_map` into compiled bytes. `LocatorRefusal::NotBuilt` names the map to build, which makes the gap actionable and does not close it.",
     "a_second_procedure": "Registry DISPATCH is now witnessed: two distinct stub procedures, both registration orders, the named one running in all four combinations, and a third-procedure refusal naming both. What that does NOT earn is ACT1-N5, which stays open — two stubs prove nothing about the relationship between an instrument's declared procedure and an execution procedure. A second REAL procedure is still owed.",
-    "a_real_run": "See ACT1-N7. The Metal arm compiles and has never run; the first real actuation belongs to stage 6's evidence programme."
+    "a_real_run": "See ACT1-N7. The Metal arm compiles and has never run; the first real actuation belongs to stage 6's evidence programme.",
+    "mutation_instrument_debt": "Two measured facts for a future CI transition. (a) The 45-minute cap: this diff's 88 mutants take ~32 minutes locally at -j 4 and did not fit CI's budget, so the job was cancelled at roughly twenty of eighty-eight; a timed-out run is visually indistinguishable from a real failure in the checks tab, though the workflow's own header already says to read it as incomplete. (b) ACT1-N11: cfg-split functions always report their inactive arm as missed, so a clean mutation score is unobtainable for them in a single run."
   }
 }

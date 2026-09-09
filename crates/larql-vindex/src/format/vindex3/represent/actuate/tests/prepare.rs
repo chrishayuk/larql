@@ -181,7 +181,10 @@ fn a_record_with_several_opportunities_reports_how_many_were_ordered() {
             .expect("not exhausted")
             .key
     );
-    assert!(prepared.request.attests_to_its_key().is_ok());
+    assert_eq!(
+        prepared.request.derived_key().expect("resolves"),
+        *prepared.request.key()
+    );
     // And `request()` reaches it on a Ready, which is the arm a caller
     // holding the enum actually uses.
     let answer = PreparedExperiment::of(&snapshot);

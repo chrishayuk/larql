@@ -24,9 +24,6 @@ fn a_request_re_derives_the_whole_experiment_from_itself() {
 
     let derived = request.derived_key().expect("the layout policy resolves");
     assert_eq!(&derived, request.key());
-    request
-        .attests_to_its_key()
-        .expect("and the request says so itself");
 
     // Each part individually, so a digest collision could not carry it.
     assert_eq!(derived.state(), request.key().state());

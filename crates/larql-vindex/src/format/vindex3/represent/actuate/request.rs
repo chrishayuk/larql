@@ -309,9 +309,20 @@ impl MeasurementRequest {
     /// **Re-derive the whole experiment from this request alone.**
     ///
     /// No arguments: the layout policy is resolved from the name the
-    /// request carries. A caller that has been handed a request — over a
-    /// queue, out of a file, from another process — can check what it is
-    /// about without the record it came from.
+    /// request carries. A caller that has been handed a request can
+    /// check what it is about without the record it came from — compare
+    /// this with [`Self::key`] and they agree, or the request is not
+    /// measuring what it says.
+    ///
+    /// There was a `attests_to_its_key` doing that comparison. It had no
+    /// production caller and could not fail: [`Self::of`] is the only
+    /// constructor, so an in-process request cannot be built that would
+    /// refuse its own attestation, and a full mutation pass duly found
+    /// its body replaceable by `Ok(())` with nothing to notice
+    /// (ACT1-N10). The comparison belongs to whichever transition first
+    /// lets a request cross a trust boundary — serde, a queue, a remote
+    /// executor — and it should arrive then, with the test that can fail
+    /// it.
     pub fn derived_key(&self) -> Result<MeasurementKey, VindexError> {
         let layout = layout_admission(&self.layout_admission)?;
         let state = resolve_state(&self.model, &self.surface, &self.candidate_map, layout);
@@ -321,23 +332,6 @@ impl MeasurementRequest {
             self.scale,
             &self.instrument.id(),
         ))
-    }
-
-    /// Whether this request still measures the experiment it names.
-    pub fn attests_to_its_key(&self) -> Result<(), RequestRefusal> {
-        let derived = self
-            .derived_key()
-            .map_err(|e| RequestRefusal::UnresolvableLayout {
-                named: self.layout_admission.clone(),
-                detail: e.to_string(),
-            })?;
-        if derived == self.key {
-            return Ok(());
-        }
-        Err(RequestRefusal::StateMismatch {
-            named: self.key.state().clone(),
-            resolved: derived.state().clone(),
-        })
     }
 
     /// The gate this request is judged under, resolved.
