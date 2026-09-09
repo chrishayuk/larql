@@ -77,6 +77,16 @@
       "also_removed": "`From<MeasurementRefusal> for ExecutionRefusal` had no caller — both construction sites name the variant explicitly. Deleted rather than covered, in the same spirit as Ruling 1's absent fourth prune: present-and-unused is worse than absent.",
       "residue_stated": "Eight lines in `request.rs` remain uncovered and are unreachable BY CONSTRUCTION: the error arms of `attests_to_its_key`, which cannot fire while `MeasurementRequest::of` is the only constructor. They exist for a request that has travelled — over a queue, out of a file — and become reachable, and testable, the day the type gains serde. That is likely to be stage 6's problem, and the arms are kept rather than deleted for it.",
       "scored": "An unforecast finding from a gate rather than from a reviewer, and the reason the gate is set per-file rather than per-crate: the crate total was never in danger."
+    },
+    "ACT1-N9": {
+      "title": "Mutation testing found the residue of the coverage fix: three survivors where a line RAN and nothing depended on what it produced.",
+      "observed": "`cargo-mutants` on the diff reported three MISSED mutants, all in `actuate/artifacts.rs`: `short() -> \"\"`, `short() -> \"xyzzy\"`, and `DeclaredArtifacts::overlay_for -> None`. All three files were at or above the coverage floor by then.",
+      "the_distinction_that_matters": "Line coverage proved those lines executed. The mutants proved no assertion depended on what they produced. The two are different claims, and ACT1-N8's fix bought the first without the second.",
+      "why_it_landed_exactly_there": "`short` has ONE production use: the digest pair inside the corpus-mismatch `detail` string. `refusals.rs` asserts that each refusal TYPE renders the fields its variant holds — but this refusal's detail is COMPOSED AT THE CALL SITE in `artifacts.rs`, so the type-level contract never reached it. The test that triggered the refusal matched the variant and never read the message.",
+      "what_it_refines_in_contract_5": "Proving a refusal type renders its fields is not sufficient. Where a refusal's actionable facts are assembled by the CONSTRUCTION SITE into a free-text field, that site needs its own witness. The type contract and the construction contract are two obligations, and only the first was frozen.",
+      "resolution": "The corpus-mismatch test now asserts the detail names BOTH digests, and `overlay_for` is asserted in the positive direction as well as the negative — a mutant returning `None` unconditionally survived because only the absent case was checked. Both mutations were applied by hand to confirm they now fail exactly two tests, and that restoring the source makes them pass.",
+      "the_run_did_not_finish": "The job was cancelled at 45m18s after testing roughly twenty of eighty-eight mutants. The remaining mutants are UNTESTED, and that is not evidence of their absence. The check is informational and structurally times out on a diff this size; earlier runs on smaller diffs completed in 6-32 minutes.",
+      "scored": "The third unforecast finding to come from a gate rather than a reviewer, and the most interesting: it is the failure mode of the previous finding's fix."
     }
   },
   "design_decisions_worth_recording": {

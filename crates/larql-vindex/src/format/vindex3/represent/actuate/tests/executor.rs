@@ -306,14 +306,31 @@ fn a_corpus_whose_manifest_is_not_the_banks_is_refused() {
 
     // The same directory after its manifest moves is not the same bank,
     // and a run over it would not be the experiment that was authorised.
-    std::fs::write(corpus_dir.path().join(BANK_MANIFEST), b"{}").expect("rewrite");
+    let moved = b"{}";
+    std::fs::write(corpus_dir.path().join(BANK_MANIFEST), moved).expect("rewrite");
     let refusal = artifacts
         .corpus(&request)
         .expect_err("its manifest is not the bank's");
-    assert!(
-        matches!(refusal, LocatorRefusal::NotWhatItClaims { .. }),
-        "{refusal:?}"
-    );
+    let LocatorRefusal::NotWhatItClaims { what, path, detail } = &refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(what, "quality bank");
+    assert_eq!(path, &corpus_dir.path().display().to_string());
+
+    // BOTH digests, in the message. The refusal is composed here rather
+    // than by the variant's own `Display`, so the type-level contract
+    // (`every_locator_refusal_names_what_it_promises`) does not reach it
+    // — a mutant that emptied the digest helper survived until this
+    // assertion existed.
+    let found = hash_bytes(moved);
+    for digest in [&found, &request.bank().manifest_sha256] {
+        assert!(
+            detail.contains(&digest[..12]),
+            "the refusal must name both digests for a reader to tell which bank they have;              `{}` is missing from: {detail}",
+            &digest[..12]
+        );
+    }
+    assert_ne!(found, request.bank().manifest_sha256, "the two must differ");
 }
 
 #[test]
@@ -336,6 +353,23 @@ fn an_overlay_that_was_never_compiled_refuses_with_the_map_to_build() {
     assert_eq!(map, &request.candidate_map().name);
     // The locator must not have built one behind the caller's back.
     assert!(artifacts.overlay_for(request.key().state()).is_none());
+
+    // And it answers about one that WAS declared, so the absence above
+    // is an answer about this state rather than a constant. A mutant
+    // returning `None` unconditionally survived until this existed.
+    let overlay = tempfile::tempdir().expect("overlay dir");
+    let holding = DeclaredArtifacts::new()
+        .container_at(dir.path())
+        .corpus_at(corpus_dir.path())
+        .overlay_at(request.key().state(), overlay.path());
+    assert_eq!(
+        holding.overlay_for(request.key().state()),
+        Some(overlay.path())
+    );
+    assert_eq!(
+        holding.candidate(&request).expect("it is built"),
+        PathBuf::from(overlay.path())
+    );
 }
 
 // ---------------------------------------------------------- the adapter
