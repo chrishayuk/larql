@@ -102,6 +102,50 @@
         "cargo test -p larql-vindex --no-run"
       ],
       "deviations_from_forecast": "None. Selection, accounting and execution unchanged: the diff touches `lowering.rs`, one method in `backend.rs` (a Debug impl), one method each in `mod.rs` and `prepared.rs`, and tests."
+    },
+    "L3": {
+      "name": "existing providers behind the registry",
+      "status": "fate table frozen before any replacement; implementation follows in this branch",
+      "branch": "lowering-l3",
+      "base": "L2 (#466) on main 4e8147ef — the tree main will be once #466 merges; rebased onto that merge before the PR",
+      "date": "2026-09-09",
+      "the_question": "Can every production selection path obtain its lowering provider from the carried registry, with zero behavioural movement and no hidden construction fallback?",
+      "rule": "Every construction site recorded by L2 is assigned a fate HERE, before it is touched. At the end a source scan asserts that exactly the sites marked `stays` still construct a provider, so a forgotten `ProductionBackend::new()` cannot become the hidden default that defeats the programme.",
+      "fates": {
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:196  ExecBackend::Reference → ReferenceBackend::new()": "route — the composition site resolves `reference/v1` from the registry",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:197  ExecBackend::Production → ProductionBackend::new()": "route — `cpu-production/v1`",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:203  ExecBackend::ProductionNvfp4 → ProductionBackend::new()": "route — `cpu-production/v1` (the arm differs upstream, in the wanted representation, not in the provider)",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:213  ExecBackend::ProductionQ8 | Q6k | Q4k → ProductionBackend::new()": "route — `cpu-production/v1`",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:230  ExecBackend::MetalMxfp4 → DevicePlanBackend::with_formats(metal-q1-mxfp4-ffn)": "construction moves INTO the composition site: the configured device provider is registered under `device-matmul/v1` and resolved by identity",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:262  ExecBackend::MetalMxfp4All → DevicePlanBackend::with_formats(metal-q1-mxfp4-all)": "same",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:313  ExecBackend::MetalNvfp4 | NoHead | Ffn → DevicePlanBackend::with_formats(metal-q2-nvfp4-*)": "same",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:328  ExecBackend::Metal → DevicePlanBackend::new(metal-r3-f16)": "same",
+        "larql-cli/src/commands/primary/vindex3_cmd/realizations.rs:92  bind_and_reconcile → ProductionBackend::new()": "route — through the composition site as `ExecBackend::Production`",
+        "larql-cli/src/commands/primary/vindex3_cmd/realizations.rs:130  report_through → ProductionBackend::new()": "route — same",
+        "larql-cli/src/commands/primary/vindex3_cmd/sensitivity.rs:387  DevicePlanBackend::new(metal-r3-f16)": "route — through the composition site as `ExecBackend::Metal`, which is the identical configuration; one fewer place that spells `metal-r3-f16`",
+        "larql-server/src/vindex3.rs:135  Vindex3Runtime::open(.., ProductionBackend::new())": "route — `Vindex3Runtime::open_via(.., &LoweringRegistry::shipped(), &LoweringIdentity::cpu_production())`",
+        "larql-lql/src/executor/vindex3.rs:833  Vindex3Runtime::open(.., ProductionBackend::new())": "route — same; the `V3Runtime` alias becomes `Vindex3Runtime<SharedProvider>`",
+        "larql-vindex/src/format/vindex3/opplan/exec/mod.rs  execute_text → ReferenceBackend::new()": "route — through `LoweringRegistry::shipped()` and `reference/v1`; it is the oracle by request, not by privileged construction",
+        "larql-vindex/src/format/vindex3/opplan/exec/device.rs:122  glue: ProductionBackend::new()": "STAYS — the device provider's own CPU glue, an implementation detail inside a provider, not authority over which provider runs",
+        "larql-vindex/src/format/vindex3/opplan/exec/lowering.rs  shipped()": "STAYS — the one place the shipped providers are constructed, as a value",
+        "larql-server/examples/v3_request_phase_profile.rs, larql-vindex/examples/cpu7c_arms.rs": "out of the gate — examples are not production paths; the scan excludes `examples/` as it excludes `tests/`; untouched in L3"
+      },
+      "closure_assertion": "`crates/larql-vindex/tests/lowering_closure.rs` walks every non-test `.rs` under `crates/*/src` and refuses any file that spells `ProductionBackend::new()`, `ReferenceBackend::new()`, `DevicePlanBackend::new(` or `DevicePlanBackend::with_formats(` other than the two `STAYS` files and the CLI composition site — with a positive control that the walk finds those three.",
+      "design_frozen_before_implementation": {
+        "shared_provider": "Registry entries become `Arc<dyn PlanBackend + Send>` (`SharedProvider`), with `PlanBackend` implemented for `Arc<T>` by delegation of EVERY method, provided ones included, so a shared handle never falls back to a trait default the inner provider overrides. A runtime can then own the provider it resolved.",
+        "runtime": "`Vindex3Runtime::open_via(container, component, &registry, &identity)` resolves the provider FIRST and opens the container second, so a refusal costs no I/O — the witness is a refusal on a container path that does not exist. The runtime holds the resolved provider, not the registry; whether it must hold the registry to invalidate is L4's.",
+        "cli": "`with_plan_backend` keeps its visitor and becomes compose-then-resolve: `lowerings_for(ExecBackend) -> (LoweringRegistry, LoweringIdentity)` is the single composition site (shipped providers plus the configured device provider for the device arms), and `with_lowerings(&registry, &identity, visitor)` is the seam a test hands a registry of its own to.",
+        "identities": "`LoweringIdentity::reference()`, `::cpu_production()`, `::device_matmul()` read the providers' own constants; no caller spells a family string."
+      },
+      "success_conditions_pinned": [
+        "13 construction sites outside larql-vindex → 1 composition site (prepare.rs); server and LQL resolve by identity from `shipped()` and construct nothing",
+        "`execute_text` loses its direct backend construction",
+        "existing CLI backend choices resolve to the same provider identities and the same provider names as before",
+        "for every existing fixture: selected RealizationId, logits, hidden state, resource ledger unchanged — the existing suites are the witness, with no assertion changed",
+        "kernel-plane files: 33",
+        "no RealizationRecord schema change (L4); no capability work; no metal-lowered migration",
+        "F4 through a production path: `Vindex3Runtime::open_via` with a registry missing `cpu-production/v1` refuses by identity naming the registered providers, before any I/O; and the CLI seam `with_lowerings` refuses the same way with the store's load count at zero"
+      ]
     }
   }
 }
