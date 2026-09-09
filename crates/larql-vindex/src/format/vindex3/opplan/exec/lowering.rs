@@ -19,13 +19,15 @@
 //! injected `MatMul` — is not identity; what it changes is already pinned
 //! in the realization form.
 //!
-//! Nothing dispatches on this yet. L2 keys a registry by it, L4 records
-//! it in every pin and invalidates preparation by it. L1 only makes it
-//! exist and be stated by every provider, which is the smallest thing
-//! that can be falsified.
+//! L2 keys a registry by it — [`LoweringRegistry`], a VALUE a caller
+//! carries and asks, never a default anything consults on its own. L4
+//! records it in every pin and invalidates preparation by it. L1 only
+//! made it exist and be stated by every provider, which was the smallest
+//! thing that could be falsified.
 
 use std::fmt;
 
+use super::backend::PlanBackend;
 use crate::error::VindexError;
 
 /// A lowering provider's semantic identity: family and revision.
@@ -113,5 +115,142 @@ mod tests {
         assert!(slashed.to_string().contains("`/`"), "{slashed}");
         let unstated = LoweringIdentity::new("cpu", 0).validate().unwrap_err();
         assert!(unstated.to_string().contains("revision 0"), "{unstated}");
+    }
+}
+
+/// Why a registry refused.
+#[derive(Debug, thiserror::Error)]
+pub enum LoweringError {
+    /// An identity that could not key a registry (see
+    /// [`LoweringIdentity::validate`]).
+    #[error("{0}")]
+    Invalid(VindexError),
+
+    /// The same family and revision registered twice. Refused rather than
+    /// replaced: "which of the two did the caller mean" has no answer, and
+    /// a registry whose answer depended on registration order would be a
+    /// registry whose meaning depended on the caller's program text.
+    #[error("lowering provider `{identity}` is already registered")]
+    Duplicate { identity: LoweringIdentity },
+
+    /// No provider under that identity. Names every identity that IS
+    /// registered, so the remedy is in the refusal: a family that is
+    /// there at another revision is a different provider, and the
+    /// refusal says which revisions exist.
+    #[error("no lowering provider `{identity}` is registered; registered: {}", registered.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", "))]
+    Unregistered {
+        identity: LoweringIdentity,
+        registered: Vec<LoweringIdentity>,
+    },
+}
+
+impl From<LoweringError> for VindexError {
+    fn from(e: LoweringError) -> Self {
+        match e {
+            LoweringError::Invalid(inner) => inner,
+            other => VindexError::Parse(other.to_string()),
+        }
+    }
+}
+
+/// The lowering providers a caller carries, keyed by identity.
+///
+/// **A value, not a default.** There is no static registry and no
+/// `builtin()` anything consults when a caller says nothing: the codec
+/// plane found three hidden built-in registries at execution (rung 3, F8)
+/// and one more at open (#461), and each was a place registration could
+/// not reach. Here the registry exists only where a caller constructed
+/// one, and every path that resolves a provider is handed it explicitly
+/// ([`super::prepared::PreparedOperands::load_via`],
+/// [`super::execute_plan_via`]). [`Self::shipped`] builds the providers
+/// this crate ships as a fresh value each time it is asked.
+///
+/// One configured INSTANCE per identity. A provider is registered as the
+/// instance the caller built — a device provider with the device it was
+/// handed and the format table it was given — and a second instance
+/// under the same identity is a duplicate, not an alternative. That is
+/// the registry answering L1's open question the only way it can: the
+/// identity is the provider's, the configuration is the registration's,
+/// and a caller that wants two differently configured device providers
+/// side by side has two providers to name.
+#[derive(Default)]
+pub struct LoweringRegistry {
+    providers: Vec<Box<dyn PlanBackend + Send>>,
+}
+
+impl fmt::Debug for LoweringRegistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.providers.iter().map(|p| p.identity()))
+            .finish()
+    }
+}
+
+impl LoweringRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a provider under the identity it states, refusing an
+    /// identity that could not be keyed and one already taken.
+    pub fn register(
+        mut self,
+        provider: Box<dyn PlanBackend + Send>,
+    ) -> Result<Self, LoweringError> {
+        let identity = provider.identity();
+        identity.validate().map_err(LoweringError::Invalid)?;
+        if self.providers.iter().any(|p| p.identity() == identity) {
+            return Err(LoweringError::Duplicate { identity });
+        }
+        self.providers.push(provider);
+        Ok(self)
+    }
+
+    /// The providers this crate ships and needs no device to build: the
+    /// reference oracle and the production CPU executor. A device
+    /// provider is registered by whoever holds the device. A fresh value
+    /// on every call — two callers asking get two registries, and neither
+    /// is the other's default.
+    pub fn shipped() -> Self {
+        Self::new()
+            .register(Box::new(super::reference::ReferenceBackend::new()))
+            .and_then(|r| r.register(Box::new(super::production::ProductionBackend::new())))
+            .expect("the shipped providers carry distinct, valid identities")
+    }
+
+    /// The provider `identity` names, or a refusal naming every provider
+    /// that is registered.
+    pub fn provider(&self, identity: &LoweringIdentity) -> Result<&dyn PlanBackend, LoweringError> {
+        self.providers
+            .iter()
+            .find(|p| p.identity() == *identity)
+            .map(|p| p.as_ref() as &dyn PlanBackend)
+            .ok_or_else(|| LoweringError::Unregistered {
+                identity: identity.clone(),
+                registered: self.identities(),
+            })
+    }
+
+    /// Every registered provider of `family`, at every revision, in
+    /// registration order.
+    pub fn family(&self, family: &str) -> Vec<&dyn PlanBackend> {
+        self.providers
+            .iter()
+            .filter(|p| p.identity().family == family)
+            .map(|p| p.as_ref() as &dyn PlanBackend)
+            .collect()
+    }
+
+    /// Registered identities, in registration order — what a refusal lists.
+    pub fn identities(&self) -> Vec<LoweringIdentity> {
+        self.providers.iter().map(|p| p.identity()).collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.providers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.providers.is_empty()
     }
 }

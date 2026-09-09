@@ -54,6 +54,7 @@ use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSli
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::kda::KdaOutputGateWeights;
+use super::lowering::{LoweringIdentity, LoweringRegistry};
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{
     realization_residency, DependencyLifetime, DependencyPin, ExtentOption, ExtentPin,
@@ -1957,6 +1958,24 @@ impl PreparedOperands {
         slice: ExecutionSlice,
     ) -> Result<Self, VindexError> {
         Self::load_within(plan, store, backend, slice, &ResidencyBudget::UNBOUNDED)
+    }
+
+    /// [`Self::load`] on the provider `provider` names in `lowerings` —
+    /// the registry-carried path (LOWERING-PLUGIN-1, L2).
+    ///
+    /// A provider the registry does not hold is refused here, by identity
+    /// and naming every provider it does hold, before selection and
+    /// before any byte. Nothing below constructs a provider the caller
+    /// did not register.
+    pub fn load_via<'s>(
+        plan: &ComponentOpPlan,
+        store: impl Into<OperandSource<'s>>,
+        lowerings: &LoweringRegistry,
+        provider: &LoweringIdentity,
+        slice: ExecutionSlice,
+    ) -> Result<Self, VindexError> {
+        let backend = lowerings.provider(provider)?;
+        Self::load(plan, store, backend, slice)
     }
 
     /// [`Self::load`] under a residency budget: the pins are chosen so the

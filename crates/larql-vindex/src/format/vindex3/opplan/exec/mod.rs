@@ -416,6 +416,25 @@ pub fn execute_plan<'s, B: PlanBackend + ?Sized>(
     execute_slice(plan, store, tokens, backend, ExecutionSlice::Full)
 }
 
+/// [`execute_plan`] on the provider `provider` names in `lowerings` — the
+/// registry-carried path (LOWERING-PLUGIN-1, L2).
+///
+/// The registry is the caller's value and the identity is the caller's
+/// choice; a provider the registry does not hold is refused here, by
+/// identity and naming every provider it does hold, before any operand
+/// is read. Nothing below constructs a provider the caller did not
+/// register.
+pub fn execute_plan_via<'s>(
+    plan: &ComponentOpPlan,
+    store: impl Into<OperandSource<'s>>,
+    tokens: &[u32],
+    lowerings: &lowering::LoweringRegistry,
+    provider: &lowering::LoweringIdentity,
+) -> Result<ExecutionTrace, VindexError> {
+    let backend = lowerings.provider(provider)?;
+    execute_plan(plan, store, tokens, backend)
+}
+
 /// [`execute_plan`] over a chosen [`ExecutionSlice`].
 ///
 /// `execute_plan` is this with [`ExecutionSlice::Full`], so the two can

@@ -755,6 +755,14 @@ pub struct DispatchStats {
     pub submissions: u64,
 }
 
+/// A provider names itself by presentation name and identity, so a
+/// refusal or a test can say which one it was talking about.
+impl std::fmt::Debug for dyn PlanBackend + '_ {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "provider {} ({})", self.name(), self.identity())
+    }
+}
+
 pub trait PlanBackend: Sync {
     /// A name for diagnostics and parity reports. Not dispatched on, and
     /// not an identity: two instances of one provider may carry different

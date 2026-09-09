@@ -79,14 +79,14 @@ fn identity_is_the_providers_not_its_configurations() {
 /// identity of its own choosing — so the two fields can be varied
 /// independently, which is the only way to show one is not derived from
 /// the other.
-struct Relabelled {
+pub(super) struct Relabelled {
     inner: ReferenceBackend,
     name: &'static str,
     identity: LoweringIdentity,
 }
 
 impl Relabelled {
-    fn new(name: &'static str, family: &str, revision: u32) -> Self {
+    pub(super) fn new(name: &'static str, family: &str, revision: u32) -> Self {
         Self {
             inner: ReferenceBackend::new(),
             name,
