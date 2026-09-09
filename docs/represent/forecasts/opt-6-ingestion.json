@@ -1,0 +1,56 @@
+{
+  "programme": "OPT-6 — ingestion",
+  "status": "design frozen before implementation",
+  "branch": "opt-6",
+  "base": "main `1c0cf5e5` (DOC-GATE-1 #469, on OPT-CONTRACT-1 #467, on ACTUATION-1 #463)",
+  "date": "2026-09-09",
+  "rule": "Frozen before implementation, as L3, L4, L5 and DOC-GATE-1 were. The acceptance and refusal arms are preregistered HERE so that an arm the implementation finds inconvenient cannot be quietly redescribed as out of scope.",
+
+  "the_claim": "An executor may produce an observation; only deterministic ingestion may decide that the observation constitutes the `MeasurementKey` it claims, and may enter `SearchFacts`.",
+
+  "the_primary_falsifier": "If a correctly keyed artifact can enter `SearchFacts` without independently re-establishing the authorities that make that key meaningful, OPT-6 FAILS. Correct keying is the claim being tested, never the evidence for it.",
+
+  "the_shape": "MeasurementRequest -> executor -> immutable MeasurementArtifact -> validate against snapshot + authorities -> AcceptedMeasurement -> append to SearchFacts",
+
+  "why_this_boundary_exists": {
+    "the_principle_carried_from_tonight": "OPT-CONTRACT-1 found that `check_contract_index.py` had never run, and DOC-GATE-1 found that `check_doc_references.py` reported success over an empty corpus. Both were ONE failure: success reported without establishing that the instrument had examined the authority it claimed to check. Ingestion is exactly where that failure would turn a superficially plausible artifact into scientific truth, so the same standard applies — an acceptance must name what it re-established, and an ingestion that verified nothing must not be able to report acceptance.",
+    "already_promised": "`represent/actuate.rs` states it under 'What this module deliberately does not do': executing yields what was observed and what the run verified, and 'whether that constitutes the measurement its key names, and how it is sealed into `SearchFacts`, is stage 6 — answered carefully there rather than cheaply here by a call to `MeasurementRegistry::record`.' This freeze is that promise being kept."
+  },
+
+  "what_exists_today_measured_before_designing": {
+    "MeasurementArtifact": "DOES NOT EXIST. `grep -rn MeasurementArtifact crates/ --include=*.rs` is empty at 1c0cf5e5. OPT-6 introduces it. Not to be confused with `actuate/artifacts.rs`, whose `DeclaredArtifacts` names where a container, corpus and overlay live on disk — a locator input, not an observation record. The near-collision is a naming hazard this transition must not walk into.",
+    "Observed": "`represent/actuate/executor.rs` — `key`, `observation: QualityBank`, `verified: VerifiedFacts`, `execution_note: String`. Deliberately thin: no verdict, no artifact identity, no completion status beyond the refusal type. That thinness is a decision to preserve, not a gap to fill by reflex.",
+    "VerifiedFacts": "`represent/measure/outcome.rs` — compiled layers, compiled projections, attribution-checked layers, seal-checked operands. This is what a run CHECKED, and is the natural raw material for re-establishment, but it is the executor's own account of itself and therefore evidence to be re-derived against, never an authority to be trusted.",
+    "SearchFacts": "`represent/state/snapshot.rs` — `graph`, `measurements: MeasurementRegistry`, `byte_ledgers`, `execution_cost`, `accounting`. Ingestion appends to `measurements`.",
+    "MeasurementRegistry::record": "`represent/state/key.rs` — ALREADY idempotent on an identical reading and ALREADY refuses a conflicting one for the same key, in its own words: 'the experiment is not reproducible and neither reading may silently win'. Arms 6 and 7 therefore have a load-bearing implementation already, and OPT-6 INHERITS them rather than reinventing them. What it must prove is that they still hold THROUGH the ingestion path, and that no ingestion route reaches the registry around them."
+  },
+
+  "findings_before_implementation": {
+    "OPT6-N1": "The conflicting-duplicate refusal is `VindexError::Parse(String)` — untyped, and its rendered form names the key via `key.short()` but NOT the two conflicting readings. Contract 5 requires a rendered refusal to preserve what failed, the expected authority, and the CONFLICTING OBSERVED authority where one exists. So arm 7 is satisfied in behaviour and NOT in contract-5 terms today. OPT-6 either types this refusal or records explicitly why the optimizer's rendered form may be thinner than contract 5 demands. Recorded before implementation so the answer cannot be chosen to suit whichever is cheaper."
+  },
+
+  "preregistered_arms": [
+    {"n": 1, "arm": "exact happy path", "expect": "accepted", "condition": "artifact matches state, bank, scale, instrument/protocol and observation shape", "must_go_red": "an artifact matching on every authority is refused"},
+    {"n": 2, "arm": "wrong key", "expect": "refuse", "must_go_red": "an artifact whose key names a different experiment is accepted, or is refused without naming BOTH expected and observed"},
+    {"n": 3, "arm": "wrong protocol declaration with a matching-looking digest or name", "expect": "refuse", "must_go_red": "protocol identity is established by resemblance rather than by the record's own declarations self-checking, which is contract 2"},
+    {"n": 4, "arm": "candidate bytes cannot establish the claimed representation state", "expect": "refuse", "must_go_red": "acceptance rests on a locator resolving a state id, which verifies NOTHING about contents. This is ACT1-N3, still open, and it is the arm most likely to be quietly dropped because closing it is the expensive one."},
+    {"n": 5, "arm": "stale source or container identity", "expect": "refuse", "must_go_red": "an artifact produced against a container the snapshot no longer describes is admitted"},
+    {"n": 6, "arm": "identical duplicate", "expect": "idempotent — NOT a second observation", "must_go_red": "ingesting the same artifact twice changes SearchFacts the second time"},
+    {"n": 7, "arm": "conflicting duplicate under the same MeasurementKey", "expect": "hard refusal, never latest-wins", "must_go_red": "either reading wins, or the refusal does not name both readings (see OPT6-N1)"},
+    {"n": 8, "arm": "malformed or incomplete artifact", "expect": "refuse BEFORE any mutation", "must_go_red": "SearchFacts is observably different after a refused ingestion"},
+    {"n": 9, "arm": "artifact tampered after creation, or mutated in round trip", "expect": "caught at ingestion", "must_go_red": "immutability is asserted by type alone and never tested against a mutated round trip"},
+    {"n": 10, "arm": "executor-provided verdict, rank or promotion fields", "expect": "structurally impossible, or ignored and proven ignored", "must_go_red": "a runner can smuggle a conclusion into facts. Preferred disposition is structural impossibility — a field that cannot be expressed cannot be ignored by accident."}
+  ],
+
+  "inherited_not_redefined": {
+    "contract_5": "`docs/optimizer-contract-index.md` contract 5 already governs refusal discipline: construction-site truth, typed-refusal truth, and rendered actionable truth. OPT-6 inherits it for a nastier set of refusals rather than defining a new error philosophy. Every arm above that refuses is a contract 5 obligation, and its rendered form is part of the arm, not a courtesy.",
+    "contracts_1_to_4": "Selection, protocol, preparation and execution identity are already frozen and enforced. Ingestion re-establishes them independently; it does not re-derive them by trusting that the forward path was correct."
+  },
+
+  "out_of_scope": [
+    "OPT-7, the closed loop. Ingestion admits one observation; looping is composition on top of it.",
+    "GATE-NONVACUOUS-1 — zero-scan guards for `check_doc_links.py` and `check_contract_index.py`. Real CI debt, measured rather than blocking, and it must not delay ingestion.",
+    "LOWERING-PLUGIN-1 L3/L4/L5, which proceed independently. The convergence point — a provider-neutral closed-loop experiment — is after both, not inside either.",
+    "Any change to what an executor observes. OPT-6 decides what may be BELIEVED, not what is measured."
+  ]
+}
