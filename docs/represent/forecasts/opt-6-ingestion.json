@@ -26,7 +26,13 @@
   },
 
   "findings_before_implementation": {
-    "OPT6-N1": "The conflicting-duplicate refusal is `VindexError::Parse(String)` — untyped, and its rendered form names the key via `key.short()` but NOT the two conflicting readings. Contract 5 requires a rendered refusal to preserve what failed, the expected authority, and the CONFLICTING OBSERVED authority where one exists. So arm 7 is satisfied in behaviour and NOT in contract-5 terms today. OPT-6 either types this refusal or records explicitly why the optimizer's rendered form may be thinner than contract 5 demands. Recorded before implementation so the answer cannot be chosen to suit whichever is cheaper."
+    "OPT6-N1": "The conflicting-duplicate refusal is `VindexError::Parse(String)` — untyped, and its rendered form names the key via `key.short()` but NOT the two conflicting readings. Contract 5 requires a rendered refusal to preserve what failed, the expected authority, and the CONFLICTING OBSERVED authority where one exists. So arm 7 is satisfied in behaviour and NOT in contract-5 terms today. OPT-6 either types this refusal or records explicitly why the optimizer's rendered form may be thinner than contract 5 demands. Recorded before implementation so the answer cannot be chosen to suit whichever is cheaper.",
+    "OPT6-N1_resolution": {
+      "date": "2026-09-10",
+      "decided": "Ingestion receives NO exemption from optimizer contract 5. The conflicting-duplicate refusal must become typed, and its rendered form must preserve the key plus both conflicting observations and the authorities needed to diagnose the conflict. The implementation may NOT satisfy arm 7 by retaining the existing `VindexError::Parse(String)` form.",
+      "why_this_is_a_tightening_and_not_a_renegotiation": "It REMOVES an allowed outcome, and it removes it before anyone has attempted either outcome. The original entry offered a fork — type it, or record why the optimizer's rendered form may be thinner. Both were open. Deciding on architectural grounds while no implementation exists is strictly stronger provenance than deciding once one does, because at that point the cheaper branch of the fork is known and the decision can no longer be shown to be independent of it.",
+      "the_ground": "A duplicate conflict is the case where showing BOTH readings is most useful, so it is the worst possible place to grant contract 5 an exemption. Contract 5 is already frozen and enforced (#467); nothing about ingestion argues for a weaker standard than the path that produced the observation."
+    }
   },
 
   "preregistered_arms": [
@@ -47,6 +53,13 @@
     "contracts_1_to_4": "Selection, protocol, preparation and execution identity are already frozen and enforced. Ingestion re-establishes them independently; it does not re-derive them by trusting that the forward path was correct."
   },
 
+  "anti_cheat": {
+    "what_it_is_not": "NOT an eleventh acceptance arm. The acceptance claim stays 'all scientific writes pass deterministic ingestion'. This exists to prove nobody satisfied the happy-path arms while leaving an old bypass somewhere else in the estate.",
+    "the_claim_it_guards": "No production route reaches `MeasurementRegistry::record` except through ingestion.",
+    "why_a_test_cannot_establish_it": "It is a whole-estate NEGATIVE claim. A behavioural test exercises the routes its author thought of, so it can only ever demonstrate that the known path works — never that an unknown one is absent. A closure claim resting on the author having remembered every caller is not closure.",
+    "the_shape": "The L5 genericity pattern. A scan over production source (every non-test `.rs` under `crates/*/src`) enumerates every callsite that records into the registry, and every one must have an allowed ingestion owner. An unexpected callsite FAILS. Positive control: the same scanner must deliberately find a callsite known to exist, so a scan that has silently stopped matching cannot pass by finding nothing — which is the DOC-GATE-1 failure in a different costume.",
+    "the_allowlist_must_be_semantic": "Exact permitted module and function locations, not a directory prefix. Under a broad allowlist, moving a recording call from one file to another inside the allowed tree stays silently permitted; under an exact one, the move itself is visible and must be re-justified."
+  },
   "out_of_scope": [
     "OPT-7, the closed loop. Ingestion admits one observation; looping is composition on top of it.",
     "GATE-NONVACUOUS-1 — zero-scan guards for `check_doc_links.py` and `check_contract_index.py`. Real CI debt, measured rather than blocking, and it must not delay ingestion.",
