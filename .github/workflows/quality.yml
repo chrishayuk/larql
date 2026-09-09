@@ -10,7 +10,8 @@
 #   deny        — licences, advisories, sources, bans            (blocking)
 #   msrv        — the declared rust-version really compiles      (blocking)
 #   proto-lint  — buf lint over the four gRPC schemas            (blocking)
-#   doc-links   — every relative Markdown link resolves          (blocking)
+#   docs-integrity — Markdown links resolve, code references resolve,
+#                   and contract indexes name real tests       (blocking)
 #
 # Mutation testing lives in `mutants.yml`, not here: it is informational,
 # and a job cancelled by `timeout-minutes` concludes the whole run as
@@ -203,8 +204,8 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
         run: cargo check --workspace --all-targets --exclude larql-compute-metal --locked
 
-  doc-links:
-    name: doc links
+  docs-integrity:
+    name: documentation integrity
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -241,6 +242,26 @@ jobs:
       # whether the contracts still hold.
       - name: Contract indexes name tests that exist
         run: python3 scripts/check_contract_index.py
+
+      # The reference checker above matched SKIP_DIRS against the ABSOLUTE
+      # directory path, and SKIP_DIRS contains `/.claude/`. Every worktree in
+      # this repository lives under `.claude/worktrees/`, so ROOT matched its
+      # own prefix, the walk was pruned at the first directory, and the gate
+      # printed "no broken references" over an empty corpus and exited 0.
+      # Sound here -- Actions checks out clean -- and vacuous in every local
+      # pre-push run, which is the worse failure: it fails OPEN in the one
+      # place a human reads it before pushing.
+      #
+      # `selftest` carries the DOC-GATE-1 controls, and each is REACHABLE:
+      # run against the pre-repair script they fail, reproducing the bug in
+      # miniature (ordinary checkout 1 reference / 1 document, `.claude`
+      # worktree 0 / 0). The strongest is equivalence rather than non-zero --
+      # equal counts from both paths, since a partial-tree bug would still
+      # report a confident number.
+      #
+      # No network, no repository walk: synthetic fixtures in a temp dir.
+      - name: Documentation instrument selftest
+        run: python3 scripts/check_doc_references.py selftest
 
   ci-instrument:
     name: ci throughput instrument
