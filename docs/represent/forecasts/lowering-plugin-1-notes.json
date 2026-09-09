@@ -290,6 +290,37 @@
         "scripts/check_contract_index.py (71 named tests), scripts/check_doc_links.py"
       ],
       "deviations_from_forecast": "None. The wave stayed inside the frozen design: no selection change, no capability work, no Metal migration, kernel-plane count 33. Two things were added beyond the seven controls and are recorded above rather than in the forecast: `ensure_lowered_by` at the execution seam (kept because it held with no existing assertion changed) and `PreparedVindex3::with_lowerings`, without which no production-path witness of invalidation was possible."
+    },
+    "L5": {
+      "name": "hostile external provider",
+      "status": "design frozen before implementation",
+      "branch": "lowering-l5",
+      "base": "L4 (`lowering-l4`) on L3 on L2 (#466)",
+      "date": "2026-09-09",
+      "the_question": "Can a lowering provider this build neither ships nor names go the whole way — register → candidate derivation → selection → accounting → pin → preparation → authority validation → execute — with no provider-specific branch in core, and the kernel plane still closed?",
+      "rule": "Frozen before implementation, as L3 and L4 were. What the provider may borrow from the crate is decided HERE, so a proof that needed an internal cannot be quietly re-described as a proof that did not.",
+      "design_frozen_before_implementation": {
+        "where": "`crates/larql-vindex/tests/external_lowering_provider/`. An integration test is a separate crate in cargo's model, so it sees only what `larql-vindex` exports — the same standard the codec plane's proof met (`external_codec_provider.rs`, `external_attested_provider/`), where anything the proof had needed from the crate's internals would have been a leak in the contract.",
+        "identity": "`outside-lowering/v1`, spelled in the test crate and nowhere that ships. The genericity scan is over that family, the provider's name and its own constants.",
+        "shape": "The provider owns its candidate derivation, its selection, its refusal and its projection kernel, and borrows the reference oracle for the glue between projections — the same composition the in-tree device provider takes with the production CPU glue (`exec/device.rs`), and the shape a real out-of-tree provider starts life in. Borrowing is through exported API, which is the point: an external provider is allowed to USE the crate; core is not allowed to know it.",
+        "reuses_an_existing_realization": "Per F3 it pins forms that already exist — the codec-declared direct plan when the facts declare one, else the universal decode — and adds no `PhysicalProjectionPlan`, `WeightFormat`, `WeightSlice`, `WeightRows` or `LoadedWeight` variant. The kernel-plane count stays 33.",
+        "what_it_must_borrow_and_that_is_a_finding": "`SelectionReason` is a closed vocabulary an external provider must choose from. Whether every arm it needs is provider-agnostic is measured, not assumed, and recorded either way."
+      },
+      "controls_frozen": [
+        "the journey, in one test on a container this build wrote: register → candidates → selection → accounting → pin → preparation → authority validation → execute",
+        "the arithmetic is the provider's own: a variant of it that computes differently produces different logits, so the numbers come from the external provider and not from a shipped path shadowing it",
+        "core never names it: a source scan over every non-test `.rs` under `crates/*/src` for the family, the name and the provider's constants — with the positive control that the same scan finds a family this build DOES ship",
+        "the pin is its own: every record says `outside-lowering/v1`, and L4's invalidation refuses by name once the provider is gone, with the shipped registry NOT a fallback",
+        "the accounting prices what IT selected, not what a shipped provider would have selected for the same operands",
+        "its refusal is its own: facts that admit no realization are refused naming the candidates it considered, before any byte, with nothing underneath constructing a provider to answer anyway"
+      ],
+      "kernel_plane_files_expected": 33,
+      "out_of_scope": [
+        "capability matching (F2)",
+        "opening the kernel vocabulary (F3 — the whole point is that the first external provider does not need it)",
+        "Metal-lowered migration (F1)",
+        "any change to selection, accounting or execution semantics in core"
+      ]
     }
   }
 }
