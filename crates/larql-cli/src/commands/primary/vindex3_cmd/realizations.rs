@@ -25,7 +25,6 @@ use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{
     select_realizations_within, ExecutionSlice, PreparedOperands,
 };
-use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::realization::SelectionReason;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
@@ -86,13 +85,9 @@ fn bind_and_reconcile(
     budget: &ResidencyBudget,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
-    let ops = PreparedOperands::load_within(
-        plan,
-        store,
-        &ProductionBackend::new(),
-        ExecutionSlice::Full,
-        budget,
-    )?;
+    let (lowerings, identity) = super::prepare::lowerings_for(super::ExecBackend::Production)?;
+    let backend = lowerings.provider_shared(&identity)?;
+    let ops = PreparedOperands::load_within(plan, store, &backend, ExecutionSlice::Full, budget)?;
     let bound_in = started.elapsed().as_secs_f64();
     let reconciled = ops.reconcile(plan, store.into())?;
     println!("bound, from the container:");
@@ -127,7 +122,8 @@ pub(super) fn report_through(
     store: &OperandStore,
     budget: &ResidencyBudget,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let backend = ProductionBackend::new();
+    let (lowerings, identity) = super::prepare::lowerings_for(super::ExecBackend::Production)?;
+    let backend = lowerings.provider_shared(&identity)?;
     let planned = plan.planned_operands().len();
     println!("planned operands: {planned}");
     println!("budget: {}", describe(budget));

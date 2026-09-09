@@ -26,9 +26,17 @@
 //! thing that could be falsified.
 
 use std::fmt;
+use std::sync::Arc;
 
 use super::backend::PlanBackend;
 use crate::error::VindexError;
+
+/// A provider as a registry hands it out: shared, so a runtime can own
+/// the provider it resolved while the registry keeps holding it.
+/// `PlanBackend` is implemented for `Arc<T>` by delegating every method,
+/// so a shared handle never falls back to a trait default the provider
+/// underneath overrides.
+pub type SharedProvider = Arc<dyn PlanBackend + Send>;
 
 /// A lowering provider's semantic identity: family and revision.
 #[derive(
@@ -48,6 +56,31 @@ impl LoweringIdentity {
             family: family.into(),
             revision,
         }
+    }
+
+    /// The reference oracle's identity, read from the provider's own
+    /// constants — no caller spells a family.
+    pub fn reference() -> Self {
+        Self::new(
+            super::reference::IDENTITY_FAMILY,
+            super::reference::IDENTITY_REVISION,
+        )
+    }
+
+    /// The production CPU executor's identity.
+    pub fn cpu_production() -> Self {
+        Self::new(
+            super::production::IDENTITY_FAMILY,
+            super::production::IDENTITY_REVISION,
+        )
+    }
+
+    /// The device-over-`MatMul` provider's identity.
+    pub fn device_matmul() -> Self {
+        Self::new(
+            super::device::IDENTITY_FAMILY,
+            super::device::IDENTITY_REVISION,
+        )
     }
 
     /// Refuse an identity that could not key a registry or name a
@@ -175,7 +208,7 @@ impl From<LoweringError> for VindexError {
 /// side by side has two providers to name.
 #[derive(Default)]
 pub struct LoweringRegistry {
-    providers: Vec<Box<dyn PlanBackend + Send>>,
+    providers: Vec<SharedProvider>,
 }
 
 impl fmt::Debug for LoweringRegistry {
@@ -202,7 +235,7 @@ impl LoweringRegistry {
         if self.providers.iter().any(|p| p.identity() == identity) {
             return Err(LoweringError::Duplicate { identity });
         }
-        self.providers.push(provider);
+        self.providers.push(Arc::from(provider));
         Ok(self)
     }
 
@@ -221,14 +254,34 @@ impl LoweringRegistry {
     /// The provider `identity` names, or a refusal naming every provider
     /// that is registered.
     pub fn provider(&self, identity: &LoweringIdentity) -> Result<&dyn PlanBackend, LoweringError> {
+        self.provider_shared(identity).map(|_| ()).and_then(|()| {
+            self.providers
+                .iter()
+                .find(|p| p.identity() == *identity)
+                .map(|p| p.as_ref() as &dyn PlanBackend)
+                .ok_or_else(|| self.unregistered(identity))
+        })
+    }
+
+    /// The provider `identity` names as a shared handle a caller can own
+    /// — a runtime, a session, a server holding the model for its
+    /// lifetime — or the same refusal as [`Self::provider`].
+    pub fn provider_shared(
+        &self,
+        identity: &LoweringIdentity,
+    ) -> Result<SharedProvider, LoweringError> {
         self.providers
             .iter()
             .find(|p| p.identity() == *identity)
-            .map(|p| p.as_ref() as &dyn PlanBackend)
-            .ok_or_else(|| LoweringError::Unregistered {
-                identity: identity.clone(),
-                registered: self.identities(),
-            })
+            .cloned()
+            .ok_or_else(|| self.unregistered(identity))
+    }
+
+    fn unregistered(&self, identity: &LoweringIdentity) -> LoweringError {
+        LoweringError::Unregistered {
+            identity: identity.clone(),
+            registered: self.identities(),
+        }
     }
 
     /// Every registered provider of `family`, at every revision, in

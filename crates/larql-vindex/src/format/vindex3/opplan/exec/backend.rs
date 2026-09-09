@@ -755,6 +755,93 @@ pub struct DispatchStats {
     pub submissions: u64,
 }
 
+/// A shared handle IS the provider it holds: every method, the provided
+/// ones included, goes to the provider underneath. Spelled out rather
+/// than left to defaults on purpose — a `select` or `dense_projector`
+/// that fell back to the trait's default here would quietly hand a
+/// device provider the reference oracle's selection.
+impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        (**self).identity()
+    }
+
+    fn dispatch_stats(&self) -> Option<DispatchStats> {
+        (**self).dispatch_stats()
+    }
+
+    fn select(
+        &self,
+        operand: &PlannedOperand,
+        facts: &RepresentationFacts,
+    ) -> Result<Selection, Box<SelectionRefusal>> {
+        (**self).select(operand, facts)
+    }
+
+    fn dense_projector(&self) -> &dyn super::gated_delta::DenseProjections {
+        (**self).dense_projector()
+    }
+
+    fn prepare(&self, weights: &[WeightSlice<'_>]) {
+        (**self).prepare(weights)
+    }
+
+    fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {
+        (**self).embed(table, hidden, token, scale)
+    }
+
+    fn norm(&self, call: NormCall<'_>) -> Vec<f32> {
+        (**self).norm(call)
+    }
+
+    fn project(&self, call: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
+        (**self).project(call)
+    }
+
+    fn attention(&self, call: AttentionCall<'_>) -> Result<AttentionOut, VindexError> {
+        (**self).attention(call)
+    }
+
+    fn attention_step(&self, call: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step(call)
+    }
+
+    fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        (**self).ffn(call)
+    }
+
+    fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
+        (**self).ffn_many(call)
+    }
+
+    fn scale_row(&self, row: &mut [f32], scale: f32) {
+        (**self).scale_row(row, scale)
+    }
+
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        (**self).routed_ffn(call)
+    }
+
+    fn output_head(
+        &self,
+        projection: WeightSlice<'_>,
+        vocab: usize,
+        hidden: usize,
+        x: &[f32],
+        multiplier: Option<f64>,
+        softcapping: Option<f32>,
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).output_head(projection, vocab, hidden, x, multiplier, softcapping)
+    }
+
+    fn residual_add(&self, acc: &mut [f32], delta: &[f32]) {
+        (**self).residual_add(acc, delta)
+    }
+}
+
 /// A provider names itself by presentation name and identity, so a
 /// refusal or a test can say which one it was talking about.
 impl std::fmt::Debug for dyn PlanBackend + '_ {

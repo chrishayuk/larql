@@ -55,7 +55,7 @@ pub(crate) enum Backend {
         #[allow(dead_code)]
         path: PathBuf,
         runtime: larql_inference::Vindex3Runtime<
-            larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend,
+            larql_vindex::format::vindex3::opplan::exec::lowering::SharedProvider,
         >,
         /// The container's tokenizer, when it carries one — the text
         /// capability. INFER requires it; USE/STATS/SHOW do not.

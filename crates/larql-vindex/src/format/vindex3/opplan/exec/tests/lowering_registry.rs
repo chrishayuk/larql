@@ -10,18 +10,22 @@
 //! production provider, handed to the carried path, refuses rather than
 //! constructing the provider anyway.
 
-use super::super::backend::{PlanBackend, WeightFormat, WeightFormats};
+use super::super::backend::{PlanBackend, ProjectCall, WeightFormat, WeightFormats, WeightSlice};
 use super::super::device::DevicePlanBackend;
-use super::super::lowering::{LoweringError, LoweringIdentity, LoweringRegistry};
+use super::super::lowering::{LoweringError, LoweringIdentity, LoweringRegistry, SharedProvider};
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::production::{self, ProductionBackend};
 use super::super::reference::{self, ReferenceBackend};
 use super::super::{execute_plan, execute_plan_via};
-use super::lowering_identity::Relabelled;
+use super::lowering_identity::{Relabelled, RELABELLED_MARK, RELABELLED_SUBMISSIONS};
+use crate::error::VindexError;
 use crate::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
+use crate::format::vindex3::opplan::exec::realization::RepresentationFacts;
+use crate::format::vindex3::opplan::planned::Operation;
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
+use crate::format::vindex3::represent::codec::CodecRegistry;
 use larql_compute::cpu::CpuBackend;
 
 const SCRATCH_FAMILY: &str = "scratch-provider";
@@ -278,6 +282,151 @@ fn the_carried_path_refuses_an_absent_provider_rather_than_constructing_one() {
     .to_string();
     assert!(err.contains("cpu-production/v1"), "{err}");
     assert_eq!(fixture.store.load_count(), 0);
+}
+
+/// A registry says what it holds. Empty until something is registered,
+/// and its `Debug` is the identities it holds, in registration order —
+/// what a caller sees when it prints the authority it is carrying.
+#[test]
+fn an_empty_registry_says_so_and_debug_lists_what_it_holds() {
+    let empty = LoweringRegistry::new();
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+
+    let shipped = LoweringRegistry::shipped();
+    assert!(!shipped.is_empty());
+    let rendered = format!("{shipped:?}");
+    for identity in shipped.identities() {
+        assert!(
+            rendered.contains(&identity.family),
+            "{identity} is registered and unlisted: {rendered}"
+        );
+    }
+    assert!(
+        rendered.find("reference").unwrap() < rendered.find("cpu-production").unwrap(),
+        "registration order: {rendered}"
+    );
+
+    // An identity that could not be keyed converts to the parse error it
+    // carried rather than to a second wrapping of it: the caller sees
+    // what is wrong with the identity, not that a registry was involved.
+    let invalid = LoweringRegistry::new()
+        .register(Box::new(Relabelled::new("x", "not a family", 1)))
+        .unwrap_err();
+    let carried: VindexError = invalid.into();
+    assert!(
+        carried.to_string().contains("` `") && !carried.to_string().contains("already"),
+        "{carried}"
+    );
+}
+
+/// **A shared handle IS the provider it wraps.** L3 hands registry
+/// entries out as `Arc<dyn PlanBackend + Send>` so a runtime can own what
+/// it resolved, and `PlanBackend` is implemented for `Arc<T>` by
+/// delegating every method. Held here rather than assumed: a whole
+/// traversal through the handle — embed, norm, attention, feed-forward,
+/// the head, the residual write — is bit-identical to the same provider
+/// called directly, and the methods a dense stack does not reach are
+/// asked directly beside it.
+#[test]
+fn a_shared_handle_is_the_provider_it_wraps() {
+    let fixture = dense();
+    let registry = LoweringRegistry::shipped();
+    let shared = registry.provider_shared(&production_id()).unwrap();
+    let direct = ProductionBackend::new();
+
+    assert_eq!(shared.name(), direct.name());
+    assert_eq!(shared.identity(), direct.identity());
+    assert_eq!(shared.dispatch_stats(), direct.dispatch_stats());
+
+    let through = execute_plan(&fixture.plan, &fixture.store, &TOKENS, &shared).unwrap();
+    let beside = execute_plan(&fixture.plan, &fixture.store, &TOKENS, &direct).unwrap();
+    assert_eq!(
+        bits(through.logits.as_deref().unwrap()),
+        bits(beside.logits.as_deref().unwrap()),
+        "the handle executes what the provider executes"
+    );
+    assert_eq!(through.final_hidden(), beside.final_hidden());
+
+    // The projection entry point, which a dense softmax stack never
+    // reaches through `project` — asked of both, compared.
+    let weight = [1.0f32, 2.0, 3.0, 4.0];
+    let x = [1.0f32, -1.0];
+    let call = || ProjectCall {
+        weight: WeightSlice::F32(&weight),
+        out_dim: 2,
+        in_dim: 2,
+        x: &x,
+    };
+    assert_eq!(
+        shared.project(call()).unwrap(),
+        direct.project(call()).unwrap()
+    );
+
+    // The provided methods, which are the ones a delegation could quietly
+    // drop: a selection, the scalar row scale, the residency hint, and
+    // the dense projector the recurrences dispatch through.
+    let planned = fixture
+        .plan
+        .planned_operands()
+        .into_iter()
+        .find(|p| matches!(p.operation, Operation::Project(_)))
+        .expect("the fixture plans projections");
+    let facts = RepresentationFacts::resolve_in(CodecRegistry::builtin(), "F32");
+    assert_eq!(
+        shared.select(&planned, &facts).unwrap(),
+        direct.select(&planned, &facts).unwrap()
+    );
+    let (mut a, mut b) = ([1.0f32, 2.0], [1.0f32, 2.0]);
+    shared.scale_row(&mut a, 3.0);
+    direct.scale_row(&mut b, 3.0);
+    assert_eq!(a, b);
+    shared.prepare(&[WeightSlice::F32(&weight)]);
+    let _ = shared.dense_projector();
+}
+
+/// And the sharper half of the same claim: a handle must never fall back
+/// to a trait DEFAULT for a provider that overrode it. `Relabelled`
+/// overrides two provided methods with answers no default produces, and
+/// both survive the trip through the `Arc`.
+#[test]
+fn a_shared_handle_never_falls_back_to_a_trait_default() {
+    let identity = LoweringIdentity::new(SCRATCH_FAMILY, 1);
+    let registry = LoweringRegistry::new()
+        .register(scratch("marked", 1))
+        .unwrap();
+    let shared = registry.provider_shared(&identity).unwrap();
+
+    let mut row = [1.0f32, 2.0, 3.0];
+    shared.scale_row(&mut row, 2.0);
+    assert_eq!(
+        row, [RELABELLED_MARK; 3],
+        "the handle answered with the trait default instead of the provider's own scale_row"
+    );
+    assert_eq!(
+        shared.dispatch_stats().map(|s| s.submissions),
+        Some(RELABELLED_SUBMISSIONS),
+        "the handle answered `None` — the trait default — for a provider that reports stats"
+    );
+
+    // `prepare` returns nothing, so the only way to see whether the
+    // handle delegated it or swallowed it into the trait's empty default
+    // is a provider that records being asked.
+    let recording = std::sync::Arc::new(Relabelled::new("recording", SCRATCH_FAMILY, 2));
+    let handle: SharedProvider = recording.clone();
+    handle.prepare(&[WeightSlice::F32(&[1.0, 2.0])]);
+    assert_eq!(
+        recording.prepares(),
+        1,
+        "the handle swallowed `prepare` instead of delegating it"
+    );
+
+    // The borrowed form the carried path uses answers the same way, so
+    // the two ways of holding one provider cannot disagree.
+    let borrowed = registry.provider(&identity).unwrap();
+    let mut row = [1.0f32, 2.0, 3.0];
+    borrowed.scale_row(&mut row, 2.0);
+    assert_eq!(row, [RELABELLED_MARK; 3]);
 }
 
 /// And the positive control: through a registry that holds the provider,
