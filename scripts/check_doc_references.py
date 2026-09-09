@@ -46,8 +46,11 @@ from __future__ import annotations
 import collections
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = ("/target/", "/.git/", "/.claude/", "/.venv/", "/node_modules/", "/coverage/")
@@ -81,15 +84,30 @@ PLANNED = re.compile(
 )
 
 
-def index_files() -> tuple[dict, dict]:
+def skipped(dirpath: str, root: str) -> bool:
+    """Is this directory one of SKIP_DIRS, RELATIVE to the repository root?
+
+    Relative is the whole point. Matching SKIP_DIRS against the absolute path
+    means a checkout that merely LIVES under one of these names matches on its
+    own prefix, every directory beneath it matches too, and the walk yields
+    nothing -- while the caller reports success over an empty corpus. Every
+    worktree in this repository lives under `.claude/worktrees/`, so that was
+    the state of every local run until DOC-GATE-1.
+    """
+    rel = os.path.relpath(dirpath, root)
+    probe = "/" if rel == "." else "/" + rel.replace(os.sep, "/") + "/"
+    return any(s in probe for s in SKIP_DIRS)
+
+
+def index_files(root: str = ROOT) -> tuple[dict, dict]:
     by_rel: dict[str, str] = {}
     by_base: dict[str, list[str]] = collections.defaultdict(list)
-    for dirpath, dirnames, filenames in os.walk(ROOT):
-        if any(s in dirpath + "/" for s in SKIP_DIRS):
+    for dirpath, dirnames, filenames in os.walk(root):
+        if skipped(dirpath, root):
             dirnames[:] = []
             continue
         for name in filenames:
-            rel = os.path.relpath(os.path.join(dirpath, name), ROOT)
+            rel = os.path.relpath(os.path.join(dirpath, name), root)
             by_rel[rel] = os.path.join(dirpath, name)
             by_base[name].append(rel)
     return by_rel, by_base
@@ -117,7 +135,7 @@ def cargo_targets(kind: str) -> dict[str, set[str]]:
     """Map target name -> owning crates, from Cargo.toml plus conventions."""
     owners: dict[str, set[str]] = collections.defaultdict(set)
     for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, "crates")):
-        if any(s in dirpath + "/" for s in SKIP_DIRS):
+        if skipped(dirpath, ROOT):
             dirnames[:] = []
             continue
         if "Cargo.toml" not in filenames:
@@ -135,7 +153,104 @@ def cargo_targets(kind: str) -> dict[str, set[str]]:
     return owners
 
 
+def _fixture(root: Path, *, with_docs: bool = True, with_broken: bool = False) -> None:
+    """A miniature repository: one real reference, and traps in skipped dirs."""
+    (root / "docs").mkdir(parents=True, exist_ok=True)
+    src = root / "crates" / "larql-x" / "src"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / "lib.rs").write_text("pub fn f() {}\n")
+    # Each of these carries a reference that WOULD be reported broken if the
+    # directory were examined -- so control B needs no bookkeeping: if skipping
+    # regresses, the run fails.
+    for name in ("target", ".git", "node_modules", ".venv", "coverage", ".claude"):
+        d = root / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "trap.md").write_text("cites `crates/larql-x/src/nowhere.rs`\n")
+    if with_docs:
+        (root / "docs" / "real.md").write_text("cites `crates/larql-x/src/lib.rs`\n")
+    if with_broken:
+        (root / "docs" / "bad.md").write_text("cites `crates/larql-x/src/gone.rs`\n")
+
+
+def _run_in(root: Path) -> tuple[int, str]:
+    """Run THIS script, as its own entry point, against a fixture root."""
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    shutil.copy(os.path.abspath(__file__), scripts / "check_doc_references.py")
+    done = subprocess.run(
+        [sys.executable, str(scripts / "check_doc_references.py"), "--strict"],
+        capture_output=True, text=True, check=False,
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+def _counts(output: str) -> tuple[int, int] | None:
+    found = re.search(r"checked (\d+) references across (\d+) documents", output)
+    return (int(found.group(1)), int(found.group(2))) if found else None
+
+
+def selftest() -> int:
+    """The DOC-GATE-1 controls. Each proves a verdict is REACHABLE."""
+    results: list[tuple[bool, str]] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # 1 + 3. The same fixture at an ordinary path and beneath
+        # `.claude/worktrees/`. Identical corpus, or the skip semantics are
+        # still absolute. Non-zero, or both are vacuous and "identical" is
+        # satisfied by 0 == 0.
+        ordinary = base / "ordinary"
+        worktree = base / ".claude" / "worktrees" / "wt"
+        _fixture(ordinary)
+        _fixture(worktree)
+        rc_o, out_o = _run_in(ordinary)
+        rc_w, out_w = _run_in(worktree)
+        got_o, got_w = _counts(out_o), _counts(out_w)
+        results.append((rc_o == 0, f"ordinary checkout passes (rc={rc_o})"))
+        results.append((rc_w == 0, f"`.claude` worktree passes (rc={rc_w})"))
+        results.append(
+            (got_o is not None and got_o == got_w,
+             f"same corpus from both paths: ordinary={got_o} worktree={got_w}")
+        )
+        results.append(
+            (got_w is not None and got_w[1] > 0,
+             f"the worktree run examined documents, not zero: {got_w}")
+        )
+
+        # 2. A corpus with no documents is a failure, not a green.
+        empty = base / "empty"
+        _fixture(empty, with_docs=False)
+        rc_e, _ = _run_in(empty)
+        results.append((rc_e != 0, f"zero documents examined FAILS (rc={rc_e})"))
+
+        # 5. The traps in skipped directories were not examined -- if they
+        # had been, `nowhere.rs` would have been reported and rc would be 1.
+        results.append(
+            (rc_w == 0, "skipped directories stayed skipped from a worktree")
+        )
+
+        # And detection still works, so none of the above passes by being blind.
+        broken = base / "broken"
+        _fixture(broken, with_broken=True)
+        rc_b, out_b = _run_in(broken)
+        results.append(
+            (rc_b != 0 and "gone.rs" in out_b,
+             f"a genuinely broken reference still FAILS (rc={rc_b})")
+        )
+
+    for ok, label in results:
+        print(f"  {'ok  ' if ok else 'FAIL'}  {label}")
+    bad = [label for ok, label in results if not ok]
+    if bad:
+        print(f"\n{len(bad)} of {len(results)} DOC-GATE-1 controls failed", file=sys.stderr)
+        return 1
+    print(f"\nall {len(results)} DOC-GATE-1 controls hold")
+    return 0
+
+
 def main() -> int:
+    if "selftest" in sys.argv[1:]:
+        return selftest()
     strict = "--strict" in sys.argv
     scope = [a for a in sys.argv[1:] if not a.startswith("-")]
 
@@ -164,6 +279,20 @@ def main() -> int:
         if scope and not any(rel == s or rel.startswith(s.rstrip("/") + "/") for s in scope):
             continue
         docs.append(rel)
+
+    # DOC-GATE-1 condition 2. A gate that examined nothing has not passed;
+    # it has failed to run. Reporting "no broken references" over an empty
+    # corpus is the exact shape of the bug this guard exists to make
+    # impossible to reintroduce, whatever future path or filter causes it.
+    if not docs:
+        where = f" matching {scope}" if scope else ""
+        print(
+            f"examined 0 documents{where} -- the corpus is empty, so this is "
+            "not a pass. Either the scope matches nothing, or the walk is "
+            "being pruned before it starts.",
+            file=sys.stderr,
+        )
+        return 2
 
     findings: list[tuple[str, int, str, str]] = []
     counts: collections.Counter = collections.Counter()
@@ -245,6 +374,14 @@ def main() -> int:
                     findings.append((rel, num, "env: not read anywhere", m.group(1)))
 
     checked = sum(counts.values())
+    if checked == 0 and not scope:
+        print(
+            f"examined {len(docs)} documents and extracted 0 references -- a "
+            "whole-repository run cannot legitimately find none, so the "
+            "extractors are not matching. Not a pass.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"checked {checked} references across {len(docs)} documents")
     for rule, n in sorted(counts.items()):
         print(f"  {rule:<8} {n}")
