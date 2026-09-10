@@ -545,6 +545,9 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     // nothing here falls back to another realization. The registry is
     // the image's own — the store's — never a built-in default.
     ops.ensure_providers_in(ops.registry())?;
+    // And the pin's OTHER authority: the provider executing these pins
+    // is the provider that decided them (LOWERING-PLUGIN-1, L4).
+    ops.ensure_lowered_by(backend)?;
     // A one-shot forward owns whatever continuation state the plan needs.
     //
     // For a wholly-softmax stack that is nothing: `None` keeps the

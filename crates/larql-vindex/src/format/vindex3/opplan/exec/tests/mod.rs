@@ -59,6 +59,7 @@ mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_two_layer;
 mod lowering_identity;
+mod lowering_pin;
 mod lowering_registry;
 mod mamba2_exec;
 #[cfg(all(feature = "gpu", target_os = "macos"))]

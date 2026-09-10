@@ -357,7 +357,11 @@ fn an_external_codec_executes_through_registration_alone_with_the_shipped_select
     assert_eq!(external_records.len(), candidate.relabelled.len());
     for r in &external_records {
         assert_eq!(r.representation, LABEL, "{r:?}");
-        assert_eq!(r.provider.as_ref(), Some(&ExternalF32.identity()), "{r:?}");
+        assert_eq!(
+            r.codec_provider.as_ref(),
+            Some(&ExternalF32.identity()),
+            "{r:?}"
+        );
     }
     // And the bytes really are the shipped image: each relabelled tensor
     // is stored at exactly f32's width.

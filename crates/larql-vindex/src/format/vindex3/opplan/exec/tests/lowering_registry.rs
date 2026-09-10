@@ -28,9 +28,9 @@ use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
 use crate::format::vindex3::represent::codec::CodecRegistry;
 use larql_compute::cpu::CpuBackend;
 
-const SCRATCH_FAMILY: &str = "scratch-provider";
+pub(super) const SCRATCH_FAMILY: &str = "scratch-provider";
 /// A prompt over the dense fixture's 128-token vocabulary.
-const TOKENS: [u32; 5] = [3, 17, 28, 0, 11];
+pub(super) const TOKENS: [u32; 5] = [3, 17, 28, 0, 11];
 
 fn reference_id() -> LoweringIdentity {
     LoweringIdentity::new(reference::IDENTITY_FAMILY, reference::IDENTITY_REVISION)
@@ -212,13 +212,13 @@ fn the_shipped_registry_is_a_value_and_one_instance_per_identity() {
 
 // ── F4: the carried path constructs nothing ──────────────────────────
 
-struct Fixture {
+pub(super) struct Fixture {
     _tmp: tempfile::TempDir,
-    plan: ComponentOpPlan,
-    store: OperandStore,
+    pub(super) plan: ComponentOpPlan,
+    pub(super) store: OperandStore,
 }
 
-fn dense() -> Fixture {
+pub(super) fn dense() -> Fixture {
     let tmp = tempfile::tempdir().unwrap();
     let checkpoint = tmp.path().join("ckpt");
     std::fs::create_dir_all(&checkpoint).unwrap();
@@ -237,7 +237,7 @@ fn dense() -> Fixture {
     }
 }
 
-fn bits(v: &[f32]) -> Vec<u32> {
+pub(super) fn bits(v: &[f32]) -> Vec<u32> {
     v.iter().map(|x| x.to_bits()).collect()
 }
 

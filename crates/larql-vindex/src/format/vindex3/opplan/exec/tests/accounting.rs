@@ -10,6 +10,7 @@ use super::super::accounting::{
 use super::super::backend::{MatrixClass, WeightFormat};
 use super::super::cpu::ledger::{ledger, thread_projection_calls};
 use super::super::cpu::physical::{KQuantExecution, PhysicalProjectionPlan};
+use super::super::lowering::LoweringIdentity;
 use super::super::operands::OperandStore;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::production::{select_cpu, ProductionBackend};
@@ -116,7 +117,8 @@ fn record(
             logical_elements: operand.shape.iter().product(),
         },
         representation: operand.dtype.clone(),
-        provider: None,
+        codec_provider: None,
+        lowering_provider: LoweringIdentity::cpu_production(),
         // A terminal representation: one extent, unpriced here because
         // this helper's subject is residency, not what a plane costs.
         extent: ExtentPin::unknown(),
@@ -270,7 +272,8 @@ fn every_resident_form_reconciles_with_its_declaration_and_a_mutated_geometry_br
     let pinned = |selection: &Selection| RealizationRecord {
         planned: planned.clone(),
         representation: packed.dtype.clone(),
-        provider: None,
+        codec_provider: None,
+        lowering_provider: LoweringIdentity::cpu_production(),
         extent: ExtentPin::unknown(),
         verified_bytes: 0,
         dependencies: Vec::new(),

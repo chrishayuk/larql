@@ -196,6 +196,100 @@
         ],
         "3_the_informational_mutants_run": "`cargo mutants --in-diff` on the PR reported three MISSED before the job was canceled at 45 minutes. One was L3's own: `<impl PlanBackend for Arc<T>>::prepare` replaced with an empty body SURVIVED, because `prepare` returns nothing and the new delegation test merely called it — coverage without a claim. Killed by giving the test double a counter and asserting the handle reached it, and verified by applying the mutant by hand and watching that assertion fail. The other two are pre-existing gaps in CLI report paths L3 happened to touch (`realizations::bind_and_reconcile`, `sensitivity::capture_moments`): each prints a report and returns `Ok(())`, and nothing asserts the printing, so a body replaced with `Ok(())` survives. Recorded rather than fixed — out of this wave's scope, and the check is informational."
       }
+    },
+    "L4": {
+      "name": "provider identity in prepared state",
+      "status": "built and held",
+      "branch": "lowering-l4",
+      "base": "L3 (`lowering-l3`) on L2 (#466); rebased onto main once both merge",
+      "date": "2026-09-09",
+      "the_question": "Can the lowering decision survive preparation and be invalidated by the authority it was made against — without the prepared image owning the provider that would keep it alive?",
+      "rule": "The design below and the device-instance experiment's DECISION RULE are frozen before any code is written, so the experiment's answer cannot be chosen after seeing its result.",
+      "design_frozen_before_implementation": {
+        "the_pin_names_both_authorities": "`RealizationRecord.provider: Option<CodecIdentity>` becomes `codec_provider`, joined by `lowering_provider: LoweringIdentity`. The lowering one is NOT optional: a record exists because a provider selected it, and since L1 every provider states an identity. Two independent authorities, both named on the pin, neither derived from the other.",
+        "record_the_identity_not_the_provider": "The prepared image records what was decided; it does not hold `Arc<dyn PlanBackend>`. A prepared image that held its provider would keep a removed provider alive and could never be invalidated by its disappearance — that is resolution turned into possession, the contract defeated rather than kept.",
+        "lifetime": "Execution session/runtime holds `Arc<LoweringRegistry>` — current authority — beside the prepared image, which holds the historical decision. Before prepared state is USED, `PreparedOperands::ensure_lowerings_in(&LoweringRegistry)` asks whether that decision still stands. The shape is the codec plane's, with the registry carried rather than `&'static`.",
+        "one_judge_for_a_live_and_a_reloaded_pin": "`PreparedOperands::authorities() -> PinnedAuthorities { codecs, lowerings }` is a serializable value carrying both planes, and `ensure_providers_in` / `ensure_lowerings_in` delegate to it — so a pin that was serialized and reloaded is judged by exactly the code that judges a live one (control 7), and neither plane gets a second implementation.",
+        "no_fallback_and_no_reinterpretation": "A registry that holds SOME other provider is not an alternative. The refusal names the identity the pin recorded and every identity the registry holds; nothing re-selects, nothing widens, nothing substitutes a same-family provider at another revision.",
+        "distinct_by_plane": "A codec refusal names the representation whose provider moved; a lowering refusal names the lowering provider. Neither message can be mistaken for the other plane's (controls 5 and 6).",
+        "device_instance_stays_out_of_identity": "`LoweringIdentity` remains implementation semantics: `device-matmul/v1`, never `device-matmul-on-device-123/v1`. If the experiment below proves a configured environment is load-bearing for prepared state, it is named as a SECOND authority, not folded into the first."
+      },
+      "controls_frozen": [
+        "1 — same provider registered: prepared state remains valid",
+        "2 — provider removed: invalid, by name",
+        "3 — same family, different revision: invalid",
+        "4 — another provider available: STILL invalid; never a fallback",
+        "5 — codec valid, lowering invalid: fails specifically on the lowering plane",
+        "6 — lowering valid, codec invalid: fails specifically on the codec plane",
+        "7 — a serialized and reloaded pin retains both authorities and yields the same two verdicts"
+      ],
+      "device_instance_experiment": {
+        "question": "Same `LoweringIdentity`, different injected device/configuration — does any prepared state become invalid or semantically different?",
+        "why_it_must_be_asked_here": "L1 recorded that `DevicePlanBackend<MetalBackend>` and `DevicePlanBackend<CpuBackend>` both answer `device-matmul/v1`, and claimed that what the configuration changes is already pinned in the realization FORM. L4 is where that claim either holds or produces a second authority.",
+        "method": "Two `DevicePlanBackend` instances over the same injected `MatMul` (`CpuBackend`, so the experiment runs everywhere), differing only in the per-class `WeightFormats` table; both answer `device-matmul/v1`. Prepare an image with A, then execute it with B and compare bit-for-bit against executing it with A.",
+        "decision_rule": {
+          "if_the_image_refuses_or_computes_different_numbers_under_B": "a second authority exists. Name it separately — `ProviderBinding` / `EnvironmentIdentity`, what configured execution environment a preparation is tied to — and NEVER by putting hardware or configuration identity into `LoweringIdentity`.",
+          "if_the_image_computes_identically_under_B": "do not invent it. Record the negative result together with the experiment's limit: `CpuBackend`-as-device holds no device-resident buffers, so this cannot speak for a preparation whose storage lives on an injected Metal device.",
+          "either_way": "the result is written here before the wave is called held."
+        },
+        "answer": {
+          "result": "NO second authority — and the question was worth asking, because the configuration is genuinely load-bearing.",
+          "what_was_observed": [
+            "Two `DevicePlanBackend`s over one injected device (`LoopDevice`), differing only in the per-class format table, answer one identity `device-matmul/v1`; the registry (one instance per identity) and the pin cannot tell them apart.",
+            "They prepare DIFFERENT images from the same plan — different resident representation, different logits — so configuration decides what a preparation contains.",
+            "And yet ONE image executes bit-identically under either instance: the format table is consumed at preparation and never consulted again, so what the configuration decided is already in the pinned realization and in the operands materialised under it. Nothing is reinterpreted."
+          ],
+          "conclusion": "The pin needs the provider's semantic identity, not its configuration. `LoweringIdentity` stays `device-matmul/v1`. No `ProviderBinding` / `EnvironmentIdentity` is invented, per the frozen decision rule.",
+          "limit_recorded_honestly": "The experiment ran over a host-memory device (`LoopDevice`). No prepared form in this build holds device-resident storage — `PreparedOperands` holds stable page-aligned HOST allocations and a device's residency is a buffer cache keyed on `(pointer, length)` (see `exec/device.rs`) — so changing the injected device costs an upload, not correctness. A future provider whose prepared form held device-resident handles WOULD make the environment load-bearing after preparation, and that is when the second authority gets named, not before."
+        }
+      },
+      "out_of_scope": [
+        "selection changes of any kind",
+        "capability matching (F2's subject, not L4's)",
+        "Metal-lowered migration",
+        "any new kernel-plane variant — the count stays 33 (F3)"
+      ],
+      "what_landed": [
+        "`RealizationRecord.provider` is now `codec_provider`, joined by `lowering_provider: LoweringIdentity` — non-optional, stamped by `select_records` from the backend that selected, so the pin names both authorities whether the caller resolved its provider through a registry or handed it in directly.",
+        "`PinnedAuthorities { codecs, lowerings }` in `exec/realization.rs`: a serializable value carrying both planes, with `ensure_codecs_in` and `ensure_lowerings_in` on it. `PreparedOperands::ensure_providers_in` (unchanged in behaviour and message) and the new `ensure_lowerings_in` delegate to it, so a live image and a reloaded record of one are judged by the same code.",
+        "`PreparedOperands::lowerings()` and `::authorities()`; `::ensure_lowered_by(backend)` for the seam where no registry exists.",
+        "`Vindex3Runtime` / `PreparedVindex3` carry `Option<Arc<LoweringRegistry>>` — `Some` on the registry-carried path (`open_via` / `open_with_via` now take `Arc<LoweringRegistry>` and KEEP it), `None` when a provider was handed in directly. `session_with_kv` and `prefill_into` hold the image's pins against that authority before anything runs; `PreparedVindex3::with_lowerings` re-points a prepared model at another authority, the lowering plane's `OperandStore::with_registry`.",
+        "`exec/tests/lowering_pin.rs`: the seven controls, the execution seam, and the device-instance experiment. The L2 fixture (`dense()`, `bits()`, `TOKENS`) became the wave's shared harness."
+      ],
+      "witnesses": {
+        "both_authorities_on_every_pin": "`every_pin_names_both_authorities_and_the_two_move_independently` — the lowering identity changes (production → reference → an unshipped scratch provider) while the codec identity does not, on one fixture",
+        "controls_1_to_4": "`only_the_provider_that_pinned_the_image_keeps_it_valid` — one image pinned by `scratch-provider/v1`, four registries: it alone stands; empty, `scratch-provider/v2`, and the shipped registry (two working providers) all refuse, naming the pin's identity and what is on offer; the image's authorities are unchanged after every refusal, so nothing re-pinned on the way through",
+        "controls_5_and_6": "`each_plane_refuses_on_its_own_authority` — codec valid / lowering moved and the reverse; the lowering refusal never says `representation` and the codec refusal never says `lowering`",
+        "control_7": "`a_serialized_and_reloaded_pin_retains_both_authorities` — `PinnedAuthorities` through `serde_json` and back, identical, and yielding the same verdicts on both planes",
+        "execution_seam": "`a_pin_is_executed_by_the_provider_that_decided_it_or_not_at_all` — a production-pinned image handed to the reference provider is refused naming both identities",
+        "production_path": "`a_served_model_refuses_when_the_provider_that_pinned_it_is_gone` (larql-inference) — the served model, re-pointed at an authority holding only `reference/v1`, refuses at BOTH uses (session and batch prefill); the reference provider can execute this plan perfectly well and is not a substitute"
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "larql_vindex_lib_tests": "4665 (4659 at L3 + the wave's 6; no existing assertion changed)",
+        "larql_vindex_all_suites": "39 suites, 4989 tests, 0 failed",
+        "existing_assertions_changed": 0,
+        "selection_changes": 0,
+        "accounting_changes": 0,
+        "numerical_changes": 0,
+        "record_schema": "one field renamed (`provider` → `codec_provider`), one added (`lowering_provider`); four read sites and three literal sites in tests followed",
+        "dependent_crate_suites": "larql-inference lib 1536 (+1), larql-lql 743, larql-server 591, larql-cli vindex3_cmd 64 — all unchanged apart from the wave's own test"
+      },
+      "observations_for_later_waves": [
+        "The execution-seam check (`ensure_lowered_by`) was added as a measurement and kept: the whole larql-vindex suite passes unchanged with it in place, so NOTHING in this build ever executed a prepared image on a provider that did not pin it. That is a stronger statement than the registry check alone can make, and it is the check available to a caller who was handed a provider rather than a registry.",
+        "A prepared image carries exactly one lowering identity today. `lowerings()` returns a list so that a future image lowered by several providers (a device provider for the FFN, a CPU provider for the head) needs no change to the invalidation contract — only to what fills it.",
+        "`Vindex3Runtime` carries `Option<Arc<LoweringRegistry>>`: `None` is the direct-backend path, which named no authority and therefore has nothing to be checked against. After L3 no production path can reach that arm without going through the CLI's own composition site, whose images are prepared and executed in one breath — the staleness window this wave closes only exists where prepared state OUTLIVES its resolution, which is the served model.",
+        "L5's external provider now has one more thing to prove: that its identity survives into the pin and invalidates by name like any shipped one. `lowering_pin.rs` already exercises that with `scratch-provider/v1`, an identity this build does not ship, so L5's provider inherits a working contract rather than discovering one."
+      ],
+      "gates_run": [
+        "cargo fmt --all (and --check)",
+        "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+        "cargo test -p larql-vindex (lib 4665 (4659 at L3 + the wave's 6; no existing assertion changed); 39 suites, 4989 tests, 0 failed)",
+        "cargo check --workspace --all-targets",
+        "kernel-plane file count, the inventory's method: 33",
+        "scripts/check_contract_index.py (71 named tests), scripts/check_doc_links.py"
+      ],
+      "deviations_from_forecast": "None. The wave stayed inside the frozen design: no selection change, no capability work, no Metal migration, kernel-plane count 33. Two things were added beyond the seven controls and are recorded above rather than in the forecast: `ensure_lowered_by` at the execution seam (kept because it held with no existing assertion changed) and `PreparedVindex3::with_lowerings`, without which no production-path witness of invalidation was possible."
     }
   }
 }

@@ -57,8 +57,9 @@ use super::kda::KdaOutputGateWeights;
 use super::lowering::{LoweringIdentity, LoweringRegistry};
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{
-    realization_residency, DependencyLifetime, DependencyPin, ExtentOption, ExtentPin,
-    RealizationId, RealizationRecord, RepresentationFacts, SelectionReason, SelectionRefusals,
+    lowerings_stand_in, realization_residency, DependencyLifetime, DependencyPin, ExtentOption,
+    ExtentPin, PinnedAuthorities, RealizationId, RealizationRecord, RepresentationFacts,
+    SelectionReason, SelectionRefusals,
 };
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
@@ -1616,6 +1617,10 @@ fn select_records<B: PlanBackend + ?Sized>(
     slice: &ExecutionSlice,
 ) -> Result<Vec<(RealizationRecord, RepresentationFacts)>, VindexError> {
     let registry = store.registry();
+    // Who is lowering this plan, asked once: the pin records the
+    // provider that qualified it, whether the caller resolved that
+    // provider through a registry or handed it in directly.
+    let lowering_provider = backend.identity();
     let whole = slice.is_whole_stack();
     let range = slice.layers(plan);
     let mut records = Vec::new();
@@ -1640,7 +1645,7 @@ fn select_records<B: PlanBackend + ?Sized>(
         if store.is_overridden(&planned.operand) {
             facts = facts.overlaid();
         }
-        let provider = facts.registered.as_ref().map(|r| r.identity.clone());
+        let codec_provider = facts.registered.as_ref().map(|r| r.identity.clone());
         // What the ARTIFACT offers, priced per extent from the codec's own
         // declaration. The pin starts on the whole of it; a budget may
         // move it shallower, and nothing else may.
@@ -1664,7 +1669,8 @@ fn select_records<B: PlanBackend + ?Sized>(
                 records.push((
                     RealizationRecord {
                         representation: label.to_string(),
-                        provider,
+                        codec_provider,
+                        lowering_provider: lowering_provider.clone(),
                         planned,
                         selection,
                         extent,
@@ -2430,7 +2436,7 @@ impl PreparedOperands {
             }
         };
         for r in &self.realizations {
-            note(&r.representation, &r.provider);
+            note(&r.representation, &r.codec_provider);
             // A DEPENDENCY's provider is a provider. An image prepared
             // while a codebook's codec was registered is not executable
             // once that codec is gone, however well the codes' own
@@ -2443,29 +2449,81 @@ impl PreparedOperands {
         out
     }
 
+    /// The lowering providers that qualified this image's pins, once
+    /// each, in pin order (LOWERING-PLUGIN-1, L4).
+    ///
+    /// One today: an image is prepared by one provider. A list because
+    /// nothing in the contract says it must stay one, and because the
+    /// check below should not have to change if it stops being one.
+    pub fn lowerings(&self) -> Vec<LoweringIdentity> {
+        let mut out: Vec<LoweringIdentity> = Vec::new();
+        for r in &self.realizations {
+            if !out.contains(&r.lowering_provider) {
+                out.push(r.lowering_provider.clone());
+            }
+        }
+        out
+    }
+
+    /// Both authorities this image was pinned under, as one value — what
+    /// was DECIDED, holding neither the codecs nor the providers that
+    /// decided it.
+    pub fn authorities(&self) -> PinnedAuthorities {
+        PinnedAuthorities {
+            codecs: self.providers(),
+            lowerings: self.lowerings(),
+        }
+    }
+
     /// Refuse to execute this image against a registry that no longer
     /// resolves every provider it was prepared with to the same identity
     /// — a provider that disappeared or changed invalidates the
     /// preparation; nothing falls back.
     pub fn ensure_providers_in(&self, registry: &CodecRegistry) -> Result<(), VindexError> {
-        let describe = |identity: &Option<CodecIdentity>| {
-            identity
-                .as_ref()
-                .map(|i| format!("{} r{}", i.family, i.revision))
-                .unwrap_or_else(|| "no registered codec".to_string())
-        };
-        for (label, prepared) in self.providers() {
-            let now = registry.by_label(&label).map(|c| c.identity());
-            if now != prepared {
+        self.authorities().ensure_codecs_in(registry)
+    }
+
+    /// Refuse to execute this image on a provider that did not prepare
+    /// it (LOWERING-PLUGIN-1, L4).
+    ///
+    /// The registry check above asks whether the pinned provider still
+    /// EXISTS. This asks the question available where no registry is —
+    /// at the execution seam, which is handed a provider directly —
+    /// namely whether the provider about to run these pins is the one
+    /// that made them. A pin is a decision one provider took from one
+    /// set of declared facts; another provider running it is that
+    /// decision reinterpreted, which is exactly what this wave forbids.
+    pub fn ensure_lowered_by<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+    ) -> Result<(), VindexError> {
+        let executing = backend.identity();
+        for pinned in self.lowerings() {
+            if pinned != executing {
                 return Err(VindexError::Parse(format!(
-                    "representation `{label}` was prepared against {} and the registry now \
-                     offers {}; re-prepare rather than execute a pin whose provider changed",
-                    describe(&prepared),
-                    describe(&now)
+                    "this image's realizations were pinned by lowering provider `{pinned}` and \
+                     `{executing}` is executing them; re-prepare rather than run a pin another \
+                     provider decided"
                 )));
             }
         }
         Ok(())
+    }
+
+    /// The same question of the LOWERING plane: is the provider that
+    /// qualified these pins still in `registry`, under exactly the
+    /// identity the pins recorded (LOWERING-PLUGIN-1, L4)?
+    ///
+    /// The registry is the caller's — a session's current authority —
+    /// because a lowering registry is a carried value and not a
+    /// `&'static` the image can hold. What the image holds is the
+    /// decision, never the provider: an image that owned its provider
+    /// would keep a removed one alive and could never be invalidated by
+    /// its disappearance.
+    pub fn ensure_lowerings_in(&self, registry: &LoweringRegistry) -> Result<(), VindexError> {
+        // The lowering half only: an image asking whether its provider
+        // still exists has no reason to build its codec half first.
+        lowerings_stand_in(&self.lowerings(), registry)
     }
 
     pub fn residency_census(&self) -> ResidencyCensus {

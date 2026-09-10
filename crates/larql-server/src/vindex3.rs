@@ -139,7 +139,7 @@ pub fn load_v3_model(path: &Path) -> Result<V3Model, Box<dyn std::error::Error +
     let runtime = Vindex3Runtime::open_via(
         path,
         SERVED_COMPONENT,
-        &LoweringRegistry::shipped(),
+        std::sync::Arc::new(LoweringRegistry::shipped()),
         &LoweringIdentity::cpu_production(),
     )
     .map_err(|e| format!("open VINDEX3 container: {e}"))?

@@ -200,12 +200,17 @@ filters candidates by the same floor.
 ## 8. Provider-identity carriage and invalidation
 
 **Invariant.** A prepared image records the provider identity each pin
-resolved to. Losing a provider, or substituting one at a revision that means
-different bytes, **invalidates the preparation by name** rather than falling
-back. An out-of-tree provider reaches selection through registration alone:
-no core file names it.
+resolved to, on **both planes**: the codec that says what the stored bytes
+are, and the lowering provider that qualified the realization. Losing
+either, or substituting one at a revision that means something different,
+**invalidates the preparation by name** rather than falling back — and each
+plane refuses in its own vocabulary, so a refusal says which authority
+moved. An out-of-tree provider reaches selection through registration
+alone: no core file names it.
 
-**Authority.** `PreparedOperands::ensure_providers_in`, `CodecIdentity`.
+**Authority.** `PreparedOperands::ensure_providers_in`, `CodecIdentity`;
+`PreparedOperands::ensure_lowerings_in`, `LoweringIdentity`
+(LOWERING-PLUGIN-1, L4).
 
 | | |
 |---|---|
@@ -217,6 +222,13 @@ no core file names it.
 | admission | `a_pack_under_the_external_identity_is_admitted_through_the_registry_the_store_opens_with` — `crates/larql-vindex/tests/external_codec_provider.rs` (refused by the built-in registry naming every family it knows; admitted by the registry the store is opened with; re-pointing re-runs the admission) |
 | genericity | `no_external_identity_or_role_appears_in_production_larql` — `crates/larql-vindex/tests/external_attested_provider/genericity.rs` |
 | scan control | `the_scan_would_have_found_an_identity_that_was_there` — same file (a shipped label *is* found by the same walk, so an empty result means "nothing there", not "nothing looked at") |
+| lowering positive | `every_pin_names_both_authorities_and_the_two_move_independently` — `…/exec/tests/lowering_pin.rs` (the lowering identity changes while the codec identity does not, on the same fixture) |
+| lowering negative | `only_the_provider_that_pinned_the_image_keeps_it_valid` — same file (gone, present at another revision, and a registry full of other providers: all invalid, none a fallback) |
+| plane separation | `each_plane_refuses_on_its_own_authority` — same file (codec valid / lowering moved and the reverse; neither refusal speaks the other's vocabulary) |
+| carriage | `a_serialized_and_reloaded_pin_retains_both_authorities` — same file (`PinnedAuthorities` written down and read back yields the same verdicts) |
+| execution seam | `a_pin_is_executed_by_the_provider_that_decided_it_or_not_at_all` — same file (the check available where no registry is: the executing provider is the one that pinned) |
+| configuration control | `one_identity_over_two_configurations_prepares_differently_and_executes_one_image_identically` — same file (one identity, two format tables: two preparations, but either instance means the same thing by a given one — why configuration is not a second authority) |
+| production path | `a_served_model_refuses_when_the_provider_that_pinned_it_is_gone` — `crates/larql-inference/src/vindex3/tests/mod.rs` (the served model, re-pointed at an authority without its provider, refuses at session and at prefill) |
 | qualified by | PR #441 (`85b46061`), PR #447 (`202ffb7b`) |
 
 ---
