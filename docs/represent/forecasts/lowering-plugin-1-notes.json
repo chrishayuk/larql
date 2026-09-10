@@ -2,6 +2,7 @@
   "programme": "LOWERING-PLUGIN-1",
   "forecast": "lowering-plugin-1.json (frozen 2026-09-08, PR #464)",
   "rule": "The forecast is not edited. Every deviation, measurement and surprise is written here with its reason.",
+  "merge_policy": "Set while landing L3 (2026-09-10). Mutation testing is NOT a merge authority — the `cargo-mutants` job is informational and can be canceled by its own runtime — but any COMPLETED mutants result is read before merging, because it reads the wave's own diff. A survivor that belongs to the wave is killed before the merge (L3's `Arc<T>::prepare` delegation was one: execution coverage with no assertion). A survivor that is pre-existing debt in code the wave merely touched is classified and recorded, not folded in, so the wave boundary stays legible. A RE-RUN need not be waited for once the required checks are green, the wave's own survivor has been reproduced by hand and shown to be killed by the new assertion, and the remaining survivors are already classified — read it when it finishes and fix forward only if it reveals a defect in a LATER wave's claim.",
   "waves": {
     "L1": {
       "name": "lowering identity",
@@ -290,6 +291,91 @@
         "scripts/check_contract_index.py (71 named tests), scripts/check_doc_links.py"
       ],
       "deviations_from_forecast": "None. The wave stayed inside the frozen design: no selection change, no capability work, no Metal migration, kernel-plane count 33. Two things were added beyond the seven controls and are recorded above rather than in the forecast: `ensure_lowered_by` at the execution seam (kept because it held with no existing assertion changed) and `PreparedVindex3::with_lowerings`, without which no production-path witness of invalidation was possible."
+    },
+    "L5": {
+      "name": "hostile external provider",
+      "status": "built and held",
+      "branch": "lowering-l5",
+      "base": "L4 (`lowering-l4`) on L3 on L2 (#466)",
+      "date": "2026-09-09",
+      "the_question": "Can a lowering provider this build neither ships nor names go the whole way — register → candidate derivation → selection → accounting → pin → preparation → authority validation → execute — with no provider-specific branch in core, and the kernel plane still closed?",
+      "rule": "Frozen before implementation, as L3 and L4 were. What the provider may borrow from the crate is decided HERE, so a proof that needed an internal cannot be quietly re-described as a proof that did not.",
+      "design_frozen_before_implementation": {
+        "where": "`crates/larql-vindex/tests/external_lowering_provider/`. An integration test is a separate crate in cargo's model, so it sees only what `larql-vindex` exports — the same standard the codec plane's proof met (`external_codec_provider.rs`, `external_attested_provider/`), where anything the proof had needed from the crate's internals would have been a leak in the contract.",
+        "identity": "`outside-lowering/v1`, spelled in the test crate and nowhere that ships. The genericity scan is over that family, the provider's name and its own constants.",
+        "shape": "The provider owns its candidate derivation, its selection, its refusal and its projection kernel, and borrows the reference oracle for the glue between projections — the same composition the in-tree device provider takes with the production CPU glue (`exec/device.rs`), and the shape a real out-of-tree provider starts life in. Borrowing is through exported API, which is the point: an external provider is allowed to USE the crate; core is not allowed to know it.",
+        "reuses_an_existing_realization": "Per F3 it pins forms that already exist — the codec-declared direct plan when the facts declare one, else the universal decode — and adds no `PhysicalProjectionPlan`, `WeightFormat`, `WeightSlice`, `WeightRows` or `LoadedWeight` variant. The kernel-plane count stays 33.",
+        "what_it_must_borrow_and_that_is_a_finding": "`SelectionReason` is a closed vocabulary an external provider must choose from. Whether every arm it needs is provider-agnostic is measured, not assumed, and recorded either way."
+      },
+      "controls_frozen": [
+        "the journey, in one test on a container this build wrote: register → candidates → selection → accounting → pin → preparation → authority validation → execute",
+        "the arithmetic is the provider's own: a variant of it that computes differently produces different logits, so the numbers come from the external provider and not from a shipped path shadowing it",
+        "core never names it: a source scan over every non-test `.rs` under `crates/*/src` for the family, the name and the provider's constants — with the positive control that the same scan finds a family this build DOES ship",
+        "the pin is its own: every record says `outside-lowering/v1`, and L4's invalidation refuses by name once the provider is gone, with the shipped registry NOT a fallback",
+        "the accounting prices what IT selected, not what a shipped provider would have selected for the same operands",
+        "its refusal is its own: facts that admit no realization are refused naming the candidates it considered, before any byte, with nothing underneath constructing a provider to answer anyway"
+      ],
+      "kernel_plane_files_expected": 33,
+      "out_of_scope": [
+        "capability matching (F2)",
+        "opening the kernel vocabulary (F3 — the whole point is that the first external provider does not need it)",
+        "Metal-lowered migration (F1)",
+        "any change to selection, accounting or execution semantics in core"
+      ],
+      "what_landed": [
+        "`crates/larql-vindex/tests/external_lowering_provider/` — `provider.rs` (two external providers), `main.rs` (the journey and its controls), `genericity.rs` (the source scan and its positive control). Nine tests.",
+        "The provider states `outside-lowering/v1`, derives its candidates from the codec's declarations, records the direct BLAS realization the f32 codec declares as CONSIDERED and declines it, and pins the universal decode — because its one kernel reads f32 values. It owns its selection, its refusal, its projection kernel, the whole dense feed-forward (three matrices per call) and the vocabulary head; it borrows the reference oracle's glue, as the in-tree device provider borrows the production CPU glue.",
+        "A second external provider — `outside-lowering-sibling/v1`, same derivation, same kernel — exists so that 'the caller named it' can be told apart from 'it was the only implementation that could have run'.",
+        "**No production file changed.** The whole wave is a new test target: `git diff --stat HEAD -- crates` over the implementation commit is empty apart from the new directory."
+      ],
+      "witnesses": {
+        "the_journey": "`an_external_provider_reaches_execution_through_registration_alone` — register → candidates (the declined direct realization is in `candidates`) → selection → accounting (`expectations` → `ResourceLedger::aggregate`, non-zero stored/resident/touch, and `render_selection_summary` naming what IT pinned) → pin (`lowering_provider == outside-lowering/v1` on every record) → preparation → authority validation (`ensure_lowerings_in` stands in its registry, refuses in the shipped one) → execute",
+        "named_not_merely_available": "`the_named_provider_is_reached_even_beside_an_equally_capable_one` — with the sibling registered, executing via `outside-lowering/v1` moves that provider's dispatch counters and leaves the sibling's at exactly zero; asking for the sibling reaches the sibling and pins its identity",
+        "the_numbers_are_its_own": "`the_numbers_are_the_external_providers_own` — a defect in its kernel moves the logits, so no shipped path was quietly answering underneath",
+        "its_choice_not_a_default": "`the_pins_are_the_providers_choice_and_not_a_shipped_default` — the production provider, handed the same operands, pins `cpu:direct/BlasF32` every time; this one pins `cpu:decode/ScalarF32` every time",
+        "its_own_refusal": "`it_refuses_on_its_own_terms_when_the_facts_admit_nothing` — facts naming no registered codec are refused by the provider itself with `UnregisteredRepresentation` and no candidates, and the same provider selects once the codec is registered",
+        "L4_inherited": "`another_provider_may_not_run_the_external_providers_pins` — `ensure_lowered_by` refuses the production provider over these pins, naming both identities",
+        "the_registry_is_indifferent": "`the_registry_treats_an_outside_identity_exactly_as_a_shipped_one` — duplicate refused, another revision of its family is another provider",
+        "genericity": "`no_external_provider_identity_appears_in_production_larql` — both families, both names and the type name appear in no non-test `.rs` under any crate's `src/` (>100 files scanned)",
+        "scan_control": "`the_scan_would_have_found_a_provider_that_was_there` — the same walk finds `cpu-production`, so the empty result means 'nothing there' rather than 'nothing looked at'",
+        "correctness": "the external path's logits and final hidden state are BIT-IDENTICAL to the reference oracle's — its own kernels compute the model exactly, not approximately"
+      },
+      "controls_added_after_the_freeze": {
+        "control": "`the_named_provider_is_reached_even_beside_an_equally_capable_one`",
+        "why": "Raised in review: the six frozen controls could not distinguish 'the registry resolved the identity the caller named' from 'the external provider was the only implementation that could have run this plan' — the journey passes either way, and 'the accounting prices what IT selected' is about pricing, not about why it was reached.",
+        "where_it_sits_relative_to_F2": "This is resolution BY IDENTITY — L2's contract, where the CALLER chooses and the registry is held to the choice. It is not the registry matching declared capabilities to pick a provider on the caller's behalf, which is F2 and remains out of scope. Nothing in the test asks the registry to choose.",
+        "recorded_here": "rather than by editing the frozen list, per the programme's rule."
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "production_files_changed": 0,
+        "larql_vindex_lib_tests": "4665, unchanged — the wave adds no lib test",
+        "external_lowering_provider_suite": "9 passed",
+        "what_the_interpreter_asked_the_provider_for": "embed 5, norm 21, project 0, attention 2, attention_step 0, ffn 10, routed_ffn 0, output_head 1, residual_add 20 — and 31 matrices multiplied by its own kernel (3 per feed-forward call, plus the head)",
+        "larql_vindex_all_suites": "39 suites, 4998 tests, 0 failed (4989 at L4 plus this wave's 9)"
+      },
+      "findings": [
+        "**`project` is dispatched zero times.** On a dense softmax stack the seam dispatches WHOLE OPERATIONS — `attention`, `ffn`, `output_head` — and `PlanBackend::project` is never called; the projections inside attention belong to `attention`. So an external provider that wants to own the matmuls must implement those methods, which is what this one does for the feed-forward and the head. Measured rather than assumed, and directly relevant to F1: the granularity question is not only 'is per-operation too fine for Metal', it is also 'which per-operation methods are actually on the path'.",
+        "**A provider owns realization and borrows plan semantics — but the shipped JUDGEMENT about semantics is not exported.** `kernels::activate` is public, so the activation is shared rather than re-transcribed; `production::require_executable_gate` — the shipped statement of which gate policies are executable — is `pub(super)`, so this provider states its own refusal for policies it does not implement. The contract says every backend must honour the gate policy or refuse; outside the crate that is enforced by convention alone. Naming a limit, not a defect: it is what a later wave would fix by exporting the judgement, not the policy.",
+        "**`SelectionReason` is a closed vocabulary and every arm this provider needed is provider-agnostic** (`ArmPrefersDecode`, `NoDirectRealization`), so it borrowed without distorting anything. `DeviceClassTable` is the one provider-flavoured arm in the enum, and nothing outside a device backend needs it.",
+        "**F3 held for the reason the forecast predicted, and the reason is worth stating.** The external provider needed no new kernel-plane variant because `Decode(ScalarF32)` is an HONEST description of what it does — decode to f32, project with a scalar loop. A provider whose kernel had a genuinely novel shape would have nothing honest to name, and would face the choice between misdescribing itself as a shipped plan and opening the vocabulary. That is precisely the question the forecast defers to after provider openness, and it is now the sharpest open question in the lane.",
+        "**The wave required zero production changes.** L1–L4 built the plane; L5 only had to use it. That is the strongest form the claim could take: the first out-of-tree provider is not a special case anywhere in the tree."
+      ],
+      "gates_run": [
+        "cargo fmt --all (and --check)",
+        "cargo clippy -p larql-vindex --all-targets -- -D warnings",
+        "cargo test -p larql-vindex — 39 suites, 4998 tests, 0 failed (4989 at L4 plus this wave's 9)",
+        "cargo check --workspace --all-targets",
+        "kernel-plane file count, the inventory's method: 33",
+        "scripts/check_contract_index.py (76 named tests), scripts/check_doc_links.py (857 links), scripts/check_doc_references.py --strict (735 path references) — the last two run from a checkout OUTSIDE `.claude/`, see the gate-hygiene note below"
+      ],
+      "deviations_from_forecast": "None. One control was added after the freeze and is recorded above with its reason. No production file changed; kernel-plane count 33; no capability matching, no Metal migration, no new kernel.",
+      "gate_hygiene_found_while_running_them": {
+        "check_doc_references_is_vacuous_in_a_worktree": "It skips any path containing `/.claude/`, so run from `.claude/worktrees/<branch>` it checks 0 documents across 0 references and exits 0 — green and meaningless. Re-run from a checkout outside that directory: 735 path references, none broken. CI checks out clean and sees the real set (`quality.yml` runs it `--strict`).",
+        "check_contract_index_is_not_wired_into_CI": "At `origin/main` (2944ace6) the only two references to `scripts/check_contract_index.py` in the tracked tree are prose in the v1 index — \"That is enforced rather than asked for\" — and this programme's own gate list. No workflow, no make target, no hook invokes it. So the index's citation discipline has been holding only because someone ran the script by hand, which is what happened for L4 and L5 here. Raised by the OPT-CONTRACT-1 session, verified independently, and being fixed on that branch by wiring the script into `quality.yml`. Recorded here because a gate list that names an unwired script is a gate list that overstates itself.",
+        "checked_from": "`git grep -n check_contract_index origin/main` and `.github/workflows/quality.yml` at origin/main (which does run check_doc_links.py and check_doc_references.py --strict)."
+      },
+      "rebase_check": "Replayed for real: #466 merged as 097d54a5 and L3→L5 (six commits) rebased onto it with no conflict — the same clean replay a trial rebase onto 2944ace6 had predicted before the merge. On the rebased stack: 19 lowering lib tests, the 9 external-provider tests and the 3 inference `via_tests` pass, the contract index resolves its 76 named tests and the 857 documentation links resolve. Main has not touched `docs/represent-v1-contract-index.md` since the base, so the index this wave extends is main's plus L4's rows and L5's."
     }
   }
 }
