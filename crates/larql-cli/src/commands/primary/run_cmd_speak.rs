@@ -310,7 +310,8 @@ pub fn run_speak(args: &RunArgs) -> Result<(), BoxErr> {
 
 /// Token-row files: one frame per line, `rvq` whitespace-separated ids,
 /// `#` comments ignored — the same format `moss_codec_cli.py` speaks.
-fn read_token_rows(path: &Path, rvq: usize) -> Result<Array2<u32>, BoxErr> {
+/// Shared with `speak_serve`, which reads a voice reference per request.
+pub(super) fn read_token_rows(path: &Path, rvq: usize) -> Result<Array2<u32>, BoxErr> {
     let mut rows: Vec<u32> = Vec::new();
     let mut count = 0usize;
     for line in std::fs::read_to_string(path)?.lines() {
@@ -339,7 +340,7 @@ fn read_token_rows(path: &Path, rvq: usize) -> Result<Array2<u32>, BoxErr> {
     Ok(Array2::from_shape_vec((count, rvq), rows)?)
 }
 
-fn write_token_rows(path: &Path, frames: &[Vec<u32>]) -> Result<(), BoxErr> {
+pub(super) fn write_token_rows(path: &Path, frames: &[Vec<u32>]) -> Result<(), BoxErr> {
     let mut out = String::with_capacity(frames.len() * frames[0].len() * 5);
     out.push_str("# larql run --speak: generated MOSS audio tokens\n");
     for frame in frames {
