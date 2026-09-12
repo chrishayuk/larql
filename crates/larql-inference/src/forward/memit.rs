@@ -427,8 +427,27 @@ fn memit_solve_layer(
         }
     }
 
-    let l = larql_compute::cpu::ops::linalg::cholesky(&cov_f64, ridge)
-        .map_err(|e| format!("MEMIT: Cholesky failed — {e}"))?;
+    // Adaptive ridge: if f64 accumulation still lands a negative pivot
+    // (rare — mostly defends against non-Gemma architectures we haven't
+    // profiled), escalate ridge up to 4 steps before giving up.
+    let mut current_ridge = ridge;
+    let l = loop {
+        match larql_compute::cpu::ops::linalg::cholesky(&cov_f64, current_ridge) {
+            Ok(l) => {
+                if current_ridge > ridge {
+                    eprintln!("MEMIT: Cholesky needed ridge escalation {ridge} → {current_ridge}");
+                }
+                break l;
+            }
+            Err(e) if current_ridge < ridge * 1000.0 => {
+                current_ridge *= 10.0;
+                eprintln!(
+                    "MEMIT: Cholesky pivot failed ({e}); retrying with ridge={current_ridge}"
+                );
+            }
+            Err(e) => return Err(format!("MEMIT: Cholesky failed after escalation — {e}")),
+        }
+    };
 
     // Q = K @ C⁻¹  [N × ffn_dim]
     // We compute this as: for each fact i, q_i = C⁻¹ @ k_i (column),
