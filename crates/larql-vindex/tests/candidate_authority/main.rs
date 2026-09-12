@@ -290,3 +290,75 @@ fn actual_layout_refusal_persists_source_despite_the_requested_encoding() {
         );
     }
 }
+
+#[test]
+fn executable_root_mutation_refuses_with_untouched_candidate_authority_and_payloads() {
+    let f = fixture();
+    for arm in ["segment", "graph-locator", "graph-content"] {
+        let out = compile(&f, arm, &RepresentSpec::nvfp4());
+        assert_eq!(read_candidate(&out).unwrap().id(), &f.expected);
+        let sidecar_before = std::fs::read(out.join(CANDIDATE_INDEX_FILE)).unwrap();
+        let root_file = out.join("index.json");
+        let mut root: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&root_file).unwrap()).unwrap();
+        if arm == "segment" {
+            root["representations"]
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .next()
+                .unwrap()["segment"] = serde_json::json!("segments/substituted.bin");
+            std::fs::write(&root_file, serde_json::to_vec(&root).unwrap()).unwrap();
+        } else {
+            let graph_file = out.join(root["system_graph"].as_str().unwrap());
+            let mut graph: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&graph_file).unwrap()).unwrap();
+            graph["components"][0]["hidden_size"] = serde_json::json!(128);
+            if arm == "graph-locator" {
+                std::fs::write(
+                    out.join("replacement-graph.json"),
+                    serde_json::to_vec(&graph).unwrap(),
+                )
+                .unwrap();
+                root["system_graph"] = serde_json::json!("replacement-graph.json");
+                std::fs::write(&root_file, serde_json::to_vec(&root).unwrap()).unwrap();
+            } else {
+                std::fs::write(&graph_file, serde_json::to_vec(&graph).unwrap()).unwrap();
+            }
+        }
+        assert_eq!(
+            std::fs::read(out.join(CANDIDATE_INDEX_FILE)).unwrap(),
+            sidecar_before
+        );
+        assert!(
+            matches!(read_candidate(&out), Err(CandidateAuthorityRefusal::Binding { what, .. }) if what == "executable root"),
+            "{arm}: changed executable artifact must refuse at its root binding"
+        );
+    }
+}
+
+#[test]
+fn equivalent_root_serialisation_and_graph_relocation_preserve_candidate_identity() {
+    let f = fixture();
+    let out = compile(&f, "equivalent-root", &RepresentSpec::nvfp4());
+    let root_file = out.join("index.json");
+    let mut root: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&root_file).unwrap()).unwrap();
+    std::fs::write(&root_file, serde_json::to_vec(&root).unwrap()).unwrap();
+    assert_eq!(read_candidate(&out).unwrap().id(), &f.expected);
+    let graph_file = out.join(root["system_graph"].as_str().unwrap());
+    std::fs::rename(&graph_file, out.join("same-graph.json")).unwrap();
+    root["system_graph"] = serde_json::json!("same-graph.json");
+    std::fs::write(root_file, serde_json::to_vec(&root).unwrap()).unwrap();
+    assert_eq!(read_candidate(&out).unwrap().id(), &f.expected);
+}
+
+#[test]
+fn a_sidecar_cannot_establish_a_candidate_without_a_readable_executable_root() {
+    let f = fixture();
+    let out = compile(&f, "broken-root", &RepresentSpec::nvfp4());
+    std::fs::write(out.join("index.json"), b"not a container index").unwrap();
+    assert!(
+        matches!(read_candidate(&out), Err(CandidateAuthorityRefusal::Invalid(detail)) if detail.contains("executable root"))
+    );
+}

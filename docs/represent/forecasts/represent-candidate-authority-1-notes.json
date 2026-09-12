@@ -4,7 +4,7 @@
   "branch": "represent-candidate-authority-impl",
   "base": "eadc43a88f5b3252e8bfe4bb463f7c7845b42a29",
   "date": "2026-09-12",
-  "status": "implemented and locally verified; ready for transition-A review",
+  "status": "executable-root review blocker fixed and locally verified; ready for transition-A review",
   "carrier": "CandidateIndex gains optional completed authority: schema and state-semantics version, TensorSurface, effective ResolvedDecisionVector, payload bindings, a metadata binding, and a convenience state_id. Legacy and in-progress candidates carry no completed authority and the independent reader refuses them.",
   "writers": {
     "bank_compilers": "Expert and KDA bank completion derives effective encodings from completed operand seals over the supplied compilation surface. An unsealed surface tensor remains source. Completion never takes a requested MeasurementKey or state id. Checkpoints emitted during a run have no completed authority.",
@@ -12,7 +12,7 @@
     "full_container_carriage": "The general compiler stores the same CandidateIndex as candidate.json beside its ordinary VINDEX3 index. Adding candidate provenance to Vindex3Index.extra would feed it into the existing source semantic catalogue digest. The sidecar avoids that accidental identity change; it is not a new manifest type.",
     "cost": "Payload and range digests use bounded streaming reads. Compilation now pays extra verification reads; this transition makes no throughput claim and does not price them as runtime preparation."
   },
-  "reader": "read_candidate opens only persisted files, validates metadata and payload binding, validates canonical surface/vector shape and seal relations, and calls RepresentationState::from_decisions. verify_candidate separately compares that established identity with the caller's expected identity. Neither reader resolves CandidateIndex.map.",
+  "reader": "read_candidate opens only persisted files, validates metadata and payload binding, re-establishes a full-container sidecar's executable-root semantic digest, validates canonical surface/vector shape and seal relations, and calls RepresentationState::from_decisions. verify_candidate separately compares that established identity with the caller's expected identity. Neither reader resolves CandidateIndex.map.",
   "witnesses": {
     "integration_file": "crates/larql-vindex/tests/candidate_authority/main.rs",
     "round_trip_and_move": "fresh_public_reader_reconstructs_the_independently_predicted_state moves the completed artifact, drops the entire fixture including checkpoint/source container, and then reads it through public API from a separate integration crate.",
@@ -21,7 +21,7 @@
     "stored_id": "a_corrupt_stored_id_is_detected_and_the_recomputed_id_is_reported",
     "request_independence_and_xy": "caller_request_cannot_author_the_compilation_and_valid_y_is_not_requested_x carries a requested MeasurementKey and matching executor restatement, compiles another state, independently establishes it, then refuses the mismatch naming both states.",
     "layout": "actual_layout_refusal_persists_source_despite_the_requested_encoding uses real Q6_K compilation: some dense-fixture matrices compile, while short rows remain F32. The state differs from the requested map resolved without layout admission and equals the effective vector.",
-    "plane_boundary": "requested_map_provenance_and_lowering_choices_do_not_replace_results",
+    "plane_boundary": "Structural boundary: the authority inputs and normative state identity exclude lowering facts. requested_map_provenance_and_lowering_choices_do_not_replace_results only witnesses ignored unknown JSON metadata, not a real RealizationRecord/lowering variation; this remains a weak behavioral witness and is not presented as stronger evidence.",
     "malformed_relations": "crates/larql-vindex/src/format/vindex3/represent/candidate_authority/tests.rs deliberately re-seals metadata to exercise surface ordering, duplicate/missing decisions, invalid encodings, missing payloads/seals, overflowing extents, wrong operand hashes, wrong ledger keys, overlaps and invalid file locators beyond the outer checksum.",
     "bank_reader": "completed_bank_authority_is_read_from_disk_and_rejects_changed_bytes in crates/larql-vindex/src/format/vindex3/represent/compiler_tests.rs"
   },
@@ -32,10 +32,23 @@
     "No execution or performance claim for K3, no lowering vocabulary change, and no promotion policy change."
   ],
   "validation": {
-    "crate_tests": "cargo test -p larql-vindex passed; the final coverage run passed 5,055 tests across 39 suites, with 7 model-backed tests ignored.",
-    "coverage": "Policy passed: 93.74% total, 465 files checked. New reader 92.73%; new producer 92.37%. No policy exemption added.",
+    "crate_tests": "The final full-crate coverage run passed 5,059 tests across 39 suites, with 7 model-backed tests ignored; the 11 independent candidate-authority integration tests passed.",
+    "coverage": "Policy passed: 93.74% total, 465 files checked. Reader 91.29%; producer 92.13%. No policy exemption added.",
     "static_checks": "cargo fmt --all --check; cargo clippy -p larql-vindex --all-targets -- -D warnings; cargo check --workspace --all-targets.",
     "documentation": "Contract index, documentation links and strict documentation-reference checks passed.",
     "environment": "The sandbox prevented local HTTP mock servers in the first full test attempt. Re-running with the required network permission passed. No model download or K3 measurement was performed."
+  },
+  "root_binding_review": {
+    "finding": "c84872ea let a full-container sidecar establish X after the executable index.json changed, because it bound only candidate metadata and listed payloads. The regression test failed before the repair when only representation.segment was changed.",
+    "repair": "ExecutableRootBinding is included in the metadata integrity seal. Full-container completion records read_source_identity(output).semantic_digest() after index.json is persisted. The fresh reader reopens that executable root and compares its semantic digest before establishing the candidate state. Inline bank authority is distinguished explicitly; a sidecar cannot downgrade itself to the inline case even with a recomputed outer binding.",
+    "identity_boundary": "The output root digest is artifact-integrity evidence only. It is not passed to RepresentationState::from_decisions, and neither normative identity algorithm nor version is changed. The existing semantic identity machinery binds the representation catalogue and the declared graph by content; root formatting and relocating the same graph bytes therefore preserve candidate identity.",
+    "hostile_witnesses": [
+      "executable_root_mutation_refuses_with_untouched_candidate_authority_and_payloads: segment locator, replacement graph locator, and graph content each change without touching candidate authority or segment bytes; each must refuse specifically at the executable root binding.",
+      "a_sidecar_cannot_establish_a_candidate_without_a_readable_executable_root",
+      "a_sidecar_cannot_downgrade_its_root_binding_to_an_inline_candidate"
+    ],
+    "positive_control": "equivalent_root_serialisation_and_graph_relocation_preserve_candidate_identity",
+    "compatibility": "The root-binding field is required. Candidate authorities from the unmerged c84872ea implementation lack it and are refused rather than accepted without root evidence.",
+    "validation": "The root-mutation test failed on c84872ea before production code changed, then passed with the executable-root binding. All 39 crate suites, coverage policy, clippy, workspace/all-target checks, formatting and documentation gates passed after the repair."
   }
 }

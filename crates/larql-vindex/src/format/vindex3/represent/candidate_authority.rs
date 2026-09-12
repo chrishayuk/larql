@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::compile::hash_bytes;
-use super::compiler::CandidateIndex;
+use super::compiler::{read_source_identity, CandidateIndex};
 use super::state::{
     RepresentationState, RepresentationStateId, ResolvedDecisionVector, TensorSurface,
     STATE_ID_VERSION,
@@ -35,6 +35,17 @@ pub struct CandidatePayload {
     pub sha256: String,
 }
 
+/// How the persisted authority relates to the executable artifact's root.
+/// This is artifact integrity evidence, never an input to representation
+/// identity. An inline bank index already carries its own authority; a
+/// sidecar must also bind the separate VINDEX3 root that execution reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecutableRootBinding {
+    InlineCandidate,
+    Vindex3 { semantic_digest: String },
+}
+
 /// The two previously absent identity inputs, bound to completed bytes
 /// and the source authority and seals already owned by `CandidateIndex`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +57,7 @@ pub struct CandidateRepresentationAuthority {
     /// One payload file per compiled object. File names locate bytes;
     /// they do not participate in RepresentationStateId.
     pub payloads: BTreeMap<String, CandidatePayload>,
+    pub executable_root: ExecutableRootBinding,
     pub binding_sha256: String,
     /// A cross-check only. Corrupting it cannot supply an identity.
     pub state_id: RepresentationStateId,
@@ -128,6 +140,7 @@ fn binding(
         &authority.decisions,
         &index.ledger.sealed,
         &authority.payloads,
+        &authority.executable_root,
     ))
     .map_err(|e| VindexError::Parse(e.to_string()))?;
     Ok(hash_bytes(&bytes))
@@ -141,6 +154,7 @@ pub(crate) fn finish(
     surface: TensorSurface,
     decisions: ResolvedDecisionVector,
     files: BTreeMap<String, String>,
+    executable_root: ExecutableRootBinding,
 ) -> Result<(), VindexError> {
     for seal in index.ledger.sealed.values() {
         if !matches!(decisions.get(&seal.object, &seal.tensor), Some(super::state::ResolvedEncoding::Compiled(enc)) if enc == &seal.encoding)
@@ -172,6 +186,7 @@ pub(crate) fn finish(
         surface,
         decisions,
         payloads,
+        executable_root,
         binding_sha256: String::new(),
         state_id: state.id().clone(),
     };
@@ -184,7 +199,8 @@ pub(crate) fn finish(
 /// memory, a locator's state-id key, or a requested PrecisionMap.
 pub fn read_candidate(path: &Path) -> Result<RepresentationState, CandidateAuthorityRefusal> {
     let sidecar = path.join(CANDIDATE_INDEX_FILE);
-    let file = if sidecar.try_exists().map_err(invalid)? {
+    let is_sidecar = sidecar.try_exists().map_err(invalid)?;
+    let file = if is_sidecar {
         sidecar
     } else {
         path.join("index.json")
@@ -218,6 +234,26 @@ pub fn read_candidate(path: &Path) -> Result<RepresentationState, CandidateAutho
             expected: a.binding_sha256.clone(),
             observed,
         });
+    }
+    match (&a.executable_root, is_sidecar) {
+        (ExecutableRootBinding::InlineCandidate, false) => {}
+        (ExecutableRootBinding::Vindex3 { semantic_digest }, true) => {
+            let observed = read_source_identity(path)
+                .map_err(|e| invalid(format!("executable root: {e}")))?
+                .semantic_digest();
+            if &observed != semantic_digest {
+                return Err(CandidateAuthorityRefusal::Binding {
+                    what: "executable root".into(),
+                    expected: semantic_digest.clone(),
+                    observed,
+                });
+            }
+        }
+        _ => {
+            return Err(invalid(
+                "executable root binding does not match the candidate authority carrier",
+            ))
+        }
     }
     // Derived serde can bypass sorted/unique constructors. Re-establish
     // the surface and vector invariants before normative identification.

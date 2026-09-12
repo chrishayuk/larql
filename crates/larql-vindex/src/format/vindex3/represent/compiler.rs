@@ -556,5 +556,6 @@ pub(crate) fn finish_bank_authority(
         surface,
         decisions,
         [(object.to_string(), relative.to_string_lossy().into_owned())].into(),
+        super::candidate_authority::ExecutableRootBinding::InlineCandidate,
     )
 }

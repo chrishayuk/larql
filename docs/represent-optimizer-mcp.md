@@ -1726,8 +1726,11 @@ Transition A extends the existing `CandidateIndex`. The bank compilers persist
 completed authority in their index; the general representation compiler writes
 the same type as `candidate.json` beside its ordinary container index. The
 [public reader](../crates/larql-vindex/src/format/vindex3/represent/candidate_authority.rs)
-verifies metadata, payloads and operand seals, then feeds persisted source,
-surface and effective decisions into `RepresentationState::from_decisions`.
+verifies metadata, payloads and operand seals. For a full-container sidecar,
+it also reopens the executable root and compares its output-container semantic
+digest. It then feeds persisted source, surface and effective decisions into
+`RepresentationState::from_decisions`; the root binding is artifact-integrity
+evidence and never another state-identity input.
 It never resolves the requested map or accepts a stored state id as authority.
 [The witnesses and limits](represent/forecasts/represent-candidate-authority-1-notes.json)
 include a fresh read after deleting the source fixture, actual layout fallback,

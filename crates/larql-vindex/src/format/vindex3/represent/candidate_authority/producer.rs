@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use super::{digest_range, finish};
+use super::{digest_range, finish, ExecutableRootBinding};
 use crate::error::VindexError;
 use crate::format::vindex3::encode::segment::read_segment_header;
 use crate::format::vindex3::index::{RepresentationEntry, Vindex3Index};
@@ -152,7 +152,20 @@ impl CompilationAuthority {
             })
             .collect();
         let decisions = ResolvedDecisionVector::from_entries(&self.surface, entries)?;
-        finish(&mut self.index, out, self.surface, decisions, self.files)?;
+        // The compiler has already persisted the executable index. Bind
+        // its catalogue and declared graph through the existing semantic
+        // identity machinery, independently of this candidate's state id.
+        let executable_root = ExecutableRootBinding::Vindex3 {
+            semantic_digest: read_source_identity(out)?.semantic_digest(),
+        };
+        finish(
+            &mut self.index,
+            out,
+            self.surface,
+            decisions,
+            self.files,
+            executable_root,
+        )?;
         Ok(self.index)
     }
 }

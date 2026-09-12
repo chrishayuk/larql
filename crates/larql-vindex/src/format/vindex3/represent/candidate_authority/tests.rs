@@ -192,9 +192,19 @@ fn finalising_cannot_claim_a_seal_outside_the_completed_surface() {
         empty,
         ResolvedDecisionVector::default(),
         a.payloads.into_iter().map(|(o, p)| (o, p.file)).collect(),
+        a.executable_root,
     )
     .unwrap_err();
     assert!(err
         .to_string()
         .contains("outside the compilation's effective surface"));
+}
+
+#[test]
+fn a_sidecar_cannot_downgrade_its_root_binding_to_an_inline_candidate() {
+    let dir = candidate();
+    let mut idx = index(dir.path());
+    idx.authority.as_mut().unwrap().executable_root = ExecutableRootBinding::InlineCandidate;
+    persist(dir.path(), idx); // valid outer binding, wrong relationship
+    assert_invalid(dir.path(), "does not match the candidate authority carrier");
 }
