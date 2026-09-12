@@ -68,7 +68,9 @@ fn fixture() -> Fixture {
 }
 
 fn compile(f: &Fixture, name: &str, spec: &RepresentSpec) -> PathBuf {
-    let out = f.dir.path().join(name);
+    // Hostile case labels include "source"; none may alias the immutable
+    // source container, even on platforms that permit rewriting open files.
+    let out = f.dir.path().join("candidates").join(name);
     // The report is dropped here; every compiler/store/arena/file handle
     // created by the public compiler has already been dropped on return.
     drop(compile_representation(&f.source, &out, spec).unwrap());

@@ -4,7 +4,7 @@
   "branch": "represent-candidate-authority-impl",
   "base": "eadc43a88f5b3252e8bfe4bb463f7c7845b42a29",
   "date": "2026-09-12",
-  "status": "executable-root review blocker fixed and locally verified; ready for transition-A review",
+  "status": "transition-A design review cleared; merge awaits green CI",
   "carrier": "CandidateIndex gains optional completed authority: schema and state-semantics version, TensorSurface, effective ResolvedDecisionVector, payload bindings, a metadata binding, and a convenience state_id. Legacy and in-progress candidates carry no completed authority and the independent reader refuses them.",
   "writers": {
     "bank_compilers": "Expert and KDA bank completion derives effective encodings from completed operand seals over the supplied compilation surface. An unsealed surface tensor remains source. Completion never takes a requested MeasurementKey or state id. Checkpoints emitted during a run have no completed authority.",
@@ -37,6 +37,11 @@
     "static_checks": "cargo fmt --all --check; cargo clippy -p larql-vindex --all-targets -- -D warnings; cargo check --workspace --all-targets.",
     "documentation": "Contract index, documentation links and strict documentation-reference checks passed.",
     "environment": "The sandbox prevented local HTTP mock servers in the first full test attempt. Re-running with the required network permission passed. No model download or K3 measurement was performed."
+  },
+  "windows_fixture_review": {
+    "finding": "The Windows integration run on 22f29ff6 failed with sharing violation OS error 32 during the metadata test. Its source mutation case used the output label source, aliasing the fixture's immutable source directory. Linux and macOS allowed that accidental in-place compilation.",
+    "repair": "All integration fixture outputs now live under a separate candidates directory, so case labels cannot alias the source container. No production authority or state-identity behavior changes.",
+    "validation": "The 11 candidate-authority integration tests are rerun after this fixture correction; platform CI must confirm the Windows result. The earlier 5,059-test and coverage results above describe the production root-binding repair. The informational mutants job on 22f29ff6 timed out and is incomplete, not clean."
   },
   "root_binding_review": {
     "finding": "c84872ea let a full-container sidecar establish X after the executable index.json changed, because it bound only candidate metadata and listed payloads. The regression test failed before the repair when only representation.segment was changed.",
