@@ -1,0 +1,39 @@
+{
+  "programme": "REPRESENT-LOOP-1 — independently established evidence changes future search",
+  "status": "milestone frozen before implementation",
+  "base": "eadc43a88f5b3252e8bfe4bb463f7c7845b42a29",
+  "date": "2026-09-12",
+  "claim": "Accepted evidence changes future search behaviour; rejected evidence cannot.",
+  "transitions": [
+    {
+      "id": "A",
+      "programme": "REPRESENT-CANDIDATE-AUTHORITY-1",
+      "scope": "Implement the existing ten-arm freeze by extending CandidateIndex with effective decisions and tensor-surface authority, bound to the actual persisted payload. Reuse RepresentationState::from_decisions without changing its canonical input or version.",
+      "acceptance": "Compile X; drop all compiler objects; reopen through a separate public reader; verify the persisted payload and reconstruct X. The requested MeasurementKey is never a writer input.",
+      "controls": "Payload mutation refuses; metadata mutation moves identity or refuses; corrupt convenience state id is detected; a caller requesting Y cannot change authority for compilation X; moving the artifact leaves identity unchanged; layout-refused decisions describe source bytes."
+    },
+    {
+      "id": "B",
+      "programme": "OPT-6",
+      "depends_on": "A",
+      "scope": "Resume the paused ingestion implementation and its existing frozen arms, consuming candidate authority earned in A.",
+      "acceptance": "A valid Y artifact independently establishes Y when requested X and the executor restates X; ingestion refuses naming both. All scientific-state inputs remain observably identical after rejection, including measurements, graph, ranking/promotion inputs and resulting snapshot/search identity. Duplicate acceptance changes facts only once."
+    },
+    {
+      "id": "C",
+      "programme": "REPRESENT-LOOP-1 closed-loop witness",
+      "depends_on": "B",
+      "scope": "A tiny deterministic fixture with two or three possible transitions, exercised through selection, actuation, independent verification and ingestion.",
+      "positive": "S0 selects A; valid observation of A is accepted; SearchFacts changes once; S1 selects predetermined B.",
+      "negative": "The same S0 selects A; plausible wrong or invalid evidence is refused; all scientific facts remain equivalent to S0 and the next experiment remains A.",
+      "failure": "Appending an observation without a demonstrated effect on future selection does not establish the claim."
+    }
+  ],
+  "sequencing": "Separate reviewable transitions A, B and C, each verified before its successor. Use a fresh worktree from the stated base; do not rebase the unrelated experimental checkout. K3 follows all three gates.",
+  "parallel_debts": [
+    {"id": "LOWERING-AUTHORITY-2", "scope": "Shared/exported gate-policy judgement", "blocks_loop": false},
+    {"id": "LOWERING-VOCABULARY-1", "scope": "Externally extensible realization/kernel vocabulary", "blocks_loop": false}
+  ],
+  "k3_question_afterwards": "Can an independently evidenced optimizer discover a better physical representation of a heterogeneous frontier model under a real laptop resource envelope?",
+  "out_of_scope": "K3 execution or performance measurements, new lowering mechanisms, and a new general candidate-artifact subsystem."
+}
