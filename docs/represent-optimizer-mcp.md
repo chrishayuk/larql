@@ -1711,10 +1711,29 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 4b | The source identity the optimizer prices from (§4i) | **done** |
 | 5a | A run is instructed, not configured; co-execution (§4j) | **done** |
 | 5b | The actuation bridge — a selected experiment becomes a request (§4j) | **done** |
+| A | Independent candidate-byte authority (REPRESENT-LOOP-1 prerequisite) | implemented; see witnesses below |
 | 6 | The measurement artifact, and ingestion that checks it names its key | |
 | 7 | The loop — reload, derive, execute, ingest, repeat | |
 | 8 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 9 | Extend `PhysicalState` with residency; optimise measured tok/s | |
+
+The pre-K3 milestone is [REPRESENT-LOOP-1](represent/forecasts/represent-loop-1.json):
+**A**, independently establish the compiled artifact; **B**, resume OPT-6 and
+admit observations transactionally; **C**, show accepted evidence changes
+future selection while rejected evidence cannot. K3 follows all three.
+
+Transition A extends the existing `CandidateIndex`. The bank compilers persist
+completed authority in their index; the general representation compiler writes
+the same type as `candidate.json` beside its ordinary container index. The
+[public reader](../crates/larql-vindex/src/format/vindex3/represent/candidate_authority.rs)
+verifies metadata, payloads and operand seals, then feeds persisted source,
+surface and effective decisions into `RepresentationState::from_decisions`.
+It never resolves the requested map or accepts a stored state id as authority.
+[The witnesses and limits](represent/forecasts/represent-candidate-authority-1-notes.json)
+include a fresh read after deleting the source fixture, actual layout fallback,
+and valid-Y/requested-X refusal. Scientific ingestion and the closed-loop
+witness remain separate transitions; establishing candidate validity does not
+append evidence or grant a promotion.
 
 Provenance lives on **incoming edges**, not baked into the node:
 
