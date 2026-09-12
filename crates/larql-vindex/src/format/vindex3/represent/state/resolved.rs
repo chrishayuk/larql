@@ -204,6 +204,29 @@ pub struct ResolvedDecisionVector {
 }
 
 impl ResolvedDecisionVector {
+    /// Validate already-produced decisions against their complete surface.
+    /// This constructs a vector; it does not resolve a requested policy.
+    pub fn from_entries(
+        surface: &TensorSurface,
+        mut decisions: Vec<ResolvedDecision>,
+    ) -> Result<Self, VindexError> {
+        decisions.sort_by(|a, b| (&a.object, &a.tensor).cmp(&(&b.object, &b.tensor)));
+        if decisions.len() != surface.len()
+            || decisions
+                .iter()
+                .zip(surface.entries())
+                .any(|(d, t)| (d.object.as_str(), d.tensor.as_str()) != t.key())
+        {
+            return Err(VindexError::Parse(
+                "effective decisions must name every surface tensor exactly once".into(),
+            ));
+        }
+        if decisions.iter().any(|d| matches!(&d.encoding, ResolvedEncoding::Compiled(e) if e.is_empty() || e == SOURCE_PRECISION)) {
+            return Err(VindexError::Parse("compiled decisions require a non-source encoding".into()));
+        }
+        Ok(Self { decisions })
+    }
+
     pub fn decisions(&self) -> &[ResolvedDecision] {
         &self.decisions
     }

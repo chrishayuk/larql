@@ -168,6 +168,9 @@ pub struct CandidateIndex {
     /// otherwise — see [`Self::apply_promotion`].
     pub selected_representation: String,
     pub ledger: CompilationLedger,
+    /// Completed byte-bound representation authority; absent on legacy or in-progress artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority: Option<super::candidate_authority::CandidateRepresentationAuthority>,
 }
 
 impl CandidateIndex {
@@ -189,6 +192,7 @@ impl CandidateIndex {
             }
         }
         Self {
+            authority: None,
             model: model.into(),
             source,
             object: object.into(),
@@ -235,7 +239,9 @@ pub struct CompileOptions<'a> {
     pub object: &'a str,
     pub role: Role,
     pub experts: u32,
-    /// Where the execution-shaped bank is written.
+    /// Where the execution-shaped bank is written. With no checkpoint,
+    /// completed authority paths are relative to this file's parent;
+    /// persist the index there, or supply its location through checkpoint.
     pub out: &'a Path,
     /// Where the index is persisted MID-RUN, and after how many seals.
     ///
@@ -267,6 +273,7 @@ pub fn compile_expert_bank(
     progress: &mut dyn FnMut(&CompileOutcome),
 ) -> Result<CompileOutcome, VindexError> {
     let (object, role, experts, out) = (opts.object, opts.role, opts.experts, opts.out);
+    index.authority = None;
     let arena = RepresentationArena::new(index.map.clone());
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -438,6 +445,14 @@ pub fn compile_expert_bank(
         progress(&outcome);
     }
     file.flush()?;
+    finish_bank_authority(
+        index,
+        tensors,
+        object,
+        role,
+        out,
+        opts.checkpoint.map(|(p, _)| p),
+    )?;
     if let Some((path, _)) = opts.checkpoint {
         write_index_atomically(index, path)?;
     }
@@ -490,3 +505,57 @@ pub fn expert_of(tensor: &str) -> Option<u32> {
 #[cfg(test)]
 #[path = "compiler_tests.rs"]
 mod tests;
+
+/// Establish only what this completed bank actually stores. The supplied
+/// tensors are the compilation surface; a wider search surface must not
+/// silently be substituted for it by a consumer.
+pub(crate) fn finish_bank_authority(
+    index: &mut CandidateIndex,
+    tensors: &[SourceTensor],
+    object: &str,
+    role: Role,
+    out: &Path,
+    checkpoint: Option<&Path>,
+) -> Result<(), VindexError> {
+    use super::state::{
+        ResolvedDecision, ResolvedDecisionVector, ResolvedEncoding, SurfaceTensor, TensorSurface,
+    };
+    let surface = TensorSurface::new(
+        tensors
+            .iter()
+            .map(|t| SurfaceTensor::new(object, &t.name, role, t.shape.clone())),
+    )?;
+    let decisions = ResolvedDecisionVector::from_entries(
+        &surface,
+        surface
+            .entries()
+            .iter()
+            .map(|t| ResolvedDecision {
+                object: t.object.clone(),
+                tensor: t.tensor.clone(),
+                encoding: index
+                    .ledger
+                    .get(&t.object, &t.tensor)
+                    .map_or(ResolvedEncoding::Source, |s| {
+                        ResolvedEncoding::Compiled(s.encoding.clone())
+                    }),
+            })
+            .collect(),
+    )?;
+    let root = checkpoint
+        .and_then(Path::parent)
+        .unwrap_or_else(|| out.parent().unwrap_or(Path::new(".")));
+    let relative = out.strip_prefix(root).map_err(|e| {
+        VindexError::Parse(format!(
+            "candidate bank must be inside its index directory: {e}"
+        ))
+    })?;
+    super::candidate_authority::finish(
+        index,
+        root,
+        surface,
+        decisions,
+        [(object.to_string(), relative.to_string_lossy().into_owned())].into(),
+        super::candidate_authority::ExecutableRootBinding::InlineCandidate,
+    )
+}

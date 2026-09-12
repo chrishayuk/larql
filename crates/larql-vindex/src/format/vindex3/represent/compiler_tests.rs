@@ -925,3 +925,32 @@ fn placement_bases_and_refusals() {
         .expect_err("per-projection mixing within a layer must refuse");
     assert!(format!("{err}").contains("ONE encoding"), "{err}");
 }
+
+#[test]
+fn completed_bank_authority_is_read_from_disk_and_rejects_changed_bytes() {
+    use super::super::candidate_authority::{read_candidate, CandidateAuthorityRefusal};
+    let dir = tempfile::tempdir().unwrap();
+    let bank = dir.path().join("bank.bin");
+    {
+        let (source, tensors) = Fake::kimi_layer(1, 0.3);
+        let mut idx = index(map_for(vec![]));
+        compile_expert_bank(
+            &source,
+            &tensors,
+            &opts("target.expert_bank", EXPERTS, &bank),
+            &mut idx,
+            &mut |_| {},
+        )
+        .unwrap();
+        write_index_atomically(&idx, &dir.path().join("index.json")).unwrap();
+    }
+    let state = read_candidate(dir.path()).unwrap();
+    assert_eq!(state.decisions().compiled(), (EXPERTS * 3) as usize);
+    let mut bytes = std::fs::read(&bank).unwrap();
+    bytes[0] ^= 1;
+    std::fs::write(&bank, bytes).unwrap();
+    assert!(matches!(
+        read_candidate(dir.path()),
+        Err(CandidateAuthorityRefusal::Binding { .. })
+    ));
+}

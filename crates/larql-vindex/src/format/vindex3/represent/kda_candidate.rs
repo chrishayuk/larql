@@ -193,6 +193,7 @@ pub fn compile_kda_bank(
     progress: &mut dyn FnMut(&CompileOutcome),
 ) -> Result<CompileOutcome, VindexError> {
     let role = Role::DecoderLinear;
+    index.authority = None;
     let arena = RepresentationArena::new(index.map.clone());
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -353,6 +354,14 @@ pub fn compile_kda_bank(
         progress(&outcome);
     }
     file.flush()?;
+    super::compiler::finish_bank_authority(
+        index,
+        tensors,
+        object,
+        role,
+        out,
+        checkpoint.map(|(p, _)| p),
+    )?;
     if let Some((path, _)) = checkpoint {
         write_index_atomically(index, path)?;
     }
