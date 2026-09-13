@@ -1,0 +1,28 @@
+{
+  "programme": "REPRESENT-PARETO-1",
+  "status": "proposed experimental freeze; no implementation or result claimed",
+  "date": "2026-09-13",
+  "predecessor": "REPRESENT-LOOP-1 establishes identity-safe feedback through AlreadyObserved; this milestone requires observation values to affect preference.",
+  "claim": "Accepted quality observations and independently grounded physical costs change which measured candidate REPRESENT prefers. Observation existence alone cannot satisfy the claim.",
+  "first_gate_assumption": "Use a tiny controlled fixture to isolate value-sensitive preference before a real numerical campaign. Fixture observations are explicitly synthetic; this is not a claim of measured K3 quality or performance.",
+  "existing_boundary": {
+    "unmeasured_selection": "RankingRule::PhysicalPrizeFirst orders unmeasured experiments by exact physical prize. ParentStanding is recorded but does not change this rule; no quality-generalization model has been registered.",
+    "measured_preference": "SearchSnapshot::promotion_candidates derives CandidateAssessment from accepted readings, graph edges, byte ledgers and the declared cost model. decide_promotion uses existing evidence classes, comparable ordering evidence and physical gains. SelectForAuthority is not proof that a candidate has been installed or promoted.",
+    "consequence": "First witness measured-candidate preference through the existing path. Changing next_experiment's unmeasured ranking, propagating beliefs to unseen neighbours, or installing a new incumbent requires an explicit follow-on contract and must not be smuggled into this result."
+  },
+  "primary_control": "Construct two independent counterfactual replays from the same initial authoritative state. Hold candidate states, requested keys, bank/instrument/scale, observed-key set, physical cost facts, gates and policy fixed. Admit the observations through OPT-6. Change only a preregistered quality value or coherent quality vector for one candidate. The measured-preference decision must change to the preregistered alternative, with the deciding evidence named. Neither AlreadyObserved nor a changed search policy can explain the difference.",
+  "physical_control": "With measured quality indistinguishable on every comparable dimension and both candidates otherwise eligible, physically distinct candidates must be separated by their grounded costs where the existing policy permits it. Do not substitute candidate names, insertion order, requested PrecisionMap estimates or arbitrary cost scores for evidence.",
+  "required_arms": [
+    "Identify all candidate keys, cost provenance, quality values and expected preference outcomes before implementing the witness; both parent and child readings/ledgers required by promotion must actually exist.",
+    "All newly introduced observations enter through sealed artifacts and independent source/candidate/bank verification with complete, fixture-consistent run reports; no raw registry injection.",
+    "Both counterfactual worlds hold identical observed-key sets and differ only in the stated accepted observation values, yet name different preferred candidates under the same policy.",
+    "Reopen each resulting snapshot and reproduce its preference and deciding evidence; permuting record/graph enumeration cannot change the scientific decision.",
+    "Reject invalid evidence transactionally; neither facts nor measured preference may change. Conflicting same-key readings in ONE history refuse rather than replacing values.",
+    "Missing/incomparable evidence, unsupported tail estimates and conflicting ordering proxies retain the existing refusal or ambiguity semantics; no unregistered weighted quality-cost scalar may manufacture a winner.",
+    "State precisely whether physical evidence is exact bytes, a calibrated cost prediction or measured runtime. Model-predicted time is not reported as measured laptop throughput."
+  ],
+  "not_an_acceptance": "A enters the registry and disappears from the unmeasured set; a different candidate is chosen only because the observed-key set changed; a display-order tiebreak is described as scientific preference; SelectForAuthority is described as a completed promotion.",
+  "implementation_entry_gate": "Freeze the concrete fixture, numeric inputs, exact expected preference changes and cost-authority path before implementation. If the current public path cannot support the claim, record the missing boundary before changing production semantics. This document does not retroactively authorize a heuristic selected because it makes the fixture pass.",
+  "toward_k3": "Follow the controlled value-sensitive gate with real numerical measurements, then a bounded K3 campaign. Resolve EXECUTION-EVIDENCE-SCOPE-1 before real K3 authority measurements, and SOURCE-AUTHORITY-MANIFEST-1 before manifest-only routed containers supply high-authority evidence.",
+  "out_of_scope": "No K3 download/run, kernel work, lowering-vocabulary redesign, new unmeasured-candidate ranking rule or value-sensitive implementation in this preregistration."
+}

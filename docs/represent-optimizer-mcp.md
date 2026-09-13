@@ -1711,16 +1711,27 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 4b | The source identity the optimizer prices from (§4i) | **done** |
 | 5a | A run is instructed, not configured; co-execution (§4j) | **done** |
 | 5b | The actuation bridge — a selected experiment becomes a request (§4j) | **done** |
-| A | Independent candidate-byte authority (REPRESENT-LOOP-1 prerequisite) | implemented; see witnesses below |
-| 6 | The measurement artifact, and ingestion that checks it names its key | |
-| 7 | The loop — reload, derive, execute, ingest, repeat | |
+| A | Independent candidate-byte authority (REPRESENT-LOOP-1 prerequisite) | **done**, #474 |
+| 6 | The measurement artifact, and ingestion that checks it names its key | **done**, #475 |
+| 7 | Paired feedback witness — reload, derive, execute, ingest, reselect | **done**, #476; synthetic observations over real artifacts |
 | 8 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 9 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 
 The pre-K3 milestone is [REPRESENT-LOOP-1](represent/forecasts/represent-loop-1.json):
 **A**, independently establish the compiled artifact; **B**, resume OPT-6 and
 admit observations transactionally; **C**, show accepted evidence changes
-future selection while rejected evidence cannot. K3 follows all three.
+future selection while rejected evidence cannot. All three are reviewed and
+merged. The demonstrated feedback uses `AlreadyObserved`; it is not yet
+numerical-quality-dependent preference or promotion.
+
+The next experimental milestone is [REPRESENT-PARETO-1](represent/forecasts/represent-pareto-1.json):
+hold candidate identities, observed-key sets, cost facts and policy fixed across
+counterfactual replays, and require accepted quality values to change measured
+candidate preference. The first-gate assumption is a tiny controlled fixture;
+real numerical measurements and a bounded K3 campaign follow. Concrete numeric
+inputs and expected decisions must be frozen before implementation. This does
+not introduce a heuristic for unmeasured neighbours or claim that
+`SelectForAuthority` installs a promoted candidate.
 
 Transition A extends the existing `CandidateIndex`. The bank compilers persist
 completed authority in their index; the general representation compiler writes
