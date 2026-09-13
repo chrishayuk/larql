@@ -3,7 +3,7 @@
   "date": "2026-09-13",
   "base": "2a5e0d6963833d89ddd3159e1f28f2bbbab13ef2, merged Transition B / #475",
   "preregistration": "966dec0b records B completion, the paired C freeze and EXECUTION-EVIDENCE-SCOPE-1 before C implementation",
-  "status": "paired witness passes; local validation complete; awaiting review and CI; not merged",
+  "status": "complete; reviewed and merged as #476 / 23a56db1fb1f196b5c6e883ab0f6986adfb8cc5f after every CI workflow passed on ac892f2e, including both informational mutation jobs",
   "claim": "Accepted evidence changes future search behaviour; rejected evidence cannot.",
   "witness": "accepted_evidence_changes_future_selection_and_rejected_evidence_cannot in represent/ingest/loop_tests.rs",
   "positive": "The test deserializes S0 and asserts two eligible experiments. It names A (all seven eligible layer-0 projections) and B (layer-0 q_proj) from their frozen actions before any observation. Both candidates are compiled without requested keys and independently established. S0 ranks A first. PreparedExperiment::of derives its request; ExecutorRegistry dispatches it through DeclaredArtifacts to the synthetic fixture executor. MeasurementArtifact captures the cold reader's binding and is serialized; execution-side helper objects are dropped. ingest_bytes re-establishes authority and records A once. Only the measurement registry changes. Candidate enumeration explicitly prunes A as AlreadyObserved and selects B as the sole next experiment; PreparedExperiment::of now requests B.",
@@ -23,6 +23,6 @@
     "coverage": "93.75% lines; all 470 per-file policy checks pass with no threshold or exemption changes",
     "static": "cargo clippy -p larql-vindex --all-targets -- -D warnings, cargo fmt --all --check and git diff --check passed",
     "documentation": "105 contract witnesses resolve; 866 relative documentation links resolve; 1448 strict references checked with no broken references",
-    "scope": "No production behavior or public API change; full workspace/doctest results remain those of reviewed Transition B. Remote CI must pass on this witness branch before merge."
+    "scope": "No production behavior or public API change; full workspace/doctest results remain those of reviewed Transition B. The witness branch subsequently passed all remote CI before merge."
   }
 }
