@@ -66,7 +66,13 @@ impl OpenAiCompatible {
     pub fn openai(model: impl Into<String>, timeout: Duration) -> Result<Self, ProviderError> {
         let key = std::env::var("OPENAI_API_KEY")
             .map_err(|_| ProviderError::MissingEnv("OPENAI_API_KEY"))?;
-        Self::new("https://api.openai.com", model, Some(key), "openai", timeout)
+        Self::new(
+            "https://api.openai.com",
+            model,
+            Some(key),
+            "openai",
+            timeout,
+        )
     }
 
     /// Exoscale.ch's AI gateway.  Reads `EXOSCALE_API_KEY` from env.
@@ -83,7 +89,13 @@ impl OpenAiCompatible {
     pub fn together(model: impl Into<String>, timeout: Duration) -> Result<Self, ProviderError> {
         let key = std::env::var("TOGETHER_API_KEY")
             .map_err(|_| ProviderError::MissingEnv("TOGETHER_API_KEY"))?;
-        Self::new("https://api.together.xyz", model, Some(key), "together", timeout)
+        Self::new(
+            "https://api.together.xyz",
+            model,
+            Some(key),
+            "together",
+            timeout,
+        )
     }
 
     /// Local-or-LAN OpenAI-compatible server (vLLM, llama.cpp,
@@ -139,8 +151,8 @@ impl CloudClient for OpenAiCompatible {
                 body: String::from_utf8_lossy(&bytes).into_owned(),
             });
         }
-        let parsed: OpenAiChatResponse = serde_json::from_slice(&bytes)
-            .map_err(|e| ProviderError::Parse(e.to_string()))?;
+        let parsed: OpenAiChatResponse =
+            serde_json::from_slice(&bytes).map_err(|e| ProviderError::Parse(e.to_string()))?;
         let choice = parsed
             .choices
             .into_iter()
@@ -214,8 +226,8 @@ impl CloudClient for OpenAiCompatible {
                 body: String::from_utf8_lossy(&bytes).into_owned(),
             });
         }
-        let parsed: OpenAiEmbedResponse = serde_json::from_slice(&bytes)
-            .map_err(|e| ProviderError::Parse(e.to_string()))?;
+        let parsed: OpenAiEmbedResponse =
+            serde_json::from_slice(&bytes).map_err(|e| ProviderError::Parse(e.to_string()))?;
         let vectors = parsed.data.into_iter().map(|d| d.embedding).collect();
         Ok(EmbedResponse {
             vectors,
@@ -457,13 +469,9 @@ mod tests {
     #[tokio::test]
     async fn server_error_propagates() {
         // Hit a non-routable port to force a transport error.
-        let bad = OpenAiCompatible::local(
-            "http://127.0.0.1:1",
-            "x",
-            None,
-            Duration::from_millis(200),
-        )
-        .expect("client");
+        let bad =
+            OpenAiCompatible::local("http://127.0.0.1:1", "x", None, Duration::from_millis(200))
+                .expect("client");
         let err = bad
             .chat(ChatRequest {
                 messages: vec![ChatMessage {
@@ -475,6 +483,9 @@ mod tests {
                 stop: vec![],
             })
             .await;
-        assert!(matches!(err, Err(ProviderError::Transport(_))), "got {err:?}");
+        assert!(
+            matches!(err, Err(ProviderError::Transport(_))),
+            "got {err:?}"
+        );
     }
 }

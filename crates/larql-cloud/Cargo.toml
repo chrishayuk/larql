@@ -42,7 +42,5 @@ http-body-util = "0.1"
 bytes = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
-[lints.clippy]
-unwrap_used = "deny"
-panic = "deny"
-panic_in_result_fn = "deny"
+[lints]
+workspace = true

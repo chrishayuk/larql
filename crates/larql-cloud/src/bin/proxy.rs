@@ -9,8 +9,7 @@
 //! Endpoints:
 //! - `GET  /v1/health`            — liveness
 //! - `GET  /v1/stats`             — `{model, mode: "cloud-proxy",
-//!                                    provider, ...}` so pg_infer's
-//!                                    registration probe succeeds
+//!   provider, ...}` so pg_infer's registration probe succeeds
 //! - `POST /v1/infer`             — `{prompt, top}` → predictions
 //! - `POST /v1/embeddings`        — `{input: [...]}` → vectors
 //! - `POST /v1/chat/completions`  — OpenAI-shaped chat passthrough
@@ -40,8 +39,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::{Parser, ValueEnum};
 use larql_cloud::{
-    BedrockAuth, BedrockClient, ChatRequest, ChatResponse, CloudClient, EmbedRequest,
-    InferRequest, InferResponse, MessageRole, OpenAiCompatible, ProviderError,
+    BedrockAuth, BedrockClient, ChatRequest, ChatResponse, CloudClient, EmbedRequest, InferRequest,
+    InferResponse, MessageRole, OpenAiCompatible, ProviderError,
 };
 use serde::Deserialize;
 use tracing::{error, info};
@@ -320,9 +319,7 @@ struct WalkParams {
     prompt: Option<String>,
 }
 
-async fn handle_walk(
-    Query(_q): Query<WalkParams>,
-) -> impl IntoResponse {
+async fn handle_walk(Query(_q): Query<WalkParams>) -> impl IntoResponse {
     handle_unsupported().await
 }
 
@@ -352,10 +349,9 @@ impl IntoResponse for ProxyError {
                 StatusCode::NOT_IMPLEMENTED,
                 serde_json::json!({"error": format!("provider does not support {operation}")}),
             ),
-            ProviderError::Invalid(msg) => (
-                StatusCode::BAD_REQUEST,
-                serde_json::json!({"error": msg}),
-            ),
+            ProviderError::Invalid(msg) => {
+                (StatusCode::BAD_REQUEST, serde_json::json!({"error": msg}))
+            }
             _ => (
                 StatusCode::BAD_GATEWAY,
                 serde_json::json!({"error": self.0.to_string()}),
@@ -489,4 +485,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     Ok(())
 }
-

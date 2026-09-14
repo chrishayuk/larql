@@ -27,7 +27,9 @@ const PROXY_BIN: &str = env!("CARGO_BIN_EXE_larql-cloud-proxy");
 type RequestLog = Arc<Mutex<Vec<(String, String)>>>;
 
 async fn spawn_mock() -> (String, RequestLog) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let log: RequestLog = Arc::new(Mutex::new(Vec::new()));
     let log_bg = log.clone();
@@ -227,7 +229,10 @@ async fn proxy_end_to_end_against_local_provider() {
 
     // Mock saw exactly the requests we expected (3 chat + 1 embed).
     let logged = log.lock().expect("log");
-    let chat_count = logged.iter().filter(|(_, p)| p == "/v1/chat/completions").count();
+    let chat_count = logged
+        .iter()
+        .filter(|(_, p)| p == "/v1/chat/completions")
+        .count();
     let emb_count = logged.iter().filter(|(_, p)| p == "/v1/embeddings").count();
     assert_eq!(chat_count, 2, "expected 2 chat calls (infer + chat)");
     assert_eq!(emb_count, 1);

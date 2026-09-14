@@ -125,8 +125,7 @@ impl BedrockClient {
         // Match either by looking for the `.anthropic.` substring or
         // a leading `anthropic.`.  Substring is sufficient because no
         // non-Anthropic model id contains that token.
-        self.model_id.starts_with("anthropic.")
-            || self.model_id.contains(".anthropic.")
+        self.model_id.starts_with("anthropic.") || self.model_id.contains(".anthropic.")
     }
 
     fn is_titan_embed(&self) -> bool {
@@ -203,8 +202,8 @@ impl CloudClient for BedrockClient {
             .send(&url, "POST", &body_bytes, "bedrock-runtime")
             .await?;
 
-        let parsed: AnthropicResponse = serde_json::from_slice(&resp)
-            .map_err(|e| ProviderError::Parse(e.to_string()))?;
+        let parsed: AnthropicResponse =
+            serde_json::from_slice(&resp).map_err(|e| ProviderError::Parse(e.to_string()))?;
         let content = parsed
             .content
             .into_iter()
@@ -281,8 +280,8 @@ impl CloudClient for BedrockClient {
             let resp = self
                 .send(&url, "POST", &body_bytes, "bedrock-runtime")
                 .await?;
-            let parsed: TitanEmbedResponse = serde_json::from_slice(&resp)
-                .map_err(|e| ProviderError::Parse(e.to_string()))?;
+            let parsed: TitanEmbedResponse =
+                serde_json::from_slice(&resp).map_err(|e| ProviderError::Parse(e.to_string()))?;
             vectors.push(parsed.embedding);
         }
         Ok(EmbedResponse {
@@ -419,6 +418,7 @@ mod sigv4 {
 
     type HmacSha256 = Hmac<Sha256>;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn sign(
         builder: RequestBuilder,
         method: &str,
@@ -430,8 +430,8 @@ mod sigv4 {
         region: &str,
         service: &str,
     ) -> Result<RequestBuilder, ProviderError> {
-        let parsed = url::Url::parse(url)
-            .map_err(|e| ProviderError::Invalid(format!("sign url: {e}")))?;
+        let parsed =
+            url::Url::parse(url).map_err(|e| ProviderError::Invalid(format!("sign url: {e}")))?;
         let host = parsed
             .host_str()
             .ok_or_else(|| ProviderError::Invalid("url has no host".into()))?
@@ -477,9 +477,7 @@ mod sigv4 {
         let cr_hash = hex_sha256(canonical_request.as_bytes());
 
         let credential_scope = format!("{date_stamp}/{region}/{service}/aws4_request");
-        let string_to_sign = format!(
-            "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{cr_hash}"
-        );
+        let string_to_sign = format!("AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{cr_hash}");
 
         let signing_key = derive_signing_key(secret_key, &date_stamp, region, service)?;
         let signature = hmac_hex(&signing_key, string_to_sign.as_bytes())?;
@@ -526,7 +524,10 @@ mod sigv4 {
         region: &str,
         service: &str,
     ) -> Result<Vec<u8>, ProviderError> {
-        let k_date = hmac_raw(format!("AWS4{secret_key}").as_bytes(), date_stamp.as_bytes())?;
+        let k_date = hmac_raw(
+            format!("AWS4{secret_key}").as_bytes(),
+            date_stamp.as_bytes(),
+        )?;
         let k_region = hmac_raw(&k_date, region.as_bytes())?;
         let k_service = hmac_raw(&k_region, service.as_bytes())?;
         hmac_raw(&k_service, b"aws4_request")
