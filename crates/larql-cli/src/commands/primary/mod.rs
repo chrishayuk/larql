@@ -32,4 +32,5 @@ pub mod shannon_cmd;
 pub mod shannon_trace;
 pub mod show_cmd;
 pub mod slice_cmd;
+pub mod speak_serve;
 pub mod vindex3_cmd;
