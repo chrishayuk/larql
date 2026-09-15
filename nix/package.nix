@@ -31,12 +31,11 @@ pkgs.rustPlatform.buildRustPackage {
   version = "0.1.0";
   src = srcFiltered;
 
-  cargoHash = "sha256-6mvESL1m5sZZCx8YdArgTkwNnGHRQz3RPub/hVYelqg=";
+  cargoHash = "sha256-UEFD9S0jgpD4+x1LaXgIzp0OZvAcVQifqcBa8hFVp6o=";
 
-  # Use system protoc instead of bundled protobuf-src
-  cargoPatches = [
-    ./patches/use-system-protoc.patch
-  ];
+  # No cargoPatches: `crates/*/build.rs` already honours an explicit
+  # PROTOC (set below), so the historical use-system-protoc.patch has
+  # nothing left to do. See the note under `cmake` in nativeBuildInputs.
 
   nativeBuildInputs = with pkgs; [
     pkg-config
@@ -56,6 +55,24 @@ pkgs.rustPlatform.buildRustPackage {
 
   # Point tonic-build to nixpkgs protoc
   PROTOC = "${pkgs.protobuf}/bin/protoc";
+
+  # utoipa-swagger-ui's build script otherwise tries to `curl` the Swagger
+  # UI dist tarball from the network, which cannot work in the Nix sandbox
+  # (no network, and no curl in the build inputs). Hand it a pre-fetched
+  # zip via the env var the build script documents, so it copies dist/
+  # out of a fixed-output derivation instead of fetching.
+  #
+  # The version is pinned to what the crate wants; if a utoipa-swagger-ui
+  # bump changes it, the build fails loudly with the new URL in the log
+  # rather than silently serving a mismatched UI.
+  SWAGGER_UI_DOWNLOAD_URL =
+    let
+      swaggerUi = pkgs.fetchurl {
+        url = "https://github.com/swagger-api/swagger-ui/archive/refs/tags/v5.17.14.zip";
+        hash = "sha256-SBJE0IEgl7Efuu73n3HZQrFxYX+cn5UU5jrL4T5xzNw=";
+      };
+    in
+    "file://${swaggerUi}";
 
   # Point openblas-src to system library
   OPENBLAS_LIB_DIR = lib.optionalString pkgs.stdenv.hostPlatform.isLinux
