@@ -25,9 +25,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::super::byte_ledger::{ByteLedger, ScopeBytes};
 use super::super::compiler::{read_source_identity, SourceIdentity};
 use super::super::diagnostic::DiagnosticPolicy;
-use super::super::byte_ledger::{ByteLedger, ScopeBytes};
 use super::super::execution_cost::{ExecutionCostModel, ExecutionCostObservation};
 use super::super::map::{Exception, PrecisionMap};
 use super::super::measure::TEACHER_FORCED_TWO_ARM;
@@ -560,8 +560,8 @@ impl PricedRecord {
 
 // ------------------------------------------------- REPRESENT-PARETO-1
 
-/// One ledger for the PARETO-1 fixture: every scope the decoder reads
-/// per token, changed or not, so `fraction_removed` has a denominator.
+/// One ledger for a PARETO-1 world: every scope the decoder reads per
+/// token, changed or not, so `fraction_removed` has a denominator.
 fn pareto_ledger(name: &str, q: u64, k: u64) -> ByteLedger {
     let scope = |scope: &str, family: &str, baseline, candidate| ScopeBytes {
         scope: scope.into(),
@@ -586,8 +586,12 @@ fn pareto_ledger(name: &str, q: u64, k: u64) -> ByteLedger {
 /// Its beta is the only slope this model has for this checkpoint —
 /// `predict` keys on `model_identity` and then on nearest byte
 /// fraction, never on codec or realization. PARETO-1 holds physical
-/// facts constant across candidates precisely so its claim does not
-/// rest on that slope being right.
+/// facts constant across candidates in every world but C2 precisely so
+/// its claim does not rest on that slope being right.
+///
+/// ```text
+/// beta = ((10.0 - 8.0)/10.0) / ((32768 - 24576)/32768) = 0.2/0.25 = 0.8
+/// ```
 fn pareto_cost_model() -> ExecutionCostModel {
     ExecutionCostModel::new(vec![ExecutionCostObservation {
         id: "pareto-1-fixture-001".into(),
@@ -610,66 +614,127 @@ fn pareto_cost_model() -> ExecutionCostModel {
     }])
 }
 
-/// **The PARETO-1 factual fixture.** Two measured children of one root,
-/// each carrying a byte ledger, under an execution cost model and
-/// ROUTE-CAL-1's calibration registry.
+/// **One PARETO-1 world — everything a world varies, and nothing else.**
 ///
-/// Distinct from [`rung5_snapshot`], which deliberately carries neither
-/// ledgers nor a cost model, so `promotion_candidates` skips every edge
-/// there. PARETO-1 needs the edges to survive assessment.
+/// The two candidates, their identities, the graph and its actions, the
+/// parent reading, the cost model and ROUTE-CAL-1's registry are FIXED
+/// across every world. A world differs only in the accepted
+/// `(kl_p99, route_flips)` of each candidate and — in exactly one world
+/// — the candidate byte ledgers that price them.
 ///
-/// **The registry is the point.** `config()` carries
+/// **The registry is why this fixture exists.** `config()` carries
 /// `TailSupportPolicy::route_cal_1()` and
 /// `SearchCalibrationRegistry::default()` — ROUTE-CAL-1's policy
 /// without ROUTE-CAL-1's calibrations. `DiagnosticReading::evidence`
 /// asks at a hardcoded `EvidenceScale::Diagnostic`, where an
 /// unregistered statistic is `Unusable` with no `is_priceable`
 /// fallback, so under the default registry NOTHING orders and every
-/// comparison is vacuous. Carrying the real registry is what makes
-/// `KlP99` and `RouteFlipRate` able to rank anything at all.
+/// comparison is vacuous. Carrying the real registry is what leaves
+/// `KlP99` and `RouteFlipRate` — and only those two — able to rank.
+pub struct ParetoWorld {
+    a_quality: (f64, u64),
+    b_quality: (f64, u64),
+    a_bytes: (u64, u64),
+    b_bytes: (u64, u64),
+}
+
+impl ParetoWorld {
+    /// Candidate A's identity, exactly as `promotion_candidates` labels
+    /// it from `edge.action().label`.
+    pub const A: &'static str = "\u{2212}M26 +K24";
+    /// Candidate B's identity.
+    pub const B: &'static str = "\u{2212}K25 +H";
+
+    /// **Physical facts INERT across the pair.** Both ledgers remove
+    /// 8,192 of 32,768 bytes, so `fraction_removed` is 0.25 on each,
+    /// both predict `gpu_ms_saved = 2.0`, and stage 5 of
+    /// `decide_promotion` cannot separate the candidates. Only the
+    /// accepted quality values can.
+    pub fn inert(a_quality: (f64, u64), b_quality: (f64, u64)) -> Self {
+        Self {
+            a_quality,
+            b_quality,
+            a_bytes: (8_192, 16_384),
+            b_bytes: (16_384, 8_192),
+        }
+    }
+
+    /// **B removes half as much.** `fraction_removed` is 0.125 against
+    /// A's 0.25, so the predicted gains are 1.0 against 2.0.
+    ///
+    /// The ONLY world where stage 5 is allowed to decide, and the only
+    /// place this asymmetry may appear. Everywhere else a physical
+    /// difference would make a quality result unattributable.
+    pub fn physically_separated(a_quality: (f64, u64), b_quality: (f64, u64)) -> Self {
+        Self {
+            a_quality,
+            b_quality,
+            a_bytes: (8_192, 16_384),
+            b_bytes: (16_384, 12_288),
+        }
+    }
+
+    pub fn snapshot(&self) -> SearchSnapshot {
+        let mut graph =
+            RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, p());
+        for (child, action, who) in [
+            (
+                t1(),
+                Action::new(Self::A).removing(["M26"]).adding(["K24"]),
+                "pareto-1/A",
+            ),
+            (
+                s2(),
+                Action::new(Self::B).removing(["K25"]).adding(["H"]),
+                "pareto-1/B",
+            ),
+        ] {
+            graph
+                .apply(p().physical_id(), action, child, Provenance::new(who))
+                .expect("both children are physically lighter than the parent");
+        }
+
+        let mut measurements = MeasurementRegistry::new();
+        for (s, (kl, flips)) in [
+            (p(), (3.3532e-3, 1427)),
+            (t1(), self.a_quality),
+            (s2(), self.b_quality),
+        ] {
+            measurements
+                .record_fixture(
+                    key_for(&s, EvidenceScale::Authority),
+                    authority_reading(kl, flips),
+                )
+                .expect("record");
+        }
+
+        let mut config = config();
+        config.calibrations = SearchCalibrationRegistry::route_cal_1();
+
+        let mut facts = facts(graph, measurements);
+        facts.byte_ledgers = BTreeMap::from([
+            (
+                p().physical_id().clone(),
+                pareto_ledger("P", 16_384, 16_384),
+            ),
+            (
+                t1().physical_id().clone(),
+                pareto_ledger("T1", self.a_bytes.0, self.a_bytes.1),
+            ),
+            (
+                s2().physical_id().clone(),
+                pareto_ledger("S2", self.b_bytes.0, self.b_bytes.1),
+            ),
+        ]);
+        facts.execution_cost = pareto_cost_model();
+
+        SearchSnapshot::new(space(), config, facts)
+    }
+}
+
+/// **The P1 instantiation, pinned.** Its numbers are the ones P1 scored
+/// and must keep producing: both candidates `Priced`, tier 2,
+/// `gpu_ms_saved` exactly 2.0, equal across the pair.
 pub fn pareto_p1_snapshot() -> SearchSnapshot {
-    let mut graph = RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, p());
-    for (child, action, who) in [
-        (
-            t1(),
-            Action::new("\u{2212}M26 +K24").removing(["M26"]).adding(["K24"]),
-            "pareto-1/A",
-        ),
-        (
-            s2(),
-            Action::new("\u{2212}K25 +H").removing(["K25"]).adding(["H"]),
-            "pareto-1/B",
-        ),
-    ] {
-        graph
-            .apply(p().physical_id(), action, child, Provenance::new(who))
-            .expect("both children are physically lighter than the parent");
-    }
-
-    let mut measurements = MeasurementRegistry::new();
-    for (s, kl, flips) in [
-        (p(), 3.3532e-3, 1427),
-        (t1(), 3.6480e-3, 1570),
-        (s2(), 4.0563e-3, 1309),
-    ] {
-        measurements
-            .record_fixture(
-                key_for(&s, EvidenceScale::Authority),
-                authority_reading(kl, flips),
-            )
-            .expect("record");
-    }
-
-    let mut config = config();
-    config.calibrations = SearchCalibrationRegistry::route_cal_1();
-
-    let mut facts = facts(graph, measurements);
-    facts.byte_ledgers = BTreeMap::from([
-        (p().physical_id().clone(), pareto_ledger("P", 16_384, 16_384)),
-        (t1().physical_id().clone(), pareto_ledger("T1", 8_192, 16_384)),
-        (s2().physical_id().clone(), pareto_ledger("S2", 16_384, 8_192)),
-    ]);
-    facts.execution_cost = pareto_cost_model();
-
-    SearchSnapshot::new(space(), config, facts)
+    ParetoWorld::inert((3.6480e-3, 1570), (4.0563e-3, 1309)).snapshot()
 }

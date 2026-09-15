@@ -103,8 +103,16 @@ fn p1_both_candidates_buy_time_and_share_one_promotion_tier() {
     // 5 cannot separate the candidates either, so only the accepted
     // quality values can.
     assert_eq!(
-        candidates[0].promotion.assessment.ranking_score.gpu_ms_saved,
-        candidates[1].promotion.assessment.ranking_score.gpu_ms_saved,
+        candidates[0]
+            .promotion
+            .assessment
+            .ranking_score
+            .gpu_ms_saved,
+        candidates[1]
+            .promotion
+            .assessment
+            .ranking_score
+            .gpu_ms_saved,
         "physical gain must be inert across the pair"
     );
 }
@@ -138,4 +146,222 @@ fn p2_repair_the_carried_registry_can_order_something() {
         ),
         "the corrected fixture still cannot order anything: {decision:?}"
     );
+}
+
+// ---------------------------------------------------- the five worlds
+
+use super::quality::Statistic;
+use super::state::fixtures::ParetoWorld;
+use super::state::snapshot::SearchSnapshot;
+
+/// The three accepted quality vectors the worlds are built from, held in
+/// the same magnitude band as the P1 instantiation so that no world
+/// changes the classification regime. Lower is better on both.
+const BETTER: (f64, u64) = (3.4000e-3, 1200);
+const WORSE: (f64, u64) = (3.9000e-3, 1600);
+const MIDDLE: (f64, u64) = (3.6500e-3, 1400);
+
+/// Decide one world, checking the two things every world must satisfy
+/// whatever its verdict.
+fn decide(world: &ParetoWorld) -> PromotionDecision {
+    let snap = world.snapshot();
+    let candidates = snap
+        .promotion_candidates(EvidenceScale::Authority)
+        .expect("the cost model covers this model");
+    assert_eq!(candidates.len(), 2, "both edges must survive assessment");
+
+    // Stage 1 must not decide in ANY world, or the frontier is never
+    // reached and the world measured nothing.
+    assert_eq!(
+        candidates[0]
+            .promotion
+            .assessment
+            .ranking_score
+            .class
+            .tier(),
+        candidates[1]
+            .promotion
+            .assessment
+            .ranking_score
+            .class
+            .tier(),
+        "stage 1 separated the candidates; the frontier was never reached"
+    );
+
+    let decision = decide_promotion(
+        &candidates,
+        &snap.config().calibrations,
+        &snap.config().tail_support,
+    );
+
+    // R4-F1, re-armed at this layer: permuting enumeration order changes
+    // neither the decision nor the RECORD.
+    let mut reversed = candidates.clone();
+    reversed.reverse();
+    let permuted = decide_promotion(
+        &reversed,
+        &snap.config().calibrations,
+        &snap.config().tail_support,
+    );
+    assert_eq!(
+        format!("{decision:?}"),
+        format!("{permuted:?}"),
+        "input order reached the decision or its record"
+    );
+
+    decision
+}
+
+/// **W1 — quality alone selects A.**
+#[test]
+fn w1_quality_alone_selects_a() {
+    match decide(&ParetoWorld::inert(BETTER, WORSE)) {
+        PromotionDecision::SelectForAuthority {
+            candidate,
+            evidence,
+        } => {
+            assert_eq!(candidate, ParetoWorld::A);
+            assert_eq!(evidence.dominated, vec![ParetoWorld::B.to_string()]);
+            assert!(
+                !evidence.decided_by_physical_gain,
+                "physical gain is inert here; a true flag would mean the \
+                 economics decided and the quality result is unattributable"
+            );
+            assert_eq!(
+                evidence.deciding,
+                vec![Statistic::KlP99, Statistic::RouteFlipRate],
+                "both registered ordering proxies separated the pair"
+            );
+        }
+        other => panic!("expected A selected, got {other:?}"),
+    }
+}
+
+/// **W2 — the same machinery selects B when only the accepted values
+/// swap.** This is the claim.
+#[test]
+fn w2_swapping_only_the_accepted_values_selects_b() {
+    match decide(&ParetoWorld::inert(WORSE, BETTER)) {
+        PromotionDecision::SelectForAuthority {
+            candidate,
+            evidence,
+        } => {
+            assert_eq!(candidate, ParetoWorld::B);
+            assert_eq!(evidence.dominated, vec![ParetoWorld::A.to_string()]);
+            assert!(!evidence.decided_by_physical_gain);
+            assert_eq!(
+                evidence.deciding,
+                vec![Statistic::KlP99, Statistic::RouteFlipRate]
+            );
+        }
+        other => panic!("expected B selected, got {other:?}"),
+    }
+}
+
+/// **W1 and W2 differ in NOTHING except the accepted values.**
+///
+/// Asserted explicitly, because without it the pair of results above is
+/// LOOP-1's claim wearing a new name: a different answer obtained by
+/// observing a different key set is not value-sensitivity.
+#[test]
+fn w1_and_w2_hold_the_observed_key_set_identical() {
+    let keys = |s: &SearchSnapshot| {
+        let mut v: Vec<String> = s
+            .facts()
+            .measurements
+            .keys()
+            .map(|k| k.as_str().to_string())
+            .collect();
+        v.sort();
+        v
+    };
+    let ids = |s: &SearchSnapshot| {
+        let mut v: Vec<String> = s
+            .promotion_candidates(EvidenceScale::Authority)
+            .expect("cost")
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
+        v.sort();
+        v
+    };
+    let gains = |s: &SearchSnapshot| {
+        let mut v: Vec<f64> = s
+            .promotion_candidates(EvidenceScale::Authority)
+            .expect("cost")
+            .iter()
+            .map(|c| c.promotion.assessment.ranking_score.gpu_ms_saved)
+            .collect();
+        v.sort_by(f64::total_cmp);
+        v
+    };
+
+    let w1 = ParetoWorld::inert(BETTER, WORSE).snapshot();
+    let w2 = ParetoWorld::inert(WORSE, BETTER).snapshot();
+
+    assert_eq!(keys(&w1), keys(&w2), "the observed key SET must be equal");
+    assert_eq!(ids(&w1), ids(&w2), "the same two candidates");
+    assert_eq!(gains(&w1), gains(&w2), "the same physical facts");
+    assert_eq!(
+        gains(&w1),
+        vec![FROZEN_GPU_MS_SAVED, FROZEN_GPU_MS_SAVED],
+        "and those facts are inert across the pair"
+    );
+}
+
+/// **C1 — conflicting proxies refuse rather than manufacture a winner.**
+///
+/// The `AmbiguityReason` is pinned, not just the variant. C1 would
+/// receive `Ambiguous` even from a fixture whose comparator was blind,
+/// so a test matching only the variant passes while the mechanism it
+/// claims to exercise is absent.
+#[test]
+fn c1_conflicting_proxies_refuse() {
+    match decide(&ParetoWorld::inert(
+        (BETTER.0, WORSE.1),
+        (WORSE.0, BETTER.1),
+    )) {
+        PromotionDecision::Ambiguous { candidates, reason } => {
+            assert_eq!(reason, AmbiguityReason::ConflictingOrderingProxies);
+            let mut expected = vec![ParetoWorld::A.to_string(), ParetoWorld::B.to_string()];
+            expected.sort();
+            assert_eq!(candidates, expected);
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+/// **C2 — indistinguishable quality, separated by grounded cost.**
+///
+/// The empty `deciding` and the true flag are what distinguish this from
+/// W1 and W2 in the trace: a reader never has to guess which stage
+/// decided.
+#[test]
+fn c2_equal_quality_is_separated_by_physical_gain() {
+    match decide(&ParetoWorld::physically_separated(MIDDLE, MIDDLE)) {
+        PromotionDecision::SelectForAuthority {
+            candidate,
+            evidence,
+        } => {
+            assert_eq!(candidate, ParetoWorld::A, "A removes twice the bytes");
+            assert!(evidence.decided_by_physical_gain);
+            assert!(evidence.deciding.is_empty(), "no proxy separated them");
+            assert!(evidence.dominated.is_empty());
+        }
+        other => panic!("expected a physical decision, got {other:?}"),
+    }
+}
+
+/// **C3 — identity must never break a tie.**
+#[test]
+fn c3_equal_on_everything_refuses() {
+    match decide(&ParetoWorld::inert(MIDDLE, MIDDLE)) {
+        PromotionDecision::Ambiguous { candidates, reason } => {
+            assert_eq!(reason, AmbiguityReason::IndistinguishableOnEveryProxy);
+            let mut expected = vec![ParetoWorld::A.to_string(), ParetoWorld::B.to_string()];
+            expected.sort();
+            assert_eq!(candidates, expected);
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
 }
