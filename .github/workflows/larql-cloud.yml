@@ -1,0 +1,130 @@
+# larql-cloud cross-platform CI
+#
+# Runs fmt + feature matrix + clippy + tests on Linux and Windows (plus
+# macOS on main). The crate is an HTTP client wrapper: no model weights,
+# no platform-specific backends, and its integration test binds only
+# loopback, so every check here is hermetic.
+
+name: larql-cloud
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-cloud/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-cloud.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-cloud/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-cloud.yml'
+  workflow_dispatch: {}
+
+# Supersede in-flight pull-request runs; see larql-core.yml for why
+# non-PR runs are keyed by run_id rather than by ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+
+    strategy:
+      fail-fast: false
+      # macOS runs on pushes to main, not on pull requests — same
+      # rationale as larql-core: this crate has no `cfg(target_os = ...)`
+      # surface, no unix/windows split that Linux and Windows do not
+      # already cover between them, and no Accelerate linkage, so the
+      # macOS PR leg would compile the same portable code a third time
+      # while macOS queue waits set this repo's PR wall clock.
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-14"]') }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry (downloads only, never target/)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-reg2-cloud-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg2-cloud-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code, so a green
+          # matrix would be evidence about an artefact that is not in this
+          # commit. Fail loudly rather than build on one.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
+
+      - name: Format check
+        run: cargo fmt -p larql-cloud -- --check
+
+      - name: Check default features
+        run: cargo check -p larql-cloud --all-targets
+
+      # Both provider features are additive and independently selectable;
+      # `bedrock` is the one that pulls extra deps (hmac/sha2/hex for
+      # SigV4), so a no-default build proves the gating is real.
+      - name: Check no default features
+        run: cargo check -p larql-cloud --no-default-features --all-targets
+
+      - name: Check openai-only feature
+        run: cargo check -p larql-cloud --no-default-features --features openai --all-targets
+
+      - name: Check bedrock-only feature
+        run: cargo check -p larql-cloud --no-default-features --features bedrock --all-targets
+
+      - name: Clippy default features
+        run: cargo clippy -p larql-cloud --all-targets -- -D warnings
+
+      # The proxy binary is what operators actually run; a lint clean
+      # library with a broken binary is not a useful green.
+      - name: Clippy no default features
+        run: cargo clippy -p larql-cloud --no-default-features --all-targets -- -D warnings
+
+      - name: Unit + integration tests
+        run: cargo test -p larql-cloud
+
+      - name: Feature matrix tests
+        run: |
+          cargo test -p larql-cloud --no-default-features
+          cargo test -p larql-cloud --no-default-features --features openai
+          cargo test -p larql-cloud --no-default-features --features bedrock
+
+  coverage:
+    name: coverage · ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage summary
+        run: cargo llvm-cov --package larql-cloud --summary-only

@@ -22,6 +22,8 @@ members = [
     "crates/larql-python",
     # boundary codec (Phase 1-3 of BOUNDARY_REF_PROTOCOL)
     "crates/larql-boundary",
+    # outbound LLM clients (OpenAI-compatible, AWS Bedrock)
+    "crates/larql-cloud",
     # portable (extract to sibling repos later, names stable)
     "crates/model-compute",
 ]
