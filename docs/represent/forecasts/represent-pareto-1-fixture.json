@@ -1,0 +1,139 @@
+{
+  "programme": "REPRESENT-PARETO-1",
+  "artifact_kind": "concrete fixture freeze; satisfies the predecessor's implementation_entry_gate. NO implementation, NO result claimed.",
+  "written": "2026-09-16",
+  "base": "`f1c491e1` (branch `represent-pareto-1`, one commit above main `23a56db1`)",
+  "follows": "docs/represent/forecasts/represent-pareto-1.json",
+
+  "what_this_freezes": "The exact candidate identities, accepted quality vectors, held-constant physical facts and expected decision of every world, before any witness code exists. The predecessor said: 'Freeze the concrete fixture, numeric inputs, exact expected preference changes and cost-authority path before implementation.' This is that freeze.",
+
+  "the_claim_restated_narrowly": "Same search state, same candidates, same policy, same physical facts; change ONLY accepted observation values -> the measured-candidate preference changes, through the frontier machinery that already exists in `decision.rs`. Nothing is added to the comparator.",
+
+  "the_machinery_being_exercised": {
+    "entry_point": "`represent::decision::decide_promotion(candidates, registry, policy)`",
+    "stages_in_order": [
+      "1. promotion class: `ranking_score.class.tier()`; max tier forms the pool; tier 0 => None{EveryMoveWorthless}",
+      "2. proxy ordering: the non-dominated frontier via `SearchCandidate::proxy_dominates` (no worse on every comparable proxy, strictly better on at least one). frontier.len()==1 => SelectForAuthority{decided_by_physical_gain:false}",
+      "3. frontier>1 and nothing comparable => Ambiguous{NoOrderingEvidence}",
+      "4. frontier>1 and any comparable difference => Ambiguous{ConflictingOrderingProxies} -- explicitly NOT scalarised",
+      "5. frontier>1, proxies all Equal => physical tie-break on `ranking_score.gpu_ms_saved`; unique best => SelectForAuthority{decided_by_physical_gain:true}",
+      "6. otherwise => Ambiguous{IndistinguishableOnEveryProxy}"
+    ],
+    "why_this_is_the_right_target": "It is already ordinal-only and already refuses to trade one proxy against another. PARETO-1 does not need a new ranking rule -- the predecessor's out_of_scope forbids one -- it needs to prove accepted VALUES reach this comparator and move its answer."
+  },
+
+  "the_quality_knob": {
+    "helper": "`state::fixtures::authority_reading(kl_p99: f64, route_flips: u64)` -> QualityBank, wrapped by `ingest::tests::Fixture::observed(kl)`",
+    "why_it_suffices": "It exposes exactly TWO independently settable dimensions that both order, which is the minimum needed to build both agreement (dominance) and conflict (no dominance) without touching production code.",
+    "what_Fixture_observed_nulls": "`routing.route_weight_mass_moved`, `top10_mass_displaced`, `top1_mass_displaced` are set to None, so RouteMixtureMass*, Top10MassDisplacedP99 and Top1MassDisplaced are UNOBSERVED and are excluded by `comparable()`. This is a property of the fixture, not of the model.",
+    "constant_and_therefore_inert": "`positions` = 8 and `min_covered_mass` = 0.6315 are identical on every candidate in every world. Statistic::Positions and Statistic::CoveredMass therefore compare Equal, which neither breaks dominance nor supplies it.",
+    "direction": "Statistic::better() -- KlP99, Top1Flips, Top10Changes, RouteFlips, RouteFlipRate are Better::Lower; Positions and CoveredMass are Better::Higher. Lower kl and fewer route flips are BETTER."
+  },
+
+  "candidates": {
+    "source": "The fixture's `ActionVocabulary` already enumerates exactly two MapEdits -- `compile-all` (layers 0..0, all projections) and `compile-q` (layers 0..0, q_proj). LOOP-1's witness asserts `initial.census().enumerated == 2`.",
+    "identity_rule": "The two candidate KEYS are whatever `CandidateSet` assigns from those edits. They MUST be read from the enumerated set at implementation time and pinned into the test as constants -- never guessed from the edit names, and never depended on positionally. R4-F1 is the standing reminder that input order must not reach a decision.",
+    "A": "the candidate generated from MapEdit `compile-all`",
+    "B": "the candidate generated from MapEdit `compile-q`"
+  },
+
+  "held_constant_across_every_world": [
+    "the initial authoritative SearchSnapshot (serialised once, deserialised per world)",
+    "the candidate set and both candidate state keys",
+    "the observed-key SET (both worlds observe the same two keys; only the VALUES differ)",
+    "bank, instrument and evidence scale",
+    "the gate and the search policy",
+    "the physical cost facts -- `ranking_score.gpu_ms_saved` IDENTICAL on A and B in W1/W2/C1 (see physical_facts_are_deliberately_inert)",
+    "`ParticipationDeclaration` on both candidates, so no dimension is excluded on one side only (R4-F10)"
+  ],
+
+  "worlds": [
+    {
+      "id": "W1",
+      "purpose": "quality alone selects A",
+      "accepted": { "A": { "kl_p99": 0.010, "route_flips": 0 }, "B": { "kl_p99": 0.020, "route_flips": 4 } },
+      "expected_decision": "SelectForAuthority{ candidate: A }",
+      "expected_evidence": "`dominated` == [B]; `deciding` names BOTH ordering statistics that separated them (kl p99 and the route-flip statistic(s) that order); `decided_by_physical_gain` == false",
+      "why": "A is no worse on every comparable proxy and strictly better on at least one, so the frontier has exactly one member and stage 2 returns."
+    },
+    {
+      "id": "W2",
+      "purpose": "the SAME machinery selects B when only the accepted values swap",
+      "accepted": { "A": { "kl_p99": 0.020, "route_flips": 4 }, "B": { "kl_p99": 0.010, "route_flips": 0 } },
+      "expected_decision": "SelectForAuthority{ candidate: B }",
+      "expected_evidence": "`dominated` == [A]; `deciding` the same statistic set as W1; `decided_by_physical_gain` == false",
+      "why": "This is the whole claim. W1 and W2 differ in NOTHING except the accepted quality values, and the preferred candidate changes. `decided_by_physical_gain == false` in both is what proves the change came from quality rather than from economics."
+    },
+    {
+      "id": "C1",
+      "purpose": "conflicting proxies must refuse rather than manufacture a winner",
+      "accepted": { "A": { "kl_p99": 0.010, "route_flips": 4 }, "B": { "kl_p99": 0.020, "route_flips": 0 } },
+      "expected_decision": "Ambiguous{ candidates: [A, B] sorted, reason: ConflictingOrderingProxies }",
+      "why": "A is better on kl, B is better on route flips, so neither dominates and the frontier keeps both. There is no calibration licensing a trade between kl places and routing places, so the refusal IS the correct answer. A winner here would be the defect."
+    },
+    {
+      "id": "C2",
+      "purpose": "the physical control the predecessor requires -- indistinguishable quality, separated by grounded cost",
+      "accepted": { "A": { "kl_p99": 0.015, "route_flips": 2 }, "B": { "kl_p99": 0.015, "route_flips": 2 } },
+      "physical": "gpu_ms_saved DIFFERS between A and B; the better value is preregistered before the run",
+      "expected_decision": "SelectForAuthority{ candidate: the preregistered better-gain candidate } with `decided_by_physical_gain` == true and `deciding` EMPTY",
+      "why": "Every comparable proxy is Equal, so stage 5 is reached and physical evidence legitimately separates them. The empty `deciding` plus the true flag is what distinguishes this from W1/W2 in the trace -- a reader never has to guess which stage decided."
+    },
+    {
+      "id": "C3",
+      "purpose": "identity must never break a tie",
+      "accepted": { "A": { "kl_p99": 0.015, "route_flips": 2 }, "B": { "kl_p99": 0.015, "route_flips": 2 } },
+      "physical": "gpu_ms_saved IDENTICAL on A and B",
+      "expected_decision": "Ambiguous{ candidates: [A, B] sorted, reason: IndistinguishableOnEveryProxy }",
+      "why": "Nothing separates them on any axis the search is allowed to use. `decide_promotion` is not given identity, so it cannot fall back on it. Naming a winner here would resurrect R4-F1."
+    },
+    {
+      "id": "C4",
+      "purpose": "rejected evidence changes nothing, transactionally",
+      "accepted": "W1's values, then a second admission carrying a substituted/incomplete run report",
+      "expected_decision": "the ingestion refuses; the preference and every persisted fact are byte-identical to W1's",
+      "why": "Inherited from LOOP-1/OPT-6 rather than reinvented; restated here because PARETO-1 must show a REJECTED observation cannot move preference either, not only that an ACCEPTED one can."
+    }
+  ],
+
+  "assertions_beyond_the_verdict": [
+    "W1 and W2 produce DIFFERENT preferred candidates while their observed-key sets are equal as sets -- assert the key sets explicitly, or the result is the LOOP-1 claim again wearing a new name.",
+    "`decided_by_physical_gain == false` in W1 and W2, and `true` in C2. Without this, a physical tie-break could be reported as value-sensitivity.",
+    "Reopen each resulting snapshot and re-derive: the same preference and the same deciding evidence come back.",
+    "Permute the enumeration order of the candidate set in every world; the decision and the RECORD (`dominated`, `deciding`, both sorted) are unchanged. This re-arms the R4-F1 guard at the PARETO-1 layer.",
+    "No unregistered weighted quality-cost scalar appears anywhere in the witness -- the predecessor forbids one by name."
+  ],
+
+  "preconditions_to_verify_before_writing_the_witness": {
+    "note": "Each of these can invalidate the fixture above. They are checks, not assumptions, and the fixture is re-pinned if any fails.",
+    "P1_both_candidates_share_a_tier": "If `ranking_score.class.tier()` differs between A and B, stage 1 filters one out and the frontier is NEVER exercised -- quality would then have no say and the witness would pass for the wrong reason. Confirm both land in the same tier under every world's values, W1 and W2 included.",
+    "P2_at_least_two_statistics_actually_order": "`comparable()` requires `observed.is_some()` AND `evidence(registry, policy).orders()` AND both participations. Confirm by direct inspection that kl p99 AND at least one route-flip statistic pass all three under this fixture's registry and policy. If the route-flip family is Unusable at diagnostic scale, C1 is unconstructible and a different second dimension must be found before anything is implemented.",
+    "P3_the_route_flip_pair_moves_together": "RouteFlips and RouteFlipRate both derive from `routing.route_flips` over a constant `positions`, so they agree by construction. That is fine -- they are one dimension wearing two names, and the freeze treats them as one. They must never be counted as two independent agreeing proxies in any narrative of the result.",
+    "P4_physical_facts_are_genuinely_inert_in_W1_W2_C1": "Assert `gpu_ms_saved` equality on A and B in those three worlds. If it differs, stage 5 could decide C1 and the refusal would be spurious."
+  },
+
+  "physical_facts_are_deliberately_inert": {
+    "what": "W1, W2 and C1 hold `gpu_ms_saved` EQUAL across candidates. C2 is the only world where it differs, and there quality is equal.",
+    "why": "It separates the two questions cleanly. PARETO-1 answers 'do accepted observation values reach the comparator and move it'. It does not answer 'is the physical number trustworthy'. Letting both vary at once would make a passing witness unable to say which one did the work."
+  },
+
+  "the_realization_cost_gap_recorded_not_fixed": {
+    "finding": "`represent::execution_cost::predict` models decode time as `gpu = baseline_gpu_ms_per_token * (1.0 - beta * wanted)`, where `beta = gpu fraction removed / byte fraction removed`. The calibration observation is chosen by filtering on `model_identity` and then taking the nearest `byte_fraction_removed`. CODEC IS NOT A KEY, and REALIZATION IS NOT A KEY.",
+    "consequence": "For one model there is one beta and the form is monotone: more bytes removed always predicts less GPU time.",
+    "the_contradicting_measurement": "PR #420, direct K-quant execution vs widening on the same model: U4 direct 2.0x FASTER, U6 1.8x SLOWER, U8 2.8x SLOWER, while streamed bytes fell 97.4 GB -> 25.9 / 20.0 / 13.7 per position. U8-direct is beta < 0 where the calibrated beta is ~0.79. The current parameterisation cannot hold both signs for one model, so this is not an unmeasured case -- it is an INEXPRESSIBLE one.",
+    "where_it_would_bite": "Stage 5 of `decide_promotion` -- the `decided_by_physical_gain` path -- reads `ranking_score.gpu_ms_saved`, which descends from this model.",
+    "why_it_is_NOT_fixed_here": "The predecessor's out_of_scope bars a lowering-vocabulary redesign, and its implementation_entry_gate says to RECORD a missing boundary rather than change production semantics inside this result. PARETO-1 holds physical facts constant in exactly the worlds where the defect could matter (see physical_facts_are_deliberately_inert), so its claim does not depend on beta being right.",
+    "what_it_becomes": "A separate follow-on contract: realization-qualified execution cost, with #420's U4/U6/U8 arms as its first calibration set -- three codecs, one model, one of them with the opposite sign. The module already anticipates the axis and misses it: `CalibrationStatus::Provisional` and `DISTINCT_BREADTH_MIN_SEPARATION` guard beta against varying with BREADTH, while the module doc says a curve should later be learned 'across breadths and codecs'. Codec is in the aspiration and absent from the lookup.",
+    "sequencing_reason": "Once PARETO-1 has passed, the beta work is no longer entangled with 'does the optimiser loop work at all', which makes it a much stronger transition to run on its own."
+  },
+
+  "not_an_acceptance": [
+    "A world in which the observed-key SET differs -- that is LOOP-1's AlreadyObserved result, not this one.",
+    "A preference change explained by `decided_by_physical_gain == true`.",
+    "A display-order or `display_order()` result described as a scientific preference.",
+    "SelectForAuthority described as a completed promotion or an installed incumbent.",
+    "Any world whose candidates sat in different tiers, where stage 1 and not the frontier did the work."
+  ],
+
+  "out_of_scope_unchanged": "No K3 download or run, no kernel work, no lowering-vocabulary redesign, no new unmeasured-candidate ranking rule, no change to `decide_promotion` itself."
+}
