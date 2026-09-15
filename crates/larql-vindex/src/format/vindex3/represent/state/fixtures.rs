@@ -562,7 +562,7 @@ impl PricedRecord {
 
 /// One ledger for a PARETO-1 world: every scope the decoder reads per
 /// token, changed or not, so `fraction_removed` has a denominator.
-fn pareto_ledger(name: &str, q: u64, k: u64) -> ByteLedger {
+pub fn pareto_ledger(name: &str, q: u64, k: u64) -> ByteLedger {
     let scope = |scope: &str, family: &str, baseline, candidate| ScopeBytes {
         scope: scope.into(),
         family: family.into(),
@@ -592,7 +592,7 @@ fn pareto_ledger(name: &str, q: u64, k: u64) -> ByteLedger {
 /// ```text
 /// beta = ((10.0 - 8.0)/10.0) / ((32768 - 24576)/32768) = 0.2/0.25 = 0.8
 /// ```
-fn pareto_cost_model() -> ExecutionCostModel {
+pub fn pareto_cost_model() -> ExecutionCostModel {
     ExecutionCostModel::new(vec![ExecutionCostObservation {
         id: "pareto-1-fixture-001".into(),
         machine: "fixture".into(),
