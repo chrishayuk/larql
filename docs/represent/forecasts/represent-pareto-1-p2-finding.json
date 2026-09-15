@@ -1,0 +1,61 @@
+{
+  "programme": "REPRESENT-PARETO-1",
+  "artifact_kind": "precondition finding; the frozen fixture is NOT executable as written. No implementation, no result, no production semantic change.",
+  "written": "2026-09-16",
+  "base": "`831d7e96` (branch `represent-pareto-1`)",
+  "corrects": "docs/represent/forecasts/represent-pareto-1-fixture.json",
+  "why_a_second_document": "The freeze did its job. P2 was preregistered as a fixture-killing check and it FIRED. Rewriting the freeze to look as though it had been right would destroy the evidence that the check earned its place.",
+
+  "P2_FIRED": {
+    "verdict": "The five-world table cannot be executed against the LOOP-1 fixture as frozen.",
+    "mechanism": [
+      "`DiagnosticReading::evidence()` (diagnostic.rs:159-163) asks the registry at a HARDCODED `EvidenceScale::Diagnostic`.",
+      "`SearchCalibrationRegistry::evidence_for` (search_evidence.rs:173) returns `SearchEvidence::Unusable` for ANY statistic with no entry at that scale. Diagnostic has no `is_priceable` fallback; only Authority does.",
+      "`SearchCandidate::comparable()` admits a reading only if `evidence(registry, policy).orders()`.",
+      "`state::fixtures::config()` sets `calibrations: SearchCalibrationRegistry::default()`, and the registry is `#[derive(Default)]` — an EMPTY calibration set."
+    ],
+    "consequence": "Every statistic is `Unusable` through this snapshot, so `comparable()` returns empty for every pair, `proxy_dominates` is vacuously false, and the frontier retains both candidates."
+  },
+
+  "the_asymmetry_that_makes_this_a_trap": {
+    "what": "`fixtures::config()` carries `tail_support: TailSupportPolicy::route_cal_1()` AND `calibrations: SearchCalibrationRegistry::default()`.",
+    "why_it_matters": "The fixture declares HALF of ROUTE-CAL-1. The policy name is right there in the config, so the snapshot reads as calibrated while the registry that actually decides `.orders()` is empty. A reader checking 'is this fixture calibrated?' finds the name and stops.",
+    "rule": "A calibration NAME in a neighbouring field is not evidence that the calibration is in force. The authority that decides admission is the registry, and it must be read directly."
+  },
+
+  "what_the_five_worlds_would_ACTUALLY_return": {
+    "W1": "Ambiguous{NoOrderingEvidence} — not SelectForAuthority{A}",
+    "W2": "Ambiguous{NoOrderingEvidence} — not SelectForAuthority{B}",
+    "C1": "Ambiguous{NoOrderingEvidence} — not Ambiguous{ConflictingOrderingProxies}",
+    "C2": "Ambiguous{NoOrderingEvidence} — stage 3 returns before the `gpu_ms_saved` tie-break is ever reached, so `decided_by_physical_gain` never becomes true",
+    "C3": "Ambiguous{NoOrderingEvidence} — not Ambiguous{IndistinguishableOnEveryProxy}",
+    "note": "All five collapse to ONE answer. The table would have measured nothing."
+  },
+
+  "C1_IS_THE_FALSE_POSITIVE": {
+    "hazard": "C1 preregisters `Ambiguous` and would RECEIVE `Ambiguous`. A witness asserting only the variant — `matches!(d, PromotionDecision::Ambiguous { .. })` — passes while the mechanism it claims to exercise is absent.",
+    "requirement": "Every Ambiguous assertion in this programme must pin `AmbiguityReason` exactly. A test that distinguishes ConflictingOrderingProxies from NoOrderingEvidence is testing the claim; one that does not is testing nothing.",
+    "generalisation": "This is the precise false-positive shape P2 existed to catch, and it would have survived a reviewer reading the world table alone."
+  },
+
+  "correction_to_the_freeze_P3": {
+    "the_freeze_said": "RouteFlips and RouteFlipRate are one dimension wearing two names.",
+    "correct_but_incomplete": "They are one dimension — both derive from `routing.route_flips` over constant `positions`. But only `RouteFlipRate` is REGISTERED. `route_cal_1()` registers KlP99 (OrderingProxy, rank correlation 0.857) and RouteFlipRate (OrderingProxy, 0.991), and explicitly marks RouteMixtureMassP99 and Top10MassDisplacedP99 `Unusable`. `RouteFlips` — the raw count — has NO entry, so it is `Unusable` at diagnostic scale like anything else unregistered.",
+    "consequence": "The orderable pair is exactly {KlP99, RouteFlipRate}. Any narrative of the result must name RouteFlipRate, never the count."
+  },
+
+  "required_fixture_corrections_before_implementation": {
+    "F1_registry": "Every world must carry `SearchCalibrationRegistry::route_cal_1()`, identically. The production capability already exists — this is a fixture declaring the authority that makes it usable, NOT a new decision semantic and NOT a change to `decide_promotion`.",
+    "F2_route_flip_plumbing": "`ingest::tests::Fixture::observed(kl)` calls `fixtures::authority_reading(kl, 0)`, hardcoding route_flips to zero. A test-only `observed_with(kl, route_flips)` is needed, with today's `observed(kl)` kept as a wrapper passing 0. Naming this now so nobody later describes route flips as a capability the existing fixture already exposed.",
+    "F3_scope": "Both corrections are test plumbing. If either turns out to require a production change, that is a separate finding and this rung stops again."
+  },
+
+  "P1_STILL_UNRUN": {
+    "status": "NOT executed. It must run against the CORRECTED fixture, and it must be executed rather than reasoned to.",
+    "why_it_cannot_be_pronounced_from_inspection": "The stock LOOP-1 fixture does not carry everything `promotion_candidates()` needs: its `SearchFacts` starts with empty byte ledgers and an empty execution-cost model, and a move is skipped unless BOTH parent and child have ledgers. The frozen synthetic cost facts have to exist before the question is even askable.",
+    "the_expectation_to_test_not_assume": "`Fixture::observed()` nulls `route_weight_mass_moved`, `top10_mass_displaced` and `top1_mass_displaced`, leaving unpriceable dimensions at authority scale. A positive-gain move with an unscorable marginal classifies as `MoveClass::Unscorable`; only a non-positive `gpu_ms_saved` drops to `Worthless`. So both candidates are expected to land in the same class.",
+    "assert_the_reason_not_the_symptom": "The witness must assert `gpu_ms_saved > 0` on BOTH candidates, `class == Unscorable` on both, and `tier == 1` on both — not merely `tier(A) == tier(B)`. Equal tiers with unequal classes would be a coincidence, and a coincidence is not a precondition."
+  },
+
+  "what_did_NOT_go_wrong": "No production decision semantic is missing. `decide_promotion` already does everything PARETO-1 needs: the ordinal frontier, the conflict refusal, the physical tie-break and the identity ban. The defect was entirely in what the chosen fixture declares."
+}
