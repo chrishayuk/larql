@@ -295,6 +295,14 @@ impl CloudClient for BedrockClient {
 impl BedrockClient {
     /// Issue a request with the configured auth.  HTTP method is
     /// always POST today; the third arg lets us extend to GET later.
+    ///
+    /// `service` is the SigV4 signing scope, so it is only read when the
+    /// `bedrock` feature supplies the signer. Marked `_`-prefixed-by-cfg
+    /// rather than cfg'd out of the signature: the parameter is part of
+    /// this method's contract on every feature combination, and dropping
+    /// it under `--no-default-features` would make the two builds take
+    /// different call sites.
+    #[cfg_attr(not(feature = "bedrock"), allow(unused_variables))]
     async fn send(
         &self,
         url: &str,
