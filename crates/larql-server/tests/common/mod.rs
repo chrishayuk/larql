@@ -146,6 +146,8 @@ pub fn model_functional(id: &str) -> Arc<LoadedModel> {
         release_mmap_after_request: false,
         weights: std::sync::OnceLock::new(),
         weights_init: std::sync::Mutex::new(()),
+        bitnet_model: std::sync::OnceLock::new(),
+        bitnet_init: std::sync::Mutex::new(()),
         probe_labels: std::collections::HashMap::new(),
         ffn_l2_cache: larql_server::ffn_l2_cache::FfnL2Cache::new(1),
         layer_latency_tracker: std::sync::Arc::new(
@@ -189,6 +191,8 @@ pub fn model_infer_enabled(id: &str) -> Arc<LoadedModel> {
         release_mmap_after_request: false,
         weights: std::sync::OnceLock::new(),
         weights_init: std::sync::Mutex::new(()),
+        bitnet_model: std::sync::OnceLock::new(),
+        bitnet_init: std::sync::Mutex::new(()),
         probe_labels: std::collections::HashMap::new(),
         ffn_l2_cache: larql_server::ffn_l2_cache::FfnL2Cache::new(1),
         layer_latency_tracker: std::sync::Arc::new(
@@ -273,6 +277,8 @@ impl ModelBuilder {
             release_mmap_after_request: false,
             weights: std::sync::OnceLock::new(),
             weights_init: std::sync::Mutex::new(()),
+            bitnet_model: std::sync::OnceLock::new(),
+            bitnet_init: std::sync::Mutex::new(()),
             probe_labels: self.probe_labels,
             ffn_l2_cache: FfnL2Cache::new(1),
             layer_latency_tracker: std::sync::Arc::new(
@@ -361,6 +367,8 @@ pub fn model_with_real_weights_and_labels(
         release_mmap_after_request: false,
         weights: std::sync::OnceLock::new(),
         weights_init: std::sync::Mutex::new(()),
+        bitnet_model: std::sync::OnceLock::new(),
+        bitnet_init: std::sync::Mutex::new(()),
         probe_labels,
         ffn_l2_cache: FfnL2Cache::new(1),
         layer_latency_tracker: std::sync::Arc::new(
@@ -441,6 +449,8 @@ pub fn model_with_q4k_weights(
         release_mmap_after_request: false,
         weights: std::sync::OnceLock::new(),
         weights_init: std::sync::Mutex::new(()),
+        bitnet_model: std::sync::OnceLock::new(),
+        bitnet_init: std::sync::Mutex::new(()),
         probe_labels: HashMap::new(),
         ffn_l2_cache: FfnL2Cache::new(1),
         layer_latency_tracker: std::sync::Arc::new(
