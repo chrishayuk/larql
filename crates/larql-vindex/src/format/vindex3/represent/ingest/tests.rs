@@ -160,7 +160,17 @@ impl Fixture {
         ArtifactStateEvidence::establish(&self.candidate).unwrap()
     }
     pub fn observed(&self, kl: f64) -> Observed {
-        let mut observation = fixtures::authority_reading(kl, 0);
+        self.observed_with(kl, 0)
+    }
+    /// The same observation with the ROUTE FLIP count settable.
+    ///
+    /// `observed` hardcoded zero, which left `Statistic::RouteFlipRate`
+    /// constant across every candidate and therefore unable to order
+    /// anything — one of the two statistics ROUTE-CAL-1 registers as an
+    /// ordering proxy. A caller that needs two independent orderable
+    /// dimensions needs this one.
+    pub fn observed_with(&self, kl: f64, route_flips: u64) -> Observed {
+        let mut observation = fixtures::authority_reading(kl, route_flips);
         observation.positions = 8;
         observation.routing.route_weight_mass_moved = None;
         observation.top10_mass_displaced = None;

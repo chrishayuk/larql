@@ -838,5 +838,9 @@ mod compile_real_tests;
 mod compat_tests;
 
 #[cfg(test)]
+#[path = "pareto_tests.rs"]
+mod pareto_tests;
+
+#[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
