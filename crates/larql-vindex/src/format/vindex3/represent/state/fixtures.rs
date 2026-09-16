@@ -614,6 +614,20 @@ pub fn pareto_cost_model() -> ExecutionCostModel {
     }])
 }
 
+/// The frozen accepted quality vectors, as `(kl_p99, route_flips)`.
+/// Lower is better on both. Held in the same magnitude band as the P1
+/// instantiation so no world changes the classification regime.
+///
+/// ONE definition, used by both the direct worlds and the OPT-6
+/// integration, so the two layers can be asserted to run the SAME
+/// experiment rather than two experiments that resemble each other.
+pub const PARETO_BETTER: (f64, u64) = (3.4000e-3, 1200);
+/// See [`PARETO_BETTER`].
+pub const PARETO_WORSE: (f64, u64) = (3.9000e-3, 1600);
+/// See [`PARETO_BETTER`]. Used where the two candidates must be
+/// indistinguishable on quality.
+pub const PARETO_MIDDLE: (f64, u64) = (3.6500e-3, 1400);
+
 /// **One PARETO-1 world — everything a world varies, and nothing else.**
 ///
 /// The two candidates, their identities, the graph and its actions, the

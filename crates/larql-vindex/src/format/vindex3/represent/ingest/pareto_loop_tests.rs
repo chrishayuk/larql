@@ -10,11 +10,35 @@
 //! through `ingest_bytes` with independent source, candidate and bank
 //! verification and complete `VerifiedFacts`.
 //!
+//! **Why this layer classifies `Unscorable` where the direct worlds
+//! classify `Priced`.** The bank family is now the same — the populated
+//! `authority_reading`, distributions intact. What still differs is
+//! `positions`. `TailSupportPolicy::route_cal_1` needs
+//! `5.0 / (1 - 0.99)` = 500 observations to support a p99, and this
+//! fixture's corpus manifest declares 8. `KlP99` is therefore
+//! unpriceable at AUTHORITY scale, a criterion's evidence is missing,
+//! and a positive-gain move is `Unscorable`.
+//!
+//! It still ORDERS at diagnostic scale, because
+//! `SearchCalibrationRegistry::route_cal_1` registers it as an
+//! `OrderingProxy` there and that lookup hits before any tail fallback.
+//! Ordering and pricing are different questions and this fixture can
+//! answer only one of them.
+//!
+//! Closing that gap means enlarging LOOP-1's corpus from 8 positions to
+//! at least 500, which would retroactively alter a closed milestone's
+//! fixture. It is recorded rather than done. Both candidates share the
+//! class, so stage 1 still cannot separate them and the frontier is
+//! still what decides.
+//!
 //! **Ingestion writes only `facts.measurements`** (`ingest.rs`). It
 //! creates no graph edge and no byte ledger, and `promotion_candidates`
-//! skips any edge whose ends lack either. So an ingested-only snapshot
-//! has observations and no candidates, and the physical facts must be
-//! supplied alongside. They are the same frozen facts the direct worlds
+//! skips any edge whose ends lack either. Evidence ingestion alone is
+//! INTENTIONALLY insufficient to derive preference: promotion composes
+//! admitted measurements with independently held graph and
+//! physical-cost facts. Those facts are pinned here and identical
+//! between worlds — never manufactured from the measurements to make a
+//! decision come out. They are the same frozen facts the direct worlds
 //! use — `state::fixtures::pareto_ledger` and `pareto_cost_model` — so
 //! there is one definition of them, not two.
 use std::cell::Cell;
@@ -29,13 +53,14 @@ use super::super::{
         prepare::PreparedExperiment,
         request::MeasurementRequest,
     },
+    assessment::MoveClass,
     compile_representation,
     decision::{decide_promotion, PromotionDecision},
     measurement::EvidenceScale,
     search_evidence::SearchCalibrationRegistry,
     state::{
         candidate::CandidateSet, fixtures, snapshot::SearchSnapshot, Action, MeasurementKey,
-        MeasurementRegistry, Provenance, ResolvedState,
+        Provenance, ResolvedState,
     },
     RepresentSpec,
 };
@@ -44,9 +69,31 @@ use super::{
     tests::Fixture, IngestionSources,
 };
 
-/// Accepted quality vectors. Lower is better on both dimensions.
-const BETTER: (f64, u64) = (1.0e-3, 4);
-const WORSE: (f64, u64) = (9.0e-3, 64);
+use fixtures::{PARETO_BETTER as BETTER, PARETO_WORSE as WORSE};
+
+/// **A sealed observation on the POPULATED bank family.**
+///
+/// `Fixture::observed_with` nulls `route_weight_mass_moved`,
+/// `top10_mass_displaced` and `top1_mass_displaced`, which is LOOP-1's
+/// bank family and classifies a move `Unscorable`. PARETO-1 is pinned
+/// to the populated family, so the integration layer must carry it too
+/// — otherwise this is a different experiment that happens to reach the
+/// same comparator.
+///
+/// LOOP-1's helper is deliberately NOT changed: it is used by a closed
+/// milestone, and editing it would retroactively alter that fixture.
+/// Only the observation is replaced; the complete `VerifiedFacts`
+/// authority comes from the fixture unmodified.
+fn pareto_observed(f: &Fixture, kl: f64, route_flips: u64) -> Observed {
+    let mut observed = f.observed_with(kl, route_flips);
+    let mut bank = fixtures::authority_reading(kl, route_flips);
+    // The only protocol-scale adaptation this tiny fixture needs. The
+    // behavioural distributions stay POPULATED.
+    bank.positions = 8;
+    observed.observation = bank;
+    observed.execution_note = "PARETO-1 populated authority-shaped fixture".into();
+    observed
+}
 
 struct FixtureExecutor<'a> {
     procedure: &'a str,
@@ -90,7 +137,7 @@ fn dispatch(
     incomplete: bool,
 ) -> Vec<u8> {
     let request = prepared.request().unwrap();
-    let mut response = f.observed_with(quality.0, quality.1);
+    let mut response = pareto_observed(f, quality.0, quality.1);
     response.key = request.key().clone();
     if incomplete {
         response.verified.invariant_neighbour_layer = None;
@@ -138,35 +185,34 @@ fn candidates(snapshot: &SearchSnapshot) -> CandidateSet {
 fn with_baseline(snapshot: &SearchSnapshot, template: &MeasurementKey) -> SearchSnapshot {
     let mut facts = snapshot.facts().clone();
     let root = facts.graph.root().clone();
-    let key = MeasurementKey::new(
-        &root,
+    let key = baseline_key(&root, template);
+    let mut bank = fixtures::authority_reading(5.0e-3, 32);
+    bank.positions = 8;
+    facts
+        .measurements
+        .record_fixture(key, bank)
+        .expect("the baseline is not already held");
+    SearchSnapshot::new(snapshot.space().clone(), snapshot.config().clone(), facts)
+}
+
+/// The baseline's key, derived from a candidate key so that bank, scale
+/// and instrument are the snapshot's own rather than invented here.
+fn baseline_key(
+    root: &super::super::state::RepresentationStateId,
+    template: &MeasurementKey,
+) -> MeasurementKey {
+    MeasurementKey::new(
+        root,
         template.bank(),
         EvidenceScale::Authority,
         template.instrument(),
-    );
-    let mut bank = fixtures::authority_reading(5.0e-3, 32);
-    bank.positions = 8;
-    let mut measurements = MeasurementRegistry::new();
-    measurements.record_fixture(key, bank).expect("record");
-    for k in facts.measurements.keys() {
-        let v = facts.measurements.get(k).unwrap().clone();
-        measurements.record_fixture(k.clone(), v).expect("record");
-    }
-    facts.measurements = measurements;
-    SearchSnapshot::new(snapshot.space().clone(), snapshot.config().clone(), facts)
+    )
 }
 
 /// Supply the physical facts ingestion does not write, and the registry
 /// the fixture's config omits. Measurements are carried through
 /// untouched — this adds facts, it never edits evidence.
 fn priced(snapshot: &SearchSnapshot, edges: &[(Action, ResolvedState)]) -> SearchSnapshot {
-    let template = snapshot
-        .measurements()
-        .keys()
-        .next()
-        .expect("at least one observation")
-        .clone();
-    let snapshot = &with_baseline(snapshot, &template);
     let mut config = snapshot.config().clone();
     config.calibrations = SearchCalibrationRegistry::route_cal_1();
 
@@ -215,6 +261,28 @@ fn decide(snapshot: &SearchSnapshot, edges: &[(Action, ResolvedState)]) -> Promo
             s.class,
             s.class.tier(),
             s.gpu_ms_saved
+        );
+        // Pinned, with its cause stated in the module header: 8 corpus
+        // positions cannot support a p99 that needs 500, so KlP99 is
+        // unpriceable at authority scale.
+        assert_eq!(s.class, MoveClass::Unscorable);
+        assert_eq!(s.gpu_ms_saved, 2.0, "the frozen physical gain");
+    }
+    if candidates.len() == 2 {
+        assert_eq!(
+            candidates[0]
+                .promotion
+                .assessment
+                .ranking_score
+                .class
+                .tier(),
+            candidates[1]
+                .promotion
+                .assessment
+                .ranking_score
+                .class
+                .tier(),
+            "stage 1 must not separate them"
         );
     }
     decide_promotion(
@@ -265,6 +333,31 @@ fn values_admitted_through_opt6_decide_the_preference() {
     };
     let edges = [edge("compile-all"), edge("compile-q")];
 
+    // The parent baseline is seeded into the PRE-state, before either
+    // candidate artifact exists. The root is never a candidate and no
+    // experiment is ever dispatched for it, yet `promotion_candidates`
+    // needs a reading at BOTH ends of an edge. Seeding it here — once,
+    // shared by both worlds — leaves no route for it to explain a flip.
+    let template = initial
+        .eligible()
+        .next()
+        .expect("two eligible")
+        .intended_key
+        .clone();
+    let root = s0.facts().graph.root().clone();
+    let baseline = baseline_key(&root, &template);
+    let s0 = with_baseline(&s0, &template);
+    assert!(
+        s0.measurements().contains(&baseline),
+        "the baseline must exist before any candidate artifact is ingested"
+    );
+    assert_eq!(s0.measurements().len(), 1, "and it is the ONLY reading");
+    assert_eq!(
+        candidates(&s0).census().enumerated,
+        2,
+        "seeding the root must not disturb the candidate set"
+    );
+
     // Two worlds over the SAME pre-state, differing only in which
     // candidate's observation carries which accepted values.
     let run = |first: (f64, u64), second: (f64, u64)| {
@@ -288,7 +381,7 @@ fn values_admitted_through_opt6_decide_the_preference() {
                 .unwrap()
                 .recorded
         );
-        assert_eq!(s.measurements().len(), 2);
+        assert_eq!(s.measurements().len(), 3, "baseline plus two candidates");
         s
     };
 
@@ -302,6 +395,11 @@ fn values_admitted_through_opt6_decide_the_preference() {
         v
     };
     assert_eq!(keys(&w1), keys(&w2), "identical observed key sets");
+    assert_eq!(
+        w1.measurements().get(&baseline),
+        w2.measurements().get(&baseline),
+        "the parent baseline reading must be identical in both worlds"
+    );
     assert_ne!(
         serde_json::to_vec(&w1).unwrap(),
         serde_json::to_vec(&w2).unwrap(),
@@ -333,6 +431,49 @@ fn values_admitted_through_opt6_decide_the_preference() {
         a, b,
         "swapping only the accepted values must change the preferred candidate"
     );
+
+    // **Cross-layer equivalence.** The same frozen values, decided by
+    // the same comparator, through sealed ingestion instead of a
+    // directly built registry.
+    //
+    // Identity cannot be compared across the layers: the direct worlds
+    // stand on synthetic states (`p`/`t1`/`s2`) and this one on real
+    // compiled containers, so the candidate LABELS necessarily differ.
+    // Everything the claim rests on is compared.
+    let direct = |world: fixtures::ParetoWorld| {
+        let snap = world.snapshot();
+        let candidates = snap
+            .promotion_candidates(EvidenceScale::Authority)
+            .expect("cost");
+        decide_promotion(
+            &candidates,
+            &snap.config().calibrations,
+            &snap.config().tail_support,
+        )
+    };
+    for (ingested, direct) in [
+        (&d1, direct(fixtures::ParetoWorld::inert(BETTER, WORSE))),
+        (&d2, direct(fixtures::ParetoWorld::inert(WORSE, BETTER))),
+    ] {
+        match (ingested, &direct) {
+            (
+                PromotionDecision::SelectForAuthority { evidence: i, .. },
+                PromotionDecision::SelectForAuthority { evidence: d, .. },
+            ) => {
+                assert_eq!(i.deciding, d.deciding, "the same proxies decided");
+                assert_eq!(
+                    i.decided_by_physical_gain, d.decided_by_physical_gain,
+                    "the same STAGE decided"
+                );
+                assert_eq!(
+                    i.dominated.len(),
+                    d.dominated.len(),
+                    "the same dominance shape"
+                );
+            }
+            other => panic!("layers disagree on the decision kind: {other:?}"),
+        }
+    }
 
     // Reopen each world and reproduce the decision and its evidence.
     for (world, expected) in [(&w1, &d1), (&w2, &d2)] {
@@ -366,6 +507,13 @@ fn c4_rejected_evidence_changes_neither_facts_nor_preference() {
         (c.action, c.child)
     };
     let edges = [edge("compile-all"), edge("compile-q")];
+    let template = initial
+        .eligible()
+        .next()
+        .expect("two eligible")
+        .intended_key
+        .clone();
+    let s0 = with_baseline(&s0, &template);
 
     // A world with one admitted observation, so there is a real
     // preference for a refusal to fail to disturb.
@@ -394,7 +542,7 @@ fn c4_rejected_evidence_changes_neither_facts_nor_preference() {
             .unwrap()
             .recorded
     );
-    assert_eq!(base.measurements().len(), 2);
+    assert_eq!(base.measurements().len(), 3, "baseline plus two candidates");
 
     let before_bytes = serde_json::to_vec(&base).unwrap();
     let before_registry = base.measurements().clone();

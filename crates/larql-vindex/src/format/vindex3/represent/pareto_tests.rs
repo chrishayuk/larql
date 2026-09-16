@@ -154,12 +154,7 @@ use super::quality::Statistic;
 use super::state::fixtures::ParetoWorld;
 use super::state::snapshot::SearchSnapshot;
 
-/// The three accepted quality vectors the worlds are built from, held in
-/// the same magnitude band as the P1 instantiation so that no world
-/// changes the classification regime. Lower is better on both.
-const BETTER: (f64, u64) = (3.4000e-3, 1200);
-const WORSE: (f64, u64) = (3.9000e-3, 1600);
-const MIDDLE: (f64, u64) = (3.6500e-3, 1400);
+use fixtures::{PARETO_BETTER as BETTER, PARETO_MIDDLE as MIDDLE, PARETO_WORSE as WORSE};
 
 /// Decide one world, checking the two things every world must satisfy
 /// whatever its verdict.
