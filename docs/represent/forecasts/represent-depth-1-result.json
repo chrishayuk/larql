@@ -1,0 +1,33 @@
+{
+  "programme": "REPRESENT-DEPTH-1",
+  "artifact_kind": "RESULT against the current contract. Every preregistered prediction fired. No remedy designed.",
+  "written": "2026-09-17",
+  "forecast": "docs/represent/forecasts/represent-depth-1.json",
+
+  "HEADLINE_A3_FIRED": {
+    "classes": "[(\"A\", Unscorable, 1), (\"B\", Priced, 2)]",
+    "decision": "SelectForAuthority{ candidate: \"B\", dominated: [], deciding: [] }",
+    "reading": "A dominates B on BOTH proxies. Pricing only B — changing nothing about either candidate's observed values — makes B win, on no evidence at all. THE LOSER WINS."
+  },
+
+  "THE_INVARIANT_VIOLATION_side_by_side": {
+    "before": "SelectForAuthority{ candidate: \"A\", dominated: [\"B\"], deciding: [KlP99, RouteFlipRate], readiness: Uninformed }",
+    "after": "SelectForAuthority{ candidate: \"B\", dominated: [], deciding: [], readiness: Priceable }",
+    "what_changed": "Only how hard B was looked at. A won with NAMED evidence; B wins with NONE.",
+    "the_sentence": "Evidence strength determines which conclusions are licensed; it is not evidence that a candidate is superior. Today it is."
+  },
+
+  "ARMS": {
+    "A1_A2": "FIRED as predicted, symmetrically. Pricing A selects A; pricing B selects B; both with empty `deciding`. The mirror is what proves it is depth and not merit — the same conflict, and the winner follows the measurement.",
+    "A3": "FIRED. The headline.",
+    "A4": "FIRED. `SelectForAuthority{A}` with empty `dominated` and `deciding` — the right candidate for the wrong reason. Asserting the EVIDENCE and not just the winner is what catches this arm; a test checking only the candidate would have passed green.",
+    "A5": "PASSED, as the control. At uniform depth — cheap/cheap and priced/priced alike — A wins with `dominated: [B]` and `deciding: [KlP99, RouteFlipRate]`, and the conflict case refuses with `ConflictingOrderingProxies`. The defect is specific to UNEQUAL depth, which is why PARETO-1 and FRONTIER-SCALE-1 remain valid.",
+    "A6": "PASSED in every arm. Reversing enumeration leaves the complete decision identical. This is a PRECEDENCE leak, not an ordering leak; R4-F1 is intact and the two must not be confused."
+  },
+
+  "ONE_DETAIL_WORTH_KEEPING": "`readiness` moves from `Uninformed` to `Priceable` across the violation. The trace does record that something epistemic changed — it simply lets that change decide the winner instead of qualifying the answer. Whatever the remedy is, `readiness` is where the honest version of this information already lives.",
+
+  "STATUS": "The arms are pinned as tests that assert the DEFECT, including one whose assertion is deliberately INVERTED (`assert_ne` where the contract requires `assert_eq`), with the inversion named in the failure message. When the remedy lands, those tests must be rewritten, which is the point of pinning them.",
+
+  "NEXT": "Design the remedy. The freeze's shape — stage 1 as admissibility (`tier > 0`) rather than precedence (`tier == best_tier`), plus a fourth ambiguity state for incomplete pricing authority across the unresolved frontier — was recorded BEFORE these arms ran and is now checkable against them."
+}

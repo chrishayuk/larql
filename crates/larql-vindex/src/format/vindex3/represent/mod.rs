@@ -854,5 +854,9 @@ mod frontier_explore_tests;
 mod frontier_spend_tests;
 
 #[cfg(test)]
+#[path = "depth_invariance_tests.rs"]
+mod depth_invariance_tests;
+
+#[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
