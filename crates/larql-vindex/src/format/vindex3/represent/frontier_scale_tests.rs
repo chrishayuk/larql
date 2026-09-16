@@ -17,9 +17,8 @@ use std::collections::BTreeSet;
 
 use super::assessment::MoveClass;
 use super::decision::{decide_promotion, AmbiguityReason, PromotionDecision, SearchCandidate};
-use super::diagnostic::{DiagnosticPolicy, DiagnosticVector};
+use super::diagnostic::DiagnosticPolicy;
 use super::measurement::{EvidenceScale, TailSupportPolicy};
-use super::participation::ParticipationDeclaration;
 use super::promotion::PromotionCandidate;
 use super::search_evidence::SearchCalibrationRegistry;
 use super::state::fixtures;
@@ -107,17 +106,7 @@ fn template() -> (
     TailSupportPolicy,
     DiagnosticPolicy,
 ) {
-    let snap = fixtures::pareto_p1_snapshot();
-    let candidates = snap
-        .promotion_candidates(EvidenceScale::Authority)
-        .expect("the cost model covers this model");
-    let config = snap.config();
-    (
-        candidates[0].promotion.clone(),
-        config.calibrations.clone(),
-        config.tail_support.clone(),
-        config.diagnostic_policy.clone(),
-    )
+    fixtures::pareto_candidate_template()
 }
 
 /// Build one candidate set. `grid` coarsens the ranks so ties become
@@ -140,12 +129,13 @@ fn build(
                 1.0e-3 + kl_rank as f64 * 1.0e-6,
                 1_000 + flip_rank as u64,
             );
-            SearchCandidate {
-                id: format!("c{i:04}"),
-                promotion: promotion.clone(),
-                diagnostic: DiagnosticVector::of(policy, &bank),
-                participation: ParticipationDeclaration::all_affected(),
-            }
+            fixtures::pareto_candidate(
+                &format!("c{i:04}"),
+                promotion,
+                policy,
+                bank.logits.kl_p99,
+                bank.routing.route_flips,
+            )
         })
         .collect()
 }

@@ -27,13 +27,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::byte_ledger::{ByteLedger, ScopeBytes};
 use super::super::compiler::{read_source_identity, SourceIdentity};
-use super::super::diagnostic::DiagnosticPolicy;
+use super::super::decision::SearchCandidate;
+use super::super::diagnostic::{DiagnosticPolicy, DiagnosticVector};
 use super::super::execution_cost::{ExecutionCostModel, ExecutionCostObservation};
 use super::super::map::{Exception, PrecisionMap};
 use super::super::measure::TEACHER_FORCED_TWO_ARM;
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::nvfp4_pack::DTYPE_NVFP4;
+use super::super::participation::ParticipationDeclaration;
 use super::super::policy::Role;
+use super::super::promotion::PromotionCandidate;
 use super::super::quality::{
     kimi_logit_balanced_v1, Distribution, LogitEvidence, QualityBank, QualityGate, RoutingEvidence,
 };
@@ -756,4 +759,46 @@ impl ParetoWorld {
 /// `gpu_ms_saved` exactly 2.0, equal across the pair.
 pub fn pareto_p1_snapshot() -> SearchSnapshot {
     ParetoWorld::inert((3.6480e-3, 1570), (4.0563e-3, 1309)).snapshot()
+}
+
+/// The shared assessment and the policies the comparator reads.
+///
+/// One assessment, cloned into every synthetic candidate. FRONTIER
+/// rungs require identical `MoveClass` and tier across a set — mixed
+/// classes make stage 1 the thing being measured — so sharing it makes
+/// that structural rather than asserted-and-hoped.
+pub fn pareto_candidate_template() -> (
+    PromotionCandidate,
+    SearchCalibrationRegistry,
+    TailSupportPolicy,
+    DiagnosticPolicy,
+) {
+    let snap = pareto_p1_snapshot();
+    let candidates = snap
+        .promotion_candidates(EvidenceScale::Authority)
+        .expect("the cost model covers this model");
+    let config = snap.config();
+    (
+        candidates[0].promotion.clone(),
+        config.calibrations.clone(),
+        config.tail_support.clone(),
+        config.diagnostic_policy.clone(),
+    )
+}
+
+/// One synthetic candidate carrying a chosen `(kl_p99, route_flips)`.
+/// Everything except the diagnostic vector comes from the template.
+pub fn pareto_candidate(
+    id: &str,
+    promotion: &PromotionCandidate,
+    policy: &DiagnosticPolicy,
+    kl: f64,
+    route_flips: u64,
+) -> SearchCandidate {
+    SearchCandidate {
+        id: id.to_string(),
+        promotion: promotion.clone(),
+        diagnostic: DiagnosticVector::of(policy, &authority_reading(kl, route_flips)),
+        participation: ParticipationDeclaration::all_affected(),
+    }
 }
