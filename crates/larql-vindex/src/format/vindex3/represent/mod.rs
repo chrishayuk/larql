@@ -842,5 +842,9 @@ mod compat_tests;
 mod pareto_tests;
 
 #[cfg(test)]
+#[path = "frontier_scale_tests.rs"]
+mod frontier_scale_tests;
+
+#[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
