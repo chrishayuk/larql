@@ -627,6 +627,11 @@ pub const PARETO_WORSE: (f64, u64) = (3.9000e-3, 1600);
 /// See [`PARETO_BETTER`]. Used where the two candidates must be
 /// indistinguishable on quality.
 pub const PARETO_MIDDLE: (f64, u64) = (3.6500e-3, 1400);
+/// The PARENT baseline both layers measure against. It sits BELOW the
+/// candidates on kl, so every move consumes kl headroom and classifies
+/// `Priced` rather than `Unpriced`. A baseline worse than its children
+/// makes every move free, which is a different experiment.
+pub const PARETO_PARENT: (f64, u64) = (3.3532e-3, 1427);
 
 /// **One PARETO-1 world — everything a world varies, and nothing else.**
 ///
@@ -710,7 +715,7 @@ impl ParetoWorld {
 
         let mut measurements = MeasurementRegistry::new();
         for (s, (kl, flips)) in [
-            (p(), (3.3532e-3, 1427)),
+            (p(), PARETO_PARENT),
             (t1(), self.a_quality),
             (s2(), self.b_quality),
         ] {

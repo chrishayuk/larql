@@ -34,10 +34,29 @@ pub(super) struct Fixture {
     pub corpus: PathBuf,
     pub snapshot: SearchSnapshot,
     pub prepared: PreparedExperiment,
+    /// The corpus depth this fixture was built at. Every observation it
+    /// seals reports it, and the bank and `VerifiedFacts` declare it.
+    pub positions: u64,
 }
 
 impl Fixture {
+    /// The default fixture: 8 positions, as every caller before
+    /// PARETO-1 expects. Unchanged, and deliberately so — LOOP-1 is a
+    /// closed milestone and its fixture must stay byte-for-byte
+    /// behaviourally identical.
     pub fn new() -> Self {
+        Self::with_positions(8)
+    }
+
+    /// A fixture at a chosen corpus depth.
+    ///
+    /// Depth is not a free parameter. `TailSupportPolicy::route_cal_1`
+    /// needs `5.0 / (1 - 0.99)` = 500 observations to support a p99, so
+    /// below 500 positions every p99 criterion is unpriceable at
+    /// authority scale and a positive-gain move classifies
+    /// `Unscorable`. PARETO-1's priced witness runs at exactly 500 and
+    /// its negative control at 499.
+    pub fn with_positions(positions: u64) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let checkpoint = dir.path().join("checkpoint");
         std::fs::create_dir(&checkpoint).unwrap();
@@ -87,10 +106,11 @@ impl Fixture {
         .unwrap();
         let corpus = dir.path().join("corpus");
         std::fs::create_dir(&corpus).unwrap();
-        let rows = vec![0u8; 8 * 64 * 4];
+        let rows = vec![0u8; positions as usize * 64 * 4];
         std::fs::write(corpus.join("seq_0.f32"), &rows).unwrap();
         let manifest = serde_json::to_vec(&serde_json::json!({
-            "sequences":1,"positions":8,"hidden":64,"token_ids":[[0,0,0,0,0,0,0,0]],"regime":"teacher-forced",
+            "sequences":1,"positions":positions,"hidden":64,
+            "token_ids":[vec![0u32; positions as usize]],"regime":"teacher-forced",
             "payload_authority":"teacher-forced-bank-payload/v1",
             "payloads":{"seq_0.f32":{"len":rows.len(),"sha256":super::super::compile::hash_bytes(&rows)}}
         })).unwrap();
@@ -100,7 +120,7 @@ impl Fixture {
             "kimi-teacher-forced/v1",
             super::super::compile::hash_bytes(&manifest),
             ["seq-000"],
-            8,
+            positions as u32,
         );
         let seed = fixtures::PricedRecord::new(&source)
             .with_protocol(protocol)
@@ -154,6 +174,7 @@ impl Fixture {
             corpus,
             snapshot,
             prepared,
+            positions,
         }
     }
     pub fn evidence(&self) -> EstablishedState {
@@ -171,7 +192,7 @@ impl Fixture {
     /// dimensions needs this one.
     pub fn observed_with(&self, kl: f64, route_flips: u64) -> Observed {
         let mut observation = fixtures::authority_reading(kl, route_flips);
-        observation.positions = 8;
+        observation.positions = self.positions;
         observation.routing.route_weight_mass_moved = None;
         observation.top10_mass_displaced = None;
         observation.top1_mass_displaced = None;
@@ -194,7 +215,7 @@ impl Fixture {
                 attribution_checked_layers: vec![0],
                 seal_checked_operands: 7,
                 invariant_neighbour_layer: Some(1),
-                positions: 8,
+                positions: self.positions,
                 gate_evaluated: self.snapshot.gate().id.clone(),
             },
             execution_note: "tiny deterministic observation fixture".into(),

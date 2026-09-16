@@ -10,26 +10,22 @@
 //! through `ingest_bytes` with independent source, candidate and bank
 //! verification and complete `VerifiedFacts`.
 //!
-//! **Why this layer classifies `Unscorable` where the direct worlds
-//! classify `Priced`.** The bank family is now the same — the populated
-//! `authority_reading`, distributions intact. What still differs is
-//! `positions`. `TailSupportPolicy::route_cal_1` needs
-//! `5.0 / (1 - 0.99)` = 500 observations to support a p99, and this
-//! fixture's corpus manifest declares 8. `KlP99` is therefore
-//! unpriceable at AUTHORITY scale, a criterion's evidence is missing,
-//! and a positive-gain move is `Unscorable`.
+//! **Corpus depth is a tested contract boundary, not a magic number.**
+//! `TailSupportPolicy::route_cal_1` needs `5.0 / (1 - 0.99)` = 500
+//! observations to support a p99. At 500 positions the p99 criteria are
+//! priceable and a positive-gain move classifies `Priced` at tier 2 —
+//! the same family and the same class as the direct worlds, so the two
+//! layers run the SAME experiment. At 499 they are not, and the move
+//! falls to `Unscorable` at tier 1. Both sides of that boundary are
+//! asserted here.
 //!
-//! It still ORDERS at diagnostic scale, because
+//! Below the floor `KlP99` still ORDERS at diagnostic scale, because
 //! `SearchCalibrationRegistry::route_cal_1` registers it as an
 //! `OrderingProxy` there and that lookup hits before any tail fallback.
-//! Ordering and pricing are different questions and this fixture can
-//! answer only one of them.
+//! Ordering and pricing are different questions, and the 499 arm is
+//! what makes that distinction observable rather than asserted.
 //!
-//! Closing that gap means enlarging LOOP-1's corpus from 8 positions to
-//! at least 500, which would retroactively alter a closed milestone's
-//! fixture. It is recorded rather than done. Both candidates share the
-//! class, so stage 1 still cannot separate them and the frontier is
-//! still what decides.
+//! LOOP-1's fixture keeps its 8-position default and is untouched.
 //!
 //! **Ingestion writes only `facts.measurements`** (`ingest.rs`). It
 //! creates no graph edge and no byte ledger, and `promotion_candidates`
@@ -69,7 +65,14 @@ use super::{
     tests::Fixture, IngestionSources,
 };
 
-use fixtures::{PARETO_BETTER as BETTER, PARETO_WORSE as WORSE};
+use fixtures::{PARETO_BETTER as BETTER, PARETO_PARENT as PARENT, PARETO_WORSE as WORSE};
+
+/// `TailSupportPolicy::route_cal_1().required_observations(0.99)`.
+/// Stated as arithmetic so the fixture cannot drift from the policy:
+/// `5.0 / (1.0 - 0.99)`, rounded up.
+const P99_SUPPORT_FLOOR: u64 = 500;
+/// One position short of the floor: the negative control.
+const BELOW_FLOOR: u64 = P99_SUPPORT_FLOOR - 1;
 
 /// **A sealed observation on the POPULATED bank family.**
 ///
@@ -87,9 +90,9 @@ use fixtures::{PARETO_BETTER as BETTER, PARETO_WORSE as WORSE};
 fn pareto_observed(f: &Fixture, kl: f64, route_flips: u64) -> Observed {
     let mut observed = f.observed_with(kl, route_flips);
     let mut bank = fixtures::authority_reading(kl, route_flips);
-    // The only protocol-scale adaptation this tiny fixture needs. The
-    // behavioural distributions stay POPULATED.
-    bank.positions = 8;
+    // Follow the fixture's declared corpus depth. The behavioural
+    // distributions stay POPULATED.
+    bank.positions = f.positions;
     observed.observation = bank;
     observed.execution_note = "PARETO-1 populated authority-shaped fixture".into();
     observed
@@ -182,12 +185,16 @@ fn candidates(snapshot: &SearchSnapshot) -> CandidateSet {
 /// on preference is the claim. Those enter only through `ingest_bytes`.
 /// The baseline is identical in every world and carries no candidate
 /// value, so it cannot be what moves a preference.
-fn with_baseline(snapshot: &SearchSnapshot, template: &MeasurementKey) -> SearchSnapshot {
+fn with_baseline(
+    snapshot: &SearchSnapshot,
+    template: &MeasurementKey,
+    positions: u64,
+) -> SearchSnapshot {
     let mut facts = snapshot.facts().clone();
     let root = facts.graph.root().clone();
     let key = baseline_key(&root, template);
-    let mut bank = fixtures::authority_reading(5.0e-3, 32);
-    bank.positions = 8;
+    let mut bank = fixtures::authority_reading(PARENT.0, PARENT.1);
+    bank.positions = positions;
     facts
         .measurements
         .record_fixture(key, bank)
@@ -262,11 +269,14 @@ fn decide(snapshot: &SearchSnapshot, edges: &[(Action, ResolvedState)]) -> Promo
             s.class.tier(),
             s.gpu_ms_saved
         );
-        // Pinned, with its cause stated in the module header: 8 corpus
-        // positions cannot support a p99 that needs 500, so KlP99 is
-        // unpriceable at authority scale.
-        assert_eq!(s.class, MoveClass::Unscorable);
         assert_eq!(s.gpu_ms_saved, 2.0, "the frozen physical gain");
+        assert_eq!(
+            s.class,
+            MoveClass::Priced,
+            "at the p99 support floor this layer must classify exactly as \
+             the direct worlds do, or it is not the same experiment"
+        );
+        assert_eq!(s.class.tier(), 2);
     }
     if candidates.len() == 2 {
         assert_eq!(
@@ -317,7 +327,7 @@ fn compile_q(f: &Fixture) -> PathBuf {
 /// the preference follows the values they carried.
 #[test]
 fn values_admitted_through_opt6_decide_the_preference() {
-    let f = Fixture::new();
+    let f = Fixture::with_positions(P99_SUPPORT_FLOOR);
     let q_candidate = compile_q(&f);
     let s0 = f.snapshot.clone();
 
@@ -346,7 +356,7 @@ fn values_admitted_through_opt6_decide_the_preference() {
         .clone();
     let root = s0.facts().graph.root().clone();
     let baseline = baseline_key(&root, &template);
-    let s0 = with_baseline(&s0, &template);
+    let s0 = with_baseline(&s0, &template, f.positions);
     assert!(
         s0.measurements().contains(&baseline),
         "the baseline must exist before any candidate artifact is ingested"
@@ -494,7 +504,7 @@ fn values_admitted_through_opt6_decide_the_preference() {
 /// `PromotionDecision` are all identical before and after the refusal.
 #[test]
 fn c4_rejected_evidence_changes_neither_facts_nor_preference() {
-    let f = Fixture::new();
+    let f = Fixture::with_positions(P99_SUPPORT_FLOOR);
     let q_candidate = compile_q(&f);
     let s0 = f.snapshot.clone();
     let initial = candidates(&s0);
@@ -513,7 +523,7 @@ fn c4_rejected_evidence_changes_neither_facts_nor_preference() {
         .expect("two eligible")
         .intended_key
         .clone();
-    let s0 = with_baseline(&s0, &template);
+    let s0 = with_baseline(&s0, &template, f.positions);
 
     // A world with one admitted observation, so there is a real
     // preference for a refusal to fail to disturb.
@@ -590,5 +600,99 @@ fn c4_rejected_evidence_changes_neither_facts_nor_preference() {
             before_decision,
             "[{name}] the preference moved"
         );
+    }
+}
+
+/// **The support boundary, tested rather than assumed.**
+///
+/// One position below the floor, the p99 criteria lose their tail
+/// support, `KlP99` becomes unpriceable at authority scale, and the same
+/// move that classifies `Priced` at 500 falls to `Unscorable` at 499.
+///
+/// This is what makes 500 a contract boundary rather than a fixture
+/// size somebody liked. It also shows the two questions coming apart:
+/// below the floor the candidates can still be ORDERED — the decision
+/// is still a selection on named proxies — they simply cannot be
+/// PRICED.
+#[test]
+fn one_position_below_the_support_floor_cannot_price() {
+    let f = Fixture::with_positions(BELOW_FLOOR);
+    let q_candidate = compile_q(&f);
+    let s0 = f.snapshot.clone();
+    let initial = candidates(&s0);
+    let edge = |added: &str| {
+        let c = initial
+            .eligible()
+            .find(|c| c.action.added == [added])
+            .unwrap()
+            .clone();
+        (c.action, c.child)
+    };
+    let edges = [edge("compile-all"), edge("compile-q")];
+    let template = initial
+        .eligible()
+        .next()
+        .expect("two eligible")
+        .intended_key
+        .clone();
+    let s0 = with_baseline(&s0, &template, f.positions);
+
+    let mut s = s0.clone();
+    let prepared = PreparedExperiment::of(&s);
+    let artifact = dispatch(&f, &prepared, &f.candidate, BETTER, false);
+    assert!(
+        ingest_bytes(&mut s, &prepared, &artifact, &f.sources())
+            .unwrap()
+            .recorded
+    );
+    let sources_q = IngestionSources {
+        container: &f.source,
+        candidate: &q_candidate,
+        corpus: &f.corpus,
+    };
+    let prepared_q = PreparedExperiment::of(&s);
+    let artifact_q = dispatch(&f, &prepared_q, &q_candidate, WORSE, false);
+    assert!(
+        ingest_bytes(&mut s, &prepared_q, &artifact_q, &sources_q)
+            .unwrap()
+            .recorded
+    );
+
+    let snap = priced(&s, &edges);
+    let candidates = snap
+        .promotion_candidates(EvidenceScale::Authority)
+        .expect("cost");
+    assert_eq!(candidates.len(), 2);
+    for c in &candidates {
+        let score = &c.promotion.assessment.ranking_score;
+        println!(
+            "BELOW-FLOOR row  id={:<28} class={:?} tier={}",
+            c.id,
+            score.class,
+            score.class.tier()
+        );
+        assert_eq!(
+            score.class,
+            MoveClass::Unscorable,
+            "{} must lose pricing one position below the floor",
+            c.id
+        );
+        assert_eq!(score.class.tier(), 1);
+    }
+
+    // Ordering survives what pricing loses. The decision is still a
+    // selection on named proxies, not a refusal.
+    match decide_promotion(
+        &candidates,
+        &snap.config().calibrations,
+        &snap.config().tail_support,
+    ) {
+        PromotionDecision::SelectForAuthority { evidence, .. } => {
+            assert!(
+                !evidence.deciding.is_empty(),
+                "diagnostic-scale ordering must survive the loss of pricing"
+            );
+        }
+        other => panic!("expected ordering to survive, got {other:?}"),
     }
 }
