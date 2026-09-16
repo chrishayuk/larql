@@ -850,5 +850,9 @@ mod frontier_scale_tests;
 mod frontier_explore_tests;
 
 #[cfg(test)]
+#[path = "frontier_spend_tests.rs"]
+mod frontier_spend_tests;
+
+#[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

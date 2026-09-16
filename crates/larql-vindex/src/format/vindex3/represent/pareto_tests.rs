@@ -360,3 +360,23 @@ fn c3_equal_on_everything_refuses() {
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
+
+/// The two rungs of the measurement ladder, as classes.
+#[test]
+fn the_depth_templates_differ_only_in_what_they_can_price() {
+    let (cheap, ..) = fixtures::pareto_candidate_template_at(8);
+    let (priced, ..) = fixtures::pareto_candidate_template_at(500);
+    println!(
+        "ladder  cheap={:?}/{}  priced={:?}/{}",
+        cheap.assessment.ranking_score.class,
+        cheap.assessment.ranking_score.class.tier(),
+        priced.assessment.ranking_score.class,
+        priced.assessment.ranking_score.class.tier()
+    );
+    assert_eq!(cheap.assessment.ranking_score.class, MoveClass::Unscorable);
+    assert_eq!(priced.assessment.ranking_score.class, MoveClass::Priced);
+    assert!(
+        cheap.assessment.ranking_score.class.tier() < priced.assessment.ranking_score.class.tier(),
+        "escalation raises the tier — this is the preregistered hazard"
+    );
+}

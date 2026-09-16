@@ -1,0 +1,54 @@
+{
+  "programme": "REPRESENT-FRONTIER-SPEND-1",
+  "artifact_kind": "RESULT. The preregistered hazard FIRED. This rung is a decision-contract finding, not a spend comparison.",
+  "written": "2026-09-17",
+  "base": "`eeb26a61` (branch `represent-pareto-1`)",
+  "forecast": "docs/represent/forecasts/represent-frontier-spend-1.json, section NAMED_HAZARD_the_ladder_may_leak_into_preference",
+
+  "VERDICT": "Exploration policy manufactures scientific preference by choosing whom to measure more deeply. The primary claim — that exploration may change where authority is spent but not the eventual preference — is FALSE under the current decision contract.",
+
+  "NUMBERS": {
+    "replicates": 1000,
+    "H1_resamples": 256,
+    "searches_scored": 1488,
+    "hazard_fired": "1488 of 1488 — every scored search, under BOTH policies",
+    "fired_on_the_first_escalation": "1488 of 1488 — a single priced run is enough",
+    "fired_with_empty_deciding_evidence": "1488 of 1488",
+    "landscapes_where_the_two_policies_selected_DIFFERENT_candidates": "500 of 744",
+    "spend_comparison": "NOT RUN. No search ever reached an evidence-determined destination, so there was nothing to compare. Averaging over the hazard would have produced a spend table describing an artifact."
+  },
+
+  "THE_TRACE": {
+    "uniform": "step 1: chose c03  depth Cheap->Priced  class Unscorable/1 -> Priced/2 ; stage-1 pool 1 of 16 ; frontier [\"c03\"] ; SelectForAuthority{ candidate: \"c03\", dominated: [], deciding: [], readiness: Priceable }",
+    "coverage": "step 1: chose c02 ... SelectForAuthority{ candidate: \"c02\", dominated: [], deciding: [] }",
+    "what_to_read_in_it": "`dominated` and `deciding` are BOTH EMPTY. Nothing was compared to anything. The candidate was selected because it was the only member of the stage-1 pool, and it was the only member because it was the only one measured deeply."
+  },
+
+  "MECHANISM_from_the_code_not_inferred": {
+    "step_1": "`MoveClass` is a function of what the evidence can PRICE. Below the p99 support floor a positive-gain move is `Unscorable` (tier 1); at or above it, `Priced` (tier 2). Pinned by PARETO-1's 499/500 boundary and re-asserted by `the_depth_templates_differ_only_in_what_they_can_price`.",
+    "step_2": "`decide_promotion` stage 1 computes `best_tier` as the MAXIMUM over candidates and filters the pool to that tier, before the non-dominated frontier is computed.",
+    "step_3": "Escalating ONE candidate therefore empties the pool of every other candidate. `frontier.len() == 1` is satisfied trivially, and the function returns `SelectForAuthority` with nothing dominated and nothing deciding.",
+    "the_root": "**Tier is a property of measurement DEPTH, not of a candidate's merit, yet stage 1 gives it strict precedence over all ordering evidence.** A candidate that has merely been looked at harder outranks every candidate that has not."
+  },
+
+  "WHY_THIS_IS_A_CONTRACT_DEFECT_AND_NOT_A_POLICY_RESULT": {
+    "argument": "The comparator's own invariant is that determinism may order indistinguishable candidates for DISPLAY but may never convert indistinguishability into evidence for PROMOTION (R4-F1). Here the conversion is not from display order but from measurement depth, and it is worse: `decide_promotion` is not given identity and cannot use it, but it IS given class, and class is downstream of a choice the exploration layer makes.",
+    "consequence": "Any search that escalates one candidate at a time — which is what a measurement ladder IS — will select the first candidate it prices, whatever the evidence says. The 62.5x economy the ladder was designed to capture is unusable until this is addressed.",
+    "scope_of_the_damage": "This does NOT invalidate PARETO-1 or FRONTIER-SCALE-1. Both hold every candidate at ONE depth, so `best_tier` is uniform and stage 1 is a no-op. The defect is invisible unless depths are allowed to differ, which no earlier rung did."
+  },
+
+  "NO_REMEDY_IS_DESIGNED_HERE": {
+    "why": "The freeze put remedies out of scope so the failure would be recognised rather than rationalised. Naming a fix in the same document as the finding invites the fix to be chosen for how well it makes this test green.",
+    "the_shape_a_remedy_must_have": "Whatever is proposed must let a search compare candidates at DIFFERENT measurement depths without depth itself deciding. That is a contract question about what `MoveClass` means to stage 1, not a policy question.",
+    "what_must_not_be_done": "Equalising depths pre-emptively — pricing everything before deciding anything — would hide the defect and discard the entire economy the ladder exists for."
+  },
+
+  "STATUS_OF_THE_REST_OF_THE_FREEZE": {
+    "H1": "Satisfied and exercised — 256 of 1000 landscapes were discarded for carrying an apparent global dominator after the cheap sweep.",
+    "H2": "Not reachable. It asks whether the two policies agree once evidence suffices; no search reached that state. What was observed instead is stronger and worse: on 500 of 744 landscapes the two policies selected DIFFERENT candidates.",
+    "H3": "Satisfied by construction — the true landscape has exactly one dominator — but never tested, because no search got far enough to find it.",
+    "P3": "Not run. It was already excluded from the ranked comparison, and there is no comparison."
+  },
+
+  "THE_TEST_PINS_THE_DEFECT": "`escalating_one_candidate_manufactures_a_preference` asserts the hazard fires in every scored search, on the first escalation, with empty `dominated` and `deciding`, and that the two policies reach different candidates. It pins the DEFECT rather than the hope. When the contract grows a remedy this test must be revisited, which is the point of pinning it."
+}

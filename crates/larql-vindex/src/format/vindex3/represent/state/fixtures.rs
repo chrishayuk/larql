@@ -658,6 +658,7 @@ pub struct ParetoWorld {
     b_quality: (f64, u64),
     a_bytes: (u64, u64),
     b_bytes: (u64, u64),
+    positions: u64,
 }
 
 impl ParetoWorld {
@@ -678,6 +679,7 @@ impl ParetoWorld {
             b_quality,
             a_bytes: (8_192, 16_384),
             b_bytes: (16_384, 8_192),
+            positions: 8192,
         }
     }
 
@@ -693,7 +695,16 @@ impl ParetoWorld {
             b_quality,
             a_bytes: (8_192, 16_384),
             b_bytes: (16_384, 12_288),
+            positions: 8192,
         }
+    }
+
+    /// Measure every bank at this corpus depth. Below the p99 support
+    /// floor the candidates stay orderable but lose pricing, which is
+    /// the whole point of the measurement ladder.
+    pub fn at_depth(mut self, positions: u64) -> Self {
+        self.positions = positions;
+        self
     }
 
     pub fn snapshot(&self) -> SearchSnapshot {
@@ -722,11 +733,10 @@ impl ParetoWorld {
             (t1(), self.a_quality),
             (s2(), self.b_quality),
         ] {
+            let mut bank = authority_reading(kl, flips);
+            bank.positions = self.positions;
             measurements
-                .record_fixture(
-                    key_for(&s, EvidenceScale::Authority),
-                    authority_reading(kl, flips),
-                )
+                .record_fixture(key_for(&s, EvidenceScale::Authority), bank)
                 .expect("record");
         }
 
@@ -767,6 +777,33 @@ pub fn pareto_p1_snapshot() -> SearchSnapshot {
 /// rungs require identical `MoveClass` and tier across a set — mixed
 /// classes make stage 1 the thing being measured — so sharing it makes
 /// that structural rather than asserted-and-hoped.
+/// The template at a chosen measurement depth. Below the p99 support
+/// floor the assessment classifies `Unscorable`; at or above it,
+/// `Priced`. That difference is what an escalation buys, and what the
+/// spend ladder is made of.
+pub fn pareto_candidate_template_at(
+    positions: u64,
+) -> (
+    PromotionCandidate,
+    SearchCalibrationRegistry,
+    TailSupportPolicy,
+    DiagnosticPolicy,
+) {
+    let snap = ParetoWorld::inert(PARETO_BETTER, PARETO_WORSE)
+        .at_depth(positions)
+        .snapshot();
+    let candidates = snap
+        .promotion_candidates(EvidenceScale::Authority)
+        .expect("the cost model covers this model");
+    let config = snap.config();
+    (
+        candidates[0].promotion.clone(),
+        config.calibrations.clone(),
+        config.tail_support.clone(),
+        config.diagnostic_policy.clone(),
+    )
+}
+
 pub fn pareto_candidate_template() -> (
     PromotionCandidate,
     SearchCalibrationRegistry,
