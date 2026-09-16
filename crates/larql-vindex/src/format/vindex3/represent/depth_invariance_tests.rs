@@ -240,3 +240,19 @@ fn changing_only_one_candidates_depth_changes_the_decision() {
     );
     println!("invariant violated:\n  before {before:?}\n  after  {after:?}");
 }
+
+/// What stage 5 would actually read, at each rung of the ladder.
+#[test]
+fn what_the_physical_stage_sees_at_each_depth() {
+    for (name, depth) in [("cheap", Depth::Cheap), ("priced", Depth::Priced)] {
+        let c = candidate("X", depth, 3.0e-3, 1_000);
+        let s = &c.promotion.assessment.ranking_score;
+        println!(
+            "{name:>7}: class={:?}/{}  gpu_ms_saved={}  readiness={:?}",
+            s.class,
+            s.class.tier(),
+            s.gpu_ms_saved,
+            c.promotion.readiness()
+        );
+    }
+}
