@@ -1,0 +1,73 @@
+{
+  "programme": "REPRESENT-FRONTIER-EXPLORE-1",
+  "artifact_kind": "experimental freeze. Written BEFORE any policy exists. No implementation, no result.",
+  "written": "2026-09-16",
+  "base": "`8ca36001` (branch `represent-pareto-1`)",
+  "predecessor": "FRONTIER-SCALE-1 measured the refusal rate through n=128: 99.1% under independent proxies, ~89% at moderate correlation, 100% under antagonistic, 0% under perfectly correlated.",
+
+  "what_this_is_NOT": "It is not a fix for the 99% refusal rate. `decide_promotion` is not weakened, not rescaled, and not given a weighted quality-cost scalar. Its refusal is doing the right epistemic thing — declining to call one Pareto member scientifically superior when the evidence cannot justify it. What is missing is a SECOND operation, not a looser version of the first.",
+
+  "THE_FIVE_DISTINCTIONS_pinned": {
+    "missing_evidence": "More measurement CAN resolve it. `Ambiguous{NoOrderingEvidence}`, unsupported tails, and everything the 499 -> 500 boundary demonstrated. Deeper measurement is the remedy.",
+    "conflict_incommensurability": "More precision does NOT resolve it. A candidate better on kl and worse on route flips stays non-dominated at any measurement depth. This is a genuine trade-off, not an uncertainty.",
+    "measurement_selection": "WHERE authority is spent next. Currently owned by `PromotionDecision::SelectForAuthority`.",
+    "evidence_preference": "WHAT the admitted evidence actually supports. Also currently expressed through `SelectForAuthority`, which is the collision this rung must resolve.",
+    "installation": "What representation becomes ACTIVE. No part of this rung, and nothing here may be described as installing anything."
+  },
+
+  "THE_INFINITY_PREDICTION": {
+    "claim": "Under a FIXED conflicting geometry, the expected number of authority runs before the evidence produces a unique preference is INFINITE.",
+    "why": "`ConflictingOrderingProxies` is incommensurability. Measuring both candidates to arbitrary precision leaves both non-dominated, because the conflict is between what the two proxies SAY, not between what is known about them. No amount of evidence about A and B resolves a trade-off between A and B.",
+    "status": "PREREGISTERED as the correct outcome, not discovered as a disappointing curve. An arm that appears to converge here indicates the geometry drifted or the candidate set changed — both harness defects.",
+    "the_only_two_exits": [
+      "exploration finds a NEW candidate that dominates both, which changes the candidate set rather than the evidence about it",
+      "a CALLER supplies an objective that licenses the trade — externally declared, never inferred by a comparator"
+    ],
+    "consequence_for_metrics": "'Runs to a unique decision' is a valid metric ONLY for the missing-evidence class. For the conflict class the metric must be frontier coverage and authority spend, since the target state does not exist."
+  },
+
+  "THE_NAMING_COLLISION_called_out_before_any_vocabulary_lands": {
+    "the_problem": "`PromotionDecision::SelectForAuthority` ALREADY means 'spend measurement here' — its own doc says a candidate 'may be selected for authority', and the PARETO-1 freeze lists 'SelectForAuthority described as a completed promotion' as a non-acceptance. Introducing `SelectedForExploration` would create a second name for that same idea and make traces ambiguous in the opposite direction from the one feared.",
+    "proposed_shape": "An exploration result AROUND authority selection, not a synonym for it: `AuthorityChoice { candidate, reason }` with `reason` in { RandomFrontier, FrontierCoverage, CallerObjective }. `PromotionDecision::SelectForAuthority` stays exactly as it is, as the evidence comparator's result.",
+    "obligation": "If `AuthorityChoice` still reads as overloaded once written, the collision is recorded again and the name is changed BEFORE it enters production vocabulary. A name that needs a paragraph to disambiguate is the wrong name.",
+    "the_invariant_the_names_protect": "An exploration policy may decide WHAT TO MEASURE. Only admitted evidence may change PREFERENCE. No trace may let the first be read as the second."
+  },
+
+  "EXECUTABLE_POLICIES_first_wave": {
+    "constraint": "None of these may read `gpu_ms_saved` or anything else descending from `execution_cost::predict`.",
+    "P1_uniform_random_frontier": "Choose uniformly among non-dominated candidates. Deterministic seeded randomness, so a run is reproducible and a permutation test is meaningful.",
+    "P2_frontier_coverage": "Choose the candidate furthest, in EVIDENCE space, from already-measured frontier points. Geometry of the diagnostic readings only — no physical cost.",
+    "P3_caller_objective": "A caller declares an objective, e.g. 'memory <= X, quality floor Y, minimise measured latency', and it selects among the frontier. This is NOT evidence manufacturing a winner: the objective is external, declared, and recorded as the reason. This is the K3-shaped arm."
+  },
+
+  "DEFERRED_and_why": {
+    "largest_physical_gain": "NOT in this wave. It ranks on `gpu_ms_saved`, which descends from a cost model whose beta is keyed on model identity and nearest byte fraction, with no codec or realization index. Such a policy would systematically spend measurement on the wrong realization, and — unlike promotion — that error is SILENT, because an exploration choice makes no claim the subsequent evidence can falsify. Enabled only after REALIZATION-COST-1.",
+    "sequencing": "freeze this -> run P1/P2/P3 -> REALIZATION-COST-1 -> enable physical-gain exploration -> real numerical loop -> K3."
+  },
+
+  "TIE_DISCIPLINE_a_hard_gate": {
+    "rule": "No exploration policy may fall through to list order, candidate identity, insertion order, or a stable-sort accident.",
+    "the_measured_reason": "FRONTIER-SCALE-1's discrete arm found `gpu_ms_saved` identical across the frontier in 1,992 of 2,000 rounds. A 'largest gain' policy with no declared tie-break would therefore have been choosing by list position in 99.6% of rounds — R4-F1 resurrected inside the exploration layer, where no evidence gate is watching for it.",
+    "test": "For every policy, reverse and permute the frontier and require the selected candidate — or, for a randomized policy, the seeded distribution — to remain semantically identical. This mirrors FRONTIER-SCALE-1's F4 at the exploration layer."
+  },
+
+  "THE_MEASUREMENT_LADDER_a_first_class_outcome": {
+    "what_the_499_500_boundary_unlocked": "Below the p99 support floor candidates remain ORDERABLE — the 499 control returned a selection naming its deciding proxies — and only PRICING is lost. Authority runs therefore have at least two prices, not one.",
+    "ladder": "cheap ordering measurement -> is the frontier still unresolved? -> if yes, a deeper >= 500-position authority measurement -> priceable evidence.",
+    "metric": "AUTHORITY SPEND, not round count. A policy that reaches the same eventual state with fewer 500-position runs is genuinely better, and round-count alone cannot see that difference.",
+    "note": "500 is `TailSupportPolicy::route_cal_1().required_observations(0.99)` = 5.0/(1-0.99), the boundary PARETO-1 pinned on both sides."
+  },
+
+  "METRICS": [
+    "authority spend, split by depth (below-floor ordering runs vs >= 500-position pricing runs)",
+    "frontier coverage: fraction of non-dominated candidates measured",
+    "runs to a unique evidence preference — MISSING-EVIDENCE arms only",
+    "whether different policies converge to the SAME eventual preference once evidence suffices",
+    "permutation-invariance violations of the exploration choice (expected 0)",
+    "rate at which exploration discovers a candidate that dominates a previous frontier"
+  ],
+
+  "INHERITED_FALSIFIERS": "FRONTIER-SCALE-1's four gates continue to apply wherever candidate sets are generated: class and tier held constant and asserted before deciding, `NoOrderingEvidence` expected exactly 0 in two-proxy arms, the physical tie-break confined to a declared discrete grid, and full decision equality under permutation.",
+
+  "out_of_scope": "No change to `decide_promotion`. No weighted quality-cost scalar anywhere. No installation or promotion of any representation. No real model, no K3, no execution measurement, no MCTS or PUCT — the first wave is deliberately boring so that the measurement is about the frontier and not about a search algorithm."
+}
