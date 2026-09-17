@@ -450,12 +450,25 @@ pub fn decide_promotion(
     // has a cost that was actually SCORED — otherwise the member whose
     // cost nobody measured would be silently treated as comparable, and
     // stage 1's defect would reappear one stage later (DEPTH-2).
-    // The test is COMPARABILITY, not universal support. A frontier on
-    // which nobody's cost was scored is equally unsupported, and
-    // comparing predicted gains there is the behaviour that predates
-    // DEPTH-2 and is left alone. What is refused is a MIXED frontier,
-    // where pricing one member and not another would let measurement
-    // depth decide — stage 1's defect reappearing one stage later.
+    // **Comparability, not universal support — adjudicated, not
+    // accidental.** Three cases:
+    //
+    //   mixed scorability      -> refuse; unequal epistemic depth must
+    //                             not decide
+    //   uniform scorability    -> the physical stage, as before
+    //   uniform NON-scorability-> existing behaviour, preserved
+    //
+    // The universal reading — refuse unless EVERY member's cost is
+    // scored — was implemented first and broke two equal-depth tests
+    // that predate this rung. That is scope creep, not a regression:
+    // DEPTH-2 repairs measurement-depth ASYMMETRY changing preference,
+    // and uniform non-scorability is not that defect.
+    //
+    // Whether `gpu_ms_saved` should decide anything when nobody has
+    // trustworthy behavioural pricing is a real question and NOT this
+    // one — it is about what a beta-derived prediction is worth, which
+    // REALIZATION-COST-1 owns. The third case is therefore deliberately
+    // left as it was, not endorsed forever.
     let scorable = frontier
         .iter()
         .filter(|c| {
