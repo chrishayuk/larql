@@ -858,5 +858,9 @@ mod frontier_spend_tests;
 mod depth_invariance_tests;
 
 #[cfg(test)]
+#[path = "terminal_tests.rs"]
+mod terminal_tests;
+
+#[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
