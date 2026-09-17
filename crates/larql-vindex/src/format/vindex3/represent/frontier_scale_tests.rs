@@ -149,6 +149,7 @@ struct Tally {
     no_ordering: usize,
     indistinguishable: usize,
     by_physical_gain: usize,
+    incomplete_pricing: usize,
     permutation_violations: usize,
 }
 
@@ -209,6 +210,10 @@ fn run(g: Geometry, n: usize, grid: Option<usize>, seed: u64) -> Tally {
                     AmbiguityReason::ConflictingOrderingProxies => t.conflicting += 1,
                     AmbiguityReason::NoOrderingEvidence => t.no_ordering += 1,
                     AmbiguityReason::IndistinguishableOnEveryProxy => t.indistinguishable += 1,
+                    // DEPTH-2. Every candidate here is `Priced`, so an
+                    // unscored cost cannot occur; a nonzero count means
+                    // the harness lost its uniform class (F1).
+                    AmbiguityReason::IncompletePricingAuthority => t.incomplete_pricing += 1,
                 }
             }
             other => panic!("unexpected decision: {other:?}"),
@@ -221,6 +226,10 @@ fn run(g: Geometry, n: usize, grid: Option<usize>, seed: u64) -> Tally {
     assert_eq!(
         t.no_ordering, 0,
         "F2: the harness lost its calibration authority"
+    );
+    assert_eq!(
+        t.incomplete_pricing, 0,
+        "every candidate is Priced here; an unscored cost means F1 was lost"
     );
     // F4, scored.
     assert_eq!(

@@ -186,6 +186,16 @@ pub enum AmbiguityReason {
     /// Every comparable proxy says the candidates are equal, and no
     /// physical difference separates them either.
     IndistinguishableOnEveryProxy,
+    /// **The proxies left the frontier unresolved, and the physical
+    /// comparison needed to continue is not supported comparably across
+    /// it** — at least one member's behavioural cost was never scored.
+    ///
+    /// Distinct from [`Self::IndistinguishableOnEveryProxy`], which
+    /// means "they are the same". This means "we cannot yet tell", and
+    /// it hands control back to the measurement layer with a named
+    /// reason to spend: measure the missing member, rather than pretend
+    /// the one already measured is superior (DEPTH-1).
+    IncompletePricingAuthority,
 }
 
 /// Why a round had nothing to promote.
@@ -325,21 +335,23 @@ pub fn decide_promotion(
             reason: NoPromotableCandidate::EmptySet,
         };
     }
-    // 1. Promotion class.
-    let best_tier = candidates
+    // 1. Promotion class — ADMISSIBILITY, not precedence.
+    //
+    // DEPTH-1: this filtered to the MAXIMUM tier, which let measurement
+    // depth outrank evidence. `Unscorable` is a knowledge state, so a
+    // candidate that had merely been measured more deeply displaced
+    // every candidate that had not — selected with `dominated: []` and
+    // `deciding: []`, on 1488 of 1488 searches. Stage 1 now decides only
+    // whether a move is promotable AT ALL.
+    let pool: Vec<&SearchCandidate> = candidates
         .iter()
-        .map(|c| c.promotion.assessment.ranking_score.class.tier())
-        .max()
-        .unwrap_or(0);
-    if best_tier == 0 {
+        .filter(|c| c.promotion.assessment.ranking_score.class.tier() > 0)
+        .collect();
+    if pool.is_empty() {
         return PromotionDecision::None {
             reason: NoPromotableCandidate::EveryMoveWorthless,
         };
     }
-    let pool: Vec<&SearchCandidate> = candidates
-        .iter()
-        .filter(|c| c.promotion.assessment.ranking_score.class.tier() == best_tier)
-        .collect();
 
     // 2. Proxy ordering: the non-dominated frontier.
     let frontier: Vec<&SearchCandidate> = pool
@@ -430,6 +442,34 @@ pub fn decide_promotion(
         return PromotionDecision::Ambiguous {
             candidates: ids(&frontier),
             reason: AmbiguityReason::ConflictingOrderingProxies,
+        };
+    }
+
+    // The proxies agree these are equal, so a physical comparison is
+    // what would continue. It may only run when every unresolved member
+    // has a cost that was actually SCORED — otherwise the member whose
+    // cost nobody measured would be silently treated as comparable, and
+    // stage 1's defect would reappear one stage later (DEPTH-2).
+    // The test is COMPARABILITY, not universal support. A frontier on
+    // which nobody's cost was scored is equally unsupported, and
+    // comparing predicted gains there is the behaviour that predates
+    // DEPTH-2 and is left alone. What is refused is a MIXED frontier,
+    // where pricing one member and not another would let measurement
+    // depth decide — stage 1's defect reappearing one stage later.
+    let scorable = frontier
+        .iter()
+        .filter(|c| {
+            c.promotion
+                .assessment
+                .ranking_score
+                .class
+                .cost_is_scorable()
+        })
+        .count();
+    if scorable != 0 && scorable != frontier.len() {
+        return PromotionDecision::Ambiguous {
+            candidates: ids(&frontier),
+            reason: AmbiguityReason::IncompletePricingAuthority,
         };
     }
 

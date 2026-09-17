@@ -5,15 +5,21 @@
 //! > Evidence strength determines which conclusions are licensed; it is
 //! > not evidence that a candidate is superior.
 //!
-//! Every arm states what the CONTRACT requires and what the current
-//! implementation is predicted to do. Where they differ, the test
-//! asserts the PREDICTION and names the contract requirement it
-//! violates, so the defect is pinned rather than the hope. No remedy is
-//! implemented here.
+//! **These arms were written against the BROKEN contract and asserted
+//! the defect.** DEPTH-2 repaired it, every one of them failed, and they
+//! are now flipped to assert the contract. That order matters: the
+//! repair is checked against a result recorded BEFORE the
+//! implementation was chosen, not against a green path invented
+//! afterwards.
+//!
+//! The repair, in one line: stage 1 stopped using `Unscorable` as
+//! PRECEDENCE and stage 5 started using it as a QUALIFICATION
+//! PRECONDITION.
 
 use super::assessment::MoveClass;
 use super::decision::{decide_promotion, AmbiguityReason, PromotionDecision, SearchCandidate};
 use super::state::fixtures;
+use super::statistic::Statistic;
 
 const CHEAP: u64 = 8;
 const PRICED: u64 = 500;
@@ -76,130 +82,150 @@ fn conflicting(a_depth: Depth, b_depth: Depth) -> Vec<SearchCandidate> {
     ]
 }
 
-/// **A3 — THE HEADLINE. Price only the loser, and the loser wins.**
+/// **G1 — price only the loser, and the loser does NOT win.**
 ///
-/// CONTRACT REQUIRES: A still wins. B being measured harder is not a
-/// reason to prefer it.
+/// A dominates B on both proxies. B is measured more deeply. B's extra
+/// measurement is still represented — `readiness` says `Uninformed`
+/// because A, the winner, is the one that was not priced — but it no
+/// longer overrules evidence.
 ///
-/// CURRENT: B is selected. A candidate that LOST on the evidence wins by
-/// having been measured more.
+/// Before DEPTH-2 this returned `SelectForAuthority{B}` with
+/// `dominated: []` and `deciding: []`.
 #[test]
-fn a3_pricing_only_the_loser_makes_the_loser_win() {
-    // Baseline: at equal cheap depth, A wins on the evidence.
+fn g1_pricing_only_the_loser_does_not_make_the_loser_win() {
     let equal = winner_and_loser(Depth::Cheap, Depth::Cheap);
-    match decide(&equal) {
-        PromotionDecision::SelectForAuthority {
-            candidate,
-            evidence,
-        } => {
-            assert_eq!(candidate, "A", "A dominates on both proxies");
-            assert_eq!(evidence.dominated, vec!["B".to_string()]);
-            assert!(!evidence.deciding.is_empty(), "and wins ON the evidence");
-        }
-        other => panic!("expected A to win at equal depth, got {other:?}"),
-    }
+    let baseline = decide(&equal);
 
-    // Now price ONLY the loser. Nothing about either candidate's
-    // observed values changed.
     let mixed = winner_and_loser(Depth::Cheap, Depth::Priced);
-    println!("A3 classes: {:?}", classes(&mixed));
+    println!("G1 classes: {:?}", classes(&mixed));
     let decision = decide(&mixed);
-    println!("A3 decision: {decision:?}");
+    println!("G1 decision: {decision:?}");
 
-    match decision {
+    match &decision {
         PromotionDecision::SelectForAuthority {
             candidate,
             evidence,
         } => {
+            assert_eq!(candidate, "A", "the candidate the EVIDENCE favours");
+            assert_eq!(evidence.dominated, vec!["B".to_string()]);
             assert_eq!(
-                candidate, "B",
-                "PINNED DEFECT: the loser wins. The contract requires A."
+                evidence.deciding,
+                vec![Statistic::KlP99, Statistic::RouteFlipRate],
+                "and it wins on the named proxies, not on a tier"
             );
-            assert!(
-                evidence.dominated.is_empty() && evidence.deciding.is_empty(),
-                "and it wins on NO evidence — nothing was compared"
-            );
+            assert!(!evidence.decided_by_physical_gain);
         }
-        other => panic!("expected the defect to fire, got {other:?}"),
+        other => panic!("expected A on the evidence, got {other:?}"),
     }
+
+    // **The invariant.** Identity, physical facts and observed values
+    // all held fixed; only B's depth changed; the decision does not
+    // move — evidence record included.
+    assert_eq!(
+        format!("{baseline:?}"),
+        format!("{decision:?}"),
+        "measuring one candidate more deeply changed the decision"
+    );
 }
 
-/// **A4 — price only the winner: the right candidate, the wrong reason.**
+/// **G2 — depth cannot manufacture a resolution.**
 ///
-/// CONTRACT REQUIRES: A wins, `dominated` names B, `deciding` names the
-/// separating proxies.
-///
-/// CURRENT: A wins with EMPTY evidence. The answer is right and the
-/// justification is hollow, which is why asserting the evidence and not
-/// just the winner is what catches this arm.
+/// Before DEPTH-2, pricing either side of a conflict selected that side
+/// with empty evidence, and the mirror proved it was depth and not
+/// merit.
 #[test]
-fn a4_pricing_only_the_winner_hollows_out_the_justification() {
-    let mixed = winner_and_loser(Depth::Priced, Depth::Cheap);
-    let decision = decide(&mixed);
-    println!("A4 decision: {decision:?}");
-    match decision {
-        PromotionDecision::SelectForAuthority {
-            candidate,
-            evidence,
-        } => {
-            assert_eq!(candidate, "A", "the right candidate");
-            assert!(
-                evidence.dominated.is_empty() && evidence.deciding.is_empty(),
-                "PINNED DEFECT: won on tier, not on evidence. The contract \
-                 requires `dominated` to name B and `deciding` to name the \
-                 separating proxies."
-            );
-        }
-        other => panic!("expected a hollow win, got {other:?}"),
-    }
-}
-
-/// **A1 / A2 — a conflict is not resolved by depth, and the mirror
-/// proves it is depth and not merit.**
-///
-/// CONTRACT REQUIRES: `Ambiguous{ConflictingOrderingProxies}` in both.
-///
-/// CURRENT: whichever side was priced is selected, on no evidence.
-#[test]
-fn a1_a2_pricing_either_side_of_a_conflict_fabricates_a_winner() {
-    // Baseline: at equal depth the conflict is refused, correctly.
-    match decide(&conflicting(Depth::Cheap, Depth::Cheap)) {
-        PromotionDecision::Ambiguous { reason, .. } => {
-            assert_eq!(reason, AmbiguityReason::ConflictingOrderingProxies);
-        }
-        other => panic!("expected a refusal at equal depth, got {other:?}"),
-    }
-
-    for (a, b, expected) in [
-        (Depth::Priced, Depth::Cheap, "A"),
-        (Depth::Cheap, Depth::Priced, "B"),
+fn g2_a_conflict_survives_asymmetric_depth() {
+    let baseline = decide(&conflicting(Depth::Cheap, Depth::Cheap));
+    for (a, b) in [
+        (Depth::Priced, Depth::Cheap),
+        (Depth::Cheap, Depth::Priced),
+        (Depth::Priced, Depth::Priced),
     ] {
         let decision = decide(&conflicting(a, b));
-        println!("A1/A2 priced={expected}: {decision:?}");
-        match decision {
-            PromotionDecision::SelectForAuthority {
-                candidate,
-                evidence,
-            } => {
-                assert_eq!(
-                    candidate, expected,
-                    "PINNED DEFECT: the priced side is selected. The contract \
-                     requires the conflict to stand."
-                );
-                assert!(evidence.deciding.is_empty());
+        match &decision {
+            PromotionDecision::Ambiguous { candidates, reason } => {
+                assert_eq!(*reason, AmbiguityReason::ConflictingOrderingProxies);
+                assert_eq!(candidates, &vec!["A".to_string(), "B".to_string()]);
             }
-            other => panic!("expected the defect to fire, got {other:?}"),
+            other => panic!("{a:?}/{b:?}: depth manufactured a winner: {other:?}"),
         }
+        assert_eq!(
+            format!("{baseline:?}"),
+            format!("{decision:?}"),
+            "{a:?}/{b:?}: the conflict's RECORD moved with depth"
+        );
     }
 }
 
-/// **A5 — the control. Uniform depth is unaffected.**
+/// **G3 — equal proxies with asymmetric depth is `IncompletePricingAuthority`.**
 ///
-/// This is what makes the defect specific to UNEQUAL depth, and why
-/// PARETO-1 and FRONTIER-SCALE-1 remain valid: both hold every candidate
-/// at one depth, so stage 1 is a no-op there.
+/// The proxies tie, so a physical comparison is what would continue. It
+/// may not, because one member's behavioural cost was never scored.
+/// This is NOT `IndistinguishableOnEveryProxy` — that means "they are
+/// the same"; this means "we cannot yet tell" — and it hands control
+/// back to the measurement layer with a named reason to spend.
 #[test]
-fn a5_uniform_depth_behaves_correctly_at_either_rung() {
+fn g3_equal_proxies_with_an_unscored_cost_refuses_to_price() {
+    let tied = |a: Depth, b: Depth| {
+        vec![
+            candidate("A", a, 3.0e-3, 1_000),
+            candidate("B", b, 3.0e-3, 1_000),
+        ]
+    };
+
+    for (a, b) in [(Depth::Priced, Depth::Cheap), (Depth::Cheap, Depth::Priced)] {
+        let decision = decide(&tied(a, b));
+        println!("G3 {a:?}/{b:?}: {decision:?}");
+        match &decision {
+            PromotionDecision::Ambiguous { candidates, reason } => {
+                assert_eq!(
+                    *reason,
+                    AmbiguityReason::IncompletePricingAuthority,
+                    "one member's cost is unscored; this is not indistinguishability"
+                );
+                assert_eq!(candidates, &vec!["A".to_string(), "B".to_string()]);
+            }
+            other => panic!("{a:?}/{b:?}: expected a refusal to price, got {other:?}"),
+        }
+    }
+
+    // **Both unscored is NOT the same answer**, and the first
+    // implementation of this precondition got it wrong. The test is
+    // COMPARABILITY, not universal support: a frontier where nobody's
+    // cost was scored is equally unsupported, and comparing predicted
+    // gains there is pre-DEPTH-2 behaviour that must be left alone.
+    // Reading the precondition as "every member must be scorable" broke
+    // two existing `decision` tests at UNIFORM depth, which is exactly
+    // what G4 forbids. The freeze's own word was the corrective — "not
+    // supported COMPARABLY across that frontier".
+    match decide(&tied(Depth::Cheap, Depth::Cheap)) {
+        PromotionDecision::Ambiguous { reason, .. } => {
+            assert_eq!(reason, AmbiguityReason::IndistinguishableOnEveryProxy);
+        }
+        other => panic!("expected the pre-DEPTH-2 answer, got {other:?}"),
+    }
+
+    // Both scored, and the physical stage may legitimately act. Here the
+    // gains are equal too, so it correctly reports indistinguishability
+    // — the variant G3 must never be confused with.
+    match decide(&tied(Depth::Priced, Depth::Priced)) {
+        PromotionDecision::Ambiguous { reason, .. } => {
+            assert_eq!(
+                reason,
+                AmbiguityReason::IndistinguishableOnEveryProxy,
+                "with every cost scored, the honest answer is 'the same'"
+            );
+        }
+        other => panic!("expected indistinguishability, got {other:?}"),
+    }
+}
+
+/// **G4 — the uniform-depth control, unchanged.**
+///
+/// PARETO-1, FRONTIER-SCALE-1 and FRONTIER-EXPLORE-1 all hold every
+/// candidate at one depth. Their behaviour must be exactly what it was.
+#[test]
+fn g4_uniform_depth_behaves_exactly_as_before() {
     for depth in [Depth::Cheap, Depth::Priced] {
         match decide(&winner_and_loser(depth, depth)) {
             PromotionDecision::SelectForAuthority {
@@ -208,7 +234,10 @@ fn a5_uniform_depth_behaves_correctly_at_either_rung() {
             } => {
                 assert_eq!(candidate, "A");
                 assert_eq!(evidence.dominated, vec!["B".to_string()]);
-                assert!(!evidence.deciding.is_empty(), "{depth:?}: won on evidence");
+                assert_eq!(
+                    evidence.deciding,
+                    vec![Statistic::KlP99, Statistic::RouteFlipRate]
+                );
             }
             other => panic!("{depth:?}: {other:?}"),
         }
@@ -221,24 +250,15 @@ fn a5_uniform_depth_behaves_correctly_at_either_rung() {
     }
 }
 
-/// **The invariant, stated as a test.**
-///
-/// Identity, physical facts and observed ordering values are all held
-/// fixed; only one candidate's measurement depth changes. The decision
-/// must not move. It does.
+/// **`Worthless` is still excluded.** Stage 1 became admissibility, not
+/// nothing: a move that buys no time is still not promotable.
 #[test]
-fn changing_only_one_candidates_depth_changes_the_decision() {
-    let before = decide(&winner_and_loser(Depth::Cheap, Depth::Cheap));
-    let after = decide(&winner_and_loser(Depth::Cheap, Depth::Priced));
-    assert_ne!(
-        format!("{before:?}"),
-        format!("{after:?}"),
-        "PINNED DEFECT: this assertion is INVERTED. The contract requires \
-         these to be EQUAL — nothing changed except how hard B was looked \
-         at. When the remedy lands, this test must be rewritten to \
-         assert_eq and this comment deleted."
-    );
-    println!("invariant violated:\n  before {before:?}\n  after  {after:?}");
+fn g5_stage_1_still_excludes_worthless() {
+    let (_, registry, tail, _) = fixtures::pareto_candidate_template_at(PRICED);
+    assert!(matches!(
+        decide_promotion(&[], &registry, &tail),
+        PromotionDecision::None { .. }
+    ));
 }
 
 /// What stage 5 would actually read, at each rung of the ladder.
@@ -254,5 +274,8 @@ fn what_the_physical_stage_sees_at_each_depth() {
             s.gpu_ms_saved,
             c.promotion.readiness()
         );
+        // Unchanged by DEPTH-2, and deliberately so: it is a PREDICTION
+        // from `execution_cost::predict`, not measured authority.
+        assert_eq!(s.gpu_ms_saved, 2.0);
     }
 }

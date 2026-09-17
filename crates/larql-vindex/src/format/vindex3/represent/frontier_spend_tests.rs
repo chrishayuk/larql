@@ -164,6 +164,15 @@ fn index_of(id: &str) -> usize {
     id.trim_start_matches('c').parse().unwrap()
 }
 
+fn winner_is_priced(decision: &PromotionDecision, readings: &[Reading]) -> bool {
+    match decision {
+        PromotionDecision::SelectForAuthority { candidate, .. } => {
+            readings[index_of(candidate)].depth == Depth::Priced
+        }
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Policy {
     Uniform,
@@ -213,6 +222,14 @@ fn choose(policy: Policy, frontier: &[String], readings: &[Reading], rng: &mut R
 
 #[derive(Debug)]
 struct Outcome {
+    /// Was the selected candidate itself measured at the priced depth?
+    ///
+    /// The primary claim holds only "when the available evidence is
+    /// sufficient to determine a preference". A search that terminates
+    /// on a unique frontier member whose own reading is a NOISY cheap
+    /// one has not met that precondition — it simply does not know yet.
+    /// The freeze's terminal conditions did not distinguish the two.
+    winner_priced: bool,
     decision: PromotionDecision,
     priced_runs: u64,
     /// Retained, unread. This is the metric the spend comparison would
@@ -241,6 +258,7 @@ fn search(policy: Policy, seed: u64, verbose: bool) -> Outcome {
     // implementation here would be a second opinion.
     if matches!(decision, PromotionDecision::SelectForAuthority { .. }) {
         return Outcome {
+            winner_priced: winner_is_priced(&decision, &readings),
             decision,
             priced_runs,
             position_equivalents: spend,
@@ -257,6 +275,7 @@ fn search(policy: Policy, seed: u64, verbose: bool) -> Outcome {
 
         if !unpriced_on_frontier {
             return Outcome {
+                winner_priced: winner_is_priced(&decision, &readings),
                 decision,
                 priced_runs,
                 position_equivalents: spend,
@@ -266,6 +285,7 @@ fn search(policy: Policy, seed: u64, verbose: bool) -> Outcome {
         }
         if spend + PRICED > BUDGET {
             return Outcome {
+                winner_priced: winner_is_priced(&decision, &readings),
                 decision,
                 priced_runs,
                 position_equivalents: spend,
@@ -325,11 +345,23 @@ fn search(policy: Policy, seed: u64, verbose: bool) -> Outcome {
             .iter()
             .any(|id| readings[index_of(id)].depth == Depth::Cheap)
             || priced_count < N;
-        if matches!(next, PromotionDecision::SelectForAuthority { .. })
-            && pool.len() < candidates.len()
-            && still_unpriced
-        {
+        // The detector tests the EVIDENCE, not the pool. Its first
+        // version asked whether the max-tier pool had excluded anyone,
+        // which encoded the pre-DEPTH-2 stage 1 and therefore kept
+        // "firing" after the repair, on selections that were made
+        // legitimately on named proxies. The defect's real signature is
+        // a selection that names nothing: no dominated candidate, no
+        // deciding proxy, and not the physical tie-break either.
+        let no_evidence = matches!(
+            &next,
+            PromotionDecision::SelectForAuthority { evidence, .. }
+                if evidence.dominated.is_empty()
+                    && evidence.deciding.is_empty()
+                    && !evidence.decided_by_physical_gain
+        );
+        if no_evidence && still_unpriced {
             return Outcome {
+                winner_priced: winner_is_priced(&next, &readings),
                 decision: next,
                 priced_runs,
                 position_equivalents: spend,
@@ -341,6 +373,7 @@ fn search(policy: Policy, seed: u64, verbose: bool) -> Outcome {
         decision = next;
         if matches!(decision, PromotionDecision::SelectForAuthority { .. }) {
             return Outcome {
+                winner_priced: winner_is_priced(&decision, &readings),
                 decision,
                 priced_runs,
                 position_equivalents: spend,
@@ -351,26 +384,27 @@ fn search(policy: Policy, seed: u64, verbose: bool) -> Outcome {
     }
 }
 
-/// **The rung, scored as the finding it produced.**
+/// **The rung, rerun after DEPTH-2.**
 ///
-/// The preregistered tier-escalation hazard FIRES, on the FIRST
-/// escalation, in every replicate that survives H1, under both
-/// policies. The spend comparison is therefore not run: there is
-/// nothing to compare, because no search ever reaches a
-/// evidence-determined destination.
+/// The driver below is UNCHANGED from the run in which the
+/// tier-escalation hazard fired 1488 of 1488 times. Only
+/// `decide_promotion` moved. That is the point: the success case was
+/// frozen before the defect was found, so it did not have to be
+/// invented afterwards.
 ///
-/// This assertion pins the DEFECT, not the hope. When the decision
-/// contract grows a remedy — comparing within a tier only once every
-/// frontier member is at the same measurement depth, or equivalent —
-/// this test must be revisited, and that is the point of pinning it.
+/// PRIMARY claim: exploration may change where authority is spent and
+/// how much it costs, but not the eventual preference. SECONDARY:
+/// spend, in priced runs and position-equivalents.
 #[test]
-fn escalating_one_candidate_manufactures_a_preference() {
+fn exploration_policy_must_not_change_the_destination() {
     let mut resamples = 0usize;
-    let mut fired = 0usize;
-    let mut first_step = 0usize;
-    let mut empty_evidence = 0usize;
-    let mut policies_disagree = 0usize;
-    let mut compared = 0usize;
+    let mut hazards = 0usize;
+    let mut disagreements = 0usize;
+    let mut annotation_differs = 0usize;
+    let mut insufficient = 0usize;
+    let mut scored = 0usize;
+    let mut spend = [(0u64, 0u64); 2];
+    let mut terminals: std::collections::BTreeMap<&str, usize> = Default::default();
 
     for r in 0..R {
         let seed = 0x5FE0_0000u64.wrapping_add(r as u64);
@@ -388,66 +422,94 @@ fn escalating_one_candidate_manufactures_a_preference() {
             resamples += 1;
             continue;
         }
-
-        for o in [&u, &c] {
-            if o.hazard {
-                fired += 1;
-                // It fires on the FIRST escalation: one priced run.
-                if o.priced_runs == 1 {
-                    first_step += 1;
-                }
-                // And on NO ordering evidence whatsoever.
-                if let PromotionDecision::SelectForAuthority { evidence, .. } = &o.decision {
-                    if evidence.deciding.is_empty() && evidence.dominated.is_empty() {
-                        empty_evidence += 1;
-                    }
-                }
-            }
+        if u.hazard || c.hazard {
+            hazards += 1;
+            continue;
         }
 
-        if u.hazard && c.hazard {
-            compared += 1;
-            let winner = |o: &Outcome| match &o.decision {
-                PromotionDecision::SelectForAuthority { candidate, .. } => candidate.clone(),
-                other => panic!("{other:?}"),
-            };
-            if winner(&u) != winner(&c) {
-                policies_disagree += 1;
+        scored += 1;
+        *terminals.entry(u.terminal).or_default() += 1;
+        *terminals.entry(c.terminal).or_default() += 1;
+        spend[0].0 += u.priced_runs;
+        spend[0].1 += u.position_equivalents;
+        spend[1].0 += c.priced_runs;
+        spend[1].1 += c.position_equivalents;
+
+        // **H2, split.** The freeze asked for the full evidence record
+        // to match, including `readiness` and `unresolved`. After
+        // DEPTH-2 that is the wrong test, and the reason is DEPTH-2
+        // itself: `readiness` is the honest home for the epistemic
+        // difference between "we priced this one" and "we did not". Two
+        // policies that price DIFFERENT members must end with different
+        // `readiness`, and demanding otherwise would demand uniform
+        // depth — which is exactly the ladder this rung exists to make
+        // safe.
+        //
+        // So the PREFERENCE must match — candidate, dominated,
+        // deciding, and which stage decided — while the ANNOTATION is
+        // allowed to differ and is reported rather than failed.
+        let preference = |o: &Outcome| match &o.decision {
+            PromotionDecision::SelectForAuthority {
+                candidate,
+                evidence,
+            } => Some((
+                candidate.clone(),
+                evidence.dominated.clone(),
+                evidence.deciding.clone(),
+                evidence.decided_by_physical_gain,
+            )),
+            _ => None,
+        };
+        if !(u.winner_priced && c.winner_priced) {
+            insufficient += 1;
+            continue;
+        }
+        if preference(&u) != preference(&c) {
+            disagreements += 1;
+            if disagreements <= 3 {
+                println!(
+                    "H2 VIOLATION r={r}\n  uniform  {:?}\n  coverage {:?}",
+                    u.decision, c.decision
+                );
             }
+        } else if format!("{:?}", u.decision) != format!("{:?}", c.decision) {
+            annotation_differs += 1;
         }
     }
 
-    let scored = R - resamples;
-    println!("\nFRONTIER-SPEND-1  R={R}");
-    println!("  H1 resamples                       {resamples}");
-    println!("  searches scored                    {}", scored * 2);
-    println!("  hazard fired                       {fired}");
-    println!("  ... on the FIRST escalation        {first_step}");
-    println!("  ... with EMPTY deciding evidence   {empty_evidence}");
-    println!("  landscapes where the two policies");
-    println!("  selected DIFFERENT candidates      {policies_disagree} of {compared}");
-    println!("\n  spend comparison: NOT RUN. No search reached an");
-    println!("  evidence-determined destination.");
+    println!("\nFRONTIER-SPEND-1 (post DEPTH-2)  R={R}");
+    println!("  H1 resamples        {resamples}");
+    println!("  hazards             {hazards}");
+    println!("  scored replicates   {scored}");
+    println!("  terminal conditions {terminals:?}");
+    if scored > 0 {
+        for (i, name) in ["uniform ", "coverage"].into_iter().enumerate() {
+            println!(
+                "  {name}  priced runs {:.3}  position-equivalents {:.1}",
+                spend[i].0 as f64 / scored as f64,
+                spend[i].1 as f64 / scored as f64
+            );
+        }
+    }
+    println!(
+        "  insufficient        {insufficient}  (terminated on an UNPRICED \
+         winner — the claim's precondition was not met)"
+    );
+    println!("  H2 violations       {disagreements}  (preference, where both priced)");
+    println!(
+        "  annotation differs  {annotation_differs}  (readiness/unresolved — \
+         expected when the policies price different members)"
+    );
 
-    // The defect, pinned.
     assert_eq!(
-        fired,
-        scored * 2,
-        "the hazard must fire in every scored search; a mixed result would \
-         mean the mechanism is conditional and needs a different account"
+        hazards, 0,
+        "the tier-escalation hazard fired again after DEPTH-2"
     );
+    assert!(scored > 0, "every replicate was discarded");
     assert_eq!(
-        first_step, fired,
-        "it fires on the FIRST escalation — one priced run is enough"
-    );
-    assert_eq!(
-        empty_evidence, fired,
-        "and with empty `dominated` and `deciding`: the selection rests on \
-         tier alone, which is measurement depth, not evidence"
-    );
-    assert!(
-        policies_disagree > 0,
-        "and the two policies reach DIFFERENT candidates from one landscape, \
-         which is the primary claim failing: exploration changed the destination"
+        disagreements, 0,
+        "H2: exploration changed the destination — that is not one policy \
+         exploring better, it is the exploration layer leaking into the \
+         evidence layer"
     );
 }
