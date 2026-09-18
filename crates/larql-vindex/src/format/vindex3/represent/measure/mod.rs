@@ -157,6 +157,12 @@ pub const BANK_ENV: &str = "LARQL_KIMI_QUALITY_BANK";
 pub const SEQUENCES_ENV: &str = "LARQL_Q2A_SEQUENCES";
 pub const LABEL_ENV: &str = "LARQL_Q2A_LABEL";
 pub const GATE_ENV: &str = "LARQL_Q2A_GATE";
+/// Where to persist the raw `PositionObservation` stream, if anywhere.
+///
+/// Opt-in by design: unset, the measurement behaves exactly as it did
+/// before REAL-EVIDENCE-1. Recording must not change the experiment it
+/// records.
+pub const RECORD_ENV: &str = "LARQL_Q2A_RECORD_DIR";
 
 /// Q2a's slice of the exported bank when none is named: 32 of 256.
 pub const DEFAULT_SEQUENCES: usize = 32;

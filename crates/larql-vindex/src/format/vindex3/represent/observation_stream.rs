@@ -63,6 +63,16 @@ pub struct StreamManifest {
     pub sequences: u32,
     pub positions_per_sequence: u32,
     pub observations: u64,
+    /// **The sequence ids in the ORDER they were measured.**
+    ///
+    /// The 1/2/4/... ladder is defined by prefixes of this order, so two
+    /// streams over the same 256 sequences in different orders imply
+    /// different progressive ladders even when their full banks agree. A
+    /// human `draw_identity` label cannot express that; this can.
+    pub sequence_order: Vec<u32>,
+    /// Over `sequence_order` as written, so a reordering is detectable
+    /// without diffing the list.
+    pub sequence_set_sha256: String,
     /// Over the compressed body exactly as written.
     pub stream_sha256: String,
 }
@@ -121,43 +131,87 @@ fn io<E: std::fmt::Display>(e: E) -> StreamError {
     StreamError::Io(e.to_string())
 }
 
-/// Persist a stream. Returns the manifest actually written.
+/// **An incremental recorder.** Observations are compressed as they
+/// arrive, so a 8,192-position run does not hold ~200 MB of stream in
+/// memory beside the model it is measuring.
+pub struct StreamWriter {
+    dir: PathBuf,
+    identity: StreamIdentity,
+    gz: GzEncoder<Vec<u8>>,
+    observations: u64,
+    sequence_order: Vec<u32>,
+}
+
+impl StreamWriter {
+    pub fn create(dir: &Path, identity: &StreamIdentity) -> Result<Self, StreamError> {
+        std::fs::create_dir_all(dir).map_err(io)?;
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            identity: identity.clone(),
+            gz: GzEncoder::new(Vec::new(), Compression::default()),
+            observations: 0,
+            sequence_order: Vec::new(),
+        })
+    }
+
+    /// Record one observation, exactly as the bank sees it.
+    ///
+    /// The caller must hand this the SAME object it gives
+    /// `BankBuilder::observe`. Reconstructing observations later from
+    /// summaries or traces would make the stream a different experiment
+    /// from the one the bank measured.
+    pub fn record(&mut self, o: &PositionObservation) -> Result<(), StreamError> {
+        if self.sequence_order.last() != Some(&o.sequence) {
+            self.sequence_order.push(o.sequence);
+        }
+        let line = serde_json::to_vec(o).map_err(|e| StreamError::Encoding(e.to_string()))?;
+        self.gz.write_all(&line).map_err(io)?;
+        self.gz.write_all(b"\n").map_err(io)?;
+        self.observations += 1;
+        Ok(())
+    }
+
+    pub fn finish(self) -> Result<StreamManifest, StreamError> {
+        let body = self.gz.finish().map_err(io)?;
+        let order_bytes = serde_json::to_vec(&self.sequence_order)
+            .map_err(|e| StreamError::Encoding(e.to_string()))?;
+        let manifest = StreamManifest {
+            format: STREAM_FORMAT.into(),
+            source_identity: self.identity.source_identity,
+            candidate_identity: self.identity.candidate_identity,
+            protocol_identity: self.identity.protocol_identity,
+            code_identity: self.identity.code_identity,
+            bank_identity: self.identity.bank_identity,
+            draw_identity: self.identity.draw_identity,
+            sequences: self.identity.sequences,
+            positions_per_sequence: self.identity.positions_per_sequence,
+            observations: self.observations,
+            sequence_set_sha256: hash_bytes(&order_bytes),
+            sequence_order: self.sequence_order,
+            stream_sha256: hash_bytes(&body),
+        };
+        std::fs::write(self.dir.join(BODY), &body).map_err(io)?;
+        std::fs::write(
+            self.dir.join(MANIFEST),
+            serde_json::to_vec_pretty(&manifest)
+                .map_err(|e| StreamError::Encoding(e.to_string()))?,
+        )
+        .map_err(io)?;
+        Ok(manifest)
+    }
+}
+
+/// Persist a whole slice at once. A convenience over [`StreamWriter`].
 pub fn write_stream(
     dir: &Path,
     identity: &StreamIdentity,
     observations: &[PositionObservation],
 ) -> Result<StreamManifest, StreamError> {
-    std::fs::create_dir_all(dir).map_err(io)?;
-
-    let mut gz = GzEncoder::new(Vec::new(), Compression::default());
+    let mut w = StreamWriter::create(dir, identity)?;
     for o in observations {
-        let line = serde_json::to_vec(o).map_err(|e| StreamError::Encoding(e.to_string()))?;
-        gz.write_all(&line).map_err(io)?;
-        gz.write_all(b"\n").map_err(io)?;
+        w.record(o)?;
     }
-    let body = gz.finish().map_err(io)?;
-
-    let manifest = StreamManifest {
-        format: STREAM_FORMAT.into(),
-        source_identity: identity.source_identity.clone(),
-        candidate_identity: identity.candidate_identity.clone(),
-        protocol_identity: identity.protocol_identity.clone(),
-        code_identity: identity.code_identity.clone(),
-        bank_identity: identity.bank_identity.clone(),
-        draw_identity: identity.draw_identity.clone(),
-        sequences: identity.sequences,
-        positions_per_sequence: identity.positions_per_sequence,
-        observations: observations.len() as u64,
-        stream_sha256: hash_bytes(&body),
-    };
-
-    std::fs::write(dir.join(BODY), &body).map_err(io)?;
-    std::fs::write(
-        dir.join(MANIFEST),
-        serde_json::to_vec_pretty(&manifest).map_err(|e| StreamError::Encoding(e.to_string()))?,
-    )
-    .map_err(io)?;
-    Ok(manifest)
+    w.finish()
 }
 
 /// Read a stream back, verifying its hash and count before returning it.

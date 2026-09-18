@@ -97,7 +97,13 @@ impl MeasurementReceipt {
     }
 }
 
-pub use crate::format::vindex3::represent::measure::{BANK_ENV, CANDIDATE_ENV, SOURCE_ENV};
+use crate::format::vindex3::represent::measure::TEACHER_FORCED_TWO_ARM;
+pub use crate::format::vindex3::represent::measure::{
+    BANK_ENV, CANDIDATE_ENV, RECORD_ENV, SOURCE_ENV,
+};
+use crate::format::vindex3::represent::observation_stream::{
+    stream_dir, StreamIdentity, StreamWriter,
+};
 /// Sequences the null arm re-runs — enough positions for the all-zero
 /// claim to cover real routing variety, cheap enough not to double the
 /// run.
@@ -802,9 +808,50 @@ pub fn measure_teacher_forced(
         );
     }
 
+    // A recording failure ABORTS the run. A partially recorded stream
+    // would carry a manifest built from the writer's own counter, so it
+    // would be self-consistent and pass `read_stream` while describing
+    // less than the run measured. Failing loudly is the only way that
+    // cannot happen silently.
+    fn recording_failed(
+        e: crate::format::vindex3::represent::observation_stream::StreamError,
+        path: &std::path::Path,
+    ) -> MeasurementRefusal {
+        MeasurementRefusal::Execution(ExecutionFailure::ArtifactUnreadable {
+            what: "observation stream".into(),
+            path: path.display().to_string(),
+            detail: e.to_string(),
+        })
+    }
+
     // ── The measurement: 32 sequences x 32 teacher-forced positions. ──
     let t3 = Instant::now();
     let mut builder = BankBuilder::new();
+    // REAL-EVIDENCE-1. Opt-in: unset, nothing below changes. The
+    // recorder is handed the SAME observation the bank sees, never a
+    // reconstruction of one.
+    let record_to = env_dir(RECORD_ENV).map(|root| stream_dir(&root, &request.label));
+    let mut recorder = match record_to.as_ref() {
+        Some(dir) => Some(
+            StreamWriter::create(
+                dir,
+                &StreamIdentity {
+                    source_identity: source_dir.display().to_string(),
+                    candidate_identity: candidate_dir.display().to_string(),
+                    protocol_identity: TEACHER_FORCED_TWO_ARM.to_string(),
+                    code_identity: option_env!("VERGEN_GIT_SHA")
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    bank_identity: bank_dir.display().to_string(),
+                    draw_identity: request.label.clone(),
+                    sequences: sequences() as u32,
+                    positions_per_sequence: positions_per_seq as u32,
+                },
+            )
+            .map_err(|e| recording_failed(e, dir))?,
+        ),
+        None => None,
+    };
     let mut candidate_l1_routed: std::collections::BTreeSet<u32> =
         std::collections::BTreeSet::new();
     let mut baseline_l1_routed: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
@@ -815,11 +862,45 @@ pub fn measure_teacher_forced(
         for (pos, ((lb, tb), (lc, tc))) in base.into_iter().zip(cand).enumerate() {
             baseline_l1_routed.extend(tb.routes[overlay_layer].iter().copied());
             candidate_l1_routed.extend(tc.routes[overlay_layer].iter().copied());
-            builder.observe(&observation(seq, pos, &lb, &tb, &lc, &tc));
+            let o = observation(seq, pos, &lb, &tb, &lc, &tc);
+            builder.observe(&o);
+            if let Some(r) = recorder.as_mut() {
+                r.record(&o)
+                    .map_err(|e| recording_failed(e, record_to.as_ref().unwrap()))?;
+            }
         }
     }
+    let recorded = match recorder.take() {
+        Some(r) => Some(
+            r.finish()
+                .map_err(|e| recording_failed(e, record_to.as_ref().unwrap()))?,
+        ),
+        None => None,
+    };
     let min_covered = builder.min_covered_mass();
     let bank = builder.finish();
+    // **The stream must describe the whole run.** The manifest's count
+    // comes from the writer's own counter, so only the BANK can say
+    // whether recording stopped early.
+    if let Some(m) = &recorded {
+        if m.observations != bank.positions {
+            return Err(MeasurementRefusal::Execution(
+                ExecutionFailure::ArtifactUnreadable {
+                    what: "observation stream".into(),
+                    path: record_to.as_ref().unwrap().display().to_string(),
+                    detail: format!(
+                        "recorded {} observations but the bank measured {} positions; \
+                         a partial stream is not evidence about this run",
+                        m.observations, bank.positions
+                    ),
+                },
+            ));
+        }
+        eprintln!(
+            "recorded {} observations over {} sequences -> {}",
+            m.observations, m.sequences, m.stream_sha256
+        );
+    }
     let run_s = t3.elapsed().as_secs_f64();
     let want_positions = (sequences() * positions_per_seq) as u64;
     if bank.positions != want_positions {
