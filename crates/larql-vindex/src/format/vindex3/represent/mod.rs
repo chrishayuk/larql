@@ -82,6 +82,7 @@ pub mod promotion;
 pub mod quality;
 #[cfg(feature = "reference-encoder")]
 pub mod reference_encoder;
+pub mod resampling;
 pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;

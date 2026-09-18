@@ -1,0 +1,38 @@
+{
+  "programme": "REPRESENT-UNCERTAINTY-2",
+  "artifact_kind": "NOTES. The frozen analyses read against their preregistered expectations. The numbers live in `represent-uncertainty-2-result.json`, regenerable from the two streams by the example; this file is the interpretation.",
+  "written": "2026-09-19",
+  "freeze": "docs/represent/forecasts/represent-uncertainty-2.json",
+  "result": "docs/represent/forecasts/represent-uncertainty-2-result.json",
+  "inputs": "both REAL-EVIDENCE-1 streams admitted through integrity, declared identity and exact replay; selection 0.002382 / 0.1582, heldout 0.002598 / 0.1538 (KlP99 / RouteFlipRate), 200 progressive draws and 50 partitions per bank, seeds 20260921..20260933",
+
+  "EXPECTATIONS_read": {
+    "E1_RouteFlipRate_easier": "HELD for ±25%: 94% of independent blocks inside by n = 16 on both banks. ±10% by n = 64: heldout 91% HELD, selection 84% MISSED — 100% at n = 128 on both. The easier statistic is easy at ±25% and needs 64-128 sequences at ±10%.",
+    "E2_small_depth_two_sided": "HELD in form, WRONG in my own numbers past n = 2. At n = 1 the relative p75 sits at +0.02 / -0.00, so about a quarter of blocks lie above the full p99 (predicted 28%) and the median is -0.51 / -0.55; at n = 2 the p75 is +0.83 / +0.92. But the freeze extended the subset-maximum formula to n = 4 and 8 (72%, 92% above) while declaring that the maximum regime ends at 32n >= 100: at 128 and 256 positions the nearest-rank p99 is the 2nd and 3rd largest value, roughly median-unbiased, and the observed medians are -0.24 / -0.32 (n = 4) and -0.03 / -0.02 (n = 8). A derivation error in the freeze, not a surprise in the data; recorded as such.",
+    "E3_KlP99_needs_depth": "HELD. The [p05, p95] band exceeds ±50% through n = 16 ([-0.47, +0.82] / [-0.52, +0.91]). 90% of blocks inside ±25% is reached at n = 64 on selection (exactly 0.90) and only at n = 128 on heldout (0.73 at 64, 0.99 at 128). At the TailSupport floor (n = 16, 5.12 expected tail observations) only 50% / 39% of blocks are inside ±25%: the floor makes a percentile a percentile and says nothing about precision, as the freeze said it would.",
+    "E4_false_pass": "HELD at small depth, MISSED at the floor. Progressive draws passing the frozen v3 KlP99 limit (1.000e-3) although the full bank fails it: n = 1: 50% / 46%; n = 2: 21% / 18%; n = 4: 14% / 13%; n = 8 (256 positions, the historical diagnostic slice): 1.5% / 5.0%; n = 16 (the TailSupport floor): 0.0% / 1.0% on the ladder and 0.3% / 1.1% on blocks; zero from n = 32 on both banks.",
+    "E5_transfer": "HELD. RouteFlipRate relative bands frozen on selection cover 88-96.5% of heldout blocks at every depth against a nominal 90%. KlP99 covers 75-91% (dips 78% at n = 16 and 75% at n = 64), never below the 70% falsifier. Absolute transfer decays with depth for both (KlP99 69% at 64, 55% at 128, 0% at 256): as sampling spread shrinks, the 9.07% set difference is what remains. The truncation confound on heldout KlP99 stands unexamined here, as preregistered.",
+    "E6_dependence": "MOSTLY HELD, with the ICC just under the stated floor. One-way ICC of sequence membership on log KL: 0.045 / 0.043 (expected 0.05-0.30) — sequences explain about 4% of the variance once the position profile is out; on route flips 0.004 / 0.00002. Lag-1 residual autocorrelation 0.070 / 0.051 on log KL, ~0 on flips. Tail clustering ratio 1.36 / 1.54 (17 vs 12.5 and 20 vs 13.0 within-sequence tail pairs) — modest but above 1. Late positions carry the tail: quartile shares 0.10 / 0.24 / 0.28 / 0.38 and 0.09 / 0.21 / 0.27 / 0.44 against a uniform 0.25."
+  },
+
+  "FALSIFIERS": {
+    "F1_RouteFlipRate_not_inside_25pct_at_64": "did not fire (100% inside).",
+    "F2_KlP99_relative_coverage_below_70pct_at_n_ge_64": "did not fire (75% at 64, 82% at 128).",
+    "F3_false_passes_at_the_TailSupport_floor": "FIRED, weakly: 0.3-1.1% of 16-sequence measurements pass a limit the full bank fails. The five-expected-tail-observation policy admits a wrong verdict about one time in a hundred on this candidate; zero only from 32 sequences (10.24 expected tail observations)."
+  },
+
+  "FINDINGS": {
+    "1_RouteFlipRate_is_a_textbook_rate": "CV x sqrt(n) is constant at 0.53-0.56 from n = 1 to n = 64 on both banks, with the finite-population drop at n = 128 (0.36 ~ 0.55 x sqrt(1 - 128/256)). Positions inside a sequence behave as independent draws for the rate (ICC ~ 0). A fresh n-sequence measurement's relative SD is about 0.55 / sqrt(n).",
+    "2_KlP99_has_a_bias_regime_before_its_variance_regime": "CV x sqrt(n) RISES from 1.9 (n = 1) to 2.4 (n = 8) before falling to 1.2 (n = 128): below ~32 sequences the nearest-rank tail estimator is biased low (median -0.51 at n = 1, -0.24 at n = 4, -0.12 at n = 16 on blocks) and its spread shrinks slower than 1/sqrt(n). ±25% for 90% of fresh measurements needs 64-128 sequences, 4-8x the TailSupport floor. A progressive measurement's step from n to 2n moves KlP99 by a median 19-36% (p95 2-7x) for n <= 8, 19% at n = 16, 7% at n = 128.",
+    "3_the_between_set_difference_looks_like_sampling": "Selection and heldout differ by 9.07% in KlP99; the within-bank n = 128 block CV is 0.109. Two independent 256-sequence draws from one population would differ by roughly this much (a rough reading — within-bank blocks sample WITHOUT replacement from a fixed set, which understates between-draw spread). There is no evidence here of a set effect beyond sampling, and no power to see a small one: two sets exist.",
+    "4_the_operational_risk_is_quantified": "Stopping early on this candidate would have passed a limit it fails with probability 50% at one sequence, ~20% at two, ~14% at four, 1.5-5% at eight, ~1% at sixteen, 0 from thirty-two. The historical diagnostic slice (8 sequences, 256 positions) sat in the 1.5-5% band.",
+    "5_the_simplest_relative_rule_transfers_for_the_rate_and_under_covers_for_the_tail": "Selection's [p05, p95] relative bands give nominal coverage on heldout for RouteFlipRate at every depth and 75-91% for KlP99. A KlP99 interval rule built on these bands would need widening by a factor to be read off `A2_independent_blocks` before it is calibrated; that is UNCERTAINTY-3 work and is not done here."
+  },
+
+  "WHAT_THIS_CHANGES": {
+    "for_REPRESENT": "The evidence ladder's RouteFlipRate rung can be priced now: 0.55/sqrt(n) relative SD, transferable. Its KlP99 rung cannot be priced from TailSupport alone: five expected tail observations admit ~1% wrong verdicts and ±40-80% spread; a 64-sequence floor (2048 positions, 20.5 expected tail observations) is where ±25% at 90% and zero false passes both hold on selection.",
+    "a_policy_question_for_the_user_not_decided_here": "Whether `TailSupportPolicy::min_tail_observations` should move from 5 toward 10-20 for KlP99 verdicts. The data say 5 is a semantics floor, not a precision floor; the number is a contract change and is the user's to make."
+  },
+
+  "NEXT": "UNCERTAINTY-3: (a) an interval rule from the A2 relative bands, RouteFlipRate first; (b) the KlP99 widening factor read from selection and tested on heldout, once; (c) the heldout truncation confound examined directly from the streams (per-position covered mass is in every observation); (d) the TailSupport policy question above. No GPU time for any of it."
+}

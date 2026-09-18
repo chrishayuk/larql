@@ -1,0 +1,107 @@
+{
+  "programme": "REPRESENT-UNCERTAINTY-2",
+  "artifact_kind": "experimental freeze. An OFFLINE analysis over the two REAL-EVIDENCE-1 streams. Written before any resampling code exists and before any ladder result has been read.",
+  "written": "2026-09-19",
+  "follows": "docs/represent/forecasts/represent-real-evidence-1-notes.json (commit 9f2afe97)",
+
+  "THE_QUESTION": "What empirical sampling behaviour do `RouteFlipRate` and `KlP99` exhibit as SEQUENCE-level authority increases, and does that behaviour transfer from the selection bank to the heldout bank?",
+  "NARROWER_THAN": "'build confidence intervals'. No estimator is fitted here. The rung characterises movement and spread; whether an interval rule can be built on it is judged by the transfer analysis and stated as a finding, not assumed.",
+  "EXPLICITLY_NOT": [
+    "no GPU time — both streams exist and replay exactly",
+    "no new candidate, model or scope",
+    "no tuning of anything after heldout has been read",
+    "no averaging of the two statistics, ever",
+    "no iid-position bootstrap — the position structure is real and blocking on it would destroy exactly what the rung measures"
+  ],
+
+  "STARTING_CONDITION_this_rung_inherits": {
+    "execution_nondeterminism": "~ 0. Both 8,192-position banks reproduced bit-exactly 19 days apart (REAL-EVIDENCE-1).",
+    "between_sequence_set_variation": "!= 0. KlP99 2.382e-3 (selection) vs 2.598e-3 (heldout): 9.07%. These are two FIXED sequence sets, not two draws from one population; the difference bounds what a calibration can claim across sets, and is not itself a variance estimate.",
+    "consequence": "Variation observed when the sequence SUBSET changes is sampling variation, not run noise. That is the ideal starting condition and it is why no arm is re-run."
+  },
+
+  "INPUTS_and_their_gates": {
+    "streams": {
+      "selection": "~/chris-models/streams/stream-flagship-selection-8192, sha256 e96cb2154a5a62604dae77afb2800ab3a50de5d3a037de874bf133a02ac53acb, bank 17d59a6b...",
+      "heldout": "~/chris-models/streams/stream-flagship-heldout-8192, sha256 29ae6b8e6b566d4be48b99664f7d2143d3f2032cd17b32501f991c991dd40946, bank f11b7302..."
+    },
+    "before_any_number_is_computed": [
+      "`read_stream` verifies hash and count (artifact integrity)",
+      "the manifest's resolved scope, producer and candidate must equal `represent-real-evidence-1-identity.json` (experimental identity) — the two gates REAL-EVIDENCE-1 showed are independent, both applied",
+      "the rederived full bank must equal the stream's own `report.json` bank exactly (replay), so every subset statistic below is a projection of evidence already proven"
+    ],
+    "statistics": "read through `Statistic::observe` on `rederive_bank(subset)` — the single canonical bank-to-statistic mapping. KlP99 = bank.logits.kl_p99 (nearest-rank p99 over all positions). RouteFlipRate = bank.routing.route_flips / bank.positions.",
+    "sampling_unit": "the SEQUENCE (32 teacher-forced positions from clean recurrent state). Every depth is a whole number of sequences."
+  },
+
+  "PARAMETERS_frozen": {
+    "depths_sequences": [1, 2, 4, 8, 16, 32, 64, 128, 256],
+    "depths_positions": [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192],
+    "progressive_draws_per_bank": 200,
+    "independent_partitions_per_bank": 50,
+    "band": "[p05, p95] of the relative-to-full distribution — a nominal 90% band",
+    "within_bands_reported": ["±5%", "±10%", "±25%", "±50%"],
+    "prng": "rand 0.8 StdRng (ChaCha12) seeded per bank and analysis from the constants in the code; every permutation is reproducible from the seed",
+    "reference_per_bank": "that bank's own 256-sequence value, which is order-invariant and equals the historical report's value"
+  },
+
+  "A1_PROGRESSIVE_NESTED_LADDER": {
+    "procedure": "For each of 200 random sequence orders, evaluate both statistics on the prefix of 1, 2, 4, ..., 256 sequences. Compare each depth with the 256-sequence value.",
+    "answers": "If REPRESENT keeps measuring THIS candidate, how does its estimate move as authority accumulates?",
+    "reported_per_depth_per_statistic": [
+      "signed relative movement (est - full)/full: mean (bias), median, p05, p25, p75, p95",
+      "absolute relative movement: mean",
+      "fraction of draws within ±5%, ±10%, ±25%, ±50% of full",
+      "path step |est(2n) - est(n)|/full: median and p95 — how far one doubling moves an estimate on the way",
+      "KlP99 only: fraction of draws that would PASS the frozen `kimi-logit-v3` KlP99 limit at that depth (a FALSE pass, since the full bank fails it) — the operational risk of stopping early"
+    ]
+  },
+
+  "A2_INDEPENDENT_BLOCKS": {
+    "procedure": "For each of 50 random partitions of the 256 sequences into disjoint blocks of n sequences (n = 1..128), evaluate both statistics on every block. At n = 256 the block is the bank.",
+    "answers": "If a FRESH n-sequence measurement is started, how variable is its answer?",
+    "not_merged_with_A1": "Nested prefixes and independent blocks estimate different things: a prefix's marginal distribution is a random n-subset's, but the QUANTITY A1 exists for is the trajectory of one growing sample. A2's spread is the fresh-measurement spread. They are reported side by side and never pooled.",
+    "reported_per_depth_per_statistic": [
+      "relative-to-full distribution: p05, p25, p50, p75, p95, mean, coefficient of variation",
+      "the frozen band [p05, p95] — the interval rule A3 transfers",
+      "fraction of blocks within ±5%, ±10%, ±25%, ±50%"
+    ]
+  },
+
+  "A3_SELECTION_TO_HELDOUT_TRANSFER": {
+    "develop_on": "selection: the A2 relative bands [p05, p95] per depth per statistic, frozen the moment they are computed.",
+    "evaluate_on": "heldout: the fraction of heldout A2 blocks (same depths, its own 50 partitions, its own seed) whose relative-to-HELDOUT-FULL value lies inside selection's band. Nominal coverage 90%.",
+    "second_reading_reported_separately": "absolute transfer — heldout blocks' ABSOLUTE values inside selection's absolute band. Confounded by the 9.07% set difference by construction; reported so the two kinds of transfer are not conflated, never used to judge the relative rule.",
+    "also": "A1 transfer: heldout progressive draws inside selection's A1 band per depth.",
+    "no_tuning": "Bands are computed from selection ONCE. Nothing is adjusted after heldout coverage is read. If coverage is poor, that is the finding."
+  },
+
+  "DEPENDENCE_descriptive_not_a_prerequisite": {
+    "why": "REAL-EVIDENCE-1's freeze ASSUMED within-sequence independence and said so. The raw streams can now describe it. Whatever it says, the sequence stays the resampling unit for the primary analysis because it is the natural independent experimental unit.",
+    "reported": [
+      "per-observation KL (`PositionObservation::kl`) and route flips (`route_changes`): one-way intraclass correlation ICC(1) of sequence membership, on log10(max(KL, 1e-9)) and on raw flips",
+      "lag-1 autocorrelation of within-sequence residuals after removing the position-index profile and the sequence mean",
+      "tail composition: of the top 1% KL observations, the share in each position quartile (0-7, 8-15, 16-23, 24-31)",
+      "tail clustering: the number of within-sequence pairs among tail observations, divided by its mean over 200 permutations that shuffle observations across sequences (ratio 1 = no clustering)"
+    ]
+  },
+
+  "EXPECTATIONS_stated_before_reading": {
+    "E1_RouteFlipRate_is_the_easier_case": "dense per-position evidence: 90% of independent blocks within ±25% of full by n = 16 (512 positions) and within ±10% by n = 64.",
+    "E2_KlP99_small_depth_is_the_subset_maximum": "nearest-rank p99 over 32n positions is the maximum until 32n >= 100 (n >= 4). The subset maximum exceeds the full p99 with probability 1 - 0.99^(32n): about 27% at n = 1, 47% at n = 2, 72% at n = 4, 92% at n = 8. So the small-depth distribution is two-sided in a way a bias number will not show: mostly far below full, sometimes far above.",
+    "E3_KlP99_needs_depth": "p05-p95 spans more than ±50% through n = 16; 90% of blocks inside ±25% only at n >= 64. The TailSupport floor of five expected tail observations is first cleared at n = 16 (5.12) and says nothing about ±25% precision — that is what this rung measures rather than assumes.",
+    "E4_false_pass": "the fraction of progressive draws passing the v3 KlP99 limit is above 10% at n <= 2 and zero by n >= 16.",
+    "E5_transfer": "RouteFlipRate relative bands cover >= 80% of heldout blocks at every depth. KlP99 coverage is lower at small depths and is CONFOUNDED at every depth by heldout's truncation (min_covered_mass 0.577 < 0.6) — the confound is named before any KlP99 transfer number is read.",
+    "E6_dependence": "ICC on log KL between 0.05 and 0.30; tail clustering ratio above 1; late positions over-represented in the tail (the freeze's monotone max growth)."
+  },
+
+  "WHAT_WOULD_FALSIFY_the_operational_reading": [
+    "RouteFlipRate not inside ±25% for 90% of blocks even at n = 64: then the 'easier statistic' is not cheap either and the ladder cannot start from it.",
+    "KlP99 relative bands from selection covering < 70% of heldout blocks at n >= 64: then a relative interval rule does not transfer across sequence sets at the depths that matter, and UNCERTAINTY-3 must be about set drift, not sampling.",
+    "false passes at n = 16: the TailSupport policy admits verdicts that are wrong more than never."
+  ],
+
+  "THE_ARTIFACT": "`docs/represent/forecasts/represent-uncertainty-2-result.json`, written by `cargo run --release -p larql-vindex --example represent_uncertainty_2`, carrying both streams' identities and hashes, the seeds, every per-depth table above, and the dependence readings. Regenerable from the streams without the model.",
+
+  "WHAT_THIS_RUNG_DOES_NOT_ANSWER": "Whether a stopping rule is licensed. It gives the empirical movement and spread such a rule would have to be calibrated against, and one transfer test of the simplest relative rule. Calibration across sequence SETS is bounded below by the 9.07% set difference and is a separate question."
+}
