@@ -7,7 +7,8 @@
 
 use super::super::bank::{BankBuilder, PositionObservation, RouteChange};
 use super::{
-    read_stream, rederive_bank, take_sequences, write_stream, StreamError, StreamIdentity,
+    read_stream, rederive_bank, take_sequences, write_stream, RuntimeScope, StreamError,
+    StreamIdentity,
 };
 
 /// A deterministic observation with realistic shape: a truncated top-N
@@ -64,6 +65,14 @@ fn identity(sequences: u32, positions: u32) -> StreamIdentity {
     StreamIdentity {
         source_identity: "kimi-linear-48b/s6".into(),
         candidate_identity: "kimi-map-l20-26q80".into(),
+        scope: RuntimeScope::resolved(
+            vec![22, 20, 21, 25, 24],
+            vec![26, 23],
+            vec![],
+            true,
+            Default::default(),
+        ),
+        producer: "fixture".into(),
         protocol_identity: "teacher-forced-two-arm/v1".into(),
         code_identity: "test".into(),
         bank_identity: "fixture-bank".into(),

@@ -838,6 +838,10 @@ pub fn measure_teacher_forced(
                 &StreamIdentity {
                     source_identity: source_dir.display().to_string(),
                     candidate_identity: candidate_dir.display().to_string(),
+                    // Overlay-only: this path applies no runtime requant.
+                    // It is NOT REAL-EVIDENCE-1's historical arm.
+                    scope: Default::default(),
+                    producer: "measure_teacher_forced (overlay-only)".into(),
                     protocol_identity: TEACHER_FORCED_TWO_ARM.to_string(),
                     code_identity: option_env!("VERGEN_GIT_SHA")
                         .unwrap_or("unknown")

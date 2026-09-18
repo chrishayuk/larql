@@ -38,7 +38,12 @@ use crate::format::vindex3::represent::bank::BankBuilder;
 use crate::format::vindex3::represent::measure::teacher_forced::{
     env_dir, observation, run_sequence, sequence_embeddings,
 };
-use crate::format::vindex3::represent::measure::{BANK_ENV, CANDIDATE_ENV, SOURCE_ENV};
+use crate::format::vindex3::represent::measure::{
+    BANK_ENV, CANDIDATE_ENV, LABEL_ENV, RECORD_ENV, SOURCE_ENV, TEACHER_FORCED_TWO_ARM,
+};
+use crate::format::vindex3::represent::observation_stream::{
+    stream_dir, RuntimeScope, StreamIdentity, StreamWriter,
+};
 use crate::format::vindex3::represent::physical::{
     EncodedRegion, ExpertEncoding as PhysEncoding, PhysicalStore, SharedExpertBinding,
 };
@@ -698,6 +703,53 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
 
     let t1 = Instant::now();
     let mut builder = BankBuilder::new();
+
+    // ── REAL-EVIDENCE-1: record THIS arm, and only this one. ──
+    //
+    // The null loop above is instrument validation, not samples from the
+    // candidate transition, and its exact-zero assertions are its own
+    // evidence. Mixing it into this stream would put non-samples in a
+    // file whose whole purpose is to be resampled.
+    //
+    // The candidate is the overlay PLUS the runtime requant applied by
+    // `build_layers_scoped`, so the manifest carries the RESOLVED scope.
+    // Without it a stream is well-formed, hash-verified, and about a
+    // different intervention.
+    let stream_label = std::env::var(LABEL_ENV).unwrap_or_else(|_| "unlabelled-kda-q8".to_string());
+    let mut recorder = env_dir(RECORD_ENV).map(|root| {
+        let raw = [LAYER_ENV, MLA_ENV, SHARED_ENV, LMHEAD_ENV, SEQUENCES_ENV]
+            .into_iter()
+            .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
+            .collect();
+        StreamWriter::create(
+            &stream_dir(&root, &stream_label),
+            &StreamIdentity {
+                source_identity: source_dir.display().to_string(),
+                candidate_identity: overlay
+                    .as_ref()
+                    .map(|o| o.index.map.name.clone())
+                    .unwrap_or_else(|| "no-overlay".into()),
+                scope: RuntimeScope::resolved(
+                    layers.clone(),
+                    layer_list(MLA_ENV),
+                    layer_list(SHARED_ENV),
+                    head_q8(),
+                    raw,
+                ),
+                producer: "kda_q8_real measurement arm".into(),
+                protocol_identity: TEACHER_FORCED_TWO_ARM.to_string(),
+                code_identity: option_env!("VERGEN_GIT_SHA")
+                    .unwrap_or("unknown")
+                    .to_string(),
+                bank_identity: bank_dir.display().to_string(),
+                draw_identity: stream_label.clone(),
+                sequences: sequences as u32,
+                positions_per_sequence: positions as u32,
+            },
+        )
+        .expect("the observation stream opens")
+    });
+
     // KL by position index, across sequences — the token-distance curve.
     let mut kl_by_pos: Vec<Vec<f64>> = vec![Vec::new(); positions];
     for seq in 0..sequences {
@@ -707,11 +759,36 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         let cand = run_sequence(&metal, &mut candidate, &rows, g.hidden).expect("the arm runs");
         for (pos, ((lb, tb), (lc, tc))) in base.into_iter().zip(cand).enumerate() {
             kl_by_pos[pos].push(full_kl(&lb, &lc));
-            builder.observe(&observation(seq, pos, &lb, &tb, &lc, &tc));
+            // The SAME instance reaches both sinks. A reconstruction
+            // would be a different experiment from the one measured.
+            let obs = observation(seq, pos, &lb, &tb, &lc, &tc);
+            if let Some(r) = recorder.as_mut() {
+                r.record(&obs).expect("the observation stream accepts");
+            }
+            builder.observe(&obs);
         }
     }
+    let recorded = recorder.take().map(|r| {
+        r.finish()
+            .expect("the observation stream completes and hashes")
+    });
     let min_covered = builder.min_covered_mass();
     let bank = builder.finish();
+    if let Some(m) = &recorded {
+        // Only the bank can say whether recording stopped early: the
+        // manifest's count comes from the writer's own counter, so a
+        // truncated stream is self-consistent.
+        assert_eq!(
+            m.observations, bank.positions,
+            "recorded {} observations against {} measured positions; a partial \
+             stream is not evidence about this run",
+            m.observations, bank.positions
+        );
+        eprintln!(
+            "[stream] {} observations, {} sequences, scope {:?}, sha {}",
+            m.observations, m.sequences, m.scope, m.stream_sha256
+        );
+    }
     let curve: Vec<serde_json::Value> = kl_by_pos
         .iter()
         .map(|v| {

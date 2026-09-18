@@ -20,6 +20,7 @@
 //! arm's argmax over the full vocabulary. The stream persists it
 //! verbatim.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
@@ -50,8 +51,24 @@ pub struct StreamManifest {
     pub format: String,
     /// Model / source container identity.
     pub source_identity: String,
-    /// Candidate / transition under measurement.
+    /// The compiled expert overlay container.
+    ///
+    /// NOT the whole transition. See `scope` — the runtime requant is
+    /// invisible in this path, and two runs differing only in KDA/MLA
+    /// scope would share this string while measuring different arms.
     pub candidate_identity: String,
+    /// **The resolved runtime transformation scope.**
+    ///
+    /// The candidate is the overlay PLUS this. REAL-EVIDENCE-1 found
+    /// that out the hard way: the historical flagship arm applies KDA,
+    /// MLA and LM-head Q8 requant at run time, leaving no trace in the
+    /// overlay container's identity. A stream recorded without it is
+    /// well-formed, hash-verified, and about a different intervention.
+    pub scope: RuntimeScope,
+    /// Which code path produced the stream. REAL-EVIDENCE-1's authority
+    /// is the `kda_q8_real` measurement arm; `measure_teacher_forced`
+    /// builds an overlay-only candidate and is a DIFFERENT experiment.
+    pub producer: String,
     /// Measurement protocol the run declared.
     pub protocol_identity: String,
     /// Code identity — commit or build stamp.
@@ -114,11 +131,53 @@ impl std::fmt::Display for StreamError {
     }
 }
 
+/// **The runtime transformation scope, RESOLVED.**
+///
+/// Resolved values rather than raw environment text, so that
+/// `20,21,22,24,25` and a differently ordered spelling of the same set
+/// describe the same scientific transition. The raw spellings are kept
+/// alongside for provenance, never for comparison.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeScope {
+    pub kda_q8_layers: Vec<usize>,
+    pub mla_q8_layers: Vec<usize>,
+    pub shared_q8_layers: Vec<usize>,
+    pub lm_head_q8: bool,
+    /// Provenance only. Two streams agree on the transition by their
+    /// RESOLVED fields, never by these strings.
+    pub raw_env: BTreeMap<String, String>,
+}
+
+impl RuntimeScope {
+    /// Sorted and deduplicated, so set equality is string equality.
+    pub fn resolved(
+        mut kda: Vec<usize>,
+        mut mla: Vec<usize>,
+        mut shared: Vec<usize>,
+        lm_head_q8: bool,
+        raw_env: BTreeMap<String, String>,
+    ) -> Self {
+        for v in [&mut kda, &mut mla, &mut shared] {
+            v.sort_unstable();
+            v.dedup();
+        }
+        Self {
+            kda_q8_layers: kda,
+            mla_q8_layers: mla,
+            shared_q8_layers: shared,
+            lm_head_q8,
+            raw_env,
+        }
+    }
+}
+
 /// What a caller knows before the observations exist.
 #[derive(Debug, Clone)]
 pub struct StreamIdentity {
     pub source_identity: String,
     pub candidate_identity: String,
+    pub scope: RuntimeScope,
+    pub producer: String,
     pub protocol_identity: String,
     pub code_identity: String,
     pub bank_identity: String,
@@ -179,6 +238,8 @@ impl StreamWriter {
             format: STREAM_FORMAT.into(),
             source_identity: self.identity.source_identity,
             candidate_identity: self.identity.candidate_identity,
+            scope: self.identity.scope,
+            producer: self.identity.producer,
             protocol_identity: self.identity.protocol_identity,
             code_identity: self.identity.code_identity,
             bank_identity: self.identity.bank_identity,
