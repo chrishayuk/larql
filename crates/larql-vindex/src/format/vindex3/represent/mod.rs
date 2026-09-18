@@ -70,6 +70,7 @@ pub mod measure;
 mod measure_tests;
 pub mod measurement;
 pub mod nvfp4_pack;
+pub mod observation_stream;
 pub mod participation;
 pub mod physical;
 pub mod plan_roles;
