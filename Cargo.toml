@@ -73,7 +73,12 @@ repository = "https://github.com/chrishayuk/larql"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `float_roundtrip`: REAL-EVIDENCE-1's replay gate compares a bank rederived
+# from the observation stream with the bank the run reported, EXACTLY. The
+# default fast float path can parse an f64 1 ulp off (measured 2026-09-18:
+# 9.228527545928955e-3 -> 9.228527545928957e-3), which would make a faithful
+# artifact look tampered with. Correct rounding is the contract, not speed.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 thiserror = "2"
 
 [profile.dev]

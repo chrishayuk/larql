@@ -144,7 +144,9 @@ pub struct RuntimeScope {
     pub shared_q8_layers: Vec<usize>,
     pub lm_head_q8: bool,
     /// Provenance only. Two streams agree on the transition by their
-    /// RESOLVED fields, never by these strings.
+    /// RESOLVED fields, never by these strings. Optional on the wire, so
+    /// a DECLARED scope (see `experiment_identity`) need not carry any.
+    #[serde(default)]
     pub raw_env: BTreeMap<String, String>,
 }
 
@@ -168,6 +170,36 @@ impl RuntimeScope {
             lm_head_q8,
             raw_env,
         }
+    }
+
+    /// The same scope, re-resolved: sorted and deduplicated, whatever
+    /// order it was written in.
+    pub fn normalised(&self) -> Self {
+        Self::resolved(
+            self.kda_q8_layers.clone(),
+            self.mla_q8_layers.clone(),
+            self.shared_q8_layers.clone(),
+            self.lm_head_q8,
+            self.raw_env.clone(),
+        )
+    }
+
+    /// Whether two scopes describe the SAME transition. Compares only
+    /// the resolved fields — `raw_env` is provenance and never decides.
+    pub fn same_transition(&self, other: &Self) -> bool {
+        let (a, b) = (self.normalised(), other.normalised());
+        a.kda_q8_layers == b.kda_q8_layers
+            && a.mla_q8_layers == b.mla_q8_layers
+            && a.shared_q8_layers == b.shared_q8_layers
+            && a.lm_head_q8 == b.lm_head_q8
+    }
+
+    /// The resolved fields, one line, for a refusal message.
+    pub fn describe(&self) -> String {
+        format!(
+            "kda {:?} mla {:?} shared {:?} lm_head_q8 {}",
+            self.kda_q8_layers, self.mla_q8_layers, self.shared_q8_layers, self.lm_head_q8
+        )
     }
 }
 
@@ -346,5 +378,4 @@ pub fn stream_dir(root: &Path, label: &str) -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "observation_stream_tests.rs"]
-mod tests;
+pub(crate) mod tests;

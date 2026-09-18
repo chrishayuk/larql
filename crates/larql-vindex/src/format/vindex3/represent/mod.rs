@@ -60,6 +60,7 @@ pub mod decision;
 pub mod diagnostic;
 pub mod execution_cost;
 pub mod experiment;
+pub mod experiment_identity;
 pub mod gptq;
 pub mod ingest;
 pub mod kda_candidate;
@@ -87,6 +88,7 @@ pub mod source_bank;
 pub mod source_identity;
 pub mod state;
 pub mod statistic;
+pub mod stream_replay;
 pub mod view;
 
 use std::collections::{BTreeMap, BTreeSet};

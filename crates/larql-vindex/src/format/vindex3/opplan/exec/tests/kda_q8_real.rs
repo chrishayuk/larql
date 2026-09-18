@@ -35,6 +35,9 @@ use serde_json::Value;
 use crate::format::vindex3::opplan::exec::kimi_source::{CandidateOverlay, KimiSourceModel};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceAttn, DeviceLayer, HybridStack};
 use crate::format::vindex3::represent::bank::BankBuilder;
+use crate::format::vindex3::represent::experiment_identity::{
+    DeclaredIdentity, EXPECT_IDENTITY_ENV,
+};
 use crate::format::vindex3::represent::measure::teacher_forced::{
     env_dir, observation, run_sequence, sequence_embeddings,
 };
@@ -187,6 +190,68 @@ pub(super) fn layer_list(var: &str) -> Vec<usize> {
 
 pub(super) fn head_q8() -> bool {
     std::env::var(LMHEAD_ENV).is_ok_and(|v| v == "1")
+}
+
+/// Every report's `run` begins with this; the rest is [`run_label`].
+const RUN_PREFIX: &str = "kda-q8-l";
+/// The report, written beside the observation stream when recording.
+const REPORT_BESIDE_STREAM: &str = "report.json";
+
+/// The historical run label, built from the RESOLVED scope: KDA layers,
+/// then `-x-<overlay>`, `-mla..`, `-shared..`, `-headq8`. This is the
+/// string every historical report carries as `run`, so it is computed
+/// ONCE, before anything loads, and the declared identity is checked
+/// against it there.
+fn run_label(
+    kda: &[usize],
+    overlay_name: Option<&str>,
+    mla: &[usize],
+    shared: &[usize],
+    q8h: bool,
+) -> String {
+    let join = |v: &[usize]| {
+        v.iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("-")
+    };
+    let mut label = join(kda);
+    if let Some(name) = overlay_name {
+        label = format!("{label}-x-{name}");
+    }
+    if !mla.is_empty() {
+        label = format!("{label}-mla{}", join(mla));
+    }
+    if !shared.is_empty() {
+        label = format!("{label}-shared{}", join(shared));
+    }
+    if q8h {
+        label = if label.is_empty() {
+            "headq8".into()
+        } else {
+            format!("{label}-headq8")
+        };
+    }
+    label
+}
+
+fn run_name(label: &str) -> String {
+    format!("{RUN_PREFIX}{label}")
+}
+
+/// The raw scope spellings, for provenance only.
+fn raw_scope_env() -> std::collections::BTreeMap<String, String> {
+    [LAYER_ENV, MLA_ENV, SHARED_ENV, LMHEAD_ENV, SEQUENCES_ENV]
+        .into_iter()
+        .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
+        .collect()
+}
+
+/// The commit this binary was built from, when the build named one.
+fn code_identity() -> String {
+    option_env!("VERGEN_GIT_SHA")
+        .unwrap_or("unknown")
+        .to_string()
 }
 /// Diagnostic slice, same default as the expert probes.
 const SEQUENCES_ENV: &str = "LARQL_Q2A_SEQUENCES";
@@ -622,6 +687,47 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
             || !shared_layers.is_empty(),
         "an empty scope with no overlay and no head flag measures nothing"
     );
+
+    // ── Experimental identity, resolved ONCE and checked BEFORE any layer
+    // loads. REAL-EVIDENCE-1: a stale shell measured `-mla23-26-headq8`
+    // while the programme believed it was reproducing the flagship arm,
+    // and every integrity check passed. The declaration decides. ──
+    let scope = RuntimeScope::resolved(
+        layers.clone(),
+        mla_layers.clone(),
+        shared_layers.clone(),
+        q8h,
+        raw_scope_env(),
+    );
+    let overlay_name = overlay.as_ref().map(|o| o.index.map.name.clone());
+    let label = run_label(
+        &layers,
+        overlay_name.as_deref(),
+        &mla_layers,
+        &shared_layers,
+        q8h,
+    );
+    let run = run_name(&label);
+    let declared_path = env_dir(EXPECT_IDENTITY_ENV);
+    let declared = declared_path
+        .as_ref()
+        .map(|p| DeclaredIdentity::load(p).unwrap_or_else(|e| panic!("[identity] {e}")));
+    match &declared {
+        Some(d) => {
+            d.check_transition(&run, overlay_name.as_deref(), &scope)
+                .unwrap_or_else(|r| panic!("[identity] REFUSED before loading any layer — {r}"));
+            eprintln!(
+                "[identity] stage 1 PASSED: run {run}, expert_candidate {overlay_name:?}, \
+                 scope {} — matches {}",
+                scope.describe(),
+                declared_path.as_ref().unwrap().display()
+            );
+        }
+        None => eprintln!(
+            "[identity] UNCHECKED: {EXPECT_IDENTITY_ENV} unset; run {run}, scope {}",
+            scope.describe()
+        ),
+    }
     let (base_layers, none) = build_layers(&metal, &model, &[], None);
     let (cand_layers, swapped) = build_layers_scoped(
         &metal,
@@ -643,6 +749,11 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         layers.is_empty() || q8_bytes < bf16_bytes,
         "Q8_0 must be smaller than bf16 — the swap did not happen"
     );
+    if let Some(d) = &declared {
+        d.check_bytes(bf16_bytes, q8_bytes)
+            .unwrap_or_else(|r| panic!("[identity] REFUSED before measuring — {r}"));
+        eprintln!("[identity] stage 2 PASSED: bytes bf16 {bf16_bytes} q8_0 {q8_bytes}");
+    }
     // Attribution BEFORE assembly: proven on the layers themselves, so
     // "identical except the targets' projections" is a checked fact,
     // not a construction argument.
@@ -716,31 +827,17 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
     // Without it a stream is well-formed, hash-verified, and about a
     // different intervention.
     let stream_label = std::env::var(LABEL_ENV).unwrap_or_else(|_| "unlabelled-kda-q8".to_string());
-    let mut recorder = env_dir(RECORD_ENV).map(|root| {
-        let raw = [LAYER_ENV, MLA_ENV, SHARED_ENV, LMHEAD_ENV, SEQUENCES_ENV]
-            .into_iter()
-            .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
-            .collect();
+    let record_dir = env_dir(RECORD_ENV).map(|root| stream_dir(&root, &stream_label));
+    let mut recorder = record_dir.as_ref().map(|dir| {
         StreamWriter::create(
-            &stream_dir(&root, &stream_label),
+            dir,
             &StreamIdentity {
                 source_identity: source_dir.display().to_string(),
-                candidate_identity: overlay
-                    .as_ref()
-                    .map(|o| o.index.map.name.clone())
-                    .unwrap_or_else(|| "no-overlay".into()),
-                scope: RuntimeScope::resolved(
-                    layers.clone(),
-                    layer_list(MLA_ENV),
-                    layer_list(SHARED_ENV),
-                    head_q8(),
-                    raw,
-                ),
+                candidate_identity: overlay_name.clone().unwrap_or_else(|| "no-overlay".into()),
+                scope: scope.clone(),
                 producer: "kda_q8_real measurement arm".into(),
                 protocol_identity: TEACHER_FORCED_TWO_ARM.to_string(),
-                code_identity: option_env!("VERGEN_GIT_SHA")
-                    .unwrap_or("unknown")
-                    .to_string(),
+                code_identity: code_identity(),
                 bank_identity: bank_dir.display().to_string(),
                 draw_identity: stream_label.clone(),
                 sequences: sequences as u32,
@@ -830,33 +927,19 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         let bytes = std::fs::read(bank_dir.join("manifest.json")).expect("bank manifest reads");
         format!("{:x}", Sha256::digest(&bytes))
     };
-    let mut label = layers
-        .iter()
-        .map(|l| l.to_string())
-        .collect::<Vec<_>>()
-        .join("-");
-    if let Some(o) = &overlay {
-        label = format!("{label}-x-{}", o.index.map.name);
-    }
-    if !mla_layers.is_empty() {
-        let tag: Vec<String> = mla_layers.iter().map(|l| l.to_string()).collect();
-        label = format!("{label}-mla{}", tag.join("-"));
-    }
-    if !shared_layers.is_empty() {
-        let tag: Vec<String> = shared_layers.iter().map(|l| l.to_string()).collect();
-        label = format!("{label}-shared{}", tag.join("-"));
-    }
-    if q8h {
-        label = if label.is_empty() {
-            "headq8".into()
-        } else {
-            format!("{label}-headq8")
-        };
-    }
     let report = serde_json::json!({
-        "run": format!("kda-q8-l{label}"),
+        "run": run,
         "scope": "KDA projections (qkv bank + o_proj), transient requant; optional compiled expert candidate beside it",
-        "expert_candidate": overlay.as_ref().map(|o| o.index.map.name.clone()),
+        "runtime_scope": scope,
+        "declared_identity": declared_path.as_ref().map(|p| p.display().to_string()),
+        "code_identity": code_identity(),
+        "source_identity": source_dir.display().to_string(),
+        "stream": recorded.as_ref().map(|m| serde_json::json!({
+            "dir": record_dir.as_ref().map(|d| d.display().to_string()),
+            "observations": m.observations,
+            "stream_sha256": m.stream_sha256,
+        })),
+        "expert_candidate": overlay_name,
         "gate": evidence.gate,
         "authority_report": evidence.report(),
         "verdict_passed": verdict.passed(),
@@ -875,11 +958,13 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         "wall_seconds": t1.elapsed().as_secs_f64(),
     });
     let path = format!("/tmp/kimi_kda-q8-l{label}_report.json");
-    std::fs::write(
-        &path,
-        serde_json::to_vec_pretty(&report).expect("serialises"),
-    )
-    .expect("report writes");
+    let serialised = serde_json::to_vec_pretty(&report).expect("serialises");
+    std::fs::write(&path, &serialised).expect("report writes");
+    // The summary belongs beside the stream it summarises — /tmp does
+    // not survive the night, and the replay gate needs both.
+    if let Some(dir) = &record_dir {
+        std::fs::write(dir.join(REPORT_BESIDE_STREAM), &serialised).expect("report writes");
+    }
     eprintln!("{}", evidence.report());
     eprintln!("[kda-q8] verdict (v3): {verdict:?}");
     eprintln!("[kda-q8] verdict (balanced-v1): {balanced:?} — report at {path}");

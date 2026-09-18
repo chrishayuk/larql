@@ -6,15 +6,18 @@
 //! a property of the recorder.
 
 use super::super::bank::{BankBuilder, PositionObservation, RouteChange};
+use super::super::compile::hash_bytes;
 use super::{
-    read_stream, rederive_bank, take_sequences, write_stream, RuntimeScope, StreamError,
-    StreamIdentity,
+    read_stream, rederive_bank, stream_dir, take_sequences, write_stream, RuntimeScope,
+    StreamError, StreamIdentity,
 };
+
+mod refusals;
 
 /// A deterministic observation with realistic shape: a truncated top-N
 /// window, both arms' logits at THE SAME ids, full-vocabulary logsumexp,
 /// and routes that sometimes move.
-fn observation(seq: u32, pos: u32) -> PositionObservation {
+pub(crate) fn observation(seq: u32, pos: u32) -> PositionObservation {
     let n = 32usize;
     let top_ids: Vec<u32> = (0..n as u32).map(|i| i * 7 + seq).collect();
     // Position-dependent divergence, as the real banks show: later
@@ -55,13 +58,13 @@ fn observation(seq: u32, pos: u32) -> PositionObservation {
     }
 }
 
-fn stream(sequences: u32, positions: u32) -> Vec<PositionObservation> {
+pub(crate) fn stream(sequences: u32, positions: u32) -> Vec<PositionObservation> {
     (0..sequences)
         .flat_map(|s| (0..positions).map(move |p| observation(s, p)))
         .collect()
 }
 
-fn identity(sequences: u32, positions: u32) -> StreamIdentity {
+pub(crate) fn identity(sequences: u32, positions: u32) -> StreamIdentity {
     StreamIdentity {
         source_identity: "kimi-linear-48b/s6".into(),
         candidate_identity: "kimi-map-l20-26q80".into(),

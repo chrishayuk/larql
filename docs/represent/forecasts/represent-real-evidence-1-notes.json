@@ -1,0 +1,96 @@
+{
+  "programme": "REPRESENT-REAL-EVIDENCE-1",
+  "artifact_kind": "NOTES. The recording rung's first real runs: an incident, the guard it earned, a parser finding, and the reproduction of the historical flagship arm on both banks.",
+  "written": "2026-09-18",
+  "forecast": "docs/represent/forecasts/represent-real-evidence-1.json",
+  "declared_identity": "docs/represent/forecasts/represent-real-evidence-1-identity.json",
+  "THE_INCIDENT": {
+    "finding": "Artifact integrity is not experimental identity. A stream can be perfectly hashed, replayable and internally correct while faithfully recording the wrong intervention. Demonstrated, not hypothetical.",
+    "what_happened": "The first 2-sequence smoke through the campaign loop was meant to reproduce `kda-q8-l20-21-22-24-25-x-kimi-map-l20-26q80` (bf16 377487360 -> q8_0 200540160). The shell still carried `LARQL_MLA_Q8_LAYER=23,26` and `LARQL_LMHEAD_Q8=1` from an earlier arm. The run resolved `...-mla23-26-headq8` (493944832 -> 262408192), recorded 64 observations, hashed them, wrote a self-consistent manifest, and passed every gate: hash, count, null-arm exact zeros, rederived-bank equality.",
+    "why_no_integrity_check_could_catch_it": "Every integrity instrument is downstream of the intervention. A hash binds bytes to a manifest; a replay binds a summary to a stream. Both verify that the recorder faithfully records what it is GIVEN. None can know what it SHOULD have been given. The only authority that can refuse is one that knows the intended identity independently of the environment: a declaration.",
+    "the_artifact": "`~/chris-models/streams/stream-smoke.QUARANTINED-wrong-intervention` \u2014 kept, quarantined, its signature recorded in `~/chris-models/streams/QUARANTINE.md`. It remains a valid 64-position sample of the `-mla23-26-headq8` transfer arm, which is worth running later, after the historical reproduction and not before.",
+    "the_decision": "Option 1: reproduce `flagship-selection-8192` exactly. The existing 8,192-position selection and heldout reports are too valuable as historical references to discard. The fuller KDA+MLA+head arm is a distinct experiment and is deferred."
+  },
+  "THE_GUARD": {
+    "mechanism": "`LARQL_Q2A_EXPECT_IDENTITY` names a committed declaration (`DeclaredIdentity`: run, expert_candidate, resolved scope, byte footprint). The runner compares what it RESOLVES against it at two moments and refuses on any difference.",
+    "stage_1": "Before any layer is loaded: run label, overlay name and resolved scope. Fires within 0.3 s of the model index opening.",
+    "stage_2": "After the candidate arm is built and before the null arm: the requant's bf16 and q8_0 byte totals.",
+    "why_two_stages": "The four facts become known at two moments. Waiting for the bytes would spend 17 GB x 3 of attention-bank copies before refusing; checking only the cheap facts would miss a requant that silently did not happen.",
+    "the_refusal_was_proven_to_fire": "Run `gate-negative-headq8` with `LARQL_LMHEAD_Q8=1` and the flagship declaration: REFUSED before loading any layer, 2 fields named (run `...-headq8`, scope `lm_head_q8 true`), no stream written, exit 101 in 0.30 s. Log kept at `~/chris-models/streams/gate-negative-headq8.REFUSED.log`.",
+    "one_derivation": "The run label is now computed ONCE, before anything loads, by `run_label`, and the same string is checked, recorded in the manifest, and written into the report. The manifest carries the RESOLVED scope and the report carries `runtime_scope`, `declared_identity`, `code_identity` and the stream's sha256, so identity is asserted programmatically on both artifacts, never read off a filename.",
+    "launch_discipline": "The arm runner sets every scope variable explicitly and `unset`s the stale ones every time. A shell that remembers is the mechanism of the incident."
+  },
+  "A_PARSER_FINDING_the_replay_gate_surfaced": {
+    "what": "The first replay-gate unit test failed on the FIXTURE: a bank rederived from a stream did not equal the same bank after one trip through the report's JSON. Field named: `routing`.",
+    "cause": "`serde_json` without the `float_roundtrip` feature parses some f64 decimal strings 1 ulp off. Measured in a standalone harness: 27,875 of 198,945 f32-derived f64 values (14%) came back 1 ulp different after `to_string` -> `from_str`; with `float_roundtrip` enabled, 0 of 198,945.",
+    "consequence": "Without the fix, a faithful artifact would look tampered with at exactly the moment the gate demanded exactness \u2014 and a tolerance would have hidden it. The workspace `serde_json` now carries `float_roundtrip`; correct rounding is the contract, not speed.",
+    "scope_of_the_hazard": "Any comparison in this repository that reads an f64 back from JSON and expects equality. The observation stream's f32 fields were not affected (a 1-ulp f64 error cannot cross an f32 rounding boundary for a shortest-representation decimal), which is why the earlier stream round-trip gate passed while the report gate failed."
+  },
+  "REPRODUCTION": {
+    "source": "`Kimi-Linear-48B-A3B-Instruct.lift2.vindex3`. Its five segments are byte-identical in size and spot-checked content to the historical `s6` container (APFS clones; only `system_graph.json` differs by 33 bytes). The overlay is the rebuilt `kimi-map-l20-26q80-lift2.vindex3`, map name `kimi-map-l20-26q80`.",
+    "what_repeatability_means_here": "NOT byte equality. The container is a clone, but the code is 19 days newer and Metal reduction order is not pinned. The comparison is metric-by-metric relative difference, judged against the reference's own between-bank spread (KlP99 9.07%, top1_flips 16.85%, max_logit_delta 19.22% between the two historical banks). Same-sequence repeatability should sit well inside those.",
+    "smoke_2_sequences": {
+      "label": "flagship-smoke-2",
+      "stream": "~/chris-models/streams/stream-flagship-smoke-2",
+      "identity_gate": "stage 1 PASSED (run, expert_candidate, scope), stage 2 PASSED (bytes 377487360 -> 200540160); arms loaded in 6.9 s",
+      "null_arm": "128 positions, everything exactly zero",
+      "recorded": "64 observations, 2 sequences, stream sha256 bc9f01f17d61236773e5b55274cbba27bc7f382b524d378286558044bb2c6559, code identity 6051336e+work.6f9156975f77",
+      "programmatic_identity_assertion": "22/22 checks PASS against kimi_flagship-selection-8192_report.json (declared vs historical; report vs historical incl. bank_manifest_sha256 17d59a6b...; report.runtime_scope and manifest.scope vs declared; manifest.observations == report.positions == 2x32; stream sha in report == manifest; bank dir hash == report)",
+      "replay": "EXACT \u2014 the 64-observation stream, hash and count verified, rederives the reported bank field for field",
+      "verdict": "v3 fails on positions (64 < 4096) and kl_p99 1.121e-3 \u2014 a 2-sequence slice is not a verdict and was not meant to be",
+      "wall": "155 s including the null arm"
+    },
+    "selection_256_sequences": {
+      "label": "flagship-selection-8192",
+      "stream": "~/chris-models/streams/stream-flagship-selection-8192 (observations.jsonl.gz 189 MB, stream-manifest.json, report.json)",
+      "identity_gate": "stage 1 and stage 2 PASSED against the declaration; null arm 128 positions exactly zero",
+      "recorded": "8192 observations, 256 sequences in order 0..255, stream sha256 e96cb2154a5a62604dae77afb2800ab3a50de5d3a037de874bf133a02ac53acb, code identity 6051336e+work.6f9156975f77",
+      "programmatic_identity_assertion": "22/22 checks PASS against kimi_flagship-selection-8192_report.json",
+      "replay": "EXACT \u2014 8192 observations, hash and count verified, rederive the reported bank field for field (4.9 s)",
+      "repeatability": {
+        "claimed_beforehand": "repeatability, not byte equality \u2014 the container is a clone, the code is 19 days newer, Metal reduction order is not pinned",
+        "observed": "BIT-EXACT. All 66 bank leaves and all 64 kl_by_position leaves equal the historical report at full f64 precision; min_covered_mass 0.631485477387131 identical; authority_report text identical; verdict identical (kl_p99 2.382e-3 > 1.000e-3, top1_mass_displaced 0.0942 > 0.0500). Every relative difference in the metric vector is +0.00%, including the coordinates where the different-intervention control moved by 282% and 46%.",
+        "what_differs": "wall time only: 4780.9 s historical vs 6324.4 s today (+32%), measured under an unrelated 7-process CPU load; the freeze already declared timing not relied on.",
+        "reading": "The teacher-forced two-arm measurement is DETERMINISTIC on this machine across 19 days, a container clone, a rebuilt overlay and a newer binary. The 9.07% selection-vs-heldout KlP99 difference in the freeze is therefore between-SEQUENCE-SET variation with zero contribution from run-to-run noise. It is not thereby a sampling variance from one population: selection and heldout are two fixed sequence sets that may represent somewhat different empirical distributions, and that distinction matters once calibration is discussed. Repeatability was the honest prior claim; determinism is the measured fact, and it strengthens the deep-arm floor argument rather than weakening it."
+      },
+      "wall": "6324 s measurement + null arm; started 20:21:23, ended 22:07:48"
+    },
+    "heldout_256_sequences": {
+      "label": "flagship-heldout-8192",
+      "stream": "~/chris-models/streams/stream-flagship-heldout-8192 (observations.jsonl.gz 189 MB, stream-manifest.json, report.json)",
+      "identity_gate": "stage 1 and stage 2 PASSED against the SAME declaration as selection \u2014 same intervention identity, only the bank differs (f11b7302...)",
+      "recorded": "8192 observations, 256 sequences in order 0..255, stream sha256 29ae6b8e6b566d4be48b99664f7d2143d3f2032cd17b32501f991c991dd40946, code identity 6051336e+work.6f9156975f77",
+      "programmatic_identity_assertion": "22/22 checks PASS against kimi_flagship-heldout-8192_report.json",
+      "replay": "EXACT \u2014 8192 observations, hash and count verified, rederive the reported bank field for field (7.5 s)",
+      "repeatability": {
+        "observed": "BIT-EXACT: 66/66 bank leaves and 64/64 kl_by_position leaves equal at full f64 precision; min_covered_mass 0.5773221325942933 identical; verdict identical (kl_p99 2.598e-3, top1_mass_displaced 0.0583, min_covered_mass 0.5773 < 0.6000); same failing-criteria class.",
+        "what_differs": "wall time only: 2698.6 s historical vs 5664.9 s today (+110%). The historical heldout was the unusually fast run the freeze flagged as an unexplained 1.77x spread; today both arms ran at ~0.69-0.77 s/position under the same unrelated CPU load, which is consistent with the spread being machine state, not the banks."
+      },
+      "wall": "5722 s test time; started 22:08:44, ended 23:44:07"
+    }
+  },
+  "THE_YARDSTICK_FOR_REPEATABILITY": {
+    "why_a_control_first": "Before reading same-experiment repeatability, measure what a DIFFERENT experiment on the SAME sequences looks like, so the comparison has a scale (controls before parity).",
+    "control": "historical `full3-selection-8192` (run `...-headq8`, same bank 17d59a6b, 8192 positions) vs historical `flagship-selection-8192`.",
+    "what_the_control_moves": "kl_p50 +282%, kl_p95 +33%, top1_flips +46% (89 -> 130).",
+    "what_the_control_does_NOT_move": "kl_p99 +0.78%, max_logit_delta +0.62%, route_flips 1296 == 1296, positions_with_route_change 999 == 999, min_covered_mass identical. The four-family `full4` arm (+mla23-26+headq8) sits at kl_p99 2.379e-3 against the flagship's 2.382e-3 \u2014 0.1% apart.",
+    "reading": "The primary tail statistic is nearly BLIND to the head and MLA scope on this bank: the p99 tail is owned by the KDA-plus-expert scope, and the head's perturbation lands in the dense body (p50) and the top-1 flips. A wrong intervention that shares the KDA scope would have reproduced the historical KlP99 to within 1% and every routing count exactly. Nobody comparing KlP99 to the historical value would have noticed. This is the second reason identity has to be DECLARED rather than inferred from the numbers.",
+    "consequence_for_reading_the_reproduction": "Same-experiment repeatability is judged on the WHOLE vector, and especially on kl_p50 and top1_flips \u2014 the coordinates where a different intervention shows. The between-bank spread (kl_p99 9.07%, top1_flips 16.85%, max_logit_delta 19.22%) is the OTHER scale: different sequences, same intervention. A faithful reproduction on the same sequences should sit well inside both."
+  },
+  "CODE_IDENTITY_NOTE": "The stamp `6051336e+work.6f9156975f77` (VERGEN_GIT_SHA at build time = HEAD + sha256 of the working-tree diff and untracked files) names the tree the running binary was built from: HEAD 6051336e plus the identity gate, the run-label derivation, the stream-replay module, the float_roundtrip workspace feature and the declaration file. Edits AFTER that build and before the branch is committed are confined to tests, the test-folder move of observation_stream, and these notes; no line of the runner, recorder or reader logic changed after the binary that measured was built.",
+  "GATES": {
+    "fmt": "clean",
+    "clippy": "clean with CI flags (`-p larql-vindex --all-targets -- -D warnings`), with `--features gpu`, and for `x86_64-apple-darwin`",
+    "coverage_new_and_touched_files": "experiment_identity/mod.rs 98.41% lines, observation_stream/mod.rs 96.99% (was 86.75% before the refusal-message tests; the 17 uncovered lines were pre-existing Display arms, the io helper, the blank-line skip and stream_dir), stream_replay/mod.rs 90.67% \u2014 all above the 90% per-file floor",
+    "unit_tests": "22 pass across experiment_identity, stream_replay and observation_stream, including the two replay tests that FAILED under the default float parser and pass with float_roundtrip",
+    "measured_where": "an isolated CARGO_TARGET_DIR, so no gate could rebuild or overwrite the release test binary while an arm was measuring"
+  },
+  "VERDICT": {
+    "the_reproduction": "Both historical flagship runs reproduce BIT-EXACTLY on the lift2 clone with today's binary: selection and heldout, 8,192 positions each, every bank leaf and every per-position KL leaf. The transition, the banks and the measurement are deterministic; only wall time moves.",
+    "what_now_exists_that_did_not": "Two authoritative observation streams (selection sha e96cb215..., heldout sha 29ae6b8e...), each bound to a declared identity, a resolved runtime scope, a code stamp, the bank hash and the sequence order \u2014 the empirical sampling substrate the freeze asked for, produced by the campaign loop and proven to replay exactly to the bank the run reported.",
+    "the_methodological_finding": "Artifact integrity is not experimental identity. A stream can be perfectly hashed, replayable and internally correct while faithfully recording the wrong intervention. Demonstrated by the quarantined smoke; guarded now by a declaration the runner must match before it measures; and shown to be undetectable from the primary statistic, since the different-intervention control reproduces the historical KlP99 within 1%.",
+    "what_this_does_not_answer": "Unchanged from the freeze: nothing here builds or calibrates an estimator (UNCERTAINTY-2). The ladders, the independent-block analysis and the within-sequence correlation question are the next reads of these two streams.",
+    "deferred_on_purpose": "The KDA+MLA+head stream (`...-mla23-26-headq8`) is a distinct transfer arm, worth running later through the same declared-identity gate with its own declaration \u2014 after, not before, this reproduction.",
+    "the_decomposition": "execution / measurement nondeterminism ~ 0 here (bit-exact twice); between-sequence-set variation != 0 (9.07% KlP99 between the two fixed banks). Artifact integrity and experimental identity are INDEPENDENT gates; both are now enforced."
+  }
+}
