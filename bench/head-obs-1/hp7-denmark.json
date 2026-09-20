@@ -1,0 +1,288 @@
+{
+  "backend": "production-larql-compute",
+  "cpu_max_format": "bf16",
+  "donor": "The capital of Denmark is",
+  "donor_ids": [
+    2,
+    818,
+    5279,
+    529,
+    37932,
+    563
+  ],
+  "family": "gemma3_text",
+  "gate": "HP7",
+  "heads": [
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.23678305745124817,
+          "ENTITY": 0.2197202891111374,
+          "LAST": 0.2435011863708496,
+          "RELATION": 0.29999544913880527
+        },
+        "recipient": {
+          "BOS": 0.2513692080974579,
+          "ENTITY": 0.42513585090637207,
+          "LAST": 0.12041530013084412,
+          "RELATION": 0.20307967683766037
+        }
+      },
+      "delta_norm_sq": 18183.772796551613,
+      "head": 0,
+      "kv_head": 0,
+      "projection_share": {
+        "BOS": 0.01969371482498745,
+        "ENTITY": 0.06590647565588018,
+        "LAST": 0.4277038061870549,
+        "RELATION": 0.48669590565142085,
+        "sum": 0.9999999023193433
+      },
+      "sealed_label": "carrier TWO_ROLES(RELATION,ENTITY)",
+      "source_sum_relative": {
+        "donor": 1.1118690476405795e-7,
+        "recipient": 2.4347842465901684e-7
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.1989174783229828,
+          "ENTITY": 0.6054849028587341,
+          "LAST": 0.07465597242116928,
+          "RELATION": 0.12094164174050093
+        },
+        "recipient": {
+          "BOS": 0.2706921398639679,
+          "ENTITY": 0.6913700699806213,
+          "LAST": 0.007857470773160458,
+          "RELATION": 0.03008031565696001
+        }
+      },
+      "delta_norm_sq": 8102.047720489429,
+      "head": 1,
+      "kv_head": 0,
+      "projection_share": {
+        "BOS": 0.0009610421541783659,
+        "ENTITY": 0.8440728392210594,
+        "LAST": 0.06035403880347518,
+        "RELATION": 0.0946120926316954,
+        "sum": 1.0000000128104083
+      },
+      "sealed_label": "SINGLE_ROLE(ENTITY)",
+      "source_sum_relative": {
+        "donor": 1.571599774022296e-7,
+        "recipient": 1.3778442799948617e-7
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.43697524070739746,
+          "ENTITY": 0.2820279002189636,
+          "LAST": 0.08976977318525314,
+          "RELATION": 0.19122709101065993
+        },
+        "recipient": {
+          "BOS": 0.3238893747329712,
+          "ENTITY": 0.09575667977333069,
+          "LAST": 0.3174317479133606,
+          "RELATION": 0.26292223669588566
+        }
+      },
+      "delta_norm_sq": 72380.49639879078,
+      "head": 2,
+      "kv_head": 1,
+      "projection_share": {
+        "BOS": 0.13110351409778226,
+        "ENTITY": 0.24519398016222507,
+        "LAST": 0.4384181447783278,
+        "RELATION": 0.18528431358692202,
+        "sum": 0.9999999526252572
+      },
+      "sealed_label": "opposer MIXED_ROLES",
+      "source_sum_relative": {
+        "donor": 1.0864613317971433e-7,
+        "recipient": 1.1653654158133836e-7
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.1414649784564972,
+          "ENTITY": 0.14572273194789886,
+          "LAST": 0.21488621830940247,
+          "RELATION": 0.4979260703548789
+        },
+        "recipient": {
+          "BOS": 0.2770702838897705,
+          "ENTITY": 0.06910927593708038,
+          "LAST": 0.3870696425437927,
+          "RELATION": 0.2667507487349212
+        }
+      },
+      "delta_norm_sq": 51785.73953189054,
+      "head": 3,
+      "kv_head": 1,
+      "projection_share": {
+        "BOS": 0.07524585685156272,
+        "ENTITY": 0.036670091753329234,
+        "LAST": 0.34479556425454777,
+        "RELATION": 0.5432884767152046,
+        "sum": 0.9999999895746443
+      },
+      "sealed_label": "carrier SINGLE_ROLE(RELATION)",
+      "source_sum_relative": {
+        "donor": 1.3348125110952423e-7,
+        "recipient": 1.0904175292007545e-7
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.5046730041503906,
+          "ENTITY": 0.3146412968635559,
+          "LAST": 0.046566758304834366,
+          "RELATION": 0.1341189630329609
+        },
+        "recipient": {
+          "BOS": 0.5029982924461365,
+          "ENTITY": 0.18340958654880524,
+          "LAST": 0.12674526870250702,
+          "RELATION": 0.18684688955545425
+        }
+      },
+      "delta_norm_sq": 5758.790338437122,
+      "head": 4,
+      "kv_head": 2,
+      "projection_share": {
+        "BOS": -0.053926243782294596,
+        "ENTITY": 0.43250965390266305,
+        "LAST": 0.31102857927960936,
+        "RELATION": 0.3103880088458846,
+        "sum": 0.9999999982458624
+      },
+      "sealed_label": "SINGLE_ROLE(RELATION)[DIVERGE]",
+      "source_sum_relative": {
+        "donor": 1.2055620640739692e-7,
+        "recipient": 1.1699448865741989e-7
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.7233243584632874,
+          "ENTITY": 0.037030793726444244,
+          "LAST": 0.0609470009803772,
+          "RELATION": 0.17869783844798803
+        },
+        "recipient": {
+          "BOS": 0.5897749662399292,
+          "ENTITY": 0.07707885652780533,
+          "LAST": 0.09800392389297485,
+          "RELATION": 0.2351422030478716
+        }
+      },
+      "delta_norm_sq": 747.5460936300798,
+      "head": 5,
+      "kv_head": 2,
+      "projection_share": {
+        "BOS": 0.17478390829588886,
+        "ENTITY": 0.09034272435305123,
+        "LAST": 0.5186245998003672,
+        "RELATION": 0.21624880542776018,
+        "sum": 1.0000000378770675
+      },
+      "sealed_label": "SINGLE_ROLE(RELATION)[DIVERGE]",
+      "source_sum_relative": {
+        "donor": 6.830270469650377e-8,
+        "recipient": 7.78489247067537e-8
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.23574139177799225,
+          "ENTITY": 0.34149572253227234,
+          "LAST": 0.16404062509536743,
+          "RELATION": 0.25872222147881985
+        },
+        "recipient": {
+          "BOS": 0.32004213333129883,
+          "ENTITY": 0.4740464687347412,
+          "LAST": 0.06205524504184723,
+          "RELATION": 0.14385618269443512
+        }
+      },
+      "delta_norm_sq": 12773.200883687003,
+      "head": 6,
+      "kv_head": 3,
+      "projection_share": {
+        "BOS": 0.2403168278500614,
+        "ENTITY": 0.2469495079801048,
+        "LAST": 0.23363725158384896,
+        "RELATION": 0.27909636541801314,
+        "sum": 0.9999999528320282
+      },
+      "sealed_label": "carrier TWO_ROLES(RELATION,BOS)",
+      "source_sum_relative": {
+        "donor": 1.1825575274841982e-7,
+        "recipient": 9.671956596191312e-8
+      }
+    },
+    {
+      "attention_mass": {
+        "donor": {
+          "BOS": 0.0638849213719368,
+          "ENTITY": 0.027611447498202324,
+          "LAST": 0.7285245656967163,
+          "RELATION": 0.17997909523546696
+        },
+        "recipient": {
+          "BOS": 0.11058495193719864,
+          "ENTITY": 0.03863587602972984,
+          "LAST": 0.6951483488082886,
+          "RELATION": 0.15563084557652473
+        }
+      },
+      "delta_norm_sq": 202320.4302498383,
+      "head": 7,
+      "kv_head": 3,
+      "projection_share": {
+        "BOS": 0.24462301638251852,
+        "ENTITY": -0.10205215084422373,
+        "LAST": 0.289142825144124,
+        "RELATION": 0.5682866089663579,
+        "sum": 1.0000002996487767
+      },
+      "sealed_label": "opposer SINGLE_ROLE(LAST)",
+      "source_sum_relative": {
+        "donor": 6.510690220014995e-8,
+        "recipient": 1.0830363090927631e-7
+      }
+    }
+  ],
+  "layer": 14,
+  "model": "093f9f388b31de276ce2de164bdc2081324b9767",
+  "recipient": "The currency of Denmark is",
+  "recipient_ids": [
+    2,
+    818,
+    15130,
+    529,
+    37932,
+    563
+  ],
+  "roles_by_position": [
+    "BOS",
+    "RELATION",
+    "RELATION",
+    "RELATION",
+    "ENTITY",
+    "LAST"
+  ],
+  "worst_head_sum_residual": {
+    "donor": 9.974625912467549e-8,
+    "recipient": 1.1993909502406042e-7
+  }
+}

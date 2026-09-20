@@ -1,0 +1,90 @@
+{
+  "arms": {
+    "read_only": [
+      {
+        "accepted": false,
+        "attempt": 1,
+        "baseline_after_seconds": 0.911687208,
+        "baseline_before_seconds": 0.923713333,
+        "baseline_drift": 0.01310463272877503,
+        "candidate_seconds": 0.91585675,
+        "overhead": -0.002008848160190313,
+        "records": 20800,
+        "worst_residual": 0.0
+      },
+      {
+        "accepted": true,
+        "attempt": 2,
+        "baseline_after_seconds": 0.951618667,
+        "baseline_before_seconds": 0.94615,
+        "baseline_drift": 0.005763259869439005,
+        "candidate_seconds": 0.949766125,
+        "overhead": 0.0009292929273554407,
+        "records": 20800,
+        "worst_residual": 0.0
+      }
+    ],
+    "reconstruct": [
+      {
+        "accepted": false,
+        "attempt": 1,
+        "baseline_after_seconds": 0.948090542,
+        "baseline_before_seconds": 0.93499775,
+        "baseline_drift": 0.013905659182973689,
+        "candidate_seconds": 2.874661209,
+        "overhead": 2.053134811800954,
+        "records": 20800,
+        "worst_residual": 3.2623347327290367e-7
+      },
+      {
+        "accepted": false,
+        "attempt": 2,
+        "baseline_after_seconds": 0.935293208,
+        "baseline_before_seconds": 0.913691584,
+        "baseline_drift": 0.023365929339672034,
+        "candidate_seconds": 2.816862375,
+        "overhead": 2.0469286574856804,
+        "records": 20800,
+        "worst_residual": 3.2623347327290367e-7
+      },
+      {
+        "accepted": true,
+        "attempt": 3,
+        "baseline_after_seconds": 0.913743875,
+        "baseline_before_seconds": 0.919265625,
+        "baseline_drift": 0.006024791469984189,
+        "candidate_seconds": 2.864011166,
+        "overhead": 2.1249277933365867,
+        "records": 20800,
+        "worst_residual": 3.2623347327290367e-7
+      }
+    ]
+  },
+  "backend": "production-larql-compute",
+  "cpu_max_format": "bf16",
+  "family": "granite",
+  "gate": "HP5",
+  "model": "b7e947307dd2efb3ad3b853b0e8a7e75f8ad4ac2",
+  "plateau_seconds": [
+    0.913949292,
+    0.896896792,
+    0.89241375
+  ],
+  "positions": 13,
+  "prompt": "The capital of France is",
+  "token_ids": [
+    791,
+    6864,
+    315,
+    9822,
+    374,
+    12366,
+    1210,
+    374,
+    837,
+    13,
+    198,
+    198,
+    1687
+  ]
+}

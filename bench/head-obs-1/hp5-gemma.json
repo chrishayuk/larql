@@ -1,0 +1,57 @@
+{
+  "arms": {
+    "read_only": [
+      {
+        "accepted": true,
+        "attempt": 1,
+        "baseline_after_seconds": 1.09334475,
+        "baseline_before_seconds": 1.100039584,
+        "baseline_drift": 0.006104569907081252,
+        "candidate_seconds": 1.093939125,
+        "overhead": -0.0025103142730845684,
+        "records": 3808,
+        "worst_residual": 0.0
+      }
+    ],
+    "reconstruct": [
+      {
+        "accepted": true,
+        "attempt": 1,
+        "baseline_after_seconds": 1.087353625,
+        "baseline_before_seconds": 1.090186,
+        "baseline_drift": 0.0026014451975817513,
+        "candidate_seconds": 1.431992291,
+        "overhead": 0.3152387902011198,
+        "records": 3808,
+        "worst_residual": 8.177274104368426e-7
+      }
+    ]
+  },
+  "backend": "production-larql-compute",
+  "cpu_max_format": "bf16",
+  "family": "gemma3_text",
+  "gate": "HP5",
+  "model": "093f9f388b31de276ce2de164bdc2081324b9767",
+  "plateau_seconds": [
+    1.094107917,
+    1.091945
+  ],
+  "positions": 14,
+  "prompt": "The capital of France is",
+  "token_ids": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563,
+    9079,
+    236761,
+    108,
+    50429,
+    563,
+    496,
+    4185,
+    3988
+  ]
+}
