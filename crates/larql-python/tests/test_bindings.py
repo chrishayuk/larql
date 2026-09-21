@@ -96,8 +96,10 @@ def vindex_path():
     # Each record: top_token_id(u32) + c_score(f32) + top_k * (token_id(u32) + logit(f32))
     top_k_count = 3
     record_size = 8 + top_k_count * 8
-    meta_data = bytearray()
+    # Match format/down_meta: file header, then a feature count per layer.
+    meta_data = bytearray(struct.pack("<IIII", 0x444D4554, 1, NUM_LAYERS, top_k_count))
     for layer in range(NUM_LAYERS):
+        meta_data.extend(struct.pack("<I", NUM_FEATURES))
         for feat in range(NUM_FEATURES):
             # Leave last 4 features per layer empty (for INSERT tests)
             if feat >= NUM_FEATURES - 4:
@@ -417,6 +419,18 @@ class TestSession:
         assert v.num_layers == NUM_LAYERS
         embed = v.embed("hello")
         assert embed.shape == (HIDDEN_SIZE,)
+
+    def test_session_array_view_follows_use(self, vindex_path, tmp_path):
+        second = tmp_path / "second.vindex"
+        shutil.copytree(vindex_path, second)
+        s = larql.session(vindex_path)
+        original = s.vindex
+        escaped = str(second).replace("\\", "\\\\").replace('"', '\\"')
+        s.query(f'USE "{escaped}"')
+        assert s.path == str(second)
+        assert s.vindex is not original
+        assert s.vindex.num_layers == NUM_LAYERS
+        assert s.vindex is s.vindex
 
     def test_session_query_text(self, vindex_path):
         s = larql.session(vindex_path)
