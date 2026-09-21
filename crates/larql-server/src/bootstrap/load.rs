@@ -18,6 +18,7 @@ use super::BoxError;
 
 #[derive(Clone, Default)]
 pub struct LoadVindexOptions {
+    pub v3_backend: crate::vindex3::V3Backend,
     pub no_infer: bool,
     pub ffn_only: bool,
     pub embed_only: bool,
@@ -163,13 +164,19 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
                 .into());
             }
             info!("Loading VINDEX3 container: {}", path.display());
-            Ok(LoadedArtifact::V3(Box::new(crate::vindex3::load_v3_model(
-                &path,
+            Ok(LoadedArtifact::V3(Box::new(
+                crate::vindex3::load_v3_model_with_backend(&path, opts.v3_backend)?,
+            )))
+        }
+        larql_vindex::format::generation::ContainerGeneration::V2 => {
+            if opts.v3_backend != crate::vindex3::V3Backend::Cpu {
+                return Err("--v3-backend applies only to VINDEX3 containers".into());
+            }
+            Ok(LoadedArtifact::V2(Box::new(load_single_vindex(
+                &resolved_path_str,
+                opts,
             )?)))
         }
-        larql_vindex::format::generation::ContainerGeneration::V2 => Ok(LoadedArtifact::V2(
-            Box::new(load_single_vindex(&resolved_path_str, opts)?),
-        )),
     }
 }
 

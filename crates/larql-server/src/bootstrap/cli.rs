@@ -86,6 +86,10 @@ pub struct Cli {
     #[arg(value_name = "VINDEX_PATH")]
     pub vindex_path: Option<String>,
 
+    /// VINDEX3 execution backend (Metal requires the vindex3-metal build feature).
+    #[arg(long, value_enum, default_value = "cpu")]
+    pub v3_backend: crate::vindex3::V3Backend,
+
     /// Serve all .vindex directories in this folder.
     #[arg(long)]
     pub dir: Option<PathBuf>,

@@ -916,3 +916,87 @@ async fn v2_only_surfaces_refuse_a_v3_container_as_unsupported_not_absent() {
     assert_eq!(status, StatusCode::NOT_FOUND, "control: {json}");
     assert_eq!(json["error"], "no model loaded", "control: {json}");
 }
+
+#[tokio::test]
+async fn lifecycle_reports_selected_backend_and_refuses_an_implicit_switch() {
+    let container = v3_container();
+    let state = common::state(vec![]);
+    let app = larql_server::routes::single_model_router(state);
+    let path = container.path().to_string_lossy();
+    let loaded = common::post_json(
+        app.clone(),
+        "/v1/runtime/model",
+        serde_json::json!({"path": path, "backend": "cpu"}),
+    )
+    .await;
+    assert_eq!(loaded.status(), StatusCode::OK);
+    let body = common::body_json(loaded.into_body()).await;
+    assert_eq!(body["backend"]["selected"], "cpu");
+    let conflict = common::post_json(
+        app.clone(),
+        "/v1/runtime/model",
+        serde_json::json!({"path": path, "backend": "metal"}),
+    )
+    .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let bad = common::post_json(
+        app,
+        "/v1/runtime/model",
+        serde_json::json!({"path": path, "backend": "typo"}),
+    )
+    .await;
+    assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[cfg(not(all(feature = "vindex3-metal", target_os = "macos")))]
+#[test]
+fn unavailable_metal_is_refused_instead_of_serving_on_cpu() {
+    let container = v3_container();
+    let result = load_artifact(
+        container.path().to_str().unwrap(),
+        LoadVindexOptions {
+            v3_backend: larql_server::vindex3::V3Backend::Metal,
+            ..Default::default()
+        },
+    );
+    let err = result
+        .err()
+        .expect("Metal must not fall back to CPU")
+        .to_string();
+    assert!(err.contains("vindex3-metal"), "{err}");
+}
+
+/// Explicit opt-in: requires a real Metal device; it never passes by skipping
+/// device creation or falling back to CPU. Run serially with vindex3-metal.
+#[cfg(all(feature = "vindex3-metal", target_os = "macos"))]
+#[test]
+#[ignore = "requires a real Metal device"]
+fn selected_metal_backend_executes_the_v3_fixture() {
+    use larql_server::vindex3::{load_v3_model_with_backend, V3Backend};
+    let container = v3_container();
+    let model = load_v3_model_with_backend(container.path(), V3Backend::Metal).unwrap();
+    assert_eq!(model.backend, V3Backend::Metal);
+    let ids = model
+        .tokenizer
+        .encode(PROMPT, true)
+        .unwrap()
+        .get_ids()
+        .to_vec();
+    let result = generate_v3(
+        &model,
+        &ids,
+        NEW_TOKENS,
+        SamplingConfig::greedy(),
+        &EosConfig::builtin(),
+        |_, _| {},
+    )
+    .unwrap();
+    let expected: Vec<_> = direct_arm(container.path(), NEW_TOKENS)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        result.ids, expected,
+        "fixture's greedy tokens must agree with CPU"
+    );
+}

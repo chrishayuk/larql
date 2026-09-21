@@ -53,16 +53,9 @@ pub const PLAN_SCHEMA_EXPECTED: u32 = larql_vindex::format::vindex3::plan::PLAN_
 /// The execution backends this server can actually bind a VINDEX3
 /// container to.
 ///
-/// `crate::vindex3::load_v3_model` opens every V3 container with
-/// `ProductionBackend` — the CPU executor — so this is `["cpu"]` even
-/// on a binary built with `metal-experts`. That feature drives
-/// VINDEX2 MoE expert dispatch; it is not on the V3 execution path,
-/// and reporting it here would tell the Explorer it can offer a GPU
-/// run this server has no way to perform. `larql run --metal` is a
-/// CLI capability, not a server one. When the server gains a Metal V3
-/// binding, this list grows with it — and
-/// `capabilities_backends_match_the_v3_binding` fails until it does.
-pub const V3_BACKENDS: &[&str] = &["cpu"];
+/// Derived from the same selector the loader accepts. `metal-experts` alone
+/// remains a V2 capability; V3 Metal requires `vindex3-metal` on macOS.
+pub const V3_BACKENDS: &[&str] = crate::vindex3::V3Backend::available();
 
 /// Which router `bootstrap::serve` built. Distinct from
 /// [`crate::state::RouterTopology`], which answers a narrower

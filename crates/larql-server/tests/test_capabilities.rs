@@ -357,35 +357,14 @@ fn source_kinds_come_from_the_resolver() {
     assert_eq!(classify_source("./relative.vindex3"), SourceKind::Local);
 }
 
-/// The server binds every V3 container on the CPU executor, so
-/// `runtime.backends` is `["cpu"]`. `metal-experts` is a VINDEX2 MoE
-/// dispatch feature and must not widen this list: advertising Metal
-/// would tell the Explorer it can offer a GPU run this server cannot
-/// perform. When a real Metal V3 binding lands, this test fails and
-/// `V3_BACKENDS` grows with it.
-///
-/// Since LOWERING-PLUGIN-1's L3 the loader does not CONSTRUCT its
-/// provider — it resolves one from a carried registry by identity — so
-/// the fact this reads is the identity the loader names. A Metal V3
-/// binding would appear here as the device provider's identity, or as a
-/// device backend constructed to register; either widens the list.
+/// Advertised choices use the loader's selector and the V3-specific feature.
 #[test]
 fn backends_match_the_v3_binding() {
-    let binding = include_str!("../src/vindex3.rs");
-    assert!(
-        binding.contains("cpu_production"),
-        "the V3 loader no longer resolves `cpu-production` — re-derive V3_BACKENDS"
-    );
-    let metal_bound = binding.contains("MetalBackend") || binding.contains("device_matmul");
+    use larql_server::vindex3::V3Backend;
+    assert_eq!(V3_BACKENDS, V3Backend::available());
+    assert!(V3_BACKENDS.contains(&V3Backend::Cpu.as_str()));
     assert_eq!(
-        metal_bound,
-        V3_BACKENDS.contains(&"metal"),
-        "V3_BACKENDS says {V3_BACKENDS:?} while the V3 loader {} a Metal backend",
-        if metal_bound {
-            "binds"
-        } else {
-            "does not bind"
-        }
+        V3_BACKENDS.contains(&V3Backend::Metal.as_str()),
+        cfg!(all(feature = "vindex3-metal", target_os = "macos"))
     );
-    assert_eq!(V3_BACKENDS, &["cpu"]);
 }

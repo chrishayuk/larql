@@ -1533,6 +1533,18 @@
           "optional": false,
           "default_features": true,
           "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
         }
       ],
       "examples": []
@@ -1621,6 +1633,9 @@
         "metal-experts": [
           "dep:larql-compute-metal"
         ],
+        "vindex3-metal": [
+          "dep:larql-compute-metal"
+        ],
         "quic": [
           "larql-router-protocol/quic",
           "dep:rustls"
@@ -1638,16 +1653,6 @@
           "path": "crates/larql-compute",
           "target": null,
           "optional": false,
-          "default_features": true,
-          "features": []
-        },
-        {
-          "name": "larql-compute-metal",
-          "alias": "larql-compute-metal",
-          "kind": "dependencies",
-          "path": "crates/larql-compute-metal",
-          "target": null,
-          "optional": true,
           "default_features": true,
           "features": []
         },
@@ -1718,6 +1723,16 @@
           "path": "crates/larql-router",
           "target": null,
           "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": "cfg(target_os = \"macos\")",
+          "optional": true,
           "default_features": true,
           "features": []
         }
