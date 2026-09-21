@@ -285,7 +285,10 @@ pub enum WeightSlice<'a> {
     /// the operand's own stored representation name (a container's
     /// `dtype`/encoding field) — a plain string this loader read and
     /// passed through, not a type it knows the meaning of.
-    CodecOwned { bytes: &'a [u8], label: &'a str },
+    CodecOwned {
+        bytes: &'a [u8],
+        label: &'a str,
+    },
 }
 
 impl<'a> WeightSlice<'a> {

@@ -243,7 +243,10 @@ pub enum LoadedWeight {
     /// does not know how to widen, quantise, or otherwise interpret —
     /// read and kept exactly as [`WeightFormat::CodecOwned`] promises,
     /// with a copy of the operand's own stored representation name.
-    CodecOwned { bytes: Vec<u8>, label: String },
+    CodecOwned {
+        bytes: Vec<u8>,
+        label: String,
+    },
 }
 
 pub mod staged;
