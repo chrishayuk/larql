@@ -127,19 +127,44 @@ kernel void kda_l2_normalise_heads(
     for (uint d = tid; d < dim; d += tcount) head_o[d] = head_v[d] * inv;
 }
 
-// `decay[i] = -exp(a_log[h]) * softplus(f_low[i] + dt_bias[i])`.
+// The decay gate, in the form the checkpoint's FAMILY declares.
+//
+//   form 0, Softplus       (Kimi Linear):
+//       decay[i] = -exp(a_log[h]) * softplus(f_low[i] + dt_bias[i])
+//   form 1, ClampedSigmoid (GLM-5.3-Flash):
+//       decay[i] = lower_bound * sigmoid(exp(a_log[h]) * (f_low[i] + dt_bias[i]))
+//
+// **Neither the presence nor the absence of `gate_lower_bound` selects
+// the form.** Verified on the checkpoints themselves 2026-09-07:
+// Kimi-Linear-48B mentions it in NO file — not config.json, not
+// configuration_kimi.py, not modeling_kimi.py — and computes softplus;
+// GLM-5.3-Flash declares -5.0 and computes the clamped sigmoid, AND
+// fills the same -5.0 by default when the key is null and `safe_gate`
+// is set, so an absent bound still means clamped THERE. Absence means
+// opposite things in the two families, so the form arrives as its own
+// input and this kernel never infers it.
+//
+// Serving one form for the other moves GLM's mean decay -0.906 ->
+// -2.528, a 2.8x per-step error that COMPOUNDS with context: invisible
+// to a single-position check, and indistinguishable from a quantisation
+// defect at exactly the moment PHYSICAL-1 is trying to score one.
 kernel void kda_decay_gate(
-    device const float* f_low   [[buffer(0)]],  // [width]
-    device const float* dt_bias [[buffer(1)]],  // [width]
-    device const float* a_log   [[buffer(2)]],  // [heads]
-    device float*       decay   [[buffer(3)]],  // [width]
-    constant uint&      width   [[buffer(4)]],
-    constant uint&      dim     [[buffer(5)]],
+    device const float* f_low       [[buffer(0)]],  // [width]
+    device const float* dt_bias     [[buffer(1)]],  // [width]
+    device const float* a_log       [[buffer(2)]],  // [heads]
+    device float*       decay       [[buffer(3)]],  // [width]
+    constant uint&      width       [[buffer(4)]],
+    constant uint&      dim         [[buffer(5)]],
+    constant uint&      form        [[buffer(6)]],
+    constant float&     lower_bound [[buffer(7)]],
     uint i [[thread_position_in_grid]])
 {
     if (i >= width) return;
     const float a = exp(a_log[i / dim]);
-    decay[i] = -a * kda_softplus(f_low[i] + dt_bias[i]);
+    const float pre = f_low[i] + dt_bias[i];
+    decay[i] = (form == 0u)
+        ? -a * kda_softplus(pre)
+        : lower_bound * (1.0f / (1.0f + exp(-(a * pre))));
 }
 
 // `beta[h] = sigmoid(b_proj_out[h])`.
