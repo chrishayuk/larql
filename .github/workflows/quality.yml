@@ -211,6 +211,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check generated VINDEX3 facts
+        run: python3 scripts/current_facts.py --check
+
+      - name: Export checkout facts with provenance
+        run: python3 scripts/current_facts.py --export /tmp/vindex3-facts.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vindex3-facts
+          path: /tmp/vindex3-facts.json
+
+
       # Docs move between docs/ and crates/*/docs/ and their links get left
       # behind: the tree carried 45 dead relative links on 2026-08-07, seven of
       # them in README.md alone (found by an outside contributor, PR #211).
