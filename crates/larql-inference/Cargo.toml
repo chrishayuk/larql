@@ -122,6 +122,8 @@ assert_approx_eq = "1"
 tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 larql-kv = { path = "../larql-kv" }
+# map7_kshape_capture example: corpus/container digests (capture spec §2/§7)
+sha2 = "0.10"
 
 [[bench]]
 name = "wire_codec"
