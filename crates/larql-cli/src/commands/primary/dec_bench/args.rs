@@ -24,6 +24,10 @@ pub enum DecBenchCmd {
     /// C6 wire-fidelity gate: teacher-forced bits/char per wire arm vs the
     /// in-run f32/f32 baseline, pass/fail at a pre-set drift gate.
     Drift(DriftArgs),
+    /// BW11-1: same-sequence consecutive-position expert-union ceiling,
+    /// from `LARQL_MOE_ROUTE_TRACE` JSONL files (no HTTP, no capture pool
+    /// — reads a decode run's routing trace directly).
+    WindowUnion(WindowUnionArgs),
 }
 
 #[derive(Args, Clone)]
@@ -215,6 +219,61 @@ pub struct ReplayArgs {
     /// Measured link bandwidth to record alongside the run (spec §6 gate).
     #[arg(long)]
     pub net_gbps: Option<f64>,
+
+    #[arg(short, long)]
+    pub verbose: bool,
+}
+
+/// `larql dec-bench window-union` — BW11-1: does K consecutive positions of
+/// ONE sequence (the shape a speculative-verification batch actually has)
+/// share routed experts more than DEC-0's cross-prompt batch union? Reads
+/// one or more `LARQL_MOE_ROUTE_TRACE` JSONL files (produced by any driver
+/// loop that installs `moe_route_observe::LayerScope`, e.g. `larql run
+/// --routed-from` without `LARQL_GPU_ROUTE=1`) and pools the sliding-window
+/// union/naive ratio across layers and files. A ceiling measurement (R6):
+/// no kernel yet groups multiple tokens through one expert's weight read,
+/// so this licenses building one, not a bandwidth claim on its own.
+#[derive(Args, Clone)]
+pub struct WindowUnionArgs {
+    /// One or more `LARQL_MOE_ROUTE_TRACE` JSONL files, one per captured
+    /// prompt. Each is windowed independently (it is one continuous
+    /// sequence: prefill positions then decode steps, in call order) and
+    /// pooled across files for the reported spread.
+    #[arg(long, value_delimiter = ',', required = true)]
+    pub trace: Vec<std::path::PathBuf>,
+
+    /// Comma-separated window widths K to report.
+    #[arg(long, default_value = "1,2,4,8")]
+    pub k: String,
+
+    /// Total routed experts for this model — the activation-fraction
+    /// denominator that must be quoted with every ratio (R2). Never
+    /// defaulted: this is the workspace's no-hardcoded-types rule applied
+    /// to a measurement, not just to model code.
+    #[arg(long)]
+    pub num_experts: usize,
+
+    /// Bytes read per selected expert (gate_up + down, this container's
+    /// format — from the loaded slice length, never a literal).
+    #[arg(long)]
+    pub per_expert_bytes: f64,
+
+    /// Marginal-preserving shuffled-null trials per layer (R9): pool a
+    /// layer's rows across all trace files, shuffle, re-measure on disjoint
+    /// K-chunks, average. Rules out "the ratio just reflects popular
+    /// experts colliding" as the whole explanation before this instrument's
+    /// number is read as same-sequence structure. 0 disables the control.
+    #[arg(long, default_value = "200")]
+    pub shuffle_trials: usize,
+
+    /// Seed for the shuffled-null control (deterministic — not wall-clock —
+    /// so the control is re-derivable from the same trace files).
+    #[arg(long, default_value = "1")]
+    pub shuffle_seed: u64,
+
+    /// Write `dec/*` pulse JSONL here (one line per K).
+    #[arg(long)]
+    pub pulse_file: Option<std::path::PathBuf>,
 
     #[arg(short, long)]
     pub verbose: bool,

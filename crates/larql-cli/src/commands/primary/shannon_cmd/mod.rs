@@ -76,6 +76,9 @@ pub fn run(cmd: ShannonCommand) -> Result<(), Box<dyn std::error::Error>> {
         ShannonCommand::LayerDump(args) => {
             crate::commands::primary::shannon_trace::dump::run_layer_dump(args)
         }
+        ShannonCommand::BlockNorms(args) => {
+            crate::commands::primary::shannon_trace::block_norms::run_block_norms(args)
+        }
         ShannonCommand::LayerDiff(args) => {
             crate::commands::primary::shannon_trace::compare::run_layer_diff(args)
         }

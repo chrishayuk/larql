@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 
+pub mod block_norms;
 pub mod compare;
 pub mod decode_diff;
 pub mod dump;
@@ -86,6 +87,13 @@ pub struct LayerDumpArgs {
     /// Output directory for the planes and manifest.
     #[arg(long, value_name = "DIR")]
     pub out: PathBuf,
+}
+
+/// `block-norms` — BW12-0's static half. See [`block_norms`].
+#[derive(Args)]
+pub struct BlockNormsArgs {
+    /// Model path, HuggingFace model ID, or cache shorthand.
+    pub model: String,
 }
 
 #[derive(Args)]

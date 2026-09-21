@@ -36,6 +36,11 @@ pub enum ShannonCommand {
     /// says at which layer. See [`crate::commands::primary::shannon_trace`].
     LayerDump(crate::commands::primary::shannon_trace::LayerDumpArgs),
 
+    /// BW12-0's static half: dump every (layer, expert)'s down-projection
+    /// column norms through `LARQL_MOE_BLOCK_CONTRIB_TRACE`. See
+    /// [`crate::commands::primary::shannon_trace::block_norms`].
+    BlockNorms(crate::commands::primary::shannon_trace::BlockNormsArgs),
+
     /// Compare two `layer-dump` directories layer by layer and name the first
     /// capture that drifts.
     LayerDiff(crate::commands::primary::shannon_trace::LayerDiffArgs),

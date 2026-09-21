@@ -78,6 +78,11 @@ pub const ENV_MOE_DEBUG: &str = "LARQL_MOE_DEBUG";
 /// backend. Value-carrying and opt-in: unset or empty means no trace.
 /// See `larql-compute/src/ffn/expert_weight/trace.rs`.
 pub const ENV_MOE_ROUTE_TRACE: &str = "LARQL_MOE_ROUTE_TRACE";
+/// Path for the per-expert intermediate-activation trace (BW12-0 static
+/// sub-expert repackability). Value-carrying and opt-in: unset or empty
+/// means no trace. See
+/// `larql-compute/src/ffn/expert_weight/block_contrib_trace.rs`.
+pub const ENV_MOE_BLOCK_CONTRIB_TRACE: &str = "LARQL_MOE_BLOCK_CONTRIB_TRACE";
 /// Enable Metal MoE dispatch timing.
 pub const ENV_METAL_MOE_TIMING: &str = "LARQL_MOE_TIMING";
 /// Select the 8-simdgroup Q4_K matvec kernel; set to a false value to opt out.
