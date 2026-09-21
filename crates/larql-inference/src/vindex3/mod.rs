@@ -46,6 +46,7 @@ mod generate;
 mod runtime;
 mod session;
 
+pub mod attribution;
 pub mod record;
 #[cfg(test)]
 mod tests;

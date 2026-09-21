@@ -1,0 +1,290 @@
+{
+  "schema": "larql.attr1d.contract.v1",
+  "status": "frozen_pre_implementation_and_witness",
+  "frozen_date": "2026-09-21",
+  "attr1d_contract_sha256": "sha256:4f48973807db0695d5f30b83a00c73637afbd0dc77d116b5a1f9eb6ec913431c",
+  "claim_boundary": "deterministic descriptive attention-head and source support; no causal claim, intervention-derived selection, or execution authorization",
+  "authorities": {
+    "code": {
+      "branch": "main",
+      "commit": "0337d77bb421ef32b3a4b02725f3d5f2f540f633",
+      "capability": "HEAD-OBS-1 merged"
+    },
+    "head_obs_engineering_spec": {
+      "path_at_code_authority": "docs/v3-head-obs-1-per-head-observation.md",
+      "sha256": "sha256:048620635ec46d99b166bd0aa032a916279fd1e31a36c7b7e48aa9051f117803"
+    },
+    "gwts1_protocol_sha256": "sha256:d873d238d99406dc8a549681aa746e750a9d4b802e24ff21a8eb26d152a97d55",
+    "programme_dependency_sha256": "sha256:43d8128d1d96ced883ed3ae8f6b3334ea03ff0bd91686a8e09970a75785a2bb4"
+  },
+  "human_spec": {
+    "path": "../../docs/v3-attr-1d-descriptive-support.md",
+    "sha256": "sha256:780d6dadf023ca09f25aa7b24944c2396db919cdba35c1835118bf97ee15380a"
+  },
+  "input_authority": {
+    "required": [
+      "complete lossless canonical VINDEX3 run record",
+      "zero live-record loss",
+      "no head-reader failure",
+      "HEAD-OBS-1 HeadsObserved, HeadWrite, HeadSum and CarrierStats events",
+      "prepared-image and operation-plan identities",
+      "reader-basis manifest frozen before observation",
+      "prompt-structure manifest frozen before observation"
+    ],
+    "source_level_additional_requirement": "lossless same-run source-evidence sidecar from borrowed AttentionHeadRecord values, bound to the observation receipt",
+    "stats_only_rule": "HeadWrite source positions and attention weights permit attention-mass summaries only; refuse source contribution, share and role contribution without full source values",
+    "forbidden_shortcut": "attention weight is never substituted for source contribution",
+    "source_sidecar_execution": "evidence captured from the canonical borrowed tap; never a second attention execution"
+  },
+  "support_coordinate": {
+    "schema": "larql.attr1d.support-coordinate.v1",
+    "required_fields": [
+      "schema",
+      "model_system_identity",
+      "logical_plan_identity",
+      "component_identity",
+      "input_layout_identity",
+      "position",
+      "operator",
+      "layer",
+      "site",
+      "coordinate_kind"
+    ],
+    "conditional_fields": {
+      "head": [
+        "query_head",
+        "kv_head"
+      ],
+      "source": [
+        "query_head",
+        "kv_head",
+        "source_start",
+        "source_end",
+        "source_role",
+        "role_map_identity"
+      ]
+    },
+    "coordinate_kinds": [
+      "site",
+      "bias",
+      "head",
+      "source"
+    ],
+    "operator": "attention",
+    "source_span": "one-token half-open span [position, position + 1)",
+    "coordinate_id": "sha256 of canonical JSON over the coordinate object only, sorted keys, UTF-8, no insignificant whitespace, integers preserved",
+    "forbidden_fields": [
+      "transition_identity",
+      "subject",
+      "relation",
+      "semantic_target",
+      "answer",
+      "prompt_family",
+      "execution_identity",
+      "provenance_fingerprint",
+      "prepared_image_fingerprint",
+      "observation_receipt_digest",
+      "event_sequence",
+      "contribution",
+      "projection",
+      "rank",
+      "outcome",
+      "support_family",
+      "intervention_identity",
+      "causal_label",
+      "mechanism_label"
+    ],
+    "stability_rule": "same logical model, plan and input layout emit the same coordinate ID across replay and supported backends"
+  },
+  "support_observation": {
+    "schema": "larql.attr1d.support-observation.v1",
+    "required_fields": [
+      "schema",
+      "support_coordinate_id",
+      "execution_identity",
+      "provenance_fingerprint",
+      "prepared_image_fingerprint",
+      "observation_receipt_digest",
+      "event_sequence"
+    ],
+    "observation_id": "sha256 of canonical JSON over the observation object only under the coordinate canonicalization rule",
+    "replay_rule": "same sealed execution reproduces coordinate and observation IDs",
+    "backend_rule": "supported backends share the coordinate ID and have distinct observation IDs whose measurements are compared"
+  },
+  "descriptive_record": {
+    "schema": "larql.attr1d.descriptive-support.v1",
+    "required_fields": [
+      "schema",
+      "attr1d_contract_identity",
+      "transition_instance",
+      "support_coordinate_id",
+      "support_coordinate",
+      "support_observation_id",
+      "support_observation",
+      "reader_identity",
+      "role_map_identity",
+      "contribution_norm",
+      "selected_token_projection",
+      "reconstruction_error",
+      "observation_receipt",
+      "coverage_status"
+    ],
+    "optional_fields": [
+      "parent_coordinate_id",
+      "contribution_vector_ref",
+      "signed_projection_share",
+      "absolute_mass_share",
+      "attention_weight",
+      "source_role",
+      "source_role_projection",
+      "source_role_share",
+      "selected_token_standing",
+      "refusal_reason"
+    ],
+    "transition_instance_rule": "record envelope only; excluded from coordinate hash",
+    "missing_evidence_rule": "coverage_status refused with a reason; never impute from another coordinate or execution"
+  },
+  "contribution_algebra": {
+    "source_input": "u[h,t] = gate[h] elementwise_mul (attention_probability[h,t] * value[kv_head,t]); omit gate when absent",
+    "raw_source_contribution": "c[h,t] = effective_prepared_W_O_head_slice * u[h,t]",
+    "raw_head_contribution": "c[h] = sum_t c[h,t]",
+    "raw_attention_output": "o = output_bias + sum_h c[h]",
+    "rms_scalar": "alpha = 1 / sqrt(mean(o squared) + eps)",
+    "post_norm_gain": "gain = weight_offset + post_attention_norm_weight",
+    "applied_transform": "G = residual_scale * alpha * gain; without post norm alpha and gain are one",
+    "applied_source_contribution": "d[h,t] = G elementwise_mul c[h,t]",
+    "applied_head_contribution": "d[h] = sum_t d[h,t]",
+    "applied_bias": "d_bias = G elementwise_mul output_bias; zero when bias absent",
+    "site_reconstruction": "delta_hat = d_bias + sum_h d[h]",
+    "weight_authority": "effective prepared production realization used by the observed run; widened checkpoint weights forbidden",
+    "once_only_bias": "separate bias coordinate; never assigned to a head or source"
+  },
+  "reader_projection": {
+    "allowed_reader_transforms": [
+      "selected_token_row/v1",
+      "token_contrast/v1"
+    ],
+    "primary_normalization": "identity/v1",
+    "secondary_normalization": "l2_normalize/v1 as a separately hashed, always-declared diagnostic that cannot replace the primary",
+    "basis_freeze": "token IDs, transforms, prepared-image fingerprint, realization and vector hashes fixed before observation",
+    "site": "p_site[j] = dot(reader[j], recorded_delta)",
+    "bias": "p_bias[j] = dot(reader[j], d_bias)",
+    "head": "p_head[h,j] = dot(reader[j], d[h])",
+    "source": "p_source[h,t,j] = dot(reader[j], d[h,t])",
+    "dla_boundary": "only selected_token_row/v1 with identity/v1 is direct output-head projection in logit units; a normalized reader is not DLA",
+    "true_lens_boundary": "linear selected-token projection is not nonlinear true-lens logit change; standing/rank joins separately from Readout",
+    "share_denominator_epsilon": 1e-12,
+    "signed_head_share": "p_head / p_site; absent on unstable denominator",
+    "absolute_head_mass_share": "abs(p_head) / (abs(p_bias) + sum_h abs(p_head))",
+    "signed_source_share": "p_source / p_head; absent on unstable denominator",
+    "absolute_source_mass_share": "abs(p_source) / sum_t abs(p_source)",
+    "cancellation_rule": "report signed and absolute surfaces separately; never clip or renormalize cancellation away",
+    "unstable_denominator_refusal": "unstable_signed_denominator"
+  },
+  "source_roles": {
+    "roles": [
+      "BOS",
+      "RELATION",
+      "ENTITY",
+      "LAST",
+      "OTHER"
+    ],
+    "authority": "construction-time token spans in the frozen prompt-structure manifest",
+    "forbidden_assignment": "decoded-string search or post-run hand adjudication",
+    "overlap_rule": "BOS, RELATION and ENTITY spans must be mutually disjoint or the role map refuses",
+    "precedence": [
+      "BOS",
+      "RELATION",
+      "ENTITY",
+      "LAST",
+      "OTHER"
+    ],
+    "last_rule": "final prompt position only when it has no earlier role; LAST may be empty",
+    "unlabelled_rule": "generated positions and unlabelled template positions are OTHER",
+    "range_rule": "positions outside the visible source range refuse; never clip"
+  },
+  "acceptance_gates": {
+    "head_sum_max_relative_l2": 0.0001,
+    "source_split_max_relative_l2": 0.00001,
+    "projection_reconstruction_scale": 0.000001,
+    "attention_probability_max_absolute_error": 0.000001,
+    "vector_denominator_floor": 1e-12,
+    "coverage": "every eligible HeadsObserved event has exactly the declared query-head set and every visible source row; no missing or duplicate coordinate",
+    "refusal_accounting": "every uncovered operator/layer, missing sidecar, truncated source surface, unstable denominator and unsupported norm is explicit",
+    "deterministic_replay": "canonical serialization and every coordinate ID byte-identical across two transforms of the same sealed inputs",
+    "backend_agreement": "where reference and production are both defined, identical coordinate set and abs(a-b) <= 1e-5 * max(1, abs(a), abs(b)) for every scalar measurement",
+    "full_gate": "all gates conjunctive; head-only output with refused sources cannot open source-level consumers"
+  },
+  "claim_vocabulary": {
+    "allowed": [
+      "contribution",
+      "share",
+      "source",
+      "support",
+      "projection",
+      "standing",
+      "rank",
+      "positive",
+      "negative",
+      "cancellation"
+    ],
+    "forbidden": [
+      "necessary",
+      "necessity",
+      "sufficient",
+      "sufficiency",
+      "causal",
+      "cause",
+      "driver",
+      "decider",
+      "mediator",
+      "responsible",
+      "essential",
+      "redundant",
+      "transporter",
+      "amplifier"
+    ],
+    "application": "serialized schema keys and enum/string labels; free-form refusal messages may quote upstream errors",
+    "winner_rule": "no winning-head selection or mechanism nickname"
+  },
+  "sealed_witness": {
+    "execution": "non-intervened production CPU",
+    "site": {
+      "layer": 24,
+      "site": "attention",
+      "position": "final prompt position"
+    },
+    "row_selection": "lexicographically smallest train TransitionIdentity in the frozen GW-0 manifest with all three prompt families; canonical prompt family",
+    "freeze_before_execution": [
+      "witness identity",
+      "exact input row",
+      "tokenization",
+      "reader basis",
+      "role map"
+    ],
+    "pass": "all acceptance gates, exact serialization round-trip, and identical artifact hash on a second transform of the sealed evidence",
+    "claim": "lawful descriptive normalization on one real-model row only"
+  },
+  "downstream": {
+    "gw_ts_1": "may copy coordinate and descriptive measurements into physical_support but cannot change coordinates from recurrence or prediction",
+    "attr_1c_object": "separate CausalSupportEvidence referencing support_coordinate_id and baseline_support_observation_id, and carrying intervention identity, observed effect, control effect and verdict",
+    "backflow": "intervention results never update ATTR-1D coordinates, normalization, readers, roles or records",
+    "executability": "not authorized"
+  },
+  "non_goals": [
+    "FFN feature support",
+    "GW-TS-1 event selection",
+    "intervention execution",
+    "GW-HEAD-1 adjudication",
+    "correctness inference",
+    "partial execution authorization"
+  ],
+  "amendment": {
+    "number": 1,
+    "timing": "before implementation or witness execution",
+    "superseded_identity": "sha256:caea00f9a43949747aa2c811344aa51ca1cab7f73d630b8ed25670f7ada4477e",
+    "reason": "baseline execution identity inside SupportCoordinate contradicted the frozen cross-backend identical-coordinate gate",
+    "resolution": "stable SupportCoordinate plus execution-specific SupportObservationIdentity"
+  },
+  "amendment_rule": "ontology, algebra, reader/role mapping, gates and vocabulary changes require an explicit amendment and new contract identity; witness results live separately"
+}
