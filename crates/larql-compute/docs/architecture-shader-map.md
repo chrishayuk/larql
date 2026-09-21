@@ -1,5 +1,7 @@
 # Architecture → Metal shader map
 
+**Class: ARCHIVE.** This family-routing map records an earlier backend design. Current [Metal implementation](../../larql-compute-metal/README.md) and [V3 lowering contracts](../../../docs/lowering-plane-inventory.md) own present dispatch support.
+
 **Date**: 2026-05-09
 **Purpose**: Make obvious which Metal shaders each model architecture dispatches to. Bridges `crates/larql-models/src/architectures/{family}.rs` (architecture trait implementations) to `crates/larql-compute/src/metal/shaders/*.rs` (the kernels themselves), via the dispatch logic in `metal/decode/`, `metal/stages/`, `metal/ops/`, `metal/prefill.rs`, `metal/decode_hybrid.rs`.
 

@@ -1,5 +1,7 @@
 # Decode Pipeline — larql-compute
 
+**Class: ARCHIVE.** This dated decode/dispatch walkthrough is retained for provenance. Current GPU execution belongs to [larql-compute-metal](../../larql-compute-metal/README.md), and V3 executes its own [component program](../../../docs/vindex3/execution.md). Historical fusion defaults below are not current capability claims.
+
 How `decode_token` processes one token through all layers with KV cache.
 
 ## Overview

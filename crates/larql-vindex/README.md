@@ -4,6 +4,8 @@
 substrate. [Overview](../../docs/vindex3/what-is-vindex3.md) ·
 [status](../../docs/vindex3/status.md) ·
 [generated facts](../../docs/generated/current-facts.md).
+[Full stack map](../../docs/architecture-stack.md) and
+[workspace dependencies/features](../../docs/generated/workspace-facts.md).
 
 This crate owns source admission, the model-system graph, container encoding
 and inspection, executable component plans, physical representations and the

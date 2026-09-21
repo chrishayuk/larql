@@ -1,0 +1,1891 @@
+{
+  "schema": 1,
+  "scope": "manifest-declarations",
+  "workspaces": [
+    {
+      "manifest": "Cargo.toml",
+      "members": [
+        "crates/larql-boundary",
+        "crates/larql-cli",
+        "crates/larql-compute",
+        "crates/larql-compute-metal",
+        "crates/larql-core",
+        "crates/larql-demos",
+        "crates/larql-execution",
+        "crates/larql-factory",
+        "crates/larql-inference",
+        "crates/larql-kv",
+        "crates/larql-lql",
+        "crates/larql-models",
+        "crates/larql-python",
+        "crates/larql-router",
+        "crates/larql-router-protocol",
+        "crates/larql-server",
+        "crates/larql-vindex",
+        "crates/larql-vindex-spec",
+        "crates/model-compute",
+        "crates/vindex-cli"
+      ],
+      "default_members": [
+        "crates/larql-models",
+        "crates/larql-compute",
+        "crates/larql-compute-metal",
+        "crates/larql-core",
+        "crates/larql-vindex",
+        "crates/larql-vindex-spec",
+        "crates/larql-factory",
+        "crates/larql-inference",
+        "crates/larql-kv",
+        "crates/larql-lql",
+        "crates/larql-cli",
+        "crates/larql-demos",
+        "crates/larql-server",
+        "crates/vindex-cli",
+        "crates/larql-router",
+        "crates/larql-router-protocol",
+        "crates/larql-boundary",
+        "crates/model-compute"
+      ]
+    },
+    {
+      "manifest": "crates/larql-experts/Cargo.toml",
+      "members": [
+        "crates/larql-experts/expert-interface",
+        "crates/larql-experts/experts/arithmetic",
+        "crates/larql-experts/experts/conway",
+        "crates/larql-experts/experts/date",
+        "crates/larql-experts/experts/dijkstra",
+        "crates/larql-experts/experts/element",
+        "crates/larql-experts/experts/finance",
+        "crates/larql-experts/experts/geometry",
+        "crates/larql-experts/experts/graph",
+        "crates/larql-experts/experts/hash",
+        "crates/larql-experts/experts/http_status",
+        "crates/larql-experts/experts/isbn",
+        "crates/larql-experts/experts/logic",
+        "crates/larql-experts/experts/luhn",
+        "crates/larql-experts/experts/markov",
+        "crates/larql-experts/experts/sql",
+        "crates/larql-experts/experts/statistics",
+        "crates/larql-experts/experts/string_ops",
+        "crates/larql-experts/experts/trig",
+        "crates/larql-experts/experts/unit"
+      ],
+      "default_members": [
+        "expert-interface",
+        "experts/arithmetic",
+        "experts/date",
+        "experts/unit",
+        "experts/logic",
+        "experts/dijkstra",
+        "experts/statistics",
+        "experts/geometry",
+        "experts/trig",
+        "experts/string_ops",
+        "experts/hash",
+        "experts/finance",
+        "experts/sql",
+        "experts/element",
+        "experts/http_status",
+        "experts/isbn",
+        "experts/luhn",
+        "experts/markov",
+        "experts/conway",
+        "experts/graph"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "name": "expert-interface",
+      "path": "crates/larql-experts/expert-interface",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "Shared ABI for LARQL WASM expert modules",
+      "features": {},
+      "local_dependencies": [],
+      "examples": []
+    },
+    {
+      "name": "larql-boundary",
+      "path": "crates/larql-boundary",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Confidence-gated BOUNDARY ref codec for LARQL",
+      "features": {},
+      "local_dependencies": [],
+      "examples": [
+        {
+          "name": "accuracy"
+        }
+      ]
+    },
+    {
+      "name": "larql-cli",
+      "path": "crates/larql-cli",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "LARQL command-line interface for artifacts, execution, observation, representation, LQL and serving.",
+      "features": {
+        "default": [
+          "gpu"
+        ],
+        "gpu": [
+          "dep:larql-compute-metal",
+          "larql-inference/gpu",
+          "larql-kv/gpu",
+          "larql-vindex/gpu"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": null,
+          "optional": true,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-core",
+          "alias": "larql-core",
+          "kind": "dependencies",
+          "path": "crates/larql-core",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-factory",
+          "alias": "larql-factory",
+          "kind": "dependencies",
+          "path": "crates/larql-factory",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-lql",
+          "alias": "larql-lql",
+          "kind": "dependencies",
+          "path": "crates/larql-lql",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex-spec",
+          "alias": "larql-vindex-spec",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex-spec",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        },
+        {
+          "name": "larql-vindex-spec",
+          "alias": "larql-vindex-spec",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-vindex-spec",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-compute",
+      "path": "crates/larql-compute",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Compute backend trait + CPU implementation for LARQL. GPU backends ship as sibling crates (larql-compute-metal, future larql-compute-vulkan / larql-compute-cuda).",
+      "features": {
+        "default": [],
+        "heavy_tests": [],
+        "test-utils": [
+          "larql-models/test-utils"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-execution",
+          "alias": "larql-execution",
+          "kind": "dependencies",
+          "path": "crates/larql-execution",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-compute-metal",
+      "path": "crates/larql-compute-metal",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Metal GPU backend for LARQL. Implements `larql_compute::ComputeBackend` on Apple Silicon via `metal-rs` + custom MSL shaders. Decoupled from larql-compute so non-Mac hosts skip the build entirely.",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-core",
+      "path": "crates/larql-core",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Core graph engine for LARQL \u2014 knowledge graphs extracted from neural network weights",
+      "features": {
+        "default": [
+          "http",
+          "msgpack"
+        ],
+        "http": [
+          "dep:reqwest"
+        ],
+        "msgpack": [
+          "dep:rmp-serde"
+        ]
+      },
+      "local_dependencies": [],
+      "examples": [
+        {
+          "name": "bench_graph"
+        }
+      ]
+    },
+    {
+      "name": "larql-demos",
+      "path": "crates/larql-demos",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Runnable demonstrations of larql's shipped capabilities",
+      "features": {
+        "default": [],
+        "gpu": [
+          "larql-inference/gpu",
+          "larql-vindex/gpu"
+        ],
+        "msgpack": [
+          "larql-core/msgpack"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-boundary",
+          "alias": "larql-boundary",
+          "kind": "dependencies",
+          "path": "crates/larql-boundary",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-core",
+          "alias": "larql-core",
+          "kind": "dependencies",
+          "path": "crates/larql-core",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-lql",
+          "alias": "larql-lql",
+          "kind": "dependencies",
+          "path": "crates/larql-lql",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-router-protocol",
+          "alias": "larql-router-protocol",
+          "kind": "dependencies",
+          "path": "crates/larql-router-protocol",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-server",
+          "alias": "larql-server",
+          "kind": "dependencies",
+          "path": "crates/larql-server",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": [
+        {
+          "name": "encode_decode",
+          "path": "examples/boundary/encode_decode.rs"
+        },
+        {
+          "name": "gate_decision",
+          "path": "examples/boundary/gate_decision.rs"
+        },
+        {
+          "name": "demo_architecture",
+          "path": "examples/compute/demo_architecture.rs"
+        },
+        {
+          "name": "demo_basic",
+          "path": "examples/compute/demo_basic.rs"
+        },
+        {
+          "name": "demo_ridge_solve",
+          "path": "examples/compute/demo_ridge_solve.rs"
+        },
+        {
+          "name": "algorithm_demo",
+          "path": "examples/core/algorithm_demo.rs"
+        },
+        {
+          "name": "edge_demo",
+          "path": "examples/core/edge_demo.rs"
+        },
+        {
+          "name": "filter_demo",
+          "path": "examples/core/filter_demo.rs"
+        },
+        {
+          "name": "graph_demo",
+          "path": "examples/core/graph_demo.rs"
+        },
+        {
+          "name": "serialization_demo",
+          "path": "examples/core/serialization_demo.rs"
+        },
+        {
+          "name": "attention_demo",
+          "path": "examples/inference/attention_demo.rs"
+        },
+        {
+          "name": "ave_demo",
+          "path": "examples/inference/ave_demo.rs"
+        },
+        {
+          "name": "backend_demo",
+          "path": "examples/inference/backend_demo.rs"
+        },
+        {
+          "name": "chat_demo",
+          "path": "examples/inference/chat_demo.rs"
+        },
+        {
+          "name": "clustering_demo",
+          "path": "examples/inference/clustering_demo.rs"
+        },
+        {
+          "name": "detok_demo",
+          "path": "examples/inference/detok_demo.rs"
+        },
+        {
+          "name": "eos_demo",
+          "path": "examples/inference/eos_demo.rs"
+        },
+        {
+          "name": "experts_demo",
+          "path": "examples/inference/experts_demo.rs"
+        },
+        {
+          "name": "ffn_cache_demo",
+          "path": "examples/inference/ffn_cache_demo.rs"
+        },
+        {
+          "name": "inference_demo",
+          "path": "examples/inference/inference_demo.rs"
+        },
+        {
+          "name": "mech_interp_demo",
+          "path": "examples/inference/mech_interp_demo.rs"
+        },
+        {
+          "name": "pair_matching_demo",
+          "path": "examples/inference/pair_matching_demo.rs"
+        },
+        {
+          "name": "sampling_demo",
+          "path": "examples/inference/sampling_demo.rs"
+        },
+        {
+          "name": "streaming_demo",
+          "path": "examples/inference/streaming_demo.rs"
+        },
+        {
+          "name": "engine_ladder",
+          "path": "examples/kv/engine_ladder.rs"
+        },
+        {
+          "name": "compact_demo",
+          "path": "examples/lql/compact_demo.rs"
+        },
+        {
+          "name": "compile_demo",
+          "path": "examples/lql/compile_demo.rs"
+        },
+        {
+          "name": "lql_demo",
+          "path": "examples/lql/lql_demo.rs"
+        },
+        {
+          "name": "vindex3_demo",
+          "path": "examples/lql/vindex3_demo.rs"
+        },
+        {
+          "name": "parser_demo",
+          "path": "examples/lql/parser_demo.rs"
+        },
+        {
+          "name": "refine_demo",
+          "path": "examples/lql/refine_demo.rs"
+        },
+        {
+          "name": "trace_demo",
+          "path": "examples/lql/trace_demo.rs"
+        },
+        {
+          "name": "architecture_demo",
+          "path": "examples/models/architecture_demo.rs"
+        },
+        {
+          "name": "demo_loading",
+          "path": "examples/models/demo_loading.rs"
+        },
+        {
+          "name": "demo_tensor_keys",
+          "path": "examples/models/demo_tensor_keys.rs"
+        },
+        {
+          "name": "embed_demo",
+          "path": "examples/server/embed_demo.rs"
+        },
+        {
+          "name": "openai_demo",
+          "path": "examples/server/openai_demo.rs"
+        },
+        {
+          "name": "vindex3_serve_demo",
+          "path": "examples/server/vindex3_serve_demo.rs"
+        },
+        {
+          "name": "server_demo",
+          "path": "examples/server/server_demo.rs"
+        },
+        {
+          "name": "shard_query_demo",
+          "path": "examples/server/shard_query_demo.rs"
+        },
+        {
+          "name": "demo_features",
+          "path": "examples/vindex/demo_features.rs"
+        },
+        {
+          "name": "demo_memit_solve",
+          "path": "examples/vindex/demo_memit_solve.rs"
+        },
+        {
+          "name": "mmap_demo",
+          "path": "examples/vindex/mmap_demo.rs"
+        },
+        {
+          "name": "q4k_demo",
+          "path": "examples/vindex/q4k_demo.rs"
+        },
+        {
+          "name": "walker_demo",
+          "path": "examples/vindex/walker_demo.rs"
+        }
+      ]
+    },
+    {
+      "name": "larql-execution",
+      "path": "crates/larql-execution",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Execution-refusal semantics shared across LARQL's runtime crates. Zero larql-* deps.",
+      "features": {},
+      "local_dependencies": [],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-arithmetic",
+      "path": "crates/larql-experts/experts/arithmetic",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: arithmetic",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-conway",
+      "path": "crates/larql-experts/experts/conway",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: conway",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-date",
+      "path": "crates/larql-experts/experts/date",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: date",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-dijkstra",
+      "path": "crates/larql-experts/experts/dijkstra",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: dijkstra",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-element",
+      "path": "crates/larql-experts/experts/element",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: element",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-finance",
+      "path": "crates/larql-experts/experts/finance",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: finance",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-geometry",
+      "path": "crates/larql-experts/experts/geometry",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: geometry",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-graph",
+      "path": "crates/larql-experts/experts/graph",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: graph",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-hash",
+      "path": "crates/larql-experts/experts/hash",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: hash",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-http_status",
+      "path": "crates/larql-experts/experts/http_status",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: http_status",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-isbn",
+      "path": "crates/larql-experts/experts/isbn",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: isbn",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-logic",
+      "path": "crates/larql-experts/experts/logic",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: logic",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-luhn",
+      "path": "crates/larql-experts/experts/luhn",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: luhn",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-markov",
+      "path": "crates/larql-experts/experts/markov",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: markov",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-sql",
+      "path": "crates/larql-experts/experts/sql",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: sql",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-statistics",
+      "path": "crates/larql-experts/experts/statistics",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: statistics",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-string_ops",
+      "path": "crates/larql-experts/experts/string_ops",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: string_ops",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-trig",
+      "path": "crates/larql-experts/experts/trig",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: trig",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-expert-unit",
+      "path": "crates/larql-experts/experts/unit",
+      "workspace": "crates/larql-experts/Cargo.toml",
+      "version": "0.1.0",
+      "description": "LARQL WASM expert: unit",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "expert-interface",
+          "alias": "expert-interface",
+          "kind": "dependencies",
+          "path": "crates/larql-experts/expert-interface",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-factory",
+      "path": "crates/larql-factory",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Recipe-driven vindex builds: validation, identity, estimates, capability manifests, cards and staged orchestration.",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex-spec",
+          "alias": "larql-vindex-spec",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex-spec",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex-spec",
+          "alias": "larql-vindex-spec",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-vindex-spec",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-inference",
+      "path": "crates/larql-inference",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "LARQL runtime composition: sessions, generation, FFN routing and VINDEX3 execution records.",
+      "features": {
+        "default": [],
+        "gpu": [
+          "dep:larql-compute-metal",
+          "larql-vindex/gpu"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": null,
+          "optional": true,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-core",
+          "alias": "larql-core",
+          "kind": "dependencies",
+          "path": "crates/larql-core",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-execution",
+          "alias": "larql-execution",
+          "kind": "dependencies",
+          "path": "crates/larql-execution",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
+        },
+        {
+          "name": "larql-router-protocol",
+          "alias": "larql-router-protocol",
+          "kind": "dependencies",
+          "path": "crates/larql-router-protocol",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": [
+        {
+          "name": "cpu_gpu_diag",
+          "required-features": [
+            "gpu"
+          ]
+        },
+        {
+          "name": "decode_vs_prefill",
+          "required-features": [
+            "gpu"
+          ]
+        },
+        {
+          "name": "stage_bisect",
+          "required-features": [
+            "gpu"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "larql-kv",
+      "path": "crates/larql-kv",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Pluggable KV-cache engines for larql-inference (markov-rs, unlimited-context, turbo-quant, apollo)",
+      "features": {
+        "default": [],
+        "gpu": [
+          "dep:larql-compute-metal",
+          "larql-inference/gpu"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-boundary",
+          "alias": "larql-boundary",
+          "kind": "dependencies",
+          "path": "crates/larql-boundary",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": null,
+          "optional": true,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-execution",
+          "alias": "larql-execution",
+          "kind": "dependencies",
+          "path": "crates/larql-execution",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-lql",
+      "path": "crates/larql-lql",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "LQL parser, executor, and REPL for LARQL",
+      "features": {
+        "default": [],
+        "gpu": [
+          "dep:larql-compute-metal",
+          "larql-inference/gpu",
+          "larql-vindex/gpu"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": null,
+          "optional": true,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-core",
+          "alias": "larql-core",
+          "kind": "dependencies",
+          "path": "crates/larql-core",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-models",
+      "path": "crates/larql-models",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Model source description, inventory, weight loading, quantized formats and multimodal contracts for LARQL.",
+      "features": {
+        "default": [],
+        "test-utils": []
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-vindex-spec",
+          "alias": "larql-vindex-spec",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex-spec",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-python",
+      "path": "crates/larql-python",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "PyO3 bindings for LARQL graphs, VectorIndex access, LQL sessions, walks and traces.",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "larql-core",
+          "alias": "larql-core",
+          "kind": "dependencies",
+          "path": "crates/larql-core",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-lql",
+          "alias": "larql-lql",
+          "kind": "dependencies",
+          "path": "crates/larql-lql",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-router",
+      "path": "crates/larql-router",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Layer-sharding router for distributed larql-server deployments",
+      "features": {
+        "default": [],
+        "quic": [
+          "larql-router-protocol/quic",
+          "dep:rustls"
+        ],
+        "http3": [
+          "quic",
+          "larql-router-protocol/http3"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-router-protocol",
+          "alias": "larql-router-protocol",
+          "kind": "dependencies",
+          "path": "crates/larql-router-protocol",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-router-protocol",
+      "path": "crates/larql-router-protocol",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Grid, expert and shard wire contracts with optional QUIC and HTTP/3 transports.",
+      "features": {
+        "default": [],
+        "quic": [
+          "dep:quinn",
+          "dep:rustls",
+          "dep:rcgen",
+          "dep:rustls-pemfile",
+          "dep:hyper-util",
+          "dep:tower",
+          "dep:sha2"
+        ],
+        "http3": [
+          "quic",
+          "dep:h3",
+          "dep:h3-quinn",
+          "dep:h3-axum",
+          "dep:axum",
+          "dep:http",
+          "dep:http-body-util",
+          "dep:bytes",
+          "dep:futures"
+        ]
+      },
+      "local_dependencies": [],
+      "examples": []
+    },
+    {
+      "name": "larql-server",
+      "path": "crates/larql-server",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "HTTP and gRPC serving for V2/VINDEX3 artifacts, generation, queries and distributed execution.",
+      "features": {
+        "default": [],
+        "metal-experts": [
+          "dep:larql-compute-metal"
+        ],
+        "quic": [
+          "larql-router-protocol/quic",
+          "dep:rustls"
+        ],
+        "http3": [
+          "quic",
+          "larql-router-protocol/http3"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": null,
+          "optional": true,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-lql",
+          "alias": "larql-lql",
+          "kind": "dependencies",
+          "path": "crates/larql-lql",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-router-protocol",
+          "alias": "larql-router-protocol",
+          "kind": "dependencies",
+          "path": "crates/larql-router-protocol",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-router",
+          "alias": "larql-router",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-router",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-vindex",
+      "path": "crates/larql-vindex",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "VINDEX lifecycle and VINDEX3 graph, representations, operation plans and canonical execution; V2 index and patch APIs.",
+      "features": {
+        "default": [],
+        "gpu": [
+          "dep:larql-compute-metal"
+        ],
+        "reference-encoder": [],
+        "test-utils": []
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-compute",
+          "alias": "larql-compute",
+          "kind": "dependencies",
+          "path": "crates/larql-compute",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-compute-metal",
+          "alias": "larql-compute-metal",
+          "kind": "dependencies",
+          "path": "crates/larql-compute-metal",
+          "target": null,
+          "optional": true,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-core",
+          "alias": "larql-core",
+          "kind": "dependencies",
+          "path": "crates/larql-core",
+          "target": null,
+          "optional": false,
+          "default_features": false,
+          "features": []
+        },
+        {
+          "name": "larql-execution",
+          "alias": "larql-execution",
+          "kind": "dependencies",
+          "path": "crates/larql-execution",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex-spec",
+          "alias": "larql-vindex-spec",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex-spec",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-inference",
+          "alias": "larql-inference",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-inference",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-kv",
+          "alias": "larql-kv",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-kv",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-vindex-spec",
+      "path": "crates/larql-vindex-spec",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Public contract for the vindex on-disk format: Rust types, JSON Schema, validation thresholds. Zero larql-* deps.",
+      "features": {
+        "default": [],
+        "test-utils": []
+      },
+      "local_dependencies": [],
+      "examples": []
+    },
+    {
+      "name": "model-compute",
+      "path": "crates/model-compute",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Bounded-cost compute for neural-model pipelines: native Rust kernels (default) and wasmtime-hosted WASM modules (opt-in)",
+      "features": {
+        "default": [
+          "native"
+        ],
+        "native": [
+          "dep:evalexpr",
+          "dep:chrono"
+        ],
+        "wasm": [
+          "dep:wasmtime"
+        ]
+      },
+      "local_dependencies": [],
+      "examples": []
+    },
+    {
+      "name": "vindex-cli",
+      "path": "crates/vindex-cli",
+      "workspace": "Cargo.toml",
+      "version": "0.8.0",
+      "description": "Format-native VINDEX3 tooling: plan, encode, inspect, verify, compile representations and export.",
+      "features": {},
+      "local_dependencies": [
+        {
+          "name": "larql-models",
+          "alias": "larql-models",
+          "kind": "dependencies",
+          "path": "crates/larql-models",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        }
+      ],
+      "examples": []
+    }
+  ]
+}

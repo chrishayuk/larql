@@ -86,7 +86,10 @@ For those workflows, use the [LQL guide](docs/lql-guide.md),
 
 ## Architecture and development
 
-[Architecture](docs/vindex3/architecture.md) maps ownership across the workspace.
+[Stack architecture](docs/architecture-stack.md) maps ownership across every crate;
+[generated workspace facts](docs/generated/workspace-facts.md) track dependencies
+and features. [VINDEX3 architecture](docs/vindex3/architecture.md) explains the
+container execution path.
 `larql-vindex` owns the container and canonical interpreter; CPU and Metal
 crates provide numerical backends; `larql-inference` owns runtime/session
 composition. CLI, LQL and server layers expose those capabilities.

@@ -1,56 +1,43 @@
 # larql-demos
 
-Runnable demonstrations of larql's shipped capabilities — one home for
-"how do I use this", filed under the crate whose capability each one
-shows.
+**Class: CURRENT.** [Stack architecture](../../docs/architecture-stack.md) ·
+[manifest-derived dependencies and features](../../docs/generated/workspace-facts.md).
 
-Each folder has its own README listing every demo, what it shows, and
-what it needs to run — including measured runtimes, so a nine-minute demo
-is not mistaken for a hung one.
+Runnable examples of workspace capabilities, with explicit Cargo targets.
+The authoritative target list is [Cargo.toml](Cargo.toml), also captured in
+[the generated JSON inventory](../../docs/generated/workspace-facts.json).
+A target being declared does not mean it can run without model files.
 
-| folder | | demos | weight-free |
-|---|---|---:|---:|
-| [`boundary/`](examples/boundary/README.md) | Boundary codec | 2 | 2 |
-| [`compute/`](examples/compute/README.md) | Compute kernels and solvers | 3 | 3 |
-| [`core/`](examples/core/README.md) | Knowledge-graph core | 5 | 5 |
-| [`inference/`](examples/inference/README.md) | Inference engine | 14 | 6 |
-| [`kv/`](examples/kv/README.md) | KV engines | 1 | 1 |
-| [`lql/`](examples/lql/README.md) | LQL query layer | 6 | 3 |
-| [`models/`](examples/models/README.md) | Architecture detection | 3 | 3 |
-| [`server/`](examples/server/README.md) | Serving surface | 4 | 3 |
-| [`vindex/`](examples/vindex/README.md) | Vindex format and store | 5 | 5 |
-| | | **43** | **31** |
+| Catalog | Scope |
+|---|---|
+| [boundary](examples/boundary/README.md) | Residual codecs and gate decisions |
+| [compute](examples/compute/README.md) | Numerical kernels and compute examples |
+| [core](examples/core/README.md) | Graph construction and algorithms |
+| [inference](examples/inference/README.md) | Generation and runtime composition |
+| [kv](examples/kv/README.md) | Continuation-state engines |
+| [lql](examples/lql/README.md) | Language parsing/execution |
+| [models](examples/models/README.md) | Model descriptions and detection |
+| [server](examples/server/README.md) | Serving adapters |
+| [vindex](examples/vindex/README.md) | Artifact storage and querying |
 
-```sh
+```bash
 cargo run -p larql-demos --example chat_demo
 ```
 
-Folders are not auto-discovered by cargo, so every demo is declared as an
-explicit `[[example]]` in `Cargo.toml` with its path. Adding a demo means
-adding four lines there — deliberately, so the inventory stays visible.
+Consult the relevant catalog and target source for required model paths and
+features before running it. `gpu` enables the supporting macOS backend paths;
+`msgpack` enables the graph serializer feature. The current manifest, rather
+than a README total, determines which examples build.
 
-The weight-free demos run in CI on every platform. The rest compile in CI
-but need a real vindex to execute; they take `--vindex PATH` and fail by
-name when it is missing, rather than surfacing a bare `NotFound`.
+Benchmarks, diagnostics and parity harnesses remain with the crate they measure.
+Dated research probes retain their own evidence contract and may live outside
+this workspace. A demonstration is not an independent fidelity or performance
+witness. The [VINDEX3 CLI recording guide](../../docs/vindex3/observation-and-intervention.md)
+is the entry point for canonical observation records.
 
-## What is deliberately not here
+```bash
+cargo check -p larql-demos --examples
+```
 
-**Benchmarks, diagnostics and parity harnesses** stay in their own
-crate's `examples/` — `bench_*`, `debug_*`, `profile_*`, `*_parity`,
-`compare_*`, `membw_probe` and friends. They exercise the engine rather
-than showing how to use it, so they belong next to the code they measure,
-where a change and its benchmark move together.
-
-**Research probes** live in `chris-experiments/larql_probes`, pinned to
-the larql revision that produced their recorded verdict. A probe answers
-a question once; a demo is documentation that has to keep working. The
-two have opposite maintenance contracts, which is why they no longer
-share a directory.
-
-`apollo_rd_backend` was briefly filed here and has moved to the probes:
-it is named after a backend but is really the compute half of a
-chris-experiments script, and is useless without it.
-
-The dividing question when adding something here: *would a new user run
-this to understand larql?* If it only makes sense while chasing a
-specific result, it is a probe, not a demo.
+Model-free and model-backed checks have different prerequisites; compilation
+alone never claims that the model-backed examples were executed.

@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Python bindings for LARQL knowledge graph engine and vindex"
+description = "PyO3 bindings for LARQL graphs, VectorIndex access, LQL sessions, walks and traces."
 
 [lib]
 name = "_native"

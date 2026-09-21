@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "CLI for LARQL knowledge graph extraction and querying"
+description = "LARQL command-line interface for artifacts, execution, observation, representation, LQL and serving."
 
 [[bin]]
 name = "larql"

@@ -5,6 +5,8 @@ artifacts, generation, chat, FFN routing, VINDEX3 execution records and lenses.
 [Architecture](../../docs/vindex3/architecture.md) ·
 [execution](../../docs/vindex3/execution.md) ·
 [status](../../docs/vindex3/status.md).
+[Full stack map](../../docs/architecture-stack.md) and
+[workspace dependencies/features](../../docs/generated/workspace-facts.md).
 
 CPU forward math, attention kernels, normalization and substrate dispatch traits
 live in `larql-compute`; Metal is a peer backend in `larql-compute-metal`.

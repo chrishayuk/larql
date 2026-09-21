@@ -3,6 +3,8 @@
 **Class: CURRENT.** The format-native VINDEX3 tool: plan and encode sources,
 inspect containers, compile alternate representations, and export supported
 representations. Execution and observation live in LARQL.
+[Full stack map](../../docs/architecture-stack.md) and
+[workspace dependencies/features](../../docs/generated/workspace-facts.md).
 
 [Generated package version and complete command inventory](../../docs/generated/current-facts.md)
 are checked against source and the Clap command tree. Package version does not

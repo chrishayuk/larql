@@ -1,6 +1,8 @@
 # VINDEX3 architecture
 
 **Class: CURRENT.** [Generated versions and schemas](../generated/current-facts.md).
+The [full stack map](../architecture-stack.md) and [workspace facts](../generated/workspace-facts.md)
+cover all crate owners, optional backends and dependency kinds.
 
 ```text
 checkpoint directories / HF repositories
@@ -22,6 +24,7 @@ index schema or the graph schema.
 
 | Owner | Responsibility |
 |---|---|
+| `larql-core` | Generic knowledge graphs and algorithms; a dependency leaf distinct from the V3 system graph |
 | `larql-models` | Source inventory, config, architecture and weight loading |
 | `larql-vindex` | Container lifecycle, system graph, plans, representations, canonical interpreter and observation seams |
 | `larql-compute` | CPU numerical kernels and substrate traits |

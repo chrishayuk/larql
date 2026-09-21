@@ -4,6 +4,13 @@
 Linked specifications and research records retain their own dates and status;
 indexing a proposal does not make it an implemented capability.
 
+| Workspace guide | Purpose |
+|---|---|
+| [Stack architecture](architecture-stack.md) | Ownership across every root crate and the nested experts workspace |
+| [Compute substrate](compute-substrate.md) | Source description, CPU/Metal traits and V3 execution boundaries |
+| [Runtime surfaces](runtime-surfaces.md) | KV, LQL, server/router, Factory and Python capability limits |
+| [Workspace facts](generated/workspace-facts.md) | Manifest-derived dependency/feature inventory |
+
 | Current guide | Purpose |
 |---|---|
 | [What is VINDEX3?](vindex3/what-is-vindex3.md) | Model artifact, executable semantics and evidence |
@@ -51,7 +58,7 @@ distributed).
 |---|---|
 | [cli.md](cli.md) | Broader `larql` CLI guide; VINDEX3 command inventory is in generated facts |
 | [lql-guide.md](lql-guide.md) | LQL quick-start guide |
-| [larql-python.md](larql-python.md) | Python bindings for the vindex |
+| [Python crate](../crates/larql-python/README.md) | Current bindings/build guide; [earlier API draft](larql-python.md) retained as archive |
 
 ## Engine and runtime
 
@@ -63,7 +70,7 @@ distributed).
 | [ffn/README.md](ffn/README.md) | FFN backend family — WeightFfn, SparseFfn, WalkFfn, distributed sharding |
 | [kv-residency-contract.md](kv-residency-contract.md) | The KV residency contract — window vs storage vs residency, disentangled |
 | [kv-attention-scaling.md](kv-attention-scaling.md) | KV attention scaling — measurement schema + run hygiene rules |
-| [metal-kernel-capabilities.md](metal-kernel-capabilities.md) | Metal kernel capability table (Phase B ground truth audit) |
+| [metal-kernel-capabilities.md](metal-kernel-capabilities.md) | Dated Phase B audit; current Metal ownership and controls are in the [crate README](../crates/larql-compute-metal/README.md) |
 | [mech-interp.md](mech-interp.md) | Mechanistic-interp surface — hooks, lens, ablation, steering, patching |
 | [residual-trace.md](residual-trace.md) | Residual stream trace — decomposition, storage, tiered context |
 | [multi-modal.md](multi-modal.md) | Multi-modal support — Phase 0–2 shipped, phases 3–6 design-only |
@@ -104,6 +111,6 @@ distributed).
 
 | Doc | One line |
 |---|---|
-| [positioning.md](positioning.md) | LARQL vs ollama, vLLM, llama.cpp — what it is and is not |
+| [positioning.md](positioning.md) | Historical positioning/aim-validation record; current framing is in the stack architecture |
 
 - [`v3-observatory-head-capture.md`](v3-observatory-head-capture.md) — opt-in CPU softmax head tap, real Granite recording, raw direction analysis, and parity/reconstruction gates.

@@ -1,5 +1,7 @@
 # larql-router — Layer-Sharding FFN Proxy
 
+**Class: ARCHIVE.** This versioned router design retains its original scope. Current proxy, grid and transport behavior is described by the [router README](../../larql-router/README.md) and its source links.
+
 **Version:** 0.2  
 **Status:** Implemented (static sharding + self-assembling grid, Phase 1)  
 **Implementation:** `crates/larql-router`, `crates/larql-router-protocol`  

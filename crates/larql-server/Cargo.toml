@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "HTTP server for vindex knowledge queries and inference"
+description = "HTTP and gRPC serving for V2/VINDEX3 artifacts, generation, queries and distributed execution."
 
 [lib]
 name = "larql_server"
