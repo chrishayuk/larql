@@ -67,9 +67,11 @@ EXTERNAL = re.compile(
 )
 PATH_ROOTS = ("crates/", "docs/", "bench/", "scripts/", "knowledge/", ".github/")
 # A reference the prose has already LABELLED is not a trap, and this gate
-# exists to catch traps. Two shapes qualify: a roadmap naming the file it
-# intends to create, and a doc that says outright the thing is missing.
-# Both leave the reader correctly informed, which is the whole point —
+# exists to catch traps. Three shapes qualify: a roadmap naming the file it
+# intends to create, a doc that says outright the thing is missing, and a
+# doc pointing at a deliberately untracked build artifact (`docs/replay/`,
+# `knowledge/data/`) -- real files that a checkout correctly never has.
+# All three leave the reader correctly informed, which is the whole point —
 # whereas an unannotated dangling path sends someone looking for code that
 # is not there.
 #
@@ -79,7 +81,10 @@ PATH_ROOTS = ("crates/", "docs/", "bench/", "scripts/", "knowledge/", ".github/"
 PLANNED = re.compile(
     r"\(new\)|new `|\bgenerate\b|\bplanned\b|\bproposed\b|\bTODO\b|"
     r"\bnot started\b|will land|lands the|to be (?:written|created|added)|"
-    r"does not exist|not yet|never committed|was never|no longer exists",
+    r"does not exist|not yet|never committed|was never|no longer exists|"
+    # Narrow on purpose: it takes an explicit word for "this is not in the
+    # repo", not a vague gesture at the file being generated somehow.
+    r"\bgitignored\b|\buntracked\b|\bnot tracked\b",
     re.I,
 )
 
@@ -92,24 +97,43 @@ def skipped(dirpath: str, root: str) -> bool:
     own prefix, every directory beneath it matches too, and the walk yields
     nothing -- while the caller reports success over an empty corpus. Every
     worktree in this repository lives under `.claude/worktrees/`, so that was
-    the state of every local run until DOC-GATE-1.
+    the state of every local run until DOC-GATE-1. Still used by
+    `cargo_targets`, which walks `crates/` rather than asking git for the
+    tracked set — see `index_files` for why that one switched.
     """
     rel = os.path.relpath(dirpath, root)
     probe = "/" if rel == "." else "/" + rel.replace(os.sep, "/") + "/"
     return any(s in probe for s in SKIP_DIRS)
 
 
-def index_files(root: str = ROOT) -> tuple[dict, dict]:
+def index_files() -> tuple[dict, dict]:
+    """Index the files a real checkout has: the tracked set, not a tree walk.
+
+    os.walk indexes the working tree, so locally it also sees the ~400
+    untracked and gitignored artifacts CI never checks out (`docs/replay/`,
+    `knowledge/data/`, ...). That made the verdict depend on the developer's
+    scratch files: on 2026-08-23 main passed here and had three findings on
+    CI. Worse, ROOT itself sits under `.claude/` in a git worktree, so
+    DOC-GATE-1's relative-path `skipped()` fix still matched the root itself
+    (rel == "."), emptied the walk, and the gate reported "0 references
+    across 0 documents" and exited 0 -- a vacuous pass from every worktree
+    under `.claude/worktrees/`, which is where most work on this repo
+    happens.
+
+    Asking git for the tracked set fixes both at once: it is exactly what CI
+    checks out, and being gitignored, `.claude/` can never come back. This
+    is already how check_doc_links.py indexes, so the two gates now agree.
+    """
     by_rel: dict[str, str] = {}
     by_base: dict[str, list[str]] = collections.defaultdict(list)
-    for dirpath, dirnames, filenames in os.walk(root):
-        if skipped(dirpath, root):
-            dirnames[:] = []
+    out = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout
+    for rel in out.split("\0"):
+        if not rel or any(s in "/" + rel for s in SKIP_DIRS):
             continue
-        for name in filenames:
-            rel = os.path.relpath(os.path.join(dirpath, name), root)
-            by_rel[rel] = os.path.join(dirpath, name)
-            by_base[name].append(rel)
+        by_rel[rel] = os.path.join(ROOT, rel)
+        by_base[os.path.basename(rel)].append(rel)
     return by_rel, by_base
 
 
@@ -154,15 +178,25 @@ def cargo_targets(kind: str) -> dict[str, set[str]]:
 
 
 def _fixture(root: Path, *, with_docs: bool = True, with_broken: bool = False) -> None:
-    """A miniature repository: one real reference, and traps in skipped dirs."""
+    """A miniature GIT repository: one real reference, and traps in
+    directories a `.gitignore` keeps untracked.
+
+    `index_files` asks git for the tracked set rather than walking the
+    filesystem (see its docstring), so what proves a trap is skipped is no
+    longer a directory NAME matched against SKIP_DIRS -- it is the trap
+    never being in `git ls-files` because `.gitignore` excludes it. `git
+    add -A` after writing `.gitignore` is what control B actually
+    exercises: if the ignore list regressed, the trap would be staged and
+    the run would fail on `nowhere.rs`.
+    """
     (root / "docs").mkdir(parents=True, exist_ok=True)
     src = root / "crates" / "larql-x" / "src"
     src.mkdir(parents=True, exist_ok=True)
     (src / "lib.rs").write_text("pub fn f() {}\n")
-    # Each of these carries a reference that WOULD be reported broken if the
-    # directory were examined -- so control B needs no bookkeeping: if skipping
-    # regresses, the run fails.
-    for name in ("target", ".git", "node_modules", ".venv", "coverage", ".claude"):
+    (root / ".gitignore").write_text(
+        "target/\nnode_modules/\n.venv/\ncoverage/\n.claude/\n"
+    )
+    for name in ("target", "node_modules", ".venv", "coverage", ".claude"):
         d = root / name
         d.mkdir(parents=True, exist_ok=True)
         (d / "trap.md").write_text("cites `crates/larql-x/src/nowhere.rs`\n")
@@ -170,6 +204,8 @@ def _fixture(root: Path, *, with_docs: bool = True, with_broken: bool = False) -
         (root / "docs" / "real.md").write_text("cites `crates/larql-x/src/lib.rs`\n")
     if with_broken:
         (root / "docs" / "bad.md").write_text("cites `crates/larql-x/src/gone.rs`\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
 
 
 def _run_in(root: Path) -> tuple[int, str]:
@@ -255,6 +291,15 @@ def main() -> int:
     scope = [a for a in sys.argv[1:] if not a.startswith("-")]
 
     by_rel, by_base = index_files()
+    # Every directory implied by a tracked file. A bare `docs/foo/` reference
+    # used to be checked with os.path.isdir, which consults the working tree
+    # and so re-opened the same local-vs-CI split index_files just closed:
+    # `docs/replay/` exists on this machine and in no checkout CI makes.
+    tracked_dirs: set[str] = set()
+    for _rel in by_rel:
+        _parts = _rel.split("/")
+        for _i in range(1, len(_parts)):
+            tracked_dirs.add("/".join(_parts[:_i]))
     examples = cargo_targets("example")
     benches = cargo_targets("bench")
     try:
@@ -284,8 +329,12 @@ def main() -> int:
     # it has failed to run. Reporting "no broken references" over an empty
     # corpus is the exact shape of the bug this guard exists to make
     # impossible to reintroduce, whatever future path or filter causes it.
+    # This is not hypothetical even after DOC-GATE-1: `index_files`'s move
+    # to `git ls-files` (see its docstring) closed the specific way the
+    # walk used to empty itself, but the guard stays as the backstop for
+    # whatever empties it next.
     if not docs:
-        where = f" matching {scope}" if scope else ""
+        where = " matching " + " ".join(scope) if scope else ""
         print(
             f"examined 0 documents{where} -- the corpus is empty, so this is "
             "not a pass. Either the scope matches nothing, or the walk is "
@@ -323,7 +372,7 @@ def main() -> int:
             for m in re.finditer(r"`((?:" + "|".join(PATH_ROOTS) + r")[A-Za-z0-9_./-]+)`", line):
                 ref = m.group(1).rstrip("/")
                 counts["path"] += 1
-                if ref in by_rel or os.path.isdir(os.path.join(ROOT, ref)):
+                if ref in by_rel or ref in tracked_dirs:
                     continue
                 if not ref.endswith(SOURCE_EXT):
                     continue  # prose-ish path, or a directory that moved

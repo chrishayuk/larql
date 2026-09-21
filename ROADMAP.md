@@ -4334,7 +4334,7 @@ vendor stacks wait for codec + ring + device integration.
 
 ## P2 — Film checklist
 
-- [ ] Confirm Gemma 4 26B A4B public config (expert count, top-K, active-param figure, GQA ratio). Replace every `~` in `docs/replay/demo-script-gemma4-moe.md` (not yet created).
+- [ ] Confirm Gemma 4 26B A4B public config (expert count, top-K, active-param figure, GQA ratio). Replace every `~` in `docs/replay/demo-script-gemma4-moe.md` (gitignored working artifact -- `docs/replay/` is not tracked, so the file is local to whoever is cutting the film).
 - [ ] Measure real footprint + latency on `google/gemma-4-31b-it` for Act 1.
 - [ ] Reliability pass on `RemoteWalkBackend` (timeouts, retries, partial shard outage). **(P2 per ADR-019.)**
 - [ ] `RemoteExpertBackend` same reliability pass. **(P2 per ADR-019.)**
