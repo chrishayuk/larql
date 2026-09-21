@@ -266,8 +266,10 @@ fn a_codec_without_dependencies_composes_to_what_it_declares() {
         assert_eq!(composed, certificate.radius.unwrap());
     }
     // And a codec that declares no radius has nothing to compose, whether
-    // or not it depends on anything.
-    let err = super::super::codecs::float::F32
+    // or not it depends on anything. `F32` cannot play that part any
+    // more — it is the identity and now says so — so the exemplar is a
+    // FITTED codec, which is the real population of this case.
+    let err = super::super::codecs::kquant::Q4_K
         .composed_certificate(RepresentationExtent::BASE, &BTreeMap::new(), TENSOR)
         .unwrap_err();
     assert!(

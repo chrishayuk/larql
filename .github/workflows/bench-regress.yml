@@ -65,18 +65,36 @@ name: bench-regress
 #    script advertises. Deliberately left alone here so this change's
 #    effect on the noise floor can be measured on its own.
 
+# ── NOT A PULL-REQUEST GATE (CI-E2-A, 2026-09-07). ──
+#
+# The `pull_request:` trigger is REMOVED, not disabled, and the reason is
+# the contract this file already states above: a gate that reds on a
+# no-op cannot grade a change. That qualification has now run, by
+# accident and then on the numbers.
+#
+#   - PR #446 changed two lines of a JSON coverage-policy file and
+#     nothing else. No Rust, nothing include_str!s it, no build script
+#     reads it — both arms compiled byte-identical artefacts, in one job,
+#     on one runner. It FAILED, swinging -11.4% to +15.3%, most at
+#     p = 0.00.
+#   - PR #449 reported ~+44% in one metal cell and ~-43% in another on a
+#     change that cannot produce that pattern. A run that improves as
+#     much as it regresses is measuring the runner.
+#   - Cost, measured over the 12-attempt window of 2026-09-07:
+#     6 jobs, 137.9 macOS execution-minutes and 61.1 macOS QUEUE-minutes,
+#     on the scarcest runner pool this repository has. #449's bench job
+#     waited 42m01s for a runner to produce a verdict that was not
+#     evidence.
+#
+# `workflow_dispatch` stays, and it is the qualification laboratory: run
+# `noop=true` for the false-positive rate and `noop=true, slowdown=2.0`
+# for the known positive. PERF-QUAL-2 — the order-balanced
+# `B H | H B | B H | H B` shape this file's own header argues for — has
+# to pass BOTH before this workflow is proposed as a PR signal again.
+# Until then a red here grades nobody's pull request.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'crates/larql-compute/**'
-      - 'crates/larql-compute-metal/**'
-      - 'scripts/bench-regress.sh'
-      - '.github/workflows/bench-regress.yml'
-      - 'Cargo.lock'
-  # Manual trigger so a reviewer can ask for the check on a PR the paths
-  # filter skipped, run it on a branch outside a PR, or QUALIFY THE
-  # INSTRUMENT itself against a no-op.
+  # Manual trigger so a reviewer can ask for the check on a branch, or
+  # QUALIFY THE INSTRUMENT itself against a no-op.
   workflow_dispatch:
     inputs:
       noop:
@@ -148,6 +166,9 @@ jobs:
             # rate rather than a property of any change.
             BASE_REV="$HEAD_REV"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            # UNREACHABLE while the pull_request trigger is off (see the
+            # header). Kept so restoring the trigger, once PERF-QUAL-2
+            # qualifies the gate, stays a one-line change.
             # actions/checkout gives the MERGE commit for pull_request, so
             # ^1 is the base branch tip the PR would land on and HEAD is
             # the merge result itself — exactly the pair worth comparing.

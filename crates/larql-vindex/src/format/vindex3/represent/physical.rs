@@ -511,15 +511,33 @@ impl ExpertEncoding {
         }
     }
 
+    /// The codec this encoding IS.
+    ///
+    /// Each arm names a shipped codec directly rather than resolving its
+    /// label through a registry: this enum enumerates the four encodings
+    /// the grouped expert kernels read, every one of them built in, so
+    /// there is no registry to consult and a hidden built-in lookup here
+    /// would be a second registry that registration cannot reach.
+    pub fn codec(self) -> &'static dyn super::codec::RepresentationCodec {
+        use super::codec::codecs::{float, kquant};
+        match self {
+            ExpertEncoding::Bf16 => &float::BF16,
+            ExpertEncoding::Q80 => &kquant::Q8_0,
+            ExpertEncoding::Q6K => &kquant::Q6_K,
+            ExpertEncoding::Q4K => &kquant::Q4_K,
+        }
+    }
+
     /// Bytes an `[n, k]` matrix occupies in this encoding.
     ///
     /// Priced by the codec the encoding names, so the block geometry has
     /// one home: a table here that repeated it was the drift the codec
     /// contract exists to remove.
     pub fn matrix_bytes(self, n: usize, k: usize) -> Result<u64, VindexError> {
-        use super::codec::{CodecRegistry, RepresentationExtent};
-        let codec = CodecRegistry::builtin().resolve(self.name(), EXPERT_BANK_OPERAND)?;
-        Ok(codec.stored_bytes(&[n, k], RepresentationExtent::BASE, EXPERT_BANK_OPERAND)?)
+        use super::codec::RepresentationExtent;
+        Ok(self
+            .codec()
+            .stored_bytes(&[n, k], RepresentationExtent::BASE, EXPERT_BANK_OPERAND)?)
     }
 }
 

@@ -18,6 +18,7 @@ use crate::format::vindex3::opplan::exec::backend::{
 };
 use crate::format::vindex3::opplan::exec::decode::DecodeSession;
 use crate::format::vindex3::opplan::exec::execute_plan;
+use crate::format::vindex3::opplan::exec::lowering::LoweringIdentity;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -311,6 +312,10 @@ impl RefusingBackend {
 impl PlanBackend for RefusingBackend {
     fn name(&self) -> &str {
         "refusing"
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new("test-refusing", 1)
     }
 
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {

@@ -8,19 +8,28 @@
 //! unobserved paths stay bit-identical, so an observer can never
 //! change arithmetic or execution order.
 //!
-//! Deliberately coarse at this rung: layer and sublayer boundaries and
-//! the head's logits — structure, not tensors. Finer taps (operand
-//! reads, attention state, residual values) are later detail levels
-//! and must arrive the same way: more events on the one executor,
-//! never a second traversal.
+//! The structural events are deliberately coarse: layer and sublayer
+//! boundaries and the head's logits. Finer taps arrive the same way —
+//! more events and borrowed records on the one executor, never a
+//! second traversal: operand inputs (sensitivity), the topology site
+//! records (waves 19 and K3-ATTNRES-1), and the carrier writes
+//! themselves (V3-OBS-1, `docs/v3-obs-1-carrier-observation.md`).
 //!
 //! [`DecodeSession::step_observed`]: super::decode::DecodeSession::step_observed
 //! [`step`]: super::decode::DecodeSession::step
 
 use super::hyper_connection::{Bundle, SinkhornSplit};
+use super::intervene::InterventionKind;
+use super::intervene_heads::HeadInterventionKind;
 
 /// One decode step's observation events, in execution order.
+///
+/// Non-exhaustive on purpose: finer taps arrive as new variants
+/// (routing, operand reads, representation resolution, refusals), and
+/// a consumer in another crate that renders what it knows must keep
+/// compiling when the executor learns to say more.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum StepEvent {
     /// The token was embedded at this absolute position.
     Embedded { position: usize },
@@ -31,6 +40,99 @@ pub enum StepEvent {
     FfnDone { layer: usize },
     /// The output head priced the vocabulary for this position.
     Logits { vocab: usize },
+    /// A sublayer's output was written into the residual carrier
+    /// (V3-OBS-1) — the write itself, as distinct from the sublayer's
+    /// completion: `AttentionDone` and `FfnDone` are boundaries and fire
+    /// on every layer, whereas this fires once per write the layer's
+    /// program actually performs (a mixer-only layer writes once). On
+    /// every carrier form; the values precede it, on
+    /// [`StepObserver::carrier_write`] for a single stream or on the
+    /// form's own site record for a bundle or a history.
+    CarrierWrite {
+        layer: usize,
+        site: SublayerSite,
+        carrier: CarrierForm,
+    },
+    /// V3-HEAD-OBS-1: this layer's attention emitted one head record per
+    /// query head on this step, before its write. Fires only when the
+    /// observer asked for heads.
+    HeadsObserved { layer: usize, heads: usize },
+    /// V3-HEAD-OBS-1: this layer's attention has no softmax heads (a
+    /// state-space or linear-attention family, or a softmax family this
+    /// rung does not tap), so the write above it has no head
+    /// decomposition. Fires only when the observer asked for heads; the
+    /// receipt names the layer as uncovered.
+    HeadsUncovered { layer: usize },
+    /// V3-INTERVENE-1: an intervention fired on this site's write. Fires
+    /// BEFORE the write's record and its structural event, so a reader of
+    /// that record knows its `after` is not the branch's own.
+    Intervened {
+        layer: usize,
+        site: SublayerSite,
+        kind: InterventionKind,
+    },
+    /// V3-INTERVENE-2: a head intervention fired on this head's `ctx_h`,
+    /// inside the attention kernel — after the (uninintervened) head
+    /// record fired (J3), before the gate multiply, `o_proj` and the
+    /// post-attention norm. Fires before the attention site's own
+    /// `CarrierWrite`, whose `delta` then reflects the model's own
+    /// response to the change.
+    HeadIntervened {
+        layer: usize,
+        head: usize,
+        kind: HeadInterventionKind,
+    },
+}
+
+/// The form the residual carrier takes at a write (V3-OBS-1, property
+/// C3). Named on the structural event so a structure-only consumer can
+/// count writes per form, and so no consumer infers the topology from
+/// which value record happened to arrive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CarrierForm {
+    /// One `[hidden]` vector; the write is a residual add.
+    Single,
+    /// A hyper-connected bundle; the write is the site's expansion.
+    Bundle,
+    /// An attention-residual prefix plus its snapshot history; the write
+    /// is `History::write`, which adds OR replaces.
+    History,
+}
+
+/// One single-stream carrier write, borrowed at the write (V3-OBS-1).
+///
+/// `delta` is the branch output AS ADDED — after the sublayer's
+/// post-norm and residual-delta scale where the plan has them — and
+/// `after` is the carrier once the add has landed. `before` is not
+/// carried: the add is in place, and copying the carrier first would
+/// cost the unobserved path what observation must not. A consumer
+/// chains instead — a write's `before` is the previous write's `after`
+/// (times `layer_scale` where the previous write carried one), and the
+/// first link is [`StepObserver::entering_carrier`].
+///
+/// At an intervened site (V3-INTERVENE-1, the `Intervened` event
+/// precedes this record) `delta` is `after − before`: the rounded write
+/// including the patch, which is not the branch output the unintervened
+/// record carries (`fl(before + d) − before ≠ d`). An intervention that
+/// left the carrier bit-identical to the unpatched write is not a write
+/// and reports the branch's own `delta`, so a no-op plan is bit-identical
+/// on the record. A reader that wants the branch output at an intervened
+/// site subtracts the patch itself.
+#[derive(Debug, Clone, Copy)]
+pub struct CarrierWriteRecord<'a> {
+    pub layer: usize,
+    pub site: SublayerSite,
+    pub position: usize,
+    pub delta: &'a [f32],
+    pub after: &'a [f32],
+    /// The per-layer scalar the executor multiplies the WHOLE carrier by
+    /// after this write and before the layer boundary (Gemma 4
+    /// `layer_scalar`), on the FFN site of a component that declares
+    /// one; `None` where the program has no such scale. Carried so the
+    /// layer output `layer_scale * after` is reconstructable and the
+    /// batch path's `post_layer`, captured after the scale, is
+    /// comparable.
+    pub layer_scale: Option<f32>,
 }
 
 /// Where in a layer an activation was taken.
@@ -68,7 +170,7 @@ pub enum InputSite {
 /// belonging to one of them would have had to be duplicated for the
 /// other. `HcSite` remains as an alias so wave 19's call sites read as
 /// they did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SublayerSite {
     Attention,
     Ffn,
@@ -185,6 +287,19 @@ pub trait StepObserver {
     /// [`event`]: Self::event
     fn operand_input(&mut self, _layer: usize, _site: InputSite, _values: &[f32]) {}
 
+    /// Observe the `[hidden]` vector entering layer 0 — the embedding
+    /// after its scale and norm, before any topology replicates or
+    /// wraps it (V3-OBS-1, property C6): the first link of the carrier
+    /// chain. Fired once per step, after `Embedded`. Default: ignore.
+    fn entering_carrier(&mut self, _position: usize, _values: &[f32]) {}
+
+    /// Observe one single-stream carrier write (V3-OBS-1). Fired once per
+    /// write the program performs on a single-stream component,
+    /// immediately after the add and before the `CarrierWrite` event.
+    /// Bundle and history writes deliver their values through their own
+    /// site records instead. Default: ignore.
+    fn carrier_write(&mut self, _record: CarrierWriteRecord<'_>) {}
+
     /// Observe one hyper-connection site's intermediate state. Fired
     /// only on a hyper-connected component, once per site per layer per
     /// step, immediately after the site's update and before the
@@ -203,6 +318,98 @@ pub trait StepObserver {
     /// schedule that wave 19's two-point site seam cannot express.
     /// Default: ignore.
     fn attention_residual_boundary(&mut self, _record: AttnResBoundaryRecord<'_>) {}
+
+    /// V3-HEAD-OBS-1: ask for one [`AttentionHeadRecord`] per query head
+    /// at every softmax attention write. Off by default; an observer
+    /// that asks on a backend that cannot serve heads is refused before
+    /// the first token executes, never handed a partial capture.
+    fn wants_attention_heads(&self) -> bool {
+        false
+    }
+
+    /// One query head's distribution and mixed value, borrowed from
+    /// inside the kernel between aggregation and the output gate. Fires
+    /// only when [`Self::wants_attention_heads`] is true, once per head,
+    /// before the layer's `HeadsObserved` event and its attention write.
+    fn attention_head(&mut self, _layer: usize, _record: AttentionHeadRecord<'_>) {}
+}
+
+/// One query head at one attention write (V3-HEAD-OBS-1, property A2):
+/// what the kernel actually computed, borrowed where it computed it.
+pub struct AttentionHeadRecord<'a> {
+    pub position: usize,
+    /// The query head.
+    pub head: usize,
+    /// The KV head it was bound to: `head / (num_q_heads / num_kv_heads)`.
+    pub kv_head: usize,
+    /// The first source position this head could read: zero on a full
+    /// span, `position + 1 − window` on a sliding span past its window.
+    /// Positions before it are ABSENT from `weights`, never zero.
+    pub source_start: usize,
+    /// The distribution over `source_start..=position`, after the score
+    /// scale, the softcap and the sink where the plan declares them.
+    pub weights: &'a [f32],
+    /// The mass the sink took, so `weights.sum() + sink == 1`; zero on a
+    /// plan without sinks.
+    pub sink: f32,
+    /// `ctx_h = Σ_t weights[t] · v_h[t]`: the head's mixed value before the
+    /// output gate, before `o_proj`, before the post-attention norm and
+    /// before any layer scale. `head_dim` wide.
+    pub values: &'a [f32],
+    /// The activated output gate for this head's slice, where the plan
+    /// declares one — what multiplies `values` before `o_proj`. `None`
+    /// where the plan declares no gate.
+    pub gate: Option<&'a [f32]>,
+    /// The KV head's value rows at the attended sources, `head_dim` wide
+    /// each, indexed by `t − source_start`, so a per-source split
+    /// `Σ_t weights[t] · source_values[t]` is computable from the record
+    /// alone (property A3). Same length as `weights`.
+    pub source_values: &'a [&'a [f32]],
+}
+
+/// Build and fire one [`AttentionHeadRecord`] per query head — ONE place,
+/// called by every backend's kernel between aggregation and the gate
+/// multiply (V3-HEAD-OBS-1, property A1), so no backend spells the record
+/// differently. `concat` is the pre-gate aggregation, `kept` the per-head
+/// distributions in head order, `activated_gate` the activated gate over
+/// `concat`'s layout where the plan declares one.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn fire_head_records<'k>(
+    tap: &mut dyn FnMut(AttentionHeadRecord<'_>),
+    position: usize,
+    num_q_heads: usize,
+    num_kv_heads: usize,
+    head_dim: usize,
+    source_start: usize,
+    has_sinks: bool,
+    concat: &[f32],
+    kept: &[Vec<f32>],
+    activated_gate: Option<&[f32]>,
+    value_of: impl Fn(usize) -> &'k [f32],
+) {
+    let group = num_q_heads / num_kv_heads;
+    for (head, weights) in kept.iter().enumerate() {
+        let kv_head = head / group;
+        let sink = if has_sinks {
+            1.0 - weights.iter().sum::<f32>()
+        } else {
+            0.0
+        };
+        let source_values: Vec<&[f32]> = (source_start..=position)
+            .map(|t| &value_of(t)[kv_head * head_dim..(kv_head + 1) * head_dim])
+            .collect();
+        tap(AttentionHeadRecord {
+            position,
+            head,
+            kv_head,
+            source_start,
+            weights,
+            sink,
+            values: &concat[head * head_dim..(head + 1) * head_dim],
+            gate: activated_gate.map(|g| &g[head * head_dim..(head + 1) * head_dim]),
+            source_values: &source_values,
+        });
+    }
 }
 
 /// The default subscriber: observes nothing. [`DecodeSession::step`]

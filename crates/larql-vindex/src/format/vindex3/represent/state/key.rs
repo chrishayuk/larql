@@ -214,6 +214,22 @@ impl TryFrom<RegistryRecords> for MeasurementRegistry {
     }
 }
 
+/// A reproducibility conflict preserves the experiment and both readings.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeasurementConflict {
+    pub key: MeasurementKey,
+    pub expected: QualityBank,
+    pub observed: QualityBank,
+}
+
+impl std::fmt::Display for MeasurementConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "measurement {:?} is already held with a different reading; the experiment is not reproducible; expected {:?}, observed {:?}; neither reading may silently win", self.key, self.expected, self.observed)
+    }
+}
+
+impl std::error::Error for MeasurementConflict {}
+
 impl MeasurementRegistry {
     pub fn new() -> Self {
         Self::default()
@@ -258,19 +274,35 @@ impl MeasurementRegistry {
     /// do. A DIFFERENT reading under the same key is not a duplicate — it
     /// says the experiment is not reproducible, and quietly keeping
     /// either one would hide that. The refusal is the finding.
-    pub fn record(
+    pub(in crate::format::vindex3::represent) fn record(
+        &mut self,
+        accepted: &super::super::ingest::AcceptedMeasurement,
+    ) -> Result<(), Box<MeasurementConflict>> {
+        self.record_validated(accepted.key().clone(), accepted.observation().clone())
+    }
+
+    /// Test fixture construction is deliberately absent from production builds.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub(in crate::format::vindex3::represent) fn record_fixture(
         &mut self,
         key: MeasurementKey,
         observation: QualityBank,
-    ) -> Result<(), VindexError> {
+    ) -> Result<(), Box<MeasurementConflict>> {
+        self.record_validated(key, observation)
+    }
+
+    fn record_validated(
+        &mut self,
+        key: MeasurementKey,
+        observation: QualityBank,
+    ) -> Result<(), Box<MeasurementConflict>> {
         match self.observations.get(&key) {
             Some(held) if held == &observation => Ok(()),
-            Some(_) => Err(VindexError::Parse(format!(
-                "measurement {} is already held with a different reading — the same state, \
-                 bank, scale and instrument produced two different observations, so the \
-                 experiment is not reproducible and neither reading may silently win",
-                key.short()
-            ))),
+            Some(held) => Err(Box::new(MeasurementConflict {
+                key,
+                expected: held.clone(),
+                observed: observation,
+            })),
             None => {
                 self.observations.insert(key, observation);
                 Ok(())

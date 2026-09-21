@@ -30,6 +30,8 @@
 //! heuristic where the registered semantics belong. The types leave room
 //! for a second rule; they do not guess at one.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use super::super::compile::hash_bytes;
@@ -187,6 +189,20 @@ impl ParentStanding for NothingMeasured {
 pub struct Assessment {
     pub action: Action,
     pub parent_state: RepresentationStateId,
+    /// **The edit set the child holds** — the only fact that says how
+    /// this state is reached rather than merely which state it is.
+    ///
+    /// Carried because a `RepresentationStateId` is a one-way digest: an
+    /// actuator handed a ranked opportunity can name the experiment and
+    /// could not build it, since building needs the map and the map
+    /// comes from `base_map` plus this set. It was dropped here until
+    /// 5b, which is why the selected experiment was nameable and not
+    /// performable.
+    ///
+    /// An ingredient, like everything else on this type: it is the
+    /// candidate's own `applied`, copied, never re-derived from the
+    /// action.
+    pub applied: BTreeSet<String>,
     pub child_state: RepresentationStateId,
     pub child_realization: RealizationId,
     /// Negative removes bytes. Computed by the generator from two
@@ -218,6 +234,7 @@ impl Assessment {
         Self {
             action: candidate.action.clone(),
             parent_state: candidate.parent_state.clone(),
+            applied: candidate.applied.clone(),
             child_state: candidate.child.physical_id().clone(),
             child_realization: candidate.child.realization_id().clone(),
             physical_delta: candidate.physical_delta,

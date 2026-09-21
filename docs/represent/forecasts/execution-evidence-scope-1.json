@@ -1,0 +1,11 @@
+{
+  "programme": "EXECUTION-EVIDENCE-SCOPE-1",
+  "status": "registered debt; not implemented",
+  "date": "2026-09-13",
+  "finding": "VerifiedFacts::complete requires a populated run-validity report, but ingestion does not generally reconcile reported compiled layers and projections with independently reconstructed candidate decisions. Completeness alone also compares attribution-list length rather than establishing exact layer membership.",
+  "claim": "Where the procedure's scope can be derived deterministically from candidate authority, a complete report naming a contradictory compiled scope must refuse before scientific mutation.",
+  "negative": "Freshly seal an otherwise valid complete report naming the wrong compiled layer or projection, or duplicate/substituted attribution-layer entries. Candidate/source/bank authority remains valid; ingestion must diagnose the scope contradiction without changing facts or future selection.",
+  "positive": "Consistent reports across supported candidate layouts and procedure scope vocabularies remain admissible; ordering and duplication semantics must be specified before implementation.",
+  "sequencing": "Separate from the accepted OPT-6 transition. Address before real K3 authority measurements; does not block the tiny, explicitly consistent graph-based closed-loop witness.",
+  "boundary": "Deterministic scope reconciliation does not independently replay or attest historical pointer-attribution checks. No representation-state identity input is added."
+}

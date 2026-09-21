@@ -190,6 +190,7 @@ fn snapshot(root: ResolvedState, measurements: MeasurementRegistry) -> SearchSna
             ),
             ranking: semantics(),
             standing_intent: intent(EvidenceScale::Authority),
+            protocol: None,
         },
         SearchFacts {
             graph: RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, root),
@@ -350,6 +351,7 @@ fn two_realizations_of_one_state_are_separated_by_the_realization_tie_break() {
 
     let assessment = |r: &ResolvedState| Assessment {
         action: Action::new("+V"),
+        applied: BTreeSet::from(["V".to_string()]),
         parent_state: a.physical_id().clone(),
         child_state: r.physical_id().clone(),
         child_realization: r.realization_id().clone(),
@@ -497,7 +499,7 @@ fn an_observation_of_the_state_reaches_every_route_to_it() {
         .realize(&applied(&["E24", "K25"]))
         .expect("realize");
     rig.measurements
-        .record(
+        .record_fixture(
             intent(EvidenceScale::Diagnostic).key_for(shared.physical_id()),
             observation(1.0e-3),
         )
@@ -597,7 +599,7 @@ fn a_measured_parent_contributes_its_whole_standing_not_a_number() {
 
     let mut measurements = MeasurementRegistry::new();
     measurements
-        .record(
+        .record_fixture(
             intent(EvidenceScale::Authority).key_for(parent.physical_id()),
             observation(3.3532e-3),
         )
@@ -629,7 +631,7 @@ fn a_diagnostic_reading_of_the_parent_is_not_its_standing() {
 
     let mut measurements = MeasurementRegistry::new();
     measurements
-        .record(
+        .record_fixture(
             intent(EvidenceScale::Diagnostic).key_for(parent.physical_id()),
             observation(3.3532e-3),
         )
@@ -676,6 +678,7 @@ fn observation(kl_p99: f64) -> QualityBank {
         })
     };
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,

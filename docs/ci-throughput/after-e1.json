@@ -1,0 +1,6384 @@
+{
+  "collected_at": "2026-09-07T18:08:11.694965+00:00",
+  "repo": "chrishayuk/larql",
+  "query": {
+    "since": "2026-09-07",
+    "until": null,
+    "max_prs": 20,
+    "branch": null
+  },
+  "runs": [
+    {
+      "id": 34099227214,
+      "workflow": "larql-lql",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:59Z",
+          "completed_at": "2026-09-07T08:18:48Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:43:30Z",
+          "completed_at": "2026-09-07T08:53:38Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:59Z",
+          "completed_at": "2026-09-07T08:20:33Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:11:00Z",
+          "completed_at": "2026-09-07T08:29:20Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34099227094,
+      "workflow": "mutants",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:59Z",
+          "completed_at": "2026-09-07T08:56:17Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:40:50Z",
+          "completed_at": "2026-09-07T08:41:00Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34099227245,
+      "workflow": "larql-vindex",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:11:05Z",
+          "completed_at": "2026-09-07T08:26:56Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:12:14Z",
+          "completed_at": "2026-09-07T08:20:01Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:53:47Z",
+          "completed_at": "2026-09-07T09:07:32Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:11:00Z",
+          "completed_at": "2026-09-07T08:33:34Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34099227192,
+      "workflow": "quality",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:17:00Z",
+          "completed_at": "2026-09-07T08:17:34Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:18:30Z",
+          "completed_at": "2026-09-07T08:19:15Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:18:50Z",
+          "completed_at": "2026-09-07T08:19:33Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:18:52Z",
+          "completed_at": "2026-09-07T08:18:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:19:02Z",
+          "completed_at": "2026-09-07T08:19:11Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:19:13Z",
+          "completed_at": "2026-09-07T08:20:15Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:19:16Z",
+          "completed_at": "2026-09-07T08:26:56Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:57Z",
+          "started_at": "2026-09-07T08:19:35Z",
+          "completed_at": "2026-09-07T08:20:15Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34099227121,
+      "workflow": "commit messages",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:11:02Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34099227087,
+      "workflow": "larql-server",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:59Z",
+          "completed_at": "2026-09-07T08:21:28Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:32:36Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:20:13Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:17:10Z",
+          "completed_at": "2026-09-07T08:28:25Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34099227088,
+      "workflow": "larql-inference",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:29:28Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:30:58Z",
+          "completed_at": "2026-09-07T08:40:17Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:17:03Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:59Z",
+          "completed_at": "2026-09-07T08:18:50Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34099227229,
+      "workflow": "larql-cli",
+      "branch": "represent-attestation-1",
+      "sha": "0d251dc05b9ed8ad86e676cea2adac22e3f02b15",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:10:56Z",
+      "run_started_at": "2026-09-07T08:10:56Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:18:28Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:58Z",
+          "completed_at": "2026-09-07T08:30:53Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:56Z",
+          "started_at": "2026-09-07T08:10:59Z",
+          "completed_at": "2026-09-07T08:21:08Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:10:57Z",
+          "started_at": "2026-09-07T08:30:49Z",
+          "completed_at": "2026-09-07T08:42:46Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071944456,
+      "workflow": "commit messages",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:07:02Z",
+          "completed_at": "2026-09-07T01:07:07Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071944487,
+      "workflow": "larql-server",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:21:28Z",
+          "completed_at": "2026-09-07T01:31:47Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:08:22Z",
+          "completed_at": "2026-09-07T01:17:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:17:14Z",
+          "completed_at": "2026-09-07T01:39:08Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:21:32Z",
+          "completed_at": "2026-09-07T01:31:46Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071944442,
+      "workflow": "quality",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:09:47Z",
+          "completed_at": "2026-09-07T01:09:57Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:36:30Z",
+          "completed_at": "2026-09-07T01:36:57Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:33:05Z",
+          "completed_at": "2026-09-07T01:33:13Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:13:53Z",
+          "completed_at": "2026-09-07T01:14:36Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:18:56Z",
+          "completed_at": "2026-09-07T01:26:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:20:59Z",
+          "completed_at": "2026-09-07T01:21:55Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:38:27Z",
+          "completed_at": "2026-09-07T01:39:11Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:39:49Z",
+          "completed_at": "2026-09-07T01:40:30Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071944459,
+      "workflow": "larql-vindex",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:59Z",
+          "started_at": "2026-09-07T01:16:54Z",
+          "completed_at": "2026-09-07T01:26:03Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:59Z",
+          "started_at": "2026-09-07T01:09:34Z",
+          "completed_at": "2026-09-07T01:24:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:59Z",
+          "started_at": "2026-09-07T01:22:00Z",
+          "completed_at": "2026-09-07T01:32:23Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:59Z",
+          "started_at": "2026-09-07T01:17:56Z",
+          "completed_at": "2026-09-07T01:40:26Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34071944455,
+      "workflow": "mutants",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:46:30Z",
+          "completed_at": "2026-09-07T01:46:39Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:07:42Z",
+          "completed_at": "2026-09-07T01:52:58Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071944443,
+      "workflow": "larql-cli",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:01Z",
+          "started_at": "2026-09-07T01:21:54Z",
+          "completed_at": "2026-09-07T01:27:41Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:01Z",
+          "started_at": "2026-09-07T01:36:38Z",
+          "completed_at": "2026-09-07T01:46:40Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:01Z",
+          "started_at": "2026-09-07T01:37:28Z",
+          "completed_at": "2026-09-07T01:47:37Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:01Z",
+          "started_at": "2026-09-07T01:19:11Z",
+          "completed_at": "2026-09-07T01:39:54Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34071944453,
+      "workflow": "larql-inference",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:00Z",
+          "started_at": "2026-09-07T01:32:04Z",
+          "completed_at": "2026-09-07T01:49:19Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:00Z",
+          "started_at": "2026-09-07T01:25:42Z",
+          "completed_at": "2026-09-07T01:32:13Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:00Z",
+          "started_at": "2026-09-07T01:39:10Z",
+          "completed_at": "2026-09-07T01:48:14Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:07:00Z",
+          "started_at": "2026-09-07T01:33:15Z",
+          "completed_at": "2026-09-07T01:40:52Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071944445,
+      "workflow": "larql-lql",
+      "branch": "represent-attestation-1",
+      "sha": "9048e9222c8c722db7bc8e575e5b1a938e33dcdb",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T01:06:54Z",
+      "run_started_at": "2026-09-07T01:06:54Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:12:27Z",
+          "completed_at": "2026-09-07T01:20:18Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:10:15Z",
+          "completed_at": "2026-09-07T01:19:09Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:17:40Z",
+          "completed_at": "2026-09-07T01:25:35Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T01:06:55Z",
+          "started_at": "2026-09-07T01:18:40Z",
+          "completed_at": "2026-09-07T01:37:26Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34071401558,
+      "workflow": "commit messages",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:59:22Z",
+          "completed_at": "2026-09-07T00:59:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071401597,
+      "workflow": "larql-lql",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:57:05Z",
+          "completed_at": "2026-09-07T01:03:03Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071401573,
+      "workflow": "mutants",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:57:04Z",
+          "started_at": "2026-09-07T00:57:04Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:57:04Z",
+          "started_at": "2026-09-07T00:57:04Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071401501,
+      "workflow": "quality",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:46Z",
+          "started_at": "2026-09-07T00:56:46Z",
+          "completed_at": "2026-09-07T01:06:55Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071401515,
+      "workflow": "larql-server",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:55Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:55Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:55Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:51Z",
+          "started_at": "2026-09-07T00:56:51Z",
+          "completed_at": "2026-09-07T01:06:55Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071401550,
+      "workflow": "larql-inference",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:50Z",
+          "started_at": "2026-09-07T00:56:50Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:50Z",
+          "started_at": "2026-09-07T00:56:50Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:50Z",
+          "started_at": "2026-09-07T00:56:53Z",
+          "completed_at": "2026-09-07T01:07:00Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:50Z",
+          "started_at": "2026-09-07T00:56:50Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071401474,
+      "workflow": "larql-cli",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:52Z",
+          "started_at": "2026-09-07T01:00:15Z",
+          "completed_at": "2026-09-07T01:07:00Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:52Z",
+          "started_at": "2026-09-07T00:56:52Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:52Z",
+          "started_at": "2026-09-07T00:56:52Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:56:52Z",
+          "started_at": "2026-09-07T00:56:52Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071401493,
+      "workflow": "larql-vindex",
+      "branch": "represent-attestation-1",
+      "sha": "5c0043d218270a709c987fc4a3d4d450e46b7f8c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:56:46Z",
+      "run_started_at": "2026-09-07T00:56:46Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:57:05Z",
+          "started_at": "2026-09-07T00:57:05Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:57:05Z",
+          "started_at": "2026-09-07T00:57:05Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:57:05Z",
+          "started_at": "2026-09-07T00:57:05Z",
+          "completed_at": "2026-09-07T01:06:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:57:05Z",
+          "started_at": "2026-09-07T01:02:29Z",
+          "completed_at": "2026-09-07T01:06:59Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34070402341,
+      "workflow": "commit messages",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:41:36Z",
+          "completed_at": "2026-09-07T00:41:41Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34070402343,
+      "workflow": "quality",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:33Z",
+          "completed_at": "2026-09-07T00:38:03Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:52Z",
+          "completed_at": "2026-09-07T00:38:02Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:46:26Z",
+          "completed_at": "2026-09-07T00:47:14Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:47:14Z",
+          "completed_at": "2026-09-07T00:47:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:47:16Z",
+          "completed_at": "2026-09-07T00:47:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:47:29Z",
+          "completed_at": "2026-09-07T00:47:37Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:47:38Z",
+          "completed_at": "2026-09-07T00:55:05Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:47:40Z",
+          "completed_at": "2026-09-07T00:48:35Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34070402388,
+      "workflow": "larql-inference",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:31Z",
+          "completed_at": "2026-09-07T00:44:46Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:44:37Z",
+          "completed_at": "2026-09-07T00:56:50Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:38:06Z",
+          "completed_at": "2026-09-07T00:47:12Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:30Z",
+          "completed_at": "2026-09-07T00:56:46Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070402346,
+      "workflow": "larql-lql",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:32Z",
+          "completed_at": "2026-09-07T00:44:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:45:01Z",
+          "completed_at": "2026-09-07T00:56:51Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:39:33Z",
+          "completed_at": "2026-09-07T00:46:24Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:30Z",
+          "completed_at": "2026-09-07T00:56:46Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070402326,
+      "workflow": "larql-server",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:45:56Z",
+          "completed_at": "2026-09-07T00:53:11Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:41:42Z",
+          "completed_at": "2026-09-07T00:56:51Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:46:07Z",
+          "completed_at": "2026-09-07T00:54:23Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:30Z",
+          "completed_at": "2026-09-07T00:56:46Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070402315,
+      "workflow": "larql-cli",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:30Z",
+          "completed_at": "2026-09-07T00:56:46Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:31Z",
+          "completed_at": "2026-09-07T00:47:37Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:32Z",
+          "completed_at": "2026-09-07T00:56:51Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:38:03Z",
+          "completed_at": "2026-09-07T00:45:55Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34070402359,
+      "workflow": "mutants",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:41:28Z",
+          "completed_at": "2026-09-07T00:57:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:52:30Z",
+          "completed_at": "2026-09-07T00:52:40Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070402328,
+      "workflow": "larql-vindex",
+      "branch": "represent-attestation-1",
+      "sha": "949a18df508c7284be43f78455adcb4c5642e372",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:37:29Z",
+      "run_started_at": "2026-09-07T00:37:29Z",
+      "pr": 447,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:37:32Z",
+          "completed_at": "2026-09-07T00:52:38Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:39:26Z",
+          "completed_at": "2026-09-07T00:56:51Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:54:01Z",
+          "completed_at": "2026-09-07T00:57:04Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:37:30Z",
+          "started_at": "2026-09-07T00:46:05Z",
+          "completed_at": "2026-09-07T00:55:37Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34098337888,
+      "workflow": "larql-compute-metal",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:03:03Z",
+          "completed_at": "2026-09-07T09:02:28Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34098337967,
+      "workflow": "bench-regress",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "bench",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:42:53Z",
+          "completed_at": "2026-09-07T09:05:15Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34098337999,
+      "workflow": "quality",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:53Z",
+          "completed_at": "2026-09-07T08:01:00Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:54Z",
+          "completed_at": "2026-09-07T08:01:03Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:53Z",
+          "completed_at": "2026-09-07T08:08:57Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:53Z",
+          "completed_at": "2026-09-07T08:01:38Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:53Z",
+          "completed_at": "2026-09-07T08:01:21Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:53Z",
+          "completed_at": "2026-09-07T08:01:35Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:56Z",
+          "completed_at": "2026-09-07T08:01:39Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:01:01Z",
+          "completed_at": "2026-09-07T08:01:42Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34098337949,
+      "workflow": "commit messages",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:53Z",
+          "completed_at": "2026-09-07T08:00:56Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34098337894,
+      "workflow": "mutants",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:28:31Z",
+          "completed_at": "2026-09-07T08:28:58Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:00:58Z",
+          "completed_at": "2026-09-07T08:01:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34098337970,
+      "workflow": "msrv-metal",
+      "branch": "ci-gates-mean-what-they-say",
+      "sha": "d0c0c816992ab43c2b86ae8864d7acfdef2a3ec4",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T08:00:51Z",
+      "run_started_at": "2026-09-07T08:00:51Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 larql-compute-metal",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T08:00:52Z",
+          "started_at": "2026-09-07T08:29:59Z",
+          "completed_at": "2026-09-07T08:30:51Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34089976116,
+      "workflow": "quality",
+      "branch": "dependabot/github_actions/github-actions-556be15a16",
+      "sha": "84f5fb42e0b9afd7920467a1170b8fdde6e46cce",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T06:14:53Z",
+      "run_started_at": "2026-09-07T06:14:53Z",
+      "pr": 448,
+      "jobs": [
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:56Z",
+          "completed_at": "2026-09-07T06:15:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:56Z",
+          "completed_at": "2026-09-07T06:15:28Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:56Z",
+          "completed_at": "2026-09-07T06:22:50Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:56Z",
+          "completed_at": "2026-09-07T06:15:42Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:55Z",
+          "completed_at": "2026-09-07T06:15:46Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:56Z",
+          "completed_at": "2026-09-07T06:15:07Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:55Z",
+          "completed_at": "2026-09-07T06:15:34Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:55Z",
+          "completed_at": "2026-09-07T06:15:34Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34089976416,
+      "workflow": "commit messages",
+      "branch": "dependabot/github_actions/github-actions-556be15a16",
+      "sha": "84f5fb42e0b9afd7920467a1170b8fdde6e46cce",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T06:14:53Z",
+      "run_started_at": "2026-09-07T06:14:53Z",
+      "pr": 448,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:55Z",
+          "completed_at": "2026-09-07T06:14:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34089976195,
+      "workflow": "mutants",
+      "branch": "dependabot/github_actions/github-actions-556be15a16",
+      "sha": "84f5fb42e0b9afd7920467a1170b8fdde6e46cce",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T06:14:53Z",
+      "run_started_at": "2026-09-07T06:14:53Z",
+      "pr": 448,
+      "jobs": [
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:15:00Z",
+          "completed_at": "2026-09-07T06:15:11Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T06:14:54Z",
+          "started_at": "2026-09-07T06:14:55Z",
+          "completed_at": "2026-09-07T06:15:46Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813242,
+      "workflow": "commit messages",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:04Z",
+          "started_at": "2026-09-07T02:54:10Z",
+          "completed_at": "2026-09-07T02:54:14Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813295,
+      "workflow": "msrv-metal",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 larql-compute-metal",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:04Z",
+          "started_at": "2026-09-07T02:54:29Z",
+          "completed_at": "2026-09-07T02:55:15Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813309,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T02:54:22Z",
+          "started_at": "2026-09-07T02:54:39Z",
+          "completed_at": "2026-09-07T03:53:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813214,
+      "workflow": "larql-vindex",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:24Z",
+          "started_at": "2026-09-07T03:04:11Z",
+          "completed_at": "2026-09-07T03:13:44Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:24Z",
+          "started_at": "2026-09-07T03:01:31Z",
+          "completed_at": "2026-09-07T03:12:15Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:24Z",
+          "started_at": "2026-09-07T03:03:54Z",
+          "completed_at": "2026-09-07T03:26:15Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:24Z",
+          "started_at": "2026-09-07T02:57:14Z",
+          "completed_at": "2026-09-07T03:13:24Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813358,
+      "workflow": "bench-regress",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "bench",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T02:54:04Z",
+          "started_at": "2026-09-07T03:05:40Z",
+          "completed_at": "2026-09-07T03:28:19Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813245,
+      "workflow": "larql-lql",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:21Z",
+          "started_at": "2026-09-07T02:54:24Z",
+          "completed_at": "2026-09-07T03:09:10Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:21Z",
+          "started_at": "2026-09-07T02:57:52Z",
+          "completed_at": "2026-09-07T03:05:48Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:21Z",
+          "started_at": "2026-09-07T02:55:55Z",
+          "completed_at": "2026-09-07T03:05:12Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:21Z",
+          "started_at": "2026-09-07T03:04:06Z",
+          "completed_at": "2026-09-07T03:12:50Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813432,
+      "workflow": "larql-kv",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T03:01:26Z",
+          "completed_at": "2026-09-07T03:07:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:28Z",
+          "completed_at": "2026-09-07T03:01:25Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:55:14Z",
+          "completed_at": "2026-09-07T03:03:52Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:21Z",
+          "completed_at": "2026-09-07T03:13:09Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34077813294,
+      "workflow": "larql-inference",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:09Z",
+          "started_at": "2026-09-07T02:54:21Z",
+          "completed_at": "2026-09-07T03:01:57Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:09Z",
+          "started_at": "2026-09-07T02:54:20Z",
+          "completed_at": "2026-09-07T03:03:30Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:09Z",
+          "started_at": "2026-09-07T02:54:22Z",
+          "completed_at": "2026-09-07T03:13:37Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:09Z",
+          "started_at": "2026-09-07T02:54:26Z",
+          "completed_at": "2026-09-07T03:03:59Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813380,
+      "workflow": "larql-server",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:55:23Z",
+          "completed_at": "2026-09-07T03:03:59Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:21Z",
+          "completed_at": "2026-09-07T03:02:52Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:21Z",
+          "completed_at": "2026-09-07T03:15:43Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:21Z",
+          "completed_at": "2026-09-07T03:02:44Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813238,
+      "workflow": "mutants",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:22Z",
+          "started_at": "2026-09-07T03:01:59Z",
+          "completed_at": "2026-09-07T03:07:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:22Z",
+          "started_at": "2026-09-07T03:12:22Z",
+          "completed_at": "2026-09-07T03:17:44Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077813356,
+      "workflow": "larql-factory",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:04Z",
+          "started_at": "2026-09-07T02:54:10Z",
+          "completed_at": "2026-09-07T02:55:09Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:04Z",
+          "started_at": "2026-09-07T02:54:15Z",
+          "completed_at": "2026-09-07T02:55:12Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:04Z",
+          "started_at": "2026-09-07T02:54:20Z",
+          "completed_at": "2026-09-07T02:56:37Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34077813343,
+      "workflow": "larql-compute",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:20Z",
+          "started_at": "2026-09-07T02:54:33Z",
+          "completed_at": "2026-09-07T03:04:09Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:20Z",
+          "started_at": "2026-09-07T03:02:45Z",
+          "completed_at": "2026-09-07T03:04:23Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:20Z",
+          "started_at": "2026-09-07T03:04:06Z",
+          "completed_at": "2026-09-07T03:05:33Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:20Z",
+          "started_at": "2026-09-07T02:55:13Z",
+          "completed_at": "2026-09-07T02:57:00Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813330,
+      "workflow": "quality",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:21Z",
+          "completed_at": "2026-09-07T03:01:24Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:22Z",
+          "completed_at": "2026-09-07T02:54:31Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:22Z",
+          "completed_at": "2026-09-07T02:54:31Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:54:22Z",
+          "completed_at": "2026-09-07T02:55:12Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T03:02:54Z",
+          "completed_at": "2026-09-07T03:03:57Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T03:05:50Z",
+          "completed_at": "2026-09-07T03:06:21Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T02:55:11Z",
+          "completed_at": "2026-09-07T02:55:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:19Z",
+          "started_at": "2026-09-07T03:06:11Z",
+          "completed_at": "2026-09-07T03:07:02Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813346,
+      "workflow": "larql-models",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T03:05:14Z",
+          "completed_at": "2026-09-07T03:06:09Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T02:56:39Z",
+          "completed_at": "2026-09-07T02:57:50Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T02:54:25Z",
+          "completed_at": "2026-09-07T02:57:12Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34077813292,
+      "workflow": "shannon-verify",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "verify",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:21Z",
+          "started_at": "2026-09-07T02:57:02Z",
+          "completed_at": "2026-09-07T03:08:30Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077813262,
+      "workflow": "larql-cli",
+      "branch": "drive-models-1",
+      "sha": "6874285f4f589be8788e4d0db6d2b99e72abb016",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:54:03Z",
+      "run_started_at": "2026-09-07T02:54:03Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T03:12:55Z",
+          "completed_at": "2026-09-07T03:22:26Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T03:03:33Z",
+          "completed_at": "2026-09-07T03:11:08Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T03:03:59Z",
+          "completed_at": "2026-09-07T03:21:13Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:54:23Z",
+          "started_at": "2026-09-07T03:04:25Z",
+          "completed_at": "2026-09-07T03:13:52Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077634508,
+      "workflow": "commit messages",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:47Z",
+      "run_started_at": "2026-09-07T02:50:47Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:47Z",
+          "started_at": "2026-09-07T02:50:47Z",
+          "completed_at": "2026-09-07T02:54:03Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623192,
+      "workflow": "commit messages",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:37Z",
+          "completed_at": "2026-09-07T02:50:42Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623097,
+      "workflow": "msrv-metal",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 larql-compute-metal",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:42Z",
+          "completed_at": "2026-09-07T02:51:30Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623093,
+      "workflow": "larql-inference",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:38Z",
+          "completed_at": "2026-09-07T02:54:08Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623213,
+      "workflow": "larql-server",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:09Z",
+          "completed_at": "2026-09-07T02:54:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623157,
+      "workflow": "larql-compute",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:53:30Z",
+          "completed_at": "2026-09-07T02:54:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34077623236,
+      "workflow": "larql-kv",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:54Z",
+          "completed_at": "2026-09-07T02:54:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623135,
+      "workflow": "larql-factory",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:51:35Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:21Z",
+          "completed_at": "2026-09-07T02:53:29Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623216,
+      "workflow": "larql-lql",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:56Z",
+          "completed_at": "2026-09-07T02:54:20Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:32Z",
+          "completed_at": "2026-09-07T02:54:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623086,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:42Z",
+          "completed_at": "2026-09-07T02:54:21Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34077623117,
+      "workflow": "quality",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:38Z",
+          "completed_at": "2026-09-07T02:50:47Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:41Z",
+          "completed_at": "2026-09-07T02:51:08Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:37Z",
+          "completed_at": "2026-09-07T02:51:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:54:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:51:31Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:50:43Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:51:30Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:51:17Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623090,
+      "workflow": "mutants",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:41Z",
+          "completed_at": "2026-09-07T02:54:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:19Z",
+          "completed_at": "2026-09-07T02:54:21Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623126,
+      "workflow": "larql-cli",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:12Z",
+          "completed_at": "2026-09-07T02:54:20Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:40Z",
+          "completed_at": "2026-09-07T02:54:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:54:18Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:33Z",
+          "completed_at": "2026-09-07T02:54:08Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34077623155,
+      "workflow": "larql-models",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:38Z",
+          "completed_at": "2026-09-07T02:51:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:32Z",
+          "completed_at": "2026-09-07T02:54:23Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:45Z",
+          "completed_at": "2026-09-07T02:51:40Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623074,
+      "workflow": "shannon-verify",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "verify",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:37Z",
+          "completed_at": "2026-09-07T02:54:20Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623107,
+      "workflow": "larql-vindex",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:51:47Z",
+          "completed_at": "2026-09-07T02:54:24Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:36Z",
+          "completed_at": "2026-09-07T02:54:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:34Z",
+          "completed_at": "2026-09-07T02:54:04Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:49Z",
+          "completed_at": "2026-09-07T02:54:20Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34077623208,
+      "workflow": "bench-regress",
+      "branch": "drive-models-1",
+      "sha": "665b471054d7e6de4567c388f76326557fc46b1e",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T02:50:34Z",
+      "run_started_at": "2026-09-07T02:50:34Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "bench",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T02:50:34Z",
+          "started_at": "2026-09-07T02:50:42Z",
+          "completed_at": "2026-09-07T03:14:40Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113361,
+      "workflow": "msrv-metal",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 larql-compute-metal",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:55:47Z",
+          "completed_at": "2026-09-07T00:56:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113352,
+      "workflow": "commit messages",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:06:36Z",
+          "completed_at": "2026-09-07T01:06:39Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071113369,
+      "workflow": "larql-factory",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:51:16Z",
+          "completed_at": "2026-09-07T00:52:24Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:51:36Z",
+          "completed_at": "2026-09-07T00:53:51Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:06:40Z",
+          "completed_at": "2026-09-07T01:07:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071113383,
+      "workflow": "larql-models",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:51:16Z",
+          "completed_at": "2026-09-07T00:52:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:08:17Z",
+          "completed_at": "2026-09-07T01:09:32Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:52:40Z",
+          "completed_at": "2026-09-07T00:55:36Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34071113404,
+      "workflow": "shannon-verify",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "verify",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:55:40Z",
+          "completed_at": "2026-09-07T01:09:45Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071113348,
+      "workflow": "larql-inference",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:04:27Z",
+          "completed_at": "2026-09-07T01:10:37Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:55:06Z",
+          "completed_at": "2026-09-07T01:13:37Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:07:00Z",
+          "completed_at": "2026-09-07T01:15:57Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:09:11Z",
+          "completed_at": "2026-09-07T01:15:57Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113407,
+      "workflow": "larql-lql",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:59:40Z",
+          "completed_at": "2026-09-07T01:05:54Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:05:03Z",
+          "completed_at": "2026-09-07T01:12:25Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:04:44Z",
+          "completed_at": "2026-09-07T01:10:51Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:57:07Z",
+          "completed_at": "2026-09-07T01:17:12Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34071113357,
+      "workflow": "larql-server",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:56:56Z",
+          "completed_at": "2026-09-07T01:08:20Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:51:16Z",
+          "completed_at": "2026-09-07T01:00:13Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:54:25Z",
+          "completed_at": "2026-09-07T01:16:52Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:52:41Z",
+          "completed_at": "2026-09-07T01:02:15Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071113431,
+      "workflow": "bench-regress",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "bench",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:53:59Z",
+          "completed_at": "2026-09-07T01:17:32Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113420,
+      "workflow": "larql-compute",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:06:53Z",
+          "completed_at": "2026-09-07T01:08:15Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:08:50Z",
+          "completed_at": "2026-09-07T01:20:58Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:07:08Z",
+          "completed_at": "2026-09-07T01:08:48Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:12:13Z",
+          "completed_at": "2026-09-07T01:13:36Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113435,
+      "workflow": "mutants",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:56:53Z",
+          "completed_at": "2026-09-07T01:04:25Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:16:06Z",
+          "completed_at": "2026-09-07T01:21:25Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113354,
+      "workflow": "larql-kv",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:52:05Z",
+          "completed_at": "2026-09-07T00:59:38Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:20:34Z",
+          "completed_at": "2026-09-07T01:39:03Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:03:10Z",
+          "completed_at": "2026-09-07T01:10:12Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:56:24Z",
+          "completed_at": "2026-09-07T01:04:39Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071113414,
+      "workflow": "larql-cli",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:53:14Z",
+          "completed_at": "2026-09-07T01:13:09Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:55:38Z",
+          "completed_at": "2026-09-07T01:05:02Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:07:28Z",
+          "completed_at": "2026-09-07T01:15:04Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:31:29Z",
+          "completed_at": "2026-09-07T01:42:08Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113470,
+      "workflow": "quality",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:02:17Z",
+          "completed_at": "2026-09-07T01:02:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:06:58Z",
+          "completed_at": "2026-09-07T01:07:41Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:31:48Z",
+          "completed_at": "2026-09-07T01:32:43Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:20:20Z",
+          "completed_at": "2026-09-07T01:20:30Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:36:58Z",
+          "completed_at": "2026-09-07T01:37:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:26:56Z",
+          "completed_at": "2026-09-07T01:27:40Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:37:55Z",
+          "completed_at": "2026-09-07T01:38:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:37:40Z",
+          "completed_at": "2026-09-07T01:45:06Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34071113371,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:51:35Z",
+          "started_at": "2026-09-07T01:13:16Z",
+          "completed_at": "2026-09-07T02:08:52Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34071113372,
+      "workflow": "larql-vindex",
+      "branch": "drive-models-1",
+      "sha": "9f7725e1acc4fa607e5bc6dd587cf4adde9c2940",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:51:14Z",
+      "run_started_at": "2026-09-07T00:51:14Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:56:52Z",
+          "completed_at": "2026-09-07T01:06:35Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:56:52Z",
+          "completed_at": "2026-09-07T01:18:38Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T00:59:27Z",
+          "completed_at": "2026-09-07T01:12:08Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:51:14Z",
+          "started_at": "2026-09-07T01:32:20Z",
+          "completed_at": "2026-09-07T01:46:23Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751707,
+      "workflow": "mutants",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:13:27Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:31:32Z",
+          "completed_at": "2026-09-07T00:37:29Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751693,
+      "workflow": "larql-cli",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:07:19Z",
+          "completed_at": "2026-09-07T00:14:58Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:27:38Z",
+          "completed_at": "2026-09-07T00:36:57Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:25:02Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:20:21Z",
+          "completed_at": "2026-09-07T00:30:18Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34068751713,
+      "workflow": "larql-compute-metal",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:07:21Z",
+          "completed_at": "2026-09-07T00:51:35Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751715,
+      "workflow": "larql-inference",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:13:00Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:49Z",
+          "completed_at": "2026-09-07T00:16:30Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:45Z",
+          "completed_at": "2026-09-07T00:16:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:44Z",
+          "completed_at": "2026-09-07T00:18:32Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34068751681,
+      "workflow": "larql-vindex",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:47Z",
+          "completed_at": "2026-09-07T00:15:57Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:22:06Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:19:57Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:07:31Z",
+          "completed_at": "2026-09-07T00:16:39Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34068751711,
+      "workflow": "larql-kv",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:09:57Z",
+          "completed_at": "2026-09-07T00:17:20Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:16:03Z",
+          "completed_at": "2026-09-07T00:22:36Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:24:26Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:13:01Z",
+          "completed_at": "2026-09-07T00:20:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34068751671,
+      "workflow": "larql-factory",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:18:45Z",
+          "completed_at": "2026-09-07T00:19:58Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:23:32Z",
+          "completed_at": "2026-09-07T00:24:34Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:08:58Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34068751733,
+      "workflow": "commit messages",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:25:29Z",
+          "completed_at": "2026-09-07T00:25:33Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34068751678,
+      "workflow": "larql-models",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:13:02Z",
+          "completed_at": "2026-09-07T00:13:55Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:07:52Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:09:56Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34068751726,
+      "workflow": "larql-server",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:13:29Z",
+          "completed_at": "2026-09-07T00:22:44Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:28:17Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:14:59Z",
+          "completed_at": "2026-09-07T00:24:34Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:16:37Z",
+          "completed_at": "2026-09-07T00:26:27Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751710,
+      "workflow": "shannon-verify",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "verify",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:14:04Z",
+          "completed_at": "2026-09-07T00:29:00Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34068751705,
+      "workflow": "bench-regress",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "bench",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:48Z",
+          "completed_at": "2026-09-07T00:29:52Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751697,
+      "workflow": "quality",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:18:34Z",
+          "completed_at": "2026-09-07T00:18:42Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:22:46Z",
+          "completed_at": "2026-09-07T00:30:37Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:28:20Z",
+          "completed_at": "2026-09-07T00:28:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:25:03Z",
+          "completed_at": "2026-09-07T00:25:56Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:29:02Z",
+          "completed_at": "2026-09-07T00:29:09Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:27:37Z",
+          "completed_at": "2026-09-07T00:28:18Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:26:46Z",
+          "completed_at": "2026-09-07T00:27:33Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:26:40Z",
+          "completed_at": "2026-09-07T00:27:36Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34068751695,
+      "workflow": "larql-lql",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:06:43Z",
+          "completed_at": "2026-09-07T00:12:59Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:24:32Z",
+          "completed_at": "2026-09-07T00:30:35Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:16:22Z",
+          "completed_at": "2026-09-07T00:25:22Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:07:54Z",
+          "completed_at": "2026-09-07T00:25:58Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34068751708,
+      "workflow": "msrv-metal",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 larql-compute-metal",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:30:43Z",
+          "completed_at": "2026-09-07T00:31:23Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34068751712,
+      "workflow": "larql-compute",
+      "branch": "drive-models-1",
+      "sha": "081b212461286433e2ff688966dff0519f3e3fd2",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:06:41Z",
+      "run_started_at": "2026-09-07T00:06:41Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:10:43Z",
+          "completed_at": "2026-09-07T00:22:36Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test \u00b7 ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:09:00Z",
+          "completed_at": "2026-09-07T00:10:41Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "coverage \u00b7 ubuntu",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:24:35Z",
+          "completed_at": "2026-09-07T00:25:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:06:41Z",
+          "started_at": "2026-09-07T00:29:58Z",
+          "completed_at": "2026-09-07T00:31:38Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070137279,
+      "workflow": "msrv-metal",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "MSRV \u00b7 larql-compute-metal",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:37:35Z",
+          "completed_at": "2026-09-07T00:38:14Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070137268,
+      "workflow": "quality",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:32Z",
+          "started_at": "2026-09-07T00:33:06Z",
+          "completed_at": "2026-09-07T00:33:14Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:33:17Z",
+          "completed_at": "2026-09-07T00:33:48Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:33:49Z",
+          "completed_at": "2026-09-07T00:41:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:33:48Z",
+          "completed_at": "2026-09-07T00:34:32Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:34:30Z",
+          "completed_at": "2026-09-07T00:34:39Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:34:34Z",
+          "completed_at": "2026-09-07T00:35:17Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:35:19Z",
+          "completed_at": "2026-09-07T00:36:09Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:34:41Z",
+          "completed_at": "2026-09-07T00:35:26Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34070137276,
+      "workflow": "mutants",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:32:51Z",
+          "completed_at": "2026-09-07T00:33:46Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:44:06Z",
+          "completed_at": "2026-09-07T00:44:33Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070137265,
+      "workflow": "bench-regress",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "bench",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-09-07T00:32:32Z",
+          "started_at": "2026-09-07T00:37:04Z",
+          "completed_at": "2026-09-07T00:59:20Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34070137280,
+      "workflow": "commit messages",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:33Z",
+          "started_at": "2026-09-07T00:32:47Z",
+          "completed_at": "2026-09-07T00:32:49Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34070137270,
+      "workflow": "larql-compute-metal",
+      "branch": "metal-coverage-floor-90",
+      "sha": "0c19c518a89005a6fb401f6712ff3e617aa26490",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:32:32Z",
+      "run_started_at": "2026-09-07T00:32:32Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test \u00b7 macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:32:32Z",
+          "started_at": "2026-09-07T00:38:21Z",
+          "completed_at": "2026-09-07T01:31:22Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34069286003,
+      "workflow": "larql-lql",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:25:34Z",
+          "completed_at": "2026-09-07T00:34:28Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:19:59Z",
+          "completed_at": "2026-09-07T00:37:50Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:25:33Z",
+          "completed_at": "2026-09-07T00:34:02Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:28:19Z",
+          "completed_at": "2026-09-07T00:35:45Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34069286033,
+      "workflow": "larql-cli",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:34:07Z",
+          "completed_at": "2026-09-07T00:44:00Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:25:57Z",
+          "completed_at": "2026-09-07T00:33:05Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:18:15Z",
+          "completed_at": "2026-09-07T00:28:44Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:22:38Z",
+          "completed_at": "2026-09-07T00:39:25Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34069286056,
+      "workflow": "larql-server",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:25:59Z",
+          "completed_at": "2026-09-07T00:34:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:22:38Z",
+          "completed_at": "2026-09-07T00:46:04Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:29:11Z",
+          "completed_at": "2026-09-07T00:39:31Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:31:45Z",
+          "completed_at": "2026-09-07T00:43:06Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        }
+      ]
+    },
+    {
+      "id": 34069285994,
+      "workflow": "larql-inference",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:16:41Z",
+          "completed_at": "2026-09-07T00:24:07Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:44:53Z",
+          "completed_at": "2026-09-07T00:53:53Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:24:36Z",
+          "completed_at": "2026-09-07T00:31:53Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:19:58Z",
+          "completed_at": "2026-09-07T00:35:45Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34069285973,
+      "workflow": "larql-vindex",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "coverage - ubuntu",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:32:21Z",
+          "completed_at": "2026-09-07T00:41:34Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:30:37Z",
+          "completed_at": "2026-09-07T00:46:05Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "test - macos-14",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:43:12Z",
+          "completed_at": "2026-09-07T00:55:42Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "test - windows-latest",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:24:09Z",
+          "completed_at": "2026-09-07T00:47:27Z",
+          "labels": [
+            "windows-latest"
+          ],
+          "os": "windows"
+        }
+      ]
+    },
+    {
+      "id": 34069286004,
+      "workflow": "commit messages",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "no generated attribution",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:25:23Z",
+          "completed_at": "2026-09-07T00:25:28Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34069285993,
+      "workflow": "mutants",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-mutants \u00b7 larql-compute-metal (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:26:33Z",
+          "completed_at": "2026-09-07T00:26:45Z",
+          "labels": [
+            "macos-14"
+          ],
+          "os": "macos"
+        },
+        {
+          "name": "cargo-mutants (informational)",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:28:46Z",
+          "completed_at": "2026-09-07T01:06:56Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    },
+    {
+      "id": 34069285978,
+      "workflow": "quality",
+      "branch": "fix-stage-ledger-race",
+      "sha": "53d089bde3a6467673bb764975ecd3aa4e5f093f",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-07T00:16:28Z",
+      "run_started_at": "2026-09-07T00:16:28Z",
+      "pr": null,
+      "jobs": [
+        {
+          "name": "cargo-audit",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:30:19Z",
+          "completed_at": "2026-09-07T00:30:51Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "doc links",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:23:22Z",
+          "completed_at": "2026-09-07T00:23:30Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "MSRV \u00b7 workspace",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:29:02Z",
+          "completed_at": "2026-09-07T00:36:47Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 licenses",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:25:55Z",
+          "completed_at": "2026-09-07T00:26:38Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "buf lint",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:31:54Z",
+          "completed_at": "2026-09-07T00:32:01Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 sources",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:30:52Z",
+          "completed_at": "2026-09-07T00:31:32Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:31:33Z",
+          "completed_at": "2026-09-07T00:32:19Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        },
+        {
+          "name": "cargo-deny \u00b7 bans",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-09-07T00:16:29Z",
+          "started_at": "2026-09-07T00:32:02Z",
+          "completed_at": "2026-09-07T00:32:45Z",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "os": "linux"
+        }
+      ]
+    }
+  ]
+}

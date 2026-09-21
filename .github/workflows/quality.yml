@@ -10,7 +10,8 @@
 #   deny        — licences, advisories, sources, bans            (blocking)
 #   msrv        — the declared rust-version really compiles      (blocking)
 #   proto-lint  — buf lint over the four gRPC schemas            (blocking)
-#   doc-links   — every relative Markdown link resolves          (blocking)
+#   docs-integrity — Markdown links resolve, code references resolve,
+#                   and contract indexes name real tests       (blocking)
 #
 # Mutation testing lives in `mutants.yml`, not here: it is informational,
 # and a job cancelled by `timeout-minutes` concludes the whole run as
@@ -203,8 +204,8 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
         run: cargo check --workspace --all-targets --exclude larql-compute-metal --locked
 
-  doc-links:
-    name: doc links
+  docs-integrity:
+    name: documentation integrity
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -230,6 +231,89 @@ jobs:
       # cries wolf on legitimate content gets switched off.
       - name: Check documentation code references
         run: python3 scripts/check_doc_references.py --strict
+
+      # A contract index names the test that pins each frozen invariant, and
+      # that citation is exactly the kind that rots silently: renaming a test
+      # is a green refactor which leaves the freeze pointing at nothing, and
+      # nothing else in CI reads the index at all. The checker has existed
+      # since the v1 index landed and NOTHING RAN IT -- enforcement in
+      # principle only -- which is the state the optimizer index would have
+      # inherited. It checks existence and location; `cargo test` decides
+      # whether the contracts still hold.
+      - name: Contract indexes name tests that exist
+        run: python3 scripts/check_contract_index.py
+
+      # The reference checker above matched SKIP_DIRS against the ABSOLUTE
+      # directory path, and SKIP_DIRS contains `/.claude/`. Every worktree in
+      # this repository lives under `.claude/worktrees/`, so ROOT matched its
+      # own prefix, the walk was pruned at the first directory, and the gate
+      # printed "no broken references" over an empty corpus and exited 0.
+      # Sound here -- Actions checks out clean -- and vacuous in every local
+      # pre-push run, which is the worse failure: it fails OPEN in the one
+      # place a human reads it before pushing.
+      #
+      # `selftest` carries the DOC-GATE-1 controls, and each is REACHABLE:
+      # run against the pre-repair script they fail, reproducing the bug in
+      # miniature (ordinary checkout 1 reference / 1 document, `.claude`
+      # worktree 0 / 0). The strongest is equivalence rather than non-zero --
+      # equal counts from both paths, since a partial-tree bug would still
+      # report a confident number.
+      #
+      # No network, no repository walk: synthetic fixtures in a temp dir.
+      - name: Documentation instrument selftest
+        run: python3 scripts/check_doc_references.py selftest
+
+  ci-instrument:
+    name: ci throughput instrument
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # scripts/ci_throughput.py adjudicates the CI experiments that decide
+      # what this repository's CI looks like, and until 2026-09-07 its
+      # `selftest` -- the thing that proves each verdict is reachable and
+      # each metric definition is right -- ran only when someone remembered
+      # to type it. E1 shipped a forecast whose validity gate could not
+      # pass; the selftest now carries the control that catches that class
+      # (an extensive metric scored across samples of different size must
+      # be REFUSED, and must still be scoreable at equal n). A checker
+      # nobody runs is not a check.
+      #
+      # No network: `selftest` builds synthetic runs with known answers and
+      # never calls the API. Seconds on Linux.
+      - name: Instrument selftest
+        run: python3 scripts/ci_throughput.py selftest
+
+      # The Metal tier classifier ships before the trigger change that will
+      # use it (CI-E2-D is designed, not activated). Its completeness check
+      # runs from the moment the manifest exists, not from activation:
+      # `parity-obligations.json` declares which upstream surfaces can
+      # invalidate Metal's behaviour, and its one real weakness is OMISSION.
+      # A new parity dependency added without a declaration would classify
+      # as compile-only once tiering is live, so the gate that notices has
+      # to predate the gate that acts.
+      - name: Metal tier classifier selftest
+        run: python3 scripts/metal_tier.py selftest
+
+      - name: Parity-obligation manifest is complete
+        run: python3 scripts/metal_tier.py check
+
+      # The conformance sweep's cached plans are the evidence every
+      # architecture verdict in `docs/arch-conformance` is derived from,
+      # and a cache outlives the planner that wrote it. Until this guard
+      # existed nothing in `arch_sweep.py` read the recorded
+      # `PLANNER_SEMANTICS_VERSION`, so a semantics-16 cache beside a
+      # semantics-22 planner was indistinguishable from current evidence:
+      # every row parsed and every field the readers touch was present.
+      #
+      # No network and no planner: `selftest` builds caches with known
+      # answers and checks the guard against them, including the control
+      # that matters — a row complete in every respect and one version
+      # behind must refuse, and the same row at the current version must
+      # not.
+      - name: Conformance evidence guard selftest
+        run: python3 scripts/conformance_evidence.py selftest
 
   proto-lint:
     name: buf lint

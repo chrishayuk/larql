@@ -26,6 +26,7 @@ pub mod attention_sinks;
 pub mod conv_qkv_attn;
 pub mod experts;
 pub mod interleave;
+pub mod latent_moe;
 pub mod layer_types;
 pub mod linear_attn;
 pub mod mamba2;
@@ -46,6 +47,7 @@ pub use activation::{
 };
 pub use architecture::{
     default_position_policy_for_layer, score_scale_from_query_pre_attn_scalar, ModelArchitecture,
+    UNSCALED_POSITION_DIVISOR,
 };
 pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
@@ -60,6 +62,7 @@ pub use interleave::{
     InterleaveProvenance, InterleaveScope, LayerIndexBase, LayerKind, RecurrenceFamily,
     ResolvedInterleave,
 };
+pub use latent_moe::{LatentNormSpec, RoutedExpertForm};
 pub use layer_types::{
     LAYER_TYPE_FULL_ATTENTION, LAYER_TYPE_LINEAR_ATTENTION, LAYER_TYPE_SLIDING_ATTENTION,
     LAYER_TYPE_WINDOW_ATTENTION,

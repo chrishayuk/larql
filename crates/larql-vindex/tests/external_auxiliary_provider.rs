@@ -357,7 +357,8 @@ impl Built {
             .unwrap_or_else(|| panic!("the external fixture must plan: {:?}", outcome.defects));
         let store = OperandStore::open(&container, &inspection)
             .unwrap()
-            .with_registry(registry);
+            .with_registry(registry)
+            .unwrap();
         (plan, store)
     }
 

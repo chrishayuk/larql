@@ -15,6 +15,7 @@ use super::*;
 /// a maximum wearing a percentile's name.
 pub(in crate::format::vindex3::represent) fn guard_256() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 256,
         logits: LogitEvidence {
             kl_p50: 6.2998e-5,

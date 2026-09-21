@@ -25,6 +25,19 @@ The matrix is [`matrix.json`](matrix.json). Plans are cached under
 evidence every number below is derived from. `report` re-derives; it
 never re-asserts.
 
+**A cached plan is a verdict, and verdicts are only comparable across
+planners that judge the same way.** Each row records the
+`PLANNER_SEMANTICS_VERSION` that produced it, and the comparative readers
+— `report`, `clusters`, `leverage`, `envelopes` — refuse a cache whose
+rows were not judged by the planner in the working tree, naming the
+cached version, the current one and the path. `run` is unaffected and can
+overwrite a stale directory normally, and nothing is deleted: a stale
+cache is still historical evidence, it is simply not CURRENT evidence.
+The hazard is real and was found in the wild — a semantics-16 cache
+sitting beside a semantics-22 planner, every row parsing, every field
+present, and nothing looking at the stamp. Re-sweep into a fresh
+directory (`--out <dir> run`) rather than reading an old one.
+
 ## What it cost
 
 `vindex plan hf://…` reads `config.json` and safetensors *headers* over

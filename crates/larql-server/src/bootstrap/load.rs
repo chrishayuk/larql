@@ -486,6 +486,8 @@ pub fn load_single_vindex(
         release_mmap_after_request: opts.release_mmap_after_request,
         weights: std::sync::OnceLock::new(),
         weights_init: std::sync::Mutex::new(()),
+        bitnet_model: std::sync::OnceLock::new(),
+        bitnet_init: std::sync::Mutex::new(()),
         probe_labels,
         ffn_l2_cache: crate::ffn_l2_cache::FfnL2Cache::new(num_layers),
         layer_latency_tracker: std::sync::Arc::new(crate::metrics::LayerLatencyTracker::new()),

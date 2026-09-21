@@ -87,6 +87,9 @@ reference-encoder = []
 test-utils = []
 
 [dev-dependencies]
+# Parse the whole production source estate for the OPT-6 write-closure gate.
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"
 larql-inference = { path = "../larql-inference" }
 # The KvEngine decode path, for the teacher-forced / free-running decode
 # parity harness. Dev-only: nothing in the library depends on the engine layer.

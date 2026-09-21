@@ -1,0 +1,381 @@
+{
+  "programme": "LOWERING-PLUGIN-1",
+  "forecast": "lowering-plugin-1.json (frozen 2026-09-08, PR #464)",
+  "rule": "The forecast is not edited. Every deviation, measurement and surprise is written here with its reason.",
+  "merge_policy": "Set while landing L3 (2026-09-10). Mutation testing is NOT a merge authority — the `cargo-mutants` job is informational and can be canceled by its own runtime — but any COMPLETED mutants result is read before merging, because it reads the wave's own diff. A survivor that belongs to the wave is killed before the merge (L3's `Arc<T>::prepare` delegation was one: execution coverage with no assertion). A survivor that is pre-existing debt in code the wave merely touched is classified and recorded, not folded in, so the wave boundary stays legible. A RE-RUN need not be waited for once the required checks are green, the wave's own survivor has been reproduced by hand and shown to be killed by the new assertion, and the remaining survivors are already classified — read it when it finishes and fix forward only if it reveals a defect in a LATER wave's claim.",
+  "waves": {
+    "L1": {
+      "name": "lowering identity",
+      "status": "built and held",
+      "branch": "lowering-l1",
+      "base": "a03efc29 (main; #461, #462 and #464 open beside it, none required)",
+      "date": "2026-09-09",
+      "what_landed": [
+        "`exec/lowering.rs`: `LoweringIdentity { family: String, revision: u32 }` — Eq/Ord/Hash/serde, `validate()` refusing an empty or blank family, a family outside `[A-Za-z0-9_-]`, and revision 0 (the unstated value); Display `family/vN`.",
+        "`PlanBackend::identity() -> LoweringIdentity` is REQUIRED — no default, nothing derived from `name()`. `name()` stays, documented as presentation.",
+        "In-tree identities: `reference/v1`, `cpu-production/v1`, `device-matmul/v1`, each a pair of `pub const`s beside the provider's `NAME`.",
+        "Every implementor in the workspace states one: three providers, three test backends (`test-recording`, `test-perturbed`, `test-refusing`). `cargo check --workspace --all-targets` is the proof there is no fourth provider hiding behind a cfg."
+      ],
+      "witnesses": {
+        "every_in_tree_provider_states_a_valid_distinct_identity": "exec/tests/lowering_identity.rs — valid, revision 1, three distinct families in the expected order",
+        "identity_is_the_providers_not_its_configurations": "same file — two device instances with different names and format tables share one identity; two production instances agree",
+        "identity_is_authority_and_name_is_presentation": "same file — the control: one name over two identities differ, one identity under two names agree, a revision bump is a different identity under the same name, and the trait object returns what the provider stated",
+        "an_unkeyable_identity_is_refused_before_anything_relies_on_it": "same file, plus `lowering::tests` for the refusal texts"
+      },
+      "required_at_end_of_L1": {
+        "PlanBackend::identity_exists": true,
+        "every_in_tree_backend_has_stable_family_and_revision": true,
+        "identity_not_inferred_from_name": "true — required method, no default; the control test varies the two independently",
+        "duplicate_or_invalid_identities_testable": "true — `validate()`, and the distinctness assertion over the in-tree set (a duplicate fails it; a registry refusing duplicates is L2)",
+        "selection_changes": 0,
+        "accounting_changes": 0,
+        "execution_changes": 0,
+        "codec_api_changes": 0,
+        "kernel_plane_files": 32
+      },
+      "evidence_for_the_zeros": "The diff touches `backend.rs` (trait method and its doc), `lowering.rs` (new), and one `identity()` plus two constants in each of `reference.rs`, `production.rs`, `device.rs`; no file under `represent/`, no `select`, no `prepared.rs`, no `accounting.rs`. `cargo test -p larql-vindex --lib`: 4638 passed, 0 failed, 7 ignored — the same suite as base plus the six new tests, with no existing assertion changed.",
+      "measurement_correction": {
+        "what": "The inventory (#462) reported the kernel-plane file count as 33 'unchanged since 2026-09-05'. Measured with the inventory's own method on main `a03efc29` the count is 32; the 33 was taken in the #461 worktree, where the new FP8 codec file names `PhysicalProjectionPlan::FusedFp8Block`. So the honest baseline is 32 on main and 33 once #461 merges, and L1 adds none: 32 on this branch.",
+        "consequence_for_F3": "F3's prediction is unchanged in meaning — the count does not move through L1–L5 — and is read against whichever base the wave branches from: 32 without #461, 33 with it. Written here rather than in the forecast, per its immutability clause.",
+        "method": "non-test `.rs` files under `opplan/exec/` and `represent/` containing `<Enum>::` for any of the five kernel-plane enums; `grep -rl` then exclude `/tests/`, `_tests.rs`, `tests.rs`."
+      },
+      "observations_for_later_waves": [
+        "Device identity is the provider's, not the injected device's: `DevicePlanBackend<MetalBackend>` and `DevicePlanBackend<CpuBackend>` both answer `device-matmul/v1`. L2 must decide whether a registry entry is per provider type or per (provider, injected device); L4 must decide whether a pin that recorded `device-matmul/v1` is invalidated when the injected device changes — today the realization FORM pins the resident format, and nothing pins the device. Raised here, not resolved.",
+        "`identity()` returns an owned value on every call (String family), mirroring `CodecIdentity`. Fine at preparation; if L4 needs it per token, intern it then.",
+        "The `metal-lowered` driver (2,890 lines, CLI) has no `PlanBackend` and therefore no identity — as the inventory recorded. Untouched by design; it is F1's subject.",
+        "Nothing dispatches on identity yet. The 'authority' claim at L1 is structural (required, independent of name); it becomes operational at L2 and L4."
+      ],
+      "gates_run": [
+        "cargo fmt --all",
+        "cargo check --workspace --all-targets",
+        "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+        "cargo test -p larql-vindex --lib (4638 passed)",
+        "cargo test -p larql-vindex --no-run (integration targets compile against the exported trait)"
+      ],
+      "deviations_from_forecast": "None in scope. One measurement correction, recorded above."
+    },
+    "L2": {
+      "name": "lowering registry",
+      "status": "built and held",
+      "branch": "lowering-l2",
+      "base": "4e8147ef (main after #462, #464, #461, #465 merged in that order)",
+      "date": "2026-09-09",
+      "the_question": "Can lowering providers be registered and carried as explicit authority, without changing what any existing backend selects or executes? Yes, and the carried path is bit-identical to the direct one for both shipped providers.",
+      "what_landed": [
+        "`LoweringRegistry` in `exec/lowering.rs`: `register(Box<dyn PlanBackend + Send>)` keyed by identity, refusing an identity `validate()` refuses (`LoweringError::Invalid`) and one already taken (`Duplicate`); `provider(&LoweringIdentity)` or `Unregistered` naming every registered identity in registration order; `family(name)` for every revision of one family; `identities()`, `len()`, `is_empty()`.",
+        "`LoweringRegistry::shipped()`: the two providers that need no device (`reference/v1`, `cpu-production/v1`), built as a FRESH VALUE on every call. There is no static, no `builtin()`, and no path that consults a registry the caller did not hand it.",
+        "The carried path: `PreparedOperands::load_via(plan, store, &registry, &identity, slice)` and `execute_plan_via(plan, store, tokens, &registry, &identity)`. Each resolves the provider through the registry it was handed and refuses by identity before selection and before any byte; neither constructs a provider.",
+        "`Debug` for `dyn PlanBackend` (`provider NAME (family/vN)`) and for the registry (its identities), so a refusal or a test can say which provider it meant."
+      ],
+      "witnesses": {
+        "registered_is_discoverable_unregistered_is_refused_naming_the_registered": "exec/tests/lowering_registry.rs — `a_registered_provider_is_discoverable_and_an_unregistered_one_is_refused_naming_the_registered`",
+        "duplicate_refused_invalid_never_enters": "`a_duplicate_identity_is_refused_and_an_invalid_one_never_enters` — a scratch provider under the production identity is a duplicate too: the identity is keyed, not the type",
+        "revision_mismatch_is_a_distinct_provider": "`two_revisions_of_one_family_are_distinct_providers` — v1 and v2 coexist and answer separately; v3 is refused naming both",
+        "registry_order_has_no_effect": "`registration_order_has_no_effect_on_who_answers` — forward and reverse registration differ only in `identities()` order",
+        "value_not_default_and_one_instance_per_identity": "`the_shipped_registry_is_a_value_and_one_instance_per_identity`",
+        "F4_anti_cheat": "`the_carried_path_refuses_an_absent_provider_rather_than_constructing_one` — a registry holding only `reference/v1`, asked to prepare and to execute as `cpu-production/v1`, refuses both naming `registered: reference/v1`, and the store's load count stays 0: nothing underneath constructed `ProductionBackend` to answer anyway",
+        "positive_control": "`the_carried_path_executes_exactly_what_the_direct_path_executes` — through `shipped()`, logits and final hidden are bit-identical to `execute_plan` with the provider constructed directly, and the pinned realizations are the same list, for both shipped providers"
+      },
+      "L1_open_question_forced": {
+        "type_or_instance": "The registry holds one configured INSTANCE per identity: a provider is registered as the instance the caller built, and a second `DevicePlanBackend` under `device-matmul/v1` — another name, another format table — is a `Duplicate`, not an alternative. So identity is the provider's (type/semantic implementation), configuration is the registration's, and a caller wanting two differently configured device providers side by side needs two providers to name. This is the default the forecast's author expected; the registry forced it rather than us choosing it.",
+        "device_swap_invalidation": "Still open for L4. Nothing in L2 records which injected device stood behind `device-matmul/v1`; whether a pin is invalidated when the concrete device changes is the question L4 must answer, and the registry has not forced it."
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "kernel_plane_files_note": "33 with #461 merged, as the L1 notes predicted; L2 adds none.",
+        "provider_construction_sites_outside_vindex_non_test": 13,
+        "provider_construction_sites_inside_vindex_non_test": {
+          "count": 2,
+          "sites": [
+            "`exec/device.rs`: `glue: ProductionBackend::new()` — the device provider's own CPU glue, an internal part of that provider and not a fallback; stays",
+            "`exec/mod.rs`: `execute_text` runs `ReferenceBackend::new()` — a convenience entry that hard-codes the oracle; L3 routes it or retires it"
+          ]
+        },
+        "production_callers_of_the_registry": 0,
+        "production_callers_note": "By design: L2 introduces the registry and the carried path and moves no construction site. That the count is 0 is L2's boundary and L3's target — the 13 outside sites (`ExecBackend`'s arms, the runtime, the server, LQL) become lookups."
+      },
+      "F4_status": "Not falsified in L2's scope: the only path that takes a registry refuses rather than defaults. The class F4 predicts — a downstream path that consults a built-in provider after registration ostensibly worked — cannot appear until L3 puts the registry on the production paths, which is where to expect it.",
+      "gates_run": [
+        "cargo fmt --all",
+        "cargo check --workspace --all-targets",
+        "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+        "cargo test -p larql-vindex --lib (4659 passed: the merged-main suite of 4652 plus seven L2 tests)",
+        "cargo test -p larql-vindex --no-run"
+      ],
+      "deviations_from_forecast": "None. Selection, accounting and execution unchanged: the diff touches `lowering.rs`, one method in `backend.rs` (a Debug impl), one method each in `mod.rs` and `prepared.rs`, and tests."
+    },
+    "L3": {
+      "name": "existing providers behind the registry",
+      "status": "built and held",
+      "branch": "lowering-l3",
+      "base": "L2 (#466) on main 4e8147ef — the tree main will be once #466 merges; rebased onto that merge before the PR",
+      "date": "2026-09-09",
+      "the_question": "Can every production selection path obtain its lowering provider from the carried registry, with zero behavioural movement and no hidden construction fallback?",
+      "rule": "Every construction site recorded by L2 is assigned a fate HERE, before it is touched. At the end a source scan asserts that exactly the sites marked `stays` still construct a provider, so a forgotten `ProductionBackend::new()` cannot become the hidden default that defeats the programme.",
+      "fates": {
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:196  ExecBackend::Reference → ReferenceBackend::new()": "route — the composition site resolves `reference/v1` from the registry",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:197  ExecBackend::Production → ProductionBackend::new()": "route — `cpu-production/v1`",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:203  ExecBackend::ProductionNvfp4 → ProductionBackend::new()": "route — `cpu-production/v1` (the arm differs upstream, in the wanted representation, not in the provider)",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:213  ExecBackend::ProductionQ8 | Q6k | Q4k → ProductionBackend::new()": "route — `cpu-production/v1`",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:230  ExecBackend::MetalMxfp4 → DevicePlanBackend::with_formats(metal-q1-mxfp4-ffn)": "construction moves INTO the composition site: the configured device provider is registered under `device-matmul/v1` and resolved by identity",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:262  ExecBackend::MetalMxfp4All → DevicePlanBackend::with_formats(metal-q1-mxfp4-all)": "same",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:313  ExecBackend::MetalNvfp4 | NoHead | Ffn → DevicePlanBackend::with_formats(metal-q2-nvfp4-*)": "same",
+        "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs:328  ExecBackend::Metal → DevicePlanBackend::new(metal-r3-f16)": "same",
+        "larql-cli/src/commands/primary/vindex3_cmd/realizations.rs:92  bind_and_reconcile → ProductionBackend::new()": "route — through the composition site as `ExecBackend::Production`",
+        "larql-cli/src/commands/primary/vindex3_cmd/realizations.rs:130  report_through → ProductionBackend::new()": "route — same",
+        "larql-cli/src/commands/primary/vindex3_cmd/sensitivity.rs:387  DevicePlanBackend::new(metal-r3-f16)": "route — through the composition site as `ExecBackend::Metal`, which is the identical configuration; one fewer place that spells `metal-r3-f16`",
+        "larql-server/src/vindex3.rs:135  Vindex3Runtime::open(.., ProductionBackend::new())": "route — `Vindex3Runtime::open_via(.., &LoweringRegistry::shipped(), &LoweringIdentity::cpu_production())`",
+        "larql-lql/src/executor/vindex3.rs:833  Vindex3Runtime::open(.., ProductionBackend::new())": "route — same; the `V3Runtime` alias becomes `Vindex3Runtime<SharedProvider>`",
+        "larql-vindex/src/format/vindex3/opplan/exec/mod.rs  execute_text → ReferenceBackend::new()": "route — through `LoweringRegistry::shipped()` and `reference/v1`; it is the oracle by request, not by privileged construction",
+        "larql-vindex/src/format/vindex3/opplan/exec/device.rs:122  glue: ProductionBackend::new()": "STAYS — the device provider's own CPU glue, an implementation detail inside a provider, not authority over which provider runs",
+        "larql-vindex/src/format/vindex3/opplan/exec/lowering.rs  shipped()": "STAYS — the one place the shipped providers are constructed, as a value",
+        "larql-server/examples/v3_request_phase_profile.rs, larql-vindex/examples/cpu7c_arms.rs": "out of the gate — examples are not production paths; the scan excludes `examples/` as it excludes `tests/`; untouched in L3"
+      },
+      "closure_assertion": "`crates/larql-vindex/tests/lowering_closure.rs` walks every non-test `.rs` under `crates/*/src` and refuses any file that spells `ProductionBackend::new()`, `ReferenceBackend::new()`, `DevicePlanBackend::new(` or `DevicePlanBackend::with_formats(` other than the two `STAYS` files and the CLI composition site — with a positive control that the walk finds those three.",
+      "design_frozen_before_implementation": {
+        "shared_provider": "Registry entries become `Arc<dyn PlanBackend + Send>` (`SharedProvider`), with `PlanBackend` implemented for `Arc<T>` by delegation of EVERY method, provided ones included, so a shared handle never falls back to a trait default the inner provider overrides. A runtime can then own the provider it resolved.",
+        "runtime": "`Vindex3Runtime::open_via(container, component, &registry, &identity)` resolves the provider FIRST and opens the container second, so a refusal costs no I/O — the witness is a refusal on a container path that does not exist. The runtime holds the resolved provider, not the registry; whether it must hold the registry to invalidate is L4's.",
+        "cli": "`with_plan_backend` keeps its visitor and becomes compose-then-resolve: `lowerings_for(ExecBackend) -> (LoweringRegistry, LoweringIdentity)` is the single composition site (shipped providers plus the configured device provider for the device arms), and `with_lowerings(&registry, &identity, visitor)` is the seam a test hands a registry of its own to.",
+        "identities": "`LoweringIdentity::reference()`, `::cpu_production()`, `::device_matmul()` read the providers' own constants; no caller spells a family string."
+      },
+      "success_conditions_pinned": [
+        "13 construction sites outside larql-vindex → 1 composition site (prepare.rs); server and LQL resolve by identity from `shipped()` and construct nothing",
+        "`execute_text` loses its direct backend construction",
+        "existing CLI backend choices resolve to the same provider identities and the same provider names as before",
+        "for every existing fixture: selected RealizationId, logits, hidden state, resource ledger unchanged — the existing suites are the witness, with no assertion changed",
+        "kernel-plane files: 33",
+        "no RealizationRecord schema change (L4); no capability work; no metal-lowered migration",
+        "F4 through a production path: `Vindex3Runtime::open_via` with a registry missing `cpu-production/v1` refuses by identity naming the registered providers, before any I/O; and the CLI seam `with_lowerings` refuses the same way with the store's load count at zero"
+      ],
+      "what_landed": [
+        "Registry entries are `SharedProvider = Arc<dyn PlanBackend + Send>`; `provider_shared(&id)` hands out a handle a runtime can own while the registry keeps holding it. `PlanBackend` is implemented for `Arc<T: PlanBackend + Send + ?Sized>` by delegating every method, provided ones included.",
+        "`LoweringIdentity::reference() / ::cpu_production() / ::device_matmul()` read the providers' own constants; no caller spells a family.",
+        "`Vindex3Runtime::open_via` / `open_with_via` resolve the provider FIRST and open the container second. Server (`load_v3_model`) and LQL (`bind`) open through them from `LoweringRegistry::shipped()` with `cpu-production/v1`; `V3Runtime` and `V3Model::runtime` are typed over `SharedProvider`.",
+        "CLI: `lowerings_for(ExecBackend) -> (LoweringRegistry, LoweringIdentity)` is the single composition site — the device arms register the provider they configure — `with_plan_backend` is compose-then-resolve, and `with_lowerings(&registry, &identity, visitor)` is the seam a test hands its own registry to. `realizations` (both sites) and `sensitivity` route through `lowerings_for`.",
+        "`execute_text` asks the shipped registry for `reference/v1`.",
+        "`crates/larql-vindex/tests/lowering_closure.rs` holds the fate table: the only non-test files constructing a provider are `lowering.rs` (`shipped()`), `device.rs` (glue) and `prepare.rs` (composition), with a control that the scan finds all three."
+      ],
+      "witnesses": {
+        "closure": "`only_the_fate_table_s_permitted_files_construct_a_provider` + control `the_scan_finds_each_permitted_site_constructing_a_provider` — larql-vindex/tests/lowering_closure.rs",
+        "F4_runtime_path": "`a_registry_without_the_provider_refuses_before_touching_the_container` — larql-inference/src/vindex3/tests/mod.rs: `open_via` on a container path that does not exist, with a registry holding only `reference/v1`, refuses naming `cpu-production/v1` and `registered: reference/v1`, and the message is the registry's, not the filesystem's — resolution provably precedes any I/O",
+        "runtime_positive_control": "`the_shipped_registry_opens_the_production_provider_the_direct_path_did` — same identity, same name, prepares",
+        "F4_cli_seam": "`the_seam_refuses_an_absent_provider_with_nothing_read` — larql-cli vindex3_cmd/tests/lowerings.rs: `with_lowerings` with a registry lacking production refuses by identity with the store's load count at 0; the shipped registry prepares and reads",
+        "cli_choices_unchanged": "`every_interpreted_backend_choice_resolves_to_its_provider_by_identity` — each interpreted `--backend` resolves to the identity and the provider NAME it constructed before, and composes exactly the shipped identities"
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "provider_construction_files_outside_vindex_non_test": {
+          "before": "3 files, 13 sites",
+          "after": "1 file (prepare.rs), 4 sites — all device configurations inside `lowerings_for`"
+        },
+        "provider_construction_files_inside_vindex_non_test": "2 — `lowering.rs` (shipped) and `device.rs` (glue), both `STAYS` in the fate table",
+        "existing_suites": "larql-vindex lib 4659 (unchanged), larql-lql lib 743, larql-server lib 591, larql-cli vindex3_cmd 58 (56 before + 2), external provider suites all pass; no existing assertion changed"
+      },
+      "observations_for_later_waves": [
+        "A provider must be `Send` to be shared: the `Arc<T>` delegation needs it for the trait's `Sync` supertrait to hold on the handle. Every in-tree provider is; an external one that is not would be refused at registration by the type system, which is the right place.",
+        "The runtime owns the RESOLVED provider, not the registry it resolved through; the registry is dropped after `open_via` in the server and LQL paths. L4's invalidation-by-name needs the runtime (or the prepared image) to hold what it resolved against — that is L4's first decision.",
+        "`lowerings_for` registers ONE device instance per invocation, chosen by the arm, so a process runs one device configuration at a time — the same shape the CLI already had. A caller wanting several device configurations resident at once needs distinct identities (L2's forced answer), which no CLI arm asks for today.",
+        "`sensitivity` now fails on a missing Metal device with the `--backend metal` arm's message rather than its own; one fewer place spells `metal-r3-f16`.",
+        "F4 held on both production seams without a finding — the class the forecast predicted did not appear, because the fate table was frozen first and the closure scan refuses a stray. The two examples that construct providers stay outside the gate."
+      ],
+      "deviations_from_forecast": "None. Selection, accounting, execution untouched (no file under `represent/`, no `select`, no `prepared.rs` beyond `load_via` from L2, no `accounting.rs`); kernel-plane count 33.",
+      "found_in_ci_after_the_local_gates_passed": {
+        "rule": "Written here rather than quietly fixed: two defects reached CI because the wave's own gate list was narrower than CI's, and the gate list is corrected below.",
+        "1_a_source_scan_guard_fired_correctly": "`larql-server/tests/test_capabilities.rs::backends_match_the_v3_binding` derives the advertised `runtime.backends` from what the V3 loader actually binds, by reading the loader's source for `ProductionBackend`. L3 made that loader RESOLVE `cpu-production/v1` from the carried registry instead of constructing a provider, so the guard did exactly its job. Re-derived against the new authority: it reads the identity the loader names, and treats `device_matmul` or `MetalBackend` as the Metal signal that would widen the list. The guard's meaning is unchanged; only the fact it reads moved, because the authority moved.",
+        "2_the_coverage_policy_caught_an_untested_claim": "`exec/backend.rs` fell 99.22% → 73.58% and `exec/lowering.rs` sat at 88.51%, both under the 90% per-file minimum. The uncovered code was L3's own `impl PlanBackend for Arc<T>` delegation, plus `LoweringIdentity::cpu_production()` / `::device_matmul()`, the registry's `Debug` and `is_empty`, and the `LoweringError::Invalid` conversion. Nothing inside larql-vindex exercised the delegation: the carried path BORROWS (`provider`) and only the inference runtime SHARES (`provider_shared`), which is another crate. So the wave's own design claim — 'a shared handle never falls back to a trait default the provider underneath overrides' — was stated in a doc comment and asserted nowhere.",
+        "fixed_by": [
+          "`a_shared_handle_is_the_provider_it_wraps` — a whole traversal through the `Arc` handle, bit-identical to the same provider called directly, plus `project`, `select`, `scale_row`, `prepare`, `dense_projector` and `dispatch_stats` asked of both and compared.",
+          "`a_shared_handle_never_falls_back_to_a_trait_default` — the test double now overrides two PROVIDED methods (`scale_row`, `dispatch_stats`) with answers no default produces, and both survive the trip through the handle; the borrowed form answers identically, so the two ways of holding one provider cannot disagree.",
+          "`the_identity_constructors_name_the_providers_they_stand_for` — each constructor equals the provider's own `identity()`, so a constant that moved without its constructor cannot pass.",
+          "`an_empty_registry_says_so_and_debug_lists_what_it_holds` — `is_empty`, the `Debug` listing in registration order, and the `Invalid` conversion carrying the parse error rather than re-wrapping it."
+        ],
+        "why_the_local_gates_missed_them": "The gate list ran `cargo test -p larql-server --lib`, which excludes `tests/` — where that guard lives — and never ran the coverage policy at all. Neither omission is CI's fault.",
+        "gate_list_corrected": [
+          "every dependent crate's FULL target set, not `--lib`: `cargo test -p larql-server -p larql-lql -p larql-inference -p larql-cli` (5,091 tests, 0 failed)",
+          "the coverage policy the vindex workflow runs: `cargo llvm-cov --package larql-vindex` then `scripts/check_coverage_policy.py coverage/larql-vindex/summary.json crates/larql-vindex/coverage-policy.json`",
+          "`cargo mutants --in-diff` is informational in CI but reads the wave's own diff: read what it MISSED before merging, and kill the ones that are the wave's."
+        ],
+        "3_the_informational_mutants_run": "`cargo mutants --in-diff` on the PR reported three MISSED before the job was canceled at 45 minutes. One was L3's own: `<impl PlanBackend for Arc<T>>::prepare` replaced with an empty body SURVIVED, because `prepare` returns nothing and the new delegation test merely called it — coverage without a claim. Killed by giving the test double a counter and asserting the handle reached it, and verified by applying the mutant by hand and watching that assertion fail. The other two are pre-existing gaps in CLI report paths L3 happened to touch (`realizations::bind_and_reconcile`, `sensitivity::capture_moments`): each prints a report and returns `Ok(())`, and nothing asserts the printing, so a body replaced with `Ok(())` survives. Recorded rather than fixed — out of this wave's scope, and the check is informational."
+      }
+    },
+    "L4": {
+      "name": "provider identity in prepared state",
+      "status": "built and held",
+      "branch": "lowering-l4",
+      "base": "L3 (`lowering-l3`) on L2 (#466); rebased onto main once both merge",
+      "date": "2026-09-09",
+      "the_question": "Can the lowering decision survive preparation and be invalidated by the authority it was made against — without the prepared image owning the provider that would keep it alive?",
+      "rule": "The design below and the device-instance experiment's DECISION RULE are frozen before any code is written, so the experiment's answer cannot be chosen after seeing its result.",
+      "design_frozen_before_implementation": {
+        "the_pin_names_both_authorities": "`RealizationRecord.provider: Option<CodecIdentity>` becomes `codec_provider`, joined by `lowering_provider: LoweringIdentity`. The lowering one is NOT optional: a record exists because a provider selected it, and since L1 every provider states an identity. Two independent authorities, both named on the pin, neither derived from the other.",
+        "record_the_identity_not_the_provider": "The prepared image records what was decided; it does not hold `Arc<dyn PlanBackend>`. A prepared image that held its provider would keep a removed provider alive and could never be invalidated by its disappearance — that is resolution turned into possession, the contract defeated rather than kept.",
+        "lifetime": "Execution session/runtime holds `Arc<LoweringRegistry>` — current authority — beside the prepared image, which holds the historical decision. Before prepared state is USED, `PreparedOperands::ensure_lowerings_in(&LoweringRegistry)` asks whether that decision still stands. The shape is the codec plane's, with the registry carried rather than `&'static`.",
+        "one_judge_for_a_live_and_a_reloaded_pin": "`PreparedOperands::authorities() -> PinnedAuthorities { codecs, lowerings }` is a serializable value carrying both planes, and `ensure_providers_in` / `ensure_lowerings_in` delegate to it — so a pin that was serialized and reloaded is judged by exactly the code that judges a live one (control 7), and neither plane gets a second implementation.",
+        "no_fallback_and_no_reinterpretation": "A registry that holds SOME other provider is not an alternative. The refusal names the identity the pin recorded and every identity the registry holds; nothing re-selects, nothing widens, nothing substitutes a same-family provider at another revision.",
+        "distinct_by_plane": "A codec refusal names the representation whose provider moved; a lowering refusal names the lowering provider. Neither message can be mistaken for the other plane's (controls 5 and 6).",
+        "device_instance_stays_out_of_identity": "`LoweringIdentity` remains implementation semantics: `device-matmul/v1`, never `device-matmul-on-device-123/v1`. If the experiment below proves a configured environment is load-bearing for prepared state, it is named as a SECOND authority, not folded into the first."
+      },
+      "controls_frozen": [
+        "1 — same provider registered: prepared state remains valid",
+        "2 — provider removed: invalid, by name",
+        "3 — same family, different revision: invalid",
+        "4 — another provider available: STILL invalid; never a fallback",
+        "5 — codec valid, lowering invalid: fails specifically on the lowering plane",
+        "6 — lowering valid, codec invalid: fails specifically on the codec plane",
+        "7 — a serialized and reloaded pin retains both authorities and yields the same two verdicts"
+      ],
+      "device_instance_experiment": {
+        "question": "Same `LoweringIdentity`, different injected device/configuration — does any prepared state become invalid or semantically different?",
+        "why_it_must_be_asked_here": "L1 recorded that `DevicePlanBackend<MetalBackend>` and `DevicePlanBackend<CpuBackend>` both answer `device-matmul/v1`, and claimed that what the configuration changes is already pinned in the realization FORM. L4 is where that claim either holds or produces a second authority.",
+        "method": "Two `DevicePlanBackend` instances over the same injected `MatMul` (`CpuBackend`, so the experiment runs everywhere), differing only in the per-class `WeightFormats` table; both answer `device-matmul/v1`. Prepare an image with A, then execute it with B and compare bit-for-bit against executing it with A.",
+        "decision_rule": {
+          "if_the_image_refuses_or_computes_different_numbers_under_B": "a second authority exists. Name it separately — `ProviderBinding` / `EnvironmentIdentity`, what configured execution environment a preparation is tied to — and NEVER by putting hardware or configuration identity into `LoweringIdentity`.",
+          "if_the_image_computes_identically_under_B": "do not invent it. Record the negative result together with the experiment's limit: `CpuBackend`-as-device holds no device-resident buffers, so this cannot speak for a preparation whose storage lives on an injected Metal device.",
+          "either_way": "the result is written here before the wave is called held."
+        },
+        "answer": {
+          "result": "NO second authority — and the question was worth asking, because the configuration is genuinely load-bearing.",
+          "what_was_observed": [
+            "Two `DevicePlanBackend`s over one injected device (`LoopDevice`), differing only in the per-class format table, answer one identity `device-matmul/v1`; the registry (one instance per identity) and the pin cannot tell them apart.",
+            "They prepare DIFFERENT images from the same plan — different resident representation, different logits — so configuration decides what a preparation contains.",
+            "And yet ONE image executes bit-identically under either instance: the format table is consumed at preparation and never consulted again, so what the configuration decided is already in the pinned realization and in the operands materialised under it. Nothing is reinterpreted."
+          ],
+          "conclusion": "The pin needs the provider's semantic identity, not its configuration. `LoweringIdentity` stays `device-matmul/v1`. No `ProviderBinding` / `EnvironmentIdentity` is invented, per the frozen decision rule.",
+          "limit_recorded_honestly": "The experiment ran over a host-memory device (`LoopDevice`). No prepared form in this build holds device-resident storage — `PreparedOperands` holds stable page-aligned HOST allocations and a device's residency is a buffer cache keyed on `(pointer, length)` (see `exec/device.rs`) — so changing the injected device costs an upload, not correctness. A future provider whose prepared form held device-resident handles WOULD make the environment load-bearing after preparation, and that is when the second authority gets named, not before."
+        }
+      },
+      "out_of_scope": [
+        "selection changes of any kind",
+        "capability matching (F2's subject, not L4's)",
+        "Metal-lowered migration",
+        "any new kernel-plane variant — the count stays 33 (F3)"
+      ],
+      "what_landed": [
+        "`RealizationRecord.provider` is now `codec_provider`, joined by `lowering_provider: LoweringIdentity` — non-optional, stamped by `select_records` from the backend that selected, so the pin names both authorities whether the caller resolved its provider through a registry or handed it in directly.",
+        "`PinnedAuthorities { codecs, lowerings }` in `exec/realization.rs`: a serializable value carrying both planes, with `ensure_codecs_in` and `ensure_lowerings_in` on it. `PreparedOperands::ensure_providers_in` (unchanged in behaviour and message) and the new `ensure_lowerings_in` delegate to it, so a live image and a reloaded record of one are judged by the same code.",
+        "`PreparedOperands::lowerings()` and `::authorities()`; `::ensure_lowered_by(backend)` for the seam where no registry exists.",
+        "`Vindex3Runtime` / `PreparedVindex3` carry `Option<Arc<LoweringRegistry>>` — `Some` on the registry-carried path (`open_via` / `open_with_via` now take `Arc<LoweringRegistry>` and KEEP it), `None` when a provider was handed in directly. `session_with_kv` and `prefill_into` hold the image's pins against that authority before anything runs; `PreparedVindex3::with_lowerings` re-points a prepared model at another authority, the lowering plane's `OperandStore::with_registry`.",
+        "`exec/tests/lowering_pin.rs`: the seven controls, the execution seam, and the device-instance experiment. The L2 fixture (`dense()`, `bits()`, `TOKENS`) became the wave's shared harness."
+      ],
+      "witnesses": {
+        "both_authorities_on_every_pin": "`every_pin_names_both_authorities_and_the_two_move_independently` — the lowering identity changes (production → reference → an unshipped scratch provider) while the codec identity does not, on one fixture",
+        "controls_1_to_4": "`only_the_provider_that_pinned_the_image_keeps_it_valid` — one image pinned by `scratch-provider/v1`, four registries: it alone stands; empty, `scratch-provider/v2`, and the shipped registry (two working providers) all refuse, naming the pin's identity and what is on offer; the image's authorities are unchanged after every refusal, so nothing re-pinned on the way through",
+        "controls_5_and_6": "`each_plane_refuses_on_its_own_authority` — codec valid / lowering moved and the reverse; the lowering refusal never says `representation` and the codec refusal never says `lowering`",
+        "control_7": "`a_serialized_and_reloaded_pin_retains_both_authorities` — `PinnedAuthorities` through `serde_json` and back, identical, and yielding the same verdicts on both planes",
+        "execution_seam": "`a_pin_is_executed_by_the_provider_that_decided_it_or_not_at_all` — a production-pinned image handed to the reference provider is refused naming both identities",
+        "production_path": "`a_served_model_refuses_when_the_provider_that_pinned_it_is_gone` (larql-inference) — the served model, re-pointed at an authority holding only `reference/v1`, refuses at BOTH uses (session and batch prefill); the reference provider can execute this plan perfectly well and is not a substitute"
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "larql_vindex_lib_tests": "4665 (4659 at L3 + the wave's 6; no existing assertion changed)",
+        "larql_vindex_all_suites": "39 suites, 4989 tests, 0 failed",
+        "existing_assertions_changed": 0,
+        "selection_changes": 0,
+        "accounting_changes": 0,
+        "numerical_changes": 0,
+        "record_schema": "one field renamed (`provider` → `codec_provider`), one added (`lowering_provider`); four read sites and three literal sites in tests followed",
+        "dependent_crate_suites": "larql-inference lib 1536 (+1), larql-lql 743, larql-server 591, larql-cli vindex3_cmd 64 — all unchanged apart from the wave's own test"
+      },
+      "observations_for_later_waves": [
+        "The execution-seam check (`ensure_lowered_by`) was added as a measurement and kept: the whole larql-vindex suite passes unchanged with it in place, so NOTHING in this build ever executed a prepared image on a provider that did not pin it. That is a stronger statement than the registry check alone can make, and it is the check available to a caller who was handed a provider rather than a registry.",
+        "A prepared image carries exactly one lowering identity today. `lowerings()` returns a list so that a future image lowered by several providers (a device provider for the FFN, a CPU provider for the head) needs no change to the invalidation contract — only to what fills it.",
+        "`Vindex3Runtime` carries `Option<Arc<LoweringRegistry>>`: `None` is the direct-backend path, which named no authority and therefore has nothing to be checked against. After L3 no production path can reach that arm without going through the CLI's own composition site, whose images are prepared and executed in one breath — the staleness window this wave closes only exists where prepared state OUTLIVES its resolution, which is the served model.",
+        "L5's external provider now has one more thing to prove: that its identity survives into the pin and invalidates by name like any shipped one. `lowering_pin.rs` already exercises that with `scratch-provider/v1`, an identity this build does not ship, so L5's provider inherits a working contract rather than discovering one."
+      ],
+      "gates_run": [
+        "cargo fmt --all (and --check)",
+        "cargo clippy -p larql-vindex -p larql-cli -p larql-inference --all-targets -- -D warnings",
+        "cargo test -p larql-vindex (lib 4665 (4659 at L3 + the wave's 6; no existing assertion changed); 39 suites, 4989 tests, 0 failed)",
+        "cargo check --workspace --all-targets",
+        "kernel-plane file count, the inventory's method: 33",
+        "scripts/check_contract_index.py (71 named tests), scripts/check_doc_links.py"
+      ],
+      "deviations_from_forecast": "None. The wave stayed inside the frozen design: no selection change, no capability work, no Metal migration, kernel-plane count 33. Two things were added beyond the seven controls and are recorded above rather than in the forecast: `ensure_lowered_by` at the execution seam (kept because it held with no existing assertion changed) and `PreparedVindex3::with_lowerings`, without which no production-path witness of invalidation was possible."
+    },
+    "L5": {
+      "name": "hostile external provider",
+      "status": "built and held",
+      "branch": "lowering-l5",
+      "base": "L4 (`lowering-l4`) on L3 on L2 (#466)",
+      "date": "2026-09-09",
+      "the_question": "Can a lowering provider this build neither ships nor names go the whole way — register → candidate derivation → selection → accounting → pin → preparation → authority validation → execute — with no provider-specific branch in core, and the kernel plane still closed?",
+      "rule": "Frozen before implementation, as L3 and L4 were. What the provider may borrow from the crate is decided HERE, so a proof that needed an internal cannot be quietly re-described as a proof that did not.",
+      "design_frozen_before_implementation": {
+        "where": "`crates/larql-vindex/tests/external_lowering_provider/`. An integration test is a separate crate in cargo's model, so it sees only what `larql-vindex` exports — the same standard the codec plane's proof met (`external_codec_provider.rs`, `external_attested_provider/`), where anything the proof had needed from the crate's internals would have been a leak in the contract.",
+        "identity": "`outside-lowering/v1`, spelled in the test crate and nowhere that ships. The genericity scan is over that family, the provider's name and its own constants.",
+        "shape": "The provider owns its candidate derivation, its selection, its refusal and its projection kernel, and borrows the reference oracle for the glue between projections — the same composition the in-tree device provider takes with the production CPU glue (`exec/device.rs`), and the shape a real out-of-tree provider starts life in. Borrowing is through exported API, which is the point: an external provider is allowed to USE the crate; core is not allowed to know it.",
+        "reuses_an_existing_realization": "Per F3 it pins forms that already exist — the codec-declared direct plan when the facts declare one, else the universal decode — and adds no `PhysicalProjectionPlan`, `WeightFormat`, `WeightSlice`, `WeightRows` or `LoadedWeight` variant. The kernel-plane count stays 33.",
+        "what_it_must_borrow_and_that_is_a_finding": "`SelectionReason` is a closed vocabulary an external provider must choose from. Whether every arm it needs is provider-agnostic is measured, not assumed, and recorded either way."
+      },
+      "controls_frozen": [
+        "the journey, in one test on a container this build wrote: register → candidates → selection → accounting → pin → preparation → authority validation → execute",
+        "the arithmetic is the provider's own: a variant of it that computes differently produces different logits, so the numbers come from the external provider and not from a shipped path shadowing it",
+        "core never names it: a source scan over every non-test `.rs` under `crates/*/src` for the family, the name and the provider's constants — with the positive control that the same scan finds a family this build DOES ship",
+        "the pin is its own: every record says `outside-lowering/v1`, and L4's invalidation refuses by name once the provider is gone, with the shipped registry NOT a fallback",
+        "the accounting prices what IT selected, not what a shipped provider would have selected for the same operands",
+        "its refusal is its own: facts that admit no realization are refused naming the candidates it considered, before any byte, with nothing underneath constructing a provider to answer anyway"
+      ],
+      "kernel_plane_files_expected": 33,
+      "out_of_scope": [
+        "capability matching (F2)",
+        "opening the kernel vocabulary (F3 — the whole point is that the first external provider does not need it)",
+        "Metal-lowered migration (F1)",
+        "any change to selection, accounting or execution semantics in core"
+      ],
+      "what_landed": [
+        "`crates/larql-vindex/tests/external_lowering_provider/` — `provider.rs` (two external providers), `main.rs` (the journey and its controls), `genericity.rs` (the source scan and its positive control). Nine tests.",
+        "The provider states `outside-lowering/v1`, derives its candidates from the codec's declarations, records the direct BLAS realization the f32 codec declares as CONSIDERED and declines it, and pins the universal decode — because its one kernel reads f32 values. It owns its selection, its refusal, its projection kernel, the whole dense feed-forward (three matrices per call) and the vocabulary head; it borrows the reference oracle's glue, as the in-tree device provider borrows the production CPU glue.",
+        "A second external provider — `outside-lowering-sibling/v1`, same derivation, same kernel — exists so that 'the caller named it' can be told apart from 'it was the only implementation that could have run'.",
+        "**No production file changed.** The whole wave is a new test target: `git diff --stat HEAD -- crates` over the implementation commit is empty apart from the new directory."
+      ],
+      "witnesses": {
+        "the_journey": "`an_external_provider_reaches_execution_through_registration_alone` — register → candidates (the declined direct realization is in `candidates`) → selection → accounting (`expectations` → `ResourceLedger::aggregate`, non-zero stored/resident/touch, and `render_selection_summary` naming what IT pinned) → pin (`lowering_provider == outside-lowering/v1` on every record) → preparation → authority validation (`ensure_lowerings_in` stands in its registry, refuses in the shipped one) → execute",
+        "named_not_merely_available": "`the_named_provider_is_reached_even_beside_an_equally_capable_one` — with the sibling registered, executing via `outside-lowering/v1` moves that provider's dispatch counters and leaves the sibling's at exactly zero; asking for the sibling reaches the sibling and pins its identity",
+        "the_numbers_are_its_own": "`the_numbers_are_the_external_providers_own` — a defect in its kernel moves the logits, so no shipped path was quietly answering underneath",
+        "its_choice_not_a_default": "`the_pins_are_the_providers_choice_and_not_a_shipped_default` — the production provider, handed the same operands, pins `cpu:direct/BlasF32` every time; this one pins `cpu:decode/ScalarF32` every time",
+        "its_own_refusal": "`it_refuses_on_its_own_terms_when_the_facts_admit_nothing` — facts naming no registered codec are refused by the provider itself with `UnregisteredRepresentation` and no candidates, and the same provider selects once the codec is registered",
+        "L4_inherited": "`another_provider_may_not_run_the_external_providers_pins` — `ensure_lowered_by` refuses the production provider over these pins, naming both identities",
+        "the_registry_is_indifferent": "`the_registry_treats_an_outside_identity_exactly_as_a_shipped_one` — duplicate refused, another revision of its family is another provider",
+        "genericity": "`no_external_provider_identity_appears_in_production_larql` — both families, both names and the type name appear in no non-test `.rs` under any crate's `src/` (>100 files scanned)",
+        "scan_control": "`the_scan_would_have_found_a_provider_that_was_there` — the same walk finds `cpu-production`, so the empty result means 'nothing there' rather than 'nothing looked at'",
+        "correctness": "the external path's logits and final hidden state are BIT-IDENTICAL to the reference oracle's — its own kernels compute the model exactly, not approximately"
+      },
+      "controls_added_after_the_freeze": {
+        "control": "`the_named_provider_is_reached_even_beside_an_equally_capable_one`",
+        "why": "Raised in review: the six frozen controls could not distinguish 'the registry resolved the identity the caller named' from 'the external provider was the only implementation that could have run this plan' — the journey passes either way, and 'the accounting prices what IT selected' is about pricing, not about why it was reached.",
+        "where_it_sits_relative_to_F2": "This is resolution BY IDENTITY — L2's contract, where the CALLER chooses and the registry is held to the choice. It is not the registry matching declared capabilities to pick a provider on the caller's behalf, which is F2 and remains out of scope. Nothing in the test asks the registry to choose.",
+        "recorded_here": "rather than by editing the frozen list, per the programme's rule."
+      },
+      "measurements": {
+        "kernel_plane_files": 33,
+        "production_files_changed": 0,
+        "larql_vindex_lib_tests": "4665, unchanged — the wave adds no lib test",
+        "external_lowering_provider_suite": "9 passed",
+        "what_the_interpreter_asked_the_provider_for": "embed 5, norm 21, project 0, attention 2, attention_step 0, ffn 10, routed_ffn 0, output_head 1, residual_add 20 — and 31 matrices multiplied by its own kernel (3 per feed-forward call, plus the head)",
+        "larql_vindex_all_suites": "39 suites, 4998 tests, 0 failed (4989 at L4 plus this wave's 9)"
+      },
+      "findings": [
+        "**`project` is dispatched zero times.** On a dense softmax stack the seam dispatches WHOLE OPERATIONS — `attention`, `ffn`, `output_head` — and `PlanBackend::project` is never called; the projections inside attention belong to `attention`. So an external provider that wants to own the matmuls must implement those methods, which is what this one does for the feed-forward and the head. Measured rather than assumed, and directly relevant to F1: the granularity question is not only 'is per-operation too fine for Metal', it is also 'which per-operation methods are actually on the path'.",
+        "**A provider owns realization and borrows plan semantics — but the shipped JUDGEMENT about semantics is not exported.** `kernels::activate` is public, so the activation is shared rather than re-transcribed; `production::require_executable_gate` — the shipped statement of which gate policies are executable — is `pub(super)`, so this provider states its own refusal for policies it does not implement. The contract says every backend must honour the gate policy or refuse; outside the crate that is enforced by convention alone. Naming a limit, not a defect: it is what a later wave would fix by exporting the judgement, not the policy.",
+        "**`SelectionReason` is a closed vocabulary and every arm this provider needed is provider-agnostic** (`ArmPrefersDecode`, `NoDirectRealization`), so it borrowed without distorting anything. `DeviceClassTable` is the one provider-flavoured arm in the enum, and nothing outside a device backend needs it.",
+        "**F3 held for the reason the forecast predicted, and the reason is worth stating.** The external provider needed no new kernel-plane variant because `Decode(ScalarF32)` is an HONEST description of what it does — decode to f32, project with a scalar loop. A provider whose kernel had a genuinely novel shape would have nothing honest to name, and would face the choice between misdescribing itself as a shipped plan and opening the vocabulary. That is precisely the question the forecast defers to after provider openness, and it is now the sharpest open question in the lane.",
+        "**The wave required zero production changes.** L1–L4 built the plane; L5 only had to use it. That is the strongest form the claim could take: the first out-of-tree provider is not a special case anywhere in the tree."
+      ],
+      "gates_run": [
+        "cargo fmt --all (and --check)",
+        "cargo clippy -p larql-vindex --all-targets -- -D warnings",
+        "cargo test -p larql-vindex — 39 suites, 4998 tests, 0 failed (4989 at L4 plus this wave's 9)",
+        "cargo check --workspace --all-targets",
+        "kernel-plane file count, the inventory's method: 33",
+        "scripts/check_contract_index.py (76 named tests), scripts/check_doc_links.py (857 links), scripts/check_doc_references.py --strict (735 path references) — the last two run from a checkout OUTSIDE `.claude/`, see the gate-hygiene note below"
+      ],
+      "deviations_from_forecast": "None. One control was added after the freeze and is recorded above with its reason. No production file changed; kernel-plane count 33; no capability matching, no Metal migration, no new kernel.",
+      "gate_hygiene_found_while_running_them": {
+        "check_doc_references_is_vacuous_in_a_worktree": "It skips any path containing `/.claude/`, so run from `.claude/worktrees/<branch>` it checks 0 documents across 0 references and exits 0 — green and meaningless. Re-run from a checkout outside that directory: 735 path references, none broken. CI checks out clean and sees the real set (`quality.yml` runs it `--strict`).",
+        "check_contract_index_is_not_wired_into_CI": "At `origin/main` (2944ace6) the only two references to `scripts/check_contract_index.py` in the tracked tree are prose in the v1 index — \"That is enforced rather than asked for\" — and this programme's own gate list. No workflow, no make target, no hook invokes it. So the index's citation discipline has been holding only because someone ran the script by hand, which is what happened for L4 and L5 here. Raised by the OPT-CONTRACT-1 session, verified independently, and being fixed on that branch by wiring the script into `quality.yml`. Recorded here because a gate list that names an unwired script is a gate list that overstates itself.",
+        "checked_from": "`git grep -n check_contract_index origin/main` and `.github/workflows/quality.yml` at origin/main (which does run check_doc_links.py and check_doc_references.py --strict)."
+      },
+      "rebase_check": "Replayed for real: #466 merged as 097d54a5 and L3→L5 (six commits) rebased onto it with no conflict — the same clean replay a trial rebase onto 2944ace6 had predicted before the merge. On the rebased stack: 19 lowering lib tests, the 9 external-provider tests and the 3 inference `via_tests` pass, the contract index resolves its 76 named tests and the 857 documentation links resolve. Main has not touched `docs/represent-v1-contract-index.md` since the base, so the index this wave extends is main's plus L4's rows and L5's."
+    }
+  }
+}

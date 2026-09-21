@@ -344,7 +344,8 @@ impl Container {
             .unwrap_or_else(|| panic!("the fixture must plan: {:?}", outcome.defects));
         let store = OperandStore::open(self.dir.path(), &inspection)
             .unwrap()
-            .with_registry(registry);
+            .with_registry(registry)
+            .unwrap();
         (plan, store)
     }
 
@@ -433,7 +434,7 @@ fn an_external_provider_s_extents_reach_selection_and_a_budget_pins_one() {
     // moves with it is what is OPENED.
     let budget = ResidencyBudget::UNBOUNDED
         .with_prepare_bytes(whole.read_to_prepare * 3 / 4)
-        .with_fidelity(RepresentationFloor::RelativeRms(5e-3));
+        .with_fidelity(RepresentationFloor::Within(5e-3));
     let (shallow_records, shallow) = candidate
         .select(registry, &budget)
         .expect("the provider's base extent satisfies the floor");
@@ -453,6 +454,9 @@ fn an_external_provider_s_extents_reach_selection_and_a_budget_pins_one() {
     let exact = ResidencyBudget::UNBOUNDED.with_prepare_bytes(whole.read_to_prepare * 3 / 4);
     let refusal = candidate
         .select(registry, &exact)
-        .expect_err("exact reconstruction leaves nothing to give up");
-    assert!(refusal.contains("exact reconstruction"), "{refusal}");
+        .expect_err("the complete stored representation leaves nothing to give up");
+    assert!(
+        refusal.contains("the complete stored representation"),
+        "{refusal}"
+    );
 }

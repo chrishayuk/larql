@@ -20,6 +20,7 @@
 
 pub mod accounting;
 pub mod attention_residual;
+pub mod attested_fidelity;
 pub mod backend;
 pub mod continuation;
 pub mod controls;
@@ -27,9 +28,13 @@ pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
 pub mod device;
+pub mod device_refusal;
 mod experts;
+pub mod fidelity_carriage;
 pub mod gated_delta;
 pub mod hyper_connection;
+pub mod intervene;
+pub mod intervene_heads;
 pub mod kda;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod kda_metal;
@@ -41,14 +46,19 @@ pub mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod kimi_source;
 pub mod kv;
+pub mod lowering;
 pub mod mamba2;
 pub mod mla;
 pub mod narrow;
 pub mod observe;
+pub mod observe_heads;
+pub mod observe_lens;
+pub mod observe_stats;
 pub mod operands;
 pub mod prefetch;
 pub mod prepared;
 pub mod production;
+pub mod provenance;
 pub mod quantise;
 pub mod realization;
 pub mod reference;
@@ -86,7 +96,6 @@ use prepared::{
     PreparedOperands,
 };
 use rayon::prelude::*;
-use reference::ReferenceBackend;
 use weights::{load_weight, LoadedWeight};
 
 /// One plane of the traversal — the residual at a layer boundary, one
@@ -395,7 +404,15 @@ pub fn execute_text<'s>(
     store: impl Into<OperandSource<'s>>,
     tokens: &[u32],
 ) -> Result<ExecutionTrace, VindexError> {
-    execute_plan(plan, store.into(), tokens, &ReferenceBackend::new())
+    // The oracle by request, from the shipped registry — not by
+    // privileged construction (LOWERING-PLUGIN-1, L3).
+    execute_plan_via(
+        plan,
+        store.into(),
+        tokens,
+        &lowering::LoweringRegistry::shipped(),
+        &lowering::LoweringIdentity::reference(),
+    )
 }
 
 /// Execute a text-component plan over `tokens` on `backend`, tracing
@@ -410,6 +427,25 @@ pub fn execute_plan<'s, B: PlanBackend + ?Sized>(
     backend: &B,
 ) -> Result<ExecutionTrace, VindexError> {
     execute_slice(plan, store, tokens, backend, ExecutionSlice::Full)
+}
+
+/// [`execute_plan`] on the provider `provider` names in `lowerings` — the
+/// registry-carried path (LOWERING-PLUGIN-1, L2).
+///
+/// The registry is the caller's value and the identity is the caller's
+/// choice; a provider the registry does not hold is refused here, by
+/// identity and naming every provider it does hold, before any operand
+/// is read. Nothing below constructs a provider the caller did not
+/// register.
+pub fn execute_plan_via<'s>(
+    plan: &ComponentOpPlan,
+    store: impl Into<OperandSource<'s>>,
+    tokens: &[u32],
+    lowerings: &lowering::LoweringRegistry,
+    provider: &lowering::LoweringIdentity,
+) -> Result<ExecutionTrace, VindexError> {
+    let backend = lowerings.provider(provider)?;
+    execute_plan(plan, store, tokens, backend)
 }
 
 /// [`execute_plan`] over a chosen [`ExecutionSlice`].
@@ -515,6 +551,9 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     // nothing here falls back to another realization. The registry is
     // the image's own — the store's — never a built-in default.
     ops.ensure_providers_in(ops.registry())?;
+    // And the pin's OTHER authority: the provider executing these pins
+    // is the provider that decided them (LOWERING-PLUGIN-1, L4).
+    ops.ensure_lowered_by(backend)?;
     // A one-shot forward owns whatever continuation state the plan needs.
     //
     // For a wholly-softmax stack that is nothing: `None` keeps the
@@ -881,7 +920,7 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                 Some(norm) => norm.apply(backend, last),
                 None => last.clone(),
             };
-            let logits = output_logits(ops, backend, hidden, &final_hidden)?;
+            let logits = ops.head_over_normed(backend, &final_hidden)?;
             (FinalState::Hidden(final_hidden), logits)
         }
         // The attention-residual exit: the same reduction a site runs,
@@ -910,7 +949,7 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         Some(norm) => norm.apply(backend, &reduced),
                         None => reduced,
                     };
-                    let logits = output_logits(ops, backend, hidden, &final_hidden)?;
+                    let logits = ops.head_over_normed(backend, &final_hidden)?;
                     (FinalState::Hidden(final_hidden), logits)
                 }
                 Some(_) => {
@@ -919,7 +958,7 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         Some(norm) => norm.apply(backend, &prefix),
                         None => prefix,
                     };
-                    let logits = output_logits(ops, backend, hidden, &final_hidden)?;
+                    let logits = ops.head_over_normed(backend, &final_hidden)?;
                     (FinalState::Hidden(final_hidden), logits)
                 }
                 None => {
@@ -950,7 +989,7 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         Some(norm) => norm.apply(backend, &reduced),
                         None => reduced,
                     };
-                    let logits = output_logits(ops, backend, hidden, &final_hidden)?;
+                    let logits = ops.head_over_normed(backend, &final_hidden)?;
                     (FinalState::Hidden(final_hidden), logits)
                 }
                 _ => {
@@ -967,30 +1006,6 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         }
     };
     Ok(FinalOutput { exit, logits })
-}
-
-/// The output head over the final-normed vector, when the image carries
-/// one.
-fn output_logits<B: PlanBackend + ?Sized>(
-    ops: &PreparedOperands,
-    backend: &B,
-    hidden: usize,
-    final_hidden: &[f32],
-) -> Result<Option<Vec<f32>>, VindexError> {
-    match ops.output() {
-        Some((output, weight)) => {
-            let vocab = output.projection.shape[0];
-            Ok(Some(backend.output_head(
-                weight.slice(),
-                vocab,
-                hidden,
-                final_hidden,
-                output.multiplier,
-                output.softcapping,
-            )?))
-        }
-        None => Ok(None),
-    }
 }
 
 /// Scale a sublayer's own output before its residual add, when the plan

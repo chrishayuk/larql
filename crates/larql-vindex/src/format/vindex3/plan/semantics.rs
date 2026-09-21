@@ -198,6 +198,19 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "rope_local_base_freq",
     // Whether router weights are renormalised after top-k selection.
     "norm_topk_prob",
+    // Kimi-K3's latent routed branch. `routed_expert_hidden_size` is a
+    // width, but it is NOT stored geometry the way `kv_lora_rank` and
+    // `moe_intermediate_size` are: those are proven carried by the placed
+    // objects whose shapes they describe, and this one governs an
+    // operator the checkpoint's own tensors cannot demonstrate — its
+    // presence adds two projections and a norm to the forward pass, and
+    // K3's expert bank is a compressed dialect that closure never
+    // reaches. Execution-semantic, therefore, and judged by a carriage
+    // rule with a probe rather than credited to a bank that does not
+    // close. `latent_moe_use_norm` is execution-semantic for the plainest
+    // reason: it decides whether an operation happens.
+    "routed_expert_hidden_size",
+    "latent_moe_use_norm",
     // Routing width: how many experts activate per token.
     "num_experts_per_tok",
     "num_experts_per_token",
@@ -427,6 +440,12 @@ pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
     // head width (equal to `head_dim` on Gemma 4 vision).
     "pooling_kernel_size",
     "position_embedding_size",
+    // SigLIP's attention-pooling head (Gemma 3's `vision_config`):
+    // `true` places a `head.*` parameter set after the encoder, `false`
+    // (what every Gemma 3 checkpoint ships) means the tower's last
+    // hidden state is its output and no head tensors exist. A fact about
+    // which tensors the tower holds.
+    "vision_use_head",
     // Input standardisation: its parameters are the placed `std_scale` /
     // `std_bias` tensors; the flag says they apply.
     "standardize", // mamba_ssm's own spelling of the hidden width, read through the
@@ -461,6 +480,15 @@ pub const INTERFACE_SEMANTIC_KEYS: &[&str] = &[
     "default_output_length",
     "use_bidirectional_attention",
     "audio_config",
+    // Gemma 3's spellings of the same image join: `Gemma3Config` names
+    // the soft token and its delimiters `*_index` where Gemma 4 says
+    // `*_id`, and the soft-token count `mm_tokens_per_image`. Read by
+    // the interface reader under these names, so they are credited as
+    // read and, like Gemma 4's, required by the image capability alone.
+    "image_token_index",
+    "boi_token_index",
+    "eoi_token_index",
+    "mm_tokens_per_image",
 ];
 
 /// Identity facts inert for a forward pass wherever they appear.
@@ -1034,6 +1062,14 @@ const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
             "n_group",
             "scoring_func",
             "norm_topk_prob",
+            // The latent routed branch: where the routed experts run, and
+            // whether their aggregate is normalised. Clustered with
+            // routing rather than with norm geometry, because the leverage
+            // they describe is the ROUTED BRANCH's shape — the norm is a
+            // parameter of that branch, not a norm the model has anywhere
+            // else.
+            "routed_expert_hidden_size",
+            "latent_moe_use_norm",
             "routed_scaling_factor",
             "decoder_sparse_step",
             "mlp_only_layers",

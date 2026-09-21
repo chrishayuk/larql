@@ -56,6 +56,14 @@ pub enum DeclaredRopeScaling {
     None,
     Yarn(YarnRopeScaling),
     Llama3(Llama3RopeScaling),
+    /// `rope_scaling = {rope_type: linear, factor}`: every position is
+    /// divided by `factor` before the rotation. The checkpoint-wide
+    /// declaration; which layers it reaches is the architecture's
+    /// answer (`ModelArchitecture::rope_position_divisor_for_layer` —
+    /// Gemma 3 applies it to its full-attention layers only).
+    Linear {
+        factor: f64,
+    },
 }
 
 /// How a layer encodes position.
@@ -64,6 +72,25 @@ pub enum DeclaredRopeScaling {
 pub enum PositionPolicy {
     /// Rotary position embedding at the given base frequency.
     Rope { theta: f64 },
+    /// Rotary position embedding at `theta` with every position divided
+    /// by `factor` before the rotation — HF's `rope_type: "linear"`
+    /// (Llama 2 long-context variants; Gemma 3's global layers, whose
+    /// `rope_scaling = {linear, 8.0}` HF applies to full-attention
+    /// layers only).
+    ///
+    /// Its own variant for the reason [`Self::Llama3`] is: a consumer
+    /// that only knew `Rope { theta }` would rotate the global layers
+    /// eight times too fast on Gemma 3 and, because every backend
+    /// dropped the same fact, CPU-vs-Metal parity would never see it
+    /// (the defect `RopeScaling::to_config_json` records). Not YaRN (no
+    /// amplitude, no band ramp) and not Llama-3 (every frequency is
+    /// divided, not a wavelength band), so it folds into neither.
+    ///
+    /// A *carriage* variant, not new mathematics: `larql-compute`'s
+    /// `rope_freq_plan` has always taken a position divisor. What was
+    /// missing was a way for the container to say so, which is why
+    /// every Gemma 3 checkpoint was refused at `plan`.
+    Linear { theta: f64, factor: f64 },
     /// Rotary position embedding at `theta`, with Llama-3 wavelength-band
     /// frequency scaling.
     ///
@@ -281,6 +308,9 @@ impl PositionPolicy {
             (Self::Rope { theta }, DeclaredRopeScaling::Llama3(scaling)) => {
                 Self::Llama3 { theta, scaling }
             }
+            (Self::Rope { theta }, DeclaredRopeScaling::Linear { factor }) => {
+                Self::Linear { theta, factor }
+            }
             (policy, _) => policy,
         }
     }
@@ -291,6 +321,7 @@ impl PositionPolicy {
     pub fn rope_theta(self) -> Option<f64> {
         match self {
             Self::Rope { theta }
+            | Self::Linear { theta, .. }
             | Self::Yarn { theta, .. }
             | Self::Llama3 { theta, .. }
             | Self::PartialRope { theta, .. }
@@ -311,9 +342,10 @@ impl PositionPolicy {
             | Self::MRope {
                 rotary_fraction, ..
             } => Some(rotary_fraction),
-            // Llama-3 scaling adjusts the frequencies of a FULL rotary;
-            // it states nothing about a rotated fraction.
+            // Llama-3 and linear scaling adjust the frequencies of a FULL
+            // rotary; they state nothing about a rotated fraction.
             Self::Rope { .. }
+            | Self::Linear { .. }
             | Self::Yarn { .. }
             | Self::Llama3 { .. }
             | Self::Relative { .. }
@@ -329,6 +361,7 @@ impl PositionPolicy {
         match self {
             Self::Yarn { .. } => Some(super::rope_types::ROPE_TYPE_YARN),
             Self::Llama3 { .. } => Some(super::rope_types::ROPE_TYPE_LLAMA3),
+            Self::Linear { .. } => Some(super::rope_types::ROPE_TYPE_LINEAR),
             Self::PartialRope {
                 basis: RotaryFrequencyBasis::HeadWidth,
                 ..
@@ -365,6 +398,7 @@ impl PositionPolicy {
             // at every position; answering this accessor would apply an
             // attention-temperature change no Llama checkpoint declares.
             Self::Llama3 { .. }
+            | Self::Linear { .. }
             | Self::Rope { .. }
             | Self::PartialRope { .. }
             | Self::MRope { .. }
@@ -379,6 +413,24 @@ impl PositionPolicy {
         match self {
             Self::Llama3 { scaling, .. } => Some(scaling),
             Self::Yarn { .. }
+            | Self::Linear { .. }
+            | Self::Rope { .. }
+            | Self::PartialRope { .. }
+            | Self::MRope { .. }
+            | Self::Relative { .. }
+            | Self::None => None,
+        }
+    }
+
+    /// The linear position divisor when the policy carries one; `None`
+    /// otherwise — including for the unscaled layers of a checkpoint
+    /// whose declaration reaches only some layers (Gemma 3's sliding
+    /// layers rotate plain, so they answer nothing here).
+    pub fn linear(self) -> Option<f64> {
+        match self {
+            Self::Linear { factor, .. } => Some(factor),
+            Self::Llama3 { .. }
+            | Self::Yarn { .. }
             | Self::Rope { .. }
             | Self::PartialRope { .. }
             | Self::MRope { .. }
@@ -398,6 +450,7 @@ impl PositionPolicy {
                 ..
             } => Some((section, interleaved)),
             Self::Rope { .. }
+            | Self::Linear { .. }
             | Self::Yarn { .. }
             | Self::Llama3 { .. }
             | Self::PartialRope { .. }
@@ -449,11 +502,61 @@ mod tests {
         );
     }
 
+    /// Gemma 3's global layers: `{rope_type: linear, factor: 8.0}` at
+    /// the family's global base. The tag is the HF spelling so a
+    /// container written by this build is read back as the same policy.
+    #[test]
+    fn linear_serialises_tagged_and_answers_its_own_accessors() {
+        let policy = PositionPolicy::Linear {
+            theta: 1e6,
+            factor: 8.0,
+        };
+        assert_eq!(
+            serde_json::to_string(&policy).unwrap(),
+            "{\"kind\":\"linear\",\"theta\":1000000.0,\"factor\":8.0}"
+        );
+        assert_eq!(policy.rope_theta(), Some(1e6));
+        assert_eq!(policy.linear(), Some(8.0));
+        assert_eq!(
+            policy.declared_rope_type(),
+            Some(super::super::rope_types::ROPE_TYPE_LINEAR)
+        );
+        // A full rotary: no fraction, and neither of the other blocks.
+        assert_eq!(policy.rotary_fraction(), None);
+        assert_eq!(policy.yarn(), None);
+        assert_eq!(policy.llama3(), None);
+        // And the plain policy answers nothing for the divisor — the
+        // sliding layers of the same checkpoint must not inherit it.
+        assert_eq!(PositionPolicy::Rope { theta: 1e4 }.linear(), None);
+    }
+
+    /// Composition at the declared-theta boundary: a plain rotary takes
+    /// the linear divisor; a NoPE sentinel does not grow one.
+    #[test]
+    fn linear_composes_with_a_declared_theta_but_not_with_nope() {
+        let scaling = DeclaredRopeScaling::Linear { factor: 4.0 };
+        assert_eq!(
+            PositionPolicy::from_declared_theta_with_scaling(5e5, scaling),
+            PositionPolicy::Linear {
+                theta: 5e5,
+                factor: 4.0
+            }
+        );
+        assert_eq!(
+            PositionPolicy::from_declared_theta_with_scaling(NOPE_THETA_SENTINEL, scaling),
+            PositionPolicy::None
+        );
+    }
+
     #[test]
     fn round_trips() {
         for policy in [
             PositionPolicy::None,
             PositionPolicy::Rope { theta: 1e6 },
+            PositionPolicy::Linear {
+                theta: 1e6,
+                factor: 8.0,
+            },
             PositionPolicy::Yarn {
                 theta: 150000.0,
                 scaling: gpt_oss_yarn(),

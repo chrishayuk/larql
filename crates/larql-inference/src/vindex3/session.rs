@@ -159,4 +159,23 @@ impl<B: PlanBackend> Vindex3Session<'_, B> {
             .logits
             .ok_or_else(missing_logits_error)
     }
+
+    /// The step with interventions armed (V3-INTERVENE-1 carrier
+    /// addresses, V3-INTERVENE-2 head addresses): both plans are
+    /// admitted against the prepared image before the token executes,
+    /// and the firings say which declared interventions applied.
+    pub fn step_intervened(
+        &mut self,
+        token: u32,
+        observer: &mut dyn larql_vindex::format::vindex3::opplan::exec::observe::StepObserver,
+        interventions: &larql_vindex::format::vindex3::opplan::exec::intervene::InterventionPlan,
+        head_interventions: &larql_vindex::format::vindex3::opplan::exec::intervene_heads::HeadInterventionPlan,
+    ) -> Result<
+        larql_vindex::format::vindex3::opplan::exec::intervene::InterventionStepOutput,
+        InferenceError,
+    > {
+        Ok(self
+            .inner
+            .step_intervened(token, observer, interventions, head_interventions)?)
+    }
 }

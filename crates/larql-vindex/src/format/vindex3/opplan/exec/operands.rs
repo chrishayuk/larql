@@ -82,6 +82,15 @@ pub struct OperandStore {
     /// test assert the shape directly: prepare, then serve N requests,
     /// then assert the count did not move.
     loads: std::sync::atomic::AtomicU64,
+    /// PHYSICAL bytes this store has actually read from disk.
+    ///
+    /// The observed half of preparation accounting. `loads` counts CALLS,
+    /// which cannot be compared against a byte ledger — two reads of a
+    /// small operand and one read of a large one are the same number.
+    /// Incremented only in [`Self::load_raw`], which is the one path that
+    /// copies payload; `map_region` binds without reading and correctly
+    /// moves neither counter.
+    read_bytes: std::sync::atomic::AtomicU64,
     /// Tensors quantised at load in this session — see
     /// [`Self::runtime_quantised`].
     runtime_quantised: std::sync::atomic::AtomicU64,
@@ -103,6 +112,24 @@ pub struct OperandStore {
     /// because the store is what resolves one: a codec asks for a
     /// dependency by name and never learns where it came from.
     references: crate::format::vindex3::auxiliary_references::ReferenceTable,
+    /// What this container measures about its own representations.
+    ///
+    /// Empty for every container written before attestation existed,
+    /// which is every container this build has ever read — so an empty
+    /// table is the normal case and means "nothing measured", never "the
+    /// file failed to load". A table the index NAMES and the container
+    /// does not hold is a refusal at open, on the same terms as the
+    /// reference table beside it.
+    attestations: crate::format::vindex3::representation_attestations::AttestationTable,
+    /// Whose measurements this build is willing to act on.
+    ///
+    /// [`RecognisedMethods::none`] by default, which is what a build that
+    /// has qualified no measurement should say: an attestation is carried
+    /// and checked either way, but an unrecognised one leaves the
+    /// guarantee unavailable rather than optimistic. Recognition is a
+    /// TRUST decision and belongs to the caller, not to the container
+    /// making the claim about itself.
+    recognised: crate::format::vindex3::representation_attestations::recognition::RecognisedMethods,
     /// Which objects this store has actually resolved an operand out of.
     ///
     /// The consumption half of the residency ledger. `load_count` says
@@ -214,6 +241,10 @@ pub struct SelectedRepresentation {
     pub encoding: String,
     /// Whether those bytes came from a compiled pack.
     pub stored: bool,
+    /// The decode ABI the pack declares, when it declares one — kept so
+    /// the admission that ran at open can run again against another
+    /// registry ([`OperandStore::with_registry`]).
+    pub codec: Option<crate::format::vindex3::represent::nvfp4_pack::CodecIdentity>,
 }
 
 impl OperandStore {
@@ -233,6 +264,25 @@ impl OperandStore {
         inspection: &SystemInspection,
         want: Option<&str>,
         source: RepresentationSource,
+    ) -> Result<Self, VindexError> {
+        Self::open_in(root, inspection, want, source, CodecRegistry::builtin())
+    }
+
+    /// [`Self::open_for`], decoding through `registry` from the first
+    /// byte: the pack admission at open, selection, provider identity and
+    /// decode all read this one registry.
+    ///
+    /// This is the constructor an external provider needs. A pack whose
+    /// identity names a family only that provider registers is admitted
+    /// here, and would have been refused by name — before the provider's
+    /// registry was ever consulted — had the store been opened through the
+    /// built-in one and re-pointed afterwards.
+    pub fn open_in(
+        root: &Path,
+        inspection: &SystemInspection,
+        want: Option<&str>,
+        source: RepresentationSource,
+        registry: &'static CodecRegistry,
     ) -> Result<Self, VindexError> {
         let mut segments = BTreeMap::new();
         let mut absent: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -280,7 +330,7 @@ impl OperandStore {
                     // contract this one may not implement must be refused
                     // here, before anything reads them.
                     if let Some(codec) = &entry.codec {
-                        codec.admit()?;
+                        codec.admit_in(registry)?;
                     }
                     (id.clone(), entry, true)
                 }
@@ -300,6 +350,7 @@ impl OperandStore {
             selected.insert(
                 object.id.clone(),
                 SelectedRepresentation {
+                    codec: entry.codec.clone(),
                     encoding: entry.encoding.clone(),
                     stored: is_stored,
                 },
@@ -343,9 +394,23 @@ impl OperandStore {
             }
             None => crate::format::vindex3::auxiliary_references::ReferenceTable::empty(),
         };
+        // The attestation table, on the same terms as the reference table
+        // above: named-but-absent is a refusal here rather than a silent
+        // loss of every guarantee at the first floor that needed one.
+        let attestations = match &inspection.index.representation_attestations {
+            Some(name) => {
+                crate::format::vindex3::representation_attestations::RepresentationAttestations::read(
+                    root, name,
+                )?
+            }
+            None => crate::format::vindex3::representation_attestations::AttestationTable::empty(),
+        };
         Ok(Self {
-            registry: CodecRegistry::builtin(),
+            registry,
             references,
+            attestations,
+            recognised:
+                crate::format::vindex3::representation_attestations::recognition::RecognisedMethods::none(),
             mapped: std::sync::Mutex::new(BTreeMap::new()),
             regions: std::sync::atomic::AtomicUsize::new(0),
             segments,
@@ -359,18 +424,41 @@ impl OperandStore {
             source,
             id: next_identity(),
             loads: std::sync::atomic::AtomicU64::new(0),
+            read_bytes: std::sync::atomic::AtomicU64::new(0),
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         })
     }
 
-    /// The same store, decoding through `registry` instead of the built-in
-    /// one. Selection, provider identity and decode all read this one
-    /// registry, so a codec registered here is executable end to end and a
-    /// codec absent from it is refused everywhere.
-    pub fn with_registry(mut self, registry: &'static CodecRegistry) -> Self {
+    /// The same store, decoding through `registry` instead of the one it
+    /// was opened with. Selection, provider identity and decode all read
+    /// this one registry, so a codec registered here is executable end to
+    /// end and a codec absent from it is refused everywhere.
+    ///
+    /// Every pack the open admitted is admitted AGAIN, against the new
+    /// registry: a store cannot be re-pointed at a registry that does not
+    /// implement the contract its bytes were written under. A pack the
+    /// open could not admit never reaches here — open the store through
+    /// [`Self::open_in`] with the registry that knows it.
+    pub fn with_registry(mut self, registry: &'static CodecRegistry) -> Result<Self, VindexError> {
+        for selected in self.selected.values() {
+            if let (true, Some(codec)) = (selected.stored, &selected.codec) {
+                codec.admit_in(registry)?;
+            }
+        }
         self.registry = registry;
+        Ok(self)
+    }
+
+    /// The same store, acting on measurements from these authorities and
+    /// methods. Trust is the caller's to declare — a container cannot
+    /// make itself believed by attesting more loudly.
+    pub fn with_recognised(
+        mut self,
+        recognised: crate::format::vindex3::representation_attestations::recognition::RecognisedMethods,
+    ) -> Self {
+        self.recognised = recognised;
         self
     }
 
@@ -589,6 +677,20 @@ impl OperandStore {
         &self.references
     }
 
+    /// What this container measures about its own representations.
+    pub fn attestations(
+        &self,
+    ) -> &crate::format::vindex3::representation_attestations::AttestationTable {
+        &self.attestations
+    }
+
+    /// Whose measurements this build acts on.
+    pub fn recognised(
+        &self,
+    ) -> &crate::format::vindex3::representation_attestations::recognition::RecognisedMethods {
+        &self.recognised
+    }
+
     /// Every dependency `operand`'s codec requires at `extent`, resolved:
     /// each target decoded through ITS own codec at ITS terminal extent.
     ///
@@ -786,6 +888,12 @@ impl OperandStore {
         self.loads.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// PHYSICAL bytes read from disk — the observed figure a preparation
+    /// ledger is held against.
+    pub fn bytes_read(&self) -> u64 {
+        self.read_bytes.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Whether this object's bytes are on disk.
     ///
     /// `false` for an object the container describes but has not
@@ -852,46 +960,6 @@ impl OperandStore {
         Some(total)
     }
 
-    /// A companion tensor of `operand`, from the SAME logical object:
-    /// its declared shape and its stored bytes.
-    ///
-    /// Exists for the one format whose operand is not one tensor.
-    /// Fine-grained FP8 stores a matrix as `*.weight` plus a sibling
-    /// `*.weight_scale_inv`, and an [`OperandRef`] names one tensor —
-    /// so the pair can only be bound if the second can be reached from
-    /// the first.
-    ///
-    /// Deliberately scoped to the same object rather than taking a free
-    /// `(object, tensor)` pair: a scale that came from somewhere else
-    /// would be a different matrix's, and the type should not be able to
-    /// express that.
-    pub fn companion(
-        &self,
-        operand: &OperandRef,
-        tensor: &str,
-    ) -> Result<(Vec<usize>, RawOperand), VindexError> {
-        let companion = OperandRef {
-            object: operand.object.clone(),
-            tensor: tensor.to_string(),
-            // The container's own record is the authority for both; these
-            // are placeholders that `load_raw` never reads.
-            dtype: String::new(),
-            shape: Vec::new(),
-        };
-        let shape = self
-            .segments
-            .get(&operand.object)
-            .and_then(|s| s.tensors.get(tensor))
-            .map(|t| t.shape.clone())
-            .ok_or_else(|| {
-                VindexError::Parse(format!(
-                    "operand `{}` names no companion `{tensor}` in `{}`'s segment",
-                    operand.tensor, operand.object
-                ))
-            })?;
-        Ok((shape, self.load_raw(&companion)?))
-    }
-
     /// Load one operand's stored bytes and dtype, unwidened — for a
     /// caller that converts to a representation other than f32 (and for
     /// [`Self::load`] itself, so there is exactly one resolution path).
@@ -919,6 +987,11 @@ impl OperandStore {
         file.seek(SeekFrom::Start(segment.payload_start + tensor.offset))?;
         let mut bytes = vec![0u8; tensor.len as usize];
         file.read_exact(&mut bytes)?;
+        // Counted AFTER the read succeeds and from the buffer that was
+        // filled, so the figure is what came off the disk rather than
+        // what the tensor table said would.
+        self.read_bytes
+            .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(RawOperand {
             dtype: tensor.dtype.clone(),
             bytes,
@@ -1234,29 +1307,6 @@ impl<'a> OperandSource<'a> {
     /// f32-space facts and cannot be represented in raw stored bytes,
     /// so an overridden operand refuses here rather than serving stale
     /// base bytes.
-    /// A companion tensor of `operand` from the same object — see
-    /// [`OperandStore::companion`].
-    ///
-    /// Refuses an overridden operand for the same reason [`Self::load_raw`]
-    /// does: an overlay edit is an f32-space fact, and serving the base
-    /// scales beside edited codes would silently mix the two.
-    pub fn companion(
-        &self,
-        operand: &OperandRef,
-        tensor: &str,
-    ) -> Result<(Vec<usize>, RawOperand), VindexError> {
-        if let Some(overrides) = self.overrides {
-            if overrides.is_overridden(operand) {
-                return Err(VindexError::Parse(format!(
-                    "operand `{}/{}` carries overlay edits — its companion `{tensor}` \
-                     cannot be bound beside edited values",
-                    operand.object, operand.tensor
-                )));
-            }
-        }
-        self.base.companion(operand, tensor)
-    }
-
     pub fn load_raw(&self, operand: &OperandRef) -> Result<RawOperand, VindexError> {
         if let Some(overrides) = self.overrides {
             if overrides.is_overridden(operand) {

@@ -11,6 +11,7 @@
 
 mod accounting;
 mod attention_kv_parity;
+mod attested_fidelity;
 mod attn_res_2a_decode;
 mod attn_res_2b_batch;
 mod attn_res_2b_controls;
@@ -19,7 +20,10 @@ mod backend_rows;
 mod bf16_gemv_bench;
 mod bf16_residency;
 mod bf16_zlib_execution;
+mod carrier_write;
+mod carrier_write_real;
 mod compact_consumption;
+mod composed_floor;
 mod continuation;
 mod controls;
 mod coverage_backend_decode;
@@ -35,6 +39,8 @@ mod gated_delta_parity;
 mod gated_delta_tiny;
 mod hybrid_traversal;
 mod hyper_connection;
+mod intervene;
+mod intervene_heads;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -56,6 +62,9 @@ mod kimi_moe_real;
 mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_two_layer;
+mod lowering_identity;
+mod lowering_pin;
+mod lowering_registry;
 mod mamba2_exec;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod mla_metal;
@@ -69,6 +78,7 @@ mod nvfp4_projection;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
+mod provenance;
 mod realization;
 mod vq8_shared_execution;
 // Each module carries its OWN cfg: inserting a bare `mod` line above a
@@ -98,17 +108,23 @@ mod generate_baseline;
 mod generate_metal;
 mod generate_real;
 mod golden;
+mod head_observation;
+mod head_observation_gates;
 mod kernels;
 mod kimi_per_expert_prepared;
 mod kquant_projection;
 mod kquant_projection_real;
 mod kv;
+mod lens;
+mod linear_rope;
 mod llama3_rope;
 mod observe;
+mod observe_stats;
 mod overrides;
 mod parity;
 mod partial_residency;
 mod recurrence_shape;
+mod reference_refusal_arms;
 mod replay_capture;
 mod requirements;
 mod residency;
@@ -132,6 +148,8 @@ pub(super) use crate::format::vindex3::fixtures::{
     DENSE_HIDDEN as HIDDEN, DENSE_INTERMEDIATE as INTERMEDIATE, DENSE_LAYERS as LAYERS,
     DENSE_Q_HEADS as Q_HEADS, DENSE_VOCAB as VOCAB,
 };
+mod latent_moe_execution;
+mod latent_moe_parity;
 mod prefetch;
 mod sigmoid_router;
 mod stages_and_routing;

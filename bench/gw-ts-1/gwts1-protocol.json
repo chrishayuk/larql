@@ -1,0 +1,263 @@
+{
+  "schema": "larql.gwts1.protocol.v1",
+  "status": "frozen_pre_population_capture",
+  "frozen_date": "2026-09-21",
+  "protocol_sha256": "sha256:d873d238d99406dc8a549681aa746e750a9d4b802e24ff21a8eb26d152a97d55",
+  "code_authority": {
+    "branch": "main",
+    "commit": "0337d77bb421ef32b3a4b02725f3d5f2f540f633",
+    "capability": "HEAD-OBS-1 merged"
+  },
+  "human_spec": {
+    "path": "../../docs/gw-transition-support-paths.md",
+    "sha256": "sha256:6f38f1afb617970ac329e3422a81b282846e6d53356508d7689182e1d5085f01"
+  },
+  "claim_boundary": "held-out support-path reproducibility and prefix-to-next-support prediction; not causality and not execution substitution",
+  "primary_claim": "a held-out prefix predicts subsequent operator-specific support better than marginal-frequency, layer-frequency, unordered-set, permutation, operator-swap and strongest-single-event controls at matched candidate budget",
+  "ontology": {
+    "transition_identity": {
+      "required": [
+        "semantic_source",
+        "semantic_operation",
+        "semantic_destination",
+        "task_identity",
+        "preregistered_answer_identity"
+      ],
+      "forbidden": [
+        "prompt_family_identity",
+        "prompt_identity",
+        "execution_identity",
+        "model_identity",
+        "architecture",
+        "layer",
+        "site",
+        "head",
+        "feature_address",
+        "support_family_identity",
+        "path_derived_label",
+        "observed_answer"
+      ],
+      "source_rule": "semantic source only; never an execution-derived carrier or residual state",
+      "answer_rule": "target declared before execution; never the model's observed answer"
+    },
+    "transition_instance": {
+      "required": [
+        "transition_identity",
+        "prompt_family_identity",
+        "prompt_identity",
+        "execution_identity",
+        "observed_outcome"
+      ]
+    },
+    "transition_support_path": {
+      "required": [
+        "transition_instance",
+        "extraction_contract_identity",
+        "ordered_support_events"
+      ],
+      "causal_status": "forbidden_in_gwts1"
+    },
+    "support_event": {
+      "occurrence_fields": [
+        "ordinal"
+      ],
+      "coordinate_fields": [
+        "operator",
+        "layer",
+        "normalized_layer_depth",
+        "site",
+        "physical_support"
+      ],
+      "measurement_fields": [
+        "signed_contribution",
+        "absolute_contribution",
+        "operator_normalized_mass",
+        "reconstruction_residual",
+        "observation_identity"
+      ],
+      "operators": [
+        "attention",
+        "ffn"
+      ]
+    }
+  },
+  "population_binding": {
+    "frozen_before": "first assessment execution",
+    "required": [
+      "semantic transition rows and transition identities",
+      "prompt families, prompts and tokenizations",
+      "discovery and held-out assignments grouped by transition identity",
+      "model, container, realization and operation-plan identities",
+      "eligible sites and capture windows",
+      "preregistered target-directed reader",
+      "observation level, source top-k, byte budget and refusal policy"
+    ],
+    "mutation_rule": "changing a bound population field after assessment starts creates a new experiment identity"
+  },
+  "join_contract": {
+    "exact_fields": [
+      "model_container_identity",
+      "operation_plan_identity",
+      "prepared_image_fingerprint",
+      "realization_policy",
+      "prompt_token_identity",
+      "execution_identity",
+      "position",
+      "observation_receipt",
+      "extraction_contract_identity",
+      "ordered_site_identity"
+    ],
+    "mismatch": "refuse_path",
+    "attention_authority": "HEAD-OBS-1 child reconstruction from the canonical attention write",
+    "ffn_authority": "production-effective GW-0B-style child reconstruction from the canonical FFN write"
+  },
+  "path_extraction": {
+    "parent_score": "dot(preregistered_reader, applied_delta)",
+    "selection_mass": "absolute(parent_score)",
+    "normalization": "discovery-only empirical absolute-contribution distribution per operator and normalized-depth quartile",
+    "event_quantile_primary": 0.75,
+    "minimum_discovery_observations_per_cell": 20,
+    "sparse_cell_fallback": "operator-wide discovery distribution",
+    "sparse_operator_rule": "fewer than 20 discovery observations refuses that operator",
+    "site_admission": "current absolute contribution is at least the locked discovery quantile; evaluated independently at the current site",
+    "prefix_causality": "no later event, whole-path total, recurrence statistic or outcome may affect admission of an earlier event",
+    "attention_head_mass_primary": 0.8,
+    "ffn_address_mass_primary": 0.8,
+    "ffn_address_cap_primary": 32,
+    "tie_break": "canonical ascending physical address within an admitted site",
+    "final_order": "canonical execution order",
+    "zero_mass_rule": "may remain for parent accounting with empty physical support; cannot count as recovered next event",
+    "truncation_rule": "retain the child-support cap, mark mass_truncated and report achieved child mass",
+    "sensitivity": {
+      "event_quantiles": [
+        0.5,
+        0.65,
+        0.9
+      ],
+      "child_mass_points": [
+        0.5,
+        0.65,
+        0.9,
+        0.95
+      ],
+      "ffn_address_caps": [
+        16,
+        64
+      ],
+      "verdict_rule": "reported only; cannot replace the primary operating point"
+    },
+    "forbidden_inputs": [
+      "later events or whole-path totals",
+      "cross-run recurrence",
+      "assessment outcome",
+      "intervention outcome",
+      "later predictor retrieval result",
+      "manual path cleanup"
+    ]
+  },
+  "alignment": {
+    "exact_within_family": "equal operator sequence and exact site sequence",
+    "global_alignment": {
+      "gap_cost": 1.0,
+      "same_operator_cost": "absolute normalized-layer-depth distance",
+      "operator_mismatch_cost": 2.0,
+      "mismatch_tie_break": "prefer two gaps so different operators never align",
+      "alignment_inputs": [
+        "operator",
+        "normalized_layer_depth"
+      ],
+      "forbidden_alignment_inputs": [
+        "physical_support_similarity",
+        "contribution",
+        "outcome"
+      ]
+    },
+    "reported_separately": [
+      "operator agreement",
+      "normalized layer-depth distance",
+      "physical-support weighted Jaccard",
+      "contribution-sign agreement",
+      "gap rate"
+    ],
+    "single_tunable_similarity_scalar": false
+  },
+  "split_discipline": {
+    "group": "transition_identity",
+    "assessment_is_read_only": true,
+    "assessment_forbidden_updates": [
+      "path prototype",
+      "threshold",
+      "equivalence mapping",
+      "candidate vocabulary",
+      "normalization statistic"
+    ],
+    "same_transition_recurrence": "different execution identities and, for the primary invariance contrast, different prompt-family or prompt identities",
+    "identical_prompt_repeats": "runtime-stability diagnostic only"
+  },
+  "controls": [
+    "same support events unordered",
+    "within-path event-order permutation",
+    "attention/ffn operator-label swap",
+    "strongest single event",
+    "marginal-frequency next event",
+    "layer-frequency next event",
+    "same transition identity with different execution identity",
+    "same relation/task stratum with different transition identity"
+  ],
+  "control_matching": [
+    "eligible universe",
+    "returned event count",
+    "candidate bytes",
+    "support-unit budget"
+  ],
+  "prediction": {
+    "minimum_prefix_events": 2,
+    "candidate_k": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "primary_score": "true next-event absolute contribution-mass retention; zero unless operator and eligible site are correct",
+    "within_architecture_site_match": "exact",
+    "cross_architecture_site_match": "secondary typed-equivalence score only",
+    "reported": [
+      "operator accuracy",
+      "event survival",
+      "support weighted Jaccard",
+      "contribution-sign accuracy",
+      "candidate fraction",
+      "bytes touched",
+      "dot products"
+    ],
+    "assessment_exclusion": "predictor cannot retrieve another assessment realization of the same transition identity"
+  },
+  "progression_gate": {
+    "minimum_held_out_path_coverage": 0.8,
+    "maximum_mean_candidate_fraction": 0.25,
+    "minimum_block_bootstrap_p05_mass_retention_advantage_over_every_control": 0.0,
+    "minimum_block_bootstrap_p05_operator_accuracy_advantage_over_frequency_controls": 0.0,
+    "requires_cross_operator_transition": true,
+    "all_controls_required": true,
+    "inapplicable_operator_swap": "not_testable_and_not_a_pass",
+    "selection": "first candidate_k point satisfying the full conjunction",
+    "bootstrap_block": "transition_identity",
+    "bootstrap_trials": 2000,
+    "random_seed": 1196897346
+  },
+  "verdicts": [
+    "no_recurrence",
+    "recurrence_without_order",
+    "order_without_prediction",
+    "predictive_observational_path",
+    "prompt_family_specific_realization",
+    "architecture_specific_realization",
+    "insufficient_coverage"
+  ],
+  "successors": {
+    "causality": "ATTR-1C or a separately frozen causal-path rung",
+    "executability": "a separately frozen skip/route/prefetch/substitute rung with correctness, calibration and saved-work gates"
+  },
+  "amendment_rule": "after assessment begins, record corrections and deviations in a separate adjudication artifact; do not silently rewrite this contract"
+}

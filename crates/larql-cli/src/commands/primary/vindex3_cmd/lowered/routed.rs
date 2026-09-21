@@ -320,6 +320,21 @@ fn build_routed(
     layer: &LayerPlan,
     op: &larql_vindex::format::vindex3::opplan::RoutedFfnOp,
 ) -> Result<RoutedLayer, VindexError> {
+    // A bottleneck around the bank refuses FIRST, and by name. The
+    // descriptor path would otherwise bind every operand successfully —
+    // the bank IS stored at the latent width — and run the layer at the
+    // wrong width with nothing to catch it. Named before any tensor is
+    // registered, for the reason K3-REP-GATE-1's D-6 gives: a refusal
+    // raised later reads as a byte count, and sends a reader to a buffer
+    // instead of to the config line that governs it.
+    if let Some(why) =
+        larql_vindex::format::vindex3::opplan::exec::device_refusal::lowered_latent_branch_refusal(
+            layer.layer,
+            op.latent.as_ref(),
+        )
+    {
+        return Err(VindexError::Parse(why));
+    }
     // Every routing/layout/format fact comes from the plan's RoutedFfnOp,
     // never a model name. A storage format the descriptor path cannot
     // serve, or a fused operand with no declared row layout, refuses here

@@ -262,23 +262,25 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "rope_type",
         reaches: Carriage::Represented,
-        // PositionPolicy is `Rope { theta } | Yarn { theta, scaling } |
-        // None`: unscaled rotary, YaRN-scaled rotary (frequencies AND the
-        // attention amplitude), or no position encoding. Any other declared
-        // rope class (llama3, dynamic, ...) still has no variant and
-        // mismatches here — represented, not lowered: the interpreter and
-        // the lowering refuse a YaRN layer until A-9.3/A-9.4 execute it.
-        site: "Component.attention[].position (PositionPolicy::Rope | Yarn | Llama3)",
+        // PositionPolicy is `Rope { theta } | Linear { theta, factor } |
+        // Yarn { theta, scaling } | Llama3 { theta, scaling } | None`:
+        // unscaled rotary, positions divided before rotation, YaRN-scaled
+        // rotary (frequencies AND the attention amplitude), Llama-3
+        // wavelength bands, or no position encoding. Any other declared
+        // rope class (dynamic, ...) still has no variant and mismatches
+        // here — represented, not lowered: the interpreter and the
+        // lowering refuse a YaRN layer until A-9.3/A-9.4 execute it.
+        site: "Component.attention[].position (PositionPolicy::Rope | Linear | Yarn | Llama3)",
         probe: Some(probe_rope_type),
     },
-    // The YaRN block's own leaves, each carried on `PositionPolicy::Yarn`
-    // and answered from it. A checkpoint that declares them without
-    // declaring `rope_type: yarn` gets no answer, which is right — the
-    // leaves mean nothing outside that block.
+    // The scaling block's own leaves, each carried on the policy variant
+    // its `rope_type` selects and answered from it. A checkpoint that
+    // declares them without declaring a scaling `rope_type` gets no
+    // answer, which is right — the leaves mean nothing outside a block.
     CarriageRule {
         leaf: "factor",
         reaches: Carriage::Represented,
-        site: "Component.attention[].position ({Yarn,Llama3}.scaling.factor)",
+        site: "Component.attention[].position ({Yarn,Llama3}.scaling.factor | Linear.factor)",
         probe: Some(probe_scaling_factor),
     },
     CarriageRule {
@@ -513,6 +515,31 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         reaches: Carriage::Lowered,
         site: "ExecutionSurface.ffn.moe.shared_expert_intermediate_size → SharedExpertOp.intermediate_size (and the shared-expert operand shapes)",
         probe: Some(probe_shared_expert_width),
+    },
+    // Kimi-K3's latent routed branch (K3-LATENTMOE-1). `Lowered`, and
+    // the claim is exact: the width reaches `LatentBranchOp.width`, where
+    // it is BOTH the geometry every routed-bank shape contract is sized
+    // from and the width the two wrapper projections are bound at — so a
+    // build that stored the number and kept sizing the bank from
+    // `hidden_size` would fail this rule's probe and the op plan
+    // together, rather than reporting a fact it does not honour.
+    //
+    // The domain was measured before the rule was promised: exactly one
+    // of the 117 conformance rows declares either leaf. The previous
+    // rung's `q_lora_rank` rule was withdrawn for the opposite reason —
+    // it reached eighteen rows of which only six built the surface it
+    // named — and that withdrawal is why this one is checked first.
+    CarriageRule {
+        leaf: "routed_expert_hidden_size",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.latent.width → LatentBranchOp.width, and through MoeSurface::routed_expert_input_width every routed expert-bank shape contract",
+        probe: Some(probe_routed_expert_width),
+    },
+    CarriageRule {
+        leaf: "latent_moe_use_norm",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.latent.norm → LatentBranchOp.norm — the RMS norm on the weighted aggregate, between summation and the up-projection",
+        probe: Some(probe_latent_moe_use_norm),
     },
     CarriageRule {
         leaf: "moe_router_activation_func",
@@ -1714,8 +1741,23 @@ fn llama3_block(component: &Component) -> Option<larql_models::Llama3RopeScaling
 fn probe_scaling_factor(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let factor = yarn_block(component)
         .map(|y| y.factor)
-        .or_else(|| llama3_block(component).map(|l| l.factor))?;
+        .or_else(|| llama3_block(component).map(|l| l.factor))
+        .or_else(|| linear_block(component))?;
     Some(json!(factor))
+}
+
+/// The linear position divisor a built layer carries, if any layer does.
+///
+/// Asked of every layer, not the first: on Gemma 3 the declaration
+/// reaches the full-attention layers only, and the sliding layers
+/// rotate plain — so the first layer of the table answers nothing while
+/// the block is carried five layers in.
+fn linear_block(component: &Component) -> Option<f64> {
+    component
+        .attention
+        .as_ref()?
+        .iter()
+        .find_map(|l| l.position.linear())
 }
 
 fn probe_llama3_low_freq(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
@@ -2130,6 +2172,52 @@ fn probe_is_llama_config(_component: &Component, ctx: &ProbeContext<'_>) -> Opti
 /// (`(u+1)·g·σ(αg)` against `act(g)·u`). Answering only for one would
 /// have reported GLM-5.3-Flash's declared clamp as uncarried while its
 /// executor applied it.
+/// Where the routed experts run, off the BUILT surface.
+///
+/// `None` under the uniform form covers the only two states that reach
+/// it — a component with no routed block at all, and one whose routed
+/// experts run at `hidden_size` — and in both the declared width found
+/// no home, which is what an unrepresented finding says. It is
+/// deliberately NOT answered with `hidden_size`: that would report a
+/// checkpoint's declared bottleneck as carried by a build that has none.
+fn probe_routed_expert_width(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component
+        .execution
+        .as_ref()?
+        .ffn
+        .as_ref()?
+        .moe
+        .as_ref()?
+        .latent
+        .map(|latent| json!(latent.width))
+}
+
+/// Whether the latent branch normalises its aggregate.
+///
+/// Answers `false` as readily as `true`, because the declaration this is
+/// compared against is a BOOLEAN: a checkpoint declaring
+/// `latent_moe_use_norm: false` beside a width has its "no norm" carried
+/// exactly, and reporting that as unrepresented would grade agreement as
+/// a dropped fact.
+///
+/// Under the uniform form it answers `None` — and this is the flag's own
+/// finding, not the width's. The reference nests the norm inside the
+/// wrapper, so a `latent_moe_use_norm: true` with no
+/// `routed_expert_hidden_size` builds no norm THERE either: the flag is
+/// inert in the model, and reporting it unrepresented is the honest
+/// reading of a declaration nothing acts on.
+fn probe_latent_moe_use_norm(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component
+        .execution
+        .as_ref()?
+        .ffn
+        .as_ref()?
+        .moe
+        .as_ref()?
+        .latent
+        .map(|latent| json!(latent.norm.is_some()))
+}
+
 fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
         // BOTH clamped policies answer, and that is the point: the

@@ -52,7 +52,7 @@ fn counterfactual_two_admitted() -> super::super::super::state::snapshot::Search
     let base = reloaded();
     let mut measurements = base.measurements().clone();
     measurements
-        .record(
+        .record_fixture(
             fixtures::key_for(&fixtures::s1(), EvidenceScale::Authority),
             fixtures::authority_reading(3.3532e-3, 1427),
         )
@@ -94,7 +94,7 @@ fn nothing_admitted_is_reported_as_nothing_and_not_as_a_best_guess() {
         (fixtures::s2(), 4.0563e-3, 1309),
     ] {
         measurements
-            .record(
+            .record_fixture(
                 fixtures::key_for(&state, EvidenceScale::Authority),
                 fixtures::authority_reading(kl, flips),
             )

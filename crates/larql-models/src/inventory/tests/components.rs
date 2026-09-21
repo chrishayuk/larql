@@ -191,3 +191,33 @@ fn topology_evidence_alone_decides_componenthood() {
         "a block with no topology fact is not a component"
     );
 }
+
+/// Gemma 3's SigLIP tower declares `vision_use_head`; the reader records
+/// it on the tower's execution facts and credits the path, so the leaf
+/// has a fate instead of grading "read by nothing".
+#[test]
+fn a_siglip_tower_reads_its_pooling_head_flag_and_credits_the_path() {
+    let readings = read_components(&json!({
+        "model_type": "gemma3",
+        "text_config": { "model_type": "gemma3_text", "hidden_size": 64 },
+        "vision_config": {
+            "model_type": "siglip_vision_model",
+            "hidden_size": 1152,
+            "intermediate_size": 4304,
+            "num_hidden_layers": 27,
+            "num_attention_heads": 16,
+            "image_size": 896,
+            "patch_size": 14,
+            "vision_use_head": false
+        }
+    }));
+    let vision = readings
+        .iter()
+        .find(|r| r.topology.name == "vision")
+        .expect("the vision component is read");
+    assert_eq!(vision.topology.tower.use_head, Some(false));
+    assert!(vision
+        .consumed_paths
+        .contains("vision_config.vision_use_head"));
+    assert!(!vision.topology.tower.is_empty());
+}

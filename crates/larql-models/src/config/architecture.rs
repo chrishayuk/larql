@@ -19,9 +19,9 @@ use crate::validation::ConfigValidationResult;
 use super::{
     layer_types, rope_types, Activation, ActivationDeclaration, DeclaredRopeScaling, EmbeddingNorm,
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, HyperConnection,
-    LayerKind, Llama3RopeScaling, MlaQueryForm, ModelConfig, NormSpec, NormType, PositionPolicy,
-    PostNormEps, QkNormScope, ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec,
-    YarnRopeScaling, SITU_NAME,
+    LatentNormSpec, LayerKind, Llama3RopeScaling, MlaQueryForm, ModelConfig, NormSpec, NormType,
+    PositionPolicy, PostNormEps, QkNormScope, ResidualTopology, RotaryFrequencyBasis,
+    RoutedExpertForm, SharedExpertGateSpec, YarnRopeScaling, SITU_NAME,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -36,6 +36,12 @@ const IDENTITY_SCALE: f32 = 1.0;
 /// because `1.0` here is a transcribed fallback from one line of one
 /// file, not a neutral scale that happens to be one.
 const SITU_DEFAULT_BETA: f32 = 1.0;
+
+/// The position divisor of an unscaled rotary: positions enter the
+/// rotation as declared. What `rope_position_divisor_for_layer` answers
+/// for every layer of a checkpoint without linear scaling, and for the
+/// layers a family's override leaves plain (Gemma 3's sliding layers).
+pub const UNSCALED_POSITION_DIVISOR: f64 = 1.0;
 
 /// Attention score scale from a declared `query_pre_attn_scalar` (or any
 /// other scalar the score is `1/sqrt` of, e.g. `head_dim`).
@@ -1479,6 +1485,60 @@ pub trait ModelArchitecture: Send + Sync {
         false
     }
 
+    /// Where this family's ROUTED experts run — at `hidden_size`, or
+    /// behind a bottleneck of their own.
+    ///
+    /// Read from the DECLARATION: `routed_expert_hidden_size`'s
+    /// PRESENCE, exactly the reference's `is not None`. Never inferred
+    /// from which tensors a checkpoint ships — a `routed_expert_down_proj`
+    /// may CONFIRM this form, it must never select it, or a checkpoint
+    /// with a stray operand would be executed as a different model.
+    ///
+    /// The norm is nested inside the latent variant because the reference
+    /// nests it: `if self.use_latent_moe:` encloses
+    /// `if self.latent_moe_use_norm:`, so a config setting the flag
+    /// without the width builds no norm at all. That state is
+    /// unrepresentable here rather than merely discouraged.
+    fn routed_expert_form(&self) -> RoutedExpertForm {
+        match self.config().routed_expert_hidden_size {
+            None => RoutedExpertForm::Uniform,
+            Some(width) => RoutedExpertForm::Latent {
+                width,
+                norm: self.latent_moe_uses_norm().then(|| LatentNormSpec {
+                    eps: self.routed_expert_norm_eps(),
+                }),
+            },
+        }
+    }
+
+    /// Whether the latent routed branch normalises its weighted
+    /// aggregate.
+    ///
+    /// TRUTHINESS, not presence: the reference reads
+    /// `getattr(config, "latent_moe_use_norm", False)` and consumes it
+    /// in a plain `if`, so absent, `null` and `false` are all "no norm"
+    /// and differ only in what the plan reports as declared.
+    fn latent_moe_uses_norm(&self) -> bool {
+        self.config().latent_moe_use_norm.unwrap_or(false)
+    }
+
+    /// The epsilon `routed_expert_norm` runs at.
+    ///
+    /// The LAYER's eps, because the reference passes it explicitly:
+    /// `KimiRMSNorm(self.moe_hidden_size, eps=config.rms_norm_eps)`.
+    ///
+    /// This is deliberately NOT [`Self::mla_q_a_norm_eps`]'s answer and
+    /// not a shared "low-rank norm epsilon" accessor. The two
+    /// neighbouring low-rank norms in this same family — `q_a_layernorm`
+    /// and `kv_a_layernorm` — are constructed with no override and run
+    /// at `KimiRMSNorm`'s class default `1e-6`, a factor of ten away.
+    /// Two rungs in a row established that class default; this one
+    /// inverts it, and the inversion is transcribed from the
+    /// constructor rather than inherited from the neighbours.
+    fn routed_expert_norm_eps(&self) -> f64 {
+        self.norm_eps() as f64
+    }
+
     /// MLA compressed KV dimension.
     fn kv_lora_rank(&self) -> usize {
         0
@@ -1676,15 +1736,40 @@ pub trait ModelArchitecture: Send + Sync {
         crate::defaults::DEFAULT_NORM_EPS
     }
 
-    /// Per-layer RoPE position divisor from `rope_scaling`. Used to honour
-    /// linear rope-scaling and the Gemma 3 per-layer-type structured form.
-    /// Default: 1.0 (no scaling).
+    /// Per-layer RoPE position divisor from `rope_scaling`: the linear
+    /// `factor` when the checkpoint declares `rope_type: "linear"`,
+    /// [`UNSCALED_POSITION_DIVISOR`] otherwise.
     ///
-    /// Gemma 3 overrides this to return the linear `factor` on global
-    /// layers only and 1.0 on sliding layers, matching the HF
-    /// `Gemma3TextConfig.rope_scaling.full_attention` structure.
+    /// **The read lives in the trait default**, for the reason recorded
+    /// on [`Self::yarn_rope_scaling`]: `rope_type: "linear"` is a config
+    /// fact, and HF's `_compute_linear_scaling_rope_parameters` applies
+    /// it to every rotating layer of any family that declares it. This
+    /// used to return `1.0` unconditionally and let Gemma 3 opt in, which
+    /// is the shape that doc-comment warns about — a Llama-2 long-context
+    /// checkpoint declaring `{type: linear, factor: 2}` was served
+    /// unscaled.
+    ///
+    /// Gemma 3 overrides this to return the `factor` on global layers
+    /// only and `1.0` on sliding layers, matching the HF
+    /// `Gemma3TextConfig.rope_scaling.full_attention` structure — the
+    /// legitimate override: which layers the block reaches is fixed by
+    /// the architecture, not by the config.
     fn rope_position_divisor_for_layer(&self, _layer: usize) -> f64 {
-        1.0
+        self.linear_rope_scaling()
+            .unwrap_or(UNSCALED_POSITION_DIVISOR)
+    }
+
+    /// The linear position divisor when the checkpoint declares
+    /// `rope_scaling = {rope_type: linear, factor}`; `None` for every
+    /// other scaling family and for no block at all.
+    ///
+    /// The checkpoint-wide declaration. Which layers it reaches is
+    /// [`Self::rope_position_divisor_for_layer`]'s answer.
+    fn linear_rope_scaling(&self) -> Option<f64> {
+        let rs = self.config().rope_scaling.as_ref()?;
+        rs.scaling_type
+            .eq_ignore_ascii_case(rope_types::ROPE_TYPE_LINEAR)
+            .then_some(rs.factor)
     }
 
     /// `llama3` RoPE scaling parameters when the checkpoint declares them.
@@ -1774,6 +1859,9 @@ pub trait ModelArchitecture: Send + Sync {
         }
         if let Some(llama3) = self.llama3_rope_scaling() {
             return DeclaredRopeScaling::Llama3(llama3);
+        }
+        if let Some(factor) = self.linear_rope_scaling() {
+            return DeclaredRopeScaling::Linear { factor };
         }
         DeclaredRopeScaling::None
     }
@@ -1883,6 +1971,22 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
     // One resolution of "which scaling family did this checkpoint
     // declare", asked once and composed with the per-layer theta below.
     let scaling = arch.declared_rope_scaling();
+    // Linear scaling is declared once for the checkpoint but REACHES a
+    // layer by the architecture's answer: HF applies Gemma 3's block to
+    // its full-attention layers only. Resolved per layer here, before
+    // the two branches below, so each sees the divisor this layer
+    // actually runs under — `None` on a layer the family leaves plain.
+    let scaling = match scaling {
+        DeclaredRopeScaling::Linear { .. } => {
+            let divisor = arch.rope_position_divisor_for_layer(layer);
+            if divisor == UNSCALED_POSITION_DIVISOR {
+                DeclaredRopeScaling::None
+            } else {
+                DeclaredRopeScaling::Linear { factor: divisor }
+            }
+        }
+        declared => declared,
+    };
     match arch
         .config()
         .layer_rope_theta
@@ -1913,6 +2017,18 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
                 theta: arch.rope_base_for_layer(layer),
                 scaling,
             },
+            // Composed with the rotary SHAPE, not built over it: a linear
+            // divisor on a partial or multi-axis rotary has no variant,
+            // so that layer keeps its shape and the plan's carriage gate
+            // refuses the unpaired `factor` — the same fallthrough
+            // `from_declared_theta_with_scaling` takes, so the two
+            // branches of this function cannot disagree.
+            DeclaredRopeScaling::Linear { factor } => {
+                match arch.rotary_policy(arch.rope_base_for_layer(layer)) {
+                    PositionPolicy::Rope { theta } => PositionPolicy::Linear { theta, factor },
+                    shaped => shaped,
+                }
+            }
             DeclaredRopeScaling::None => arch.rotary_policy(arch.rope_base_for_layer(layer)),
         },
     }

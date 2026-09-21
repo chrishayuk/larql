@@ -110,7 +110,8 @@ fn a_registry_without_the_representation_refuses_before_io() {
     let empty: &'static CodecRegistry = Box::leak(Box::new(CodecRegistry::new()));
     let store = OperandStore::open(&out, &inspection)
         .unwrap()
-        .with_registry(empty);
+        .with_registry(empty)
+        .unwrap();
     let budget = larql_vindex::format::vindex3::opplan::exec::accounting::ResidencyBudget::physical(
         1024 * 1024 * 1024 * 1024,
     );

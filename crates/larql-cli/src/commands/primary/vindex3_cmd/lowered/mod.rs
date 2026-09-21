@@ -696,6 +696,14 @@ impl<'a> LoweredSession<'a> {
                         theta,
                         amplitude: 1.0,
                     },
+                    // Linear rides the shared table too — its `inv_freq`
+                    // is the plain series divided by the factor, built in
+                    // `new` — at unit amplitude, written explicitly for
+                    // the reason Llama-3's is.
+                    PositionPolicy::Linear { theta, .. } => LoweredPosition::Scaled {
+                        theta,
+                        amplitude: 1.0,
+                    },
                     // No lowering exists for a relative scheme. It
                     // lowers to `None` — no rotation — and the executor
                     // refuses rather than running it unpositioned, so the

@@ -43,6 +43,108 @@ pub(super) fn stream_chat_completion(
 
     tokio::task::spawn_blocking(move || {
         let _gen_guard = runtime.clone().enter_generation();
+
+        // BitNet (--keep-quant) vindexes take the native-ternary
+        // streaming path: skips the dense weights write-lock and runs
+        // generate_streaming_bitnet against the pre-loaded
+        // BitnetModel at ~1.4 GB resident instead of ~5 GB.
+        //
+        // Tools and constrained generation are refused rather than
+        // silently ignored: both need masked logits over the dense
+        // path, and answering a tool request with prose would look
+        // like a model that chose not to call the tool.
+        if model.is_bitnet() {
+            if tools_active || constrained_schema.is_some() {
+                let _ = tx.blocking_send(error_chunk(
+                    "tools / constrained generation not supported on BitNet \
+                     (--keep-quant) models yet",
+                ));
+                return;
+            }
+            let bitnet_guard = match model.get_or_load_bitnet() {
+                Ok(g) => g,
+                Err(e) => {
+                    let _ = tx.blocking_send(error_chunk(&e));
+                    return;
+                }
+            };
+            let bitnet: &larql_inference::ternary::BitnetModel = &bitnet_guard;
+            // `pick_template` needs `&ModelWeights`, which the ternary
+            // path deliberately never loads. Resolve the template from
+            // the container's declared family instead — the same string
+            // `ModelWeights::arch.family()` would have yielded.
+            let template = larql_inference::prompt::ChatTemplate::for_family(&model.config.family);
+            let prompt = render(template, &messages);
+            let encoding = match model.tokenizer.encode(prompt.as_str(), true) {
+                Ok(e) => e,
+                Err(e) => {
+                    let _ = tx.blocking_send(error_chunk(&format!("tokenize: {e}")));
+                    return;
+                }
+            };
+            let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
+            if prompt_ids.is_empty() {
+                let _ = tx.blocking_send(error_chunk("rendered prompt tokenises to empty"));
+                return;
+            }
+
+            // Initial role=assistant chunk — OpenAI contract.
+            let first = build_chat_chunk(&chat_id, &model_id, Some(ASSISTANT_ROLE), None, None);
+            if tx.blocking_send(first).is_err() {
+                return;
+            }
+
+            let (sampling, eos) = util::build_sampling_eos(sampling_params, &stop_strings);
+            // Same `TokenTap` the dense path uses, so stop-string
+            // handling and halt semantics are one implementation
+            // rather than two that have to agree.
+            let tap = std::rc::Rc::new(std::cell::RefCell::new(TokenTap::new(
+                &stop_strings,
+                EmitFailure::Halt,
+            )));
+            let chat_id_cb = chat_id.clone();
+            let model_id_cb = model_id.clone();
+            let tx_cb = tx.clone();
+            let tap_cb = std::rc::Rc::clone(&tap);
+            let result = larql_inference::ternary::generate_streaming_bitnet(
+                bitnet,
+                &model.tokenizer,
+                &prompt_ids,
+                max_tokens,
+                sampling,
+                &eos,
+                move |_id: u32, text: &str, _ms: f64| {
+                    tap_cb.borrow_mut().feed(text, |t| {
+                        let chunk =
+                            build_chat_chunk(&chat_id_cb, &model_id_cb, None, Some(t), None);
+                        tx_cb.blocking_send(chunk).is_ok()
+                    });
+                },
+            );
+
+            let emitted = result;
+            // Record the generation the same way the dense path does,
+            // or `/v1/stats` would report BitNet traffic as zero
+            // throughput. `add_v3` takes plain counts, which is all the
+            // ternary path produces (no GenerateResult); the split
+            // between prefill and decode is not separately measured
+            // here, so the whole span is attributed to decode.
+            let mut tally = crate::runtime_stats::GenerationTally::new();
+            let elapsed = crate::state::elapsed_ms(call_started);
+            tally.add_v3(prompt_ids.len(), emitted, 0.0, elapsed);
+            runtime.record(tally.into_sample(elapsed));
+
+            let finish_reason: &'static str = if tap.borrow().halted() || emitted < max_tokens {
+                FINISH_REASON_STOP
+            } else {
+                FINISH_REASON_LENGTH
+            };
+            let final_chunk =
+                build_chat_chunk(&chat_id, &model_id, None, None, Some(finish_reason));
+            let _ = tx.blocking_send(final_chunk);
+            return;
+        }
+
         let mut weights_guard = match model.lock_weights_for_gen() {
             Ok(w) => w,
             Err(e) => {

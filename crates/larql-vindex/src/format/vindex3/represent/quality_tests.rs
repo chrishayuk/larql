@@ -4,6 +4,7 @@ use super::*;
 
 fn gate() -> QualityGate {
     QualityGate {
+        require_model_activations: None,
         id: "kimi-logit-v1".into(),
         positions_min: 512,
         kl_p99_max: 1e-3,
@@ -20,6 +21,7 @@ fn gate() -> QualityGate {
 
 fn clean_bank() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 512,
         logits: LogitEvidence {
             kl_p50: 4.0e-5,
@@ -67,6 +69,7 @@ fn the_same_bank_passes_one_gate_and_fails_a_tighter_one() {
     let bank = clean_bank();
     assert!(gate().evaluate(&bank).passed());
     let tighter = QualityGate {
+        require_model_activations: None,
         id: "kimi-logit-v2".into(),
         kl_p99_max: 1e-4,
         top10_change_max: Some(0),
@@ -178,6 +181,7 @@ fn kimi_logit_v1_is_frozen() {
 
 fn null_bank() -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
@@ -258,6 +262,7 @@ fn v2_changes_only_the_coverage_criterion() {
 #[test]
 fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
     let perfect = QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
@@ -353,6 +358,7 @@ fn v3_passes_marginal_churn_and_fails_material_displacement() {
     // probability, 232 top-10 changes moving 0.33 % one rank, no
     // routing change at all.
     let marginal = QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 2.2e-5,
@@ -428,6 +434,7 @@ fn v3_passes_marginal_churn_and_fails_material_displacement() {
 #[test]
 fn v3_refuses_unmeasured_consequence_but_not_an_absent_one() {
     let base = QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
@@ -507,6 +514,7 @@ fn the_report_names_authority_and_diagnostics_separately() {
     let evidence = QualityEvidence {
         gate: kimi_logit_v3(),
         bank: QualityBank {
+            activations: None,
             positions: 8192,
             logits: LogitEvidence {
                 kl_p50: 1e-5,
@@ -601,6 +609,7 @@ fn dist(p99: f64, max: f64) -> Distribution {
 /// One calibration anchor's authority-scale evidence.
 fn anchor_bank(kl_p99: f64, top1_max: f64, top10_p99: f64, covered: f64) -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: kl_p99 / 100.0,

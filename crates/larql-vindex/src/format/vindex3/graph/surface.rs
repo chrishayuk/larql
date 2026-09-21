@@ -197,6 +197,84 @@ pub struct MoeSurface {
     pub dense_prefix_layers: Option<usize>,
     /// A dense MLP summed with the expert block every layer.
     pub hybrid: bool,
+    /// The bottleneck the ROUTED experts run behind, when the family
+    /// declares one. `None` = the experts consume the block input at
+    /// `hidden` and their weighted sum is already in the residual
+    /// stream's space.
+    ///
+    /// Absent from the serialised surface when `None`, so every
+    /// non-latent container reads back unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latent: Option<MoeLatent>,
+}
+
+/// The routed branch's bottleneck: down to [`Self::width`], experts,
+/// weighted aggregate, optional norm, back up to `hidden`.
+///
+/// Nested rather than two flat fields on [`MoeSurface`] because the
+/// reference nests them — `if self.use_latent_moe:` encloses `if
+/// self.latent_moe_use_norm:` — so a norm without a width builds nothing
+/// at all. Nesting makes that state unrepresentable instead of merely
+/// wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MoeLatent {
+    /// The width the routed experts' projections are sized from. A third
+    /// independently declared number — not `hidden / 2`, not the expert
+    /// intermediate width.
+    pub width: usize,
+    /// The norm on the weighted aggregate, between summation and the
+    /// up-projection. `None` = the family declares none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub norm: Option<LatentNorm>,
+}
+
+/// The routed-expert norm's own epsilon.
+///
+/// Carried rather than defaulted, and deliberately not shared with the
+/// MLA low-rank norms: in this same family `q_a_layernorm` and
+/// `kv_a_layernorm` run at `KimiRMSNorm`'s class default `1e-6` while
+/// this one is constructed with `eps=config.rms_norm_eps` and runs at the
+/// layer's `1e-5`. Same shape of fact, different authority, ten times
+/// apart.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LatentNorm {
+    /// The epsilon, from the layer's `rms_norm_eps`.
+    pub eps: f64,
+}
+
+impl MoeSurface {
+    /// The width the routed experts' own projections are sized from —
+    /// the bottleneck when one is declared, `hidden` otherwise.
+    ///
+    /// THE single authority for routed-bank geometry. Every expert-bank
+    /// shape contract asks this rather than reaching for `hidden`, so the
+    /// packed and per-expert call sites cannot disagree about where the
+    /// bank lives, and a future storage format inherits the answer rather
+    /// than restating it.
+    ///
+    /// The router and the shared experts do NOT ask this: both read the
+    /// un-projected block input, and the shared branch is summed after
+    /// the up-projection.
+    pub fn routed_expert_input_width(&self, hidden: usize) -> usize {
+        self.latent.map_or(hidden, |l| l.width)
+    }
+
+    /// The declared latent width that cannot be executed, if there is
+    /// one.
+    ///
+    /// `routed_expert_hidden_size: 0` SELECTS the latent form — the
+    /// reference tests `is not None`, not truthiness — and then describes
+    /// a bottleneck of no width. Naming it here lets the op plan refuse
+    /// the DECLARATION, rather than letting every bank contract refuse a
+    /// zero-column operand and send a reader to a tensor whose stored
+    /// width is not the thing that is wrong.
+    ///
+    /// Falling back to the uniform form is the one answer that must not
+    /// be given: it would execute a different model than the checkpoint
+    /// declares, silently.
+    pub fn degenerate_latent_width(&self) -> Option<usize> {
+        self.latent.map(|l| l.width).filter(|w| *w == 0)
+    }
 }
 
 /// What the norm op reads.
@@ -669,6 +747,15 @@ pub fn surface_from_resolved(
                 shared_expert_intermediate_size: m.shared_expert_intermediate_size,
                 shared_expert_gate: m.shared_expert_gate,
                 hybrid: m.hybrid,
+                latent: match m.routed_expert_form {
+                    larql_models::config::RoutedExpertForm::Uniform => None,
+                    larql_models::config::RoutedExpertForm::Latent { width, norm } => {
+                        Some(MoeLatent {
+                            width,
+                            norm: norm.map(|n| LatentNorm { eps: n.eps }),
+                        })
+                    }
+                },
             }),
         }),
         norm: NormSurface {

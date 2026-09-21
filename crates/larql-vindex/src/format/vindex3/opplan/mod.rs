@@ -307,6 +307,48 @@ pub struct RoutedFfnOp {
     /// pass, which requires the operand set iff this would be `Some`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shared: Option<SharedExpertOp>,
+    /// The bottleneck the ROUTED experts run behind (Kimi-K3). `None` =
+    /// the experts consume the block input at `hidden`.
+    ///
+    /// Deliberately INSIDE the routed op rather than a projection the
+    /// caller applies first. Two of this operator's three placement facts
+    /// are then structural rather than maintained: the router reads the
+    /// op's own input because it never sees anything else, and the shared
+    /// branch is summed by the caller after this op returns, so it cannot
+    /// enter the bottleneck. Only the norm's placement is left to get
+    /// wrong, which is exactly what the oracle found — the other two are
+    /// shape-protected there for the same reason they are structural
+    /// here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latent: Option<LatentBranchOp>,
+}
+
+/// The latent routed branch's three operands and its width.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LatentBranchOp {
+    /// The width the experts run at — the authority their bank is loaded
+    /// and shaped against, not `hidden`.
+    pub width: usize,
+    /// `[width, hidden]`: the block input down to the bottleneck.
+    pub down: OperandRef,
+    /// `[hidden, width]`: the aggregate back to the residual stream.
+    pub up: OperandRef,
+    /// The RMSNorm on the WEIGHTED AGGREGATE, between summation and the
+    /// up-projection. `None` when the family declares none.
+    ///
+    /// Its epsilon rides with it rather than being read from the layer,
+    /// because "the layer's eps" is a claim about this family that the
+    /// two neighbouring MLA norms falsify — they run at a class default
+    /// ten times smaller.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub norm: Option<LatentNormOp>,
+}
+
+/// The routed-aggregate norm: its weight and its own epsilon.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LatentNormOp {
+    pub weight: OperandRef,
+    pub eps: f64,
 }
 
 impl RoutedFfnOp {

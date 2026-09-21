@@ -57,6 +57,40 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **22** — Kimi-K3's latent routed branch (K3-LATENTMOE-1). The routed
+/// experts run behind a bottleneck of their own:
+/// `routed_expert_down_proj` takes the block input to
+/// `routed_expert_hidden_size`, the experts run THERE, the weighted
+/// aggregate is normalised, and `routed_expert_up_proj` returns it. Two
+/// leaves stop grading `unknown` and become carried facts, and the router
+/// and shared experts stay at `hidden_size` — both read the un-projected
+/// block input, and the shared branch is summed after the up-projection.
+///
+/// The bump is not the two leaves finding homes. It is that
+/// `routed_expert_hidden_size` becomes **the authority the routed bank's
+/// geometry is sized from**: every expert-bank shape contract — packed
+/// gate/up and down, both scale streams, the per-expert variants and the
+/// down bias — asks `MoeSurface::routed_expert_input_width` instead of
+/// reaching for the component's `hidden`. A build that stored the width
+/// and kept sizing the bank from `hidden` would report the fact as
+/// carried while refusing the checkpoint's real bank on shape; that is
+/// the hollow carriage this transition exists to make impossible, and it
+/// is why the leaf and the geometry move together rather than in two
+/// rungs.
+///
+/// The norm's epsilon is the LAYER's `rms_norm_eps`, and this inverts the
+/// finding of the two K3 rungs before it: `q_a_layernorm` and
+/// `kv_a_layernorm` run at `KimiRMSNorm`'s class default `1e-6` because
+/// their constructor passes no override, and `routed_expert_norm`'s
+/// passes one. Same family, same norm class, a factor of ten apart —
+/// carried with the form rather than reached for.
+///
+/// Presence and truthiness are not shared between adjacent leaves:
+/// `routed_expert_hidden_size` selects the form by PRESENCE (`0` selects
+/// it and is then refused by name; `null` is absent), while
+/// `latent_moe_use_norm` is read by truthiness, so `null`, `false` and
+/// absent all mean no norm.
+///
 /// **21** — Kimi-K3's factorised MLA query (K3-MLA-Q-LORA-1).
 /// `q_lora_rank` selects the query FORM — `q_a_proj` -> `q_a_layernorm`
 /// -> `q_b_proj` in place of one dense `q_proj` — and the form is
@@ -366,6 +400,21 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// value: inert at the uniform all-MoE stack, blocking for any real
 /// per-layer topology.
 ///
+/// **23** — linear rope scaling is represented and Gemma 3's interface
+/// spellings are read. `PositionPolicy::Linear` carries `rope_scaling =
+/// {linear, factor}` on the layers the architecture says it reaches
+/// (Gemma 3: full-attention layers only), so `rope_type: "linear"` and its
+/// `factor` are admissible where they used to mismatch. `image_token_index`
+/// / `boi_token_index` / `eoi_token_index` / `mm_tokens_per_image` are the
+/// image binding under Gemma 3's names and `vision_use_head` is the SigLIP
+/// tower's pooling-head fact, so none of the five grades `Unknown` any
+/// longer. And a `vocab_size` the config omits is answered by the
+/// embedding table's row count, recorded with its provenance, so the text
+/// execution surface completes. Forecast before the code: every Gemma 3
+/// checkpoint moves from seven text-generation blockers to zero; nothing
+/// else moves. Not new mathematics: `larql-compute`'s `rope_freq_plan`
+/// has always taken a position divisor.
+///
 /// **4** — Llama-3 wavelength-band rope scaling is represented.
 /// `PositionPolicy::Llama3` carries the block, so a checkpoint declaring
 /// `rope_type: "llama3"` is admissible where it used to be refused. Not
@@ -389,7 +438,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 21;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 23;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

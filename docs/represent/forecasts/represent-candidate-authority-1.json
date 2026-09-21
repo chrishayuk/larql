@@ -1,0 +1,123 @@
+{
+  "programme": "REPRESENT-CANDIDATE-AUTHORITY-1 — a compiled candidate states what it is",
+  "status": "design frozen before implementation",
+  "branch": "represent-candidate-authority-1",
+  "base": "main `68e50625` (LOWERING L3 #468, on OPT-6 forecast #470)",
+  "date": "2026-09-10",
+  "rule": "Frozen before implementation. This transition exists because a CONSUMER asked for proof the producer never emitted, so its arms are fixed before the producer's shape is chosen — otherwise the format gets designed to make the proof easy rather than true.",
+  "the_claim": "A compiled representation artifact carries enough authoritative information for an INDEPENDENT reader to reconstruct the effective representation state it presents, bind that claim to the actual candidate bytes, and recompute `RepresentationStateId`. A stored state id is only a cross-check; it is never the authority.",
+  "why_this_exists": {
+    "the_consumer_finding": "OPT6-N2, as corrected. OPT-6 arm 4 — candidate bytes cannot establish the claimed representation state — is unsatisfiable today, but NOT because candidate authority is absent. It exists and is insufficient.",
+    "what_the_candidate_already_has": "A compiled candidate is a `.vindex3` container carrying a `CandidateIndex` (`represent/compiler.rs`), persisted by `write_index_atomically` as `index.json` and read back into a `CandidateOverlay` by `opplan/exec/kimi_source.rs`. It holds the model, a `SourceDependency` with its own `verify(&SourceIdentity)`, the object, the `PrecisionMap` it was compiled with, `can_represent_as`, `selected_representation`, and a `CompilationLedger` of `OperandSeal`s. So there is a format, a writer and a reader, and source authority is already covered.",
+    "what_is_missing_and_why_it_blocks_arm_4": "`RepresentationState::from_decisions(model, surface, decisions)` needs three authoritative inputs, and the candidate can supply only the first. `CandidateIndex.map` records the REQUESTED `PrecisionMap` — the rule set — and not the EFFECTIVE `ResolvedDecisionVector` that compilation actually produced, so it is a record of intent rather than of result. Tensor-surface identity is absent entirely. Therefore the recomputation that would establish the state cannot be performed by anyone, however carefully.",
+    "the_original_finding_which_stands": "ACT1-N3, open since stage 5b. `verify_container` reads a container's own source identity and refuses `LocatorRefusal::NotWhatItClaims`; the actuation path has no `verify_candidate` equivalent. `ArtifactLocator::candidate` resolves a candidate BY state id and verifies nothing about its contents, so the index agreeing with the request is the claim rather than evidence for it. The stage 5b executor tests hand it an empty `tempfile::tempdir()`, so nothing on the measurement path has ever read a real candidate index.",
+    "the_boundary_being_respected": "The repair is producer-side and deliberately NOT inside OPT-6. Extending the candidate's authority inside the consumer would change that programme after its own falsifier fired. OPT-6 consumes what this transition earns; it does not define it.",
+    "the_transition_is_smaller_than_first_thought": "This is an EXTENSION of `CandidateIndex` plus a reader for the actuation path, not the invention of a candidate format. Source authority is already present and already verifiable."
+  },
+  "the_anti_cheat": {
+    "stated": "The requested `MeasurementKey::state` must NOT be an input to `CandidateRepresentationAuthority` creation, at any remove.",
+    "why": "The writer's truth comes from the ACTUAL COMPILATION RESULT. If the requested state reaches the writer, ACT1-N3 has merely moved from executor self-witnessing to compiler self-witnessing, and the reader's recomputation becomes an elaborate way of returning what it was told. This is the arm most likely to be satisfied accidentally, because the requested key is in scope at every call site that would produce a candidate.",
+    "how_it_is_proven": "Arm 5. The same compilation performed while a caller asks for state Y must still produce authority for X."
+  },
+  "what_the_reader_needs": {
+    "the_normative_identity_function_already_exists": "`RepresentationState::from_decisions(model: &SourceIdentity, surface: &TensorSurface, decisions: ResolvedDecisionVector)`. Its own doc says it is 'for a caller that read the decisions out of a built container rather than resolving a map — the check that a compiled artifact is the state the search believes it measured'. It was written in anticipation of this transition.",
+    "the_requirement_that_follows": "The reader MUST call it. It may not implement a second hashing recipe, however faithfully. What is wanted is independent evidence inputs feeding the SAME normative identity function — two identity algorithms that agree today are a coincidence with a maintenance schedule, and `STATE_ID_VERSION` exists precisely because the canonical form is a promise that can change.",
+    "so_the_authority_must_carry": [
+      "schema / semantics version",
+      "source semantic identity (`SourceIdentity`, semantic not provenance — the artifact digest moves on a re-export changing no value)",
+      "tensor-surface identity (`TensorSurface`, from which `surface.identity()` is derived)",
+      "the EFFECTIVE resolved decision vector (`ResolvedDecisionVector`), layout admission already applied",
+      "payload digest(s) binding all of the above to the actual candidate bytes"
+    ],
+    "the_invariant": "recomputed state id = authority. stored state id, if present at all = convenience and cross-check."
+  },
+  "preregistered_arms": [
+    {
+      "n": 1,
+      "arm": "round trip",
+      "expect": "compile candidate X, read its authority, independently reconstruct X",
+      "must_go_red": "the reconstructed id differs from the compilation's actual state"
+    },
+    {
+      "n": 2,
+      "arm": "payload binding",
+      "expect": "refuse",
+      "condition": "candidate bytes mutated without updating the authority",
+      "must_go_red": "metadata that no longer describes the bytes still establishes a state"
+    },
+    {
+      "n": 3,
+      "arm": "metadata binding",
+      "expect": "recomputed identity MOVES, or refuses",
+      "condition": "resolved decisions, surface or source authority mutated",
+      "must_go_red": "a changed decision vector reconstructs the same state, which would mean the decisions are not actually inputs"
+    },
+    {
+      "n": 4,
+      "arm": "stored-id anti-cheat",
+      "expect": "reader detects the disagreement",
+      "condition": "only a convenience `state_id` field corrupted",
+      "must_go_red": "the stored id is believed, or silently preferred, over the recomputation"
+    },
+    {
+      "n": 5,
+      "arm": "requested-key independence",
+      "expect": "authority for X regardless",
+      "condition": "the same compilation performed while some caller asks for Y",
+      "must_go_red": "the requested key reaches the writer at any remove — see the anti-cheat"
+    },
+    {
+      "n": 6,
+      "arm": "hostile X/Y witness",
+      "expect": "establish Y and refuse, naming X and Y",
+      "condition": "a VALID candidate presenting Y supplied where X was requested, with everything else agreeing — artifact seal valid, container correct, protocol correct, observation structurally valid, executor restated X",
+      "must_go_red": "both candidates are ingestible because their seals and source identities are internally consistent. This is the witness ACT1-N3 has been waiting for since 5b, and it is why step 2 and step 3 must be separate stages: step 2 should happily allow the artifact to EXIST."
+    },
+    {
+      "n": 7,
+      "arm": "no filename or path inference",
+      "expect": "identity unchanged",
+      "condition": "the candidate renamed or moved",
+      "must_go_red": "identity is a function of where the file is filed"
+    },
+    {
+      "n": 8,
+      "arm": "layout semantics included",
+      "expect": "the EFFECTIVE decision vector reconstructs",
+      "condition": "a decision the layout refused",
+      "must_go_red": "the REQUESTED decisions reconstruct instead of the effective ones, which would make the authority a record of intent rather than of result"
+    },
+    {
+      "n": 9,
+      "arm": "provider / lowering boundary",
+      "expect": "lowering identity is not mistaken for representation identity",
+      "condition": "`RealizationRecord` carries backend, form and codec provider identity for an OPERAND — a different plane",
+      "must_go_red": "lowering facts are folded into representation identity without being genuinely required to reconstruct the represented state"
+    },
+    {
+      "n": 10,
+      "arm": "reader independence",
+      "expect": "writer and reader are separate code paths",
+      "must_go_red": "the proof runs through a shared object that returns the state just compiled, which is self-witnessing wearing a reader's coat"
+    }
+  ],
+  "what_is_deliberately_not_frozen": {
+    "the_container_format": "No large new format is preregistered. The minimum durable artifact may be a sidecar, a manifest, or a section of an existing container — what matters is the AUTHORITY RELATION, not whether the bytes live in `candidate.json` or elsewhere. Freezing a format here would preregister an implementation rather than a claim.",
+    "why_that_is_safe": "Every arm above is stated over the relation and not the encoding, so a different carrier satisfies or fails them identically.",
+    "the_carrier": "Extending `CandidateIndex` is the likely carrier now that it is known to exist, but it is still not frozen. Every arm is stated over the authority RELATION rather than the encoding, so a sidecar, a manifest or additional `CandidateIndex` fields satisfy or fail them identically."
+  },
+  "out_of_scope": [
+    "OPT-6 steps 3b onward. This transition earns the authority; the consumer resumes afterwards and is not touched here. `opt-6-implementation` stays paused at 17053de5.",
+    "OPT-7 and the closed loop.",
+    "LOWERING-PLUGIN-1, which proceeds independently. Arm 9 exists to keep the two planes from being confused, not to couple them.",
+    "Changing `RepresentationStateId`, `STATE_ID_VERSION` or the canonical digest input. This transition FEEDS the existing identity function and must not alter it — a producer transition that moved the identity would invalidate every stored DAG to make its own proof easier."
+  ],
+  "reconnaissance_correction": {
+    "date": "2026-09-10",
+    "what_was_wrong": "Initial reconnaissance concluded that candidate artifacts had no format, no writer and no reader anywhere in the workspace, and OPT6-N2 was first recorded that way.",
+    "how_the_error_was_made": "The search followed the ACTUATION concept — `overlay`, the word `DeclaredArtifacts` and `ArtifactLocator` use — and found it is only ever a path there. It did not follow the COMPILER's candidate output, even though `represent/compile.rs` states in its own module doc that REPRESENT emits `Kimi-Linear-q6-candidate.vindex3` carrying source semantic graph, protected operands, expert banks in execution layout and experiment evidence. The doc was read and not followed.",
+    "the_corrected_finding": "Candidate authority EXISTS but is insufficient to independently reconstruct `RepresentationStateId`.",
+    "why_it_is_recorded_rather_than_erased": "The confusion is itself evidence about this codebase: 'the actuation path sees a path' and 'no candidate format exists' are easy to conflate, and the word `overlay` is overloaded across the represent, server and LQL planes. A future reader searching the same way will make the same mistake, and the correction is more useful to them than a clean-looking history.",
+    "what_did_not_change": "Every preregistered arm, the anti-cheat, the `from_decisions` requirement, the hostile X/Y witness, and the prohibition on changing `RepresentationStateId` or `STATE_ID_VERSION`. Arm 8 in particular is CONFIRMED rather than weakened: `CandidateIndex.map` storing the requested rule set is precisely the 'record of intent rather than of result' failure that arm anticipates."
+  }
+}

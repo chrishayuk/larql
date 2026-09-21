@@ -102,19 +102,73 @@ jobs:
         # the same flag for the same reason.
         run: cargo clippy -p larql-compute-metal --all-targets --no-deps -- -D warnings
 
-      # `--test-threads=1` serialises the test runner, matching the Makefile
-      # targets (`larql-compute-metal-test{,-tests}`). Many tests read
-      # process-global state cached at `MetalBackend::new()` (decode flags) and
-      # share the single GPU; cargo's default parallel runner races on them and
-      # intermittently yields NaN/zero pipeline output. Serial execution is the
-      # same fix larql-inference uses for its OpenBLAS global-buffer race.
-      - name: Unit tests
-        run: cargo test -p larql-compute-metal --lib -- --test-threads=1
-
-      - name: Integration tests
-        run: cargo test -p larql-compute-metal --tests -- --test-threads=1
-
-      - name: Coverage policy gate
+      # ── ONE PIECE OF EVIDENCE, ONCE (CI-E2-A, 2026-09-07). ──
+      #
+      # This job used to run:
+      #
+      #     cargo test --lib     -> 1 binary
+      #     cargo test --tests   -> 69 binaries, INCLUDING src/lib.rs again
+      #     cargo llvm-cov       -> the same 69, instrumented
+      #
+      # `--tests` selects every target with `test = true`, and a lib has
+      # that by default, so the 530-test lib suite ran THREE times and the
+      # 68 integration binaries TWICE. Measured on run 34098337888 (#449):
+      # 671.22s + 535.74s + 535.52s for the lib suite alone, in a job that
+      # took 59m25s of a scarce macOS runner. The `--lib` step was already
+      # fully redundant with the `--tests` step before coverage entered
+      # the argument.
+      #
+      # The coverage run is not a report generator bolted onto a test
+      # pass — it IS a test pass: it runs the same 69 binaries under the
+      # same `--test-threads=1`, a failing test fails the step, and
+      # `--fail-under-lines` plus check_coverage_policy.py then hold the
+      # per-file floors. So it is the authoritative execution, and the two
+      # plain passes are deleted rather than reordered.
+      #
+      # What that would lose on its own: the instrumented build is not the
+      # profile anyone develops against (different RUSTFLAGS, a separate
+      # target dir, slower binaries around GPU races). The smoke step below
+      # keeps that witness at a size proportional to the claim — it proves
+      # the ordinary profile executes, not that the estate passes twice.
+      #
+      # `--test-threads=1` throughout, matching the Makefile targets. Many
+      # tests read process-global state cached at `MetalBackend::new()`
+      # (decode flags) and share the single GPU; cargo's default parallel
+      # runner races on them and intermittently yields NaN/zero pipeline
+      # output. Serial execution is the same fix larql-inference uses for
+      # its OpenBLAS global-buffer race.
+      - name: Ordinary-profile execution witness
+        env:
+          # `backend::tests::` constructs a real MetalBackend, populates
+          # the pipeline cache and computes — the smallest subset that
+          # proves the uninstrumented build actually runs on the GPU.
+          SMOKE_FILTER: "backend::tests::"
+          # A cargo test filter that matches nothing exits 0. Without a
+          # floor, renaming the module would turn this witness into a
+          # green that ran no tests. The filter selects 7 today; the floor
+          # is deliberately below that so adding or removing a test does
+          # not break the build, while a typo or a rename still does.
+          SMOKE_MIN_TESTS: "5"
         run: |
-          cargo install --locked cargo-llvm-cov
-          make larql-compute-metal-coverage-summary
+          set -o pipefail
+          cargo test -p larql-compute-metal --lib -- --test-threads=1 "$SMOKE_FILTER" \
+            2>&1 | tee smoke.log
+          ran=$(sed -n 's/^test result: ok\. \([0-9][0-9]*\) passed.*/\1/p' smoke.log | head -1)
+          echo "smoke tests executed: ${ran:-0} (floor ${SMOKE_MIN_TESTS})"
+          if [ "${ran:-0}" -lt "$SMOKE_MIN_TESTS" ]; then
+            echo "::error::the ordinary-profile witness ran ${ran:-0} tests, below the floor of ${SMOKE_MIN_TESTS} — the filter '${SMOKE_FILTER}' no longer selects the intended module"
+            exit 1
+          fi
+
+      - name: Install cargo-llvm-cov
+        # Prebuilt, like every other coverage job in this repository. This
+        # one used to `cargo install --locked` it from source on every
+        # fresh runner: 49.7s on #449, to build a tool that is not under
+        # test.
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      # AUTHORITATIVE. Runs the whole test estate once, instrumented, and
+      # applies the coverage policy to the result. A failing test reds this
+      # step; so does a file dropping below its floor.
+      - name: Test estate + coverage policy (authoritative)
+        run: make larql-compute-metal-coverage-summary

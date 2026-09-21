@@ -172,6 +172,42 @@ impl fmt::Display for DomainId {
 
 /// A reconstruction bound, and what it is a bound ON.
 ///
+/// # The referent
+///
+/// A certificate measures **decoded values against the typed logical
+/// source tensor presented at the representation boundary** — the tensor
+/// the encoder was handed, at the dtype it was handed it in.
+///
+/// Two things it is deliberately NOT:
+///
+/// * **Not a bound against the STORED representation.** That reading
+///   would make every terminal extent trivially exact — decoding all of
+///   an artifact always reproduces the artifact — and a floor asking for
+///   an exact reconstruction would be satisfied by terminal Q4 or VQ
+///   data, which is the one thing it must never say.
+/// * **Not a bound including kernel arithmetic.** What a direct kernel
+///   over codes rounds to is a property of the kernel, not of the
+///   representation, and belongs to realization qualification — the
+///   fourth layer, a separate rung.
+///
+/// So the honest declarations follow from what a codec actually promises
+/// its caller:
+///
+/// | codec | radius | why |
+/// |---|---|---|
+/// | raw `F32` | `0.0` | the identity, against an f32 logical source |
+/// | `F16` / `BF16` | `0.0` | a lossless carrier, against a logical source of its own dtype, widened exactly |
+/// | `BF16_ZLIB` | `0.0` | entropy-coded but byte-identical once inflated |
+/// | `F32_PLANES` terminal | `0.0` | the planes partition the pattern |
+/// | `F32_PLANES` shallow | derived | a truncation residue the scheme bounds |
+/// | `Q4_K` / `Q6_K` / `NVFP4` / `MXFP4` / `VQ8_SHARED` | **none** | the error is a property of a fitted instance, not of the scheme |
+///
+/// A codec in that last row states no radius and cannot satisfy a
+/// source-fidelity floor at all until an attestation supplies a measured
+/// one for the instance — which is what
+/// [`representation_attestations`](crate::format::vindex3::representation_attestations)
+/// exists to carry.
+///
 /// No public fields: a certificate gains metadata over time — a sample
 /// size, a confidence, a provenance — and a provider that spelled one out
 /// positionally would break on the first addition.

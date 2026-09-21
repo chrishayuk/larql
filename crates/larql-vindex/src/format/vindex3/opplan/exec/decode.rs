@@ -28,10 +28,12 @@ use std::borrow::Cow;
 use super::attention_residual::{self, BoundaryPhase};
 use super::backend::{AttentionStepCall, NormCall, PlanBackend};
 use super::hyper_connection::{self, Bundle, Mutation, SiteReduction};
+use super::intervene::{Firing, Intervention, InterventionPlan, InterventionStepOutput};
+use super::intervene_heads::{HeadFiring, HeadInterventionPlan};
 use super::kv::{KvState, RowKvState};
 use super::observe::{
-    AttnResBoundaryRecord, AttnResSiteRecord, HcSite, HcSiteRecord, InputSite, NoopObserver,
-    StepEvent, StepObserver,
+    AttnResBoundaryRecord, AttnResSiteRecord, CarrierForm, CarrierWriteRecord, HcSite,
+    HcSiteRecord, InputSite, NoopObserver, StepEvent, StepObserver,
 };
 use super::operands::OperandSource;
 use super::prepared::{
@@ -161,6 +163,12 @@ struct AttnResEntry {
 /// nothing it does not return.
 pub(super) struct StepRun {
     pub(super) logits: Option<Vec<f32>>,
+    /// Every intervention that fired on this step, in execution order
+    /// (V3-INTERVENE-1). Empty on the production step.
+    pub(super) firings: Vec<Firing>,
+    /// Every head intervention that fired on this step, in execution
+    /// order (V3-INTERVENE-2). Empty on the production step.
+    pub(super) head_firings: Vec<HeadFiring>,
     /// The `[hidden]` vector the exit reduced to, before the final norm.
     #[cfg(test)]
     pub(super) exit: Option<Vec<f32>>,
@@ -248,6 +256,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         mut kv: KvSlot<'a>,
     ) -> Result<Self, VindexError> {
         ops.get().ensure_providers_in(ops.get().registry())?;
+        ops.get().ensure_lowered_by(backend)?;
         // The FULL continuation geometry, KV and recurrent alike.
         // `plan_kv_geometry` is the KV-only adapter and refuses a hybrid
         // plan; a session over one needs both forms announced.
@@ -380,8 +389,70 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         token: u32,
         observer: &mut dyn StepObserver,
     ) -> Result<StepOutput, VindexError> {
-        let run = self.run(Entry::Token(token), observer, Mutation::None)?;
+        // V3-HEAD-OBS-1, property A8: a request for heads against a
+        // backend that cannot serve them refuses before the token
+        // executes, never after a partial capture.
+        if observer.wants_attention_heads() && !self.backend.serves_attention_heads() {
+            return Err(VindexError::Parse(format!(
+                "per-head attention observation is not served by the {} backend; observe \
+                 without heads or run on a backend that declares them",
+                self.backend.name()
+            )));
+        }
+        let run = self.run(
+            Entry::Token(token),
+            observer,
+            Mutation::None,
+            &InterventionPlan::none(),
+            &HeadInterventionPlan::none(),
+        )?;
         Ok(StepOutput { logits: run.logits })
+    }
+
+    /// The step with interventions armed (V3-INTERVENE-1 carrier
+    /// addresses, V3-INTERVENE-2 head addresses — declared beside each
+    /// other, since one declaration file may name both). Both plans are
+    /// admitted against this image before the token executes: an address
+    /// off the executed layers, a site or head the layer never writes, a
+    /// carrier that is not `Single`, or a vector of the wrong width
+    /// refuses here. The returned firings say which declared
+    /// interventions applied on this step; a declared address the run
+    /// never reaches is the caller's to report from
+    /// `InterventionPlan::unreached` / `HeadInterventionPlan::unreached`.
+    pub fn step_intervened(
+        &mut self,
+        token: u32,
+        observer: &mut dyn StepObserver,
+        interventions: &InterventionPlan,
+        head_interventions: &HeadInterventionPlan,
+    ) -> Result<InterventionStepOutput, VindexError> {
+        if observer.wants_attention_heads() && !self.backend.serves_attention_heads() {
+            return Err(VindexError::Parse(format!(
+                "per-head attention observation is not served by the {} backend; observe \
+                 without heads or run on a backend that declares them",
+                self.backend.name()
+            )));
+        }
+        if !head_interventions.is_none() && !self.backend.serves_head_intervention() {
+            return Err(VindexError::Parse(format!(
+                "per-head attention intervention is not served by the {} backend",
+                self.backend.name()
+            )));
+        }
+        interventions.admit(self.plan, self.ops.get())?;
+        head_interventions.admit(self.plan, self.ops.get())?;
+        let run = self.run(
+            Entry::Token(token),
+            observer,
+            Mutation::None,
+            interventions,
+            head_interventions,
+        )?;
+        Ok(InterventionStepOutput {
+            logits: run.logits,
+            firings: run.firings,
+            head_firings: run.head_firings,
+        })
     }
 
     /// The step under a deliberate defect — the wave-19a negative
@@ -394,7 +465,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         observer: &mut dyn StepObserver,
         mutation: Mutation,
     ) -> Result<StepRun, VindexError> {
-        self.run(Entry::Token(token), observer, mutation)
+        self.run(
+            Entry::Token(token),
+            observer,
+            mutation,
+            &InterventionPlan::none(),
+            &HeadInterventionPlan::none(),
+        )
     }
 
     /// The step entered with a bundle at the first executed layer instead
@@ -407,7 +484,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         observer: &mut dyn StepObserver,
         mutation: Mutation,
     ) -> Result<StepRun, VindexError> {
-        self.run(Entry::Bundle(bundle), observer, mutation)
+        self.run(
+            Entry::Bundle(bundle),
+            observer,
+            mutation,
+            &InterventionPlan::none(),
+            &HeadInterventionPlan::none(),
+        )
     }
 
     /// The one decode step. Every public and test entry above is this.
@@ -416,8 +499,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         entry: Entry,
         observer: &mut dyn StepObserver,
         mutation: Mutation,
+        interventions: &InterventionPlan,
+        head_interventions: &HeadInterventionPlan,
     ) -> Result<StepRun, VindexError> {
         let ops = self.ops.get();
+        let mut firings: Vec<Firing> = Vec::new();
+        let mut head_firings: Vec<HeadFiring> = Vec::new();
         let hidden = ops.hidden();
         let topology = ops.hyper_connection();
         // The ONE declared fact the attention-residual schedule needs:
@@ -457,6 +544,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     });
                 }
                 observer.event(StepEvent::Embedded { position });
+                // The first link of the carrier chain (V3-OBS-1, C6):
+                // what enters layer 0, before any topology wraps it.
+                observer.entering_carrier(position, &h);
                 // The embedding enters a hyper-connected stack replicated
                 // into every stream (`Transformer.forward`'s repeat) —
                 // after its scale and norm, which belong to the lookup.
@@ -522,6 +612,8 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 site: HcSite::Attention,
                 position,
                 mutation,
+                intervention: None,
+                layer_scale: None,
             };
             // Phase one of three: before the attention site reads. The
             // reference does NOTHING here; one control moves the
@@ -686,16 +778,94 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         hidden,
                     );
                     let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Attention);
-                    let out = self.backend.attention_step(AttentionStepCall {
+                    let step = AttentionStepCall {
                         op: call,
                         position,
                         keys: self.kv.state().keys(index),
                         values: self.kv.state().values(index),
-                    })?;
+                    };
+                    // V3-HEAD-OBS-1: the same step, with the per-head tap
+                    // armed when the observer asked for it. The tap fires
+                    // inside the kernel; the structural event closes it
+                    // before the write so a reader of the write knows
+                    // the heads preceded it.
+                    //
+                    // V3-INTERVENE-2: when a head intervention addresses
+                    // THIS layer, the step routes through the intervened
+                    // form instead — the tap (if armed) still fires on
+                    // the uninintervened `ctx_h` first (J3); declaring
+                    // nothing at this layer costs nothing (J4/JF1).
+                    let out = if head_interventions.touches_layer(index) {
+                        let heads = step.op.num_q_heads;
+                        let wants_heads = observer.wants_attention_heads();
+                        let mut fired_heads: Vec<HeadFiring> = Vec::new();
+                        let mut head_intervene = |head: usize, ctx_h: &mut [f32]| {
+                            if let Some(intervention) = head_interventions.at(index, head, position)
+                            {
+                                intervention.apply(ctx_h);
+                                fired_heads.push(HeadFiring {
+                                    layer: index,
+                                    head,
+                                    position,
+                                    kind: intervention.kind(),
+                                });
+                            }
+                        };
+                        let out = if wants_heads {
+                            self.backend.attention_step_intervened(
+                                step,
+                                Some(&mut |record| observer.attention_head(index, record)),
+                                &mut head_intervene,
+                            )?
+                        } else {
+                            self.backend.attention_step_intervened(
+                                step,
+                                None,
+                                &mut head_intervene,
+                            )?
+                        };
+                        if wants_heads {
+                            observer.event(StepEvent::HeadsObserved {
+                                layer: index,
+                                heads,
+                            });
+                        }
+                        for fired in &fired_heads {
+                            observer.event(StepEvent::HeadIntervened {
+                                layer: fired.layer,
+                                head: fired.head,
+                                kind: fired.kind,
+                            });
+                        }
+                        head_firings.extend(fired_heads);
+                        out
+                    } else if observer.wants_attention_heads() {
+                        let heads = step.op.num_q_heads;
+                        let out = self.backend.attention_step_observed(step, &mut |record| {
+                            observer.attention_head(index, record)
+                        })?;
+                        observer.event(StepEvent::HeadsObserved {
+                            layer: index,
+                            heads,
+                        });
+                        out
+                    } else {
+                        self.backend.attention_step(step)?
+                    };
                     self.kv.state_mut().append(index, out.key, out.value);
                     out.output
                 }
             };
+            // V3-HEAD-OBS-1, property A6: a layer without softmax heads is
+            // named as uncovered on this step, never refused as a plan.
+            if observer.wants_attention_heads()
+                && !matches!(
+                    state.attention,
+                    super::prepared::PreparedAttention::Softmax(_)
+                )
+            {
+                observer.event(StepEvent::HeadsUncovered { layer: index });
+            }
             drop(_attention_stage);
             let mut attn_out = match &state.post_attention {
                 Some(norm) => norm.apply(self.backend, &raw_attn),
@@ -713,9 +883,19 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     site: HcSite::Attention,
                     position,
                     mutation,
+                    intervention: interventions.at(index, HcSite::Attention, position),
+                    layer_scale: None,
                 },
                 observer,
             )?;
+            if let Some(fired) = interventions.at(index, HcSite::Attention, position) {
+                firings.push(Firing {
+                    layer: index,
+                    site: HcSite::Attention,
+                    position,
+                    kind: fired.kind(),
+                });
+            }
             // Phase three: after the attention branch. The reference does
             // NOTHING here; one control moves the snapshot to this point
             // so it carries the post-attention prefix instead of the
@@ -794,9 +974,19 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         site: HcSite::Ffn,
                         position,
                         mutation,
+                        intervention: interventions.at(index, HcSite::Ffn, position),
+                        layer_scale: state.layer_scale,
                     },
                     observer,
                 )?;
+                if let Some(fired) = interventions.at(index, HcSite::Ffn, position) {
+                    firings.push(Firing {
+                        layer: index,
+                        site: HcSite::Ffn,
+                        position,
+                        kind: fired.kind(),
+                    });
+                }
                 if let Some(scale) = state.layer_scale {
                     match &mut carrier {
                         Carrier::Single(h) => self.backend.scale_row(h, scale),
@@ -896,23 +1086,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         #[cfg(test)]
         let witness_exit = exit.hidden.clone();
         let logits = match exit.hidden {
-            Some(exit_hidden) => {
-                let final_hidden = match ops.final_norm() {
-                    Some(norm) => norm.apply(self.backend, &exit_hidden),
-                    None => exit_hidden,
-                };
-                match ops.output() {
-                    Some((op, weight)) => Some(self.backend.output_head(
-                        weight.slice(),
-                        op.projection.shape[0],
-                        hidden,
-                        &final_hidden,
-                        op.multiplier,
-                        op.softcapping,
-                    )?),
-                    None => None,
-                }
-            }
+            // The one head path (V3-LENS-1): the same function a logit lens
+            // calls on an intermediate carrier.
+            Some(exit_hidden) => ops.head_logits(self.backend, &exit_hidden)?,
             None => {
                 if ops.final_norm().is_some() || ops.output().is_some() {
                     return Err(VindexError::Parse(
@@ -932,6 +1108,8 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         self.kv.state_mut().set_position(position + 1);
         Ok(StepRun {
             logits,
+            firings,
+            head_firings,
             #[cfg(test)]
             exit: witness_exit,
             #[cfg(test)]
@@ -949,11 +1127,20 @@ struct Exit {
 
 /// Which site a record belongs to, and under which control.
 #[derive(Clone, Copy)]
-struct SiteContext {
+struct SiteContext<'i> {
     layer: usize,
     site: HcSite,
     position: usize,
     mutation: Mutation,
+    /// The intervention that fires on this site's write, if the run
+    /// declared one at this address (V3-INTERVENE-1). `None` on the
+    /// production step and at every other site.
+    intervention: Option<&'i Intervention>,
+    /// The whole-carrier scalar the layer applies AFTER this site's
+    /// write (Gemma 4 `layer_scalar`) — `Some` only at the FFN site of
+    /// a component that declares one, so the write record can carry
+    /// what happens to its `after` before the layer boundary.
+    layer_scale: Option<f32>,
 }
 
 /// Enter one site: produce the `[hidden]` vector the branch consumes.
@@ -1155,7 +1342,7 @@ fn leave_site<B: PlanBackend + ?Sized>(
     delta: Vec<f32>,
     reduction: Option<SiteReduction>,
     attn_res: Option<AttnResEntry>,
-    context: SiteContext,
+    context: SiteContext<'_>,
     observer: &mut dyn StepObserver,
 ) -> Result<(), VindexError> {
     // The attention-residual write, and it is NOT always an add: a
@@ -1181,11 +1368,62 @@ fn leave_site<B: PlanBackend + ?Sized>(
                 prefix_after,
             });
         }
+        // The write happened whether or not the reference reduced here:
+        // layer 0's attention site writes with no record, and the event
+        // is what says so.
+        observer.event(StepEvent::CarrierWrite {
+            layer: context.layer,
+            site: context.site,
+            carrier: CarrierForm::History,
+        });
         return Ok(());
     }
     match (carrier, reduction) {
         (Carrier::Single(h), None) => {
+            // V3-INTERVENE-1: the write lands first, exactly as it would
+            // unintervened; the intervention then acts on the written
+            // carrier in the backend's residual path, and the record's
+            // `delta` becomes `after − before` so it still includes what
+            // landed. The event precedes the record so its reader knows.
+            // An intervention that leaves the carrier bit-identical to
+            // the unpatched write (`Add(0)`, `Replace` with its own value)
+            // reports the branch's own `delta`, borrowed: `after − before`
+            // is the ROUNDED write, not the branch output, and the no-op
+            // law (I3/IP1) is a claim on the record, not only the logits.
+            let before = context.intervention.map(|_| h.clone());
             backend.residual_add(h, &delta);
+            let delta: Cow<'_, [f32]> = match (context.intervention, before) {
+                (Some(intervention), Some(before)) => {
+                    let unpatched = h.clone();
+                    intervention.apply(backend, h);
+                    observer.event(StepEvent::Intervened {
+                        layer: context.layer,
+                        site: context.site,
+                        kind: intervention.kind(),
+                    });
+                    if h.as_slice() == unpatched.as_slice() {
+                        Cow::Borrowed(delta.as_slice())
+                    } else {
+                        Cow::Owned(h.iter().zip(&before).map(|(a, b)| a - b).collect())
+                    }
+                }
+                _ => Cow::Borrowed(delta.as_slice()),
+            };
+            // V3-OBS-1: the write, borrowed where it landed. Values
+            // first, then the structural event that closes it.
+            observer.carrier_write(CarrierWriteRecord {
+                layer: context.layer,
+                site: context.site,
+                position: context.position,
+                delta: &delta,
+                after: h.as_slice(),
+                layer_scale: context.layer_scale,
+            });
+            observer.event(StepEvent::CarrierWrite {
+                layer: context.layer,
+                site: context.site,
+                carrier: CarrierForm::Single,
+            });
             Ok(())
         }
         (Carrier::Bundle(x), Some(reduction)) => {
@@ -1200,6 +1438,11 @@ fn leave_site<B: PlanBackend + ?Sized>(
                 bundle_out: &next,
             });
             *x = next;
+            observer.event(StepEvent::CarrierWrite {
+                layer: context.layer,
+                site: context.site,
+                carrier: CarrierForm::Bundle,
+            });
             Ok(())
         }
         (Carrier::Bundle(x), None) => {
@@ -1208,6 +1451,13 @@ fn leave_site<B: PlanBackend + ?Sized>(
             // ran the topology would do.
             debug_assert_eq!(context.mutation, Mutation::BypassComposition);
             backend.residual_add(x.stream_mut(0), &delta);
+            // Still a write: the control drops the RECORD (no split
+            // exists), never the fact that the carrier moved.
+            observer.event(StepEvent::CarrierWrite {
+                layer: context.layer,
+                site: context.site,
+                carrier: CarrierForm::Bundle,
+            });
             Ok(())
         }
         // A history carrier reaches this match only if its entry was

@@ -14,6 +14,14 @@ distributed).
 | [format.md](format.md) | LARQL graph format specification (v0.1.0) |
 | [vindex3-format.md](vindex3-format.md) | VINDEX3 model-system container format — the living spec (plan/encode/verify semantics), companion to the [3.0 Candidate Specification](../crates/larql-vindex/docs/vindex3-format-spec.md) |
 | [vindex3-runtime.md](vindex3-runtime.md) | VINDEX3 runtime stack — `Vindex3Runtime`, `LogitsSession`, the KV seam, V3 serving over `/v1/completions`, `/v1/chat/completions`, `/v1/responses` |
+| [observatory.md](observatory.md) | LARQL Observatory v0.1 product proposal — HAUSE instrument, local/hosted execution, coordinated views, replay and real-model acceptance |
+| [vindex3-observation-contract.md](vindex3-observation-contract.md) | Draft observation contract — canonical taps, event identity, bounded capture, loss accounting, transport, privacy and receipts |
+| [head-obs-1-per-head-observation.md](head-obs-1-per-head-observation.md) | HEAD-OBS-1 — pre-registered per-head observation rung: head-sum / source / parity / accounting laws, emergence and precursor witnesses on the INSTRUMENT-1 bank, no causal labels |
+| [instrument-1-calibration.md](instrument-1-calibration.md) | INSTRUMENT-1 — pre-registered calibration of `vindex3 observe` readers, Anatomist DLA/lens and Observatory against the sealed EDGE-1 bank on Gemma 3 4B (12B replay); case set, readers, questions and forecasts frozen |
+| [instrument-1b-lens.md](instrument-1b-lens.md) | INSTRUMENT-1b — pre-registered: the V3-LENS-1 lens pointed at the emergence write on the INSTRUMENT-1a cases (no new selection); rank/top-1 before, at and after L23 (L35 on 12B) |
+| [v3-obs-1-carrier-observation.md](v3-obs-1-carrier-observation.md) | Frozen executor-side carrier observation rung for the VINDEX3 Observatory contract: `leave_site` tap, parity/reconstruction properties, witness map, and capture-cost protocol |
+| [v3-head-obs-1-per-head-observation.md](v3-head-obs-1-per-head-observation.md) | Frozen V3-HEAD-OBS-1 rung: per-head distribution and pre-projection output from the one softmax kernel, per-layer coverage on the receipt, the per-head and per-source split identities, and the first HEAD-2 reading |
+| [v3-intervene-1-carrier-intervention.md](v3-intervene-1-carrier-intervention.md) | Frozen V3-INTERVENE-1 rung: Zero/Add/Replace on one declared carrier address, vector provenance, the no-op law, receipt fields, and the first causal arm (HEAD-1 CARRIED) |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |
 | [vindex3-ontology-drill.md](vindex3-ontology-drill.md) | The four-architecture ontology drill (candidate §17.4) — run 2026-08-30, findings F1–F16 |
 | [lyrw-v2.md](lyrw-v2.md) | LYRW v2 — the K3 routed-layer physical-layout gate (storage half of K3) |
@@ -80,3 +88,5 @@ distributed).
 | Doc | One line |
 |---|---|
 | [positioning.md](positioning.md) | LARQL vs ollama, vLLM, llama.cpp — what it is and is not |
+
+- [`v3-observatory-head-capture.md`](v3-observatory-head-capture.md) — opt-in CPU softmax head tap, real Granite recording, raw direction analysis, and parity/reconstruction gates.

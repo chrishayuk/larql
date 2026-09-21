@@ -1,0 +1,28 @@
+{
+  "programme": "REPRESENT-LOOP-1 / Transition C",
+  "date": "2026-09-13",
+  "base": "2a5e0d6963833d89ddd3159e1f28f2bbbab13ef2, merged Transition B / #475",
+  "preregistration": "966dec0b records B completion, the paired C freeze and EXECUTION-EVIDENCE-SCOPE-1 before C implementation",
+  "status": "paired witness passes; local validation complete; awaiting review and CI; not merged",
+  "claim": "Accepted evidence changes future search behaviour; rejected evidence cannot.",
+  "witness": "accepted_evidence_changes_future_selection_and_rejected_evidence_cannot in represent/ingest/loop_tests.rs",
+  "positive": "The test deserializes S0 and asserts two eligible experiments. It names A (all seven eligible layer-0 projections) and B (layer-0 q_proj) from their frozen actions before any observation. Both candidates are compiled without requested keys and independently established. S0 ranks A first. PreparedExperiment::of derives its request; ExecutorRegistry dispatches it through DeclaredArtifacts to the synthetic fixture executor. MeasurementArtifact captures the cold reader's binding and is serialized; execution-side helper objects are dropped. ingest_bytes re-establishes authority and records A once. Only the measurement registry changes. Candidate enumeration explicitly prunes A as AlreadyObserved and selects B as the sole next experiment; PreparedExperiment::of now requests B.",
+  "replay": "Deserialize S1, reproduce selection B, and ingest A's original artifact under its original authorisation. The duplicate reports recorded=false, serialized S1 remains identical and B remains selected.",
+  "negative": "Both twins restart from the exact serialized S0 and dispatch the authorised A through the same production interfaces. One synthetic report omits the invariant neighbour and is freshly sealed: IncompleteRun refuses. The other supplies independently valid candidate B/Y while requesting A/X and returning a complete report: identity validation names both states and refuses. The entire snapshot, serialized bytes, frontier, promotion outputs, next selection and prepared request remain identical to S0/A.",
+  "anti_cheat": "No production logic, ranking policy or scientific-state schema changed. The new test does not call record or record_fixture, modify applied actions, or insert a chosen successor. Expected B and its independently verified candidate exist before acceptance. Success must show the concrete key, the explicit AlreadyObserved prune and the resulting next request, not merely an append.",
+  "limits": [
+    "The fixture executor returns predetermined synthetic observations and run-validity reports. Persisted candidate/source/bank bytes are real and independently verified; numerical execution and historical pointer-attribution checks are not independently replayed.",
+    "The demonstrated feedback is non-repetition of an accepted experiment under the existing pruning rule. It does not show numerical-quality-dependent ranking or promotion, large-model performance, or resource-envelope optimisation.",
+    "SOURCE-AUTHORITY-MANIFEST-1 and EXECUTION-EVIDENCE-SCOPE-1 remain explicit debts before the corresponding K3 authority measurements; neither is implemented by this witness.",
+    "No K3 run, model download, new autonomous service or new optimizer subsystem was added."
+  ],
+  "validation": {
+    "toolchain": "pinned Rust 1.98.0, macOS default features",
+    "targeted": "The single paired witness passed, including acceptance, duplicate replay, incomplete-report refusal and valid-Y/requested-X refusal.",
+    "full_vindex": "cargo llvm-cov --package larql-vindex: 5089 passed, 0 failed, 7 ignored across 40 suites; includes the existing whole-estate registry-write closure controls",
+    "coverage": "93.75% lines; all 470 per-file policy checks pass with no threshold or exemption changes",
+    "static": "cargo clippy -p larql-vindex --all-targets -- -D warnings, cargo fmt --all --check and git diff --check passed",
+    "documentation": "105 contract witnesses resolve; 866 relative documentation links resolve; 1448 strict references checked with no broken references",
+    "scope": "No production behavior or public API change; full workspace/doctest results remain those of reviewed Transition B. Remote CI must pass on this witness branch before merge."
+  }
+}

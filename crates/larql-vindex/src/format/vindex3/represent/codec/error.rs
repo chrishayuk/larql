@@ -22,6 +22,17 @@ pub enum CodecError {
     },
 
     #[error(
+        "tensor `{tensor}`: no encoder registered for `{label}` (it may still be decodable — \
+         this is the write-side registry, a separate question); registered encoders: [{}]",
+        registered.join(", ")
+    )]
+    NoEncoderRegistered {
+        tensor: String,
+        label: String,
+        registered: Vec<String>,
+    },
+
+    #[error(
         "tensor `{tensor}`: `{label}` needs stream `{stream}`, which was not bound; bound: [{}]",
         bound.join(", ")
     )]

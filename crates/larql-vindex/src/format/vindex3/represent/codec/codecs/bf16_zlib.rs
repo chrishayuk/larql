@@ -35,6 +35,7 @@ use flate2::{Decompress, FlushDecompress, Status};
 use super::super::capability::{AccessGranularity, CodecCapabilities};
 use super::super::error::CodecError;
 use super::super::extent::{ExtentCertificate, RepresentationExtent, BITS_PER_BYTE};
+use super::super::fidelity::FidelityCertificate;
 use super::super::geometry::RowGeometry;
 use super::super::residency::ResidencyProfile;
 use super::super::streams::{CodecOperands, StreamSpec, VALUES};
@@ -246,7 +247,14 @@ impl RepresentationCodec for Bf16ZlibCodec {
     }
 
     fn extents(&self) -> Vec<ExtentCertificate> {
-        vec![ExtentCertificate::terminal(BITS_PER_WEIGHT_SUPREMUM)]
+        // Entropy-coded, but the inflated bytes ARE the bf16 image, so
+        // against a bf16 logical source this carries no error at all.
+        // Compression is not approximation.
+        vec![ExtentCertificate::certified(
+            0,
+            BITS_PER_WEIGHT_SUPREMUM,
+            FidelityCertificate::relative_rms(0.0).expect("zero is a finite, non-negative radius"),
+        )]
     }
 
     /// Refused: the stored size of an entropy-coded tensor is a property

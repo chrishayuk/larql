@@ -334,3 +334,78 @@ fn the_same_fixture_under_a_served_combine_dispatches() {
         "the fixture must dispatch"
     );
 }
+
+/// Does the STAGED dispatch reach its SiTU-GLU arm?
+///
+/// `moe_gpu_route`'s SiTU witness drives the gpu-route and zero-copy
+/// arms, and `tests/test_lowering_situ.rs` qualifies the kernel itself,
+/// but neither reaches the staging loop here — the path a layer takes
+/// when its expert bytes are supplied rather than resident in a
+/// registered region. A `match` arm here that fell through to `geglu`
+/// would leave all of those green.
+///
+/// Same shape as the dense-FFN witness: `situ_glu` computes
+/// `beta*tanh(g/beta)*sigmoid(g)*u` with the up branch untouched when
+/// `linear_beta` is `None`, and `beta*tanh(g/beta) -> g`, so at a wide
+/// beta the combine IS `silu(g)*u` and must agree with plain SiLU
+/// gating on the identical fixture. Paired with real K3 parameters,
+/// which must move the answer — the agreement alone is equally
+/// consistent with the arm never having been reached.
+#[test]
+fn situ_glu_reaches_the_staged_dispatch_with_its_parameters_bound() {
+    let Some(metal) = MetalBackend::new() else {
+        return;
+    };
+    let b = bank();
+    let s = scratch(&metal, TOP_K);
+    let x = h(23);
+    let supply = |e: usize| Some((b.gu[e].as_slice(), b.dn[e].as_slice()));
+
+    let mut silu = b.moe();
+    silu.gate_rule = MoeGateRule::Gated(Activation::Silu);
+    let plain = block(&metal, &x, &silu, &s, &supply);
+
+    // Wide beta, up branch uncapped: analytically silu(g)*u.
+    let mut wide = b.moe();
+    wide.gate_rule = MoeGateRule::SituGlu {
+        beta: 1.0e4,
+        linear_beta: None,
+    };
+    let wide_out = block(&metal, &x, &wide, &s, &supply);
+
+    assert!(wide_out.iter().all(|v| v.is_finite()));
+    let scale = plain.iter().fold(0.0f32, |m, v| m.max(v.abs())).max(1e-6);
+    let drift = plain
+        .iter()
+        .zip(&wide_out)
+        .map(|(p, w)| (p - w).abs())
+        .fold(0.0f32, f32::max)
+        / scale;
+    assert!(
+        drift < 1e-3,
+        "at a wide beta SiTU must BE silu(g)*u, so the staged dispatch \
+         disagreeing here means it bound the kernel's parameters wrongly: \
+         relative drift {drift:.3e}"
+    );
+
+    // The pairing: real parameters must move the answer, or the
+    // agreement above says nothing about which arm ran.
+    let mut capped = b.moe();
+    capped.gate_rule = MoeGateRule::SituGlu {
+        beta: 4.0,
+        linear_beta: Some(25.0),
+    };
+    let capped_out = block(&metal, &x, &capped, &s, &supply);
+    let moved = plain
+        .iter()
+        .zip(&capped_out)
+        .map(|(p, c)| (p - c).abs())
+        .fold(0.0f32, f32::max)
+        / scale;
+    assert!(
+        moved > 100.0 * drift.max(1e-6),
+        "the SiTU softcap moved the staged dispatch by only {moved:.3e} \
+         relative against a {drift:.3e} agreement floor — the arm is not \
+         being reached, so the wide-beta agreement proves nothing"
+    );
+}

@@ -50,14 +50,16 @@ use super::accounting::{
     declared_resident_for, expectations, reconcile, BlockGeometry, Bound, Expectation, Observed,
     Reconciliation, ResidencyBudget, ResourceLedger,
 };
-use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
+use super::backend::{MatrixClass, NormCall, PlanBackend, ProjectCall, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::kda::KdaOutputGateWeights;
+use super::lowering::{LoweringIdentity, LoweringRegistry};
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{
-    realization_residency, DependencyLifetime, DependencyPin, ExtentOption, ExtentPin,
-    RealizationId, RealizationRecord, RepresentationFacts, SelectionReason, SelectionRefusals,
+    lowerings_stand_in, realization_residency, DependencyLifetime, DependencyPin, ExtentOption,
+    ExtentPin, PinnedAuthorities, RealizationId, RealizationRecord, RepresentationFacts,
+    SelectionReason, SelectionRefusals,
 };
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
@@ -65,6 +67,7 @@ use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
 use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
+use larql_models::config::NormType;
 
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
@@ -189,6 +192,27 @@ impl PreparedNorm {
             weight_offset: self.op.weight_offset,
             eps: self.op.eps,
         })
+    }
+
+    /// The norm's kind, so a consumer decomposing a write through it can
+    /// refuse a kind whose linearisation it does not know.
+    pub(super) fn kind(&self) -> NormType {
+        self.op.kind
+    }
+
+    /// The learned weight, before the offset.
+    pub(super) fn weight(&self) -> &[f32] {
+        &self.weight
+    }
+
+    /// The offset added to the weight (`1.0` on a Gemma-style `(1 + w)`
+    /// norm, `0.0` otherwise).
+    pub(super) fn weight_offset(&self) -> f32 {
+        self.op.weight_offset
+    }
+
+    pub(super) fn eps(&self) -> f64 {
+        self.op.eps
     }
 }
 
@@ -1418,11 +1442,19 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
     // The access policy is the budget's, not the candidate's: every mapped
     // pin executes under the one the caller declared.
     for (record, _) in &mut selected {
-        record.selection.realization = record
+        let under_policy = record
             .selection
             .realization
             .with_access(budget.expert_access);
+        record.repin(under_policy);
     }
+    // The floor gates SELECTION, so it is asked about what was selected
+    // — here, before any budget pressure — and not only about the
+    // shallower extents the loop below considers moving to.
+    super::fidelity_carriage::enforce_floor(
+        selected.iter().map(|(record, _)| record),
+        budget.fidelity,
+    )?;
     let geometry = BlockGeometry::executor();
     let stored_len = |op: &OperandRef| store.stored_len(op);
     let mut switches: Vec<String> = Vec::new();
@@ -1432,6 +1464,14 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
         let ledger = ResourceLedger::aggregate(&priced);
         let deficit = budget.deficit(&ledger);
         if deficit.is_zero() {
+            // No second floor check here, deliberately. The initial
+            // selection was enforced above, and the ONLY assignment to
+            // `extent.selected` after it takes its extent from
+            // `shallowest_saving`, which already filters candidates by
+            // `fidelity.admits`. Reselection is therefore enforced at the
+            // point of choice, and a re-check on the way out could never
+            // fire — a refusal that cannot happen is not a guarantee, it
+            // is decoration, and this plane exists to remove those.
             return Ok(records);
         }
         // Preparation overruns are answered by reading LESS of an
@@ -1503,7 +1543,7 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
             saving as f64 / 1e9
         ));
         record.selection.residency = realization_residency(facts, candidate);
-        record.selection.realization = candidate;
+        record.repin(candidate);
         record.selection.reason = SelectionReason::BudgetPolicy;
     }
 }
@@ -1599,6 +1639,10 @@ fn select_records<B: PlanBackend + ?Sized>(
     slice: &ExecutionSlice,
 ) -> Result<Vec<(RealizationRecord, RepresentationFacts)>, VindexError> {
     let registry = store.registry();
+    // Who is lowering this plan, asked once: the pin records the
+    // provider that qualified it, whether the caller resolved that
+    // provider through a registry or handed it in directly.
+    let lowering_provider = backend.identity();
     let whole = slice.is_whole_stack();
     let range = slice.layers(plan);
     let mut records = Vec::new();
@@ -1623,32 +1667,55 @@ fn select_records<B: PlanBackend + ?Sized>(
         if store.is_overridden(&planned.operand) {
             facts = facts.overlaid();
         }
-        let provider = facts.registered.as_ref().map(|r| r.identity.clone());
+        let codec_provider = facts.registered.as_ref().map(|r| r.identity.clone());
         // What the ARTIFACT offers, priced per extent from the codec's own
         // declaration. The pin starts on the whole of it; a budget may
         // move it shallower, and nothing else may.
         let extent = extent_pin(registry, &label, &planned);
-        let dependencies = dependency_pins(registry, &label, &planned, extent.selected, store);
+        let mut dependencies = dependency_pins(registry, &label, &planned, extent.selected, store);
         match backend.select(&planned, &facts) {
-            Ok(selection) => records.push((
-                RealizationRecord {
-                    representation: label.to_string(),
-                    provider,
-                    planned,
-                    selection,
-                    extent,
-                    dependencies,
-                },
-                facts,
-            )),
+            Ok(selection) => {
+                // The lifetime is the REALIZATION's: a decode is finished
+                // with its dependency once it has an f32 image, and a
+                // direct kernel over the stored codes keeps it for every
+                // token. Decided here, after the pin, because nothing
+                // before the pin knows which.
+                let lifetime = if selection.realization.retains_dependencies() {
+                    DependencyLifetime::Retained
+                } else {
+                    DependencyLifetime::PreparationOnly
+                };
+                for dependency in &mut dependencies {
+                    dependency.lifetime = lifetime;
+                }
+                records.push((
+                    RealizationRecord {
+                        representation: label.to_string(),
+                        codec_provider,
+                        lowering_provider: lowering_provider.clone(),
+                        planned,
+                        selection,
+                        extent,
+                        dependencies,
+                        // Filled in by the carriage pass below, which is
+                        // the only thing that reads a payload to verify a
+                        // claim.
+                        verified_bytes: 0,
+                    },
+                    facts,
+                ))
+            }
             Err(refusal) => refusals.push(*refusal),
         }
     }
-    if refusals.is_empty() {
-        Ok(records)
-    } else {
-        Err(VindexError::Parse(SelectionRefusals(refusals).to_string()))
+    if !refusals.is_empty() {
+        return Err(VindexError::Parse(SelectionRefusals(refusals).to_string()));
     }
+    // The floor gates selection, so the certificate it judges has to be
+    // the derived one BEFORE anything consults it. Refusals first: a
+    // plan that is already refused should not pay for verification.
+    super::fidelity_carriage::compose_extent_certificates(&mut records, store)?;
+    Ok(records)
 }
 
 /// The largest saving in bytes-opened any record can make by taking a
@@ -1697,11 +1764,11 @@ fn shallowest_saving(
 /// What `planned`'s codec depends on at `extent`, as the container's
 /// reference table addresses it, priced from the container's record.
 ///
-/// The LIFETIME is the realization's: every realization this build ships
-/// decodes, and a decode is finished with its dependency once it has an
-/// f32 image, so every pin here is `PreparationOnly`. A direct kernel
-/// over codes would declare `Retained`, and the ledger already knows what
-/// that costs — which is the point of pricing it before anyone builds one.
+/// The LIFETIME is the realization's and is not known here: every pin
+/// starts `PreparationOnly` and [`select_records`] sets it from the
+/// realization the backend pinned. A direct kernel over codes — the FP8
+/// codes with their scale grid — retains its dependency, and the ledger
+/// prices exactly that.
 fn dependency_pins(
     registry: &CodecRegistry,
     label: &str,
@@ -1919,6 +1986,24 @@ impl PreparedOperands {
         slice: ExecutionSlice,
     ) -> Result<Self, VindexError> {
         Self::load_within(plan, store, backend, slice, &ResidencyBudget::UNBOUNDED)
+    }
+
+    /// [`Self::load`] on the provider `provider` names in `lowerings` —
+    /// the registry-carried path (LOWERING-PLUGIN-1, L2).
+    ///
+    /// A provider the registry does not hold is refused here, by identity
+    /// and naming every provider it does hold, before selection and
+    /// before any byte. Nothing below constructs a provider the caller
+    /// did not register.
+    pub fn load_via<'s>(
+        plan: &ComponentOpPlan,
+        store: impl Into<OperandSource<'s>>,
+        lowerings: &LoweringRegistry,
+        provider: &LoweringIdentity,
+        slice: ExecutionSlice,
+    ) -> Result<Self, VindexError> {
+        let backend = lowerings.provider(provider)?;
+        Self::load(plan, store, backend, slice)
     }
 
     /// [`Self::load`] under a residency budget: the pins are chosen so the
@@ -2373,7 +2458,7 @@ impl PreparedOperands {
             }
         };
         for r in &self.realizations {
-            note(&r.representation, &r.provider);
+            note(&r.representation, &r.codec_provider);
             // A DEPENDENCY's provider is a provider. An image prepared
             // while a codebook's codec was registered is not executable
             // once that codec is gone, however well the codes' own
@@ -2386,29 +2471,81 @@ impl PreparedOperands {
         out
     }
 
+    /// The lowering providers that qualified this image's pins, once
+    /// each, in pin order (LOWERING-PLUGIN-1, L4).
+    ///
+    /// One today: an image is prepared by one provider. A list because
+    /// nothing in the contract says it must stay one, and because the
+    /// check below should not have to change if it stops being one.
+    pub fn lowerings(&self) -> Vec<LoweringIdentity> {
+        let mut out: Vec<LoweringIdentity> = Vec::new();
+        for r in &self.realizations {
+            if !out.contains(&r.lowering_provider) {
+                out.push(r.lowering_provider.clone());
+            }
+        }
+        out
+    }
+
+    /// Both authorities this image was pinned under, as one value — what
+    /// was DECIDED, holding neither the codecs nor the providers that
+    /// decided it.
+    pub fn authorities(&self) -> PinnedAuthorities {
+        PinnedAuthorities {
+            codecs: self.providers(),
+            lowerings: self.lowerings(),
+        }
+    }
+
     /// Refuse to execute this image against a registry that no longer
     /// resolves every provider it was prepared with to the same identity
     /// — a provider that disappeared or changed invalidates the
     /// preparation; nothing falls back.
     pub fn ensure_providers_in(&self, registry: &CodecRegistry) -> Result<(), VindexError> {
-        let describe = |identity: &Option<CodecIdentity>| {
-            identity
-                .as_ref()
-                .map(|i| format!("{} r{}", i.family, i.revision))
-                .unwrap_or_else(|| "no registered codec".to_string())
-        };
-        for (label, prepared) in self.providers() {
-            let now = registry.by_label(&label).map(|c| c.identity());
-            if now != prepared {
+        self.authorities().ensure_codecs_in(registry)
+    }
+
+    /// Refuse to execute this image on a provider that did not prepare
+    /// it (LOWERING-PLUGIN-1, L4).
+    ///
+    /// The registry check above asks whether the pinned provider still
+    /// EXISTS. This asks the question available where no registry is —
+    /// at the execution seam, which is handed a provider directly —
+    /// namely whether the provider about to run these pins is the one
+    /// that made them. A pin is a decision one provider took from one
+    /// set of declared facts; another provider running it is that
+    /// decision reinterpreted, which is exactly what this wave forbids.
+    pub fn ensure_lowered_by<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+    ) -> Result<(), VindexError> {
+        let executing = backend.identity();
+        for pinned in self.lowerings() {
+            if pinned != executing {
                 return Err(VindexError::Parse(format!(
-                    "representation `{label}` was prepared against {} and the registry now \
-                     offers {}; re-prepare rather than execute a pin whose provider changed",
-                    describe(&prepared),
-                    describe(&now)
+                    "this image's realizations were pinned by lowering provider `{pinned}` and \
+                     `{executing}` is executing them; re-prepare rather than run a pin another \
+                     provider decided"
                 )));
             }
         }
         Ok(())
+    }
+
+    /// The same question of the LOWERING plane: is the provider that
+    /// qualified these pins still in `registry`, under exactly the
+    /// identity the pins recorded (LOWERING-PLUGIN-1, L4)?
+    ///
+    /// The registry is the caller's — a session's current authority —
+    /// because a lowering registry is a carried value and not a
+    /// `&'static` the image can hold. What the image holds is the
+    /// decision, never the provider: an image that owned its provider
+    /// would keep a removed one alive and could never be invalidated by
+    /// its disappearance.
+    pub fn ensure_lowerings_in(&self, registry: &LoweringRegistry) -> Result<(), VindexError> {
+        // The lowering half only: an image asking whether its provider
+        // still exists has no reason to build its codec half first.
+        lowerings_stand_in(&self.lowerings(), registry)
     }
 
     pub fn residency_census(&self) -> ResidencyCensus {
@@ -2589,6 +2726,142 @@ impl PreparedOperands {
     }
 
     /// Hidden width, read from the plan's embedding op.
+    /// The exit's arithmetic on one `[hidden]` carrier: the prepared
+    /// final norm, then [`Self::head_over_normed`]. `None` when the image
+    /// carries no output head (a layer-range slice).
+    ///
+    /// V3-LENS-1's one head path: the decode exit calls this, a logit
+    /// lens calls this on an intermediate carrier, and there is no
+    /// second spelling of "the head" for the two to disagree on.
+    pub fn head_logits<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+    ) -> Result<Option<Vec<f32>>, VindexError> {
+        if self.output().is_none() {
+            return Ok(None);
+        }
+        let normed;
+        let final_hidden: &[f32] = match self.final_norm() {
+            Some(norm) => {
+                normed = norm.apply(backend, carrier);
+                &normed
+            }
+            None => carrier,
+        };
+        self.head_over_normed(backend, final_hidden)
+    }
+
+    /// The prepared output head over an ALREADY final-normed vector, with
+    /// the head's multiplier and softcap; `None` when the image carries
+    /// no output head. The batch exit norms a plane row by row and then
+    /// calls this per row; the decode exit and the lens reach it through
+    /// [`Self::head_logits`].
+    pub fn head_over_normed<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        final_hidden: &[f32],
+    ) -> Result<Option<Vec<f32>>, VindexError> {
+        match self.output() {
+            Some((output, weight)) => Ok(Some(backend.output_head(
+                weight.slice(),
+                output.projection.shape[0],
+                self.hidden(),
+                final_hidden,
+                output.multiplier,
+                output.softcapping,
+            )?)),
+            None => Ok(None),
+        }
+    }
+
+    /// V3-HEAD-OBS-1, property A4: one query head's share of the output
+    /// projection, `W_o[:, h·d..(h+1)·d] · x`, computed by the SAME
+    /// projection kernel and the same pinned realisation the executor's
+    /// `o_proj` uses — the head's slice of the input is placed in a
+    /// zero vector of the projection's full input width and the whole
+    /// projection runs, so a consumer never carries a second `W_o`. The
+    /// O bias is NOT added: it is a once-only term the consumer adds
+    /// after summing heads (see [`Self::attention_output_bias`]).
+    /// Refuses a layer outside the executed range, a layer whose
+    /// attention has no softmax heads, or an `x` of the wrong width.
+    pub fn head_projection<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        layer: usize,
+        head: usize,
+        head_dim: usize,
+        num_q_heads: usize,
+        x: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        let prepared = self.prepared_layer(layer)?;
+        let PreparedAttention::Softmax(ops) = &prepared.attention else {
+            return Err(VindexError::Parse(format!(
+                "layer {layer}'s attention has no softmax heads to project"
+            )));
+        };
+        if x.len() != head_dim {
+            return Err(VindexError::Parse(format!(
+                "head projection expects a {head_dim}-wide head input, got {}",
+                x.len()
+            )));
+        }
+        if head >= num_q_heads {
+            return Err(VindexError::Parse(format!(
+                "head {head} is outside this layer's {num_q_heads} query heads"
+            )));
+        }
+        let q_rows = num_q_heads * head_dim;
+        let mut padded = vec![0.0f32; q_rows];
+        padded[head * head_dim..(head + 1) * head_dim].copy_from_slice(x);
+        backend.project(ProjectCall {
+            weight: ops.w_o.slice(),
+            out_dim: self.hidden,
+            in_dim: q_rows,
+            x: &padded,
+        })
+    }
+
+    /// The attention output projection's bias for a layer, if the plan
+    /// declares one — the once-only term of the head-sum law.
+    pub fn attention_output_bias(&self, layer: usize) -> Result<Option<&[f32]>, VindexError> {
+        let prepared = self.prepared_layer(layer)?;
+        let PreparedAttention::Softmax(ops) = &prepared.attention else {
+            return Ok(None);
+        };
+        Ok(ops.biases.as_ref().map(|b| b[3].as_slice()))
+    }
+
+    /// The post-attention norm a layer applies to its attention output
+    /// before the residual write, if it has one.
+    pub(super) fn post_attention_norm(
+        &self,
+        layer: usize,
+    ) -> Result<Option<&PreparedNorm>, VindexError> {
+        Ok(self.prepared_layer(layer)?.post_attention.as_ref())
+    }
+
+    /// Whether a layer's attention is a softmax family this image taps.
+    pub fn attention_has_heads(&self, layer: usize) -> Result<bool, VindexError> {
+        Ok(matches!(
+            self.prepared_layer(layer)?.attention,
+            PreparedAttention::Softmax(_)
+        ))
+    }
+
+    fn prepared_layer(&self, layer: usize) -> Result<&PreparedLayer, VindexError> {
+        let first = self.first_layer;
+        layer
+            .checked_sub(first)
+            .and_then(|offset| self.layers.get(offset))
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "layer {layer} is outside this image's executed layers {first}..{}",
+                    first + self.layers.len()
+                ))
+            })
+    }
+
     pub fn hidden(&self) -> usize {
         self.hidden
     }

@@ -1,0 +1,73 @@
+{
+  "programme": "represent-optimizer",
+  "wave": "REPRESENT-ACTUATION-1: the bridge from a selected experiment to an executable request (stage 5b)",
+  "frozen": "2026-09-08, before any implementation, against `origin/main` a03efc29 (merge of PR #460, DIRECT-RECON-1), which contains #455 (activation authority), #456 (co-execution), #457 (ACCOUNTING-D1) and #459 (the v1 contract index). Branch `represent-actuation-1`. The reconnaissance below was read against that tree BEFORE this freeze, and B2 changed the shape of the wave. Any contract movement from now on is a FINDING, not a redesign.",
+  "lane": "Semantic lane. The performance lane stays PAUSED — nothing here makes a throughput claim.",
+
+  "why": "Stage 4/4b closed the read path and stage 5a made a measurement run INSTRUCTED rather than configured. What is still missing is the join between them. `next_experiment` returns a `MeasurementKey` the optimiser selected; `measure::run` takes a `TeacherForcedRequest` nobody can derive from one. Between the two sits a gap that today is crossed by a human reading a digest and setting six environment variables. Until it is crossed by code, the optimiser is an oracle for an agent and not an optimiser: there is no path by which a selected experiment becomes a performed one.",
+
+  "frozen_scope": {
+    "statement": "It turns an experiment the optimiser has ALREADY SELECTED into a request an executor can perform. It does not choose which experiments should exist, it does not perform one, and it does not write to the scientific record.",
+    "the_headline_falsifier": "If preparing an experiment can change WHAT IS MEASURED — the state, the corpus, the scale, the instrument or the gate — the bridge is wrong. The bridge translates an authorisation; it must not be able to author one.",
+    "why_that_is_the_falsifier": "Every other property of this layer is convenience. This one is the reason the layer may exist at all: an actuation path that can quietly re-aim an experiment turns the whole 1a-1c identity model into decoration, because the key would no longer name what was run."
+  },
+
+  "reconnaissance_2026_09_08": {
+    "note": "Read against a03efc29. B2 is the finding that changed the wave's shape.",
+
+    "B1_THE_READ_PATH_IS_A_PURE_DERIVATION": "VERIFIED. `NextExperiment::of(snapshot)` takes no arguments — `view/next_experiment.rs` states it deliberately — and `SearchSnapshot::next_experiment` resolves its layout policy and rebuilds its price table from stored facts. So the thing to be actuated is already a property of the record, and the bridge inherits that discipline rather than needing to establish it.",
+
+    "B2_THREE_OF_THE_FOUR_KEY_PARTS_ARE_ONE_WAY_DIGESTS": {
+      "finding": "`MeasurementKey` is state + bank + scale + instrument. `RepresentationStateId` is RECOVERABLE from the record — `ActionVocabulary::map_for(base_map, applied)` then `RepresentationState::resolve`, which is exactly what `Generator::realize` does. `EvidenceBankId` and `InstrumentSemanticsId` are NOT. The record stores `SearchConfig::standing_intent: MeasurementIntent`, which holds the two ids and nothing else, and `EvidenceBank::new` / `InstrumentSemantics::new` have ZERO production call sites — every construction in the tree is in a test or in `state/fixtures.rs`.",
+      "consequence": "A bridge written today could not name the corpus the optimiser selected, nor say what the reading would mean. It would have to invent both, which is the one thing this programme's evidence discipline forbids.",
+      "planned_resolution": "The record carries the declarations its standing intent stands for, added the way `SearchFacts::accounting` was added (B3) — optional, defaulted, absence a FACT about the record rather than a fallback, and refused by name. The declarations are self-checking: `bank.id()` must equal the intent's bank and `instrument.id()` its instrument, or the record is refused for describing a protocol it does not search under.",
+      "why_this_is_not_scope_creep": "It is the same movement 4b made for pricing. `next_experiment` could not answer until the record carried the accounting authority it prices from; it cannot be ACTUATED until the record carries the protocol authority it measures under. Both are inputs to add, not conclusions to invent."
+    },
+
+    "B3_THE_PRECEDENT_IS_EXACT": "VERIFIED. `SearchFacts::accounting: Option<PhysicalAccountingFacts>` with `#[serde(default, skip_serializing_if = \"Option::is_none\")]`, and `NextExperiment` refusing with a stable machine-readable `reason` plus a `Missing { fact, because }` list. A record written before the authority existed stays readable and stays honest about what it cannot answer. The protocol is the same shape of declaration and must not invent a second mechanism.",
+
+    "B4_THE_RUNNER_ALREADY_TAKES_ITS_CONTROLS_AS_FIELDS": {
+      "finding": "5a-0 made every control on `TeacherForcedRequest` a field, resolved by name and refused when unknown. Three of them have record-side authority nobody has connected: `sequences` is `EvidenceBank::sample_count` (the bank declares WHICH samples, in order, and `positions()` is computed from them), `gate` is `SearchConfig::gate.id`, and `label` is not a control at all and can be named by the experiment itself.",
+      "the_gap_this_makes_checkable": "`DEFAULT_GATE` is `kimi-logit-v3`; the record `state/fixtures.rs` carries declares `kimi-logit-balanced-v1`. `measure/mod.rs` names that discrepancy as the reason the request type exists. A record-derived request therefore JUDGES UNDER A DIFFERENT GATE from the historic environment invocation, and that difference is observable rather than asserted.",
+      "boundary": "`DEFAULT_SEQUENCES`, `DEFAULT_GATE` and `DEFAULT_LABEL` stay exactly where they are — defaults of the ENVIRONMENT ADAPTER, so the historic command line keeps meaning what it meant. They must be unreachable from a record-derived request. A default that leaks into the derived path would let a record's declaration be silently overridden by a constant, which is the whole defect 5a-0 closed."
+    },
+
+    "B5_THE_RECEIPT_CANNOT_BE_THE_SEAM": "VERIFIED. `MeasurementReceipt` embeds `TeacherForcedRequest` by value. A trait returning it would teach every caller one procedure's request shape, which is the opposite of a provider-neutral seam. The seam needs a procedure-neutral observation: the key that was performed, what was observed, and what the run verified.",
+
+    "B6_LOCATION_IS_ALREADY_DOCTRINALLY_SEPARATE_FROM_IDENTITY": "VERIFIED, twice. `EvidenceBank::locator_hint` is documented as 'where the bank was last seen, never part of what it is', and `SourceDependency` states the same rule for containers. `read_source_identity(container)` means a located container can be CHECKED against the record's `SourceIdentity` rather than trusted. So paths enter through a locator seam and are verified there; they never become part of a request.",
+
+    "B7_CO_EXECUTION_ALREADY_HOLDS_ITS_BOUNDARY": "VERIFIED. `ExecutionBatch::assemble` takes `Vec<MeasurementKey>` and holds keys, never states, and its frozen scope says it batches execution and does not choose which experiments should exist. It therefore composes with a per-key bridge without either knowing about the other, and batch width must NOT become a field of a request — that would put scheduling identity back into the measurement, which #456 exists to prevent."
+  },
+
+  "predictions": {
+    "P1": "The record can carry the declarations behind its standing intent as ONE optional, self-checking field, and preparation refuses by name when it is absent — with no change to what `MeasurementKey`, `MeasurementIntent` or `NextExperiment` ARE. FALSIFIED if preparing an experiment requires changing the key's canonical form, or if any existing digest moves.",
+
+    "P2": "A `MeasurementRequest` cannot be CONSTRUCTED unless it attests to its own key: resolving its candidate map over the record's surface under the record's layout policy yields exactly `key.state()`, and its declarations digest to `key.bank()` and `key.instrument()`. FALSIFIED if a request can exist that measures something other than the experiment it names — concretely, if the four-part key cannot be reconstructed from the request alone.",
+
+    "P3": "The bridge names no device, backend, kernel, lowering target, store id or container path. An executor is selected by the PROCEDURE the record declares, resolved by name and refused when this build does not implement it — the same discipline as `layout_admission`, `compiled_bytes` and `gate_by_id`. FALSIFIED if any type in the bridge must mention one of those to compile.",
+
+    "P4": "Every field the teacher-forced runner currently takes from the environment has record-side authority, and a record-derived request judges under the gate the RECORD declares rather than under the adapter's historic default. FALSIFIED if any control has no record-side authority and must keep an invented default in the derived path.",
+
+    "P5": "Where the artifacts are stays out of identity: paths enter through one locator seam, and a located container is checked against the record's `SourceIdentity` rather than trusted. FALSIFIED if a path has to become part of a request for an executor to run.",
+
+    "P6": "This wave produces no evidence. Executing returns what was observed and what the run verified; nothing added here can write to `SearchFacts`, and the question 'does this observation constitute the measurement its key names' is left to stage 6. FALSIFIED if a measurement can reach the scientific record through anything this wave adds."
+  },
+
+  "deliberately_not_done": {
+    "no_compilation": "The bridge says which map must be presented and which physical state it must resolve to. BUILDING that overlay belongs to the executor's realization provider. A locator with no built overlay refuses with an actionable name; it must not silently build one, because a build is where a representation could differ from the one the key names.",
+    "no_ingestion": "Stage 6. There is no write path to `SearchFacts` in this wave, and the admissibility question — does this artifact constitute the measurement named by this key — is deliberately left open rather than answered cheaply by `measurements.record`.",
+    "no_loop": "Stage 7. Reload, derive, execute, ingest, repeat needs stage 6 first, and a loop built on an un-sealed observation would automate exactly the error stage 6 exists to prevent.",
+    "no_batching": "See B7.",
+    "no_experiment_value_policy": "Choosing WHICH experiment is worth running is a change to search semantics and belongs in a registered policy with its own evidence. The bridge takes the experiment it is given.",
+    "no_mcts_or_learned_proxies": "Unearned, and the SENSITIVITY programme's four falsified local proxies are why.",
+    "no_transport_change": "Stage 4b's lesson was that the MCP transport did not move when `next_experiment` became answerable, because the intelligence lives underneath it. Nothing here is exposed as a tool until an agent has a question the read path cannot already answer."
+  },
+
+  "steps": {
+    "1": "`MeasurementProtocol` — the declarations the standing intent's digests stand for, self-checking, carried by the record as an optional fact.",
+    "2": "`MeasurementRequest` — provider-neutral and construct-or-refuse, attesting to its key.",
+    "3": "`PreparedExperiment::of(snapshot)` — three answers, derived from the record and nothing else, with distinct reasons that call for different actions.",
+    "4": "The executor seam — `ExperimentExecutor` selected by procedure name, `ArtifactLocator` for where things are, and a procedure-neutral observation.",
+    "5": "The teacher-forced procedure as the first registered executor: an ADAPTER over the existing runner, not a second runner."
+  }
+}

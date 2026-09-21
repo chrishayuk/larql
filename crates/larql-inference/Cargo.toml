@@ -25,7 +25,10 @@ larql-core = { path = "../larql-core" }
 larql-vindex = { path = "../larql-vindex" }
 larql-execution = { path = "../larql-execution" }
 serde = { workspace = true }
-serde_json = { workspace = true }
+# `float_roundtrip`: the run record (V3-STREAM-1) replays floats
+# bit-exactly, and the default parser is not correctly rounded.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+sha2 = "0.10"
 thiserror = { workspace = true }
 zip = { version = "2", default-features = false }
 rand = "0.8"

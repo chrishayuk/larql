@@ -1,0 +1,191 @@
+{
+  "experiment": "E2-A",
+  "title": "One piece of evidence, once \u2014 de-duplicated Metal gate, bench-regress off the PR path",
+  "frozen_at": "2026-09-07",
+  "claim": "A Metal-changing pull request executes every required test binary ONCE, under the authoritative coverage profile, plus a deliberately small ordinary-profile execution witness. No complete test suite is executed twice, and no unqualified benchmark job sits on the pull-request critical path.",
+  "measurement_contract": {
+    "rule": "Every prediction frozen from E2 onward names an INTENSIVE metric. The instrument refuses to score an extensive one across samples of different size, and the selftest asserts that refusal fires.",
+    "reason": "E1's C2 froze two extensive totals and collected 12 attempts against 33; a 12/33 ratio contributes -63.6% before any effect exists, so its validity gate could not pass. See E1-postmortem.md.",
+    "intensive_metrics_available": [
+      "merge_ready.p50 / p95",
+      "first_blocking_green.p50 / p95",
+      "macos_queue_max.p50 / p95",
+      "queued_per_attempt.<os>",
+      "executed_per_attempt.<os>",
+      "superseded_exec_mean",
+      "workflow_exec_max.<workflow>.p50 / p95   (successful runs only)",
+      "workflow_share.<workflow>"
+    ]
+  },
+  "baseline": {
+    "primary_snapshot": "docs/ci-throughput/after-e1.json",
+    "primary_window": "2026-09-07, 12 attempts / 6 branches \u2014 the state E1 left behind",
+    "metal_gate_snapshot": "docs/ci-throughput/metal-gate-baseline.json",
+    "metal_gate_window": "2026-08-25 onward, pruned to larql-compute-metal: 40 attempts, 34 SUCCESSFUL runs (durations 47.0-68.7 min)",
+    "why_two": "The primary window holds only 2 successful Metal runs, too thin to freeze a target against. The Metal gate's duration is a property of the job, not of the surrounding mix, and E1's c1/c2/c3 did not change what that job runs \u2014 so a wider window is the honest baseline for it. The two agree: 56.22 min (n=2) and 56.61 min (n=34).",
+    "values": {
+      "workflow_exec_max.larql-compute-metal.p50": 56.61,
+      "workflow_exec_max.larql-compute-metal.p95": 66.05,
+      "merge_ready.p50": 40.81,
+      "merge_ready.p95": 54.47,
+      "macos_queue_max.p50": 21.69,
+      "executed_per_attempt.macos": 76.72,
+      "queued_per_attempt.macos": 80.15,
+      "workflow_share.larql-compute-metal": 0.5,
+      "workflow_share.bench-regress": 0.5,
+      "workflow_share.msrv-metal": 0.5,
+      "workflow_exec_max.msrv-metal.p50": 0.72
+    }
+  },
+  "mechanism_measured_from_the_baseline": {
+    "run_id": 34098337888,
+    "pull_request": 449,
+    "job_seconds": 3565,
+    "duplicate_seconds": 2061,
+    "reading": "`cargo test --tests` selects every target with test = true, and a lib has it by default. Run 34098337888 ran 1 binary under `--lib`, then 69 under `--tests` INCLUDING src/lib.rs again, then the same 69 instrumented. The 530-test lib suite executed three times (671.22s + 535.74s + 535.52s); the 68 integration binaries twice. Deleting both plain steps removes 2061s of a 3565s job. Builds are not the cost: cold `cargo check --all-targets` is 26.1s, the plain test build 21.8s, the instrumented build 35.7s, and `cargo install --locked cargo-llvm-cov` 49.7s."
+  },
+  "predictions": [
+    {
+      "id": "A1",
+      "scores": "metal-dedup",
+      "claim": "the larql-compute-metal gate's successful-run p50 falls from 56.6 min to <= 27 min",
+      "reason": "2061s of 3565s on the measured run is duplicate execution; removing it leaves ~24 min, plus ~1-2 min for the ordinary-profile witness and minus ~50s of cargo install",
+      "falsifier": "> 35 min means the duplication was not the cost, or the coverage run is slower than the plain run by more than instrumentation explains",
+      "mechanism": "metal-dedup",
+      "kind": "effect",
+      "metric": "workflow_exec_max.larql-compute-metal.p50",
+      "held_if": {
+        "after": {
+          "lte": 27
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "gt": 35
+        }
+      },
+      "pass_band_note": "<= 30 min is a pass; 27 is the target. Between 30 and 35 is PARTIAL and must be explained, not rounded."
+    },
+    {
+      "id": "A2",
+      "scores": "bench-removal",
+      "claim": "no pull-request attempt contains a bench-regress run",
+      "reason": "the pull_request trigger is removed from the workflow, not disabled by a paths filter",
+      "falsifier": "any nonzero share means the trigger is still reachable",
+      "mechanism": "bench-removal",
+      "kind": "effect",
+      "metric": "workflow_share.bench-regress",
+      "held_if": {
+        "after": {
+          "lte": 0
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "gt": 0
+        }
+      }
+    },
+    {
+      "id": "A3",
+      "scores": "metal-dedup + bench-removal",
+      "claim": "macOS executed runner-minutes per attempt fall by at least 25%",
+      "reason": "bench-regress contributed 137.9 macOS execution-minutes over 12 attempts (11.5/attempt); Metal de-duplication removes ~34 min on the half of attempts that trigger it (~17/attempt)",
+      "falsifier": "a fall of less than 10% means neither mechanism reached the macOS pool",
+      "mechanism": "system",
+      "kind": "effect",
+      "metric": "executed_per_attempt.macos",
+      "held_if": {
+        "delta_pct": {
+          "lte": -25
+        }
+      },
+      "falsified_if": {
+        "delta_pct": {
+          "gt": -10
+        }
+      }
+    },
+    {
+      "id": "A4",
+      "scores": "system",
+      "claim": "merge-ready p50 falls from 40.8 min to <= 30 min",
+      "reason": "headline; the Metal gate is the tail on the attempts that trigger it, and bench-regress leaves the critical path entirely",
+      "falsifier": "> 38 min means the shortened gates were not on the critical path",
+      "mechanism": "system",
+      "kind": "effect",
+      "metric": "merge_ready.p50",
+      "held_if": {
+        "after": {
+          "lte": 30
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "gt": 38
+        }
+      }
+    },
+    {
+      "id": "A5",
+      "scores": "system",
+      "claim": "VALIDITY \u2014 the AFTER window still triggers the Metal gate on a comparable share of attempts",
+      "reason": "A3 is intensive in sample size but not in MIX: a window that happens to trigger the expensive macOS gate on far fewer pull requests would show macOS minutes falling without anything having been made faster. This is the gate E1's P3 was reaching for and could not express.",
+      "falsifier": "a share below 0.3 means the AFTER window is not comparable and A3 must not be read as an effect",
+      "mechanism": "system",
+      "kind": "validity",
+      "metric": "workflow_share.larql-compute-metal",
+      "held_if": {
+        "after": {
+          "gte": 0.3
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "lt": 0.3
+        }
+      },
+      "one_sided_note": "Only the LOW side falsifies. A higher Metal share would make macOS minutes worse, not flatter, so it cannot manufacture the effect A3 claims."
+    }
+  ],
+  "structural_falsifiers": [
+    {
+      "id": "S1",
+      "claim": "the same 69 test binaries are still executed",
+      "check": "count `Running ` lines in the authoritative step's log; must equal the 69 executed by the pre-change `--tests` step. A binary that stops being built is a silently shrunk estate.",
+      "not_scoreable_by": "ci_throughput.py \u2014 this is a log property, not a timing one"
+    },
+    {
+      "id": "S2",
+      "claim": "a deliberately failing test reds the combined gate",
+      "check": "push a commit with one `assert!(false)` in a lib test and one in an integration test; the authoritative step must fail. Revert before merge."
+    },
+    {
+      "id": "S3",
+      "claim": "a deliberately violated coverage policy reds the gate",
+      "check": "lower a per-file floor in coverage-policy.json above the file's real coverage, or delete a covering test; check_coverage_policy.py must fail. Revert before merge."
+    },
+    {
+      "id": "S4",
+      "claim": "the ordinary-profile witness actually runs, in the ordinary profile",
+      "check": "the step prints `smoke tests executed: N` with N >= SMOKE_MIN_TESTS, and its binary path is under target/debug/, not target/llvm-cov-target/. A filter that matches nothing must fail the step \u2014 verify by dispatching once with a deliberately wrong filter."
+    },
+    {
+      "id": "S5",
+      "claim": "no pull_request benchmark job remains",
+      "check": "`.github/workflows/bench-regress.yml` has no `pull_request:` key, and A2 scores 0 on the AFTER window."
+    }
+  ],
+  "confounds": [
+    "GitHub's hosted macOS pool availability varies independently of this repository; macos_queue_max is not claimed by any E2-A prediction for that reason",
+    "the AFTER window must contain enough SUCCESSFUL Metal runs for A1's p50 to mean anything \u2014 collect until workflow_exec_max.larql-compute-metal.n >= 8",
+    "E2-D (tiered Metal triggers) would change workflow_share.larql-compute-metal deliberately, which is why it must be measured AFTER E2-A is scored, not alongside it"
+  ],
+  "scoring": "scripts/ci_throughput.py adjudicate --forecast docs/ci-throughput/E2-contract.json --before docs/ci-throughput/after-e1.json --after docs/ci-throughput/after-e2a.json",
+  "scoring_note": "A1's baseline comes from metal-gate-baseline.json, not from the primary before-snapshot: pass --before docs/ci-throughput/metal-gate-baseline.json for A1 and read the other four against after-e1.json. The two-baseline split is stated here so the adjudicator cannot be pointed at the thin one by accident.",
+  "mechanisms": {
+    "metal-dedup": "run the Metal test estate once, under coverage, plus a small ordinary-profile witness",
+    "bench-removal": "bench-regress off the pull-request path until PERF-QUAL-2 qualifies it",
+    "system": "the tranche as a whole"
+  }
+}

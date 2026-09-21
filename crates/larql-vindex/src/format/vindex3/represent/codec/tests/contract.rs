@@ -113,38 +113,78 @@ fn every_codec_declares_its_extents_from_the_base_up_and_refuses_past_them() {
 
 /// Which codecs are progressive, and what the terminal ones still promise.
 ///
-/// A terminal codec declares no radius — its reconstruction error is
-/// measured per encoder and per tensor, and a number in the certificate
-/// would promote one measurement to a property of the format. A
-/// progressive one MUST declare one per extent, because a caller choosing
-/// a depth is choosing a fidelity and has nothing else to choose by.
+/// What a codec may declare follows from the REFERENT, not from how many
+/// extents it has.
+///
+/// A certificate bounds decoded values against the typed logical source
+/// tensor presented at the representation boundary. So a codec that
+/// carries its source losslessly can honestly say `0.0` — the identity,
+/// or a widening that loses nothing, or entropy coding that is
+/// byte-identical once inflated. A codec that FITS its source can say
+/// nothing: the error belongs to the instance that was encoded, and a
+/// number in the certificate would promote one measurement to a property
+/// of the format. Only an attestation can supply that.
+///
+/// The old rule here was "a single-extent codec declares no radius",
+/// which conflated the two questions: it is not the extent count that
+/// decides, it is whether anything was thrown away.
 #[test]
-fn only_the_progressive_codec_declares_a_radius_and_it_declares_one_per_extent() {
+fn only_a_lossless_carrier_declares_a_radius_and_a_progressive_one_declares_one_per_extent() {
+    // Lossless carriers of their own typed logical source.
+    const LOSSLESS: [&str; 4] = ["BF16", "F16", "F32", "BF16_ZLIB"];
+    // Codecs that fit their source, and so certify nothing without an
+    // attestation for the instance.
+    const FITTED: [&str; 9] = [
+        "Q4_K",
+        "Q6_K",
+        "Q8_0",
+        "NVFP4",
+        "MXFP4",
+        "VQ8_SHARED",
+        "F8_E4M3",
+        "Q5_K",
+        "Q3_K",
+    ];
+
     let progressive: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| c.extents().len() > 1)
         .map(|c| c.encoding_label())
         .collect();
     assert_eq!(progressive, ["F32_PLANES"]);
+
     for codec in builtin() {
         let label = codec.encoding_label();
         let extents = codec.extents();
-        if extents.len() == 1 {
+        if extents.len() > 1 {
             assert!(
-                extents[0].radius.is_none(),
-                "{label}: no radius is declared, only measured"
+                extents.iter().all(|c| c.radius.is_some()),
+                "{label}: an extent without a radius cannot be chosen by fidelity"
+            );
+            assert_eq!(
+                extents.last().unwrap().radius.as_ref().unwrap().radius(),
+                0.0,
+                "{label}: the terminal extent reconstructs its source exactly"
             );
             continue;
         }
-        assert!(
-            extents.iter().all(|c| c.radius.is_some()),
-            "{label}: an extent without a radius cannot be chosen by fidelity"
-        );
-        assert_eq!(
-            extents.last().unwrap().radius.as_ref().unwrap().radius(),
-            0.0,
-            "{label}: the terminal extent reconstructs exactly"
-        );
+        let radius = extents[0].radius.as_ref().map(|r| r.radius());
+        if LOSSLESS.contains(&label) {
+            assert_eq!(
+                radius,
+                Some(0.0),
+                "{label}: a lossless carrier states 0.0 rather than declining to state"
+            );
+        } else {
+            assert!(
+                FITTED.contains(&label),
+                "{label}: every shipped codec is a lossless carrier or a fitted one;                  a new one must say which"
+            );
+            assert_eq!(
+                radius, None,
+                "{label}: a fitted codec's error is measured per instance, not declared"
+            );
+        }
     }
 }
 
@@ -228,12 +268,10 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         // in the bound operand, not the format — so this cannot name one.
         // `every_acceleration_...` checks the family membership directly.
         WeightFormat::KQuant => None,
-        // A SOURCE format, not a REPRESENT target: fine-grained FP8
-        // arrives in the checkpoint and this build never compiles a
-        // tensor into it, so no `represent` codec answers to it. `None`
-        // here is that fact, not an omission — if a codec ever emits
-        // FP8, this arm names it and the assertion above starts applying.
-        WeightFormat::Fp8Block => None,
+        // The checkpoint's own fine-grained FP8, executed in place: the
+        // codec that answers to it is the one registered under the
+        // safetensors dtype the encoder carries through.
+        WeightFormat::Fp8Block => Some("F8_E4M3"),
     }
 }
 
@@ -286,21 +324,34 @@ fn codecs_with_no_direct_cpu_realization_say_so_rather_than_claim_one() {
         .filter(|c| c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    // K-quants gained a direct CPU realization (FusedKQuant); the
+    // K-quants with a kernel gained a direct CPU realization
+    // (FusedKQuant); Q5_K and Q3_K have no kernel and say so; the
     // entropy-coded codec registers none, and neither do the progressive
     // or the codebook-dependent ones — deliberately, so an extent and a
     // dependency can each be shown to work without any kernel knowing
-    // they exist.
+    // they exist. Fine-grained FP8 is the dependency-bearing codec WITH
+    // a kernel: the grid is retained beside the codes it scales.
     assert_eq!(
         without,
-        ["F16", "MXFP4", "BF16_ZLIB", "F32_PLANES", "VQ8_SHARED"]
+        [
+            "F16",
+            "MXFP4",
+            "BF16_ZLIB",
+            "F32_PLANES",
+            "VQ8_SHARED",
+            "Q5_K",
+            "Q3_K"
+        ]
     );
     let with: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| !c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    assert_eq!(with, ["BF16", "F32", "Q4_K", "Q6_K", "Q8_0", "NVFP4"]);
+    assert_eq!(
+        with,
+        ["BF16", "F32", "Q4_K", "Q6_K", "Q8_0", "NVFP4", "F8_E4M3"]
+    );
 }
 
 #[test]

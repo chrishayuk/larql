@@ -46,7 +46,7 @@ pub(crate) use balance::probe_target_prob;
 mod tests;
 
 use larql_inference::vindex3::Vindex3Runtime;
-use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+use larql_vindex::format::vindex3::opplan::exec::lowering::SharedProvider;
 use larql_vindex::format::vindex3::opplan::LayerFfn;
 
 use super::compose::{median_or, unit_vector};
@@ -75,7 +75,7 @@ const NORM_SAMPLE_SIZE: usize = 100;
 /// check caught the first version of this function computing real
 /// medians V2 never sees).
 fn layer_median_norms(
-    runtime: &Vindex3Runtime<ProductionBackend>,
+    runtime: &Vindex3Runtime<SharedProvider>,
     layer: usize,
 ) -> Result<(f32, f32, f32), LqlError> {
     let Some(LayerFfn::Dense(ffn)) = &runtime.plan().layers[layer].ffn else {

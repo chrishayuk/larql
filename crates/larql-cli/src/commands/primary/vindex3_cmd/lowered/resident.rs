@@ -345,6 +345,17 @@ pub(super) fn rope_table_key(position: &PositionPolicy, head_dim: usize) -> Opti
             head_dim.hash(&mut h);
             Some(h.finish() | 1)
         }
+        // Linear's table is the plain series divided by the factor, so
+        // the factor joins the key: the same theta scaled and unscaled
+        // (Gemma 3's global vs sliding layers share neither theta nor
+        // scaling, but a family could) must never share one table.
+        PositionPolicy::Linear { theta, factor } => {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            theta.to_bits().hash(&mut h);
+            factor.to_bits().hash(&mut h);
+            head_dim.hash(&mut h);
+            Some(h.finish() | 1)
+        }
         // The partial rotary's table is the full-head rotate-half table
         // with the top frequencies zero (head-width basis); fraction and
         // basis join the key.
@@ -407,6 +418,17 @@ pub(super) fn rope_inv_freq_table(position: &PositionPolicy, head_dim: usize) ->
         PositionPolicy::Llama3 { theta, scaling } => {
             larql_vindex::format::vindex3::opplan::exec::kernels::llama3_frequencies(
                 scaling, head_dim, *theta,
+            )
+            .iter()
+            .map(|f| *f as f32)
+            .collect()
+        }
+        // The interpreter's own linear table: plain series over the
+        // factor, so the lowered kernel rotates exactly what the
+        // reference arm rotates.
+        PositionPolicy::Linear { theta, factor } => {
+            larql_vindex::format::vindex3::opplan::exec::kernels::linear_frequencies(
+                head_dim, *theta, *factor,
             )
             .iter()
             .map(|f| *f as f32)

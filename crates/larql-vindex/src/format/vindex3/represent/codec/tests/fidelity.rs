@@ -158,7 +158,8 @@ fn every_shipped_certificate_is_stated_in_the_builds_own_terms() {
         }
     }
     assert_eq!(
-        certified, 3,
-        "the progressive codec's three extents, and no other"
+        certified, 7,
+        "the progressive codec's three extents, plus the four lossless carriers \
+         (F32, F16, BF16, BF16_ZLIB) that state 0.0 against their own logical source"
     );
 }

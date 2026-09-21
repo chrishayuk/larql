@@ -188,7 +188,7 @@ fn assert_control(what: &str, perturbed: &[f32], got: &[f32], parity_rel_rms: f6
     );
 }
 
-/// Run the lowered FFN once and return its output.
+/// Run the lowered FFN once under SiLU-GLU and return its output.
 #[allow(clippy::too_many_arguments)]
 fn run_lowered(
     gpu: &larql_compute_metal::MetalBackend,
@@ -200,6 +200,38 @@ fn run_lowered(
     offset: f32,
     post_norm_w: Option<&[f32]>,
     post_eps: f32,
+) -> Vec<f32> {
+    run_lowered_act(
+        gpu,
+        h,
+        norm_w,
+        gate,
+        up,
+        down,
+        offset,
+        post_norm_w,
+        post_eps,
+        FfnActivation::Silu,
+    )
+}
+
+/// The same run, with the plan's gate COMBINE stated explicitly.
+///
+/// Split out so the SiTU arm can be driven through the identical
+/// lowering — the point of that test is that only `shape.activation`
+/// differs, so anything else varying between the arms would confound it.
+#[allow(clippy::too_many_arguments)]
+fn run_lowered_act(
+    gpu: &larql_compute_metal::MetalBackend,
+    h: &[f32],
+    norm_w: &[f32],
+    gate: &nvfp4::Nvfp4Matrix,
+    up: &nvfp4::Nvfp4Matrix,
+    down: &nvfp4::Nvfp4Matrix,
+    offset: f32,
+    post_norm_w: Option<&[f32]>,
+    post_eps: f32,
+    activation: FfnActivation,
 ) -> Vec<f32> {
     let h_in = gpu.lowering_upload(h).expect("upload");
     let norm_buf = gpu.lowering_upload(norm_w).expect("upload");
@@ -257,7 +289,7 @@ fn run_lowered(
         intermediate: INTER,
         norm_eps: EPS,
         norm_weight_offset: offset,
-        activation: FfnActivation::Silu,
+        activation,
     };
 
     let cmd = gpu.new_lowering_command_buffer();
@@ -568,5 +600,153 @@ fn post_norm_epsilon_is_read_where_it_is_observable() {
         "the plan's post-norm epsilon must reach the kernel: swapping 1e-8 for 1e-5 \
          moved the branch only {ratio:.1}x the parity residual ({:.3e})",
         m.rel_rms
+    );
+}
+
+/// Does the dense-FFN lowering REACH its SiTU-GLU arm?
+///
+/// `tests/test_lowering_situ.rs` already qualifies the `situ_glu` kernel
+/// against the scalar authority, but it binds `bind_situ_glu` directly.
+/// Nothing there — or anywhere — drives
+/// `lowering::ffn::encode_gate_up_act_from_normed`'s
+/// `FfnActivation::SituGlu` arm, so a lowering that ignored the plan's
+/// combine and ran `geglu_silu` would keep every one of those tests
+/// green. A proven kernel nobody dispatches is not an executed kernel.
+///
+/// The witness is an analytic identity rather than a second transcription
+/// of the reference. `situ_glu` computes
+///
+/// ```text
+/// beta * tanh(g / beta) * sigmoid(g) * u        (linear_beta = None)
+/// ```
+///
+/// and `beta * tanh(g / beta) -> g` as `beta` grows, so at a large beta
+/// with the up branch uncapped the combine IS `silu(g) * u`. That gives
+/// the arm a real external reference — the same `cpu_reference` the SiLU
+/// parity test uses — with only `shape.activation` changed.
+///
+/// Paired, because the identity alone is satisfied by a lowering that
+/// never reached the arm at all: at GLM/K3-scale parameters the SiTU
+/// combine must MOVE the answer, far past the parity residual. One arm
+/// says the lowering computes SiTU's formula; the other says it is not
+/// quietly computing SiLU.
+#[test]
+fn the_lowering_dispatches_situ_glu_and_binds_its_parameters() {
+    let Some(gpu) = larql_compute_metal::MetalBackend::new() else {
+        eprintln!("no Metal device; skipping");
+        return;
+    };
+    let h = deterministic(HIDDEN, 11);
+    let norm_w = deterministic(HIDDEN, 12);
+    let gate_f = deterministic(INTER * HIDDEN, 13);
+    let up_f = deterministic(INTER * HIDDEN, 14);
+    let down_f = deterministic(HIDDEN * INTER, 15);
+
+    let gate = nvfp4::quantize(&gate_f, INTER, HIDDEN).unwrap();
+    let up = nvfp4::quantize(&up_f, INTER, HIDDEN).unwrap();
+    let down = nvfp4::quantize(&down_f, HIDDEN, INTER).unwrap();
+    let gate_q = nvfp4::round_trip(&gate_f, INTER, HIDDEN).unwrap();
+    let up_q = nvfp4::round_trip(&up_f, INTER, HIDDEN).unwrap();
+    let down_q = nvfp4::round_trip(&down_f, HIDDEN, INTER).unwrap();
+
+    // `beta` large enough that `beta*tanh(g/beta)` is `g` to well inside
+    // f32, small enough that `g/beta` is not flushed: the normed gate
+    // here is O(1), so g/beta ~ 1e-4 and the cubic term ~1e-9 relative.
+    const WIDE_BETA: f32 = 1.0e4;
+
+    let reference = cpu_reference(
+        &h,
+        &norm_w,
+        &gate_q,
+        &up_q,
+        &down_q,
+        NORM_OFFSET,
+        true,
+        true,
+        PostNormMode::None,
+    );
+    let wide = run_lowered_act(
+        &gpu,
+        &h,
+        &norm_w,
+        &gate,
+        &up,
+        &down,
+        NORM_OFFSET,
+        None,
+        EPS,
+        FfnActivation::SituGlu {
+            beta: WIDE_BETA,
+            linear_beta: None,
+        },
+    );
+
+    assert!(
+        wide.iter().all(|v| v.is_finite()),
+        "the SiTU lowering produced non-finite output"
+    );
+    let m = compare(&reference, &wide);
+    eprintln!(
+        "SiTU(beta={WIDE_BETA:.0e}, no cap) vs the SiLU program: max_abs {:.3e}  \
+         rel_rms {:.3e}  cosine {:.9}",
+        m.max_abs, m.rel_rms, m.cosine
+    );
+    assert!(
+        m.rel_rms < 1e-4 && m.cosine > 0.999_999,
+        "at a wide beta the SiTU combine must BE silu(g)*u, so the lowering \
+         disagreeing here means it bound the kernel's parameters wrongly: \
+         rel_rms {:.3e}, cosine {:.9}",
+        m.rel_rms,
+        m.cosine
+    );
+
+    // The pairing: at real parameters the arm must move the answer, or
+    // the agreement above is equally consistent with the lowering having
+    // ignored `FfnActivation::SituGlu` and run `geglu_silu`.
+    let capped = run_lowered_act(
+        &gpu,
+        &h,
+        &norm_w,
+        &gate,
+        &up,
+        &down,
+        NORM_OFFSET,
+        None,
+        EPS,
+        FfnActivation::SituGlu {
+            beta: 4.0,
+            linear_beta: Some(25.0),
+        },
+    );
+    assert!(
+        capped.iter().all(|v| v.is_finite()),
+        "the capped SiTU lowering produced non-finite output"
+    );
+    assert_control("SiTU softcap at K3 parameters", &capped, &wide, m.rel_rms);
+
+    // And `linear_beta: None` is a DIFFERENT function from an infinite
+    // bound, not a spelling of it — the flag the kernel binds separately.
+    // Capping only the up branch, at the same beta, must move the answer
+    // too, or `has_linear` is not reaching the shader.
+    let up_capped = run_lowered_act(
+        &gpu,
+        &h,
+        &norm_w,
+        &gate,
+        &up,
+        &down,
+        NORM_OFFSET,
+        None,
+        EPS,
+        FfnActivation::SituGlu {
+            beta: WIDE_BETA,
+            linear_beta: Some(0.5),
+        },
+    );
+    assert_control(
+        "SiTU up-branch cap (has_linear)",
+        &up_capped,
+        &wide,
+        m.rel_rms,
     );
 }

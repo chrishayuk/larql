@@ -20,19 +20,27 @@
 //! test rather than silently mis-sizing a 20 GB segment.
 //!
 //! ```text
-//! encoding   elements/block   bytes/block   bits/weight
-//! Q8_0             32              34          8.5
-//! Q6_K            256             210          6.5625
-//! Q4_K            256             144          4.5
+//! encoding   elements/block   bytes/block   bits/weight   encoder   kernel
+//! Q8_0             32              34          8.5          yes       yes
+//! Q6_K            256             210          6.5625       yes       yes
+//! Q5_K            256             176          5.5          no        no
+//! Q4_K            256             144          4.5          yes       yes
+//! Q3_K            256             110          3.4375       no        no
 //! ```
 //!
-//! ## Not the whole family
+//! ## Two tables, because two questions
 //!
-//! The *decoders* in `larql_models::quant::ggml` already cover Q2_K,
-//! Q3_K and Q5_K. Only these three have encoders in the workspace, and
-//! an encoding whose bytes we cannot write is not a representation this
-//! compiler can offer. Adding one here means adding its encoder, not
-//! adding a row.
+//! [`COMPILABLE`] is what this compiler can WRITE: an encoding whose
+//! bytes we cannot produce is not a representation `vindex represent`
+//! can offer, and adding one there means adding its encoder. [`DECODABLE`]
+//! is what this build can READ — the codecs the registry ships — and is
+//! wider: `Q5_K` and `Q3_K` arrive from a GGUF import or a pack another
+//! tool wrote, decode through the workspace's ggml dispatch, and fill the
+//! ~5.5 and ~3.4 bits-per-weight points on the physical frontier that
+//! the K-quant ladder otherwise skips. Q2_K stays out until footprint
+//! pressure earns it. Which members have a direct kernel is a third
+//! fact, answered by [`KQuant::has_direct_gemv`] beside the kernel
+//! itself.
 
 use super::nvfp4_pack::CodecIdentity;
 use crate::error::VindexError;
@@ -79,8 +87,30 @@ pub const Q4_K: KQuant = KQuant {
     bytes_per_block: 144,
 };
 
+/// 256-element super-block: 4-bit lows, 1-bit highs, 6-bit scales/mins,
+/// f16 d and dmin. Decoded, not compiled: no encoder in the workspace.
+pub const Q5_K: KQuant = KQuant {
+    name: "Q5_K",
+    ggml_type: larql_models::quant::ggml::TYPE_Q5_K,
+    elements_per_block: 256,
+    bytes_per_block: 176,
+};
+
+/// 256-element super-block: 2-bit lows, 1-bit highs, 6-bit signed
+/// scales, f16 d. Decoded, not compiled: no encoder in the workspace.
+pub const Q3_K: KQuant = KQuant {
+    name: "Q3_K",
+    ggml_type: larql_models::quant::ggml::TYPE_Q3_K,
+    elements_per_block: 256,
+    bytes_per_block: 110,
+};
+
 /// Every encoding this compiler can write, in ascending bit order.
 pub const COMPILABLE: [KQuant; 3] = [Q4_K, Q6_K, Q8_0];
+
+/// Every encoding this build can read, in ascending bit order — the
+/// members the codec registry ships. A superset of [`COMPILABLE`].
+pub const DECODABLE: [KQuant; 5] = [Q3_K, Q4_K, Q5_K, Q6_K, Q8_0];
 
 /// The encoding named, or `None` if this compiler cannot write it.
 ///
@@ -265,6 +295,16 @@ impl KQuant {
             "Q4_K" => CpuBackend.quant_matvec(QuantFormat::Q4_K, blocks, x, rows, in_dim),
             _ => None,
         }
+    }
+
+    /// Whether [`Self::gemv`] has a kernel for this member — the fact a
+    /// codec consults before DECLARING the direct realization, stated
+    /// beside the dispatch so the two cannot drift. A member listed here
+    /// and not there would pin a kernel that returns `None` at the first
+    /// token; one there and not here would ship a kernel selection can
+    /// never reach. `kquant_direct_tests` holds the two together.
+    pub fn has_direct_gemv(&self) -> bool {
+        matches!(self.name, "Q8_0" | "Q6_K" | "Q4_K")
     }
 }
 

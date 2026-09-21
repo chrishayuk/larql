@@ -175,6 +175,27 @@ pub struct ModelConfig {
     /// architectures that read it treat that as `false`, matching HF's own
     /// default for the OLMoE/Mixtral family.
     pub norm_topk_prob: Option<bool>,
+    /// Kimi-K3: the width the ROUTED experts run at, when that is not the
+    /// model's `hidden_size`. Its PRESENCE selects the latent routed
+    /// branch — the block input is projected down to this width, the
+    /// experts run here, and the aggregate is projected back up.
+    ///
+    /// Presence, not value: `0` selects the latent form and then
+    /// describes a degenerate geometry that closure refuses by name,
+    /// exactly as the reference's `is not None` does. The router and the
+    /// shared experts stay at `hidden_size` regardless — they read the
+    /// un-projected block input.
+    pub routed_expert_hidden_size: Option<usize>,
+    /// Kimi-K3: whether the latent routed branch normalises its weighted
+    /// aggregate before projecting back up (`routed_expert_norm`).
+    ///
+    /// Truthiness, not presence: the reference reads it with
+    /// `getattr(config, "latent_moe_use_norm", False)` and consumes it in
+    /// a plain `if`, so absent, `null` and `false` all mean no norm and
+    /// differ only in what the plan reports as declared. Meaningless
+    /// without [`Self::routed_expert_hidden_size`], because the reference
+    /// nests the norm inside the wrapper.
+    pub latent_moe_use_norm: Option<bool>,
     // MLA fields
     pub kv_lora_rank: Option<usize>,
     pub q_lora_rank: Option<usize>,

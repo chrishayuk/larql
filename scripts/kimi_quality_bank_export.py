@@ -32,13 +32,10 @@ deployment never visits.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
-
-import torch
-
-import kimi_moe_export
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CORPUS = REPO / "data" / "gutenberg"
@@ -57,6 +54,17 @@ def corpus_text(corpus: Path) -> str:
     if not files:
         raise SystemExit(f"no .txt under {corpus}")
     return "\n\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in files)
+
+
+def seal_sequence(path: Path) -> dict:
+    """Describe the bytes actually persisted, with bounded verification reads."""
+    digest = hashlib.sha256()
+    length = 0
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+            length += len(chunk)
+    return {"len": length, "sha256": digest.hexdigest()}
 
 
 def main() -> None:
@@ -81,6 +89,9 @@ def main() -> None:
                          "unless you are deliberately sampling one region.")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
+
+    import torch
+    import kimi_moe_export
     args.out.mkdir(parents=True, exist_ok=True)
 
     tok = load_tokenizer(args.checkpoint)
@@ -106,6 +117,7 @@ def main() -> None:
     print(f"[bank] embedding table {tuple(embed.shape)}", flush=True)
 
     sequences = []
+    payloads = {}
     last_needed = args.start + (args.sequences - 1) * stride + args.positions
     if last_needed > len(ids):
         raise SystemExit(
@@ -119,17 +131,22 @@ def main() -> None:
         rows = embed[torch.tensor(seq, dtype=torch.long)].to(torch.float32)
         # One file per sequence: the runner streams them, and a bank of
         # 256 x 32 x 2304 f32 is only ~75 MB in total.
-        rows.numpy().astype("<f4").tofile(args.out / f"seq_{s}.f32")
+        sequence_file = args.out / f"seq_{s}.f32"
+        rows.numpy().astype("<f4").tofile(sequence_file)
+        payloads[sequence_file.name] = seal_sequence(sequence_file)
 
+    # Adding payload authority deliberately changes the manifest/bank identity.
+    # Old snapshots must not silently acquire authority they never recorded.
     manifest = {
+        "payload_authority": "teacher-forced-bank-payload/v1",
+        "payloads": payloads,
         "sequences": args.sequences,
         "positions": args.positions,
         "hidden": hidden,
         "vocab_size": int(embed.shape[0]),
         "stride": stride,
-        # Only a held-out bank carries a start: the canonical bank's
-        # manifest bytes predate this knob, and its content-hash identity
-        # must not change under regeneration.
+        # Preserve the existing distinction between the canonical corpus
+        # window and explicitly offset held-out windows.
         **({"start": args.start} if args.start else {}),
         "corpus": str(args.corpus),
         "token_ids": sequences,

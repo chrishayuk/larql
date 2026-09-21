@@ -46,11 +46,16 @@ mod generate;
 mod runtime;
 mod session;
 
+pub mod attribution;
+pub mod record;
 #[cfg(test)]
 mod tests;
 
 pub use generate::{
     continue_session, continue_session_masked, generate_session, LogitsMask, SessionGeneration,
+};
+pub use larql_vindex::format::vindex3::opplan::exec::lowering::{
+    LoweringError, LoweringIdentity, LoweringRegistry, SharedProvider,
 };
 pub use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 pub use runtime::{open_component, OpenPolicy, OpenedComponent, PreparedVindex3, Vindex3Runtime};
@@ -69,7 +74,30 @@ pub use larql_vindex::format::vindex3::opplan::exec::kv::{
 // The observation seam (LQL-2 TRACE): subscribers to the canonical
 // executor's step boundaries — one execution path, many consumers.
 pub use larql_vindex::format::vindex3::opplan::exec::observe::{
-    RecordingObserver, StepEvent, StepObserver,
+    CarrierForm, CarrierWriteRecord, RecordingObserver, StepEvent, StepObserver, SublayerSite,
+};
+// V3-OBS-1's cheap consumer of the carrier tap, and the basis identity
+// every projected coordinate carries.
+pub use larql_vindex::format::vindex3::opplan::exec::observe_stats::{
+    BasisIdentity, FixedBasis, HeadProbe, StatsObserver, WriteStats,
+};
+// What a run RAN — pinned realizations, the process arithmetic arm, the
+// basis — for a runner to embed in its envelope; values are only
+// comparable across runs whose execution fingerprints match.
+pub use larql_vindex::format::vindex3::opplan::exec::provenance::{
+    ExecutionProvenance, RealizationClass, RunProvenance,
+};
+// V3-STREAM-1: the lossless run record and the lossy live tap.
+pub use record::{
+    Carrier, DropLedger, EventKind, LiveTap, Receipt, RecordError, RecordedEvent, RunIdentity,
+    RunRecord, RunRecorder, Site, TokenStanding, TopStanding, RECORD_SCHEMA,
+};
+// V3-LENS-1: the true logit lens through the executor's own head.
+pub use larql_vindex::format::vindex3::opplan::exec::observe_heads::{
+    HeadReader, HeadRow, HeadStats, HeadWrite, HEAD_SUM_METHOD,
+};
+pub use larql_vindex::format::vindex3::opplan::exec::observe_lens::{
+    readout_of, LensLayers, LensReader, LensSites, LogitLens, Readout, TokenReadout, LENS_METHOD,
 };
 // The batch-execution taps (V3-LQL-3B): plane events streamed from the
 // one traversal, consumed by residual capture and retrieval keys.

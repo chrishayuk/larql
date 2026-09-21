@@ -365,7 +365,7 @@ mod refactor_tests {
 
         {
             let mut cache = v.gate.f16_decode_cache.lock().unwrap();
-            cache[1] = Some(vec![1.0, 2.0, 3.0]);
+            cache[1] = Some(std::sync::Arc::new(vec![1.0, 2.0, 3.0]));
         }
         {
             let mut warm = v.gate.warmed_gates.write().unwrap();

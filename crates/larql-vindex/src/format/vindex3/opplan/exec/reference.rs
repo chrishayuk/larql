@@ -23,10 +23,13 @@ use super::backend::{
     WeightSlice,
 };
 use super::kernels::{
-    activate, gather_fused_half_mutated, llama3_frequencies, matvec, mrope_rotate, norm,
-    partial_rotary_frequencies, partial_rotary_slice, rope_rotate, rope_rotate_scaled, sigmoid,
-    softcap, softmax, softmax_with_sink, yarn_frequencies, FusedHalf, GateMutation,
+    activate, gather_fused_half_mutated, linear_frequencies, llama3_frequencies, matvec,
+    mrope_rotate, norm, partial_rotary_frequencies, partial_rotary_slice, rope_rotate,
+    rope_rotate_scaled, sigmoid, softcap, softmax, softmax_with_sink, yarn_frequencies, FusedHalf,
+    GateMutation,
 };
+use super::lowering::LoweringIdentity;
+use super::observe::AttentionHeadRecord;
 use crate::error::VindexError;
 use larql_models::config::NormType;
 use larql_models::config::{PositionPolicy, RotaryFrequencyBasis};
@@ -34,6 +37,12 @@ use rayon::prelude::*;
 
 /// Name reported by [`PlanBackend::name`].
 const NAME: &str = "reference-f32";
+/// The provider's family ([`PlanBackend::identity`]): the literal f32
+/// transcription that defines correctness. Its revision moves only if the
+/// transcription itself is corrected — which is a change to what every
+/// other provider is judged against, and is recorded as one.
+pub const IDENTITY_FAMILY: &str = "reference";
+pub const IDENTITY_REVISION: u32 = 1;
 
 /// Naive f32 realisation of every plan operation.
 #[derive(Debug, Default, Clone, Copy)]
@@ -191,6 +200,20 @@ impl ReferenceBackend {
                     rope_rotate_scaled(head, position, &inv_freq, amplitude);
                 }
             }
+            // Linear, transcribed: every frequency divided by the
+            // factor, unit amplitude — Gemma 3's global layers. Written
+            // as its own arm rather than a divisor on the plain arm, so
+            // a plain layer can never inherit a divisor.
+            PositionPolicy::Linear { theta, factor } => {
+                const UNIT_AMPLITUDE: f32 = 1.0;
+                let inv_freq = linear_frequencies(head_dim, theta, factor);
+                for head in q.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &inv_freq, UNIT_AMPLITUDE);
+                }
+                for head in k.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &inv_freq, UNIT_AMPLITUDE);
+                }
+            }
             // Llama-3, transcribed: wavelength-band frequencies at unit
             // amplitude. `UNIT_AMPLITUDE` is passed explicitly rather
             // than defaulted, so an amplitude arriving here later has to
@@ -279,30 +302,6 @@ impl ReferenceBackend {
         Ok((q, k, v))
     }
 
-    /// One query position's scores, softmax, weighted-V aggregation,
-    /// gate, and output projection. `key_of`/`value_of` abstract where
-    /// K/V rows live (the batch path's local vectors, or the decode
-    /// step's interpreter-owned cache plus the fresh row).
-    #[allow(clippy::too_many_arguments)]
-    fn attend_position<'k>(
-        call: &AttentionCall<'_>,
-        position: usize,
-        query: &[f32],
-        key_of: impl Fn(usize) -> &'k [f32],
-        value_of: impl Fn(usize) -> &'k [f32],
-        gate_input: &[f32],
-    ) -> Result<Vec<f32>, VindexError> {
-        Self::attend_position_inner(
-            call,
-            position,
-            query,
-            key_of,
-            value_of,
-            gate_input,
-            GateMutation::None,
-        )
-    }
-
     /// [`Self::attend_position`] with a deliberate defect in the gate
     /// stage. See [`Self::project_position_inner`].
     #[allow(clippy::too_many_arguments)]
@@ -315,6 +314,39 @@ impl ReferenceBackend {
         gate_input: &[f32],
         gate_mutation: GateMutation,
     ) -> Result<Vec<f32>, VindexError> {
+        Self::attend_position_tapped(
+            call,
+            position,
+            query,
+            key_of,
+            value_of,
+            gate_input,
+            gate_mutation,
+            None,
+            None,
+        )
+    }
+
+    /// [`Self::attend_position_inner`] with the V3-HEAD-OBS-1 tap: the
+    /// oracle's own loop keeps each head's distribution when asked and
+    /// fires one record per query head after the gate values are known
+    /// and before they multiply the heads. The arithmetic is the same
+    /// either way; the tap is what the production kernel's tap is gated
+    /// against.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn attend_position_tapped<'k>(
+        call: &AttentionCall<'_>,
+        position: usize,
+        query: &[f32],
+        key_of: impl Fn(usize) -> &'k [f32],
+        value_of: impl Fn(usize) -> &'k [f32],
+        gate_input: &[f32],
+        gate_mutation: GateMutation,
+        mut tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+        mut head_intervene: Option<&mut super::backend::HeadIntervene<'_>>,
+    ) -> Result<Vec<f32>, VindexError> {
+        let mut kept: Vec<Vec<f32>> = Vec::new();
+        let mut fired = false;
         let head_dim = call.head_dim;
         let q_rows = call.num_q_heads * head_dim;
         let group = call.num_q_heads / call.num_kv_heads;
@@ -363,6 +395,9 @@ impl ReferenceBackend {
                 for (acc, v) in head_out.iter_mut().zip(v_slice) {
                     *acc += weight * v;
                 }
+            }
+            if tap.is_some() {
+                kept.push(scores);
             }
         }
 
@@ -427,6 +462,33 @@ impl ReferenceBackend {
                 GateMutation::SiluGate => g * sigmoid(g),
                 _ => sigmoid(g),
             };
+            // V3-HEAD-OBS-1: the records, with the activated gate the
+            // multiply below will apply, before it applies.
+            if let Some(tap) = tap.as_deref_mut() {
+                let activated: Vec<f32> = gate_values.iter().map(|g| activate_gate(*g)).collect();
+                super::observe::fire_head_records(
+                    tap,
+                    position,
+                    call.num_q_heads,
+                    call.num_kv_heads,
+                    head_dim,
+                    start,
+                    call.sinks.is_some(),
+                    &concat,
+                    &kept,
+                    Some(&activated),
+                    &value_of,
+                );
+                fired = true;
+            }
+            // V3-INTERVENE-2: each head's `ctx_h`, mutated in place if
+            // declared — after the uninintervened head record above (J3),
+            // before the gate multiply and `o_proj` below (J1).
+            if let Some(hi) = head_intervene.as_deref_mut() {
+                for (head, ctx_h) in concat.chunks_exact_mut(head_dim).enumerate() {
+                    hi(head, ctx_h);
+                }
+            }
             if gate_mutation != GateMutation::NoGate
                 && gate_mutation != GateMutation::GateAfterOProj
             {
@@ -446,11 +508,81 @@ impl ReferenceBackend {
             }
         }
 
+        // V3-HEAD-OBS-1: a plan without a gate fires its records here,
+        // with no gate slice; a gated plan fired them above.
+        if let (Some(tap), false) = (tap, fired) {
+            super::observe::fire_head_records(
+                tap,
+                position,
+                call.num_q_heads,
+                call.num_kv_heads,
+                head_dim,
+                start,
+                call.sinks.is_some(),
+                &concat,
+                &kept,
+                None,
+                &value_of,
+            );
+        }
+        // V3-INTERVENE-2: a plan without a gate applies its head
+        // intervention here; a gated plan applied it above regardless of
+        // whether observation was armed — gated on the plan's OWN gate,
+        // not on `fired`, which tracks the tap and stays false without one.
+        if call.gate.is_none() {
+            if let Some(hi) = head_intervene {
+                for (head, ctx_h) in concat.chunks_exact_mut(head_dim).enumerate() {
+                    hi(head, ctx_h);
+                }
+            }
+        }
+
         let mut out = matvec(call.w_o.as_f32()?, call.hidden, q_rows, &concat);
         if let Some(bias) = &call.bias {
             add_in_place(&mut out, bias.o);
         }
         Ok(out)
+    }
+
+    /// The decode step with an optional per-head tap and an optional
+    /// per-head intervention; `attention_step` is this with `None, None`,
+    /// so the observed step IS the step.
+    fn attention_step_tapped(
+        step: AttentionStepCall<'_>,
+        tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+        head_intervene: Option<&mut super::backend::HeadIntervene<'_>>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        let call = &step.op;
+        let pre = &call.inputs[0];
+        let (q, k, v) = Self::project_position(call, step.position, pre)?;
+        let output = Self::attend_position_tapped(
+            call,
+            step.position,
+            &q,
+            |p| {
+                if p == step.position {
+                    k.as_slice()
+                } else {
+                    step.keys[p].as_slice()
+                }
+            },
+            |p| {
+                if p == step.position {
+                    v.as_slice()
+                } else {
+                    step.values[p].as_slice()
+                }
+            },
+            pre,
+            GateMutation::None,
+            tap,
+            head_intervene,
+        )?;
+        Ok(AttentionStepOut {
+            key: k,
+            value: v,
+            output,
+        })
     }
 }
 
@@ -673,6 +805,10 @@ impl PlanBackend for ReferenceBackend {
         NAME
     }
 
+    fn identity(&self) -> LoweringIdentity {
+        LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
+    }
+
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {
         let row = &table[token as usize * hidden..(token as usize + 1) * hidden];
         match scale {
@@ -699,34 +835,32 @@ impl PlanBackend for ReferenceBackend {
     }
 
     fn attention_step(&self, step: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
-        let call = &step.op;
-        let pre = &call.inputs[0];
-        let (q, k, v) = Self::project_position(call, step.position, pre)?;
-        let output = Self::attend_position(
-            call,
-            step.position,
-            &q,
-            |p| {
-                if p == step.position {
-                    k.as_slice()
-                } else {
-                    step.keys[p].as_slice()
-                }
-            },
-            |p| {
-                if p == step.position {
-                    v.as_slice()
-                } else {
-                    step.values[p].as_slice()
-                }
-            },
-            pre,
-        )?;
-        Ok(AttentionStepOut {
-            key: k,
-            value: v,
-            output,
-        })
+        Self::attention_step_tapped(step, None, None)
+    }
+
+    fn serves_attention_heads(&self) -> bool {
+        true
+    }
+
+    fn attention_step_observed(
+        &self,
+        step: AttentionStepCall<'_>,
+        tap: &mut dyn FnMut(AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        Self::attention_step_tapped(step, Some(tap), None)
+    }
+
+    fn serves_head_intervention(&self) -> bool {
+        true
+    }
+
+    fn attention_step_intervened(
+        &self,
+        step: AttentionStepCall<'_>,
+        tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+        head_intervene: &mut super::backend::HeadIntervene<'_>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        Self::attention_step_tapped(step, tap, Some(head_intervene))
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {

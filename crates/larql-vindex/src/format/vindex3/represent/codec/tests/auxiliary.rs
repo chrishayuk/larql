@@ -182,9 +182,10 @@ fn metadata(shape: &[usize]) -> AuxiliaryMetadata {
     }
 }
 
-/// Exactly one shipped codec depends on another object, and it says which
-/// object by name at every extent it declares. Every other reads only its
-/// own bytes.
+/// Exactly two shipped codecs depend on another object — the forcing one
+/// (a codebook) and the production one (fine-grained FP8's scale grid) —
+/// and each says which object by name at every extent it declares. Every
+/// other reads only its own bytes.
 ///
 /// This asserted that NO shipped codec required anything, which was true
 /// of what had been implemented rather than of the contract. What survives
@@ -193,7 +194,7 @@ fn metadata(shape: &[usize]) -> AuxiliaryMetadata {
 /// silently dropping a requirement at one depth would make a stored
 /// container's meaning depend on how much of it someone chose to read.
 #[test]
-fn exactly_one_shipped_codec_depends_on_another_object() {
+fn exactly_two_shipped_codecs_depend_on_another_object() {
     let dependants: Vec<&str> = builtin()
         .into_iter()
         .filter(|codec| {
@@ -204,7 +205,7 @@ fn exactly_one_shipped_codec_depends_on_another_object() {
         })
         .map(|codec| codec.encoding_label())
         .collect();
-    assert_eq!(dependants, [DTYPE_VQ8_SHARED]);
+    assert_eq!(dependants, [DTYPE_VQ8_SHARED, DTYPE_FP8_BLOCK]);
 
     for codec in builtin() {
         let names_at = |extent| -> Vec<&str> {
@@ -224,10 +225,10 @@ fn exactly_one_shipped_codec_depends_on_another_object() {
                 certificate.extent.depth
             );
         }
-        if codec.encoding_label() == DTYPE_VQ8_SHARED {
-            assert_eq!(base, vec![CODEBOOK]);
-        } else {
-            assert!(base.is_empty(), "{}", codec.encoding_label());
+        match codec.encoding_label() {
+            DTYPE_VQ8_SHARED => assert_eq!(base, vec![CODEBOOK]),
+            DTYPE_FP8_BLOCK => assert_eq!(base, vec![FP8_SCALES]),
+            other => assert!(base.is_empty(), "{other}"),
         }
     }
 }

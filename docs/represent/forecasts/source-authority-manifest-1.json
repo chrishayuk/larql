@@ -1,0 +1,11 @@
+{
+  "programme": "SOURCE-AUTHORITY-MANIFEST-1",
+  "status": "registered debt; not implemented",
+  "date": "2026-09-12",
+  "finding": "SourceSemanticIdentity currently binds moe_manifest by filename, not referenced content. ExecutableRootBinding intentionally inherits that existing semantic authority.",
+  "claim": "Changing routed manifest content must change source semantic authority even when its locator and payloads remain unchanged.",
+  "positive": "Equivalent manifest semantics and relocation should follow an explicitly specified identity rule, with compatibility/version behavior recorded before implementation.",
+  "negative": "Mutate the referenced manifest without changing its filename or candidate sidecar: a fresh authority reader must not accept the old claim.",
+  "sequencing": "Close before manifest-only routed containers are accepted as high-authority closed-loop evidence. Does not block OPT-6 with a tiny graph-based fixture.",
+  "out_of_scope": "No source identity canonicalization or version changes in OPT-6."
+}

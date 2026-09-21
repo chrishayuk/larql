@@ -4,7 +4,7 @@ use super::*;
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
 #[test]
-fn the_built_in_registry_carries_the_eleven_encodings_in_declaration_order() {
+fn the_built_in_registry_carries_the_fourteen_encodings_in_declaration_order() {
     assert_eq!(
         CodecRegistry::builtin().labels(),
         [
@@ -18,7 +18,10 @@ fn the_built_in_registry_carries_the_eleven_encodings_in_declaration_order() {
             "MXFP4",
             "BF16_ZLIB",
             "F32_PLANES",
-            "VQ8_SHARED"
+            "VQ8_SHARED",
+            "F8_E4M3",
+            "Q5_K",
+            "Q3_K"
         ]
     );
     assert_eq!(
@@ -34,7 +37,10 @@ fn the_built_in_registry_carries_the_eleven_encodings_in_declaration_order() {
             "mxfp4",
             "BF16_ZLIB",
             "F32_PLANES",
-            "VQ8_SHARED"
+            "VQ8_SHARED",
+            "fp8-block",
+            "Q5_K",
+            "Q3_K"
         ]
     );
 }
@@ -69,13 +75,13 @@ fn a_label_and_a_family_resolve_to_the_same_codec() {
 #[test]
 fn an_unregistered_label_is_refused_naming_every_registered_one() {
     let err = CodecRegistry::builtin()
-        .resolve("Q5_K", TENSOR)
+        .resolve("Q2_K", TENSOR)
         .unwrap_err();
     assert_eq!(
         err,
         CodecError::UnknownEncoding {
             tensor: TENSOR.into(),
-            label: "Q5_K".into(),
+            label: "Q2_K".into(),
             registered: CodecRegistry::builtin().labels(),
         }
     );

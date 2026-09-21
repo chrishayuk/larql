@@ -378,17 +378,13 @@ fn capture_moments(
     let token_digest = calibration_digest(&entries);
 
     // The f16 Metal realisation, the same one `exec --backend metal` uses
-    // and the one Granite's external oracle was verified against. The
-    // naive f32 reference is correct and takes hours on a 40-layer model
-    // with no KV cache, which would make the screen more expensive than
-    // the Q-BANK run it exists to avoid.
-    let gpu = larql_compute_metal::MetalBackend::new()
-        .ok_or("no Metal device available for the sensitivity capture")?;
-    let backend = larql_vindex::format::vindex3::opplan::exec::device::DevicePlanBackend::new(
-        gpu,
-        "metal-r3-f16",
-        larql_vindex::format::vindex3::opplan::exec::backend::WeightFormat::F16,
-    );
+    // and the one Granite's external oracle was verified against — asked
+    // for through the same composition that arm uses, so this file spells
+    // no provider of its own. The naive f32 reference is correct and takes
+    // hours on a 40-layer model with no KV cache, which would make the
+    // screen more expensive than the Q-BANK run it exists to avoid.
+    let (lowerings, identity) = super::prepare::lowerings_for(super::ExecBackend::Metal)?;
+    let backend = lowerings.provider_shared(&identity)?;
     let mut collector = MomentCollector::default();
     let started = std::time::Instant::now();
     let mut positions = 0usize;

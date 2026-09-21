@@ -130,7 +130,7 @@ fn the_objective_orders_the_admitted_set_and_ties_break_deterministically() {
     let mut measurements = MeasurementRegistry::new();
     for s in [p(), s1()] {
         measurements
-            .record(
+            .record_fixture(
                 key_for(&s, EvidenceScale::Authority),
                 authority_reading(3.3532e-3, 1427),
             )
@@ -155,7 +155,7 @@ fn an_authority_pass_admits_and_a_diagnostic_pass_does_not() {
     // contract is not an admission.
     let mut measurements = MeasurementRegistry::new();
     measurements
-        .record(
+        .record_fixture(
             key_for(&p(), EvidenceScale::Diagnostic),
             authority_reading(3.3532e-3, 1427),
         )
@@ -341,7 +341,7 @@ fn a_measurement_of_a_state_this_graph_does_not_hold_is_not_this_frontier() {
     // search built must not appear here as an admitted map.
     let mut measurements = MeasurementRegistry::new();
     measurements
-        .record(
+        .record_fixture(
             key_for(&s2(), EvidenceScale::Authority),
             authority_reading(1.0e-3, 10),
         )

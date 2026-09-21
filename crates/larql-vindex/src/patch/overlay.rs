@@ -478,19 +478,40 @@ impl PatchedVindex {
     }
 
     /// Walk with patch overrides.
+    /// Walk the given layers, collecting top-K gate hits per layer.
+    ///
+    /// Parallel across layers: each layer's `gate_knn` is an independent
+    /// gemv over that layer's gate matrix, so there is no ordering or data
+    /// dependency between them. `describe()` scans 12--30 layers, which is
+    /// enough work per item to cover rayon's dispatch overhead.
+    ///
+    /// What this does and does not buy, measured rather than assumed:
+    /// it cuts **single-query latency** by spreading one query's layers
+    /// across cores. It does **not** raise saturated throughput, because
+    /// the total bytes read per query are unchanged and the scan is
+    /// memory-bound, not compute-bound (15% of 32 vCPUs under 8 concurrent
+    /// requests -- threads stalled on memory, not busy). Under concurrent
+    /// load the queries already fill the cores; this helps the single-query
+    /// case and the lightly-loaded case.
+    ///
+    /// `map` on a parallel iterator preserves input order, so the returned
+    /// trace is still layer-ordered.
     pub fn walk(&self, residual: &Array1<f32>, layers: &[usize], top_k: usize) -> WalkTrace {
-        let mut trace_layers = Vec::with_capacity(layers.len());
-        for &layer in layers {
-            let hits = self.gate_knn(layer, residual, top_k);
-            let walk_hits: Vec<WalkHit> = hits
-                .into_iter()
-                .filter_map(|(feature, gate_score)| {
-                    let meta = self.feature_meta(layer, feature)?.clone();
-                    Some(WalkHit::from_gate(layer, feature, gate_score, meta))
-                })
-                .collect();
-            trace_layers.push((layer, walk_hits));
-        }
+        use rayon::prelude::*;
+        let trace_layers: Vec<(usize, Vec<WalkHit>)> = layers
+            .par_iter()
+            .map(|&layer| {
+                let hits = self.gate_knn(layer, residual, top_k);
+                let walk_hits: Vec<WalkHit> = hits
+                    .into_iter()
+                    .filter_map(|(feature, gate_score)| {
+                        let meta = self.feature_meta(layer, feature)?.clone();
+                        Some(WalkHit::from_gate(layer, feature, gate_score, meta))
+                    })
+                    .collect();
+                (layer, walk_hits)
+            })
+            .collect();
         WalkTrace {
             layers: trace_layers,
         }

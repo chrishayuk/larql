@@ -354,6 +354,19 @@ pub fn llama3_frequencies(
         .collect()
 }
 
+/// Linear rope scaling, transcribed: every base frequency divided by
+/// `factor`, which is exactly `position / factor` folded into the table
+/// (`angle = (pos / factor) · inv_freq = pos · (inv_freq / factor)`).
+/// Unit amplitude, so no second value — the family rescales positions,
+/// never the logits.
+pub fn linear_frequencies(head_dim: usize, theta: f64, factor: f64) -> Vec<f64> {
+    let half = head_dim / 2;
+    let d = head_dim as f64;
+    (0..half)
+        .map(|i| theta.powf(-2.0 * i as f64 / d) / factor)
+        .collect()
+}
+
 /// Tanh softcap: `cap * tanh(x / cap)`.
 pub fn softcap(x: f32, cap: f32) -> f32 {
     cap * (x / cap).tanh()

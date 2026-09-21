@@ -28,11 +28,16 @@ use larql_models::config::{
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::cpu::WeightRows;
+use super::lowering::LoweringIdentity;
 use super::quantise::SUM_BLOCK;
 use super::realization::{RepresentationFacts, Selection, SelectionRefusal};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::PlannedOperand;
 use crate::format::vindex3::represent::kquant::KQuant;
+
+/// V3-INTERVENE-2: a per-head intervention applier — `(head, ctx_h)`,
+/// mutating the head's mixed value in place.
+pub type HeadIntervene<'a> = dyn FnMut(usize, &mut [f32]) + 'a;
 
 /// The numerical representation a backend wants matrix operands in.
 ///
@@ -754,9 +759,139 @@ pub struct DispatchStats {
     pub submissions: u64,
 }
 
+/// A shared handle IS the provider it holds: every method, the provided
+/// ones included, goes to the provider underneath. Spelled out rather
+/// than left to defaults on purpose — a `select` or `dense_projector`
+/// that fell back to the trait's default here would quietly hand a
+/// device provider the reference oracle's selection.
+impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    fn identity(&self) -> LoweringIdentity {
+        (**self).identity()
+    }
+
+    fn dispatch_stats(&self) -> Option<DispatchStats> {
+        (**self).dispatch_stats()
+    }
+
+    fn select(
+        &self,
+        operand: &PlannedOperand,
+        facts: &RepresentationFacts,
+    ) -> Result<Selection, Box<SelectionRefusal>> {
+        (**self).select(operand, facts)
+    }
+
+    fn dense_projector(&self) -> &dyn super::gated_delta::DenseProjections {
+        (**self).dense_projector()
+    }
+
+    fn prepare(&self, weights: &[WeightSlice<'_>]) {
+        (**self).prepare(weights)
+    }
+
+    fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {
+        (**self).embed(table, hidden, token, scale)
+    }
+
+    fn norm(&self, call: NormCall<'_>) -> Vec<f32> {
+        (**self).norm(call)
+    }
+
+    fn project(&self, call: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
+        (**self).project(call)
+    }
+
+    fn attention(&self, call: AttentionCall<'_>) -> Result<AttentionOut, VindexError> {
+        (**self).attention(call)
+    }
+
+    fn attention_step(&self, call: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step(call)
+    }
+
+    fn serves_attention_heads(&self) -> bool {
+        (**self).serves_attention_heads()
+    }
+
+    fn attention_step_observed(
+        &self,
+        call: AttentionStepCall<'_>,
+        tap: &mut dyn FnMut(super::observe::AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step_observed(call, tap)
+    }
+
+    fn serves_head_intervention(&self) -> bool {
+        (**self).serves_head_intervention()
+    }
+
+    fn attention_step_intervened(
+        &self,
+        call: AttentionStepCall<'_>,
+        tap: Option<&mut dyn FnMut(super::observe::AttentionHeadRecord<'_>)>,
+        head_intervene: &mut HeadIntervene<'_>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step_intervened(call, tap, head_intervene)
+    }
+
+    fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        (**self).ffn(call)
+    }
+
+    fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
+        (**self).ffn_many(call)
+    }
+
+    fn scale_row(&self, row: &mut [f32], scale: f32) {
+        (**self).scale_row(row, scale)
+    }
+
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        (**self).routed_ffn(call)
+    }
+
+    fn output_head(
+        &self,
+        projection: WeightSlice<'_>,
+        vocab: usize,
+        hidden: usize,
+        x: &[f32],
+        multiplier: Option<f64>,
+        softcapping: Option<f32>,
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).output_head(projection, vocab, hidden, x, multiplier, softcapping)
+    }
+
+    fn residual_add(&self, acc: &mut [f32], delta: &[f32]) {
+        (**self).residual_add(acc, delta)
+    }
+}
+
+/// A provider names itself by presentation name and identity, so a
+/// refusal or a test can say which one it was talking about.
+impl std::fmt::Debug for dyn PlanBackend + '_ {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "provider {} ({})", self.name(), self.identity())
+    }
+}
+
 pub trait PlanBackend: Sync {
-    /// A name for diagnostics and parity reports. Not dispatched on.
+    /// A name for diagnostics and parity reports. Not dispatched on, and
+    /// not an identity: two instances of one provider may carry different
+    /// names (a device backend names its device and realisation), and the
+    /// name says nothing a registry or a pin can rely on.
     fn name(&self) -> &str;
+
+    /// **The provider's identity** — family and revision — which is the
+    /// authority a pin will record and a registry will key. Required, so
+    /// a provider that says nothing does not exist; never derived from
+    /// [`Self::name`]. See [`super::lowering`] for what the two fields
+    /// mean and when the revision moves.
+    fn identity(&self) -> LoweringIdentity;
 
     /// Cumulative device-dispatch accounting, when the backend keeps it.
     /// `None` for backends with no device to account for.
@@ -832,6 +967,53 @@ pub trait PlanBackend: Sync {
     /// pin the two paths together per backend, and a backend may not
     /// borrow another backend's step to fill the gap.
     fn attention_step(&self, call: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError>;
+
+    /// V3-HEAD-OBS-1: whether this backend's softmax attention core can
+    /// hand an observer one [`super::observe::AttentionHeadRecord`] per
+    /// query head. `false` by default, and a request against a backend
+    /// that says so is refused before the first token executes.
+    fn serves_attention_heads(&self) -> bool {
+        false
+    }
+
+    /// [`Self::attention_step`] with the per-head tap armed: the same
+    /// arithmetic, with each query head's distribution and mixed value
+    /// handed to `tap` between aggregation and the output gate. The
+    /// default refuses, matching [`Self::serves_attention_heads`].
+    fn attention_step_observed(
+        &self,
+        _call: AttentionStepCall<'_>,
+        _tap: &mut dyn FnMut(super::observe::AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        Err(VindexError::Parse(format!(
+            "per-head attention observation is not served by the {} backend",
+            self.name()
+        )))
+    }
+
+    /// V3-INTERVENE-2: whether this backend's softmax attention core can
+    /// take a per-head intervention — mutate `ctx_h` in place, after the
+    /// (uninintervened) head record fires and before the gate multiply.
+    /// `false` by default, matching [`Self::serves_attention_heads`].
+    fn serves_head_intervention(&self) -> bool {
+        false
+    }
+
+    /// [`Self::attention_step`] with a per-head intervention armed, and
+    /// optionally the per-head tap too (records still see the
+    /// uninintervened `ctx_h`, J3). The default refuses, matching
+    /// [`Self::serves_head_intervention`].
+    fn attention_step_intervened(
+        &self,
+        _call: AttentionStepCall<'_>,
+        _tap: Option<&mut dyn FnMut(super::observe::AttentionHeadRecord<'_>)>,
+        _head_intervene: &mut HeadIntervene<'_>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        Err(VindexError::Parse(format!(
+            "per-head attention intervention is not served by the {} backend",
+            self.name()
+        )))
+    }
 
     /// Fallible for the same reason as [`Self::attention`]: a backend
     /// with no kernel for a judged variant must say so, not borrow

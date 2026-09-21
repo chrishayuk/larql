@@ -204,6 +204,7 @@ fn reading(kl_p99: f64) -> QualityBank {
         })
     };
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
@@ -271,13 +272,13 @@ fn recorded() -> SearchSnapshot {
 
     let mut measurements = MeasurementRegistry::new();
     measurements
-        .record(
+        .record_fixture(
             intent(EvidenceScale::Authority).key_for(root.physical_id()),
             reading(0.0),
         )
         .expect("record");
     measurements
-        .record(
+        .record_fixture(
             intent(EvidenceScale::Authority).key_for(e24.physical_id()),
             reading(1.2e-3),
         )
@@ -302,6 +303,7 @@ fn recorded() -> SearchSnapshot {
             ),
             ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
             standing_intent: intent(EvidenceScale::Authority),
+            protocol: None,
         },
         SearchFacts {
             graph,

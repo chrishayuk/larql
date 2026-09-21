@@ -60,3 +60,57 @@ fn a_text_only_config_has_no_interface() {
     let config = serde_json::json!({ "model_type": "llama", "hidden_size": 64 });
     assert!(read_interface(&config).is_none());
 }
+
+/// Gemma 3's spellings of the image join are read under their own names
+/// and credited by path, and the soft-token count answers from
+/// `mm_tokens_per_image` where Gemma 4 says `vision_soft_tokens_per_image`.
+/// Values are `google/gemma-3-12b-it`'s own.
+#[test]
+fn gemma3_spellings_are_read_and_credited() {
+    let reading = read_interface(&serde_json::json!({
+        "boi_token_index": 255999,
+        "eoi_token_index": 256000,
+        "image_token_index": 262144,
+        "mm_tokens_per_image": 256,
+    }))
+    .expect("declares an interface");
+    let i = &reading.interface;
+    assert_eq!(
+        i.token_roles,
+        vec![
+            ("image_token_index".to_string(), 262144),
+            ("boi_token_index".to_string(), 255999),
+            ("eoi_token_index".to_string(), 256000),
+        ]
+    );
+    assert_eq!(i.soft_tokens_per_image, Some(256));
+    for path in [
+        "boi_token_index",
+        "eoi_token_index",
+        "image_token_index",
+        "mm_tokens_per_image",
+    ] {
+        assert!(reading.consumed_paths.contains(path), "{path} credited");
+    }
+    assert_eq!(
+        reading.consumed_paths.len(),
+        4,
+        "nothing credited that was not read"
+    );
+}
+
+/// One fact under two spellings: the first present answers, and only the
+/// spelling actually read is credited — the other stays honestly unread.
+#[test]
+fn soft_token_count_credits_only_the_spelling_it_read() {
+    let reading = read_interface(&serde_json::json!({
+        "vision_soft_tokens_per_image": 280,
+        "mm_tokens_per_image": 256,
+    }))
+    .expect("declares an interface");
+    assert_eq!(reading.interface.soft_tokens_per_image, Some(280));
+    assert!(reading
+        .consumed_paths
+        .contains("vision_soft_tokens_per_image"));
+    assert!(!reading.consumed_paths.contains("mm_tokens_per_image"));
+}

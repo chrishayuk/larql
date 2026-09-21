@@ -36,7 +36,14 @@ pub struct GateStore {
     /// Per-layer gate vectors (heap mode).
     pub gate_vectors: Vec<Option<Array2<f32>>>,
     /// Lazy decode cache for f16 gate vectors.
-    pub f16_decode_cache: Mutex<Vec<Option<Vec<f32>>>>,
+    ///
+    /// `Arc` per layer so a reader can take a cheap handle and release the
+    /// mutex *before* scoring. Holding the lock across `gemv` would
+    /// serialise `PatchedVindex::walk`'s rayon-parallel layers against each
+    /// other, which is the whole point of parallelising them; cloning the
+    /// data instead would reintroduce the ~71 MB/layer copy this cache
+    /// exists to avoid. An `Arc` clone is a refcount bump.
+    pub f16_decode_cache: Mutex<Vec<Option<std::sync::Arc<Vec<f32>>>>>,
     /// LRU queue for `f16_decode_cache`. Back is oldest, front is newest.
     pub gate_cache_lru: Mutex<std::collections::VecDeque<usize>>,
     /// Cap on live entries in `f16_decode_cache`. 0 = unlimited.
@@ -110,11 +117,29 @@ impl Clone for GateStore {
 /// Matrix-vector multiply: view[N, hidden] × vec[hidden] → scores[N].
 /// All compute goes through larql-compute.
 pub(crate) fn gemv(view: &ArrayView2<f32>, vec: &Array1<f32>) -> Array1<f32> {
-    let hidden = vec.len();
-    let x = vec.view().into_shape_with_order((1, hidden)).unwrap();
-    let cpu = larql_compute::CpuBackend;
-    let result = cpu.matmul_transb(x, *view);
-    Array1::from_vec(result.into_raw_vec_and_offset().0)
+    // `gate[N, hidden] . vec[hidden] -> [N]`, expressed as a real
+    // matrix-vector product rather than a 1-row matmul against a
+    // transpose.
+    //
+    // The previous form was `matmul_transb(vec.into_shape((1, hidden)),
+    // gate)`, i.e. `a.dot(&b.t())` with `a` shaped [1, hidden]. ndarray
+    // only dispatches to BLAS when the operand layouts qualify, and that
+    // shape does not reach `sgemv`: it fell to ndarray's own path.
+    // Measured on one layer of a real BitNet 2B browse vindex
+    // (6912 features x 2560 dims, f32 cached):
+    //
+    //   a.dot(&b.t())     15.5 ms/layer    4.6 GB/s
+    //   gate.dot(&vec)     3.3 ms/layer   21.4 GB/s   <- this
+    //   manual row dot     9.8 ms/layer    7.2 GB/s
+    //
+    // 4.7x, from removing the transpose. `describe()` scans 12-30 layers
+    // per call, so this is the dominant term in its latency.
+    //
+    // `Array2::dot(&Array1)` is ndarray's gemv entry point and hits
+    // `cblas_sgemv` for f32 with a standard-layout operand, which the
+    // gate view is (contiguous rows straight out of the mmap or the f16
+    // decode cache).
+    view.dot(vec)
 }
 
 /// Gate scores batch: gate[N, hidden] × x[seq, hidden]^T → [N, seq].
@@ -205,7 +230,7 @@ impl VectorIndex {
         &self,
         layer: usize,
         just_inserted: bool,
-        cache: &mut [Option<Vec<f32>>],
+        cache: &mut [Option<std::sync::Arc<Vec<f32>>>],
     ) {
         let max = self
             .gate
@@ -286,6 +311,10 @@ impl VectorIndex {
                     }
                 }
                 crate::config::dtype::StorageDtype::F16 => {
+                    // `GateData` owns its buffer, so this arm still copies.
+                    // It is the slow path: `gate_knn_mmap_fast` handles f16
+                    // without copying and is what the scan actually takes.
+                    // Reached only by callers that need an owned matrix.
                     let mut cache = self.gate.f16_decode_cache.lock().unwrap();
                     if cache.len() <= layer {
                         cache.resize(layer + 1, None);
@@ -293,10 +322,12 @@ impl VectorIndex {
                     let miss = cache[layer].is_none();
                     if miss {
                         let raw = &mmap[byte_offset..byte_end];
-                        cache[layer] = Some(larql_models::quant::half::decode_f16(raw));
+                        cache[layer] = Some(std::sync::Arc::new(
+                            larql_models::quant::half::decode_f16(raw),
+                        ));
                     }
                     self.touch_gate_cache_lru(layer, miss, &mut cache);
-                    cache[layer].as_ref().unwrap().clone()
+                    cache[layer].as_ref().unwrap().as_ref().clone()
                 }
             };
             return Some(GateData {
@@ -308,9 +339,21 @@ impl VectorIndex {
         None
     }
 
-    /// Zero-copy gate KNN scoring for the f32 mmap path — no
-    /// allocation, no clone. Returns `None` if not on the f32 mmap
-    /// path; caller falls back to `resolve_gate`.
+    /// Zero-copy gate KNN scoring for the mmap path — no allocation of a
+    /// gate copy. Returns `None` if the layer cannot be scored here;
+    /// caller falls back to `resolve_gate`.
+    ///
+    /// Handles f32 (direct reinterpret of the mmap) *and* f16 (score out of
+    /// the decode cache in place). The f16 arm is the load-bearing one:
+    /// without it every f16 layer fell through to `resolve_gate`, which
+    /// ends in `cache[layer].as_ref().unwrap().clone()` — a full f32 copy
+    /// of the layer's gate matrix on **every query**. At 6912 features ×
+    /// 2560 dims that is ~71 MB cloned per layer, so a 20-layer
+    /// `describe()` spent ~1.4 GB on allocation and memcpy before scoring
+    /// a single feature, and another ~1.4 GB reading it back in `gemv`.
+    /// Measured effect on a real 2B browse container: `describe()` 288 ms
+    /// → see `bench_graph.csv`. The decode itself was already cached; it
+    /// was purely the copy.
     pub(crate) fn gate_knn_mmap_fast(
         &self,
         layer: usize,
@@ -354,6 +397,54 @@ impl VectorIndex {
                     .unwrap();
                 return Some(gemv(&arr, residual));
             }
+        }
+
+        // f16 mmap: score out of the decode cache without copying it.
+        //
+        // Decoding on a miss is unavoidable (it is what the cache is for),
+        // but on a hit the previous path cloned the whole layer purely to
+        // hand an owned `Vec` back to the caller. `gemv` only needs a view,
+        // so take one over the cached buffer while the lock is held.
+        //
+        // The lock is released before `gemv`: the cache holds an `Arc` per
+        // layer, so a reader takes a refcount bump and scores outside the
+        // critical section. Holding it across `gemv` would serialise
+        // `PatchedVindex::walk`'s rayon-parallel layers, and cloning the
+        // buffer to release early would reintroduce the ~71 MB/layer copy
+        // this path exists to remove.
+        if self.storage.gate_dtype() == crate::config::dtype::StorageDtype::F16 {
+            let view = self.storage.gate_layer_view(layer)?;
+            if view.slice.num_features == 0 {
+                return None;
+            }
+            let bpf = 2;
+            let byte_offset = view.slice.float_offset * bpf;
+            let byte_end = byte_offset + view.slice.num_features * self.hidden_size * bpf;
+            let mmap: &[u8] = view.bytes.as_ref();
+            if byte_end > mmap.len() {
+                return None;
+            }
+
+            let data = {
+                let mut cache = self.gate.f16_decode_cache.lock().unwrap();
+                if cache.len() <= layer {
+                    cache.resize(layer + 1, None);
+                }
+                let miss = cache[layer].is_none();
+                if miss {
+                    cache[layer] = Some(std::sync::Arc::new(
+                        larql_models::quant::half::decode_f16(&mmap[byte_offset..byte_end]),
+                    ));
+                }
+                self.touch_gate_cache_lru(layer, miss, &mut cache);
+                std::sync::Arc::clone(cache[layer].as_ref()?)
+            };
+            let arr = ArrayView2::from_shape(
+                (view.slice.num_features, self.hidden_size),
+                data.as_slice(),
+            )
+            .ok()?;
+            return Some(gemv(&arr, residual));
         }
 
         None
@@ -518,5 +609,79 @@ mod gate_cache_lru_tests {
 
         idx.set_gate_cache_max_layers(0);
         assert_eq!(resident_layers(&idx), 2);
+    }
+    #[test]
+    fn f16_fast_path_scores_without_cloning_the_layer() {
+        // The f16 arm of `gate_knn_mmap_fast` is what the gate scan takes on
+        // an f16 container. Before it existed, f16 layers fell through to
+        // `resolve_gate`, which clones the whole decoded layer per query.
+        //
+        // Asserts the arm is reached and correct: the fixture's gate matrix
+        // is a scaled identity, so a query that is 1.0 in every dim scores
+        // every feature at 1.0, and feature 0 is among the top hits.
+        let idx = f16_mmap_index(2, 4, 4);
+        let q = Array1::from_vec(vec![1.0f32; 4]);
+
+        let scores = idx
+            .gate_knn_mmap_fast(0, &q)
+            .expect("f16 mmap layers must be scored by the fast path, not resolve_gate");
+        assert_eq!(scores.len(), 4, "one score per feature");
+        for (i, s) in scores.iter().enumerate() {
+            assert!(
+                (s - 1.0).abs() < 1e-3,
+                "feature {i} scored {s}, expected ~1.0 from the identity fixture"
+            );
+        }
+
+        // Scoring populated the decode cache (the buffer the Arc points at),
+        // so a second call is a cache hit and must agree exactly.
+        assert_eq!(resident_layers(&idx), 1, "scoring must populate the cache");
+        let again = idx.gate_knn_mmap_fast(0, &q).expect("cache hit");
+        assert_eq!(scores, again, "a cache hit must not change the scores");
+    }
+
+    #[test]
+    fn f16_fast_path_agrees_with_the_resolve_gate_slow_path() {
+        // Two routes to the same numbers: the fast path scores in place out
+        // of the Arc'd cache, `resolve_gate` hands back an owned copy that
+        // the caller multiplies itself. They must not disagree -- that would
+        // mean the optimisation changed answers, which is the failure mode
+        // worth a test rather than the speed.
+        let idx = f16_mmap_index(1, 6, 4);
+        let q = Array1::from_vec(vec![0.5f32, 0.25, 0.125, 1.0]);
+
+        let fast = idx.gate_knn_mmap_fast(0, &q).expect("fast path");
+        let gate = idx.resolve_gate(0).expect("slow path");
+        let view = gate.view(idx.hidden_size);
+        let slow = super::gemv(&view, &q);
+
+        assert_eq!(fast.len(), slow.len());
+        for (i, (f, s)) in fast.iter().zip(slow.iter()).enumerate() {
+            assert!(
+                (f - s).abs() < 1e-6,
+                "feature {i}: fast={f} slow={s} -- the paths disagree"
+            );
+        }
+    }
+
+    #[test]
+    fn f16_cache_hands_out_arc_handles_not_copies() {
+        // The cache holds `Arc<Vec<f32>>` specifically so a reader can take a
+        // handle and release the mutex before scoring; holding it across the
+        // multiply would serialise `PatchedVindex::walk`'s parallel layers.
+        // Two handles to the same layer must therefore be the same
+        // allocation, not two copies of it.
+        let idx = f16_mmap_index(1, 4, 4);
+        touch(&idx, 0);
+
+        let (a, b) = {
+            let cache = idx.gate.f16_decode_cache.lock().unwrap();
+            let entry = cache[0].as_ref().expect("layer 0 cached");
+            (std::sync::Arc::clone(entry), std::sync::Arc::clone(entry))
+        };
+        assert!(
+            std::sync::Arc::ptr_eq(&a, &b),
+            "cache handles must alias one buffer, not clone it"
+        );
     }
 }

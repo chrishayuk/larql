@@ -81,6 +81,7 @@ use super::footprint::{compiled_bytes, SurfaceFootprint};
 use super::graph::RepresentationStateGraph;
 use super::identity::RepresentationStateId;
 use super::key::{MeasurementKey, MeasurementRegistry};
+use super::protocol::MeasurementProtocol;
 use super::realization::LogicalBytes;
 use super::resolved::{layout_admission, LayoutAdmission};
 use super::search_policy::{BestFirst, Selection};
@@ -247,6 +248,21 @@ pub struct SearchConfig {
     /// one state, and which one is due is a standing decision about how
     /// this search is run.
     pub standing_intent: MeasurementIntent,
+    /// **The declarations the standing intent's digests stand for.**
+    ///
+    /// Two of the intent's three values are one-way hashes, so a record
+    /// carrying only the intent can say which experiments are the same
+    /// experiment and cannot say which corpus to read or what a reading
+    /// would mean. The declarations close that, and they are checked
+    /// against the intent rather than trusted beside it.
+    ///
+    /// Absent on a record written before actuation authority existed,
+    /// and absence is a fact about the record rather than a default —
+    /// exactly as for [`SearchFacts::accounting`]. Nothing derived
+    /// changes without it: the whole read path still answers, and only
+    /// preparation refuses, naming what is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<MeasurementProtocol>,
 }
 
 /// **What has been observed, and what it costs.**
@@ -353,6 +369,12 @@ impl SearchSnapshot {
     /// The experiment the next run would be.
     pub fn standing_intent(&self) -> &MeasurementIntent {
         &self.config.standing_intent
+    }
+
+    /// The declarations behind that experiment's identities, where the
+    /// record carries them.
+    pub fn protocol(&self) -> Option<&MeasurementProtocol> {
+        self.config.protocol.as_ref()
     }
 
     /// The rules this snapshot's conclusions were originally drawn

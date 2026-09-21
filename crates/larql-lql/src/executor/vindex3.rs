@@ -16,7 +16,9 @@ use larql_kv::CanonicalKvState;
 use larql_vindex::format::vindex3::opplan::exec::continuation::{
     plan_continuation_geometry, LayerContinuationGeometry,
 };
-use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+use larql_vindex::format::vindex3::opplan::exec::lowering::{
+    LoweringIdentity, LoweringRegistry, SharedProvider,
+};
 use larql_vindex::format::vindex3::opplan::LayerAttention;
 use larql_vindex::tokenizers::Tokenizer;
 
@@ -39,7 +41,9 @@ pub(crate) const SUPPORTED: &str = "SELECT, DESCRIBE, WALK, EXPLAIN WALK, \
 /// Component id a container's text stack is bound under.
 pub(crate) const V3_COMPONENT: &str = "target";
 
-pub(crate) type V3Runtime = Vindex3Runtime<ProductionBackend>;
+/// The served realisation, resolved from the shipped registry by
+/// identity rather than constructed here (LOWERING-PLUGIN-1, L3).
+pub(crate) type V3Runtime = Vindex3Runtime<SharedProvider>;
 
 /// The capability refusal for statements a V3 binding does not serve.
 pub(crate) fn unsupported(what: &str) -> LqlError {
@@ -561,7 +565,7 @@ impl Session {
     /// gate pins that tracing never changes arithmetic, and the LQL
     /// gate pins that the reported token equals INFER's.
     pub(crate) fn exec_v3_trace(&self, prompt: &str) -> Result<Vec<String>, LqlError> {
-        use larql_inference::vindex3::{RecordingObserver, StepEvent};
+        use larql_inference::vindex3::{CarrierForm, RecordingObserver, StepEvent, SublayerSite};
         let Backend::Vindex3 {
             runtime,
             tokenizer,
@@ -599,9 +603,29 @@ impl Session {
                         out.push(format!("  layer {layer}: attention"))
                     }
                     StepEvent::FfnDone { layer } => out.push(format!("  layer {layer}: ffn")),
+                    StepEvent::CarrierWrite {
+                        layer,
+                        site,
+                        carrier,
+                    } => {
+                        let site = match site {
+                            SublayerSite::Attention => "attention",
+                            SublayerSite::Ffn => "ffn",
+                        };
+                        let carrier = match carrier {
+                            CarrierForm::Single => "single",
+                            CarrierForm::Bundle => "bundle",
+                            CarrierForm::History => "history",
+                        };
+                        out.push(format!("  layer {layer}: {site} write ({carrier} carrier)"))
+                    }
                     StepEvent::Logits { vocab } => {
                         out.push(format!("  output_head (vocab {vocab})"))
                     }
+                    // The executor may learn new events before TRACE
+                    // learns to print them; an unprinted event is not
+                    // an error.
+                    _ => {}
                 }
             }
         }
@@ -830,8 +854,13 @@ pub(crate) type V3Knowledge = larql_vindex::format::vindex3::knowledge::Knowledg
 pub(crate) fn bind(
     path: &std::path::Path,
 ) -> Result<(V3Runtime, Option<Tokenizer>, Option<V3Knowledge>), LqlError> {
-    let runtime = Vindex3Runtime::open(path, V3_COMPONENT, ProductionBackend::new())
-        .map_err(|e| LqlError::exec("failed to open VINDEX3 container", e))?;
+    let runtime = Vindex3Runtime::open_via(
+        path,
+        V3_COMPONENT,
+        std::sync::Arc::new(LoweringRegistry::shipped()),
+        &LoweringIdentity::cpu_production(),
+    )
+    .map_err(|e| LqlError::exec("failed to open VINDEX3 container", e))?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(path).ok();
     // The browse view needs the tokenizer (feature annotations decode
     // token ids); a tokenizer-less container binds without it.

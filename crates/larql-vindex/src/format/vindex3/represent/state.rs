@@ -84,6 +84,7 @@ pub mod graph;
 pub mod identity;
 pub mod instrument;
 pub mod key;
+pub mod protocol;
 pub mod realization;
 pub mod resolved;
 pub mod search_policy;
@@ -113,6 +114,7 @@ pub use graph::{RepresentationStateGraph, StateNode, TransitionPolicy};
 pub use identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
 pub use instrument::{InstrumentSemantics, InstrumentSemanticsId, INSTRUMENT_SEMANTICS_ID_VERSION};
 pub use key::{MeasurementKey, MeasurementRegistry, MEASUREMENT_KEY_VERSION};
+pub use protocol::{MeasurementProtocol, ProtocolMismatch};
 pub use realization::{LogicalBytes, RealizationId, ResolvedState};
 pub use resolved::{
     resolve, LayoutAdmission, NoLayoutConstraint, PackLayoutAdmission, ResolvedDecision,

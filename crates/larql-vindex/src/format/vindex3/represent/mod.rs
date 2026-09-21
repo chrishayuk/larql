@@ -45,10 +45,13 @@
 //! [`super::variants`] already states, and the reason a compiler is needed
 //! at all: a profile cannot turn one encoding's bytes into another's.
 
+pub mod activation;
+pub mod actuate;
 pub mod arena;
 pub mod assessment;
 pub mod bank;
 pub mod byte_ledger;
+pub mod candidate_authority;
 pub mod codec;
 pub mod compile;
 pub mod compiler;
@@ -58,6 +61,7 @@ pub mod diagnostic;
 pub mod execution_cost;
 pub mod experiment;
 pub mod gptq;
+pub mod ingest;
 pub mod kda_candidate;
 pub mod kquant;
 pub mod map;
@@ -370,6 +374,13 @@ pub fn compile_representation(
     // Best-effort: a component whose plan does not build contributes
     // nothing here and its tensors fall back to name classification.
     let declared_roles = plan_roles::plan_roles(src, &inspection);
+    let mut candidate = candidate_authority::producer::CompilationAuthority::new(
+        src,
+        &index,
+        PrecisionMap::from_policy(spec.map_name(), &spec.encoding, &spec.roles, &spec.protect),
+        &primary_text,
+        &declared_roles,
+    )?;
     let store = OperandStore::open(src, &inspection)?;
     let source = OperandSource::from(&store);
 
@@ -462,6 +473,17 @@ pub fn compile_representation(
                         .map(|len| TensorEncoding::KQuant(k, len)),
                 })
                 .flatten();
+            candidate.decided(
+                &entry.object,
+                &t.name,
+                match encoded {
+                    Some(_) => state::ResolvedEncoding::Compiled(spec.encoding.clone()),
+                    None if eligible => state::ResolvedEncoding::LayoutRefused {
+                        encoding: spec.encoding.clone(),
+                    },
+                    None => state::ResolvedEncoding::Source,
+                },
+            );
             match encoded {
                 Some(encoding) => {
                     source_bytes += t.len;
@@ -631,6 +653,8 @@ pub fn compile_representation(
             }
         })?;
 
+        candidate.written(src, out, entry, &segment_rel)?;
+
         report.compiled_objects.push(CompiledObject {
             object: entry.object.clone(),
             representation_id: target_id.clone(),
@@ -796,6 +820,11 @@ pub fn compile_representation(
     let serialised = serde_json::to_string_pretty(&index)
         .map_err(|e| VindexError::Parse(format!("serialise {INDEX_JSON}: {e}")))?;
     std::fs::write(out.join(INDEX_JSON), serialised)?;
+    let completed_candidate = candidate.finish(out)?;
+    compiler::write_index_atomically(
+        &completed_candidate,
+        &out.join(candidate_authority::CANDIDATE_INDEX_FILE),
+    )?;
 
     Ok(report)
 }

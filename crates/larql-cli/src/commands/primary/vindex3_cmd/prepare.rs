@@ -8,17 +8,18 @@
 //! close the plan, bind the operands — and `larql serve` binds through
 //! the same call. What this module owns is the CLI's side of that line:
 //! which encoding a `--backend` asks for, whether the runtime may
-//! manufacture it, and handing the chosen backend — a concrete type,
-//! chosen exactly once — to a [`BackendVisitor`]. Realisation is not
-//! interpretation, so it stays here.
+//! manufacture it, and composing the lowering registry a `--backend`
+//! names — in [`lowerings_for`], the one place this crate constructs a
+//! provider — then resolving the provider by identity and handing it to
+//! a [`BackendVisitor`]. Realisation is not interpretation, so it stays
+//! here.
 
 use std::path::Path;
 
 use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::lowering::{LoweringIdentity, LoweringRegistry};
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
-use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
-use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
 
 use super::ExecBackend;
 
@@ -171,47 +172,58 @@ pub(super) fn lowered_formats(
     }
 }
 
-/// Work that runs against a backend chosen at runtime.
+/// Work that runs against a provider resolved at runtime.
 ///
-/// The backends are distinct concrete types and the interpreter is
-/// generic over them, so the choice cannot be a trait object; it is made
-/// once, in [`with_plan_backend`], and the visitor sees the concrete
-/// type.
+/// The interpreter is generic over the provider type; the visitor sees
+/// the shared handle the registry hands out, which implements the trait
+/// by delegation, so the choice is made once — in [`lowerings_for`] —
+/// and the work is written once.
 pub(crate) trait BackendVisitor {
     type Out;
     fn visit<B: PlanBackend>(self, backend: &B) -> Result<Self::Out, BoxErr>;
 }
 
-/// Construct the interpreted backend `backend` names and hand it to
-/// `visitor` — the single place a `--backend` value becomes a type.
+/// The lowering registry a `--backend` value composes, and the identity
+/// it asks that registry for — **the single place a provider is
+/// constructed in this crate** (LOWERING-PLUGIN-1, L3).
 ///
-/// The lowered arms are not interpreted backends and are refused here:
-/// they run through `lowered::run_lowered`, which the exec verb reaches
-/// via [`lowered_formats`] before it comes this way.
-pub(crate) fn with_plan_backend<V: BackendVisitor>(
+/// The shipped providers come from the registry's own constructor. A
+/// device arm registers the device provider it configures — the injected
+/// Metal device and the per-class format table that make that arm what it
+/// is — under the device provider's identity, and asks for it by that
+/// identity. Nothing downstream constructs a provider: every verb
+/// resolves through the registry this returns.
+pub(crate) fn lowerings_for(
     backend: ExecBackend,
-    visitor: V,
-) -> Result<V::Out, BoxErr> {
+) -> Result<(LoweringRegistry, LoweringIdentity), BoxErr> {
+    let shipped = LoweringRegistry::shipped();
     match backend {
-        ExecBackend::Reference => visitor.visit(&ReferenceBackend::new()),
-        ExecBackend::Production => visitor.visit(&ProductionBackend::new()),
-        // Same kernels as `production`; the difference is upstream, in
-        // `wanted_representation`, which makes the store bind the
-        // compiled NVFP4 pack instead of the canonical bytes. The
-        // projector then dispatches `FusedNvfp4` off the resident
-        // representation, exactly as it dispatches every other arm.
-        ExecBackend::ProductionNvfp4 => visitor.visit(&ProductionBackend::new()),
-        // Same kernels again, and the same policy: a stored K-quant pack
-        // is bound and executed IN PLACE by its codec's kernel
-        // (`FusedKQuant`), or — under `LARQL_KQUANT_EXEC=widen` — decoded
-        // to f32 in `OperandStore::load` and run through BLAS as rung A's
-        // authority path did. The two arms read the same stored bytes and
-        // differ only in where the arithmetic happens; the executor
-        // reports which one ran in its `projection plans:` line rather
-        // than leaving it to the backend's name.
-        ExecBackend::ProductionQ8 | ExecBackend::ProductionQ6k | ExecBackend::ProductionQ4k => {
-            visitor.visit(&ProductionBackend::new())
-        }
+        ExecBackend::Reference => Ok((shipped, LoweringIdentity::reference())),
+        // Same kernels for every production arm; the arms differ
+        // upstream, in `wanted_representation`, which makes the store
+        // bind a compiled NVFP4 or K-quant pack instead of the canonical
+        // bytes. The projector then dispatches `FusedNvfp4` /
+        // `FusedKQuant` off the resident representation — or, under
+        // `LARQL_KQUANT_EXEC=widen`, a stored K-quant is decoded to f32
+        // in `OperandStore::load` and run through BLAS as rung A's
+        // authority path did. The executor reports which one ran in its
+        // `projection plans:` line rather than leaving it to the
+        // provider's name.
+        ExecBackend::Production
+        | ExecBackend::ProductionNvfp4
+        | ExecBackend::ProductionQ8
+        | ExecBackend::ProductionQ6k
+        | ExecBackend::ProductionQ4k => Ok((shipped, LoweringIdentity::cpu_production())),
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
+        ExecBackend::MetalLowered
+        | ExecBackend::MetalLoweredFfn
+        | ExecBackend::MetalLoweredNoHead
+        | ExecBackend::MetalLoweredMxfp4
+        | ExecBackend::MetalLoweredMxfp4Ffn
+        | ExecBackend::MetalLoweredF16 => Err(format!(
+            "`{backend:?}` is a lowered arm: it does not execute through the interpreter"
+        )
+        .into()),
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4 => {
             let gpu = larql_compute_metal::MetalBackend::new()
@@ -226,7 +238,7 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
             use larql_vindex::format::vindex3::opplan::exec::backend::{
                 WeightFormat, WeightFormats,
             };
-            let backend =
+            let device =
                 larql_vindex::format::vindex3::opplan::exec::device::DevicePlanBackend::with_formats(
                     gpu,
                     "metal-q1-mxfp4-ffn",
@@ -236,18 +248,11 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
                         head: WeightFormat::F16,
                     },
                 );
-            visitor.visit(&backend)
+            Ok((
+                shipped.register(Box::new(device))?,
+                LoweringIdentity::device_matmul(),
+            ))
         }
-        #[cfg(all(feature = "gpu", target_os = "macos"))]
-        ExecBackend::MetalLowered
-        | ExecBackend::MetalLoweredFfn
-        | ExecBackend::MetalLoweredNoHead
-        | ExecBackend::MetalLoweredMxfp4
-        | ExecBackend::MetalLoweredMxfp4Ffn
-        | ExecBackend::MetalLoweredF16 => Err(format!(
-            "`{backend:?}` is a lowered arm: it does not execute through the interpreter"
-        )
-        .into()),
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4All => {
             let gpu = larql_compute_metal::MetalBackend::new()
@@ -258,13 +263,16 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
             use larql_vindex::format::vindex3::opplan::exec::backend::{
                 WeightFormat, WeightFormats,
             };
-            let backend =
+            let device =
                 larql_vindex::format::vindex3::opplan::exec::device::DevicePlanBackend::with_formats(
                     gpu,
                     "metal-q1-mxfp4-all",
                     WeightFormats::uniform(WeightFormat::Mxfp4),
                 );
-            visitor.visit(&backend)
+            Ok((
+                shipped.register(Box::new(device))?,
+                LoweringIdentity::device_matmul(),
+            ))
         }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalNvfp4 | ExecBackend::MetalNvfp4Ffn | ExecBackend::MetalNvfp4NoHead => {
@@ -309,11 +317,14 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
                     },
                 ),
             };
-            let backend =
+            let device =
                 larql_vindex::format::vindex3::opplan::exec::device::DevicePlanBackend::with_formats(
                     gpu, name, formats,
                 );
-            visitor.visit(&backend)
+            Ok((
+                shipped.register(Box::new(device))?,
+                LoweringIdentity::device_matmul(),
+            ))
         }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::Metal => {
@@ -324,13 +335,42 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
             // mistaken for the f32 r1 lowering.
             let gpu = larql_compute_metal::MetalBackend::new()
                 .ok_or("no Metal device available for --backend metal")?;
-            let backend =
+            let device =
                 larql_vindex::format::vindex3::opplan::exec::device::DevicePlanBackend::new(
                     gpu,
                     "metal-r3-f16",
                     larql_vindex::format::vindex3::opplan::exec::backend::WeightFormat::F16,
                 );
-            visitor.visit(&backend)
+            Ok((
+                shipped.register(Box::new(device))?,
+                LoweringIdentity::device_matmul(),
+            ))
         }
     }
+}
+
+/// Resolve the provider `backend` names and hand it to `visitor`:
+/// compose the registry, then [`with_lowerings`]. The visitor sees a
+/// shared handle to the registered provider, never a type this function
+/// constructed for it.
+pub(crate) fn with_plan_backend<V: BackendVisitor>(
+    backend: ExecBackend,
+    visitor: V,
+) -> Result<V::Out, BoxErr> {
+    let (lowerings, identity) = lowerings_for(backend)?;
+    with_lowerings(&lowerings, &identity, visitor)
+}
+
+/// Hand `visitor` the provider `identity` names in `lowerings`, or
+/// refuse by identity naming every provider the registry holds — before
+/// the visitor runs, so before any operand is read. The seam a test hands
+/// a registry of its own to: a registry without the provider must refuse
+/// here, and nothing underneath may construct one to answer anyway.
+pub(crate) fn with_lowerings<V: BackendVisitor>(
+    lowerings: &LoweringRegistry,
+    identity: &LoweringIdentity,
+    visitor: V,
+) -> Result<V::Out, BoxErr> {
+    let provider = lowerings.provider_shared(identity)?;
+    visitor.visit(&provider)
 }

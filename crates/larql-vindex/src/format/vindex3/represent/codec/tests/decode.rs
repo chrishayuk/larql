@@ -54,7 +54,7 @@ fn floats_decode_through_the_operand_widener() {
 
 #[test]
 fn kquants_decode_through_the_workspace_decoder() {
-    for codec in [Q4_K, Q6_K, Q8_0] {
+    for codec in [Q4_K, Q6_K, Q8_0, Q5_K, Q3_K] {
         let fixture = fixtures()
             .into_iter()
             .find(|f| f.label() == codec.encoding_label())

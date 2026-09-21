@@ -119,7 +119,7 @@ pub enum PhysicalProjectionPlan {
 /// a bank run is one process per arm, and a value that could change
 /// mid-decode would make the resulting distribution describe no single
 /// representation.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize)]
 pub enum ArithmeticArm {
     /// Compact weights against an f32 activation — what ships today.
     #[default]
@@ -622,7 +622,7 @@ pub const KQUANT_EXEC_WIDEN: &str = "widen";
 /// meaningful because both arms live in ONE binary, so "the kernel
 /// changed the answer" cannot be confused with "the compiler did". Same
 /// rule, same reason, as `weights::staged::STAGE_ENV`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize)]
 pub enum KQuantExecution {
     /// Execute the stored blocks in place:
     /// [`PhysicalProjectionPlan::FusedKQuant`].

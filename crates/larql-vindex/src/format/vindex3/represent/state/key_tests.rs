@@ -102,6 +102,7 @@ fn dist(p99: f64) -> Option<Distribution> {
 
 fn observation(kl_p99: f64) -> QualityBank {
     QualityBank {
+        activations: None,
         positions: 8192,
         logits: LogitEvidence {
             kl_p50: 0.0,
@@ -148,7 +149,8 @@ fn registry_with(s: &RepresentationState) -> (MeasurementRegistry, MeasurementKe
         &instrument(),
     );
     let mut r = MeasurementRegistry::new();
-    r.record(k.clone(), observation(2.5262e-3)).expect("record");
+    r.record_fixture(k.clone(), observation(2.5262e-3))
+        .expect("record");
     (r, k)
 }
 
@@ -372,14 +374,14 @@ fn re_recording_a_reproduced_reading_is_a_no_op_and_a_contradiction_is_refused()
 
     // A control witness reproducing is exactly what a replayed round
     // should do.
-    r.record(k.clone(), observation(2.5262e-3))
+    r.record_fixture(k.clone(), observation(2.5262e-3))
         .expect("a reproduced reading");
     assert_eq!(r.len(), 1);
 
     // A different reading under the same key says the experiment is not
     // reproducible. Silently keeping either would hide that.
     let err = r
-        .record(k.clone(), observation(3.3532e-3))
+        .record_fixture(k.clone(), observation(3.3532e-3))
         .expect_err("two readings, one key");
     assert!(format!("{err}").contains("not reproducible"), "{err}");
     assert_eq!(
@@ -393,7 +395,7 @@ fn re_recording_a_reproduced_reading_is_a_no_op_and_a_contradiction_is_refused()
 fn a_registry_answers_what_is_known_about_one_state() {
     let s = state(&map(vec![]));
     let (mut r, _) = registry_with(&s);
-    r.record(
+    r.record_fixture(
         key(
             &s,
             &selection_bank(),
@@ -408,7 +410,7 @@ fn a_registry_answers_what_is_known_about_one_state() {
         layers: None,
         encoding: None,
     }]));
-    r.record(
+    r.record_fixture(
         key(
             &other,
             &selection_bank(),

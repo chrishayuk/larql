@@ -17,6 +17,7 @@
 //! diverged logits, or bit-equality above proves nothing.
 
 mod opener;
+mod record;
 
 use std::path::Path;
 
@@ -743,8 +744,9 @@ fn an_observed_session_step_is_bit_identical_and_records_boundaries() {
         let b = observed.step_observed(token, &mut recorder).unwrap();
         assert_eq!(a, b, "observation changed the arithmetic");
     }
-    // Per position: embed + (attention, ffn) per layer + logits.
-    let per_position = 1 + 2 * runtime.plan().layers.len() + 1;
+    // Per position: embed + (write, attention, write, ffn) per layer +
+    // logits — the two carrier writes are V3-OBS-1's events.
+    let per_position = 1 + 4 * runtime.plan().layers.len() + 1;
     assert_eq!(recorder.events.len(), G_TOKENS.len() * per_position);
     assert!(matches!(
         recorder.events[0],
@@ -895,4 +897,142 @@ fn overlaid_entry_points_are_bit_identical_when_empty_and_observe_edits() {
     let effective = runtime.operands();
     let base_gate = effective.load(&gate).unwrap();
     assert_ne!(&base_gate[..gate.shape[1]], &vec![5.0; gate.shape[1]][..]);
+}
+
+/// LOWERING-PLUGIN-1, L3: the runtime — the path the server and LQL open
+/// through — resolves its provider from the registry it is handed, and
+/// constructs none.
+mod via_tests {
+    use std::path::Path;
+
+    use super::super::*;
+    use larql_vindex::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
+    use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+    use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+    use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
+
+    /// F4 through a production path. A registry that omits the
+    /// production provider, asked to open as it, is refused by identity
+    /// naming what the registry holds — and the container path does not
+    /// even exist, so the refusal provably happened before any I/O and no
+    /// provider was constructed underneath to answer anyway.
+    #[test]
+    fn a_registry_without_the_provider_refuses_before_touching_the_container() {
+        let without_production = LoweringRegistry::new()
+            .register(Box::new(ReferenceBackend::new()))
+            .unwrap();
+        let err = Vindex3Runtime::open_via(
+            Path::new("/definitely/not/a/container"),
+            "target",
+            std::sync::Arc::new(without_production),
+            &LoweringIdentity::cpu_production(),
+        )
+        .err()
+        .expect("refused")
+        .to_string();
+        assert!(err.contains("cpu-production/v1"), "{err}");
+        assert!(err.contains("registered: reference/v1"), "{err}");
+        assert!(
+            !err.contains("not/a/container") && !err.to_lowercase().contains("no such file"),
+            "the refusal is the registry's, not the filesystem's: {err}"
+        );
+    }
+
+    /// Through the shipped registry the runtime opens on the same
+    /// provider the direct constructor would have handed it, by identity
+    /// and by name, and prepares.
+    #[test]
+    fn the_shipped_registry_opens_the_production_provider_the_direct_path_did() {
+        let tmp = tempfile::tempdir().unwrap();
+        let checkpoint = tmp.path().join("ckpt");
+        std::fs::create_dir_all(&checkpoint).unwrap();
+        let container = tmp.path().join("out.vindex3");
+        encode_fixture_container(dense_f32_model, &checkpoint, &container, "target");
+
+        let via = Vindex3Runtime::open_via(
+            &container,
+            "target",
+            std::sync::Arc::new(LoweringRegistry::shipped()),
+            &LoweringIdentity::cpu_production(),
+        )
+        .expect("the shipped registry holds the production provider");
+        let direct = Vindex3Runtime::open(&container, "target", ProductionBackend::new()).unwrap();
+        assert_eq!(via.backend().identity(), direct.backend().identity());
+        assert_eq!(via.backend().name(), direct.backend().name());
+        assert_eq!(via.model_name(), direct.model_name());
+        via.prepare().expect("prepares through the shared provider");
+    }
+
+    /// LOWERING-PLUGIN-1, L4, through the production path that HOLDS
+    /// prepared state: a served model prepares once and answers requests
+    /// for the life of the process, so it is the one place where a pin
+    /// can outlive the authority that made it.
+    ///
+    /// The image records which provider decided its pins; the runtime
+    /// carries which providers exist now. Re-pointed at an authority
+    /// without that provider, the model refuses at its next use — every
+    /// use, sessions and batch prefill alike — naming the provider the
+    /// pins recorded and the ones on offer. The reference provider is
+    /// registered and perfectly able to execute this plan, and is not a
+    /// substitute for the provider that pinned it.
+    #[test]
+    fn a_served_model_refuses_when_the_provider_that_pinned_it_is_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let checkpoint = tmp.path().join("ckpt");
+        std::fs::create_dir_all(&checkpoint).unwrap();
+        let container = tmp.path().join("out.vindex3");
+        encode_fixture_container(dense_f32_model, &checkpoint, &container, "target");
+
+        let served = Vindex3Runtime::open_via(
+            &container,
+            "target",
+            std::sync::Arc::new(LoweringRegistry::shipped()),
+            &LoweringIdentity::cpu_production(),
+        )
+        .unwrap()
+        .prepare()
+        .unwrap();
+        assert!(served.lowerings().is_some(), "opened through an authority");
+
+        let tokens = [3u32, 17, 28];
+        let mut kv = RowKvState::default();
+        served
+            .session_with_kv(&mut kv)
+            .expect("the provider that pinned the image is still registered");
+        let mut kv = RowKvState::default();
+        served
+            .prefill_into(&tokens, &mut kv)
+            .expect("and batch prefill runs on it");
+
+        let stale = served.with_lowerings(std::sync::Arc::new(
+            LoweringRegistry::new()
+                .register(Box::new(ReferenceBackend::new()))
+                .unwrap(),
+        ));
+        for err in [
+            {
+                let mut kv = RowKvState::default();
+                stale
+                    .session_with_kv(&mut kv)
+                    .err()
+                    .expect("a session over a pin whose provider is gone is refused")
+                    .to_string()
+            },
+            {
+                let mut kv = RowKvState::default();
+                stale
+                    .prefill_into(&tokens, &mut kv)
+                    .expect_err("and so is a prefill")
+                    .to_string()
+            },
+        ] {
+            assert!(err.contains("cpu-production/v1"), "{err}");
+            assert!(err.contains("reference/v1"), "{err}");
+            assert!(err.contains("re-prepare"), "{err}");
+            assert!(
+                err.contains("no other provider stands in for it"),
+                "an available provider is not a fallback: {err}"
+            );
+        }
+    }
 }

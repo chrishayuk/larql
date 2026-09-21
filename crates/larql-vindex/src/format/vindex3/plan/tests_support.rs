@@ -461,6 +461,147 @@ pub fn gemma4_shaped_target_with(
     inventory_from(dir, &config, &serde_json::Value::Object(header))
 }
 
+// ── Gemma 3 ──────────────────────────────────────────────────────────
+//
+// The miniature mirrors `google/gemma-3-4b-it`'s config shape and tensor
+// spelling: a multimodal root with `*_index` token roles and
+// `mm_tokens_per_image`; a `text_config` that declares NO `vocab_size`,
+// NO head count and NO head width (HF leaves all three at class defaults
+// — 8 / 4 / 256 — which the parser supplies and the tensors below are
+// shaped to, so the estate binds only if the defaults are right), a
+// flat `rope_scaling = {linear, 8.0}` and a sliding window; a SigLIP
+// `vision_config` with `vision_use_head: false`.
+
+pub const GEMMA3_FIXTURE_LAYERS: usize = 12;
+/// HF's `sliding_window_pattern` class default is 6: every sixth layer
+/// is full attention, so at twelve layers two are — an instrument, not a
+/// single special case.
+pub const GEMMA3_FULL_LAYERS: [usize; 2] = [5, 11];
+pub const GEMMA3_HIDDEN: usize = 32;
+pub const GEMMA3_INTER: usize = 64;
+/// The attention class defaults the real 4B config leaves implicit.
+pub const GEMMA3_Q_HEADS: usize = 8;
+pub const GEMMA3_KV_HEADS: usize = 4;
+pub const GEMMA3_HEAD_DIM: usize = 256;
+/// Deliberately not a power of two and not a multiple of anything the
+/// stack pads to: a width read off the wrong axis or rounded shows.
+pub const GEMMA3_VOCAB: usize = 300;
+pub const GEMMA3_GLOBAL_THETA: f64 = 1_000_000.0;
+pub const GEMMA3_LOCAL_THETA: f64 = 10_000.0;
+pub const GEMMA3_ROPE_FACTOR: f64 = 8.0;
+pub const GEMMA3_SLIDING_WINDOW: usize = 16;
+pub const GEMMA3_VISION_HIDDEN: usize = 16;
+/// The embedding as the checkpoint spells it — the tensor that answers
+/// `vocab_size` when the config does not.
+pub const GEMMA3_EMBED_TENSOR: &str = "language_model.model.embed_tokens.weight";
+
+pub fn gemma3_shaped_target(dir: &Path) -> ArchitectureInventory {
+    gemma3_shaped_target_with(dir, |_| {}, |_| {})
+}
+
+/// The same fixture with `mutate_config` applied to its config and
+/// `mutate_tensors` to its `(name, shape)` list before writing.
+pub fn gemma3_shaped_target_with(
+    dir: &Path,
+    mutate_config: impl FnOnce(&mut serde_json::Value),
+    mutate_tensors: impl FnOnce(&mut Vec<(String, Vec<usize>)>),
+) -> ArchitectureInventory {
+    let mut config = serde_json::json!({
+        "architectures": ["Gemma3ForConditionalGeneration"],
+        "boi_token_index": 255999,
+        "eoi_token_index": 256000,
+        "eos_token_id": [1, 106],
+        "image_token_index": 262144,
+        "initializer_range": 0.02,
+        "mm_tokens_per_image": 256,
+        "model_type": "gemma3",
+        "text_config": {
+            "hidden_size": GEMMA3_HIDDEN,
+            "intermediate_size": GEMMA3_INTER,
+            "model_type": "gemma3_text",
+            "num_hidden_layers": GEMMA3_FIXTURE_LAYERS,
+            "rope_scaling": { "factor": GEMMA3_ROPE_FACTOR, "rope_type": "linear" },
+            "sliding_window": GEMMA3_SLIDING_WINDOW
+        },
+        "torch_dtype": "bfloat16",
+        "transformers_version": "4.50.0.dev0",
+        "vision_config": {
+            "hidden_size": GEMMA3_VISION_HIDDEN,
+            "image_size": 896,
+            "intermediate_size": 32,
+            "model_type": "siglip_vision_model",
+            "num_attention_heads": 4,
+            "num_hidden_layers": 1,
+            "patch_size": 14,
+            "vision_use_head": false
+        }
+    });
+    mutate_config(&mut config);
+
+    let h = GEMMA3_HIDDEN;
+    let mut tensors: Vec<(String, Vec<usize>)> = vec![
+        (GEMMA3_EMBED_TENSOR.into(), vec![GEMMA3_VOCAB, h]),
+        ("language_model.model.norm.weight".into(), vec![h]),
+        (
+            "multi_modal_projector.mm_input_projection_weight".into(),
+            vec![GEMMA3_VISION_HIDDEN, h],
+        ),
+        (
+            "multi_modal_projector.mm_soft_emb_norm.weight".into(),
+            vec![GEMMA3_VISION_HIDDEN],
+        ),
+        (
+            "vision_tower.vision_model.embeddings.patch_embedding.weight".into(),
+            vec![GEMMA3_VISION_HIDDEN, 3, 14, 14],
+        ),
+        (
+            "vision_tower.vision_model.encoder.layers.0.self_attn.q_proj.weight".into(),
+            vec![GEMMA3_VISION_HIDDEN, GEMMA3_VISION_HIDDEN],
+        ),
+    ];
+    let q_rows = GEMMA3_Q_HEADS * GEMMA3_HEAD_DIM;
+    let kv_rows = GEMMA3_KV_HEADS * GEMMA3_HEAD_DIM;
+    for layer in 0..GEMMA3_FIXTURE_LAYERS {
+        let stack = format!("language_model.model.layers.{layer}");
+        tensors.push((format!("{stack}.self_attn.q_proj.weight"), vec![q_rows, h]));
+        tensors.push((format!("{stack}.self_attn.k_proj.weight"), vec![kv_rows, h]));
+        tensors.push((format!("{stack}.self_attn.v_proj.weight"), vec![kv_rows, h]));
+        tensors.push((format!("{stack}.self_attn.o_proj.weight"), vec![h, q_rows]));
+        tensors.push((
+            format!("{stack}.self_attn.q_norm.weight"),
+            vec![GEMMA3_HEAD_DIM],
+        ));
+        tensors.push((
+            format!("{stack}.self_attn.k_norm.weight"),
+            vec![GEMMA3_HEAD_DIM],
+        ));
+        for norm in [
+            "input_layernorm",
+            "post_attention_layernorm",
+            "pre_feedforward_layernorm",
+            "post_feedforward_layernorm",
+        ] {
+            tensors.push((format!("{stack}.{norm}.weight"), vec![h]));
+        }
+        tensors.push((
+            format!("{stack}.mlp.gate_proj.weight"),
+            vec![GEMMA3_INTER, h],
+        ));
+        tensors.push((format!("{stack}.mlp.up_proj.weight"), vec![GEMMA3_INTER, h]));
+        tensors.push((
+            format!("{stack}.mlp.down_proj.weight"),
+            vec![h, GEMMA3_INTER],
+        ));
+    }
+    mutate_tensors(&mut tensors);
+    let mut header = serde_json::Map::new();
+    let mut offset = 0u64;
+    for (name, shape) in &tensors {
+        push_tensor(&mut header, &mut offset, name, shape);
+    }
+    inventory_from(dir, &config, &serde_json::Value::Object(header))
+}
+
 /// A drafter-shaped artifact declaring `target_layer_ids` taps into a
 /// deeper producer.
 pub fn drafter_shaped(dir: &Path) -> ArchitectureInventory {

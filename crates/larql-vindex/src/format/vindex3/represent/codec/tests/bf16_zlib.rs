@@ -236,7 +236,14 @@ fn it_declares_no_acceleration_and_an_f32_decode_residency() {
         extents[0].bits_per_weight, 16.0,
         "the supremum, not a measurement"
     );
-    assert!(extents[0].radius.is_none());
+    // Entropy coding is not approximation: the inflated bytes ARE the
+    // bf16 image, so against a bf16 logical source this carries no error
+    // and says so.
+    assert_eq!(
+        extents[0].radius.as_ref().map(|r| r.radius()),
+        Some(0.0),
+        "a lossless carrier states 0.0 rather than declining to state"
+    );
 }
 
 // ── Refusals at the stream's edges ───────────────────────────────────

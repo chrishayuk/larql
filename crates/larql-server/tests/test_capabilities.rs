@@ -363,14 +363,20 @@ fn source_kinds_come_from_the_resolver() {
 /// would tell the Explorer it can offer a GPU run this server cannot
 /// perform. When a real Metal V3 binding lands, this test fails and
 /// `V3_BACKENDS` grows with it.
+///
+/// Since LOWERING-PLUGIN-1's L3 the loader does not CONSTRUCT its
+/// provider — it resolves one from a carried registry by identity — so
+/// the fact this reads is the identity the loader names. A Metal V3
+/// binding would appear here as the device provider's identity, or as a
+/// device backend constructed to register; either widens the list.
 #[test]
 fn backends_match_the_v3_binding() {
     let binding = include_str!("../src/vindex3.rs");
     assert!(
-        binding.contains("ProductionBackend"),
-        "the V3 loader no longer names ProductionBackend — re-derive V3_BACKENDS"
+        binding.contains("cpu_production"),
+        "the V3 loader no longer resolves `cpu-production` — re-derive V3_BACKENDS"
     );
-    let metal_bound = binding.contains("MetalBackend");
+    let metal_bound = binding.contains("MetalBackend") || binding.contains("device_matmul");
     assert_eq!(
         metal_bound,
         V3_BACKENDS.contains(&"metal"),

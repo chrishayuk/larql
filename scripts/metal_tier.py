@@ -1,0 +1,460 @@
+#!/usr/bin/env python3
+"""Which Metal evidence does this change actually require?
+
+CI-E2-D. The Metal gate costs ~24 minutes of a scarce macOS runner and
+fires whenever `crates/larql-compute/**` or `crates/larql-models/**`
+moves. Over pull requests #415-#449 that was 18 triggers, and 12 of them
+touched no Metal file at all.
+
+The wrong fix is a cleverer set of path globs. `crates/larql-compute/**`
+holds both the trait boundary Metal LINKS against and the CPU kernels
+Metal's tests compare NUMBERS against -- 72 references to
+`cpu::ops::q4_common` alone -- and no amount of directory ancestry
+separates those two. So the distinction is DECLARED, in
+crates/larql-compute-metal/parity-obligations.json, and this script
+checks the declaration stays complete.
+
+Three declaration classes, two of which are tier A:
+
+    parity_obligations         code that COMPUTES the reference values
+    silent_parity_obligations  code that changes WHICH values appear
+                               without computing any: path selection,
+                               reduction order, fixture data. No import
+                               and no signature reveals these, so the
+                               completeness check below cannot discover
+                               them and they must be declared by hand.
+    interface_only             genuinely structural; a compile catches it
+
+Three tiers:
+
+    A  full behavioural qualification   the Metal crate itself changed,
+                                        or a declared parity obligation
+    B  compatibility only               a crate Metal depends on changed
+                                        in a way that can break the
+                                        COMPILE but not the numbers
+    C  nothing                          Metal cannot be affected
+
+The asymmetry that sets every uncertain call: a surface wrongly placed
+in tier B is UNSAFE (Metal never re-qualifies against changed numerics);
+wrongly placed in tier A it is merely expensive. Uncertain goes to A.
+
+    metal_tier.py classify --files-from <path>   # one path per line
+    metal_tier.py check                          # manifest completeness
+    metal_tier.py selftest
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+METAL_CRATE = "crates/larql-compute-metal"
+MANIFEST = Path(METAL_CRATE) / "parity-obligations.json"
+
+TIER_A, TIER_B, TIER_C = "A", "B", "C"
+
+# Tier A on their own: the Metal crate, and the workflow that defines the
+# gate (a change to the gate must be qualified by the gate).
+TIER_A_ALWAYS = (
+    f"{METAL_CRATE}/**",
+    ".github/workflows/larql-compute-metal.yml",
+)
+
+# Tier B floor: the workspace crates Metal actually depends on, read from
+# its Cargo.toml rather than assumed, plus the files that can change the
+# build itself.
+BUILD_INPUTS = ("Cargo.toml", "Cargo.lock", "Makefile", "rust-toolchain.toml")
+
+# Where a reference to `larql_compute::foo::bar` is looked for.
+CRATE_DIRS = {"larql_compute": "crates/larql-compute", "larql_models": "crates/larql-models"}
+REFERENCE_RE = re.compile(r"larql_(compute|models)((?:::[a-z_0-9]+)+)")
+
+
+def load_manifest(root: Path = REPO_ROOT) -> dict:
+    return json.loads((root / MANIFEST).read_text())
+
+
+def manifest_paths(manifest: dict, key: str) -> list[str]:
+    return [p for entry in manifest.get(key, []) for p in entry["paths"]]
+
+
+def matches(path: str, pattern: str) -> bool:
+    """Glob match where `**` means 'this subtree'."""
+    if pattern.endswith("/**"):
+        return path == pattern[:-3] or path.startswith(pattern[:-2])
+    return fnmatch.fnmatch(path, pattern)
+
+
+def metal_workspace_deps(root: Path = REPO_ROOT) -> list[str]:
+    """Workspace crates Metal depends on, read from its manifest.
+
+    Declared in Cargo.toml, not inferred from the directory tree: that is
+    the whole point. A crate that stops being a dependency stops being a
+    tier-B trigger without anyone editing a glob.
+    """
+    import tomllib
+
+    cargo = tomllib.loads((root / METAL_CRATE / "Cargo.toml").read_text())
+    out: set[str] = set()
+    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+        for spec in (cargo.get(section) or {}).values():
+            if isinstance(spec, dict) and "path" in spec:
+                rel = os.path.normpath(os.path.join(METAL_CRATE, spec["path"]))
+                out.add(f"{rel}/**")
+    return sorted(out)
+
+
+def classify(changed: list[str], manifest: dict, deps: list[str]) -> tuple[str, list[str]]:
+    """Highest tier any changed file demands, with the reasons."""
+    reasons: list[str] = []
+    tier = TIER_C
+    parity = manifest_paths(manifest, "parity_obligations")
+    silent = manifest_paths(manifest, "silent_parity_obligations")
+    interface = manifest_paths(manifest, "interface_only")
+
+    # PRECEDENCE, and each step is load-bearing:
+    #
+    #   1. silent parity      -- FIRST, and NOT exemptable. Two reasons.
+    #      Its members sit inside broad parity subtrees (spin_pool.rs is
+    #      under cpu/**), so testing parity first would swallow them and
+    #      their reason would read as ordinary parity, losing the identity
+    #      the class exists to preserve. And an interface_only entry that
+    #      overlapped one would DEMOTE it to B -- the unsafe direction the
+    #      manifest says is impossible. Ordering alone does not make that
+    #      impossible, so `check` also refuses the overlap outright.
+    #   2. the Metal crate and its own workflow.
+    #   3. interface_only     -- an EXEMPTION from ORDINARY parity only.
+    #      This is how the named kquant_gemv.rs and backend/ exemptions
+    #      escape their enclosing subtree, so it must stay above parity.
+    #   4. ordinary parity, then the dependency floor.
+    for path in changed:
+        if any(matches(path, p) for p in silent):
+            tier = TIER_A
+            reasons.append(f"{path}: SILENT parity obligation -> A")
+            continue
+        if any(matches(path, p) for p in TIER_A_ALWAYS):
+            tier = TIER_A
+            reasons.append(f"{path}: Metal crate or its workflow -> A")
+            continue
+        if any(matches(path, p) for p in interface):
+            if tier == TIER_C:
+                tier = TIER_B
+            reasons.append(f"{path}: interface_only -> B")
+            continue
+        if any(matches(path, p) for p in parity):
+            tier = TIER_A
+            reasons.append(f"{path}: declared parity obligation -> A")
+            continue
+        if any(matches(path, p) for p in deps) or path in BUILD_INPUTS:
+            if tier == TIER_C:
+                tier = TIER_B
+            reasons.append(f"{path}: dependency or build input -> B")
+    return tier, reasons
+
+
+def referenced_paths(root: Path = REPO_ROOT) -> dict[str, int]:
+    """Upstream paths the Metal crate names, resolved to files/subtrees.
+
+    APPROXIMATE, and deliberately used only as a completeness CHECK on the
+    declaration rather than as the declaration itself: brace imports
+    (`cpu::{ops, q4}`) and type imports (`cpu::Foo`) truncate here, so this
+    under-resolves. Under-resolution makes the check conservative — it
+    reports a shallower path, which is harder to satisfy, not easier.
+    """
+    hits: dict[str, int] = {}
+    for sub in ("src", "tests", "benches"):
+        base = root / METAL_CRATE / sub
+        if not base.is_dir():
+            continue
+        for dirpath, _dirs, files in os.walk(base):
+            for name in files:
+                if not name.endswith(".rs"):
+                    continue
+                text = (Path(dirpath) / name).read_text(errors="replace")
+                for match in REFERENCE_RE.finditer(text):
+                    crate_dir = CRATE_DIRS[f"larql_{match.group(1)}"]
+                    parts = [p for p in match.group(2).split("::") if p]
+                    resolved = _resolve(root, crate_dir, parts)
+                    if resolved:
+                        hits[resolved] = hits.get(resolved, 0) + 1
+    return hits
+
+
+def _resolve(root: Path, crate_dir: str, parts: list[str]) -> str | None:
+    rel = f"{crate_dir}/src"
+    best: str | None = None
+    for seg in parts:
+        as_dir, as_file = f"{rel}/{seg}", f"{rel}/{seg}.rs"
+        if (root / as_dir).is_dir():
+            best, rel = f"{as_dir}/**", as_dir
+        elif (root / as_file).is_file():
+            return as_file
+        else:
+            break
+    return best
+
+
+def overlapping_silent_exemptions(manifest: dict) -> list[tuple[str, str]]:
+    """silent_parity paths that an interface_only entry would exempt.
+
+    MALFORMED AUTHORITY, not something precedence resolves. A silent
+    obligation is one no static check can rediscover, so demoting it to
+    tier B removes the only thing standing between a changed default or a
+    changed fixture and a Metal backend that never re-qualifies. Ordering
+    makes the demotion not HAPPEN; this makes it not be EXPRESSIBLE.
+    """
+    silent = manifest_paths(manifest, "silent_parity_obligations")
+    interface = manifest_paths(manifest, "interface_only")
+    clashes = []
+    for s_path in silent:
+        probe = s_path[:-3] if s_path.endswith("/**") else s_path
+        for i_path in interface:
+            if matches(probe, i_path) or (i_path.endswith("/**") and matches(i_path[:-3], s_path)):
+                clashes.append((s_path, i_path))
+    return clashes
+
+
+def check(root: Path = REPO_ROOT) -> tuple[list[str], dict[str, int]]:
+    """Referenced-but-undeclared paths. Empty list means complete."""
+    manifest = load_manifest(root)
+    declared = (
+        manifest_paths(manifest, "parity_obligations")
+        + manifest_paths(manifest, "silent_parity_obligations")
+        + manifest_paths(manifest, "interface_only")
+    )
+    undeclared = []
+    hits = referenced_paths(root)
+    for path in sorted(hits):
+        probe = path[:-3] if path.endswith("/**") else path
+        if not any(matches(probe, d) for d in declared):
+            undeclared.append(path)
+    return undeclared, hits
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_classify(args: argparse.Namespace) -> int:
+    changed = [l.strip() for l in Path(args.files_from).read_text().splitlines() if l.strip()]
+    manifest = load_manifest()
+    tier, reasons = classify(changed, manifest, metal_workspace_deps())
+    if args.quiet:
+        print(tier)
+        return 0
+    print(f"tier: {tier}   ({len(changed)} changed files)")
+    for r in reasons[: args.max_reasons]:
+        print(f"  {r}")
+    if len(reasons) > args.max_reasons:
+        print(f"  ... and {len(reasons) - args.max_reasons} more")
+    return 0
+
+
+def cmd_check(_args: argparse.Namespace) -> int:
+    undeclared, hits = check()
+    clashes = overlapping_silent_exemptions(load_manifest())
+    if clashes:
+        print("MALFORMED MANIFEST: a silent parity obligation is also declared interface_only.")
+        print("A silent obligation is one no static check can rediscover; exempting it is the")
+        print("one error direction this manifest exists to make impossible.")
+        for s_path, i_path in clashes:
+            print(f"  {s_path}  exempted by  {i_path}")
+        return 1
+    print(f"{len(hits)} upstream paths referenced by {METAL_CRATE}")
+
+    # Print the silent class every time. Its members are invisible to the
+    # derivation BY DEFINITION -- spin_pool.rs has zero references from the
+    # Metal crate and is still tier A -- so a check that only printed
+    # "complete" would imply a coverage it does not have.
+    silent = manifest_paths(load_manifest(), "silent_parity_obligations")
+    if silent:
+        print(f"\n{len(silent)} SILENT parity paths, declared by hand because no import or")
+        print("signature reveals them. This check lists them; it cannot verify them:")
+        for path in silent:
+            probe = path[:-3] if path.endswith("/**") else path
+            seen = "referenced" if any(h.startswith(probe) for h in hits) else "NOT referenced"
+            print(f"  {path}  ({seen} -- either way it stays tier A)")
+    if undeclared:
+        print("\nREFERENCED BUT NOT DECLARED — every one is a surface that could change")
+        print("what Metal must reproduce with nothing in CI noticing:")
+        for path in undeclared:
+            print(f"  {path}  ({hits[path]} references)")
+        return 1
+    print("manifest is complete: every referenced path is declared")
+    return 0
+
+
+def cmd_selftest(_args: argparse.Namespace) -> int:
+    failures: list[str] = []
+
+    def ok(name: str, got, want) -> None:
+        if got != want:
+            failures.append(f"{name}: got {got!r}, want {want!r}")
+        else:
+            print(f"  ok  {name} == {want!r}")
+
+    m = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/cpu/ops/**"]}],
+        "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/options.rs"]}],
+    }
+    deps = ["crates/larql-compute/**", "crates/larql-models/**"]
+
+    ok("metal source is A", classify([f"{METAL_CRATE}/src/lib.rs"], m, deps)[0], TIER_A)
+    ok("the gate's own workflow is A",
+       classify([".github/workflows/larql-compute-metal.yml"], m, deps)[0], TIER_A)
+    ok("declared parity path is A",
+       classify(["crates/larql-compute/src/cpu/ops/q4k_matvec.rs"], m, deps)[0], TIER_A)
+    ok("undeclared dependency path is B",
+       classify(["crates/larql-compute/src/cpu/spin_pool.rs"], m, deps)[0], TIER_B)
+    ok("interface_only inside a dependency is B",
+       classify(["crates/larql-compute/src/options.rs"], m, deps)[0], TIER_B)
+    ok("Cargo.lock alone is B", classify(["Cargo.lock"], m, deps)[0], TIER_B)
+    ok("docs are C", classify(["docs/ci-throughput/README.md"], m, deps)[0], TIER_C)
+    ok("an unrelated crate is C", classify(["crates/larql-lql/src/lib.rs"], m, deps)[0], TIER_C)
+
+    # The tier is the MAXIMUM demand across the diff, never the last file seen.
+    ok("A wins over C regardless of order",
+       classify(["docs/x.md", f"{METAL_CRATE}/src/lib.rs"], m, deps)[0], TIER_A)
+    ok("A wins over C in the other order",
+       classify([f"{METAL_CRATE}/src/lib.rs", "docs/x.md"], m, deps)[0], TIER_A)
+    ok("A wins over B", classify(["Cargo.lock", "crates/larql-compute/src/cpu/ops/q.rs"], m, deps)[0], TIER_A)
+    ok("empty diff is C", classify([], m, deps)[0], TIER_C)
+
+    # An exemption must be able to fire INSIDE a declared parity subtree,
+    # or interface_only would be unreachable wherever it mattered.
+    nested = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/**"]}],
+        "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/options.rs"]}],
+    }
+    ok("interface_only exempts a file inside a parity subtree",
+       classify(["crates/larql-compute/src/options.rs"], nested, deps)[0], TIER_B)
+    ok("its sibling is still A",
+       classify(["crates/larql-compute/src/other.rs"], nested, deps)[0], TIER_A)
+
+    ok("subtree glob matches the directory itself",
+       matches("crates/larql-compute/src/cpu", "crates/larql-compute/src/cpu/**"), True)
+    ok("subtree glob does not match a prefix sibling",
+       matches("crates/larql-compute/src/cpu_extra.rs", "crates/larql-compute/src/cpu/**"), False)
+
+    # Silent parity: tier A on the same terms as parity, and crucially
+    #     still tier A when NOTHING references it. That is the whole class.
+    sil = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/cpu/ops/**"]}],
+        "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+        "interface_only": [],
+    }
+    ok("silent parity path is A",
+       classify(["crates/larql-compute/src/cpu/spin_pool.rs"], sil, deps)[0], TIER_A)
+    ok("silent parity is named as such in the reason",
+       "SILENT" in classify(["crates/larql-compute/src/cpu/spin_pool.rs"], sil, deps)[1][0], True)
+
+    #     ...and the same path SHADOWED by a broad parity subtree, which
+    #     is the real manifest's shape: spin_pool.rs lives under cpu/**.
+    #     The synthetic case above cannot catch a precedence regression
+    #     because nothing there shadows it.
+    shadowed = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/cpu/**"]}],
+        "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+        "interface_only": [],
+    }
+    sh = classify(["crates/larql-compute/src/cpu/spin_pool.rs"], shadowed, deps)
+    ok("a shadowed silent path is still A", sh[0], TIER_A)
+    ok("a shadowed silent path keeps its SILENT identity", "SILENT" in sh[1][0], True)
+
+    #     Silent parity must NOT be exemptable, or a mis-edit demotes it
+    #     to B -- the one unsafe direction. Ordering makes that not
+    #     happen; overlapping_silent_exemptions makes it not expressible.
+    exempted = {
+        "parity_obligations": [{"id": "p", "paths": ["crates/larql-compute/src/cpu/**"]}],
+        "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+        "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+    }
+    ok("interface_only cannot demote a silent obligation",
+       classify(["crates/larql-compute/src/cpu/spin_pool.rs"], exempted, deps)[0], TIER_A)
+    ok("...and the overlap is reported as malformed authority",
+       len(overlapping_silent_exemptions(exempted)), 1)
+    ok("a subtree exemption swallowing a silent file is also malformed",
+       len(overlapping_silent_exemptions({
+           "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/cpu/spin_pool.rs"]}],
+           "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/cpu/**"]}]})), 1)
+    ok("an ordinary parity exemption is still legal",
+       len(overlapping_silent_exemptions({
+           "silent_parity_obligations": [{"id": "s", "paths": ["crates/larql-compute/src/options.rs"]}],
+           "interface_only": [{"id": "i", "paths": ["crates/larql-compute/src/cpu/kquant_gemv.rs"]}]})), 0)
+    ok("the SHIPPED manifest has no silent/interface overlap",
+       overlapping_silent_exemptions(load_manifest()), [])
+
+    #     Regression controls on the SHIPPED manifest, for the two entries
+    #     version 1 got wrong and the one it cited as its hard case.
+    real, rdeps = load_manifest(), metal_workspace_deps()
+    for path, want, note in (
+        ("crates/larql-compute/src/options.rs", TIER_A, "selects the numerical path; was interface_only in v1"),
+        ("crates/larql-models/src/test_fixtures.rs", TIER_A, "fixture DATA authority; was interface_only in v1"),
+        ("crates/larql-compute/src/cpu/spin_pool.rs", TIER_A, "reduction order, zero Metal references"),
+        ("crates/larql-compute/src/cpu/kquant_gemv.rs", TIER_B, "#420's file: no Metal reference or reach"),
+        ("crates/larql-compute/src/cpu/nvfp4_gemv.rs", TIER_A, "42 Metal references"),
+        ("crates/larql-compute/src/backend/capability.rs", TIER_B, "enum + default impl"),
+        ("crates/larql-compute/src/backend/decode.rs", TIER_A, "arithmetic in default bodies"),
+    ):
+        ok(f"{path.split('/')[-1]} is {want} ({note})", classify([path], real, rdeps)[0], want)
+
+    #     The structural half of the asymmetry: a file that does not exist
+    #     yet, added inside a parity subtree, must default to A rather than
+    #     fall through to the tier-B dependency rule.
+    real_spin = classify(["crates/larql-compute/src/cpu/spin_pool.rs"], real, rdeps)
+    ok("SHIPPED manifest: spin_pool.rs reason says SILENT, not ordinary parity",
+       "SILENT" in real_spin[1][0], True)
+    real_opts = classify(["crates/larql-compute/src/options.rs"], real, rdeps)
+    ok("SHIPPED manifest: options.rs reason says SILENT", "SILENT" in real_opts[1][0], True)
+
+    ok("a NEW file in a parity subtree defaults to A",
+       classify(["crates/larql-compute/src/cpu/ops/brand_new_kernel.rs"], real, rdeps)[0], TIER_A)
+    ok("a NEW file in backend/ defaults to A",
+       classify(["crates/larql-compute/src/backend/brand_new.rs"], real, rdeps)[0], TIER_A)
+
+    #     ...and the exemptions are files, not subtrees, so they cannot
+    #     accidentally exempt a sibling.
+    ok("an exemption does not cover its siblings",
+       classify(["crates/larql-compute/src/backend/helpers.rs"], real, rdeps)[0], TIER_A)
+
+    deps_real = metal_workspace_deps()
+    ok("dependencies are read from Cargo.toml",
+       set(deps_real), {"crates/larql-compute/**", "crates/larql-models/**"})
+
+    undeclared, hits = check()
+    ok("the shipped manifest references something at all", len(hits) > 0, True)
+    ok("the shipped manifest is complete", undeclared, [])
+
+    print()
+    if failures:
+        for f in failures:
+            print(f"  FAIL {f}")
+        print(f"{len(failures)} failing check(s)")
+        return 1
+    print("selftest: all checks passed")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_cl = sub.add_parser("classify", help="tier for a set of changed files")
+    p_cl.add_argument("--files-from", required=True, help="file with one changed path per line")
+    p_cl.add_argument("--quiet", action="store_true", help="print only the tier letter")
+    p_cl.add_argument("--max-reasons", type=int, default=10)
+    p_cl.set_defaults(func=cmd_classify)
+
+    sub.add_parser("check", help="manifest completeness").set_defaults(func=cmd_check)
+    sub.add_parser("selftest", help="classification rules against known answers").set_defaults(func=cmd_selftest)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

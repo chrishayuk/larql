@@ -7,7 +7,7 @@
 # CANCELLED, and one cancelled job makes the entire workflow run
 # conclude `cancelled` regardless. So while this lived in `quality.yml`,
 # a mutation run that ran out of clock turned the whole quality check
-# red even though MSRV, cargo-deny, cargo-audit, buf lint and doc-links
+# red even though MSRV, cargo-deny, cargo-audit, buf lint and docs-integrity
 # had all passed.
 #
 # That was not hypothetical and not rare. It fired on the PRs with the

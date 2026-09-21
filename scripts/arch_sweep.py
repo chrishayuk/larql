@@ -36,6 +36,16 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+# The cached-evidence guard lives in its own script because it is its own
+# job: `arch_sweep` produces and tabulates plans, `conformance_evidence`
+# decides whether a saved set may be read as CURRENT evidence. It carries
+# its own selftest, which `quality.yml` runs.
+from conformance_evidence import (  # noqa: E402
+    StaleEvidence,
+    require_current_evidence,
+)
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_MATRIX = REPO_ROOT / "docs" / "arch-conformance" / "matrix.json"
 DEFAULT_OUT = pathlib.Path.home() / "chris-models" / "_conformance"
@@ -314,14 +324,32 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def load_results(args: argparse.Namespace) -> tuple[list[dict], dict]:
+    """Every saved row, classified — the one entry the comparative
+    readers share, and therefore where the evidence guard belongs.
+
+    The records are read and CHECKED before any of them is classified. A
+    guard applied row by row inside the loop would let a partial table be
+    built out of the current rows of a mixed cache, which is the failure
+    it exists to prevent.
+    """
     matrix = {m["repo"]: m for m in load_matrix(args.matrix)}
-    recognised = recognised_model_types()
-    rows = []
+    out_dir = args.out / "plans"
+    records = []
     for repo, meta in matrix.items():
-        path = args.out / "plans" / f"{slug(repo)}.json"
+        path = out_dir / f"{slug(repo)}.json"
         if not path.exists():
             continue
-        row = classify(json.loads(path.read_text()), recognised)
+        records.append((path, meta, json.loads(path.read_text())))
+    # The guard runs BEFORE anything that needs a built binary. A stale
+    # cache is a fact about the saved rows, and a reader should be able
+    # to be told so without first compiling the planner — otherwise the
+    # refusal is unreachable on exactly the machine most likely to have
+    # an old cache lying around.
+    require_current_evidence([(path, record) for path, _, record in records], out_dir)
+    recognised = recognised_model_types()
+    rows = []
+    for _, meta, record in records:
+        row = classify(record, recognised)
         row.update(meta)
         rows.append(row)
     return rows, recognised
@@ -568,7 +596,14 @@ def main() -> int:
     leverage.set_defaults(func=cmd_leverage)
 
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except StaleEvidence as refusal:
+        # A refusal, not a crash: the cache is intact and the reader
+        # declined to treat it as current. Printed whole, because the
+        # message carries the two versions and the path.
+        print(f"\n{refusal}\n", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

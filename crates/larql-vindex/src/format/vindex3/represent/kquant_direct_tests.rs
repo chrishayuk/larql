@@ -251,3 +251,32 @@ fn the_larql_q8_0_format_does_not_answer_for_ggml_blocks() {
          and a silent answer is the 34-vs-18 byte stride bug returning"
     );
 }
+
+/// [`kquant::KQuant::has_direct_gemv`] is the fact a codec consults before
+/// DECLARING the direct realization, and [`kquant::KQuant::gemv`] is the
+/// dispatch it stands for. Held together over every member this build
+/// reads: a member declared without a kernel would pin a realization that
+/// answers `None` at the first token; one with a kernel and no
+/// declaration would ship a kernel selection can never reach.
+#[test]
+fn has_direct_gemv_agrees_with_the_dispatch_for_every_decodable_member() {
+    let (rows, k) = (2usize, 256usize);
+    let x = activations(k);
+    for quant in kquant::DECODABLE {
+        let bytes = vec![0u8; quant.row_bytes(k).expect("256 is a whole block") * rows];
+        let answered = quant.gemv(&bytes, &x, rows, k).is_some();
+        assert_eq!(
+            answered,
+            quant.has_direct_gemv(),
+            "{}: gemv answers {answered}, the declaration says {}",
+            quant.name,
+            quant.has_direct_gemv()
+        );
+    }
+    let with_kernel: Vec<&str> = kquant::DECODABLE
+        .iter()
+        .filter(|q| q.has_direct_gemv())
+        .map(|q| q.name)
+        .collect();
+    assert_eq!(with_kernel, ["Q4_K", "Q6_K", "Q8_0"]);
+}

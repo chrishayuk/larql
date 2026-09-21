@@ -1,0 +1,171 @@
+{
+  "programme": "OPT-6 \u2014 ingestion",
+  "status": "design frozen before implementation",
+  "branch": "opt-6",
+  "base": "main `1c0cf5e5` (DOC-GATE-1 #469, on OPT-CONTRACT-1 #467, on ACTUATION-1 #463)",
+  "date": "2026-09-09",
+  "rule": "Frozen before implementation, as L3, L4, L5 and DOC-GATE-1 were. The acceptance and refusal arms are preregistered HERE so that an arm the implementation finds inconvenient cannot be quietly redescribed as out of scope.",
+  "the_claim": "An executor may produce an observation; only deterministic ingestion may decide that the observation constitutes the `MeasurementKey` it claims, and may enter `SearchFacts`.",
+  "the_primary_falsifier": "If a correctly keyed artifact can enter `SearchFacts` without independently re-establishing the authorities that make that key meaningful, OPT-6 FAILS. Correct keying is the claim being tested, never the evidence for it.",
+  "the_shape": "MeasurementRequest -> executor -> immutable MeasurementArtifact -> validate against snapshot + authorities -> AcceptedMeasurement -> append to SearchFacts",
+  "why_this_boundary_exists": {
+    "the_principle_carried_from_tonight": "OPT-CONTRACT-1 found that `check_contract_index.py` had never run, and DOC-GATE-1 found that `check_doc_references.py` reported success over an empty corpus. Both were ONE failure: success reported without establishing that the instrument had examined the authority it claimed to check. Ingestion is exactly where that failure would turn a superficially plausible artifact into scientific truth, so the same standard applies \u2014 an acceptance must name what it re-established, and an ingestion that verified nothing must not be able to report acceptance.",
+    "already_promised": "`represent/actuate.rs` states it under 'What this module deliberately does not do': executing yields what was observed and what the run verified, and 'whether that constitutes the measurement its key names, and how it is sealed into `SearchFacts`, is stage 6 \u2014 answered carefully there rather than cheaply here by a call to `MeasurementRegistry::record`.' This freeze is that promise being kept."
+  },
+  "what_exists_today_measured_before_designing": {
+    "MeasurementArtifact": "DOES NOT EXIST. `grep -rn MeasurementArtifact crates/ --include=*.rs` is empty at 1c0cf5e5. OPT-6 introduces it. Not to be confused with `actuate/artifacts.rs`, whose `DeclaredArtifacts` names where a container, corpus and overlay live on disk \u2014 a locator input, not an observation record. The near-collision is a naming hazard this transition must not walk into.",
+    "Observed": "`represent/actuate/executor.rs` \u2014 `key`, `observation: QualityBank`, `verified: VerifiedFacts`, `execution_note: String`. Deliberately thin: no verdict, no artifact identity, no completion status beyond the refusal type. That thinness is a decision to preserve, not a gap to fill by reflex.",
+    "VerifiedFacts": "`represent/measure/outcome.rs` \u2014 compiled layers, compiled projections, attribution-checked layers, seal-checked operands. This is what a run CHECKED, and is the natural raw material for re-establishment, but it is the executor's own account of itself and therefore evidence to be re-derived against, never an authority to be trusted.",
+    "SearchFacts": "`represent/state/snapshot.rs` \u2014 `graph`, `measurements: MeasurementRegistry`, `byte_ledgers`, `execution_cost`, `accounting`. Ingestion appends to `measurements`.",
+    "MeasurementRegistry::record": "`represent/state/key.rs` \u2014 ALREADY idempotent on an identical reading and ALREADY refuses a conflicting one for the same key, in its own words: 'the experiment is not reproducible and neither reading may silently win'. Arms 6 and 7 therefore have a load-bearing implementation already, and OPT-6 INHERITS them rather than reinventing them. What it must prove is that they still hold THROUGH the ingestion path, and that no ingestion route reaches the registry around them."
+  },
+  "findings_before_implementation": {
+    "OPT6-N1": "The conflicting-duplicate refusal is `VindexError::Parse(String)` \u2014 untyped, and its rendered form names the key via `key.short()` but NOT the two conflicting readings. Contract 5 requires a rendered refusal to preserve what failed, the expected authority, and the CONFLICTING OBSERVED authority where one exists. So arm 7 is satisfied in behaviour and NOT in contract-5 terms today. OPT-6 either types this refusal or records explicitly why the optimizer's rendered form may be thinner than contract 5 demands. Recorded before implementation so the answer cannot be chosen to suit whichever is cheaper.",
+    "OPT6-N1_resolution": {
+      "date": "2026-09-10",
+      "decided": "Ingestion receives NO exemption from optimizer contract 5. The conflicting-duplicate refusal must become typed, and its rendered form must preserve the key plus both conflicting observations and the authorities needed to diagnose the conflict. The implementation may NOT satisfy arm 7 by retaining the existing `VindexError::Parse(String)` form.",
+      "why_this_is_a_tightening_and_not_a_renegotiation": "It REMOVES an allowed outcome, and it removes it before anyone has attempted either outcome. The original entry offered a fork \u2014 type it, or record why the optimizer's rendered form may be thinner. Both were open. Deciding on architectural grounds while no implementation exists is strictly stronger provenance than deciding once one does, because at that point the cheaper branch of the fork is known and the decision can no longer be shown to be independent of it.",
+      "the_ground": "A duplicate conflict is the case where showing BOTH readings is most useful, so it is the worst possible place to grant contract 5 an exemption. Contract 5 is already frozen and enforced (#467); nothing about ingestion argues for a weaker standard than the path that produced the observation."
+    }
+  },
+  "preregistered_arms": [
+    {
+      "n": 1,
+      "arm": "exact happy path",
+      "expect": "accepted",
+      "condition": "artifact matches state, bank, scale, instrument/protocol and observation shape",
+      "must_go_red": "an artifact matching on every authority is refused"
+    },
+    {
+      "n": 2,
+      "arm": "wrong key",
+      "expect": "refuse",
+      "must_go_red": "an artifact whose key names a different experiment is accepted, or is refused without naming BOTH expected and observed"
+    },
+    {
+      "n": 3,
+      "arm": "wrong protocol declaration with a matching-looking digest or name",
+      "expect": "refuse",
+      "must_go_red": "protocol identity is established by resemblance rather than by the record's own declarations self-checking, which is contract 2"
+    },
+    {
+      "n": 4,
+      "arm": "candidate bytes cannot establish the claimed representation state",
+      "expect": "refuse",
+      "must_go_red": "acceptance rests on a locator resolving a state id, which verifies NOTHING about contents. This is ACT1-N3, still open, and it is the arm most likely to be quietly dropped because closing it is the expensive one.",
+      "scored": "BLOCKED \u2014 not failed, and not waived. The arm is UNSATISFIABLE as the tree stands, because candidate authority is INCOMPLETE: it supplies the source model and neither the tensor-surface identity nor the effective resolved decision vector that `RepresentationState::from_decisions` also requires. See OPT6-N2. The freeze named this the arm most likely to be quietly dropped; it is instead executable as a refusal, and OPT-6's accepting path is unreachable until the missing authorities exist."
+    },
+    {
+      "n": 5,
+      "arm": "stale source or container identity",
+      "expect": "refuse",
+      "must_go_red": "an artifact produced against a container the snapshot no longer describes is admitted"
+    },
+    {
+      "n": 6,
+      "arm": "identical duplicate",
+      "expect": "idempotent \u2014 NOT a second observation",
+      "must_go_red": "ingesting the same artifact twice changes SearchFacts the second time"
+    },
+    {
+      "n": 7,
+      "arm": "conflicting duplicate under the same MeasurementKey",
+      "expect": "hard refusal, never latest-wins",
+      "must_go_red": "either reading wins, or the refusal does not name both readings (see OPT6-N1)"
+    },
+    {
+      "n": 8,
+      "arm": "malformed or incomplete artifact",
+      "expect": "refuse BEFORE any mutation",
+      "must_go_red": "SearchFacts is observably different after a refused ingestion"
+    },
+    {
+      "n": 9,
+      "arm": "artifact tampered after creation, or mutated in round trip",
+      "expect": "caught at ingestion",
+      "must_go_red": "immutability is asserted by type alone and never tested against a mutated round trip"
+    },
+    {
+      "n": 10,
+      "arm": "executor-provided verdict, rank or promotion fields",
+      "expect": "structurally impossible, or ignored and proven ignored",
+      "must_go_red": "a runner can smuggle a conclusion into facts. Preferred disposition is structural impossibility \u2014 a field that cannot be expressed cannot be ignored by accident."
+    }
+  ],
+  "inherited_not_redefined": {
+    "contract_5": "`docs/optimizer-contract-index.md` contract 5 already governs refusal discipline: construction-site truth, typed-refusal truth, and rendered actionable truth. OPT-6 inherits it for a nastier set of refusals rather than defining a new error philosophy. Every arm above that refuses is a contract 5 obligation, and its rendered form is part of the arm, not a courtesy.",
+    "contracts_1_to_4": "Selection, protocol, preparation and execution identity are already frozen and enforced. Ingestion re-establishes them independently; it does not re-derive them by trusting that the forward path was correct."
+  },
+  "anti_cheat": {
+    "what_it_is_not": "NOT an eleventh acceptance arm. The acceptance claim stays 'all scientific writes pass deterministic ingestion'. This exists to prove nobody satisfied the happy-path arms while leaving an old bypass somewhere else in the estate.",
+    "the_claim_it_guards": "No production route reaches `MeasurementRegistry::record` except through ingestion.",
+    "why_a_test_cannot_establish_it": "It is a whole-estate NEGATIVE claim. A behavioural test exercises the routes its author thought of, so it can only ever demonstrate that the known path works \u2014 never that an unknown one is absent. A closure claim resting on the author having remembered every caller is not closure.",
+    "the_shape": "The L5 genericity pattern. A scan over production source (every non-test `.rs` under `crates/*/src`) enumerates every callsite that records into the registry, and every one must have an allowed ingestion owner. An unexpected callsite FAILS. Positive control: the same scanner must deliberately find a callsite known to exist, so a scan that has silently stopped matching cannot pass by finding nothing \u2014 which is the DOC-GATE-1 failure in a different costume.",
+    "the_allowlist_must_be_semantic": "Exact permitted module and function locations, not a directory prefix. Under a broad allowlist, moving a recording call from one file to another inside the allowed tree stays silently permitted; under an exact one, the move itself is visible and must be re-justified."
+  },
+  "out_of_scope": [
+    "OPT-7, the closed loop. Ingestion admits one observation; looping is composition on top of it.",
+    "GATE-NONVACUOUS-1 \u2014 zero-scan guards for `check_doc_links.py` and `check_contract_index.py`. Real CI debt, measured rather than blocking, and it must not delay ingestion.",
+    "LOWERING-PLUGIN-1 L3/L4/L5, which proceed independently. The convergence point \u2014 a provider-neutral closed-loop experiment \u2014 is after both, not inside either.",
+    "Any change to what an executor observes. OPT-6 decides what may be BELIEVED, not what is measured."
+  ],
+  "findings_from_implementation": {
+    "OPT6-N2": {
+      "date": "2026-09-10",
+      "title": "Arm 4 is currently impossible to satisfy: candidate authority exists and is insufficient to reconstruct the state.",
+      "what_the_candidate_already_carries": "A compiled candidate is a `.vindex3` container holding a `CandidateIndex` (`represent/compiler.rs`), persisted by `write_index_atomically` as `index.json` and read back into a `CandidateOverlay` by `opplan/exec/kimi_source.rs`. It carries the model, a `SourceDependency` with its own `verify(&SourceIdentity)`, the object, the `PrecisionMap` it was compiled with, `can_represent_as`, `selected_representation`, and a `CompilationLedger` of `OperandSeal`s. There IS a format, a writer and a reader, and source authority is already covered and already verifiable.",
+      "what_is_missing": "`RepresentationState::from_decisions(model, surface, decisions)` is the normative identity function, and the candidate supplies one of its three inputs. Tensor-surface identity is absent. The effective `ResolvedDecisionVector` is absent \u2014 `CandidateIndex.map` records the REQUESTED `PrecisionMap`, which is the rule set that was asked for and not the result compilation produced. So the recomputation that would establish the state cannot be performed by anyone, however careful.",
+      "the_separate_standing_finding": "ACT1-N3. `verify_container` reads a container's own source identity and refuses `LocatorRefusal::NotWhatItClaims`; the actuation path has no `verify_candidate` equivalent. `ArtifactLocator::candidate` resolves a candidate BY state id and verifies nothing about its contents, so the index agreeing with the request is the claim rather than evidence for it. The stage 5b executor tests hand it an empty `tempfile::tempdir()`, so nothing on the measurement path has ever read a real candidate index.",
+      "what_the_run_proves_and_does_not": "The teacher-forced procedure produces candidate-scope, physical-attribution, non-candidate identity and seal/read consistency proofs, surfaced as `VerifiedFacts` and `Inadmissible`. They establish that the candidate arm read only within its SEALED SCOPE. They do not establish that the scope presents the requested state, and reading them as authority would make the artifact its own witness \u2014 which step 2 explicitly forbids.",
+      "not_supplied_by_the_lowering_plane": "`RealizationRecord` carries backend, form and codec provider identity for an OPERAND. A different plane; it does not establish which representation state a compiled artifact presents.",
+      "disposition": "OPT-6 fails closed. `ArtifactStateEvidence::establish` returns `CandidateAuthorityIncomplete` \u2014 naming the requested state, the candidate, and the missing authorities individually \u2014 for every candidate this build can be handed. `EstablishedState` has no constructor, so the accepting path is UNREACHABLE rather than merely unexercised. The repair belongs to REPRESENT-CANDIDATE-AUTHORITY-1, a producer-side transition, because extending candidate authority inside OPT-6 would change the programme after its own falsifier fired.",
+      "the_transition_is_an_extension": "Now that `CandidateIndex` is known to exist, the producer work is extending it and giving the actuation path a reader \u2014 not inventing a candidate format.",
+      "consequence_for_the_artifact": "Once the missing authorities exist, `MeasurementArtifact` should gain a candidate-authority digest. That is a legitimate widening of the step 1 exact-key-set test rather than a breach of arm 10: it is evidence needed to establish what was measured, not a verdict, rank or promotion. The path stays outside identity.",
+      "reconnaissance_correction": {
+        "what_was_wrong": "This finding was first recorded as 'a compiled representation artifact is a path and nothing else, with no writer, no format and no reader anywhere in the workspace'. That is false.",
+        "how_the_error_was_made": "The search followed the ACTUATION concept \u2014 `overlay`, as `DeclaredArtifacts` and `ArtifactLocator` use it \u2014 where a candidate really is only a path. It did not follow the COMPILER's output, although `represent/compile.rs` states in its own module doc that REPRESENT emits `Kimi-Linear-q6-candidate.vindex3` carrying source semantic graph, protected operands, expert banks in execution layout and experiment evidence. The doc was read and not followed.",
+        "why_it_is_recorded_rather_than_erased": "The confusion is evidence about this codebase. 'The actuation path sees a path' and 'no candidate format exists' are easy to conflate, and `overlay` is overloaded across the represent, server and LQL planes. A future reader searching the same way will make the same mistake, and the correction is more useful to them than a clean-looking history.",
+        "what_did_not_change": "The disposition. Arm 4 is still BLOCKED, `establish` still refuses every candidate, and the accepting path is still unreachable. Only the REASON is corrected, from absent authority to incomplete authority \u2014 and the repair got smaller."
+      }
+    },
+    "OPT6-N3": {
+      "date": "2026-09-12",
+      "title": "Bank manifest identity does not bind the physical input rows or their execution order.",
+      "evidence": "scripts/kimi_quality_bank_export.py writes token_ids, dimensions and provenance to manifest.json but no seq_*.f32 digests. DeclaredArtifacts::corpus verifies only manifest bytes. TeacherForcedExecutor forwards only sample count, and sequence_embeddings reads seq_0.f32 through seq_(N-1).f32 regardless of EvidenceBank.samples.",
+      "falsifier": "Change a seq_0.f32 byte with manifest and requested bank identity unchanged: manifest-only ingestion would still accept. A non-prefix or reordered sample declaration can also name a different experiment from the one the current procedure executes.",
+      "repair_frozen_before_bank_implementation": "Extend the existing exporter manifest with a versioned payload-authority field and per-sequence file length/SHA-256, computed from actual written files. Independently reread each selected payload during ingestion, verify dimensions and manifest token/sample inventory, and require the exact seq-000..seq-(N-1) prefix the current procedure executes. Refuse legacy unsealed banks and unsupported sample ordering rather than inventing authority. No EvidenceBankId or RepresentationStateId canonicalization/version changes. Newly sealed exports naturally acquire a new manifest digest and bank ID.",
+      "required_controls": [
+        "Changed row byte with unchanged manifest/key refuses",
+        "Correctly sealed rows and matching prefix accept",
+        "Reordered or non-prefix declaration refuses even when its key self-checks",
+        "Missing payload bindings and inconsistent dimensions refuse without scientific mutation"
+      ],
+      "scope": "A small extension of the existing bank export and an independent reader, not a new evidence format or a change to numerical observations."
+    },
+    "OPT6-N5": {
+      "date": "2026-09-12",
+      "finding": "Review found ingestion checked only reported positions and gate, bypassing the existing VerifiedFacts::complete contract. The happy-path fixture itself supplied an incomplete report. Independent persisted input authority does not excuse an executor reporting that required run-validity checks were omitted.",
+      "falsifier": "Freshly seal an otherwise valid observation with correct positions/gate but missing compiled scope, attribution checks, seal/read checks or invariant-neighbour evidence. Before repair, ingestion accepts it. After repair, each omission must refuse without changing the complete snapshot or downstream search outputs.",
+      "repair_frozen_before_implementation": "Require VerifiedFacts::complete before scientific mutation. Return a typed actionable refusal naming the missing obligations and preserving the observed report. Populate the positive tiny fixture with a complete report. Keep independent source/candidate/bank verification and reported position/gate cross-checks; completeness is necessary, not independent proof that the historical execution occurred.",
+      "required_controls": "Fresh-sealed positions/gate-only reproducer; individually omit every complete() obligation; partial attribution coverage; all missing obligations named together; complete positive report still accepted once and identical replay idempotent. Extend the exhaustive refusal rendering witness.",
+      "scope": "Enforce the existing measurement validity contract. No execution replay, identity changes or new candidate-scope interpretation. Deterministic comparison of projection/layer report vocabulary against general representation decisions remains a separate strengthening."
+    },
+    "OPT6-N4": {
+      "date": "2026-09-12",
+      "finding": "read_source_identity reconstructs the container semantic claim from index/graph authority; it does not rehash source segment bytes. Ingestion must verify baseline bytes as well as candidate bytes.",
+      "control": "Replace a baseline segment while preserving index/graph declarations and the original candidate hardlinks. The source declaration and candidate reader remain valid; ingestion must refuse the changed baseline bytes and name expected/observed segment hashes.",
+      "repair": "Reuse inspect_container(source, true) for source graph/directory/header coherence and physical segment hashes before acceptance. This adds physical validation without changing SourceSemanticIdentity."
+    }
+  },
+  "resumption": {
+    "date": "2026-09-12",
+    "base": "222033cc677ecd0e8f4cca237483c2a280801b64 (#474 merged)",
+    "branch": "represent-opt-6-ingestion",
+    "restored_commits": [
+      "1c0dce56",
+      "f55185dd",
+      "50f7efda"
+    ],
+    "rule": "All original acceptance/refusal arms and the whole-estate closure remain required. A closes OPT6-N2; implementation must independently establish valid Y before refusing it for requested X, with the entire snapshot unchanged. The candidate authority digest becomes a sealed artifact input as preregistered in OPT6-N2. Transition C remains separate."
+  }
+}

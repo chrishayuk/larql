@@ -99,6 +99,7 @@ fn k3_config() -> serde_json::Value {
             "intermediate_size": 33792,
             "moe_intermediate_size": 3072,
             "routed_expert_hidden_size": 3584,
+            "latent_moe_use_norm": true,
             "num_experts": 896,
             "num_experts_per_token": 16,
             "num_shared_experts": 2,
@@ -568,18 +569,50 @@ fn k3_estate_reports_every_unaddressed_spelling() {
     }
 
     assert_eq!(rows.len(), 5421, "the fixture's two real layers");
-    // 5,382 -> 5,379 when the q-LoRA query path landed: the MLA layer's
-    // three query operands are addressed, and nothing on the KDA layer
-    // moved. What remains is ONE cell — K3-LATENTMOE-1's latent expert
-    // bank (`routed_expert_{up,down}_proj`, `routed_expert_norm`) plus
-    // its 896-way MXFP4 `weight_packed`/`weight_scale` pairs.
+    // 5,382 -> 5,379 when the q-LoRA query path landed (the MLA layer's
+    // three query operands), and 5,379 -> 5,376 when K3-LATENTMOE-1
+    // addressed the latent wrapper — `routed_expert_down_proj`,
+    // `routed_expert_norm`, `routed_expert_up_proj`, one of each on the
+    // one routed layer. Both moves are three DENSE operands; the
+    // 896-way expert bank has never moved and does not move here.
     assert_eq!(
-        unclassified, 5379,
-        "5,376 expert-bank operands + 3 distinct dense spellings"
+        unclassified, 5376,
+        "the expert bank alone, every dense operand addressed"
+    );
+
+    // **The set, not the count** — the rung's own P4, and the condition
+    // that decides whether it closed for the right reason. After this
+    // transition every unaddressed spelling must be the compressed
+    // expert-bank dialect. A count alone would be satisfied by three
+    // wrapper operands retiring while three unrelated spellings
+    // appeared; naming the set is what makes that indistinguishable
+    // outcome impossible.
+    let remaining: std::collections::BTreeSet<&str> = spellings
+        .iter()
+        .map(|s| {
+            s.rsplit_once("block_sparse_moe.")
+                .map_or(s.as_str(), |(_, t)| t)
+        })
+        .collect();
+    let expected: std::collections::BTreeSet<&str> = [
+        "experts.N.w1.weight_packed",
+        "experts.N.w1.weight_scale",
+        "experts.N.w2.weight_packed",
+        "experts.N.w2.weight_scale",
+        "experts.N.w3.weight_packed",
+        "experts.N.w3.weight_scale",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        remaining, expected,
+        "what remains must be the compressed expert-bank dialect and nothing else — \
+         a spelling here that is not a `weight_packed`/`weight_scale` pair means this \
+         rung retired its three and left something else behind"
     );
     assert_eq!(
         spellings.len(),
-        9,
+        6,
         "distinct unaddressed spellings across both layers"
     );
 }
@@ -658,12 +691,17 @@ fn the_plan_stage_places_bytes_and_classifies_no_operand() {
     assert_eq!(
         blocking,
         [
-            // `use_full_rank_gate` left this list at K3-REP-GATE-1: it is
-            // carried to the KDA op as the gate's declared form.
-            "text_config.routed_expert_hidden_size",
-            // Not an operand refusal: the two-shard slice carries no
-            // model-level exit pair for the topology it declares. See
-            // this test's own doc.
+            // Not an operand refusal, and after K3-LATENTMOE-1 the only
+            // entry left: the two-shard slice carries no model-level exit
+            // pair for the topology it declares. See this test's own doc.
+            //
+            // `use_full_rank_gate` left this list at K3-REP-GATE-1;
+            // `routed_expert_hidden_size` — the last config leaf on it —
+            // left at K3-LATENTMOE-1, carried to the latent branch's
+            // width. **No config semantics block K3's plan stage any
+            // more**, which is a different and stronger statement than
+            // the count moving: what remains is a model-level object the
+            // fixture genuinely does not contain.
             "target.execution_surface",
         ],
         "the plan stage refuses on config semantics and component-level \
