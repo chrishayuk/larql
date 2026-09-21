@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Transformer inference engine — forward pass, attention, FFN, layer norm from safetensors weights"
+description = "LARQL runtime composition: sessions, generation, FFN routing and VINDEX3 execution records."
 keywords = ["transformer", "inference", "llm", "interpretability"]
 categories = ["science"]
 

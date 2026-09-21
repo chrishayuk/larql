@@ -218,6 +218,11 @@ jobs:
       - name: Check generated VINDEX3 facts
         run: python3 scripts/current_facts.py --check
 
+      - name: Check generated workspace facts
+        run: |
+          python3 -m unittest discover -s scripts -p test_workspace_facts.py
+          python3 scripts/workspace_facts.py --check
+
       - name: Export checkout facts with provenance
         run: python3 scripts/current_facts.py --export /tmp/vindex3-facts.json
 

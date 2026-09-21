@@ -11,17 +11,16 @@ different authorities.
 | RECORD | Dated protocol, measurement or experimental finding | Preserve original claims; add an explicitly dated correction or successor |
 | ARCHIVE | Superseded orientation or design | Retain for provenance and point to its successor |
 
-The small CURRENT spine is the root README, this policy, the documentation
-index, [VINDEX3 overview](vindex3/what-is-vindex3.md),
-[architecture](vindex3/architecture.md), [execution](vindex3/execution.md),
-[representation](vindex3/representation.md),
-[observation and intervention](vindex3/observation-and-intervention.md),
-[status](vindex3/status.md), [generated facts](generated/current-facts.md),
-and the READMEs for [larql-vindex](../crates/larql-vindex/README.md),
-[vindex-cli](../crates/vindex-cli/README.md),
-[larql-cli](../crates/larql-cli/README.md),
-[larql-inference](../crates/larql-inference/README.md) and
-[Observatory](../observatory/README.md).
+The CURRENT spine comprises the root README, this policy, the documentation
+index, the [stack architecture](architecture-stack.md),
+[compute/source guide](compute-substrate.md), [runtime surface map](runtime-surfaces.md),
+[inference guide](inference-engine.md), the [VINDEX3 overview](vindex3/what-is-vindex3.md)
+and its architecture/execution/representation/observation/status companions.
+The root workspace crate READMEs, [nested experts guide](../crates/larql-experts/README.md)
+and [Observatory README](../observatory/README.md) are the entry points to their
+respective capabilities. The manifest-derived [workspace inventory](generated/workspace-facts.md)
+links every package; [VINDEX3 facts](generated/current-facts.md) track versions,
+schemas and CLI commands. A new root member needs a CURRENT README.
 
 Deep implementation guides remain useful but are not automatically certified
 by membership in the index. Frozen specifications, preregistrations, ADRs and
@@ -41,6 +40,11 @@ alone does not prove the executable's public surface.
 CURRENT prose should link to the facts instead of copying versions and schema
 numbers. The checks cover the generated facts, not every claim in prose.
 Capability, fidelity and performance claims still need a scoped witness.
+
+`python3 scripts/workspace_facts.py --write` derives the separate root/nested
+workspace inventories from Cargo manifests, including optional and target-specific
+normal/build/dev dependencies. CI checks regeneration and root crate entry-point
+coverage. These are manifest declarations, not a feature-resolved build graph.
 
 Downstream consumers can use `--export PATH` to obtain those same facts plus
 the checkout SHA, dirty flag and hashes of authority files. A clean checkout

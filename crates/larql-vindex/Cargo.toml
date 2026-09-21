@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Vindex — the queryable model format. Storage, KNN index, build, load, mutate."
+description = "VINDEX lifecycle and VINDEX3 graph, representations, operation plans and canonical execution; V2 index and patch APIs."
 keywords = ["transformer", "vindex", "knn", "interpretability"]
 categories = ["science"]
 

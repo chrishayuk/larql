@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "gRPC protocol types for the larql-router self-assembling grid"
+description = "Grid, expert and shard wire contracts with optional QUIC and HTTP/3 transports."
 
 [dependencies]
 tonic = "0.13"

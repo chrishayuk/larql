@@ -6,7 +6,9 @@
 //! - **mxfp4**: Microscaling 4-bit floats with e8m0 scales (GPT-OSS/OpenAI)
 //!
 //! This module handles data format encoding/decoding only.
-//! Compute operations (matvec, vecmat, GPU shaders) are in `larql-compute`.
+//! CPU compute operations live in `larql-compute`; GPU shaders and
+//! dispatch live in `larql-compute-metal`. VINDEX3 representation codecs
+//! are owned by `larql-vindex`.
 
 pub mod fp4;
 pub mod fp4_block;

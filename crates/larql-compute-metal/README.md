@@ -1,7 +1,10 @@
 # larql-compute-metal
 
-The Metal GPU backend: 199 source files, 61 shader modules carrying 111
-`kernel void` entry points, 31 examples and 63 integration-test binaries.
+**Class: CURRENT.** Metal numerical backend, GPU kernels, execution lowering
+and device-buffer management. [Stack architecture](../../docs/architecture-stack.md)
+and [manifest facts](../../docs/generated/workspace-facts.md) describe its
+consumers and feature gates. Shader inventory comes from [src/shaders](src/shaders/),
+not a fixed file/kernel count in this README.
 
 **There is no `metal` feature.** The crate is gated on
 `target_os = "macos"` and is pulled in by the `gpu` feature of its
@@ -12,7 +15,9 @@ enable.
 
 Metal is a first-class peer, not a special case (ADR-0022): this crate is
 the same shape a future `larql-compute-vulkan` would be — its own crate,
-implementing the same trait surface, owning its kernels.
+implementing the same trait surface, owning its kernels. In Cargo it depends
+on `larql-compute` for those traits and CPU fallback; peer implementation does
+not mean a dependency-free crate.
 
 ## Why this file exists
 
@@ -31,7 +36,7 @@ audit produced: a doc lives in the crate that owns the code it describes.
 
 ```
 src/
-  shaders/     61 modules of embedded MSL, one per kernel family
+  shaders/     embedded MSL, grouped by kernel family
   kernels/     KernelHandle / pipeline construction and the registry
   ops/         encode-side primitives (one function per dispatch)
   stages/      composed stages (qkv_proj, ffn, attention, …)
@@ -98,20 +103,22 @@ deleted cannot stop the same idea being re-proposed next quarter.
 cargo build --release -p larql-compute-metal
 make larql-compute-metal-test              # lib tests, --test-threads=1
 make larql-compute-metal-ci                # fmt + lint + test + coverage
-make larql-compute-metal-coverage-summary  # coverage gate (96% total floor)
+make larql-compute-metal-coverage-summary  # floors in coverage-policy.json
 ```
 
 `--test-threads=1` is not optional: many tests set process-global env
 vars, and the default parallel runner races on them.
 
-The toolchain is pinned by `rust-toolchain.toml` (1.98.0). CI installs
-newest-stable, so before the pin a local clippy could pass against lints
-CI would fail on.
+Use the repository-pinned toolchain in `rust-toolchain.toml`. Coverage floors
+and documented runner limitations live in [coverage-policy.json](coverage-policy.json);
+an old measured percentage is not the current gate.
 
 ## Measuring anything in this crate
 
-Read `bench/prompts/README.md` first — it is the protocol of record. The
-short version, all learned the expensive way:
+Read [bench/prompts/README.md](../../bench/prompts/README.md) and
+[run hygiene](../../docs/kv-attention-scaling.md) before measuring. The examples
+below record earlier instrument failures; their percentages are not universal
+noise floors for every model or backend. The operating rules are:
 
 1. **AC power, full charge, idle GPU.** On battery the same probe reads
    roughly half speed. Bulk-charging is not the same as charged.
@@ -119,8 +126,10 @@ short version, all learned the expensive way:
    load: an unwarmed single-dispatch arm read 150.5 µs where the warmed
    arm read 39.5 — a 3.8× fake that fabricates clean-looking curves out
    of nothing but the frequency ramp.
-3. **Pair every arm with an adjacent baseline.** A global open/close
-   bracket can read −36% drift while paired measurements sit inside 1.3%.
+3. **Bracket each candidate with agreeing controls: baseline/candidate/baseline.**
+   Reject a block whose controls disagree beyond the protocol tolerance. Establish
+   exclusive use by handshake with peer sessions; an idle process check cannot
+   rule out steady contention. A global opening/closing bracket is insufficient.
 4. **The end-to-end decode instrument reproduces to ~±6% across
    sessions.** No sub-6% claim is banked from one block, however clean
    its internal brackets — an interleaved A/B/A/B with a 0.48% control
@@ -138,12 +147,15 @@ the stage profiler. Its sampling drains the pipeline at every stage
 boundary, so judge *throughput* from an unprofiled run and *attribution*
 from a profiled one — the two are not the same number.
 
-## Known-open
+## Capability and evidence references
 
-- Coverage sits below the 96% total floor; `backend/mod.rs`,
-  `lowering/{ffn,stack}.rs`, `moe_gpu_route/encode.rs` and
-  `trait_impl/matmul.rs` are under the 90% per-file default.
-- `crates/larql-compute/ROADMAP.md` §F1–F22 is the capability checklist:
-  F17 and F21 remain open, the rest are fixed.
-- `docs/metal-kernel-capabilities.md` is a useful kernel *reference*
-  (§1–§6) but its *findings* half is stale — 20 of 22 are fixed.
+[src/lowering](src/lowering/) and the VINDEX3
+[lowering inventory](../../docs/lowering-plane-inventory.md) define the implemented
+execution seam. GPU generation does not imply that CPU-only observation or
+head-intervention hooks are available on Metal.
+
+[The Phase B capability audit](../../docs/metal-kernel-capabilities.md) and
+[the compute roadmap](../larql-compute/ROADMAP.md) retain dated findings and
+closure evidence. Use current source/tests and coverage policy before treating
+an old open/fixed count as a present capability verdict. Historical performance
+records and refuted control arms remain available for reproduction.

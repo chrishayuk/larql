@@ -4,6 +4,8 @@
 execution, observation, LQL, serving and research tools.
 [Current VINDEX3 command inventory](../../docs/generated/current-facts.md) is
 generated and compared with the Clap command tree.
+[Full stack map](../../docs/architecture-stack.md) and
+[workspace dependencies/features](../../docs/generated/workspace-facts.md).
 
 ```bash
 cargo build --release -p larql-cli

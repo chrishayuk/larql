@@ -1,5 +1,7 @@
 # Vindex Server — Remote Knowledge & Inference
 
+**Class: ARCHIVE.** This versioned early server draft is retained as written. The [server README](../README.md) and [interface guide](../../../docs/runtime-surfaces.md) describe the current V2/V3 service boundary; mounted routes/capabilities decide availability.
+
 **Version:** 0.1  
 **Date:** 2026-04-01  
 **Status:** Draft  
