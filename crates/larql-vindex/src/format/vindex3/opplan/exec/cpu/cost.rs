@@ -98,6 +98,10 @@ pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> Option<f64> {
         // never a deployment plan and its cost is quoted only so a
         // control run's ledger still adds up.
         PhysicalProjectionPlan::Bf16xQ8 => Some(121.66),
+        // Never executed by this crate's own kernels — an external
+        // backend pins and runs it, so no harness here has a rate to
+        // report.
+        PhysicalProjectionPlan::CodecOwned => None,
     }
 }
 

@@ -268,6 +268,11 @@ pub struct ProjectionLedger {
     fused_fp8_block: Tally,
     q4_x_q8: Tally,
     bf16_x_q8: Tally,
+    /// Never incremented by this crate's own kernels — an external
+    /// backend that pins this plan keeps its own accounting, not this
+    /// one — but the arm needs a bucket for the tally lookup to stay
+    /// total.
+    codec_owned: Tally,
     /// The same time, cut by operator class instead of by arithmetic.
     sites: [SiteTally; 4],
 }
@@ -287,6 +292,7 @@ impl ProjectionLedger {
             PhysicalProjectionPlan::Q8xQ8 => &self.q8_x_q8,
             PhysicalProjectionPlan::Q4xQ8 => &self.q4_x_q8,
             PhysicalProjectionPlan::Bf16xQ8 => &self.bf16_x_q8,
+            PhysicalProjectionPlan::CodecOwned => &self.codec_owned,
         }
     }
 
@@ -443,6 +449,7 @@ impl ProjectionLedger {
             q8_x_q8: ZERO,
             q4_x_q8: ZERO,
             bf16_x_q8: ZERO,
+            codec_owned: ZERO,
             #[allow(clippy::declare_interior_mutable_const)]
             sites: [const {
                 SiteTally {

@@ -44,6 +44,11 @@ fn every_plan() -> Vec<(PhysicalProjectionPlan, bool)> {
                 | WeightRep::KQuant
                 | WeightRep::Fp8Block => true,
                 WeightRep::Q8 { .. } | WeightRep::Q4 { .. } => false,
+                // `CodecOwned` never appears in `all` above — this crate
+                // has no kernel over it, so it is neither this closure's
+                // stored side nor its re-quantised side. Matched here only
+                // because the match is over the whole enum, not the list.
+                WeightRep::CodecOwned => true,
             };
             // The match above is what makes the list honest: a variant
             // added to the enum and not to `all` still compiles, so the

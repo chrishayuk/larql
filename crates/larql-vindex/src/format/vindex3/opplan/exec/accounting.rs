@@ -142,6 +142,18 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
         // weight, 0.2 % — but at a `[1, 32]` grid it would be a full bit,
         // and a forecast that silently omitted it would be 12 % light.
         WeightFormat::Fp8Block => ResidencyProfile::stored(FP8_BITS_PER_WEIGHT),
+        // Bound AS STORED, like every other native compact format — but
+        // this function only ever sees `WeightFormat`, never which codec
+        // produced the bytes, so it cannot look up a real bits/weight
+        // figure the way `KQuant`/`Fp8Block` do from a constant. The
+        // codec's own declared residency (`Acceleration`'s
+        // `ResidencyProfile`, set where the codec is registered) is the
+        // real number for this path; this generic entry exists only so
+        // the format is accounted for at all, not to price it.
+        WeightFormat::CodecOwned => ResidencyProfile {
+            class: ResidencyClass::Stored,
+            bytes_per_weight: 0.0,
+        },
     }
 }
 
@@ -190,6 +202,7 @@ pub fn requantised_image_bytes(
         | WeightFormat::Mxfp4
         | WeightFormat::KQuant
         | WeightFormat::KQuantQ8k
+        | WeightFormat::CodecOwned
         // Stored as-is: there is no re-quantised image, so no bytes to price.
         | WeightFormat::Fp8Block => None,
     }

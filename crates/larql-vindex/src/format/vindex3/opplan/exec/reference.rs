@@ -746,7 +746,7 @@ fn widen_reference<'a>(
 }
 
 /// The stored form a slice is in, named for a refusal — never its bytes.
-fn slice_form(slice: &WeightSlice<'_>) -> &'static str {
+fn slice_form<'a>(slice: &WeightSlice<'a>) -> &'a str {
     match slice {
         WeightSlice::F32(_) => "f32",
         WeightSlice::Bf16(_) => "bf16",
@@ -757,6 +757,7 @@ fn slice_form(slice: &WeightSlice<'_>) -> &'static str {
         WeightSlice::Nvfp4 { .. } => "nvfp4",
         WeightSlice::KQuant { .. } => "k-quant",
         WeightSlice::Fp8Block { .. } => "fine-grained fp8",
+        WeightSlice::CodecOwned { label, .. } => label,
     }
 }
 
