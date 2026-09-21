@@ -1,6 +1,7 @@
-//! Stage-driver tests for [`super::run`].
+//! Public preflight refusal and private stage-orchestration tests.
 //!
-//! Every stage is mocked through [`MockRunner`], so these assert the
+//! Stage tests call `run_stages` to cover orchestration independently of the
+//! public verification-capability refusal. Every stage is mocked through [`MockRunner`], so these assert the
 //! orchestration contract — stage order, what each failure reports, and
 //! what lands in the [`BuildRecord`] — without spawning a process or
 //! needing credentials. Per-stage argument construction is tested in
@@ -148,7 +149,7 @@ fn full_pipeline_passes_when_every_stage_succeeds() {
             ok(),
         );
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     assert!(record.passed(), "{record:?}", record = record.status);
     assert_eq!(record.outputs.len(), 1);
@@ -176,7 +177,7 @@ fn stops_at_fetch_on_failure_without_running_later_stages() {
         },
     );
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     assert!(!record.passed());
     match record.status {
@@ -203,7 +204,7 @@ fn preflight_failure_never_touches_the_runner() {
 
     let runner = MockRunner::new(); // expects zero calls
 
-    let record = run(&runner, &recipe, &scratch);
+    let record = run_stages(&runner, &recipe, &scratch);
 
     assert!(!record.passed());
     match record.status {
@@ -227,7 +228,7 @@ fn stops_at_extract_on_failure() {
     let seq = expected_sequence(&recipe, scratch.path());
     let runner = runner_failing_after(&seq, 1, "safetensors header truncated");
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     let (stage, message) = failed_stage(&record);
     assert_eq!(stage, Stage::Extract);
@@ -247,7 +248,7 @@ fn stops_at_slice_on_failure() {
     let seq = expected_sequence(&recipe, scratch.path());
     let runner = runner_failing_after(&seq, 2, "unknown part");
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     let (stage, message) = failed_stage(&record);
     assert_eq!(stage, Stage::Slice);
@@ -266,7 +267,7 @@ fn stops_at_manifest_when_an_output_directory_is_missing() {
         .expect(seq[0].clone(), ok())
         .expect(seq[1].clone(), ok());
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     let (stage, _) = failed_stage(&record);
     assert_eq!(stage, Stage::Manifest);
@@ -280,7 +281,7 @@ fn stops_at_verify_on_failure() {
     let seq = expected_sequence(&recipe, scratch.path());
     let runner = runner_failing_after(&seq, 2, "checksum mismatch");
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     let (stage, message) = failed_stage(&record);
     assert_eq!(stage, Stage::Verify);
@@ -297,7 +298,7 @@ fn stops_at_publish_on_failure() {
     let seq = expected_sequence(&recipe, scratch.path());
     let runner = runner_failing_after(&seq, 3, "401 unauthorized");
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     let (stage, message) = failed_stage(&record);
     assert_eq!(stage, Stage::Publish);
@@ -316,7 +317,7 @@ fn a_release_failure_leaves_the_repo_recorded_but_unreleased() {
     let seq = expected_sequence(&recipe, scratch.path());
     let runner = runner_failing_after(&seq, 4, "403 forbidden");
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     let (stage, message) = failed_stage(&record);
     assert_eq!(stage, Stage::Release);
@@ -339,7 +340,7 @@ fn a_multi_output_recipe_slices_every_non_full_preset_and_releases_all() {
         runner = runner.expect(inv.clone(), ok());
     }
 
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
 
     assert!(record.passed(), "{:?}", record.status);
     assert_eq!(record.outputs.len(), recipe.spec.outputs.len());
@@ -361,7 +362,31 @@ fn build_id_is_present_regardless_of_outcome() {
             ..Default::default()
         },
     );
-    let record = run(&runner, &recipe, scratch.path());
+    let record = run_stages(&runner, &recipe, scratch.path());
     assert_eq!(record.build_id, crate::build_id(&recipe));
     assert_eq!(record.recipe_name, "tiny-model");
+}
+
+#[test]
+fn public_build_refuses_unimplemented_verification_before_any_side_effect() {
+    for from_hub in [false, true] {
+        let mut recipe = single_output_recipe();
+        recipe.spec.verify.from_hub = from_hub;
+        let parent = tempfile::tempdir().unwrap();
+        let scratch = parent.path().join("must-not-be-created");
+        let runner = MockRunner::new();
+        let record = run(&runner, &recipe, &scratch);
+        let (stage, message) = failed_stage(&record);
+        assert_eq!(stage, Stage::Preflight);
+        assert!(message.contains("spec.verify.reconstruction"));
+        assert!(message.contains("spec.verify.logit_match"));
+        assert_eq!(message.contains("spec.verify.from_hub"), from_hub);
+        assert!(!scratch.exists());
+        assert!(record
+            .outputs
+            .iter()
+            .all(|o| o.repo.is_none() && !o.released));
+        assert!(runner.all_consumed());
+        assert_eq!(record.build_id, crate::build_id(&recipe));
+    }
 }
