@@ -990,3 +990,20 @@ mod trampoline_tests {
         assert_eq!(out.len(), input.len() + 1);
     }
 }
+
+#[cfg(test)]
+mod documentation_tests {
+    use clap::CommandFactory;
+
+    #[test]
+    fn current_documentation_facts_match_clap() {
+        let facts: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/generated/current-facts.json"))
+                .unwrap();
+        let command = super::Cli::command();
+        let vindex3 = command.find_subcommand("vindex3").unwrap();
+        let mut names: Vec<_> = vindex3.get_subcommands().map(|c| c.get_name()).collect();
+        names.sort_unstable();
+        assert_eq!(facts["commands"]["larql_vindex3"], serde_json::json!(names));
+    }
+}

@@ -17,7 +17,7 @@ mod update;
 #[derive(Parser)]
 #[command(
     name = "vindex",
-    about = "The format-native VINDEX3 tool: inspect, describe, representations, diff, represent, precision, verify.",
+    about = "Format-native VINDEX3 tooling: plan, encode, inspect, verify, compile representations and export.",
     version
 )]
 struct Cli {
@@ -775,5 +775,42 @@ fn main() -> ExitCode {
             eprintln!("vindex: {e}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod documentation_tests {
+    use clap::CommandFactory;
+    use larql_vindex::format::generation::{
+        ContainerGeneration, DEFAULT_EXTRACTION_GENERATION, V3_CURRENT_SCHEMA,
+    };
+    use larql_vindex::format::vindex3::{
+        graph::GRAPH_SCHEMA,
+        plan::{PLANNER_SEMANTICS_VERSION, PLAN_SCHEMA},
+    };
+
+    #[test]
+    fn current_documentation_facts_match_code_and_clap() {
+        let facts: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/generated/current-facts.json"))
+                .unwrap();
+        assert_eq!(facts["vindex_cli_version"], env!("CARGO_PKG_VERSION"));
+        let constants = &facts["constants"];
+        assert_eq!(constants["V3_CURRENT_SCHEMA"], V3_CURRENT_SCHEMA);
+        assert_eq!(constants["GRAPH_SCHEMA"], GRAPH_SCHEMA);
+        assert_eq!(constants["PLAN_SCHEMA"], PLAN_SCHEMA);
+        assert_eq!(
+            constants["PLANNER_SEMANTICS_VERSION"],
+            PLANNER_SEMANTICS_VERSION
+        );
+        let generation = match DEFAULT_EXTRACTION_GENERATION {
+            ContainerGeneration::V2 => "V2",
+            ContainerGeneration::V3 => "V3",
+        };
+        assert_eq!(constants["DEFAULT_EXTRACTION_GENERATION"], generation);
+        let command = super::Cli::command();
+        let mut names: Vec<_> = command.get_subcommands().map(|c| c.get_name()).collect();
+        names.sort_unstable();
+        assert_eq!(facts["commands"]["vindex"], serde_json::json!(names));
     }
 }

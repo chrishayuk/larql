@@ -1,17 +1,17 @@
 # VINDEX3 — Model-System Container Format
 
-Status: **living spec** — the implementation-tracking companion to the
-[VINDEX3 3.0 Candidate Specification](../crates/larql-vindex/docs/vindex3-format-spec.md),
-which owns the normative container model and the contract stack. As of
-2026-08-30: §1–§7 are implemented and gated; §8's execution contract is
-implemented through 5b-3 (surface, operand closure, reference executor,
-golden parity, causal controls, `larql vindex3 exec`), and the runtime
-above it landed through VI3-SERVE-1 with chat/responses arms
-(`docs/vindex3-runtime.md`) — five model families encode, verify and
-execute end to end. The experimental programme, gates and run order live
-in `docs/vindex3-experiments.md`; the LYRW v2 routed-layer physical
-layout lives in `docs/lyrw-v2.md` and is incorporated by reference as one
-segment codec (candidate spec §5.6, §6).
+Status: **implementation guide** — graph, admission and encoding details.
+The [CURRENT overview](vindex3/what-is-vindex3.md),
+[architecture](vindex3/architecture.md) and [status](vindex3/status.md) describe
+the full system, including representation, execution and observation.
+[Generated facts](generated/current-facts.md) own current schema and planner
+version values. The [candidate specification](../crates/larql-vindex/docs/vindex3-format-spec.md)
+owns the normative container model and contract stack.
+
+The G0–G5 narrative below records the original implementation ladder, not the
+boundary of today's runtime. Experimental gates retain their historical scope
+in [vindex3-experiments.md](vindex3-experiments.md); the routed-layer physical
+layout is described in [lyrw-v2.md](lyrw-v2.md).
 
 > Older `spec §N` citations in `format/vindex3/{index,lyrw2,…}` code
 > comments refer to the pre-G2 draft of this spec; where they conflict,
@@ -151,7 +151,7 @@ type exists to remove.
 ## 4. G1/G2 — the representability plan
 
 `larql vindex3 plan <artifact>…` → `SystemPlan`
-(`larql-vindex/src/format/vindex3/plan/`), schema `PLAN_SCHEMA = 4`.
+(`larql-vindex/src/format/vindex3/plan/`), `PLAN_SCHEMA` (see [generated facts](generated/current-facts.md)).
 Artifacts are checkpoint dirs, saved inventory JSONs and/or `hf://` specs,
 treated as one model system. Exit is non-zero when the plan is
 inadmissible.
@@ -206,7 +206,7 @@ blocking clean dense models fails there first.
 
 ## 5. G2 — the system graph
 
-`larql-vindex/src/format/vindex3/graph/`, schema `GRAPH_SCHEMA = 1`.
+`larql-vindex/src/format/vindex3/graph/`, `GRAPH_SCHEMA` (see [generated facts](generated/current-facts.md)).
 
 ```text
 SystemGraph

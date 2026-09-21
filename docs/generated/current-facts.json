@@ -1,0 +1,51 @@
+{
+  "facts_schema": 1,
+  "scope": "source-checkout",
+  "vindex_cli_version": "0.8.0",
+  "spec_version": "3.0-candidate",
+  "constants": {
+    "V3_CURRENT_SCHEMA": 4,
+    "GRAPH_SCHEMA": 6,
+    "PLAN_SCHEMA": 6,
+    "PLANNER_SEMANTICS_VERSION": 23,
+    "DEFAULT_EXTRACTION_GENERATION": "V2"
+  },
+  "commands": {
+    "vindex": [
+      "describe",
+      "diff",
+      "encode",
+      "export",
+      "inspect",
+      "layers",
+      "plan",
+      "precision",
+      "represent",
+      "representations",
+      "update",
+      "verify"
+    ],
+    "larql_vindex3": [
+      "consequence",
+      "encode",
+      "exec",
+      "inspect",
+      "observe",
+      "ops",
+      "plan",
+      "references",
+      "represent",
+      "sensitivity",
+      "verify"
+    ]
+  },
+  "sources": {
+    "package": "crates/vindex-cli/Cargo.toml",
+    "generation": "crates/larql-vindex/src/format/generation.rs",
+    "graph": "crates/larql-vindex/src/format/vindex3/graph/mod.rs",
+    "plan": "crates/larql-vindex/src/format/vindex3/plan/report.rs",
+    "spec": "crates/larql-vindex/docs/vindex3-format-spec.md",
+    "vindex": "crates/vindex-cli/src/main.rs",
+    "larql_vindex3": "crates/larql-cli/src/commands/primary/vindex3_cmd/mod.rs"
+  }
+}
