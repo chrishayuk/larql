@@ -1677,6 +1677,57 @@ pub trait ModelArchitecture: Send + Sync {
         None
     }
 
+    // ── DSA (DeepSeek Sparse Attention) indexer — GLM-5.2 ──
+    //
+    // GLM-5.2 (`glm_moe_dsa`) layers a sparse top-k token-selection
+    // indexer on top of MLA: a small side-attention picks which cached
+    // K/V entries the real MLA attention is even allowed to look at.
+    // These seven methods expose the indexer's config facts and tensor
+    // keys **for extraction/inspection only** — no compute path in
+    // `larql` implements the indexer's top-k selection or consumes
+    // these values. An architecture returning non-default answers here
+    // has done nothing but publish inert facts; wiring the sparse
+    // attention forward pass is a separate, unimplemented piece of work.
+
+    /// Number of key/value entries the indexer selects per query
+    /// (`index_topk` in config.json). `None` = not a DSA architecture.
+    fn dsa_index_topk(&self) -> Option<usize> {
+        None
+    }
+
+    /// Number of indexer attention heads (`index_n_heads`).
+    fn dsa_index_n_heads(&self) -> Option<usize> {
+        None
+    }
+
+    /// Per-head dimension of the indexer's own (small) attention
+    /// (`index_head_dim`) — distinct from the main attention's head
+    /// dimensions above.
+    fn dsa_index_head_dim(&self) -> Option<usize> {
+        None
+    }
+
+    /// Indexer query down-projection weight key.
+    fn dsa_indexer_wq_b_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
+    /// Indexer key projection weight key.
+    fn dsa_indexer_wk_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
+    /// Indexer key-norm weight key.
+    fn dsa_indexer_k_norm_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
+    /// Indexer per-head selection-weight projection key (turns the
+    /// indexer's own attention scores into the top-k selection weights).
+    fn dsa_indexer_weights_proj_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
     // ── RoPE scaling ──
 
     /// RoPE scaling type (None, "linear", "yarn", "dynamic", "llama3").

@@ -205,6 +205,19 @@ pub struct ModelConfig {
     pub qk_rope_head_dim: Option<usize>,
     /// DS-V3 MLA: V head dim (may differ from qk_nope+rope total).
     pub v_head_dim: Option<usize>,
+    // DSA (DeepSeek Sparse Attention) indexer fields — GLM-5.2
+    // (`glm_moe_dsa`). DSA sparse-attention indexer config — NOT wired to
+    // any compute path yet; browse/extraction-tier only, same as the rest
+    // of this struct's MLA fields for architectures that don't implement
+    // inference.
+    /// Number of key/value entries the DSA indexer selects per query
+    /// (`index_topk` in config.json).
+    pub index_topk: Option<usize>,
+    /// Number of DSA indexer attention heads (`index_n_heads`).
+    pub index_n_heads: Option<usize>,
+    /// Per-head dimension of the DSA indexer's own attention
+    /// (`index_head_dim`).
+    pub index_head_dim: Option<usize>,
     // RoPE scaling
     pub rope_scaling: Option<RopeScaling>,
     // Softcapping (Gemma2)
