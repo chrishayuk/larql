@@ -22,6 +22,7 @@ mod bf16_residency;
 mod bf16_zlib_execution;
 mod carrier_write;
 mod carrier_write_real;
+mod carrier_entry;
 mod compact_consumption;
 mod composed_floor;
 mod continuation;
@@ -37,8 +38,11 @@ mod f32_planes_execution;
 mod fp8_carriage;
 mod gated_delta_parity;
 mod gated_delta_tiny;
+mod head_observation;
+mod head_replay;
 mod hybrid_traversal;
 mod hyper_connection;
+mod intervene;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]

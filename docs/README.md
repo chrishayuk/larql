@@ -1,5 +1,20 @@
 # docs/
 
+**Class: CURRENT — index.** Start with the maintained VINDEX3 overview below.
+Linked specifications and research records retain their own dates and status;
+indexing a proposal does not make it an implemented capability.
+
+| Current guide | Purpose |
+|---|---|
+| [What is VINDEX3?](vindex3/what-is-vindex3.md) | Model artifact, executable semantics and evidence |
+| [Architecture](vindex3/architecture.md) | Ownership, plans, representations and backends |
+| [Execution](vindex3/execution.md) | Build, encode, execute, record and serve |
+| [Representation](vindex3/representation.md) | Compilation, candidate authority and evidence/search contracts |
+| [Observation and intervention](vindex3/observation-and-intervention.md) | Carrier/head evidence, lenses and counterfactual boundaries |
+| [Status](vindex3/status.md) | Capability boundaries and current research |
+| [Generated facts](generated/current-facts.md) | Versions, schemas, extraction default and CLI inventories |
+| [Documentation policy](documentation-policy.md) | CURRENT, NORMATIVE, RECORD and ARCHIVE authority |
+
 Index of the top-level documentation. One line per file; specs that live
 with their crate are indexed in [specs.md](specs.md). Subdirectories:
 [adr/](adr/) (architecture decision records), [audits/](audits/) (review
@@ -12,11 +27,12 @@ distributed).
 | Doc | One line |
 |---|---|
 | [format.md](format.md) | LARQL graph format specification (v0.1.0) |
-| [vindex3-format.md](vindex3-format.md) | VINDEX3 model-system container format — the living spec (plan/encode/verify semantics), companion to the [3.0 Candidate Specification](../crates/larql-vindex/docs/vindex3-format-spec.md) |
+| [vindex3-format.md](vindex3-format.md) | VINDEX3 model-system container format — implementation guide (plan/encode/verify semantics), companion to the [3.0 Candidate Specification](../crates/larql-vindex/docs/vindex3-format-spec.md) |
 | [vindex3-runtime.md](vindex3-runtime.md) | VINDEX3 runtime stack — `Vindex3Runtime`, `LogitsSession`, the KV seam, V3 serving over `/v1/completions`, `/v1/chat/completions`, `/v1/responses` |
 | [observatory.md](observatory.md) | LARQL Observatory v0.1 product proposal — HAUSE instrument, local/hosted execution, coordinated views, replay and real-model acceptance |
 | [vindex3-observation-contract.md](vindex3-observation-contract.md) | Draft observation contract — canonical taps, event identity, bounded capture, loss accounting, transport, privacy and receipts |
 | [v3-obs-1-carrier-observation.md](v3-obs-1-carrier-observation.md) | Frozen executor-side carrier observation rung for the VINDEX3 Observatory contract: `leave_site` tap, parity/reconstruction properties, witness map, and capture-cost protocol |
+| [v3-attr-1d-descriptive-support.md](v3-attr-1d-descriptive-support.md) | ATTR-1D frozen normalization contract — HEAD-OBS-1 records to stable descriptive head/source support coordinates shared by prediction and causal attribution |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |
 | [vindex3-ontology-drill.md](vindex3-ontology-drill.md) | The four-architecture ontology drill (candidate §17.4) — run 2026-08-30, findings F1–F16 |
 | [lyrw-v2.md](lyrw-v2.md) | LYRW v2 — the K3 routed-layer physical-layout gate (storage half of K3) |
@@ -27,7 +43,7 @@ distributed).
 
 | Doc | One line |
 |---|---|
-| [cli.md](cli.md) | Full `larql` CLI reference |
+| [cli.md](cli.md) | Broader `larql` CLI guide; VINDEX3 command inventory is in generated facts |
 | [lql-guide.md](lql-guide.md) | LQL quick-start guide |
 | [larql-python.md](larql-python.md) | Python bindings for the vindex |
 
@@ -77,6 +93,14 @@ distributed).
 | [authority-control-plane.md](authority-control-plane.md) | Authority control plane (EXP-26..38) — layer-mechanism branch closed |
 | [kimi-precision-topology.md](kimi-precision-topology.md) | Kimi Linear 48B — the PRECISION-1 topology, the first complete REPRESENT chain |
 | [represent-optimizer-mcp.md](represent-optimizer-mcp.md) | REPRESENT as a queryable optimiser — map DAG, MCP surface, and the search ladder to MCTS (design) |
+| [gw-vindex3-walk-phase1.md](gw-vindex3-walk-phase1.md) | VINDEX3 graph-walk programme — sealed GW-0 through the operator-aware transition-support successor |
+| [gw-head-1.md](gw-head-1.md) | GW-HEAD-1 — frozen L24H1 necessity/sufficiency result and the boundary before source-key attribution |
+| [gw-key-1.md](gw-key-1.md) | GW-KEY-1 — frozen source-role K/V causality protocol through immutable L24H1 |
+| [gw-read-1-results.md](gw-read-1-results.md) | GW-READ-1 — cached Q/K pass, while V construction, composition and economical execution fail |
+| [gw-v2-results.md](gw-v2-results.md) | GW-V2 — sealed 35-cell causal payload surface with no registered early frontier |
+| [gw-state-1.md](gw-state-1.md) | GW-STATE-1 design draft — remove carrier and non-H1 context around the frozen H1 effect |
+| [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
+| [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
 
 ## Positioning
 

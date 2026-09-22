@@ -45,6 +45,9 @@ fn args(container: &std::path::Path, record: &std::path::Path) -> ObserveArgs {
         lens_layers: "all".to_string(),
         lens_attention: false,
         lens_top_k: 2,
+        intervene: None,
+        capture: None,
+        capture_out: None,
     }
 }
 
@@ -293,6 +296,7 @@ fn the_summary_and_lens_lines_say_what_the_record_says() {
         final_logits: vec![0.1, 0.9, 0.5],
         record_bytes: 123,
         stepping: std::time::Duration::from_millis(40),
+        applied: 0,
     };
     let lines = summary_lines(&a, &opened, &[1, 2, 3], &outcome, None);
     assert!(lines[0].starts_with("observe "), "{}", lines[0]);
@@ -329,4 +333,173 @@ fn the_summary_and_lens_lines_say_what_the_record_says() {
         lines[top + 2]
     );
     assert_eq!(lines.len(), top + 3);
+}
+
+/// V3-INTERVENE-1 through the verb (IF4): a run captures a carrier to a
+/// file, a declaration patches it into another run with that run's
+/// provenance, the difference of two captures builds the CARRIED shape,
+/// the receipt counts and names, and a bad declaration refuses.
+#[test]
+fn observe_captures_a_carrier_and_a_declaration_patches_it_in_with_provenance() {
+    use larql_vindex::format::vindex3::opplan::exec::intervene::vector_sha256;
+    let (_dir, container) = encoded_fixture();
+    let work = tempfile::tempdir().unwrap();
+
+    // A plain run tells us the geometry.
+    let plain = work.path().join("plain.jsonl");
+    run(Vindex3Command::Observe(args(&container, &plain))).unwrap();
+    let plain = RunRecord::read_jsonl(&plain).unwrap();
+    let (layers, hidden) = layers_and_hidden(&plain);
+    let layer = layers - 1;
+    assert_eq!(plain.identity.intervention_sha256, None);
+    assert_eq!(plain.receipt.interventions_declared, 0);
+
+    // Run B, captured at (layer, ffn, 1).
+    let b_record = work.path().join("b.jsonl");
+    let b_capture = work.path().join("b.json");
+    let mut b = args(&container, &b_record);
+    b.tokens = Some("3,2,1".to_string());
+    b.run_id = Some("run-B".to_string());
+    b.capture = Some(format!("{layer}:ffn:1"));
+    b.capture_out = Some(b_capture.clone());
+    run(Vindex3Command::Observe(b)).unwrap();
+    let captured: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&b_capture).unwrap()).unwrap();
+    assert_eq!(captured["run_id"], "run-B");
+    let entry = &captured["captures"][0];
+    let values: Vec<f32> = entry["values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap() as f32)
+        .collect();
+    assert_eq!(values.len(), hidden);
+    assert_eq!(entry["sha256"], vector_sha256(&values));
+
+    // Run A, captured too, so a difference can be declared afterwards.
+    let a_record = work.path().join("a.jsonl");
+    let a_capture = work.path().join("a.json");
+    let mut a = args(&container, &a_record);
+    a.run_id = Some("run-A".to_string());
+    a.capture = Some(format!("{layer}:ffn:1"));
+    a.capture_out = Some(a_capture.clone());
+    run(Vindex3Command::Observe(a)).unwrap();
+
+    // Replace A's carrier at the address with B's, by reference.
+    let declaration = work.path().join("replace.json");
+    std::fs::write(
+        &declaration,
+        format!(
+            r#"{{"interventions":[{{"layer":{layer},"site":"ffn","positions":[1],"kind":"replace",
+                "vector":{{"file":"b.json","layer":{layer},"site":"ffn","position":1}}}}]}}"#
+        ),
+    )
+    .unwrap();
+    let patched = work.path().join("patched.jsonl");
+    let mut p = args(&container, &patched);
+    p.intervene = Some(declaration.clone());
+    run(Vindex3Command::Observe(p)).unwrap();
+    let patched = RunRecord::read_jsonl(&patched).unwrap();
+    assert!(patched.identity.intervention_sha256.is_some());
+    assert_eq!(patched.receipt.interventions_declared, 1);
+    assert_eq!(patched.receipt.interventions_applied, 1);
+    assert_eq!(patched.receipt.intervention_refusal, None);
+    let fired = patched
+        .events
+        .iter()
+        .find(|e| matches!(e.event, EventKind::Intervened { .. }))
+        .expect("the firing is on the record");
+    assert_eq!(fired.position, 1);
+
+    // The CARRIED shape: add the difference of two captures, with an
+    // explicit hash that must match.
+    let a_values: Vec<f32> = {
+        let file: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&a_capture).unwrap()).unwrap();
+        file["captures"][0]["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap() as f32)
+            .collect()
+    };
+    let difference: Vec<f32> = values.iter().zip(&a_values).map(|(x, y)| x - y).collect();
+    let carried = work.path().join("carried.json");
+    std::fs::write(
+        &carried,
+        format!(
+            r#"{{"interventions":[{{"layer":{layer},"site":"ffn","positions":[1],"kind":"add",
+                "sha256":"{}",
+                "vector":{{"minuend":{{"file":"b.json","layer":{layer},"site":"ffn","position":1}},
+                          "subtrahend":{{"file":"a.json","layer":{layer},"site":"ffn","position":1}}}}}}]}}"#,
+            vector_sha256(&difference)
+        ),
+    )
+    .unwrap();
+    let carried_record = work.path().join("carried.jsonl");
+    let mut c = args(&container, &carried_record);
+    c.intervene = Some(carried);
+    run(Vindex3Command::Observe(c)).unwrap();
+    let carried_record = RunRecord::read_jsonl(&carried_record).unwrap();
+    assert_eq!(carried_record.receipt.interventions_applied, 1);
+    assert_ne!(
+        carried_record.identity.intervention_sha256, patched.identity.intervention_sha256,
+        "a different declaration is a different identity"
+    );
+
+    // A literal zero vector at an unreached position: fires nowhere,
+    // and the receipt says so.
+    let never = work.path().join("never.json");
+    std::fs::write(
+        &never,
+        format!(r#"{{"interventions":[{{"layer":{layer},"site":"ffn","positions":[40],"kind":"zero"}}]}}"#),
+    )
+    .unwrap();
+    let never_record = work.path().join("never.jsonl");
+    let mut n = args(&container, &never_record);
+    n.intervene = Some(never);
+    run(Vindex3Command::Observe(n)).unwrap();
+    let never_record = RunRecord::read_jsonl(&never_record).unwrap();
+    assert_eq!(never_record.receipt.interventions_applied, 0);
+    assert!(never_record
+        .receipt
+        .intervention_refusal
+        .as_deref()
+        .unwrap()
+        .contains("position 40"));
+
+    // Refusals: a wrong hash, a wrong site, a capture never reached.
+    let bad_hash = work.path().join("bad-hash.json");
+    std::fs::write(
+        &bad_hash,
+        format!(
+            r#"{{"interventions":[{{"layer":{layer},"site":"ffn","positions":[1],"kind":"add",
+                "sha256":"0000","vector":[{}]}}]}}"#,
+            vec!["0.0"; hidden].join(",")
+        ),
+    )
+    .unwrap();
+    let mut bad = args(&container, &work.path().join("bad.jsonl"));
+    bad.intervene = Some(bad_hash);
+    let err = run(Vindex3Command::Observe(bad)).unwrap_err().to_string();
+    assert!(err.contains("claims sha256 0000"), "{err}");
+
+    let bad_site = work.path().join("bad-site.json");
+    std::fs::write(
+        &bad_site,
+        r#"{"interventions":[{"layer":0,"site":"mixer","positions":[1],"kind":"zero"}]}"#,
+    )
+    .unwrap();
+    let mut bad = args(&container, &work.path().join("bad.jsonl"));
+    bad.intervene = Some(bad_site);
+    let err = run(Vindex3Command::Observe(bad)).unwrap_err().to_string();
+    assert!(err.contains("unknown site `mixer`"), "{err}");
+
+    let mut unreached = args(&container, &work.path().join("unreached.jsonl"));
+    unreached.capture = Some(format!("{layer}:ffn:40"));
+    unreached.capture_out = Some(work.path().join("unreached.json"));
+    let err = run(Vindex3Command::Observe(unreached))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("never reached"), "{err}");
 }

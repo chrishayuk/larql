@@ -19,6 +19,7 @@
 //! [`step`]: super::decode::DecodeSession::step
 
 use super::hyper_connection::{Bundle, SinkhornSplit};
+use super::intervene::InterventionKind;
 
 /// One decode step's observation events, in execution order.
 ///
@@ -50,6 +51,14 @@ pub enum StepEvent {
         layer: usize,
         site: SublayerSite,
         carrier: CarrierForm,
+    },
+    /// V3-INTERVENE-1: an intervention fired on this site's write. Fires
+    /// BEFORE the write's record and its structural event, so a reader of
+    /// that record knows its `after` is not the branch's own.
+    Intervened {
+        layer: usize,
+        site: SublayerSite,
+        kind: InterventionKind,
     },
 }
 
@@ -236,9 +245,54 @@ pub struct HcSiteRecord<'a> {
     pub bundle_out: &'a Bundle,
 }
 
+/// Borrowed softmax head values from the actual production aggregation loop.
+/// Pre output-gate, pre W_O, pre post-attention norm and residual scaling.
+/// Source weights cover `source_start..=position`; sink mass is not renormalized.
+/// Capturing these values is opt-in and timing-intrusive, separate from V3-OBS-1.
+#[derive(Debug)]
+pub struct AttentionHeadRecord<'a> {
+    pub position: usize,
+    pub head: usize,
+    pub kv_head: usize,
+    pub source_start: usize,
+    pub weights: &'a [f32],
+    pub values: &'a [f32],
+    /// The conditioned query slice used for this head's scores.
+    pub query: &'a [f32],
+    /// Conditioned K slices, one per position in `source_start..=position`.
+    /// Present only on the opt-in observed path.
+    pub source_keys: &'a [Vec<f32>],
+    /// Conditioned V slices aligned one-for-one with [`Self::source_keys`].
+    pub source_values: &'a [Vec<f32>],
+}
+
 /// A subscriber to the canonical step's observation points.
 pub trait StepObserver {
     fn event(&mut self, event: StepEvent);
+
+    /// Request actual per-head softmax observations. Unsupported backends and
+    /// non-softmax plans refuse, rather than silently emitting incomplete data.
+    fn wants_attention_heads(&self) -> bool {
+        false
+    }
+
+    /// Narrow an opt-in head capture to selected layer/position pairs. The
+    /// default preserves the original all-head behaviour. This is a capture
+    /// cost filter only and may not alter execution arithmetic.
+    fn wants_attention_heads_at(&self, _layer: usize, _position: usize) -> bool {
+        self.wants_attention_heads()
+    }
+
+    fn attention_head(&mut self, _layer: usize, _record: AttentionHeadRecord<'_>) {}
+
+    /// Observe the attention branch after output projection and bias, but
+    /// before a declared post-attention norm or residual-delta scale.
+    ///
+    /// This is the reconstruction authority for norm-aware head replay:
+    /// per-head `W_O` contributions must sum to this value before the
+    /// nonlinear post norm is applied. Borrowed and observation-only, like
+    /// [`Self::attention_head`].
+    fn attention_output(&mut self, _layer: usize, _position: usize, _values: &[f32]) {}
 
     /// Observe an operand input's values. Separate from [`event`] so the
     /// values are borrowed rather than cloned into an event: capturing

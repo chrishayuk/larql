@@ -22,10 +22,12 @@ use larql_inference::vindex3::{
 };
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
+use larql_vindex::format::vindex3::opplan::exec::intervene::{CarrierCapture, InterventionPlan};
 use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::observe_stats::{FixedBasis, StatsObserver};
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 
+use super::intervention;
 use super::prepare::{parse_representation_source, prepare, with_plan_backend, BackendVisitor};
 use super::ExecBackend;
 
@@ -119,6 +121,23 @@ pub struct ObserveArgs {
     /// How many top ids each readout keeps.
     #[arg(long, default_value_t = DEFAULT_LENS_TOP_K, requires = "lens_tokens")]
     pub lens_top_k: usize,
+
+    /// V3-INTERVENE-1: a declaration file (JSON) naming the interventions
+    /// this run executes under. Its hash joins the run identity; the
+    /// receipt counts firings against declarations.
+    #[arg(long)]
+    pub intervene: Option<PathBuf>,
+
+    /// Addresses `layer:site:position[,…]` whose written carrier is
+    /// captured in memory during the run and written to `--capture-out`,
+    /// so a later declaration can patch it in with this run's provenance.
+    #[arg(long, requires = "capture_out")]
+    pub capture: Option<String>,
+
+    /// Where the captured carriers go: the run id and, per address, the
+    /// vector and its hash.
+    #[arg(long, requires = "capture")]
+    pub capture_out: Option<PathBuf>,
 }
 
 pub fn run(args: ObserveArgs) -> Result<(), BoxErr> {
@@ -149,6 +168,8 @@ pub(super) struct Outcome {
     /// Wall time of the stepping loop alone — preparation excluded — so
     /// a lens's price is visible against the same run without one.
     pub(super) stepping: Duration,
+    /// How many declared interventions fired (V3-INTERVENE-1).
+    pub(super) applied: usize,
 }
 
 struct Observe<'a> {
@@ -187,13 +208,38 @@ impl BackendVisitor for Observe<'_> {
             let lens = LogitLens::new(&ops, backend, sites, tokens, self.args.lens_top_k);
             recorder = recorder.with_lens(Box::new(lens));
         }
+        // V3-INTERVENE-1: the declaration, if any, joins the identity
+        // before the first token; the capture, if any, watches the same
+        // run through one observer beside the recorder.
+        let interventions = match &self.args.intervene {
+            Some(path) => intervention::load_plan(path)?,
+            None => InterventionPlan::none(),
+        };
+        if !interventions.is_none() {
+            recorder = recorder.with_interventions(&interventions);
+        }
+        let addresses = match &self.args.capture {
+            Some(list) => intervention::parse_addresses(list)?,
+            None => Vec::new(),
+        };
+        let mut capture =
+            (!addresses.is_empty()).then(|| CarrierCapture::at(addresses.iter().copied()));
 
         let clock = Instant::now();
         let mut kv = RowKvState::default();
         let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+        let mut applied = 0usize;
         let mut last = None;
         for &token in self.tokens {
-            last = session.step_observed(token, &mut recorder)?.logits;
+            let (logits, fired) = step(
+                &mut session,
+                token,
+                &mut recorder,
+                capture.as_mut(),
+                &interventions,
+            )?;
+            applied += fired;
+            last = logits;
         }
         let mut generated = Vec::with_capacity(self.args.generate);
         for _ in 0..self.args.generate {
@@ -202,13 +248,24 @@ impl BackendVisitor for Observe<'_> {
                 .ok_or("the component carries no output head, so nothing can be generated")?;
             let next = argmax(logits);
             generated.push(next);
-            last = session.step_observed(next, &mut recorder)?.logits;
+            let (logits, fired) = step(
+                &mut session,
+                next,
+                &mut recorder,
+                capture.as_mut(),
+                &interventions,
+            )?;
+            applied += fired;
+            last = logits;
         }
         let stepping = clock.elapsed();
         let final_logits = last.ok_or("the component carries no output head")?;
         recorder.complete();
         let record = recorder.finish();
         record.write_jsonl(&self.args.record)?;
+        if let (Some(out), Some(capture)) = (&self.args.capture_out, &capture) {
+            intervention::write_capture(out, self.run_id, capture, &addresses)?;
+        }
         let record_bytes = std::fs::metadata(&self.args.record)?.len();
         Ok(Outcome {
             record,
@@ -216,8 +273,23 @@ impl BackendVisitor for Observe<'_> {
             final_logits,
             record_bytes,
             stepping,
+            applied,
         })
     }
+}
+
+/// One step through the recorder and, when armed, the capture, with the
+/// declared interventions; returns the logits and how many fired.
+fn step<B: PlanBackend>(
+    session: &mut DecodeSession<'_, B>,
+    token: u32,
+    recorder: &mut RunRecorder,
+    capture: Option<&mut CarrierCapture>,
+    interventions: &InterventionPlan,
+) -> Result<(Option<Vec<f32>>, usize), BoxErr> {
+    let mut tee = intervention::Tee { recorder, capture };
+    let out = session.step_intervened(token, &mut tee, interventions)?;
+    Ok((out.logits, out.firings.len()))
 }
 
 fn basis_for(args: &ObserveArgs, hidden: usize) -> Result<FixedBasis, BoxErr> {
@@ -380,6 +452,18 @@ pub(super) fn summary_lines(
         record.provenance_fingerprint
     ));
     lines.push(format!("  log sha256: {}", record.receipt.log_sha256));
+    if let Some(hash) = &record.identity.intervention_sha256 {
+        lines.push(format!(
+            "  interventions: declaration {hash}, {} declared, {} fired",
+            record.receipt.interventions_declared, outcome.applied
+        ));
+        if let Some(refusal) = &record.receipt.intervention_refusal {
+            lines.push(format!("  intervention REFUSED: {refusal}"));
+        }
+    }
+    if let (Some(list), Some(out)) = (&args.capture, &args.capture_out) {
+        lines.push(format!("  captured {list} -> {}", out.display()));
+    }
     lines.extend(lens_lines(record, positions.saturating_sub(1), tokenizer));
     lines.push(format!("  final position, top {}:", args.top_k));
     for (id, logprob) in top_k(&outcome.final_logits, args.top_k) {

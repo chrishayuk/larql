@@ -241,6 +241,40 @@ pub enum WeightSlice<'a> {
 }
 
 impl<'a> WeightSlice<'a> {
+    /// Materialise the effective f32 matrix represented by this resident
+    /// slice. This is an offline evidence path, not an execution path: GW-0B
+    /// uses it to express contribution addresses in the exact weight image
+    /// the selected kernel consumed.
+    pub fn decode_f32(&self, out_dim: usize, in_dim: usize) -> Result<Vec<f32>, VindexError> {
+        let rows = self.rows(out_dim, in_dim)?;
+        match rows {
+            WeightRows::F32(values) => Ok(values.to_vec()),
+            WeightRows::Bf16(values) => Ok(values
+                .iter()
+                .map(|bits| f32::from_bits(u32::from(*bits) << 16))
+                .collect()),
+            WeightRows::Q8 {
+                codes,
+                scales,
+                block,
+                ..
+            } => {
+                let blocks_per_row = in_dim.div_ceil(block);
+                Ok((0..out_dim * in_dim)
+                    .map(|index| {
+                        let row = index / in_dim;
+                        let column = index % in_dim;
+                        f32::from(codes[index]) * scales[row * blocks_per_row + column / block]
+                    })
+                    .collect())
+            }
+            _ => Err(VindexError::Parse(
+                "offline dense-FFN attribution cannot materialise this resident weight form"
+                    .to_string(),
+            )),
+        }
+    }
+
     /// The f32 view a CPU backend computes with. A backend that declared
     /// `F32` can never legitimately receive `F16`, so this is fail-closed
     /// evidence of an interpreter bug, not a conversion point.
@@ -809,6 +843,14 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
         (**self).attention_step(call)
     }
 
+    fn attention_step_observed(
+        &self,
+        call: AttentionStepCall<'_>,
+        tap: &mut dyn FnMut(super::observe::AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step_observed(call, tap)
+    }
+
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         (**self).ffn(call)
     }
@@ -938,6 +980,17 @@ pub trait PlanBackend: Sync {
     /// pin the two paths together per backend, and a backend may not
     /// borrow another backend's step to fill the gap.
     fn attention_step(&self, call: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError>;
+
+    /// Opt-in borrowed per-head capture; the default explicitly refuses.
+    fn attention_step_observed(
+        &self,
+        _call: AttentionStepCall<'_>,
+        _tap: &mut dyn FnMut(super::observe::AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        Err(VindexError::Parse(
+            "per-head capture unavailable on this backend".into(),
+        ))
+    }
 
     /// Fallible for the same reason as [`Self::attention`]: a backend
     /// with no kernel for a judged variant must say so, not borrow

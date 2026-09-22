@@ -556,3 +556,147 @@ fn a_failing_lens_is_named_on_the_receipt_and_the_record_is_still_complete() {
         .any(|e| matches!(e.event, EventKind::Readout { .. })));
     assert!(record.receipt.complete);
 }
+
+/// V3-INTERVENE-1, IP6: an intervened run's record carries the
+/// declaration in its identity and receipt, the firing as an event at its
+/// position ahead of the write it changed, counts firings against
+/// declarations, reads back equal, and names a declared address the run
+/// never reached — only once the run is complete.
+#[test]
+fn ip6_an_intervened_record_carries_its_declaration_firings_and_refusal() {
+    use crate::vindex3::record::{Kind, Site};
+    use larql_vindex::format::vindex3::opplan::exec::intervene::{
+        Address, Intervention, InterventionPlan,
+    };
+    use larql_vindex::format::vindex3::opplan::exec::observe::SublayerSite;
+
+    let f = fixture();
+    let backend = ProductionBackend::new();
+    let ops = PreparedOperands::load(&f.plan, &f.store, &backend, ExecutionSlice::Full).unwrap();
+    let layer = G_LAYERS - 1;
+    let fired_at = 2usize;
+    let never = 40usize;
+    let declared = InterventionPlan::none()
+        .with(Intervention::zero(
+            Address::new(layer, SublayerSite::Ffn, [fired_at, never]).unwrap(),
+        ))
+        .unwrap();
+
+    let step_all = |plan: &InterventionPlan, recorder: &mut RunRecorder| -> usize {
+        let mut kv = RowKvState::default();
+        let mut session = DecodeSession::over_prepared(&f.plan, &ops, &backend, &mut kv).unwrap();
+        G_TOKENS
+            .iter()
+            .map(|&t| {
+                session
+                    .step_intervened(t, recorder, plan)
+                    .unwrap()
+                    .firings
+                    .len()
+            })
+            .sum()
+    };
+
+    let mut recorder =
+        RunRecorder::for_image(identity(), &ops, Some(stats())).with_interventions(&declared);
+    assert_eq!(
+        step_all(&declared, &mut recorder),
+        1,
+        "one position reached, one firing"
+    );
+    recorder.complete();
+    let written = recorder.finish();
+
+    // Identity: the declaration's hash joins it, and a baseline differs.
+    assert_eq!(
+        written.identity.intervention_sha256,
+        declared.declaration_sha256()
+    );
+    assert!(written.identity.intervention_sha256.is_some());
+    let baseline = RunRecorder::for_image(identity(), &ops, None).finish();
+    assert_eq!(baseline.identity.intervention_sha256, None);
+    assert_ne!(
+        baseline.identity.intervention_sha256, written.identity.intervention_sha256,
+        "an intervened run is never read as a baseline"
+    );
+
+    // The event: at its position, before the write's stats and its
+    // structural event, exactly once.
+    let idx = written
+        .events
+        .iter()
+        .position(|e| matches!(e.event, EventKind::Intervened { .. }))
+        .expect("the firing is on the record");
+    assert_eq!(written.events[idx].position, fired_at);
+    assert_eq!(
+        written.events[idx].event,
+        EventKind::Intervened {
+            layer,
+            site: Site::Ffn,
+            intervention: Kind::Zero,
+        }
+    );
+    assert!(matches!(
+        &written.events[idx + 1].event,
+        EventKind::CarrierStats { layer: l, site: Site::Ffn, .. } if *l == layer
+    ));
+    assert!(matches!(
+        &written.events[idx + 2].event,
+        EventKind::CarrierWrite { layer: l, site: Site::Ffn, .. } if *l == layer
+    ));
+    assert_eq!(
+        written
+            .events
+            .iter()
+            .filter(|e| matches!(e.event, EventKind::Intervened { .. }))
+            .count(),
+        1
+    );
+
+    // The receipt: counted, and the unreached position named.
+    assert_eq!(written.receipt.interventions_declared, 1);
+    assert_eq!(written.receipt.interventions_applied, 1);
+    let refusal = written
+        .receipt
+        .intervention_refusal
+        .as_deref()
+        .expect("position 40 was never reached");
+    assert!(refusal.contains("position 40"), "{refusal}");
+    assert!(refusal.contains("executed 5 position(s)"), "{refusal}");
+
+    // Round trip: the record reads back equal, identity and receipt included.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("intervened.jsonl");
+    written.write_jsonl(&path).unwrap();
+    let read = RunRecord::read_jsonl(&path).unwrap();
+    assert_record_eq(&read, &written);
+    assert_eq!(read.identity, written.identity);
+    assert_eq!(read.receipt, written.receipt);
+
+    // An incomplete record is a prefix: it has not failed to reach anything.
+    let mut prefix = RunRecorder::for_image(identity(), &ops, None).with_interventions(&declared);
+    step_all(&declared, &mut prefix);
+    let prefix = prefix.finish();
+    assert!(!prefix.receipt.complete);
+    assert_eq!(prefix.receipt.intervention_refusal, None);
+    assert_eq!(prefix.receipt.interventions_applied, 1);
+
+    // A declaration the run fully reaches carries no refusal.
+    let reached = InterventionPlan::none()
+        .with(Intervention::zero(
+            Address::new(layer, SublayerSite::Ffn, [fired_at]).unwrap(),
+        ))
+        .unwrap();
+    let mut recorder = RunRecorder::for_image(identity(), &ops, None).with_interventions(&reached);
+    assert_eq!(step_all(&reached, &mut recorder), 1);
+    recorder.complete();
+    let complete = recorder.finish();
+    assert_eq!(complete.receipt.intervention_refusal, None);
+    assert_eq!(complete.receipt.interventions_declared, 1);
+    assert_eq!(complete.receipt.interventions_applied, 1);
+
+    // An unintervened record still says so on its receipt.
+    assert_eq!(baseline.receipt.interventions_declared, 0);
+    assert_eq!(baseline.receipt.interventions_applied, 0);
+    assert_eq!(baseline.receipt.intervention_refusal, None);
+}

@@ -1,5 +1,11 @@
 # LARQL Observatory UI
 
+**Class: CURRENT.** Evidence inspection and replay for LARQL/VINDEX3.
+Start with the [observation guide](../docs/vindex3/observation-and-intervention.md)
+and [capability status](../docs/vindex3/status.md). Canonical JSONL recording,
+legacy Standard captures, supplemental head/lens evidence and synthetic
+fixtures are distinct inputs with distinct claims.
+
 A HAUSE-native research workbench for the model as a computational database.
 This directory owns UI, synthetic studies, measured Standard records, selection
 and replay. The recording runner consumes the frozen
@@ -75,7 +81,7 @@ future adapted streams. The executor does not emit the web envelope: the
 `program` declares the fixture's real sites, independently of its event log;
 no view should invent an FFN write from a layer boundary. Unsupported topology
 is refused by this initial synthetic adapter. Bundle/history UI and live
-VINDEX3 adapters remain follow-on work and must preserve topology identity.
+VINDEX3 transport remain follow-on work and must preserve topology identity.
 
 Live delivery may be lossy and nonblocking. The replay record must be lossless
 within its declared scope or fail completeness explicitly. Local JSON import
@@ -136,10 +142,11 @@ timing stay unavailable. Runner declarations are labelled as such: importing
 a file does not validate its model identity or prove output parity.
 
 The original input is retained for download and exact replay. The Standard
-bridge is a draft UI handoff, not a frozen executor serializer. The current
-executor exports no matching runner file/endpoint in this checkout. Adapter
-checks use authored contract cases, not a real model witness. Live transport
-and real observed/unobserved parity remain pending the runner handoff.
+bridge is a legacy UI handoff, not the canonical executor serializer. The
+checked-in Granite capture has separate parity and replay witnesses (see
+Real-record witness below). New recordings should use `larql vindex3 observe`
+and the native JSONL bridge. Live transport remains outside this file-import
+workflow; importing either format does not rerun its parity experiment.
 
 See [the bridge and handoff checklist](STANDARD-ADAPTER.md).
 

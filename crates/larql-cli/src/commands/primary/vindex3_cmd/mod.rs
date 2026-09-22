@@ -548,6 +548,7 @@ mod consequence;
 pub(crate) mod decode;
 mod exec;
 mod generate;
+mod intervention;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod lowered;
 mod observe;

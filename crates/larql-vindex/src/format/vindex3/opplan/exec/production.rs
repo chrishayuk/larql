@@ -49,6 +49,7 @@ use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, sigmoid, FusedHalf,
 };
 use super::lowering::LoweringIdentity;
+use super::observe::AttentionHeadRecord;
 use super::prefetch;
 use super::realization::{
     class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
@@ -637,6 +638,17 @@ pub(super) fn aggregate_heads<'k>(
     key_of: impl Fn(usize) -> &'k [f32],
     value_of: impl Fn(usize) -> &'k [f32],
 ) -> Vec<f32> {
+    aggregate_heads_observed(call, position, query, key_of, value_of, None)
+}
+
+fn aggregate_heads_observed<'k>(
+    call: &AttentionCall<'_>,
+    position: usize,
+    query: &[f32],
+    key_of: impl Fn(usize) -> &'k [f32],
+    value_of: impl Fn(usize) -> &'k [f32],
+    mut tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+) -> Vec<f32> {
     let head_dim = call.head_dim;
     let q_rows = call.num_q_heads * head_dim;
     let group = call.num_q_heads / call.num_kv_heads;
@@ -680,12 +692,43 @@ pub(super) fn aggregate_heads<'k>(
             None => softmax_in_place_f32(&mut scores),
         }
         let head_out = &mut concat[q_head * head_dim..(q_head + 1) * head_dim];
+        let source_keys: Vec<Vec<f32>> = if tap.is_some() {
+            (start..=position)
+                .map(|key_position| {
+                    key_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim].to_vec()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let source_values: Vec<Vec<f32>> = if tap.is_some() {
+            (start..=position)
+                .map(|key_position| {
+                    value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim].to_vec()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         for (offset, key_position) in (start..=position).enumerate() {
             let v_slice = &value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
             let weight = scores[offset];
             for (acc, v) in head_out.iter_mut().zip(v_slice) {
                 *acc += weight * v;
             }
+        }
+        if let Some(tap) = tap.as_mut() {
+            tap(AttentionHeadRecord {
+                position,
+                head: q_head,
+                kv_head,
+                source_start: start,
+                weights: &scores,
+                values: head_out,
+                query: q_slice,
+                source_keys: &source_keys,
+                source_values: &source_values,
+            });
         }
     }
     concat
@@ -773,8 +816,31 @@ impl ProductionBackend {
         gate_input: &[f32],
         projected_gate: Option<&[f32]>,
     ) -> Result<Vec<f32>, VindexError> {
+        Self::attend_position_observed(
+            call,
+            position,
+            query,
+            key_of,
+            value_of,
+            gate_input,
+            projected_gate,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn attend_position_observed<'k>(
+        call: &AttentionCall<'_>,
+        position: usize,
+        query: &[f32],
+        key_of: impl Fn(usize) -> &'k [f32],
+        value_of: impl Fn(usize) -> &'k [f32],
+        gate_input: &[f32],
+        projected_gate: Option<&[f32]>,
+        tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+    ) -> Result<Vec<f32>, VindexError> {
         let q_rows = call.num_q_heads * call.head_dim;
-        let mut concat = aggregate_heads(call, position, query, key_of, value_of);
+        let mut concat = aggregate_heads_observed(call, position, query, key_of, value_of, tap);
 
         if let Some(GateCall { spec, weight }) = &call.gate {
             // Exhaustive on the judged semantics, same as the
@@ -1044,38 +1110,15 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn attention_step(&self, step: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
-        let call = &step.op;
-        let pre = &call.inputs[0];
-        let ProjectedAttention {
-            qkv: (q, k, v),
-            gate,
-        } = Self::project_position(call, step.position, pre)?;
-        let output = Self::attend_position(
-            call,
-            step.position,
-            &q,
-            |p| {
-                if p == step.position {
-                    k.as_slice()
-                } else {
-                    step.keys[p].as_slice()
-                }
-            },
-            |p| {
-                if p == step.position {
-                    v.as_slice()
-                } else {
-                    step.values[p].as_slice()
-                }
-            },
-            pre,
-            gate.as_deref(),
-        )?;
-        Ok(AttentionStepOut {
-            key: k,
-            value: v,
-            output,
-        })
+        self.attention_step_capture(step, None)
+    }
+
+    fn attention_step_observed(
+        &self,
+        step: AttentionStepCall<'_>,
+        tap: &mut dyn FnMut(AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        self.attention_step_capture(step, Some(tap))
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
@@ -1254,5 +1297,47 @@ impl PlanBackend for ProductionBackend {
         for (a, b) in acc.iter_mut().zip(delta) {
             *a += b;
         }
+    }
+}
+
+impl ProductionBackend {
+    fn attention_step_capture(
+        &self,
+        step: AttentionStepCall<'_>,
+        tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        let call = &step.op;
+        let pre = &call.inputs[0];
+        let ProjectedAttention {
+            qkv: (q, k, v),
+            gate,
+        } = Self::project_position(call, step.position, pre)?;
+        let output = Self::attend_position_observed(
+            call,
+            step.position,
+            &q,
+            |p| {
+                if p == step.position {
+                    k.as_slice()
+                } else {
+                    step.keys[p].as_slice()
+                }
+            },
+            |p| {
+                if p == step.position {
+                    v.as_slice()
+                } else {
+                    step.values[p].as_slice()
+                }
+            },
+            pre,
+            gate.as_deref(),
+            tap,
+        )?;
+        Ok(AttentionStepOut {
+            key: k,
+            value: v,
+            output,
+        })
     }
 }

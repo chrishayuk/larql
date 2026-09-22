@@ -1,13 +1,19 @@
 # VINDEX3 Runtime — the VI3 inference stack
 
-Status: as of 2026-08-30 — describes the runtime as landed through the
-VI3-INF-0..3, VI3-KV-1 and VI3-SERVE-1 rungs, plus the OpenAI-surface
-completion of 2026-08-22 (`/v1/chat/completions` and `/v1/responses` V3
-arms). The container format itself is specified in
-`crates/larql-vindex/docs/vindex3-format-spec.md` (the 3.0 Candidate) and
-`docs/vindex3-format.md` (the living spec); this document is the **State
-and Serving contract**: what happens *after* a container exists — how it
-is opened, executed, given continuation state, and served.
+Status: **implementation guide — state, serving and recording**. The
+[CURRENT execution guide](vindex3/execution.md) is the entry point;
+[generated facts](generated/current-facts.md) list the command inventory.
+The [candidate specification](../crates/larql-vindex/docs/vindex3-format-spec.md)
+owns the format contract. The VI3-INF/KV/SERVE rungs below explain the state
+and serving seams; they are not the limit of the execution substrate.
+
+Canonical decode also exposes observation. A prepared image pins operands and
+realization; `step_observed` subscribes to its execution boundaries, and the
+runtime recorder binds carrier statistics, optional lens readouts, provenance
+and receipts into a run record. The [Observatory](../observatory/README.md)
+validates and replays that evidence. See
+[observation and intervention](vindex3/observation-and-intervention.md) for
+head-capture scope, descriptive attribution and counterfactual boundaries.
 
 ---
 
@@ -266,5 +272,26 @@ shared resident session/operand pool is later, perf-shaped work.
   and representation pipelines — `plan`, `encode`, `inspect`, `verify`,
   `ops` (see `docs/vindex3-format.md`) and `represent`, `sensitivity`,
   `consequence` (representation compilation and its quality
-  instruments). The format-native read-only surface is the standalone
-  `vindex` binary (candidate spec §18.3).
+  instruments). The standalone `vindex` binary also owns source planning/encoding,
+  representation compilation and supported export; it does not run inference.
+
+
+## 7. Observation and evidence records
+
+`larql vindex3 observe CONTAINER --prompt TEXT --record run.jsonl` opens and
+prepares a component, tokenizes using its tokenizer, and records canonical
+decode. `--tokens` accepts explicit IDs instead; `--generate` adds observed
+greedy continuation. The default arithmetic backend is production CPU.
+
+The executor's `StepObserver` receives actual boundaries and carrier writes.
+`StatsObserver` derives norms and fixed-basis projections; `RunRecorder` in
+`larql-inference::vindex3::record` owns serialization and record accounting.
+`--lens-tokens` separately arms the normalized vocabulary lens. It incurs
+additional head work; raw probes must not be presented as its probabilities.
+
+An observation receipt binds the captured scope. It does not independently
+establish HF parity, performance, or causal influence. The Observatory bridge
+replays existing records without rerunning inference. Per-head capture and
+intervention are separately scoped research surfaces, described in the
+[CURRENT observation guide](vindex3/observation-and-intervention.md); Standard
+carrier capture does not imply that every backend exposes head internals.

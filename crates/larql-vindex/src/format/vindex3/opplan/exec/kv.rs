@@ -272,7 +272,7 @@ pub use ContinuationProvider as KvState;
 /// state [`DecodeSession`](super::decode::DecodeSession) used to own
 /// privately, now behind the seam. The decode-vs-batch parity gates
 /// pin that this indirection changed nothing.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RowKvState {
     layers: Vec<LayerRows>,
     /// Durable recurrent buffers, one slot per layer, `None` on layers
@@ -290,7 +290,7 @@ pub struct RowKvState {
     position: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct LayerRows {
     keys: Vec<Vec<f32>>,
     values: Vec<Vec<f32>>,

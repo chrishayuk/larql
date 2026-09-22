@@ -1,0 +1,26 @@
+{
+  "bootstrap": {
+    "initialization": "reset the registered generator separately within each split and diagnostic subset",
+    "replicates": 10000,
+    "seed": 27022032,
+    "standard_error": "bootstrap draw standard deviation, ddof=1",
+    "subject_order": "sorted ISO subject ID"
+  },
+  "candidate_outcomes_examined": false,
+  "files": {
+    "scripts/gwv2_adjudicate.py": "sha256:8c8613d2b777092d96dabb3ed379d046051cd23dd9f7f12e77d589f9220de5c8",
+    "scripts/gwv2_cost.py": "sha256:1beacc1f2b08d0b15c9446f06a9d08370356caf7b9069c96b0d01265be4f55e7",
+    "scripts/gwv2_io.py": "sha256:c3278560e7dfbe9f2d6489ad36b470a2744a039d0bde0a95950b7a88e036a331",
+    "scripts/test_gwv2_analysis.py": "sha256:ba22db78b2bf3f492ff9441c56686ea51ef39a4ddcc4b869da872b354d62cb4c"
+  },
+  "implementation_sha256": "sha256:784a17e1ef7d5706336a846399586f0b92b7893ba84d5669397921d286342eb0",
+  "lineage": {
+    "amendment_sha256": "sha256:bb5ebb48e52768e50ff5a26954bf8873489c1ab01d0fec1272e2f52caa3b2d5b",
+    "donor_map_sha256": "sha256:3ed66fc2432fe2d967ab58243faea729d0dbd0ed19f211ae6b58d17d7afec45c",
+    "population_sha256": "sha256:d73e0783adc0c26777ed9f0e4b880133814c39d0283cd7d816cd72cd1d37c23c",
+    "protocol_sha256": "sha256:830c2ceb97fce4f2d03e74e207d04e54257cd5b38e830a93047a86b6bd4fd006"
+  },
+  "python_tests_passed": 22,
+  "schema": "larql.gwv2.analysis-implementation.v1",
+  "status": "sealed before reading replay outcomes"
+}

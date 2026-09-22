@@ -90,6 +90,34 @@ fn annotations_implement_the_v2_contract() {
     assert!(metas.iter().all(Option::is_some));
 }
 
+#[test]
+fn batched_promotions_are_the_same_annotation_contract() {
+    let (_c, view) = view_for(dense_f32_model, "know-promotion-batch", 128);
+    let width = view.num_features(0);
+    let features: Vec<_> = (0..width).rev().collect();
+    let batched = view.feature_promotions(0, &features).unwrap();
+    assert_eq!(batched.len(), features.len());
+    for (&feature, actual) in features.iter().zip(batched) {
+        let actual = actual.unwrap();
+        let expected = view.feature_meta(0, feature).unwrap();
+        assert_eq!(actual.top_token_id, expected.top_token_id);
+        assert!((actual.c_score - expected.c_score).abs() < 1e-5);
+        assert_eq!(
+            actual
+                .top_k
+                .iter()
+                .map(|item| item.token_id)
+                .collect::<Vec<_>>(),
+            expected
+                .top_k
+                .iter()
+                .map(|item| item.token_id)
+                .collect::<Vec<_>>()
+        );
+    }
+    assert!(view.feature_promotions(0, &[width]).is_err());
+}
+
 /// The KNN statistic is the V2 gate scan's: dot product, ranked by
 /// absolute magnitude descending.
 #[test]
@@ -117,6 +145,51 @@ fn gate_knn_is_the_v2_statistic() {
     assert_eq!(trace.layers[0].1[0].feature, hits[0].0);
     assert_eq!(trace.layers[0].1[0].gate_score, hits[0].1);
     assert!(!trace.layers[0].1[0].meta.top_token.is_empty());
+}
+
+#[test]
+fn postings_are_a_non_learned_maskable_access_path() {
+    let (_c, view) = view_for(miniature_glimmer, "know-postings", G_VOCAB);
+    let source_tokens = [2, 3, 2];
+    let index = view
+        .build_posting_index(&[0, 1], &source_tokens, 3, 2)
+        .unwrap();
+    assert_eq!(index.features_per_source(), 3);
+    assert_eq!(index.target_top_k(), 2);
+    assert_eq!(index.source_tokens(), 2, "source keys are deduplicated");
+    assert_eq!(index.total_features(), 2 * G_FFN);
+    assert!(index.logical_index_bytes() >= 2 * 2 * 3 * 12);
+
+    let token = source_tokens[0];
+    assert_eq!(index.source_postings(token).len(), 2 * 3);
+    let unmasked = index.lookup(&[token, token], None);
+    assert!(!unmasked.candidates.is_empty());
+    assert_eq!(unmasked.total_features, 2 * G_FFN);
+    assert_eq!(unmasked.eligible_features, 2 * G_FFN);
+    assert!(unmasked.candidate_fraction() > 0.0);
+    assert!(unmasked.candidate_fraction() <= 1.0);
+    assert_eq!(
+        unmasked.logical_bytes_touched,
+        (unmasked.source_postings_touched + unmasked.target_postings_touched) * 12
+    );
+    let prefix = index.lookup_at_width(&[token], None, 1);
+    assert_eq!(prefix.source_postings_touched, 2);
+    assert!(prefix.candidates.len() <= 2);
+    assert!(index.logical_index_bytes_at_width(1) <= index.logical_index_bytes());
+
+    let masked = index.lookup(&[token], Some(&[1]));
+    assert_eq!(masked.eligible_features, G_FFN);
+    assert!(masked.candidates.iter().all(|address| address.layer == 1));
+    assert!(masked.candidates.len() <= unmasked.candidates.len());
+    assert_eq!(
+        masked.candidate_fraction(),
+        masked.candidates.len() as f64 / G_FFN as f64
+    );
+
+    let error = view
+        .build_posting_index(&[0], &[G_VOCAB as u32], 1, 1)
+        .unwrap_err();
+    assert!(error.to_string().contains("outside vocabulary"));
 }
 
 /// `find_features` implements `VectorIndex::find_features`'s matching
