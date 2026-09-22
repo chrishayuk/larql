@@ -98,12 +98,8 @@ pub enum LoadedArtifact {
 /// non-V2 generations.
 /// Options a VINDEX3 binding cannot honour, named for the refusal.
 ///
-/// The V3 branch of [`load_artifact`] takes only a path — slicing,
-/// service modes, and cache knobs have no V3 implementation. Accepting
-/// the flag and ignoring it is the dangerous failure: a `--layers 0-9`
-/// shard silently loads the *whole* model and answers complete
-/// requests, and `--no-infer` does not disable inference. Fail closed
-/// until V3 sharding exists (ROADMAP §N1 / V3 sharding).
+/// V3 implements CPU layer-prefix sharding. Other V2 service modes and
+/// expert ownership protocols remain unsupported and must fail closed.
 fn unsupported_v3_options(opts: &LoadVindexOptions) -> Vec<&'static str> {
     let mut named = Vec::new();
     if opts.no_infer {
@@ -114,9 +110,6 @@ fn unsupported_v3_options(opts: &LoadVindexOptions) -> Vec<&'static str> {
     }
     if opts.embed_only {
         named.push("--embed-only");
-    }
-    if opts.layer_range.is_some() {
-        named.push("--layers");
     }
     if opts.expert_filter.is_some() {
         named.push("--experts");
@@ -150,10 +143,7 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
             let unsupported = unsupported_v3_options(&opts);
             if !unsupported.is_empty() {
                 return Err(format!(
-                    "VINDEX3 containers do not support {} — a V3 binding serves the whole \
-                     model, so accepting these would silently ignore them (a `--layers` shard \
-                     would load the full model and answer complete requests). Remove them, or \
-                     serve a VINDEX2 container: {}",
+                    "VINDEX3 containers do not support {} — remove them or serve a VINDEX2 container: {}",
                     if unsupported.len() == 1 {
                         "this option"
                     } else {
@@ -165,7 +155,7 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
             }
             info!("Loading VINDEX3 container: {}", path.display());
             Ok(LoadedArtifact::V3(Box::new(
-                crate::vindex3::load_v3_model_with_backend(&path, opts.v3_backend)?,
+                crate::vindex3::load_v3_model_slice(&path, opts.v3_backend, opts.layer_range)?,
             )))
         }
         larql_vindex::format::generation::ContainerGeneration::V2 => {
@@ -567,7 +557,6 @@ mod v3_option_tests {
             "--no-infer",
             "--ffn-only",
             "--embed-only",
-            "--layers",
             "--experts",
             "--units",
         ] {

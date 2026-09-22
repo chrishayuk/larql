@@ -178,6 +178,11 @@ pub const fn plans_source(profile: ServerProfile, scheme: SourceScheme) -> bool 
 /// route-backed content is generated from this table plus the
 /// mounted-route ledger — see the module doc.
 pub const ROUTE_CAPABILITIES: &[RouteCapability] = &[
+    RouteCapability {
+        key: "/runtime/layer_prefix",
+        route: paths::VINDEX3_LAYERS,
+        source: None,
+    },
     // ── sources: what a client may hand this server, and as what ──
     // `load` binds an ALREADY-ENCODED container. `plan` and `encode`
     // take a raw checkpoint. Keeping them apart matters: the server

@@ -37,7 +37,11 @@ assembly and capability code are authoritative; a reserved path or protocol
 message is not proof of an exposed operation. V3 defaults to production CPU execution. The macOS `vindex3-metal` feature adds
 explicit Metal selection at startup (`--v3-backend`) and dynamic load (`backend`).
 The selected backend is reported in `/v1/runtime`. `metal-experts` alone still
-serves the separate V2 expert path. V3 sharding options remain refused.
+serves the separate V2 expert path. CPU V3 `--layers` prepares a stateless
+layer-prefix worker; the `larql run --v3-shards` coordinator validates complete
+coverage and loads only the stack endpoints. Workers refuse whole-model
+completion requests. See [inputs, state and workers](vindex3/runtime-followups.md)
+for the supported scopes and remaining distributed work.
 
 The router's whole-model API proxy uses capable grid registrations, while
 FFN/expert fan-out distributes partial work. Static layer maps do not supply

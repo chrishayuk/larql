@@ -8,6 +8,11 @@ FFN/expert and shard services. Bootstrap distinguishes V2 indexes from VINDEX3
 containers. V3 requests execute the artifact's declared program through the
 VINDEX3 runtime rather than rebuilding V2 weights.
 
+For V3 CPU softmax stacks, `--layers START-END` prepares only that inclusive
+layer range. `GET/POST /v1/vindex3/layers` exposes a stateless prefix worker in
+single-model mode, and `/v1/runtime` reports `layer_shard`. Whole-model
+generation on a worker refuses. See [worker commands and scope](../../docs/vindex3/runtime-followups.md).
+
 ## Start and inspect capabilities
 
 ```bash

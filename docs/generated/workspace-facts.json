@@ -219,6 +219,16 @@
           "features": []
         },
         {
+          "name": "larql-router",
+          "alias": "larql-router",
+          "kind": "dependencies",
+          "path": "crates/larql-router",
+          "target": null,
+          "optional": false,
+          "default_features": false,
+          "features": []
+        },
+        {
           "name": "larql-vindex",
           "alias": "larql-vindex",
           "kind": "dependencies",

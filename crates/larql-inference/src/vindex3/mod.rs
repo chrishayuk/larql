@@ -41,8 +41,10 @@
 //! continuation position, and `session_with_kv` resumes from it; no
 //! batch-state → decode-state translation exists anywhere.
 
+pub mod distributed;
 mod explain;
 mod generate;
+pub mod input;
 mod runtime;
 mod session;
 

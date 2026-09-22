@@ -10,6 +10,8 @@ owns the versioned format contract; its byte-level ABI remains candidate.
 |---|---|
 | Plan / encode / inspect | Local and HF source admission, graph/container construction and inspection; support is determined by admission and closure |
 | Execute / serve | Canonical component program, CPU and scoped Metal realizations, sessions and HTTP serving; backend support is operator-specific |
+| Input / state | CPU Gemma 3 image-prefix adapter; row/canonical continuation and exact full-history replay; multimodal HF parity remains unestablished |
+| Layer workers | Stateless CPU softmax-prefix RPC and endpoint-only coordinator; no remote KV cache or grid integration; [scope](runtime-followups.md) |
 | Represent | Compilation, codecs, selection/accounting and evidence/search machinery; quality and promotion require their own evidence |
 | Observe | Canonical decode carrier records, provenance/receipts and optional logit lens through `larql vindex3 observe` |
 | Observatory | Recorded-data import, validation, lenses and replay; importing a recording does not execute the model |

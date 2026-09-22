@@ -10,6 +10,7 @@ remain with consumers.
 
 | Contract | Responsibility |
 |---|---|
+| [vindex3](src/vindex3.rs) | Versioned JSON binding and rows for stateless CPU layer-prefix execution |
 | [grid.proto](proto/grid.proto) | Registration, heartbeats, assignment, status and drain control |
 | [expert.proto](proto/expert.proto) | Remote expert dispatch |
 | [shard.proto](proto/shard.proto) | Sharded index-query service |
@@ -31,4 +32,5 @@ cargo test -p larql-router-protocol
 
 The [distributed interface guide](../../docs/runtime-surfaces.md) explains
 service boundaries. Proto lint and consumer integration tests complement
+[V3 worker integration](../../docs/vindex3/runtime-followups.md),
 crate tests; wire-format changes must update both sides deliberately.

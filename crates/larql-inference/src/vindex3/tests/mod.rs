@@ -16,6 +16,7 @@
 //! known-different input): a diverged prompt stream must produce
 //! diverged logits, or bit-equality above proves nothing.
 
+mod inputs;
 mod opener;
 mod record;
 

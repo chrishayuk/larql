@@ -26,6 +26,11 @@ subscribes to execution boundaries, with provenance and record composition in
 
 <a id="crate-structure"></a>
 
+The interpreter accepts checked, externally projected embedding rows through
+`DecodeSession::step_embedding`. `ExecutionSlice::Endpoints` loads only token
+embedding and final norm/head for a distributed coordinator; direct model
+execution refuses this slice. See [runtime integration](../../docs/vindex3/runtime-followups.md).
+
 ## Source map
 
 | Area | Responsibility |

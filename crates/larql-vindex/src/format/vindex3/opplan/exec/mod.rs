@@ -553,6 +553,11 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     ops.ensure_providers_in(ops.registry())?;
     // And the pin's OTHER authority: the provider executing these pins
     // is the provider that decided them (LOWERING-PLUGIN-1, L4).
+    if matches!(ops.slice(), prepared::ExecutionSlice::Endpoints) {
+        return Err(VindexError::Parse(
+            "endpoints-only operands require a distributed coordinator".into(),
+        ));
+    }
     ops.ensure_lowered_by(backend)?;
     // A one-shot forward owns whatever continuation state the plan needs.
     //
@@ -634,6 +639,11 @@ pub fn prefill_prepared<B: PlanBackend + ?Sized>(
     backend: &B,
     kv: &mut dyn KvState,
 ) -> Result<FinalOutput, VindexError> {
+    if matches!(ops.slice(), prepared::ExecutionSlice::Endpoints) {
+        return Err(VindexError::Parse(
+            "endpoints-only operands require a distributed coordinator".into(),
+        ));
+    }
     // The FULL geometry, KV and recurrent alike. `plan_kv_geometry` is
     // the KV-only adapter and refuses a hybrid plan outright, which was
     // the right answer while nothing could execute one.

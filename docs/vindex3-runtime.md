@@ -15,6 +15,11 @@ validates and replays that evidence. See
 [observation and intervention](vindex3/observation-and-intervention.md) for
 head-capture scope, descriptive attribution and counterfactual boundaries.
 
+The [input and layer-worker guide](vindex3/runtime-followups.md) documents
+`CachedInputSession`, exact `ReplaySession`, external embedding rows and
+`DistributedSession`. These compose above the same interpreter. The initial
+worker protocol is stateless CPU prefix execution, separate from grid routing.
+
 ---
 
 ## 1. What the V3 runtime is

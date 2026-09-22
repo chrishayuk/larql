@@ -8,6 +8,12 @@ deployments. The router selects serving nodes, tracks coverage and proxies
 supported requests. It does not own VINDEX3 model semantics or replace the
 canonical interpreter.
 
+[HttpLayerShards](src/vindex3.rs) is a separate blocking client used by
+`larql run --v3-shards`. It sends artifact-bound prefix requests to V3 CPU
+workers; it does not use the static-map binary or grid/OpenAI proxy. The
+[worker guide](../../docs/vindex3/runtime-followups.md) describes coverage checks,
+stateless replay, authentication and current limitations.
+
 ## Modes
 
 ```bash

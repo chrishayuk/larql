@@ -434,6 +434,8 @@ pub mod schemas {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub model: Option<RuntimeModel>,
         pub backend: RuntimeBackend,
+        /// Versioned layer-worker binding, or null for a whole-model binding.
+        pub layer_shard: Option<serde_json::Value>,
         pub memory: RuntimeMemory,
         pub performance: RuntimePerformance,
         pub generation: RuntimeGeneration,

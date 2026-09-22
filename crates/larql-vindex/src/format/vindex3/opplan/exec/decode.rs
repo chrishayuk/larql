@@ -26,7 +26,7 @@
 use std::borrow::Cow;
 
 use super::attention_residual::{self, BoundaryPhase};
-use super::backend::{AttentionStepCall, NormCall, PlanBackend};
+use super::backend::{AttentionStepCall, PlanBackend};
 use super::hyper_connection::{self, Bundle, Mutation, SiteReduction};
 use super::intervene::{Firing, Intervention, InterventionPlan, InterventionStepOutput};
 use super::intervene_heads::{HeadFiring, HeadInterventionPlan};
@@ -105,6 +105,7 @@ pub struct StepOutput {
 /// decode form of the layer-range contract.
 enum Entry {
     Token(u32),
+    Hidden(Vec<f32>),
     #[cfg(test)]
     Bundle(Bundle),
 }
@@ -255,6 +256,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         backend: &'a B,
         mut kv: KvSlot<'a>,
     ) -> Result<Self, VindexError> {
+        if matches!(ops.get().slice(), ExecutionSlice::Endpoints) {
+            return Err(VindexError::Parse(
+                "endpoints-only operands require a distributed coordinator".into(),
+            ));
+        }
         ops.get().ensure_providers_in(ops.get().registry())?;
         ops.get().ensure_lowered_by(backend)?;
         // The FULL continuation geometry, KV and recurrent alike.
@@ -306,6 +312,32 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// decode-vs-batch parity tests are the guarantee.
     pub fn step(&mut self, token: u32) -> Result<StepOutput, VindexError> {
         self.step_observed(token, &mut NoopObserver)
+    }
+
+    /// Consume one ready-to-concatenate embedding row at the next absolute
+    /// position. Scaling/projector work belongs to the input producer. This
+    /// enters the same layer loop as a token lookup; it does not edit weights.
+    pub fn step_embedding(&mut self, row: &[f32]) -> Result<StepOutput, VindexError> {
+        let ops = self.ops.get();
+        if row.len() != ops.hidden() || row.iter().any(|x| !x.is_finite()) {
+            return Err(VindexError::Parse(format!(
+                "external embedding must contain {} finite values",
+                ops.hidden()
+            )));
+        }
+        if !ops.slice().is_whole_stack() || matches!(ops.slice(), ExecutionSlice::Endpoints) {
+            return Err(VindexError::Parse(
+                "external embeddings require a whole-stack image".into(),
+            ));
+        }
+        let run = self.run(
+            Entry::Hidden(row.to_vec()),
+            &mut NoopObserver,
+            Mutation::None,
+            &InterventionPlan::none(),
+            &HeadInterventionPlan::none(),
+        )?;
+        Ok(StepOutput { logits: run.logits })
     }
 
     /// **CPU-7C.** Advance this continuation through exactly `tokens`, in
@@ -514,35 +546,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let position = self.kv.state().position();
         let mut carrier = match entry {
             Entry::Token(token) => {
-                let embedding = self
-                    .plan
-                    .embedding
-                    .as_ref()
-                    .expect("session construction required an embedding op");
-                let embed_table = ops.embed_table().ok_or_else(|| {
-                    VindexError::Parse(
-                        "this prepared image carries no embedding table — a layer-range slice \
-                         consumes hidden states, not token ids"
-                            .to_string(),
-                    )
-                })?;
-                if (token as usize + 1) * hidden > embed_table.len() {
-                    return Err(VindexError::Parse(format!(
-                        "token id {token} is outside the embedding table",
-                    )));
-                }
-                let mut h = self
-                    .backend
-                    .embed(embed_table, hidden, token, embedding.scale);
-                if let Some(norm) = embedding.norm {
-                    h = self.backend.norm(NormCall {
-                        kind: norm.kind,
-                        x: &h,
-                        weight: &[],
-                        weight_offset: 0.0,
-                        eps: norm.eps,
-                    });
-                }
+                let h = ops.embed_token(self.plan, self.backend, token)?;
                 observer.event(StepEvent::Embedded { position });
                 // The first link of the carrier chain (V3-OBS-1, C6):
                 // what enters layer 0, before any topology wraps it.
@@ -558,6 +562,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     // `new_zeros(tokens, 0, hidden)` and nothing is
                     // replicated. That emptiness is what gives layer 0's
                     // attention site nothing to read.
+                    (None, Some(_)) => Carrier::History(attention_residual::History::new(h)),
+                    (None, None) => Carrier::Single(h),
+                }
+            }
+            Entry::Hidden(h) => {
+                observer.entering_carrier(position, &h);
+                match (topology, block_size) {
+                    (Some(hc), _) => Carrier::Bundle(Bundle::replicate(&h, hc.streams)),
                     (None, Some(_)) => Carrier::History(attention_residual::History::new(h)),
                     (None, None) => Carrier::Single(h),
                 }

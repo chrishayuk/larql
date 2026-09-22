@@ -45,3 +45,7 @@ Use `larql serve model.vindex3 --port 8080` for the server surface; build
 `larql-server` as well. HTTP state and API behavior are detailed in the
 [runtime guide](../vindex3-runtime.md). To inspect execution evidence, continue
 with [observation](observation-and-intervention.md).
+
+`larql run` also exposes exact continuation providers, CPU Gemma 3 image
+prefixes and stateless CPU layer workers. See [inputs, continuation and
+workers](runtime-followups.md) for commands, numerical tests and limitations.

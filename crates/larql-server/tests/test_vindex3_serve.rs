@@ -498,10 +498,9 @@ async fn stats_answers_on_a_v3_only_server_and_carries_the_server_block() {
     assert!(json["server"]["sessions"]["active"].is_number());
 }
 
-/// A V3 container must refuse the slicing / service-mode options rather
-/// than accept and ignore them. Accepting `--layers 0-9` silently
-/// loaded the *whole* model and answered complete requests; `--no-infer`
-/// did not disable inference.
+/// Service modes without a V3 implementation must refuse rather than
+/// silently accept flags such as `--no-infer`. CPU layer slicing is
+/// tested separately through its actual HTTP contract.
 #[test]
 fn a_v3_container_refuses_options_it_cannot_honour() {
     let container = v3_container();
@@ -512,13 +511,6 @@ fn a_v3_container_refuses_options_it_cannot_honour() {
             "--no-infer",
             LoadVindexOptions {
                 no_infer: true,
-                ..LoadVindexOptions::default()
-            },
-        ),
-        (
-            "--layers",
-            LoadVindexOptions {
-                layer_range: Some((0, 1)),
                 ..LoadVindexOptions::default()
             },
         ),
@@ -999,4 +991,133 @@ fn selected_metal_backend_executes_the_v3_fixture() {
         result.ids, expected,
         "fixture's greedy tokens must agree with CPU"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v3_layer_workers_over_http_match_local_execution_and_refuse_bad_requests() {
+    use larql_inference::vindex3::{
+        distributed::{artifact_identity, DistributedSession},
+        LogitsSession,
+    };
+    use larql_router::vindex3::HttpLayerShards;
+    use larql_router_protocol::vindex3::{Binding, PATH};
+    use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    let container = v3_container();
+    let full = larql_server::routes::single_model_router(v3_state(container.path()));
+    let response = full
+        .oneshot(Request::builder().uri(PATH).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    for (range, backend) in [
+        ((2, 3), larql_server::vindex3::V3Backend::Cpu),
+        ((1, 0), larql_server::vindex3::V3Backend::Cpu),
+        ((0, usize::MAX), larql_server::vindex3::V3Backend::Cpu),
+        ((0, 0), larql_server::vindex3::V3Backend::Metal),
+    ] {
+        assert!(load_artifact(
+            container.path().to_str().unwrap(),
+            LoadVindexOptions {
+                layer_range: Some(range),
+                v3_backend: backend,
+                ..Default::default()
+            }
+        )
+        .is_err());
+    }
+    let mut urls = Vec::new();
+    let mut servers = Vec::new();
+    for layer in 0..2 {
+        let state = v3_state(container.path());
+        let LoadedArtifact::V3(model) = load_artifact(
+            container.path().to_str().unwrap(),
+            LoadVindexOptions {
+                layer_range: Some((layer, layer)),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("V3")
+        };
+        assert_eq!(model.runtime.operands().layer_count(), 1);
+        assert!(!model.runtime.operands().has_output());
+        state.model_set.write().unwrap().v3_models = vec![Arc::new(*model)];
+        let app = larql_server::routes::single_model_router(state);
+        // A worker never serves a partial stack as a complete language model.
+        let denied = common::post_json(
+            app.clone(),
+            "/v1/completions",
+            serde_json::json!({"prompt":PROMPT,"max_tokens":1}),
+        )
+        .await;
+        assert!(!denied.status().is_success());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        urls.push(format!("http://{}", listener.local_addr().unwrap()));
+        servers.push(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap()
+        }));
+    }
+    let client = reqwest::Client::new();
+    let binding: Binding = client
+        .get(format!("{}{PATH}", urls[0]))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut wrong = binding.clone();
+    wrong.end = 2;
+    for body in [
+        serde_json::json!({"binding":wrong,"rows":[vec![0.0;binding.hidden]]}),
+        serde_json::json!({"binding":binding,"rows":[[0.0]]}),
+    ] {
+        assert_eq!(
+            client
+                .post(format!("{}{PATH}", urls[0]))
+                .json(&body)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let path = container.path().to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+        let identity = artifact_identity(&path, runtime.plan()).unwrap();
+        let endpoints = runtime.prepare_slice(ExecutionSlice::Endpoints).unwrap();
+        let transport = HttpLayerShards::connect(&urls, None).unwrap();
+        let mut remote = DistributedSession::new(
+            endpoints.plan(),
+            endpoints.operands(),
+            endpoints.backend(),
+            &identity,
+            transport,
+        )
+        .unwrap();
+        let local = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new())
+            .unwrap()
+            .prepare()
+            .unwrap();
+        let mut kv = CanonicalKvState::new();
+        let mut reference = local.session_with_kv(&mut kv).unwrap();
+        // Sliding window is three: this fixture actually crosses its boundary.
+        for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
+            let a = reference.step(id).unwrap();
+            let b = remote.step(id).unwrap();
+            let delta = a
+                .iter()
+                .zip(&b)
+                .map(|(x, y)| (x - y).abs())
+                .fold(0.0f32, f32::max);
+            assert!(delta < 1e-5, "HTTP logit delta {delta}");
+        }
+    })
+    .await
+    .unwrap();
+    for server in servers {
+        server.abort();
+    }
 }

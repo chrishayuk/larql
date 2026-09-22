@@ -116,6 +116,10 @@ pub(crate) fn runtime_snapshot(state: &AppState) -> serde_json::Value {
                 ServedModel::V2(_) => None,
             }),
         },
+        "layer_shard": served.as_ref().and_then(|m| match m {
+            ServedModel::V3(m) => m.shard.as_ref(),
+            ServedModel::V2(_) => None,
+        }),
         "memory": {
             "resident_bytes": crate::runtime_stats::resident_bytes(),
             "model_bytes": served.as_ref().and_then(model_bytes),
