@@ -220,3 +220,37 @@ The two kernels agree to f32 rounding once they see the same activation. C0-a's
 error is therefore the activation's quantisation error alone, consistent with
 high-crest-factor projection inputs, where a few outlier channels set the block
 scale. The control changes no threshold.
+
+## Results: fidelity verdict (F)
+
+Run 2026-09-23 against implementation commit `baa81944`, from a release build of
+that commit, with `LARQL_Q4K_ASM` unset. The machine was under unrelated load at
+the time: another session's GW-STATE-1 training run and a cargo test in another
+worktree. F measures numbers, not time, so the load does not affect it.
+
+S_B is the 27 prompt B ids followed by `production-q4k`'s 64 greedy ids (91
+positions):
+`1408,669,19865,236772,236788,101672,19657,236787,562,10358,529,9079,108,50429,236764,506,999,17698,529,46768,2130,506,999,17698,529,11543,2130,532,496,4185,3988,573,1610,236764,8013,236764,532,6540,236764,41041,496,4083,618,53091,532,3996,618,506,52996,3707,529,1061,15729,236761,9567,3925,5889,236858,236745,886,529,11059,11381,236764`
+
+In F2's run, the arm's ledger shows every Q4_K projection executed as
+`FusedKQuantQ8k` (21,658 calls). The head stays `FusedQ8`, as before.
+
+| Gate | Measured | Threshold | Verdict |
+|---|---|---|---|
+| F0 wiring | output bit-identical to `quantize_x_to_q8k` + `q4k_q8k_matvec_parallel` (Q4_K, Q6_K); a mutation that swaps in the f32 kernel turns it red | exact | **PASS** |
+| F1 projection (prompt B, 1904 Q4_K calls) | max rel L2 **7.362e-2** (median 1.518e-2, p99 3.521e-2); instrument control max 1.174e-6 | ≤ τ1 = 0.2 | **PASS** |
+| F2 logits (S_B) | mean KL(`production-q4k` ‖ arm) **6.9655e-3**, max 1.009e-1 | ≤ τ2 = 5.60e-2 | **PASS** |
+| F3 decisions (S_B) | arm vs `production-q4k` top-1 agreement **0.9890** (1 of 91 positions flips) | ≥ `production-q4k` vs BF16 **0.9341** (6 of 91) | **PASS** |
+
+**F verdict: PASS.** On this corpus, Q8_K activation quantisation adds about a
+tenth of the logit divergence that Q4_K weight quantisation already introduces
+(mean KL 7.0e-3 vs 7.3e-2), and flips one decision where weight quantisation flips
+six.
+
+## Results: performance verdict (P) and mechanism (M)
+
+*Not yet run.* P and M need a machine quiet enough for the control to hold within
+15% of 68.2 ms/token. At 00:45 the load average was 29, and a smoke comparison had
+the control at 124 ms/token (+82%). Under the frozen rule that session is disturbed
+and is not a reading. The smoke numbers are recorded here only so they cannot be
+quoted later as evidence either way.
