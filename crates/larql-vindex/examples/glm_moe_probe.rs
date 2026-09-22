@@ -274,7 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  CONTROL: {control}");
     }
 
-    let backend = ProductionBackend;
+    let backend = ProductionBackend::new();
     let mut routed_out = Vec::new();
     for p in 0..positions {
         let x = &xs[p * hidden..(p + 1) * hidden];

@@ -168,9 +168,21 @@ impl RepresentationCodec for KQuantCodec {
         if !self.quant.has_direct_gemv() {
             return Vec::new();
         }
-        vec![Acceleration::cpu(
+        let stored = ResidencyProfile::stored(self.quant.bits_per_weight());
+        let mut declared = vec![Acceleration::cpu(
             PhysicalProjectionPlan::FusedKQuant,
-            ResidencyProfile::stored(self.quant.bits_per_weight()),
-        )]
+            stored,
+        )];
+        // The same stored blocks against a Q8_K activation (Q8K-ACT-1),
+        // declared only where `KQuant::gemv_q8k` answers. Only the
+        // `production-q4k-q8k` provider selects it; declaring it changes
+        // nothing another provider picks.
+        if self.quant.has_q8k_gemv() {
+            declared.push(Acceleration::cpu(
+                PhysicalProjectionPlan::FusedKQuantQ8k,
+                stored,
+            ));
+        }
+        declared
     }
 }

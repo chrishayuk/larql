@@ -127,9 +127,33 @@ pub enum WeightFormat {
     /// K-quant; a backend asking for it over anything else is refused at
     /// load rather than served a manufactured pack.
     KQuant,
+    /// The same stored K-quant blocks as [`Self::KQuant`], bound to run
+    /// against a **Q8_K activation** (Q8K-ACT-1, `docs/q8k-act-1.md`).
+    ///
+    /// Byte-for-byte the same residency. It is a separate format because
+    /// the executor OBSERVES its kernel from what is resident and never
+    /// chooses again: the activation form has to be fixed at load, by the
+    /// realization the provider pinned, or the plan that ran would not be
+    /// the plan that was selected. Only for members with a Q8_K kernel
+    /// (Q4_K, Q6_K); any other member is refused at load.
+    KQuantQ8k,
     /// Fine-grained (block-wise) FP8: the checkpoint's own E4M3 codes
     /// against a two-dimensional grid of f32 scales.
     Fp8Block,
+}
+
+/// The activation form a stored K-quant is bound to run against — fixed
+/// at load from the pinned realization, so the kernel is read back off
+/// the resident operand rather than chosen a second time.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum KQuantActivation {
+    /// f32 activation: the codec's own dequantise-and-FMA kernel.
+    #[default]
+    F32,
+    /// The activation quantised once per call to Q8_K (int8, one scale
+    /// per 256), multiplied by the integer-dot `q4k_q8k` family. Lossy in
+    /// the activation, by declaration.
+    Q8k,
 }
 
 /// Which matrix a format question is about. Formats are declared per
@@ -227,6 +251,7 @@ pub enum WeightSlice<'a> {
     KQuant {
         blocks: &'a [u8],
         codec: KQuant,
+        activation: KQuantActivation,
     },
     /// Fine-grained FP8: E4M3 codes and the f32 scale grid, both the
     /// checkpoint's own bytes. TWO streams, and unlike every other pair
@@ -398,7 +423,11 @@ impl<'a> WeightSlice<'a> {
                     _ => Err(short(packed.len() * 2)),
                 }
             }
-            WeightSlice::KQuant { blocks, codec } => {
+            WeightSlice::KQuant {
+                blocks,
+                codec,
+                activation,
+            } => {
                 // The stride is the codec's: blocks run along the row,
                 // and a width off the block grid describes no rows.
                 let Some(per_row) = codec.row_bytes(in_dim) else {
@@ -432,6 +461,7 @@ impl<'a> WeightSlice<'a> {
                 Ok(WeightRows::KQuant {
                     blocks,
                     codec: *codec,
+                    activation: *activation,
                 })
             }
             WeightSlice::Fp8Block {

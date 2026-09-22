@@ -36,6 +36,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+use super::super::backend::KQuantActivation;
 use super::executor::CpuExecutor;
 use super::physical::PhysicalProjectionPlan;
 use super::projector::WeightRows;
@@ -90,6 +91,10 @@ pub struct Captured {
     /// Captured for the same reason the tensor scale is: replaying the
     /// bytes under another codec would price a kernel over garbage.
     codec: Option<KQuant>,
+    /// Which arithmetic the K-quant call ran — replaying Q8_K-activation
+    /// blocks through the f32 kernel would price a kernel the decode never
+    /// ran, the substitution this harness exists to rule out.
+    kquant_activation: KQuantActivation,
     /// Fine-grained FP8's tile and grid, and where the slab starts
     /// within its first tile.
     ///
@@ -178,6 +183,7 @@ impl Captured {
             Kind::KQuant => WeightRows::KQuant {
                 blocks: std::slice::from_raw_parts(p as *const u8, n),
                 codec: self.codec.expect("a K-quant capture records its codec"),
+                activation: self.kquant_activation,
             },
             Kind::Fp8Block => {
                 let g = self.fp8.expect("an FP8 capture records its slab geometry");
@@ -266,6 +272,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
     }
     let mut tensor_scale = 0.0f32;
     let mut codec = None;
+    let mut kquant_activation = KQuantActivation::F32;
     let mut fp8 = None;
     let (kind, primary, secondary, tertiary, block) = match weight {
         WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
@@ -315,8 +322,13 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
                 0,
             )
         }
-        WeightRows::KQuant { blocks, codec: c } => {
+        WeightRows::KQuant {
+            blocks,
+            codec: c,
+            activation,
+        } => {
             codec = Some(c);
+            kquant_activation = activation;
             (
                 Kind::KQuant,
                 (blocks.as_ptr() as usize, blocks.len()),
@@ -360,6 +372,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
         kind,
         tensor_scale,
         codec,
+        kquant_activation,
         fp8,
         primary,
         secondary,

@@ -16,7 +16,7 @@
 //! tail is a bounded realisation choice, and the parity gates against
 //! the f32 backends and the upstream trace are its judge.
 
-use super::backend::{WeightFormat, WeightSlice};
+use super::backend::{KQuantActivation, WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
 use super::operands::{OperandSource, RawOperand, RepresentationSource};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
@@ -235,6 +235,9 @@ pub enum LoadedWeight {
     KQuant {
         blocks: Vec<u8>,
         codec: KQuant,
+        /// The activation form this binding runs against, fixed by the
+        /// pinned realization — see [`WeightFormat::KQuantQ8k`].
+        activation: KQuantActivation,
     },
 }
 
@@ -391,7 +394,10 @@ impl LoadedWeight {
             LoadedWeight::Q4 { .. } => WeightFormat::Q4,
             LoadedWeight::Mxfp4 { .. } => WeightFormat::Mxfp4,
             LoadedWeight::Nvfp4 { .. } => WeightFormat::Nvfp4,
-            LoadedWeight::KQuant { .. } => WeightFormat::KQuant,
+            LoadedWeight::KQuant { activation, .. } => match activation {
+                KQuantActivation::F32 => WeightFormat::KQuant,
+                KQuantActivation::Q8k => WeightFormat::KQuantQ8k,
+            },
             LoadedWeight::Fp8Block { .. } => WeightFormat::Fp8Block,
         }
     }
@@ -469,9 +475,14 @@ impl LoadedWeight {
                 scales: scales.as_slice(),
                 tensor_scale: *tensor_scale,
             },
-            LoadedWeight::KQuant { blocks, codec } => WeightSlice::KQuant {
+            LoadedWeight::KQuant {
+                blocks,
+                codec,
+                activation,
+            } => WeightSlice::KQuant {
                 blocks,
                 codec: *codec,
+                activation: *activation,
             },
         }
     }
@@ -711,7 +722,8 @@ pub fn load_weight(
             let values = widen_raw(&raw, &operand.tensor)?;
             quantize_nvfp4(&values, rows, k, &operand.tensor)
         }
-        WeightFormat::KQuant => kquant_from_stored(store, operand),
+        WeightFormat::KQuant => kquant_from_stored(store, operand, KQuantActivation::F32),
+        WeightFormat::KQuantQ8k => kquant_from_stored(store, operand, KQuantActivation::Q8k),
         WeightFormat::F16 => {
             let raw = store.load_raw(operand)?;
             match raw.dtype.as_str() {
@@ -782,6 +794,7 @@ fn check_pack_conforms(
 fn kquant_from_stored(
     store: OperandSource<'_>,
     operand: &OperandRef,
+    activation: KQuantActivation,
 ) -> Result<LoadedWeight, VindexError> {
     let raw = store.load_raw(operand)?;
     let Some(codec) = kquant::lookup(&raw.dtype) else {
@@ -805,9 +818,20 @@ fn kquant_from_stored(
             operand.shape
         )));
     }
+    // A Q8_K binding for a member with no Q8_K kernel would pin a
+    // realization that fails at the first token; refuse it at load, by
+    // name, as the codec mismatch above is.
+    if activation == KQuantActivation::Q8k && !codec.has_q8k_gemv() {
+        return Err(VindexError::Parse(format!(
+            "tensor `{}` is {}, which has no Q8_K-activation kernel — only Q4_K and Q6_K bind \
+             for a Q8_K activation",
+            operand.tensor, codec.name
+        )));
+    }
     Ok(LoadedWeight::KQuant {
         blocks: raw.bytes,
         codec,
+        activation,
     })
 }
 

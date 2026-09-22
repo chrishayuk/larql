@@ -103,6 +103,13 @@ fn the_fp8_kernel_is_declared_by_exactly_the_fp8_codec() {
         ["Q4_K", "Q6_K", "Q8_0"],
         "the K-quant kernel is declared by the members it has a kernel for, and no other"
     );
+    // Q8K-ACT-1: the Q8_K-activation kernel exists for exactly the two
+    // members `larql-compute` routes to a Q8_K matvec.
+    assert_eq!(
+        declared_by(PhysicalProjectionPlan::FusedKQuantQ8k),
+        ["Q4_K", "Q6_K"],
+        "the Q8_K-activation kernel is declared by the members it has a kernel for, and no other"
+    );
 }
 
 /// A codec with no kernel executes through decode, flagged — never through
@@ -117,8 +124,17 @@ fn a_kquant_without_a_kernel_declares_no_direct_realization() {
         );
         assert!(!codec.quant().has_direct_gemv());
     }
-    for codec in [Q4_K, Q6_K, Q8_0] {
+    // Every member with a kernel declares the f32-activation realization;
+    // Q4_K and Q6_K also declare the Q8_K one (Q8K-ACT-1), and Q8_0, with
+    // no Q8_K kernel, declares nothing more.
+    for (codec, declared) in [(Q4_K, 2), (Q6_K, 2), (Q8_0, 1)] {
         assert!(codec.quant().has_direct_gemv());
-        assert_eq!(codec.accelerations().len(), 1, "{}", codec.encoding_label());
+        assert_eq!(
+            codec.accelerations().len(),
+            declared,
+            "{}",
+            codec.encoding_label()
+        );
+        assert_eq!(codec.quant().has_q8k_gemv(), declared == 2);
     }
 }

@@ -3,6 +3,7 @@
 //! None of them spawns. Every one computes exactly the output rows it is
 //! handed; the executor decides how the rows were cut.
 
+use super::super::backend::KQuantActivation;
 use super::projector::{CpuParallelism, DenseProjector, WeightRows};
 
 /// The literal transcription: one scalar dot per row, f32 weights.
@@ -266,8 +267,16 @@ impl DenseProjector for FusedKQuant {
     }
 
     fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
-        let WeightRows::KQuant { blocks, codec } = weight_rows else {
-            panic!("the direct K-quant kernel consumes stored K-quant blocks only");
+        let WeightRows::KQuant {
+            blocks,
+            codec,
+            activation: KQuantActivation::F32,
+        } = weight_rows
+        else {
+            panic!(
+                "the direct K-quant kernel consumes stored K-quant blocks bound for an f32 \
+                 activation only"
+            );
         };
         let n = out.len();
         let Some(values) = codec.gemv(blocks, x, n, x.len()) else {
@@ -276,6 +285,52 @@ impl DenseProjector for FusedKQuant {
             // file, not a runtime condition to absorb.
             panic!(
                 "{} slab geometry does not describe [{n}, {}]",
+                codec.name,
+                x.len()
+            );
+        };
+        out.copy_from_slice(&values);
+    }
+}
+
+/// **Direct K-quant against a Q8_K activation** (Q8K-ACT-1,
+/// `docs/q8k-act-1.md`). The same stored blocks [`FusedKQuant`] reads,
+/// multiplied by the integer-dot kernel V2's CPU decode runs: the
+/// activation is quantised once per call to Q8_K and the codec's
+/// [`gemv_q8k`](crate::format::vindex3::represent::kquant::KQuant::gemv_q8k)
+/// does the rest.
+///
+/// A separate kernel, not a mode of [`FusedKQuant`]: the bytes are the
+/// same and only the activation differs, so the difference has to be
+/// visible as a plan in every ledger line and every realization record,
+/// never inferred from an environment. Lossy in the activation by
+/// declaration; its fidelity contract is Q8K-ACT-1's, not PARETO-1's.
+///
+/// [`CpuParallelism::LibraryOwned`] for [`FusedKQuant`]'s reason: the
+/// `q4k_q8k` kernels split rows across their own pool.
+pub struct FusedKQuantQ8k;
+
+impl DenseProjector for FusedKQuantQ8k {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::LibraryOwned
+    }
+
+    fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
+        let WeightRows::KQuant {
+            blocks,
+            codec,
+            activation: KQuantActivation::Q8k,
+        } = weight_rows
+        else {
+            panic!("the Q8_K-activation kernel consumes K-quant blocks bound for a Q8_K activation only");
+        };
+        let n = out.len();
+        let Some(values) = codec.gemv_q8k(blocks, x, n, x.len()) else {
+            // Geometry is settled at `WeightSlice::rows`, and the loader
+            // refused any member without a Q8_K kernel, so a refusal here
+            // is a bug in this file, not a runtime condition to absorb.
+            panic!(
+                "{} Q8_K slab geometry does not describe [{n}, {}]",
                 codec.name,
                 x.len()
             );

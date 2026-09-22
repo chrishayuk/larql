@@ -278,7 +278,7 @@ fn the_direct_projection_reads_the_stored_bytes() {
     let (_src, out) = compiled(&tmp, Q8_0);
     let op = a_stored_matrix(&out, Q8_0);
     let store = open(&out, Q8_0);
-    let LoadedWeight::KQuant { blocks, codec } =
+    let LoadedWeight::KQuant { blocks, codec, .. } =
         load_weight((&store).into(), &op, WeightFormat::KQuant).unwrap()
     else {
         panic!("the direct arm binds blocks");
@@ -289,6 +289,7 @@ fn the_direct_projection_reads_the_stored_bytes() {
         &WeightSlice::KQuant {
             blocks: &blocks,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         },
         &x,
         out_dim,
@@ -303,6 +304,7 @@ fn the_direct_projection_reads_the_stored_bytes() {
         &WeightSlice::KQuant {
             blocks: &dirty,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         },
         &x,
         out_dim,
@@ -414,7 +416,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let (_src, out) = compiled(&tmp, Q6_K);
     let op = a_stored_matrix(&out, Q6_K);
     let store = open(&out, Q6_K);
-    let LoadedWeight::KQuant { blocks, codec } =
+    let LoadedWeight::KQuant { blocks, codec, .. } =
         load_weight((&store).into(), &op, WeightFormat::KQuant).unwrap()
     else {
         panic!("the direct arm binds blocks");
@@ -425,6 +427,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let as_q6 = WeightSlice::KQuant {
         blocks: &blocks,
         codec: Q6_K,
+        activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
     };
     assert!(as_q6.rows(out_dim, in_dim).is_ok(), "the control case");
 
@@ -432,6 +435,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let as_q4 = WeightSlice::KQuant {
         blocks: &blocks,
         codec: Q4_K,
+        activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
     };
     let err = as_q4
         .rows(out_dim, in_dim)
@@ -448,6 +452,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let as_q8 = WeightSlice::KQuant {
         blocks: &blocks,
         codec: Q8_0,
+        activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
     };
     let err = as_q8
         .rows(out_dim, in_dim)
