@@ -2,7 +2,7 @@
 """Q-BANK-1 runner: characterise a compiled representation against BF16.
 
     python3 run_bank.py reference <container> <tokenizer.json> <out-dir> [--backend metal]
-    python3 run_bank.py compare   <container> <out-dir> [--backend ... --source stored] [--keep]
+    python3 run_bank.py compare   <container> <out-dir> [--backend ... --source stored] [--keep] [--per-prompt]
     python3 run_bank.py report    <out-dir>
 
 `reference` runs the BF16 arm once and banks its logits with the model
@@ -293,11 +293,40 @@ def cmd_reference(container, tokenizer, outdir, backend, limit):
     print(f"banked {len(entries)} references -> {outdir}")
 
 
-def cmd_compare(container, outdir, backend, source, label, keep=False):
+def run_per_prompt_arm(container, entries, backend, source, dump_dir):
+    """Fallback for backends `--bank` doesn't support (e.g. metal-lowered-*,
+    which silently ignores --bank and runs the --tokens placeholder instead
+    of erroring — confirmed 2026-08-25 on granite-4.2-3b: exits 0, writes no
+    dumps). One process per prompt, folded into the same `facts` shape
+    `run_bank_arm` returns so `cmd_compare` doesn't care which one ran:
+    `runtime_compiled` and each plan's calls/GB are summed across prompts;
+    `requested`/`source`/`objects_from_pack`/`objects_total` are read from
+    the first prompt, since they describe the backend and container, not
+    an individual prompt, and must be identical across the run.
+    """
+    os.makedirs(dump_dir, exist_ok=True)
+    total = {"requested": None, "source": None, "objects_from_pack": None,
+             "objects_total": None, "runtime_compiled": 0, "plans": {}}
+    for e in entries:
+        dump = os.path.join(dump_dir, f"{e['id']}.f32")
+        facts = run_arm(container, e, backend, source, dump)
+        total["runtime_compiled"] += facts.get("runtime_compiled", 0)
+        for key in ("requested", "source", "objects_from_pack", "objects_total"):
+            if total[key] is None:
+                total[key] = facts.get(key)
+        for name, plan in (facts.get("plans") or {}).items():
+            slot = total["plans"].setdefault(name, {"calls": 0, "gb": 0.0})
+            slot["calls"] += plan.get("calls", 0)
+            slot["gb"] += plan.get("gb", 0.0)
+    return total
+
+
+def cmd_compare(container, outdir, backend, source, label, keep=False, per_prompt=False):
     meta = json.load(open(os.path.join(outdir, "reference.json")))
     rows = []
     canddir = os.path.join(outdir, f"_cand-{label}")
-    facts = run_bank_arm(container, meta["entries"], backend, source, canddir)
+    runner = run_per_prompt_arm if per_prompt else run_bank_arm
+    facts = runner(container, meta["entries"], backend, source, canddir)
     cand_id = container_identity(container)
     assert_candidate_executed_its_representation(cand_id, facts, label)
     assert_stored_kquant_ran_as_declared(cand_id, facts, label)
@@ -433,7 +462,8 @@ if __name__ == "__main__":
         backend = a[a.index("--backend") + 1] if "--backend" in a else "metal-nvfp4-no-head"
         source = a[a.index("--source") + 1] if "--source" in a else "stored"
         label = a[a.index("--label") + 1] if "--label" in a else "candidate"
-        cmd_compare(a[1], a[2], backend, source, label, keep="--keep" in a)
+        per_prompt = "--per-prompt" in a
+        cmd_compare(a[1], a[2], backend, source, label, keep="--keep" in a, per_prompt=per_prompt)
     elif a[0] == "report":
         label = a[a.index("--label") + 1] if "--label" in a else "candidate"
         cmd_report(a[1], label)
