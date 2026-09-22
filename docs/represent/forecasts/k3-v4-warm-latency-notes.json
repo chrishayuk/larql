@@ -98,10 +98,76 @@
         "other": 6.7
       },
       "reading": "Four busy loops on a 16-core machine left the 6-worker pool its cores: p50 moved 79.5 → 85.7 ms (1.08×) and the distribution TIGHTENED (p95/p50 1.09 against the quiet arm's 9.57). The quiet arm's tail was therefore not other processes' CPU demand."
+    },
+    "A_quiet_QUALIFIED": {
+      "when": "2026-09-06 ~13:10 local, AC power, after waiting for every process under the probe's caps (the run refused twice before that: a `claude` process at 14% of a core over the 12% limit)",
+      "qualification": "QUALIFIED — the instrument ran without --unquiet-ok, so the probe found no disqualifier at start",
+      "passes": {
+        "repeat": 33,
+        "warmup": 3,
+        "counted": 30
+      },
+      "routing": "IDENTICAL (ebe045dc40cce5b1, 26 routed layers)",
+      "logits": "bit-identical (0.00e0)",
+      "faults": "major 0; minor ≤ 2 per pass; resident-page delta 0",
+      "token_ms": {
+        "p50": 75.4,
+        "p95": 77.6,
+        "min": 73.7,
+        "max": 80.8,
+        "p95_over_p50": 1.03,
+        "all_counted": [
+          75.0,
+          74.0,
+          75.0,
+          74.0,
+          74.0,
+          76.0,
+          75.0,
+          75.0,
+          77.0,
+          77.0,
+          76.0,
+          76.0,
+          75.0,
+          74.0,
+          75.0,
+          75.0,
+          78.0,
+          75.0,
+          78.0,
+          77.0,
+          75.0,
+          76.0,
+          75.0,
+          76.0,
+          76.0,
+          81.0,
+          74.0,
+          75.0,
+          77.0,
+          75.0
+        ]
+      },
+      "stage_split_at_p50_ms": {
+        "attention": 25.3,
+        "router": 0.9,
+        "routed_experts": 35.3,
+        "shared_expert": 7.6,
+        "prefetch": 0.0,
+        "other": 6.1
+      },
+      "stage_share_of_token_p50": {
+        "attention": "33.6%",
+        "router": "1.2%",
+        "routed_experts": "46.9%",
+        "shared_expert": "10.1%",
+        "other": "8.1%"
+      }
     }
   },
   "predictions_scored": {
-    "P1": "PARTIAL. p50 79.5 ms ≤ 180 ✓ (and below V3's 140 ms floor). p95/p50 9.57 ✗ — but the tail is a labelled, uniform whole-process slowdown on a machine on BATTERY; the prediction stands untested on a QUALIFIED machine.",
+    "P1": "HELD on the qualified machine: p50 75.4 ms ≤ 180 ✓ and p95/p50 1.03 ≤ 1.3 ✓ (min 73.7, max 80.8 over 30 passes). The unqualified arm's tail (p95/p50 9.57 on battery) does not appear on AC with the probe's caps met.",
     "P2": "HELD. One routing fingerprint in 30 passes; generated ids identical; logits bit-identical.",
     "P3": "HELD except the shared expert: routed 48.0% (40–55 ✓), attention 32.9% (25–40 ✓), router 1.1% (<3 ✓), other 7.4% (≤15 ✓), shared expert 10.5% (3–8 ✗ — the 1024-wide shared expert is three dense projections per layer, 26 layers, ≈ one routed expert's cost in every layer; the forecast underpriced it).",
     "P4": "HELD on major faults (0) and resident delta (0); minor faults ≤ 22 vs ≤ 10 predicted ✗ (the 22 coincided with the 342 ms pass).",
@@ -112,8 +178,9 @@
     "V4-N1": "The warm Kimi-Linear token's floor through the prepared plan is ≈ 75–80 ms on this machine (p50 79.5, min 74.9), with identical routing and bit-identical logits across passes. V3's 140 ms and 430 ms both sit in the slow regime this arm exposed: passes where every stage slows by one factor together, with no page faults — the machine, not the model.",
     "V4-N2": "The stage denominator for prefetch pricing at p50: routed experts 38 ms (48%), attention 26 ms (33%), shared expert 8 ms (10.5%), router 1 ms, other 6 ms. A prefetch move can only recover cold-path cost; on the WARM token the routed loop is already 48% and compute-bound at these sizes.",
     "V4-N3": "A measurement's qualification is part of its result. The probe reported BATTERY and the run went ahead because the instrument only printed the probe; it now refuses a disqualified machine unless told to run labelled. [[feedback_a_gate_owns_its_own_state]] again.",
-    "V4-N4": "The tail is episodic and uniform, not load-driven: in the quiet arm four consecutive passes slowed every stage by one common factor (up to 20×) with 0 faults, while a deliberately loaded machine produced a tight 1.09 distribution. What remains as cause is whole-process frequency or scheduling policy — the machine was on BATTERY in both arms, and macOS's frequency policy on battery is exactly the disqualifier the environment probe names. The qualified arm on AC power is the discriminating experiment and has not run."
+    "V4-N4": "The tail is episodic and uniform, not load-driven: in the quiet arm four consecutive passes slowed every stage by one common factor (up to 20×) with 0 faults, while a deliberately loaded machine produced a tight 1.09 distribution. What remains as cause is whole-process frequency or scheduling policy — the machine was on BATTERY in both arms, and macOS's frequency policy on battery is exactly the disqualifier the environment probe names. The qualified arm on AC power is the discriminating experiment and has not run.",
+    "V4-N5": "CLOSED: V3's 140–430 ms warm spread was the machine, not the model. On a qualified machine (AC power, load < 2.5, background < 40%, no process over 12% of a core) the warm Kimi-Linear token is 75.4 ms p50 with p95/p50 1.03, routing identical and logits bit-identical. The V4 denominator for prefetch pricing is therefore: token 75.4 ms; routed experts 35.3 (46.9%), attention 25.3 (33.6%), shared expert 7.6 (10.1%), router 0.9, other 6.1."
   },
-  "not_claimed": "No tokens-per-second. The quiet arm on a QUALIFIED machine (AC power) has not run; 79.5 ms p50 is the modal floor of an unqualified run, and the tail's cause is narrowed to frequency/scheduling policy, not established.",
+  "not_claimed": "No tokens-per-second figure is quoted as a product claim; 75.4 ms p50 on a qualified machine is the warm latency floor of THIS machine at 6 CPU workers, an upper bound on what a throughput claim could later rest on.",
   "next": "Run arm A on AC power (the instrument now refuses otherwise). If p95/p50 ≤ 1.3 there, P1 holds and V3's spread is closed as battery frequency policy; if the tail persists on AC, the next tap is per-pass core frequency and QoS class. Then the prefetch arms, priced against V4-N2's denominator."
 }
