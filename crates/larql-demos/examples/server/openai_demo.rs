@@ -139,21 +139,7 @@ fn make_app_state(model: LoadedModel) -> Arc<AppState> {
 }
 
 fn load_default(path: &str) -> Result<LoadedModel, Box<dyn std::error::Error + Send + Sync>> {
-    let opts = LoadVindexOptions {
-        no_infer: false,
-        ffn_only: false,
-        embed_only: false,
-        layer_range: None,
-        max_gate_cache_layers: 0,
-        max_q4k_cache_layers: 0,
-        hnsw: None,
-        warmup_hnsw: false,
-        release_mmap_after_request: false,
-        expert_filter: None,
-        unit_filter: None,
-        moe_remote: None,
-    };
-    load_single_vindex(path, opts)
+    load_single_vindex(path, LoadVindexOptions::default())
 }
 
 // ── Demos ─────────────────────────────────────────────────────────────────────

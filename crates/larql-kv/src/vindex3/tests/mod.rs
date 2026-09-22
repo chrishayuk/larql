@@ -467,3 +467,38 @@ fn append_accepts_an_adopted_column_major_cache() {
         vec![5., 6.]
     );
 }
+
+#[test]
+fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation::{
+        LayerContinuationGeometry, LayerLatentKvGeometry,
+    };
+    use larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError;
+    let mut state = CanonicalKvState::new();
+    assert!(matches!(
+        state.latent_state(1),
+        Err(ContinuationError::LatentUnsupported { layer: 1, .. })
+    ));
+    let geometry = [
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 2,
+            window: None,
+        }),
+        LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 3 }),
+    ];
+    state.prepare_continuation(&geometry).unwrap();
+    assert!(matches!(
+        state.latent_state(0),
+        Err(ContinuationError::NotLatent { layer: 0, .. })
+    ));
+    assert!(state.latent_state(1).unwrap().is_empty());
+    state.latent_state(1).unwrap().append(vec![1.0, -0.0, 3.0]);
+    state.append(0, vec![4.0, 5.0], vec![6.0, 7.0]);
+    state.set_position(1);
+    state.prepare_continuation(&geometry).unwrap();
+    let rows = state.latent_state(1).unwrap().rows();
+    assert_eq!(rows, &[vec![1.0, -0.0, 3.0]]);
+    assert_eq!(rows[0][1].to_bits(), (-0.0f32).to_bits());
+    assert_eq!(state.keys(0), &[vec![4.0, 5.0]]);
+    assert_eq!(state.position(), 1);
+}
