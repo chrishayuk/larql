@@ -3,6 +3,8 @@ use super::*;
 use super::matvec_f32::dot_256_f32;
 #[cfg(target_arch = "aarch64")]
 use super::matvec_f32::{dot_256_f32_neon, dot_256_f32_scalar};
+use super::quantize::Q5K_MAX_LEVEL;
+use larql_models::quant::ggml::{K_QUANT_BLOCK_ELEMS, Q5_K_BLOCK_BYTES};
 
 /// Reference implementation kept here as the correctness oracle for
 /// the bit-manipulation `f16_to_f32`.  Mirrors the previous (slow)
@@ -170,6 +172,84 @@ fn q4k_decode_matches_models_reference_incl_subnormal_scales() {
             );
         }
     }
+}
+
+/// Q5_K encode → decode round trip against the larql-models decoder.
+///
+/// The encoder and decoder are in different crates and were written
+/// against the layout spec independently, so this is the seam that would
+/// catch a swapped qh/qs order or an off-by-one in the high-bit shift.
+#[test]
+fn q5k_round_trips_through_models_decoder() {
+    let n = K_QUANT_BLOCK_ELEMS * 4;
+    let data = seeded_data(n, 1.0, 0xB0B01);
+    let bytes = quantize_q5_k(&data);
+
+    assert_eq!(
+        bytes.len(),
+        (n / K_QUANT_BLOCK_ELEMS) * Q5_K_BLOCK_BYTES,
+        "Q5_K must emit exactly {Q5_K_BLOCK_BYTES} bytes per super-block"
+    );
+
+    let decoded = larql_models::quant::ggml::dequantize_q5_k(&bytes, n).expect("models decode");
+
+    // Quantisation error is bounded by half a level of the sub-block's
+    // own scale; compare against the data's dynamic range rather than
+    // per-element magnitude (small values legitimately land on zero).
+    let range = data.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    for (i, (want, got)) in data.iter().zip(&decoded).enumerate() {
+        assert!(
+            (want - got).abs() <= range / Q5K_MAX_LEVEL,
+            "elem {i}: encoded {want:e}, decoded {got:e} (range {range:e})"
+        );
+    }
+}
+
+/// Q5_K must beat Q4_K on the same data. This is the whole reason the
+/// format exists: one extra magnitude bit halves the quantisation step.
+/// A qh plane that is written but never read still round-trips within
+/// Q4_K's tolerance — this test is what fails if the fifth bit is inert.
+#[test]
+fn q5k_is_strictly_more_accurate_than_q4k() {
+    let n = K_QUANT_BLOCK_ELEMS * 8;
+    let data = seeded_data(n, 1.0, 0xB0B02);
+
+    let q4k = larql_models::quant::ggml::dequantize_q4_k(&quantize_q4_k(&data), n).unwrap();
+    let q5k = larql_models::quant::ggml::dequantize_q5_k(&quantize_q5_k(&data), n).unwrap();
+
+    let err = |approx: &[f32]| -> f64 {
+        data.iter()
+            .zip(approx)
+            .map(|(a, b)| ((a - b) as f64).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    };
+    let (e4, e5) = (err(&q4k), err(&q5k));
+    assert!(
+        e5 < e4 * 0.75,
+        "Q5_K RMSE {e5:e} should be well under Q4_K's {e4:e} — \
+         if they're close the high-bit plane isn't contributing"
+    );
+}
+
+/// The fused row kernels must agree with encode → dequantize → dot, so a
+/// Q5_K vindex serves the same numbers whichever path the caller takes.
+#[test]
+fn q5k_row_dot_matches_encoded_weights() {
+    let cols = K_QUANT_BLOCK_ELEMS * 2;
+    let weights = seeded_data(cols, 1.0, 0xB0B03);
+    let x = seeded_data(cols, 1.0, 0xB0B04);
+    let bytes = quantize_q5_k(&weights);
+
+    let decoded = larql_models::quant::ggml::dequantize_q5_k(&bytes, cols).unwrap();
+    let expected: f32 = decoded.iter().zip(&x).map(|(w, v)| w * v).sum();
+    let got = larql_models::quant::ggml::q5k_row_dot(&bytes, &x).unwrap();
+
+    let denom = expected.abs().max(1e-6);
+    assert!(
+        (got - expected).abs() / denom < 1e-5,
+        "fused row dot {got:e} vs dequantize+dot {expected:e}"
+    );
 }
 
 /// Q6_K twin — its `d` is also an f16 scale, and the int8 Q6K matvec

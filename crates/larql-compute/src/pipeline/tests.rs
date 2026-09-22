@@ -52,6 +52,7 @@ fn registry_tag_round_trips_every_variant() {
         QuantFormat::Q4_0,
         QuantFormat::Q4_K,
         QuantFormat::Q4_KF,
+        QuantFormat::Q5_K,
         QuantFormat::Q6_K,
         QuantFormat::Q8_0,
         QuantFormat::BF16,
@@ -131,6 +132,7 @@ fn quant_format_classifiers() {
     // k-quant family (256-element super-blocks)
     assert!(QuantFormat::Q4_K.is_kquant_family());
     assert!(QuantFormat::Q4_KF.is_kquant_family());
+    assert!(QuantFormat::Q5_K.is_kquant_family());
     assert!(QuantFormat::Q6_K.is_kquant_family());
     // Legacy block-32 Q8 path
     assert!(QuantFormat::Q4_0.is_legacy_q8());
@@ -144,6 +146,38 @@ fn quant_format_classifiers() {
     assert!(QuantFormat::Q4_KF.is_q4kf());
     assert!(!QuantFormat::Q4_K.is_q4kf());
     assert!(!QuantFormat::Q6_K.is_q4kf());
+}
+
+/// Being a k-quant and having a Metal kernel are separate questions, and
+/// Q5_K is the format that separates them. Conflating the two is what
+/// would route its 176-byte super-block into the Q4_K kernel's 144-byte
+/// stride.
+#[test]
+fn kquant_family_does_not_imply_metal_kernel() {
+    assert!(QuantFormat::Q5_K.is_kquant_family());
+    assert!(!QuantFormat::Q5_K.has_metal_kernel());
+
+    for fmt in [QuantFormat::Q4_K, QuantFormat::Q4_KF, QuantFormat::Q6_K] {
+        assert!(fmt.is_kquant_family());
+        assert!(fmt.has_metal_kernel());
+    }
+}
+
+/// Q5_K's super-block geometry must round-trip through the format enum —
+/// a wrong `bytes_per_block` here silently mis-strides every row read.
+#[test]
+fn q5k_block_layout_and_tag() {
+    assert_eq!(QuantFormat::Q5_K.packed_block_layout(), Some((256, 176)));
+    assert_eq!(QuantFormat::Q5_K.registry_tag(), "Q5_K");
+    assert_eq!(
+        QuantFormat::from_registry_tag("Q5_K"),
+        Some(QuantFormat::Q5_K)
+    );
+    // 2560 columns = 10 super-blocks → 1760 bytes per row.
+    assert_eq!(QuantFormat::Q5_K.packed_matrix_bytes(1, 2560), Some(1760));
+    assert!(!QuantFormat::Q5_K.is_legacy_q8());
+    assert!(!QuantFormat::Q5_K.is_ternary());
+    assert!(!QuantFormat::Q5_K.is_q4kf());
 }
 
 #[test]

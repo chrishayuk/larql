@@ -48,6 +48,9 @@ impl MetalBackend {
         } else {
             layer_head_dim
         };
+        // Layout branch below is not a capability check — refuse formats
+        // with no Metal kernel first. See `decode::preflight`.
+        crate::decode::preflight::assert_layer_servable(layer, layer_idx);
         let uses_kquant = layer.wq.format.is_kquant_family();
         let layer_q_dim = layer_num_q_heads * layer_head_dim;
         let window_size = layer.sliding_window as u32;

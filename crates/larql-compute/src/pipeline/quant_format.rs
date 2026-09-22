@@ -10,11 +10,17 @@ pub enum QuantFormat {
     Q4_0,  // 18 bytes per 32 values (one f16 scale)
     Q4_K,  // 144 bytes per 256 values (GGUF-canonical, Ollama-compatible)
     Q4_KF, // 160 bytes per 256 values (pre-baked half scales — fast decode)
-    Q6_K,  // 210 bytes per 256 values (6-bit with sub-block scales)
-    Q8_0,  // int8 values + separate f32 scales
-    BF16,  // raw bfloat16 (2 bytes per value, no quantization scales)
-    F16,   // raw float16  (2 bytes per value)
-    F32,   // raw float32  (4 bytes per value)
+    /// 176 bytes per 256 values — Q4_K's affine layout plus a 32-byte
+    /// high-bit plane. **CPU only**: there is no Q5_K Metal shader, so
+    /// `MetalBackend::supports_quant` reports `false` and the Metal decode
+    /// paths reject it rather than mis-routing its 176-byte stride into a
+    /// Q4_K (144) or Q6_K (210) kernel.
+    Q5_K,
+    Q6_K, // 210 bytes per 256 values (6-bit with sub-block scales)
+    Q8_0, // int8 values + separate f32 scales
+    BF16, // raw bfloat16 (2 bytes per value, no quantization scales)
+    F16,  // raw float16  (2 bytes per value)
+    F32,  // raw float32  (4 bytes per value)
     /// BitNet 1.58-bit ternary (GGML I2_S, type 36): 4 trits/byte packed
     /// row-major (`cols/4` bytes per row) plus a separate per-channel f32
     /// scale array. Unlike the block-quant formats, the weight is NOT a
@@ -38,6 +44,7 @@ impl QuantFormat {
             Self::Q4_0 => Some((ggml::Q4_0_BLOCK_ELEMS, ggml::Q4_0_BLOCK_BYTES)),
             Self::Q4_K => Some((ggml::Q4_K_BLOCK_ELEMS, ggml::Q4_K_BLOCK_BYTES)),
             Self::Q4_KF => Some((ggml::Q4_K_BLOCK_ELEMS, Q4_KF_BLOCK_BYTES)),
+            Self::Q5_K => Some((ggml::Q5_K_BLOCK_ELEMS, ggml::Q5_K_BLOCK_BYTES)),
             Self::Q6_K => Some((ggml::Q6_K_BLOCK_ELEMS, ggml::Q6_K_BLOCK_BYTES)),
             _ => None,
         }
@@ -59,13 +66,33 @@ impl QuantFormat {
     /// dispatchers (vs the legacy block-32 Q4_0 / Q8_0 path). Used to gate
     /// the "skip Q8 quantize" fast path in `residual_norm` and FFN routing.
     ///
-    /// Adding a future k-quant format (e.g. Q5_K) extends this one method,
-    /// not the ~10 OR-chains it currently replaces. Roadmap #7
-    /// (`FormatRoute` enum) is the fuller version of this idea; this helper
-    /// is the contained step that addresses the user-visible code-duplication
-    /// cost without rippling through 49 files.
+    /// Adding a future k-quant format extends this one method, not the ~10
+    /// OR-chains it currently replaces (Q5_K did exactly that on
+    /// 2026-08-01). Roadmap #7 (`FormatRoute` enum) is the fuller version
+    /// of this idea; this helper is the contained step that addresses the
+    /// user-visible code-duplication cost without rippling through 49 files.
+    ///
+    /// This is a claim about **layout**, not about kernel availability: it
+    /// says the format's weights are 256-element super-blocks consumed from
+    /// f32 input, not that every backend can serve it. Q5_K is in the
+    /// family but has no Metal shader — ask [`Self::has_metal_kernel`]
+    /// before routing on a GPU backend.
     pub fn is_kquant_family(self) -> bool {
-        matches!(self, Self::Q4_K | Self::Q4_KF | Self::Q6_K)
+        matches!(self, Self::Q4_K | Self::Q4_KF | Self::Q5_K | Self::Q6_K)
+    }
+
+    /// Whether a Metal shader exists for this format's weight layout.
+    ///
+    /// Separate from [`Self::is_kquant_family`] because the two diverged
+    /// when Q5_K landed CPU-only. The Metal decode paths gate on
+    /// `is_kquant_family` to choose between the k-quant and legacy-Q8
+    /// routes, and **both** of those routes read a wrong byte stride for
+    /// Q5_K (144 or 210 vs its 176), so a format that is structurally a
+    /// k-quant but has no shader must be rejected up front rather than
+    /// silently decoded as garbage. Same bug class as the pre-2026-05-09
+    /// Q8_0-through-`q4_matvec` routing.
+    pub fn has_metal_kernel(self) -> bool {
+        !matches!(self, Self::Q5_K)
     }
 
     /// Whether this format uses the llama.cpp-exact "Q4_KF" pre-baked
@@ -98,6 +125,7 @@ impl QuantFormat {
             "Q4_0" => Self::Q4_0,
             "Q4_K" => Self::Q4_K,
             "Q4_KF" => Self::Q4_KF,
+            "Q5_K" => Self::Q5_K,
             "Q6_K" => Self::Q6_K,
             "Q8_0" => Self::Q8_0,
             "BF16" => Self::BF16,
@@ -119,6 +147,7 @@ impl QuantFormat {
             Self::Q4_0 => "Q4_0",
             Self::Q4_K => "Q4_K",
             Self::Q4_KF => "Q4_KF",
+            Self::Q5_K => "Q5_K",
             Self::Q6_K => "Q6_K",
             Self::Q8_0 => "Q8_0",
             Self::BF16 => "BF16",

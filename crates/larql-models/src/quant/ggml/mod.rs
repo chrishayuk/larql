@@ -35,7 +35,7 @@ pub mod tq;
 pub use legacy::{dequantize_q4_0, dequantize_q5_0, dequantize_q5_1};
 pub use q3_k::dequantize_q3_k;
 pub use q4_k::{dequantize_q4_k, q4k_row_dot, q4k_row_scaled_add};
-pub use q5_k::dequantize_q5_k;
+pub use q5_k::{dequantize_q5_k, q5k_row_dot, q5k_row_scaled_add};
 pub use q6_k::{dequantize_q6_k, q6k_row_dot, q6k_row_scaled_add};
 pub use quantize::{quantize_q4_0, quantize_q8_0};
 

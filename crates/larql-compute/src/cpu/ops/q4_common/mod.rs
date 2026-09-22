@@ -43,5 +43,6 @@ pub(crate) use f16::f32_to_f16;
 pub use matmul::{q4k_matmul_into, q6k_matmul_into};
 pub use matvec_f32::q4k_matvec_into;
 pub use quantize::{
-    q4k_to_q4kf, quantize_q4_0, quantize_q4_k, quantize_q4_kf, quantize_q6_k, quantize_to_q8,
+    q4k_to_q4kf, quantize_q4_0, quantize_q4_k, quantize_q4_kf, quantize_q5_k, quantize_q6_k,
+    quantize_to_q8,
 };

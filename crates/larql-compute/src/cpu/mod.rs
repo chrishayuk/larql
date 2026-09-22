@@ -109,6 +109,19 @@ impl QuantMatVec for CpuBackend {
         Some(out)
     }
 
+    fn q5k_matvec(
+        &self,
+        q5k_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+    ) -> Option<Vec<f32>> {
+        // Returns `None` on bad geometry rather than reading a short
+        // buffer — Q5_K's 176-byte stride is easy to confuse with Q4_K's
+        // 144 or Q6_K's 210, and a truncated read decodes silently.
+        ops::q5k_matvec::dispatch(q5k_data, x, num_rows, hidden)
+    }
+
     fn q6k_matvec(
         &self,
         q6k_data: &[u8],
@@ -155,6 +168,7 @@ impl QuantMatVec for CpuBackend {
             QuantFormat::Q4_0
                 | QuantFormat::Q4_K
                 | QuantFormat::Q4_KF
+                | QuantFormat::Q5_K
                 | QuantFormat::Q6_K
                 | QuantFormat::I2S
         )
@@ -338,6 +352,41 @@ mod cpu_backend_tests {
         assert!(out.iter().all(|v| v.is_finite()));
     }
 
+    /// Q5_K must serve through the format-dispatched `quant_matvec`, not
+    /// just the per-format helper — that dispatch is what a vindex caller
+    /// actually reaches, and a missing arm there would return `None` while
+    /// `q5k_matvec` looks fine in isolation.
+    #[test]
+    fn cpu_backend_q5k_serves_through_format_dispatch() {
+        use crate::cpu::ops::q4_common::quantize_q5_k;
+        use crate::QuantFormat;
+
+        let rows = 4usize;
+        let cols = 256usize;
+        let weights: Vec<f32> = (0..rows * cols)
+            .map(|i| ((i as f32) * 0.005).cos() * 0.1)
+            .collect();
+        let q5k = quantize_q5_k(&weights);
+        let x: Vec<f32> = (0..cols)
+            .map(|j| ((j as f32) * 0.009).sin() * 0.5)
+            .collect();
+
+        let direct = CpuBackend
+            .q5k_matvec(&q5k, &x, rows, cols)
+            .expect("q5k_matvec must return Some");
+        let dispatched = CpuBackend
+            .quant_matvec(QuantFormat::Q5_K, &q5k, &x, rows, cols)
+            .expect("quant_matvec must route Q5_K to q5k_matvec");
+
+        assert_eq!(direct.len(), rows);
+        assert_eq!(direct, dispatched);
+        assert!(direct.iter().all(|v| v.is_finite()));
+        assert!(
+            direct.iter().any(|&v| v.abs() > 1e-6),
+            "non-degenerate input should produce non-zero output"
+        );
+    }
+
     #[test]
     fn cpu_backend_q4k_dual_matvec_returns_both_outputs() {
         let rows = 8usize;
@@ -372,6 +421,7 @@ mod cpu_backend_tests {
         assert!(CpuBackend.supports_quant(QuantFormat::Q4_0));
         assert!(CpuBackend.supports_quant(QuantFormat::Q4_K));
         assert!(CpuBackend.supports_quant(QuantFormat::Q4_KF));
+        assert!(CpuBackend.supports_quant(QuantFormat::Q5_K));
         assert!(CpuBackend.supports_quant(QuantFormat::Q6_K));
         // CPU doesn't have a Q8_0 fast path; advertise honestly.
         assert!(!CpuBackend.supports_quant(QuantFormat::Q8_0));

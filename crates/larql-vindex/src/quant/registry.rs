@@ -9,12 +9,15 @@
 //! editing eight files and hoping you didn't miss one of the
 //! match arms.
 //!
-//! The registry collapses that to **one place**. Adding Q5_K is:
+//! The registry collapses that to **one place**. Adding Q3_K would be:
 //!
-//! 1. Implement `quantize_q5_k` / `dequantize_q5_k` / `q5k_row_dot` /
-//!    `q5k_row_scaled_add` in `larql-models::quant::ggml`.
+//! 1. Implement `quantize_q3_k` / `q3k_row_dot` / `q3k_row_scaled_add` in
+//!    `larql-models::quant::ggml` (`dequantize_q3_k` already exists).
 //! 2. Add one `QuantFormatInfo` entry to `QUANT_FORMATS` below.
 //! 3. (Optionally) extend `crate::config::types::QuantFormat`.
+//!
+//! Q5_K followed exactly this shape on 2026-08-01 and touched nothing
+//! else in this crate.
 //!
 //! Calling code at the seam looks like:
 //!
@@ -49,6 +52,7 @@ pub struct QuantFormatInfo {
     /// Bytes per super-block.
     /// - Q4_0: 18 bytes / 32 elements (legacy 4-bit)
     /// - Q4_K: 144 bytes / 256 elements
+    /// - Q5_K: 176 bytes / 256 elements
     /// - Q6_K: 210 bytes / 256 elements
     /// - Q8_0: 34 bytes / 32 elements
     pub bytes_per_block: usize,
@@ -98,7 +102,7 @@ impl QuantFormatInfo {
     }
 }
 
-/// All quant formats the vindex understands as of 2026-04-25. Adding a
+/// All quant formats the vindex understands as of 2026-08-01. Adding a
 /// format = one entry here + the ggml functions it points at. The
 /// caller-visible `tag` is the only string literal that should appear
 /// in match arms anywhere else; everything else flows through this
@@ -119,6 +123,14 @@ pub static QUANT_FORMATS: &[QuantFormatInfo] = &[
         dequantize: ggml::dequantize_q6_k,
         row_dot: Some(ggml::q6k_row_dot),
         row_scaled_add: Some(ggml::q6k_row_scaled_add),
+    },
+    QuantFormatInfo {
+        tag: "Q5_K",
+        block_elements: ggml::K_QUANT_BLOCK_ELEMS,
+        bytes_per_block: ggml::Q5_K_BLOCK_BYTES,
+        dequantize: ggml::dequantize_q5_k,
+        row_dot: Some(ggml::q5k_row_dot),
+        row_scaled_add: Some(ggml::q5k_row_scaled_add),
     },
 ];
 
@@ -164,15 +176,41 @@ mod tests {
 
         let q6k = lookup("Q6_K").expect("Q6_K should be registered");
         assert_eq!(q6k.bytes_per_block, 210);
+
+        let q5k = lookup("Q5_K").expect("Q5_K should be registered");
+        assert_eq!(q5k.block_elements, 256);
+        assert_eq!(q5k.bytes_per_block, 176);
+        assert!(q5k.row_dot.is_some());
+        assert!(q5k.row_scaled_add.is_some());
     }
 
     #[test]
     fn lookup_unknown_returns_none() {
         // The whole point of the registry: typo'd tags fail loudly at
         // the seam instead of triggering a silent `_ => None` arm.
-        assert!(lookup("Q5_K").is_none());
+        assert!(lookup("Q3_K").is_none()); // dequant exists, but no registry entry
         assert!(lookup("q4_k").is_none()); // case-sensitive — manifest uses "Q4_K"
         assert!(lookup("").is_none());
+    }
+
+    /// Q5_K's byte stride must not be confusable with its neighbours —
+    /// a row read at Q4_K's or Q6_K's stride decodes without erroring
+    /// and silently drifts, which is the failure mode
+    /// `LEGACY_BLOCK_Q4_K_STRIDE` exists to catch for Q4_K.
+    #[test]
+    fn expected_bytes_q5k_distinct_from_q4k_and_q6k() {
+        let shape = [1024, 2560];
+        let q5k = lookup("Q5_K").unwrap();
+        // 10 blocks per row × 176 bytes × 1024 rows.
+        assert_eq!(q5k.expected_bytes(&shape), Some(1_802_240));
+        assert_ne!(
+            q5k.expected_bytes(&shape),
+            lookup("Q4_K").unwrap().expected_bytes(&shape)
+        );
+        assert_ne!(
+            q5k.expected_bytes(&shape),
+            lookup("Q6_K").unwrap().expected_bytes(&shape)
+        );
     }
 
     #[test]

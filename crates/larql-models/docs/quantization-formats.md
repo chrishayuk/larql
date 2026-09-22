@@ -105,6 +105,30 @@ Bits per weight: 4.5
 
 8 sub-blocks of 32 elements each. Each sub-block has its own 6-bit scale and min derived from the 12-byte packed field. Used for gate/up projections in Q4_K_M GGUF mixes.
 
+### Q5_K
+
+```
+Super-block size: 256 elements
+Storage: 2 bytes (f16 d) + 2 bytes (f16 dmin) + 12 bytes (8 packed 6-bit scales+mins)
+         + 32 bytes (1 high bit per element) + 128 bytes (nibbles) = 176 bytes
+Bits per weight: 5.5
+```
+
+Q4_K's affine layout widened by one bit. Identical `d` / `dmin` globals and
+identical 12-byte 6-bit (scale, min) packing; the addition is a 32-byte `qh`
+plane inserted before the nibbles, supplying a fifth magnitude bit per
+element. Decode is `x = (d * q_scale) * q - (dmin * q_min)` with `q ∈ [0, 31]`
+rather than Q4_K's `[0, 15]`. Element ordering matches Q4_K: group `g` covers
+`qs[g*32 .. (g+1)*32]`, whose low nibbles feed sub-block `2g` and high nibbles
+sub-block `2g+1`; `qh` bits `2g` / `2g+1` are those two halves' fifth bits.
+
+Used for gate/up (and often down) projections in `Q5_K_M` GGUF mixes.
+
+**CPU-only.** There is no Q5_K Metal shader. `QuantFormat::has_metal_kernel()`
+reports `false` for it and the Metal decode paths refuse it up front
+(`decode::preflight`) — being a 256-element k-quant, it would otherwise take
+the Q4_K/Q6_K route and be read at a 144- or 210-byte stride instead of 176.
+
 ### Q6_K
 
 ```
@@ -118,24 +142,31 @@ Bits per weight: 6.5625
 ### K-quant API
 
 ```rust
-use larql_models::quant::ggml::{q4_k, q6_k};
+use larql_models::quant::ggml::{q4_k, q5_k, q6_k};
 
 // Fused decode + dot (no intermediate Vec allocation)
 let dot: f32 = q4_k::q4k_row_dot(&row_bytes, &x)?;
+let dot: f32 = q5_k::q5k_row_dot(&row_bytes, &x)?;
 let dot: f32 = q6_k::q6k_row_dot(&row_bytes, &x)?;
 
 // Fused decode + scaled-add: out += alpha * dequant(row)
 q4_k::q4k_row_scaled_add(&row_bytes, alpha, &mut out)?;
+q5_k::q5k_row_scaled_add(&row_bytes, alpha, &mut out)?;
 q6_k::q6k_row_scaled_add(&row_bytes, alpha, &mut out)?;
 
 // Full dequantize to Vec<f32>
 let vals = q4_k::dequantize_q4_k(&bytes, num_elements)?;
+let vals = q5_k::dequantize_q5_k(&bytes, num_elements)?;
 let vals = q6_k::dequantize_q6_k(&bytes, num_elements)?;
 ```
 
-On aarch64, `q4k_row_dot` and `q6k_row_dot` use NEON SIMD; other targets fall
-back to scalar. Tests assert NEON and scalar parity, plus fused row-dot and
-scaled-add agreement with full dequantization.
+On aarch64, `q4k_row_dot`, `q5k_row_dot` and `q6k_row_dot` use NEON SIMD;
+other targets fall back to scalar. Tests assert NEON and scalar parity, plus
+fused row-dot and scaled-add agreement with full dequantization.
+
+Encoders (f32 → packed bytes) for the K-quants live in
+`larql_compute::cpu::ops::q4_common` per ADR-008 — `quantize_q4_k`,
+`quantize_q5_k`, `quantize_q6_k` — next to the SIMD kernels that consume them.
 
 ### API
 
@@ -168,13 +199,16 @@ let name = ggml::type_name(ggml::TYPE_Q6_K);                // "Q6_K"
 | `TYPE_Q8_0` | 6 | Q8_0 |
 | `TYPE_Q5_0` | 8 | Q5_0 |
 | `TYPE_Q5_1` | 9 | Q5_1 |
+| `TYPE_Q3_K` | 11 | Q3_K |
 | `TYPE_Q4_K` | 12 | Q4_K |
+| `TYPE_Q5_K` | 13 | Q5_K |
 | `TYPE_Q6_K` | 14 | Q6_K |
 | `TYPE_BF16` | 30 | BF16 |
 
-`TYPE_Q2_K`, `TYPE_Q3_K`, and `TYPE_Q5_K` names are recognized for diagnostics
-and sizing compatibility, but they are not dequantized yet; dispatch returns
-`ModelError::UnsupportedDtype` for unsupported GGML types.
+`TYPE_Q2_K` is recognized for diagnostics and sizing compatibility but is not
+dequantized; dispatch returns `ModelError::UnsupportedDtype` for unsupported
+GGML types. `TYPE_Q3_K` and `TYPE_Q5_K` **are** dequantized — Q5_K also has
+fused row ops and a registry entry, Q3_K currently has neither (decode only).
 
 ## MXFP4 (mxfp4.rs)
 
@@ -258,6 +292,7 @@ For a 10240×2560 FFN weight matrix (26.2M elements):
 | f16 | 52.4 MB | 0.50x |
 | Q8_0 | 27.9 MB | 0.27x |
 | Q6_K | 21.4 MB | 0.20x |
+| Q5_K | 18.0 MB | 0.17x |
 | Q5_1 | 19.7 MB | 0.19x |
 | Q5_0 | 18.0 MB | 0.17x |
 | Q4_K | 14.6 MB | 0.14x |

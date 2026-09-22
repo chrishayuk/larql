@@ -1,6 +1,29 @@
-use larql_models::quant::ggml::LEGACY_BLOCK_ELEMS;
+use larql_models::quant::ggml::{K_QUANT_BLOCK_ELEMS, LEGACY_BLOCK_ELEMS, Q5_K_BLOCK_BYTES};
 
 use super::{f16_to_f32, f32_to_f16};
+
+// ── Q5_K encode geometry ──
+//
+// Named rather than inlined because the two level caps (31 for the 5-bit
+// payload, 63 for the packed 6-bit scale/min) are the only numbers that
+// differ from Q4_K's encoder, and a silent 15/31 mix-up there produces a
+// file that decodes without error at half the intended dynamic range.
+
+/// Sub-blocks per super-block that carry their own (scale, min) pair.
+const Q5K_SUB_BLOCKS: usize = 8;
+/// Elements governed by one (scale, min) pair.
+const Q5K_SUB_ELEMS: usize = 32;
+/// Sub-block pairs sharing one 32-byte nibble span.
+const Q5K_GROUPS: usize = 4;
+/// Highest 5-bit payload level — `q ∈ [0, 31]` (Q4_K's is 15). Visible to
+/// the sibling test module, which bounds round-trip error by one level.
+pub(super) const Q5K_MAX_LEVEL: f32 = 31.0;
+/// Highest packed 6-bit scale/min level — `q_scale`, `q_min ∈ [0, 63]`.
+const K_QUANT_MAX_SCALE: f32 = 63.0;
+/// Bytes in the Q5_K high-bit plane.
+const Q5K_QH_BYTES: usize = 32;
+/// Bytes in the Q5_K low-nibble payload.
+const Q5K_QS_BYTES: usize = 128;
 
 /// Pre-quantize f32 vector to Q8_0 (int8 + per-block f32 scale).
 pub fn quantize_to_q8(x: &[f32]) -> (Vec<i8>, Vec<f32>) {
@@ -182,6 +205,131 @@ pub fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
                 out.push(lo | (hi << 4));
             }
         }
+    }
+    out
+}
+
+/// Quantize f32 data to Q5_K format (176-byte GGUF super-block).
+///
+/// Q5_K is Q4_K's affine layout widened by one bit: identical f16 `d` /
+/// `dmin` globals and identical 12-byte 6-bit (scale, min) packing, with a
+/// 32-byte high-bit plane inserted before the nibbles. Decode is
+/// `x = (d * q_scale) * q - (dmin * q_min)` with `q ∈ [0, 31]` rather than
+/// Q4_K's `[0, 15]`, so the only arithmetic change is the level count.
+///
+/// Layout (matching `larql_models::quant::ggml::q5_k`):
+///   [0..2]     f16 d
+///   [2..4]     f16 dmin
+///   [4..16]    12 packed (scale, min) bytes — `get_scale_min_k4` order
+///   [16..48]   32 bytes qh — bit `2g` / `2g+1` is the fifth bit for
+///              sub-block `2g` / `2g+1` at element offset `l`
+///   [48..176]  128 nibble bytes, low → sub-block `2g`, high → `2g+1`
+///
+/// Round-trips through `larql_models::quant::ggml::dequantize_q5_k` and the
+/// fused `q5k_row_dot` / `q5k_row_scaled_add` kernels.
+pub fn quantize_q5_k(data: &[f32]) -> Vec<u8> {
+    assert!(
+        data.len().is_multiple_of(K_QUANT_BLOCK_ELEMS),
+        "data length must be a multiple of {K_QUANT_BLOCK_ELEMS}"
+    );
+    let n_superblocks = data.len() / K_QUANT_BLOCK_ELEMS;
+    let mut out = Vec::with_capacity(n_superblocks * Q5_K_BLOCK_BYTES);
+
+    for sb in 0..n_superblocks {
+        let block = &data[sb * K_QUANT_BLOCK_ELEMS..(sb + 1) * K_QUANT_BLOCK_ELEMS];
+
+        // Per-sub-block min/max — force min ≤ 0 so purely-positive
+        // sub-blocks don't get shifted down by their own baseline.
+        let mut sub_mins = [0.0f32; Q5K_SUB_BLOCKS];
+        let mut sub_maxs = [0.0f32; Q5K_SUB_BLOCKS];
+        for j in 0..Q5K_SUB_BLOCKS {
+            let sub = &block[j * Q5K_SUB_ELEMS..(j + 1) * Q5K_SUB_ELEMS];
+            let mn = sub.iter().copied().fold(f32::INFINITY, f32::min);
+            let mx = sub.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            sub_mins[j] = mn.min(0.0);
+            sub_maxs[j] = mx.max(0.0);
+        }
+
+        let global_max_range = sub_maxs
+            .iter()
+            .zip(&sub_mins)
+            .map(|(a, b)| a - b)
+            .fold(0.0f32, f32::max);
+        let global_min = sub_mins.iter().copied().fold(f32::INFINITY, f32::min);
+
+        let d = if global_max_range > 0.0 {
+            global_max_range / (Q5K_MAX_LEVEL * K_QUANT_MAX_SCALE)
+        } else {
+            0.0
+        };
+        let dmin = if global_min < 0.0 {
+            -global_min / K_QUANT_MAX_SCALE
+        } else {
+            0.0
+        };
+
+        out.extend_from_slice(&f32_to_f16(d).to_le_bytes());
+        out.extend_from_slice(&f32_to_f16(dmin).to_le_bytes());
+
+        let mut q_scales = [0u8; Q5K_SUB_BLOCKS];
+        let mut q_mins = [0u8; Q5K_SUB_BLOCKS];
+        for j in 0..Q5K_SUB_BLOCKS {
+            let range = sub_maxs[j] - sub_mins[j];
+            q_scales[j] = if d > 0.0 {
+                (range / (Q5K_MAX_LEVEL * d))
+                    .round()
+                    .clamp(0.0, K_QUANT_MAX_SCALE) as u8
+            } else {
+                0
+            };
+            q_mins[j] = if dmin > 0.0 {
+                (-sub_mins[j] / dmin).round().clamp(0.0, K_QUANT_MAX_SCALE) as u8
+            } else {
+                0
+            };
+        }
+
+        // 12-byte scales + mins packing — identical to Q4_K's, per
+        // llama.cpp's `get_scale_min_k4`.
+        let mut packed = [0u8; 12];
+        for j in 0..4 {
+            packed[j] = (q_scales[j] & 0x3F) | (((q_scales[j + 4] >> 4) & 0x03) << 6);
+            packed[j + 4] = (q_mins[j] & 0x3F) | (((q_mins[j + 4] >> 4) & 0x03) << 6);
+            packed[j + 8] = (q_scales[j + 4] & 0x0F) | ((q_mins[j + 4] & 0x0F) << 4);
+        }
+        out.extend_from_slice(&packed);
+
+        // Encode all 256 values to 5 bits, splitting each into its low
+        // nibble (qs) and fifth bit (qh). Group `g` pairs sub-blocks `2g`
+        // (low nibbles, qh bit `2g`) and `2g+1` (high nibbles, qh bit
+        // `2g+1`), both indexed by the same element offset `l`.
+        let mut qh = [0u8; Q5K_QH_BYTES];
+        let mut qs = [0u8; Q5K_QS_BYTES];
+        for g in 0..Q5K_GROUPS {
+            let sb_lo = 2 * g;
+            let sb_hi = 2 * g + 1;
+            let sc_lo = d * q_scales[sb_lo] as f32;
+            let sc_hi = d * q_scales[sb_hi] as f32;
+            let mn_lo = dmin * q_mins[sb_lo] as f32;
+            let mn_hi = dmin * q_mins[sb_hi] as f32;
+            let inv_lo = if sc_lo > 0.0 { 1.0 / sc_lo } else { 0.0 };
+            let inv_hi = if sc_hi > 0.0 { 1.0 / sc_hi } else { 0.0 };
+            let lo_sub = &block[sb_lo * Q5K_SUB_ELEMS..(sb_lo + 1) * Q5K_SUB_ELEMS];
+            let hi_sub = &block[sb_hi * Q5K_SUB_ELEMS..(sb_hi + 1) * Q5K_SUB_ELEMS];
+            for l in 0..Q5K_SUB_ELEMS {
+                let enc_lo = ((lo_sub[l] + mn_lo) * inv_lo)
+                    .round()
+                    .clamp(0.0, Q5K_MAX_LEVEL) as u8;
+                let enc_hi = ((hi_sub[l] + mn_hi) * inv_hi)
+                    .round()
+                    .clamp(0.0, Q5K_MAX_LEVEL) as u8;
+                qs[g * Q5K_SUB_ELEMS + l] = (enc_lo & 0x0F) | ((enc_hi & 0x0F) << 4);
+                qh[l] |= ((enc_lo >> 4) & 0x01) << sb_lo;
+                qh[l] |= ((enc_hi >> 4) & 0x01) << sb_hi;
+            }
+        }
+        out.extend_from_slice(&qh);
+        out.extend_from_slice(&qs);
     }
     out
 }

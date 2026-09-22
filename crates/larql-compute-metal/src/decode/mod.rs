@@ -16,6 +16,7 @@ mod encode_qkv;
 pub mod gpu_timing;
 mod moe_combine;
 mod moe_interleave;
+pub mod preflight;
 pub mod profile;
 mod setup;
 
@@ -292,6 +293,11 @@ impl MetalBackend {
         static CALL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let call_n = CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         diag::log_decode_entry(call_n, x, hidden, inter, layers);
+
+        // Refuse formats with no Metal kernel before encoding any GPU work
+        // — `is_kquant_family()` below is a layout question, not a
+        // capability one. See `preflight`.
+        preflight::assert_layers_servable(layers);
 
         // Per-layer weight-buffer caches + per-stage scratch + ping-pong
         // h-buffers. See `setup.rs` for the full inventory; previously

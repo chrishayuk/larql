@@ -219,6 +219,22 @@ pub fn encode(
                  `Pipelines` struct to carry a Q8 kernel."
             );
         }
+        larql_compute::QuantFormat::Q5_K => {
+            // Q5_K has no Metal shader — it is a CPU-only path
+            // (`CpuBackend::q5k_matvec` over `q5k_row_dot`). It is more
+            // dangerous than the other missing formats because it *is* a
+            // 256-element k-quant, so `is_kquant_family()` routes it here
+            // alongside Q4_K and Q6_K; its 176-byte super-block would then
+            // be read at 144 or 210 bytes and decode as plausible garbage
+            // rather than erroring. Fail loudly, as Q8_0 and I2_S do.
+            panic!(
+                "metal::stages::quant_matvec::encode: Q5_K has no Metal \
+                 shader (176-byte super-block; the Q4_K kernel reads 144 \
+                 and Q6_K reads 210). Serve Q5_K on the CPU backend \
+                 (`q5k_matvec`), or add a `q5k_matvec` shader and a \
+                 `Pipelines` entry for it."
+            );
+        }
         larql_compute::QuantFormat::I2S => {
             // BitNet ternary (I2_S) has no Metal shader yet — it is a
             // CPU-only path (`CpuBackend::ternary_matvec` over a

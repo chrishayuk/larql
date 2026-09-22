@@ -57,6 +57,7 @@ pub trait QuantMatVec {
     ) -> Option<Vec<f32>> {
         match format {
             QuantFormat::Q4_K | QuantFormat::Q4_KF => self.q4k_matvec(weights, x, num_rows, hidden),
+            QuantFormat::Q5_K => self.q5k_matvec(weights, x, num_rows, hidden),
             QuantFormat::Q6_K => self.q6k_matvec(weights, x, num_rows, hidden),
             QuantFormat::Q4_0 => {
                 let (q8_x, q8_scales) = crate::cpu::ops::q4_common::quantize_to_q8(x);
@@ -113,8 +114,8 @@ pub trait QuantMatVec {
         match format {
             QuantFormat::Q4_0 => self.q4_matvec(weights, q8_x, q8_scales, num_rows, hidden),
             QuantFormat::Q8_0 => self.q8_matvec(weights, q8_x, q8_scales, num_rows, hidden),
-            QuantFormat::Q4_K | QuantFormat::Q4_KF | QuantFormat::Q6_K => {
-                // f32-input shaders — dequantise Q8 first.
+            QuantFormat::Q4_K | QuantFormat::Q4_KF | QuantFormat::Q5_K | QuantFormat::Q6_K => {
+                // f32-input kernels — dequantise Q8 first.
                 let x_f32 = dequantise_q8(q8_x, q8_scales);
                 self.quant_matvec(format, weights, &x_f32, num_rows, hidden)
             }
@@ -287,6 +288,21 @@ pub trait QuantMatVec {
         _num_rows: usize,
         _hidden: usize,
         _seq_len: usize,
+    ) -> Option<Vec<f32>> {
+        None
+    }
+
+    /// Q5_K matvec: `scores[N] = Q5_K[N, K] @ f32_x[K]`.
+    ///
+    /// CPU-only in practice — there is no Q5_K Metal shader, so
+    /// `MetalBackend` leaves this at the `None` default and
+    /// `QuantFormat::has_metal_kernel` reports `false` for it.
+    fn q5k_matvec(
+        &self,
+        _q5k_data: &[u8],
+        _x: &[f32],
+        _num_rows: usize,
+        _hidden: usize,
     ) -> Option<Vec<f32>> {
         None
     }
