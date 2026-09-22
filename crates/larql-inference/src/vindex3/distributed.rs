@@ -13,6 +13,7 @@ use larql_vindex::format::vindex3::{
         exec::{
             self,
             backend::PlanBackend,
+            lowering::LoweringIdentity,
             prepared::{ExecutionSlice, PreparedOperands},
             Plane, PlaneEvent, ResumePoint,
         },
@@ -59,10 +60,7 @@ pub fn binding(
         schema: SCHEMA,
         artifact: artifact_identity(path, plan)?,
         backend: "cpu".into(),
-        lowering:
-            larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity::cpu_production(
-            )
-            .to_string(),
+        lowering: LoweringIdentity::cpu_production().to_string(),
         start: *start,
         end: *end,
         layers: plan.layers.len(),
@@ -245,9 +243,7 @@ impl<B: PlanBackend, T: ShardTransport> LogitsSession for DistributedSession<'_,
 }
 
 fn ensure_cpu<B: PlanBackend>(backend: &B) -> Result<(), InferenceError> {
-    if backend.identity()
-        != larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity::cpu_production()
-    {
+    if backend.identity() != LoweringIdentity::cpu_production() {
         return Err(InferenceError::Parse(
             "V3 layer RPC requires the CPU production lowering".into(),
         ));

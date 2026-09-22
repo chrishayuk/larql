@@ -13,7 +13,9 @@ larql run model.vindex3 "Hello" --engine no-cache
 ```
 
 The default remains `RowKvState`; `standard` selects `CanonicalKvState`.
-Both implement the canonical interpreter's continuation contract. `no-cache`
+Both implement the canonical interpreter's continuation contract. An explicit
+`--engine` wins over `LARQL_KV_ENGINE`; unsupported values refuse. Attention
+windows come from the V3 plan, so a separate `--context-window` override refuses. `no-cache`
 (also `--kv-cache none`) retains the input history and replays it through fresh
 state for each step. It avoids retaining KV between steps, but still allocates
 KV during replay and retains image rows. It is an exact execution control,

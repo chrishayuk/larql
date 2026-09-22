@@ -114,6 +114,7 @@ pub struct RunArgs {
     #[arg(long, default_value = "0")]
     pub context_window: usize,
 
+    /// VINDEX3 accepts row, standard and no-cache; other engine specs refuse.
     /// KV engine spec, overrides `--kv-cache` when set. Accepts the same
     /// syntax `larql bench --engine` parses:
     ///
@@ -365,7 +366,7 @@ pub struct RunArgs {
     pub q4: bool,
 }
 
-pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Speech mode routes before vindex resolution: the speech model lives
     // in its safetensors directory until TTS funnel step 6.
     if args.speak {
@@ -386,6 +387,11 @@ pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     // reader is asked to open it. A directory that is not a VINDEX3
     // container falls through so the dense path surfaces its own error.
     if super::run_cmd_vindex3::is_vindex3_container(&vindex_path) {
+        if args.engine.is_none() {
+            args.engine = std::env::var("LARQL_KV_ENGINE")
+                .ok()
+                .filter(|s| !s.is_empty());
+        }
         return super::run_cmd_vindex3::run(&vindex_path, &args);
     }
     if !args.v3_shards.is_empty() {

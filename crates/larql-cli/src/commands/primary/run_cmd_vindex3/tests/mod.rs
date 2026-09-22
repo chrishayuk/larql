@@ -376,6 +376,7 @@ fn v3_input_flags_reject_conflicting_or_unusable_requests() {
     let root = tempfile::tempdir().unwrap();
     let container = fixture_container(root.path(), true);
     for flags in [
+        vec!["--context-window", "10"],
         vec!["--mm-weights", "missing"],
         vec!["--engine", "standard", "--kv-cache", "none"],
         vec!["--v3-shards", "http://127.0.0.1:1", "--metal"],

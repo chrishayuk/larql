@@ -173,6 +173,7 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
     }
     let set: Vec<&str> = [
         ("--top", args.top != SINGLE_PREDICTION),
+        ("--context-window", args.context_window != 0),
         ("--kv-cache", args.kv_cache == KvCacheKind::MarkovBounded),
         (
             "--engine",
