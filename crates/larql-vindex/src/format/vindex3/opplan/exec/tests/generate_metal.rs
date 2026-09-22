@@ -261,6 +261,7 @@ fn attention_for(
                 ],
                 o_proj: read_bf16_bytes(dir, &format!("layer{i}_kda_o_proj")),
                 encoding: MetalEncoding::Bf16,
+                gate_form: larql_models::config::KdaGateForm::Softplus,
                 f32s: f32_order
                     .iter()
                     .map(|f| read_f32(dir, &format!("layer{i}_kda_{f}")))
