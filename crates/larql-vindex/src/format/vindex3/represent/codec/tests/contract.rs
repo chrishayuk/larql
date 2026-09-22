@@ -267,7 +267,8 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         // The three K-quants share one resident format — the codec rides
         // in the bound operand, not the format — so this cannot name one.
         // `every_acceleration_...` checks the family membership directly.
-        WeightFormat::KQuant => None,
+        // The Q8_K binding is the same stored blocks, so the same answer.
+        WeightFormat::KQuant | WeightFormat::KQuantQ8k => None,
         // The checkpoint's own fine-grained FP8, executed in place: the
         // codec that answers to it is the one registered under the
         // safetensors dtype the encoder carries through.
@@ -297,14 +298,20 @@ fn every_acceleration_runs_over_the_stored_bytes_and_names_a_plan_for_them() {
             // A codec's direct plan names it. The K-quants are the one
             // family that shares a resident format (`WeightFormat::KQuant`,
             // the codec carried by the operand): there the plan names the
-            // FAMILY, and the label is Q4_K/Q6_K/Q8_0.
+            // FAMILY, and the label is Q4_K/Q6_K/Q8_0. Q4_K and Q6_K also
+            // bind the same bytes for a Q8_K activation (Q8K-ACT-1).
             if matches!(label, "Q4_K" | "Q6_K" | "Q8_0") {
-                assert_eq!(
-                    accel.plan.format(),
-                    WeightFormat::KQuant,
+                assert!(
+                    matches!(
+                        accel.plan.format(),
+                        WeightFormat::KQuant | WeightFormat::KQuantQ8k
+                    ),
                     "{label}: {:?}",
                     accel.plan
                 );
+                if accel.plan.format() == WeightFormat::KQuantQ8k {
+                    assert_ne!(label, "Q8_0", "Q8_0 has no Q8_K kernel");
+                }
             } else {
                 assert_eq!(
                     label_of(accel.plan.format()),

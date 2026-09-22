@@ -306,6 +306,42 @@ impl KQuant {
     pub fn has_direct_gemv(&self) -> bool {
         matches!(self.name, "Q8_0" | "Q6_K" | "Q4_K")
     }
+
+    /// `out[n] = W[n, k] · q8k(x)[k]`: the activation quantised once to
+    /// Q8_K (int8, one scale per 256), then multiplied against these
+    /// stored blocks by the integer-dot kernel V2's CPU decode uses —
+    /// `q4k_q8k_matvec_parallel`, whose `LARQL_Q4K_ASM` switch applies
+    /// here unchanged (Q8K-ACT-1).
+    ///
+    /// Lossy in the ACTIVATION, by declaration; the weights are the
+    /// stored bytes exactly as [`Self::gemv`] reads them. Same geometry
+    /// refusal as [`Self::gemv`], and `None` for a member with no Q8_K
+    /// kernel — see [`Self::has_q8k_gemv`].
+    pub fn gemv_q8k(
+        &self,
+        blocks: &[u8],
+        x: &[f32],
+        rows: usize,
+        in_dim: usize,
+    ) -> Option<Vec<f32>> {
+        use larql_compute::cpu::ops::q4k_q8k_dot::{q4k_q8k_matvec_parallel, quantize_x_to_q8k};
+        if !self.has_q8k_gemv()
+            || self.row_bytes(in_dim)? * rows != blocks.len()
+            || x.len() != in_dim
+        {
+            return None;
+        }
+        let q = quantize_x_to_q8k(x);
+        let mut out = vec![0.0f32; rows];
+        q4k_q8k_matvec_parallel(&mut out, &q, blocks, rows, in_dim, self.name).ok()?;
+        Some(out)
+    }
+
+    /// Whether [`Self::gemv_q8k`] has a kernel for this member: the
+    /// formats `larql-compute` routes to a Q8_K matvec.
+    pub fn has_q8k_gemv(&self) -> bool {
+        matches!(self.name, "Q6_K" | "Q4_K")
+    }
 }
 
 impl KQuant {

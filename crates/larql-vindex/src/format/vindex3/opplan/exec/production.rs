@@ -80,13 +80,39 @@ const NAME: &str = "production-larql-compute";
 pub const IDENTITY_FAMILY: &str = "cpu-production";
 pub const IDENTITY_REVISION: u32 = 1;
 
+/// The Q8_K-activation provider's name and family (Q8K-ACT-1). A distinct
+/// identity, because the same pin computes different numbers under it:
+/// a prepared image records which provider qualified its pins, and an
+/// image prepared for one must not execute under the other.
+const Q8K_NAME: &str = "production-larql-compute-q8k";
+pub const Q8K_IDENTITY_FAMILY: &str = "cpu-production-q8k";
+pub const Q8K_IDENTITY_REVISION: u32 = 1;
+
 /// `larql-compute` realisation of every plan operation.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct ProductionBackend;
+pub struct ProductionBackend {
+    /// How stored K-quants execute. `None` is the shipped provider: the
+    /// process arm ([`kquant_execution`], `direct` unless widened). `Some`
+    /// is a provider constructed for one arm, under its own identity.
+    kquant: Option<KQuantExecution>,
+}
 
 impl ProductionBackend {
     pub fn new() -> Self {
-        Self
+        Self { kquant: None }
+    }
+
+    /// The Q8_K-activation provider (Q8K-ACT-1): stored Q4_K / Q6_K
+    /// blocks run against an activation quantised to Q8_K. Everything
+    /// else is this backend's ordinary arithmetic.
+    pub fn q8k_activation() -> Self {
+        Self {
+            kquant: Some(KQuantExecution::DirectQ8k),
+        }
+    }
+
+    fn is_q8k(&self) -> bool {
+        self.kquant == Some(KQuantExecution::DirectQ8k)
     }
 }
 
@@ -1030,7 +1056,16 @@ pub(crate) fn select_cpu(
     }
     if has(Direct(PhysicalProjectionPlan::FusedKQuant)) {
         return match kquant {
-            KQuantExecution::Direct => pick(
+            KQuantExecution::DirectQ8k if has(Direct(PhysicalProjectionPlan::FusedKQuantQ8k)) => {
+                pick(
+                    RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedKQuantQ8k)),
+                    SelectionReason::DirectDeclared,
+                )
+            }
+            // A member with no Q8_K kernel (Q8_0) keeps the in-place f32
+            // realization: the arm changes the activation of the formats
+            // it can, and nothing else.
+            KQuantExecution::Direct | KQuantExecution::DirectQ8k => pick(
                 RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedKQuant)),
                 SelectionReason::DirectDeclared,
             ),
@@ -1101,15 +1136,23 @@ impl PlanBackend for ProductionBackend {
         operand: &PlannedOperand,
         facts: &RepresentationFacts,
     ) -> Result<Selection, Box<SelectionRefusal>> {
-        select_cpu(operand, facts, kquant_execution())
+        select_cpu(operand, facts, self.kquant.unwrap_or_else(kquant_execution))
     }
 
     fn name(&self) -> &str {
-        NAME
+        if self.is_q8k() {
+            Q8K_NAME
+        } else {
+            NAME
+        }
     }
 
     fn identity(&self) -> LoweringIdentity {
-        LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
+        if self.is_q8k() {
+            LoweringIdentity::new(Q8K_IDENTITY_FAMILY, Q8K_IDENTITY_REVISION)
+        } else {
+            LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
+        }
     }
 
     fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {
