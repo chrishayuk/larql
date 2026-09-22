@@ -50,8 +50,7 @@ dates, frozen scopes and stated limitations:
 - **Walk:** [transition-support protocol](../gw-transition-support-paths.md)
   and [dependency freeze](../gw-ts-1-dependencies.md), which separate
   observational prediction, causal attribution and eventual executability;
-  the separate causal-read chain records the [GW-V2 result](../gw-v2-results.md)
-  and the unsealed [GW-STATE-1 dependency-removal design](../gw-state-1.md).
+  the separate causal-read chain records the [GW-V2 result](../gw-v2-results.md).
 - **Represent:** [representation contracts](../represent-v1-contract-index.md)
   and [optimizer contracts](../optimizer-contract-index.md).
 

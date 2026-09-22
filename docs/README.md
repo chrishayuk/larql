@@ -51,7 +51,6 @@ distributed).
 | [gw-key-1.md](gw-key-1.md) | GW-KEY-1 — frozen source-role K/V causality protocol through immutable L24H1 |
 | [gw-read-1-results.md](gw-read-1-results.md) | GW-READ-1 — cached Q/K pass, while V construction, composition and economical execution fail |
 | [gw-v2-results.md](gw-v2-results.md) | GW-V2 — sealed 35-cell causal payload surface with no registered early frontier |
-| [gw-state-1.md](gw-state-1.md) | GW-STATE-1 design draft — remove carrier and non-H1 context around the frozen H1 effect |
 | [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
 | [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |

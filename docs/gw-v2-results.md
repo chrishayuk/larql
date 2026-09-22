@@ -40,7 +40,7 @@ GW-V2 is scientifically closed at this boundary. No cell is borderline, and
 the frozen result supplies no methodological reason to extend the grid or rerun
 the predictor search. Remaining latency work is bookkeeping rather than a
 condition on the causal verdict. The next causal question is dependency removal
-around exact H1, specified as the unsealed [GW-STATE-1 design](gw-state-1.md).
+around exact H1, specified as the unsealed GW-STATE-1 design (not yet in the tree).
 
 The sham deserves explicit caution. Its point retention exceeds the primary
 fit in 25/35 raw and 21/35 z-scored validation cells, and 28/35 raw and 23/35

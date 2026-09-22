@@ -81,7 +81,7 @@ model. In particular:
 
 A preregistered search across 35 depth/rank constructions found no early
 low-rank linear reconstruction that met the held-out fidelity threshold. The
-next causal rung is therefore [GW-STATE-1](gw-state-1.md): hold exact H1 fixed
+next causal rung is therefore GW-STATE-1 (design not yet in the tree): hold exact H1 fixed
 and remove the entering carrier and seven non-H1 heads, alone and in
 combination, to measure the smallest surrounding context that preserves the
 effect. Its current document is a design draft, not a frozen protocol.
