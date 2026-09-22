@@ -1,0 +1,20 @@
+{
+  "name": "calibration-v1",
+  "role": "calibration",
+  "frozen": "2026-09-07",
+  "note": "The bank KDA-BEHAV-1 may calibrate against, and that a REPRESENT search may optimise against. Already used for the on-manifold state re-runs in funnel 8.2.2k.",
+  "prompts": [
+    {"category": "factual", "text": "The capital of France is Paris, and the Seine runs through it."},
+    {"category": "code", "text": "def quicksort(a):\n    if len(a) <= 1: return a\n    p = a[0]"},
+    {"category": "history", "text": "In 1947, the partition of British India displaced millions of people."},
+    {"category": "science", "text": "Photosynthesis converts light energy into chemical energy stored in glucose."},
+    {"category": "legal", "text": "She argued that the contract was void because consideration had failed."},
+    {"category": "maths", "text": "The derivative of sin(x) with respect to x is cos(x)."},
+    {"category": "medical", "text": "Patient presents with a three-day history of fever and productive cough."},
+    {"category": "multilingual", "text": "Es war einmal ein kleines Maedchen, das lebte in einem Dorf am Waldrand."},
+    {"category": "finance", "text": "Interest rates rose sharply, and the yield curve inverted for the first time."},
+    {"category": "literary", "text": "To be, or not to be, that is the question: whether 'tis nobler in the mind"},
+    {"category": "code", "text": "SELECT customer_id, SUM(total) FROM orders GROUP BY customer_id HAVING SUM(total) > 1000;"},
+    {"category": "science", "text": "The mitochondrion is often called the powerhouse of the cell."}
+  ]
+}

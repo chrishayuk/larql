@@ -40,6 +40,7 @@ use super::grouped_experts::{ExpertOffset, GroupedError, InputLayout};
 use super::kimi_layer::ExpertEncoding;
 use crate::shaders::kda as kda_shader;
 use crate::MetalBackend;
+use larql_models::config::KdaGateForm;
 
 /// `o_proj` is one slot at offset zero. A `static` so its address is
 /// stable and the device table can be cached rather than rebuilt.
@@ -94,18 +95,78 @@ pub struct KdaDeviceWeights<'a> {
     pub q_conv1d: &'a [f32],
     pub k_conv1d: &'a [f32],
     pub v_conv1d: &'a [f32],
-    /// `[head_dim, hidden]` then `[width, head_dim]`.
-    pub f_a_proj: &'a [f32],
-    pub f_b_proj: &'a [f32],
-    pub g_a_proj: &'a [f32],
-    pub g_b_proj: &'a [f32],
+    /// `[head_dim, hidden]` then `[width, head_dim]`, each at its own
+    /// stored precision — see [`SmallMatrix`].
+    pub f_a_proj: SmallMatrix<'a>,
+    pub f_b_proj: SmallMatrix<'a>,
+    pub g_a_proj: SmallMatrix<'a>,
+    pub g_b_proj: SmallMatrix<'a>,
     /// `[num_heads, hidden]`.
-    pub b_proj: &'a [f32],
+    pub b_proj: SmallMatrix<'a>,
     /// `[num_heads]`, `[width]`, `[head_dim]`.
     pub a_log: &'a [f32],
     pub dt_bias: &'a [f32],
     pub o_norm: &'a [f32],
     pub norm_eps: f32,
+    /// Which decay gate this checkpoint's FAMILY computes.
+    ///
+    /// Required, and deliberately not `Option` with a default: Kimi and
+    /// GLM both declare `gate_lower_bound: -5.0` and only GLM applies
+    /// it, so a default here would be a silent substitution rather than
+    /// a missing value. Callers holding a declaration that may be absent
+    /// resolve it through [`declared_gate_form`], which refuses by name.
+    pub gate_form: KdaGateForm,
+}
+
+/// One of KDA's five small matrices, bound at the precision the
+/// CHECKPOINT stores it.
+///
+/// **Dtype-preserving per tensor, not a blanket conversion.** Kimi ships
+/// `A_log` and `dt_bias` as F32 while every matrix in the same KDA block
+/// is BF16, so "the small tensors are BF16" is false of the block and
+/// only true of particular tensors. Widening BF16 codes to f32 at bind
+/// time doubles their traffic for no fidelity: these five are 97 % of
+/// KDA's non-projection parameters, 0.239 GB/token of avoidable reads
+/// across 34 GLM layers.
+#[derive(Clone, Copy)]
+pub enum SmallMatrix<'a> {
+    /// The checkpoint stores f32; bind it as it is.
+    F32(&'a [f32]),
+    /// The checkpoint stores bf16; bind its own bytes, unwidened.
+    Bf16(&'a [u8]),
+}
+
+impl SmallMatrix<'_> {
+    /// Elements, so a caller can check a shape without knowing the dtype.
+    pub fn len(&self) -> usize {
+        match self {
+            SmallMatrix::F32(v) => v.len(),
+            SmallMatrix::Bf16(b) => b.len() / 2,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// The four buffers the decay gate binds. Grouped so the encoder's
+/// signature stays readable now that the FORM travels with them.
+struct DecayGateBinding<'a> {
+    f_low: &'a Buffer,
+    dt_bias: &'a Buffer,
+    a_log: &'a Buffer,
+    decay: &'a Buffer,
+}
+
+/// Resolve a DECLARED gate form, refusing rather than defaulting.
+///
+/// `ExecutionSurface.kda_gate_form` is `Option` because no checkpoint
+/// states which branch its reference takes — the fact lives with the
+/// family. An unjudged family must not run: picking either form
+/// produces a plausible, wrong, compounding recurrence.
+pub fn declared_gate_form(declared: Option<KdaGateForm>) -> Result<KdaGateForm, GroupedError> {
+    declared.ok_or(GroupedError::KdaGateFormUndeclared)
 }
 
 /// The recurrent and convolution state a KDA layer carries between
@@ -458,6 +519,21 @@ impl MetalBackend {
         let (hidden, width, dim, heads) =
             (shape.hidden, shape.width(), shape.head_dim, shape.num_heads);
         let f32b = |v: &[f32]| self.bufs().get_f32(v);
+        // A small matrix is bound at its stored precision, so the GEMV
+        // that reads it is chosen by the DTYPE and never by the caller.
+        let small = |enc: &ComputeCommandEncoderRef,
+                     m: SmallMatrix<'_>,
+                     x: &Buffer,
+                     out: &Buffer,
+                     n: usize,
+                     k: usize| match m {
+            SmallMatrix::F32(v) => {
+                self.encode_f32_gemv_into(enc, &self.bufs().get_f32(v), x, out, n, k)
+            }
+            SmallMatrix::Bf16(b) => {
+                self.encode_bf16_gemv_into(enc, &self.bufs().get_bytes(b), x, out, n, k)
+            }
+        };
         // Both tables are constant for the layer: the q|k|v bases never
         // move, and o_proj is always one slot at zero. Cached, not
         // rebuilt — see `stable_offset_table`.
@@ -525,19 +601,22 @@ impl MetalBackend {
 
         // The low-rank gates. All three read `x`, so they could share a
         // submission — they already do, being in this encoder.
-        self.encode_f32_gemv_into(enc, &f32b(w.f_a_proj), buf_x, &s.f_a, dim, hidden);
-        self.encode_f32_gemv_into(enc, &f32b(w.f_b_proj), &s.f_a, &s.f_low, width, dim);
+        small(enc, w.f_a_proj, buf_x, &s.f_a, dim, hidden);
+        small(enc, w.f_b_proj, &s.f_a, &s.f_low, width, dim);
         self.encode_decay_gate(
             enc,
-            &s.f_low,
-            &f32b(w.dt_bias),
-            &f32b(w.a_log),
-            &s.decay,
+            DecayGateBinding {
+                f_low: &s.f_low,
+                dt_bias: &f32b(w.dt_bias),
+                a_log: &f32b(w.a_log),
+                decay: &s.decay,
+            },
             shape,
+            w.gate_form,
         );
-        self.encode_f32_gemv_into(enc, &f32b(w.g_a_proj), buf_x, &s.g_a, dim, hidden);
-        self.encode_f32_gemv_into(enc, &f32b(w.g_b_proj), &s.g_a, &s.gate, width, dim);
-        self.encode_f32_gemv_into(enc, &f32b(w.b_proj), buf_x, &s.b_pre, heads, hidden);
+        small(enc, w.g_a_proj, buf_x, &s.g_a, dim, hidden);
+        small(enc, w.g_b_proj, &s.g_a, &s.gate, width, dim);
+        small(enc, w.b_proj, buf_x, &s.b_pre, heads, hidden);
         self.encode_beta(enc, &s.b_pre, &s.beta, heads);
 
         // The delta rule, against device-resident state.
@@ -641,13 +720,18 @@ impl MetalBackend {
     fn encode_decay_gate(
         &self,
         enc: &ComputeCommandEncoderRef,
-        f_low: &Buffer,
-        dt_bias: &Buffer,
-        a_log: &Buffer,
-        decay: &Buffer,
+        b: DecayGateBinding<'_>,
         shape: KdaShape,
+        gate_form: KdaGateForm,
     ) {
+        let (f_low, dt_bias, a_log, decay) = (b.f_low, b.dt_bias, b.a_log, b.decay);
         let (width, dim) = (shape.width() as u32, shape.head_dim as u32);
+        // The form travels as a code plus its bound, never as a bound
+        // alone — a `-5.0` present on both families cannot select it.
+        let (form, lower_bound) = match gate_form {
+            KdaGateForm::Softplus => (0u32, 0.0f32),
+            KdaGateForm::ClampedSigmoid { lower_bound } => (1u32, lower_bound),
+        };
         enc.set_compute_pipeline_state(&self.kda.decay_gate);
         enc.set_buffer(0, Some(f_low), 0);
         enc.set_buffer(1, Some(dt_bias), 0);
@@ -655,6 +739,8 @@ impl MetalBackend {
         enc.set_buffer(3, Some(decay), 0);
         enc.set_bytes(4, 4, &width as *const u32 as *const std::ffi::c_void);
         enc.set_bytes(5, 4, &dim as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(6, 4, &form as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(7, 4, &lower_bound as *const f32 as *const std::ffi::c_void);
         enc.dispatch_threads(
             MTLSize::new(width as u64, 1, 1),
             MTLSize::new(kda_shader::ELEMENTWISE_THREADS_PER_TG, 1, 1),
@@ -734,5 +820,13 @@ impl MetalBackend {
     }
 }
 
+pub mod trajectory;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod gate_form;
+
+#[cfg(test)]
+mod q4_trajectory;

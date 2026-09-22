@@ -10,7 +10,33 @@ use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use super::super::ExecArgs;
 use super::dump::dump_lowered;
 use super::step::host_argmax;
+use super::teacher_force::run_teacher_force_lowered;
 use super::LoweredSession;
+
+/// `--bank` drives one resident model over many manifest entries on the
+/// interpreter path (`bank.rs`); nothing on the lowered path reads it —
+/// refuse rather than silently running `--tokens` as the only prompt and
+/// writing none of the manifest's dumps (the failure this replaces:
+/// exit 0, zero files, no indication the manifest was ever ignored).
+///
+/// Deliberately checked before any GPU/session state is touched — a
+/// caller who passes `--bank` on a machine with no Metal device gets the
+/// same clear refusal as one who has a device, not a confusing "no
+/// Metal device available" instead of the real problem.
+pub(super) fn refuse_bank_on_lowered(
+    bank: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if bank.is_some() {
+        return Err(
+            "--bank is not supported on lowered backends (metal-lowered*); \
+             it drives one resident model over a manifest and nothing in \
+             the lowered path reads it. Use an interpreter backend \
+             (e.g. --backend metal) for --bank runs."
+                .into(),
+        );
+    }
+    Ok(())
+}
 
 /// Run the plan through the lowering and report the final position's
 /// logits, in the same shape `run_exec`'s other arms do.
@@ -22,6 +48,7 @@ pub(in super::super) fn run_lowered(
     formats: WeightFormats,
     label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    refuse_bank_on_lowered(args.bank.as_deref())?;
     let gpu = MetalBackend::new().ok_or("no Metal device available for --backend metal-lowered")?;
     let total = tokens.len() + args.generate.unwrap_or(0);
     let loading = std::time::Instant::now();
@@ -47,6 +74,15 @@ pub(in super::super) fn run_lowered(
     //    `shannon layer-diff` reads (the lowered arm of the A-9.5 chain).
     if let Some(dir) = &args.dump_layers {
         return dump_lowered(&mut session, tokens, plan, &args.container, label, dir);
+    }
+
+    // ── teacher-forced logit dump: every position, not just the last ──
+    // `clap` already forbids combining this with --generate (mod.rs's
+    // `conflicts_with_all`), so there is no decode loop to reconcile
+    // with — this is prefill-only, exactly like --dump-layers above.
+    if let Some(path) = &args.logit_dump {
+        let engine = format!("vindex3-metal-lowered-{label}");
+        return run_teacher_force_lowered(&mut session, &engine, tokens, path);
     }
 
     let prompt_started = std::time::Instant::now();
@@ -166,15 +202,9 @@ pub(in super::super) fn run_lowered(
                 None => "no device argmax",
             };
             println!("logits: {}, argmax {best} ({value:+.4}) — {check}", l.len());
-            if let Some(path) = &args.logit_dump {
-                use std::io::Write;
-                let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
-                for v in l {
-                    f.write_all(&v.to_le_bytes())?;
-                }
-                f.flush()?;
-                println!("wrote [{}] f32 to {}", l.len(), path.display());
-            }
+            // --logit-dump returns above, via `run_teacher_force_lowered`,
+            // before this summary block ever runs — there is no
+            // last-position-only write here to duplicate or fall behind.
         }
         None => println!("logits: none (plan carries no output head)"),
     }

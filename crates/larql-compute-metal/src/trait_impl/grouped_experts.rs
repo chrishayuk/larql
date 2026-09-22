@@ -51,6 +51,16 @@ pub enum GroupedError {
         have: usize,
     },
     NoExpertsSelected,
+    /// A KDA layer was bound without a declared decay-gate form.
+    ///
+    /// Kimi computes `-exp(A_log)*softplus(pre)` and GLM computes
+    /// `lower_bound*sigmoid(exp(A_log)*pre)`. Neither the presence nor
+    /// the absence of `gate_lower_bound` distinguishes them — Kimi never
+    /// mentions the key, and GLM defaults it to -5.0 when it is null.
+    /// There is no safe default:
+    /// serving one for the other is a 2.8x per-step decay error that
+    /// compounds with context.
+    KdaGateFormUndeclared,
     /// A bf16 slot offset is odd. The table is in bytes for every codec
     /// in this family, but bf16 payloads bind as `ushort`, so an odd
     /// offset would read misaligned codes — silent garbage rather than a
@@ -116,6 +126,13 @@ impl std::fmt::Display for GroupedError {
                 "grouped experts: slot {slot} at offset {offset} needs {need} bytes, buffer has {have}"
             ),
             Self::NoExpertsSelected => write!(f, "grouped experts: empty selection"),
+            Self::KdaGateFormUndeclared => write!(
+                f,
+                "KDA: no decay-gate form declared for this family. Kimi computes \
+                 -exp(A_log)*softplus(pre); GLM computes lower_bound*sigmoid(exp(A_log)*pre); \
+                 gate_lower_bound selects neither, present or absent. Declare \
+                 the family's form rather than defaulting"
+            ),
             Self::OffsetNotCodeAligned { slot, offset } => write!(
                 f,
                 "grouped experts: slot {slot} byte offset {offset} is odd; bf16 payloads \

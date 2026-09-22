@@ -142,15 +142,16 @@ impl Weights {
             q_conv1d: &self.conv[0],
             k_conv1d: &self.conv[1],
             v_conv1d: &self.conv[2],
-            f_a_proj: &self.fa,
-            f_b_proj: &self.fb,
-            g_a_proj: &self.ga,
-            g_b_proj: &self.gb,
-            b_proj: &self.bp,
+            f_a_proj: SmallMatrix::F32(&self.fa),
+            f_b_proj: SmallMatrix::F32(&self.fb),
+            g_a_proj: SmallMatrix::F32(&self.ga),
+            g_b_proj: SmallMatrix::F32(&self.gb),
+            b_proj: SmallMatrix::F32(&self.bp),
             a_log: &self.a_log,
             dt_bias: &self.dt,
             o_norm: &self.o_norm,
             norm_eps: self.eps,
+            gate_form: larql_models::config::KdaGateForm::Softplus,
         }
     }
 }
@@ -525,15 +526,16 @@ impl DualBanks {
             q_conv1d: &f.conv[0],
             k_conv1d: &f.conv[1],
             v_conv1d: &f.conv[2],
-            f_a_proj: &f.fa,
-            f_b_proj: &f.fb,
-            g_a_proj: &f.ga,
-            g_b_proj: &f.gb,
-            b_proj: &f.bp,
+            f_a_proj: SmallMatrix::F32(&f.fa),
+            f_b_proj: SmallMatrix::F32(&f.fb),
+            g_a_proj: SmallMatrix::F32(&f.ga),
+            g_b_proj: SmallMatrix::F32(&f.gb),
+            b_proj: SmallMatrix::F32(&f.bp),
             a_log: &f.a_log,
             dt_bias: &f.dt,
             o_norm: &f.o_norm,
             norm_eps: f.eps,
+            gate_form: larql_models::config::KdaGateForm::Softplus,
         }
     }
 }

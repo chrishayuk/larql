@@ -42,6 +42,7 @@ mod resident;
 mod routed;
 mod run;
 mod step;
+mod teacher_force;
 #[cfg(test)]
 mod tests;
 

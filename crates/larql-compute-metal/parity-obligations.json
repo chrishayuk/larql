@@ -72,6 +72,17 @@
       ],
       "why": "Every file here carries arithmetic, including default trait method bodies a Metal impl can inherit. Kept parity WHOLE with capability.rs and factory.rs exempted by name below, so a new file in backend/ defaults to tier A rather than falling through to B.",
       "confidence": "observed"
+    },
+    {
+      "id": "kda-gate-form-config",
+      "paths": [
+        "crates/larql-models/src/config/**"
+      ],
+      "why": "KDA-GATE-METAL-1 (gate_form.rs) reads `larql_models::config::KdaGateForm`, whose two variants select which decay-gate ARITHMETIC formula the Metal kernel evaluates \u2014 Kimi's unbounded softplus vs GLM's clamped sigmoid, floored at gate_lower_bound. The type is re-exported from config::mod and defined and parsed in config::linear_attn (from_glm5_section resolves gate_lower_bound to a per-family default), so the reference resolves only to the module root. Declared WHOLE per the module-root granularity floor rather than narrowed to linear_attn.rs alone.",
+      "witnesses": [
+        "crates/larql-compute-metal/src/trait_impl/kda/gate_form.rs"
+      ],
+      "confidence": "observed"
     }
   ],
   "interface_only": [
