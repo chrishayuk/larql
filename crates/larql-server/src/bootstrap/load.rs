@@ -102,7 +102,7 @@ pub enum LoadedArtifact {
 /// the flag and ignoring it is the dangerous failure: a `--layers 0-9`
 /// shard silently loads the *whole* model and answers complete
 /// requests, and `--no-infer` does not disable inference. Fail closed
-/// until V3 sharding exists (ROADMAP §N1 / V3 sharding).
+/// until V3 sharding exists (ROADMAP.md § Planned V3 capabilities).
 fn unsupported_v3_options(opts: &LoadVindexOptions) -> Vec<&'static str> {
     let mut named = Vec::new();
     if opts.no_infer {

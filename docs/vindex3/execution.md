@@ -41,6 +41,11 @@ continuation state. `LogitsSession` lets generation and serving consume logits
 without reconstructing a V2 `ModelWeights` object. Backend support and
 representation compatibility are checked at their respective boundaries.
 
+`larql bench model.vindex3 --backends cpu,metal` times the serving path's
+prefill and decode with the same statistic as a VINDEX2 bench row; see the
+[CLI reference](../cli.md#larql-bench). Its numbers describe the machine and
+backend they ran on and do not establish behavioral fidelity.
+
 Use `larql serve model.vindex3 --port 8080` for the server surface; build
 `larql-server` as well. HTTP state and API behavior are detailed in the
 [runtime guide](../vindex3-runtime.md). To inspect execution evidence, continue
