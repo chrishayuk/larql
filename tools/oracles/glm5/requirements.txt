@@ -1,0 +1,11 @@
+# The GLM-5.3-Flash reference environment, pinned exactly.
+#
+# `transformers` IS the contract: the checkpoint ships no modeling code,
+# so the architecture named by its `architectures` field resolves to
+# upstream's `glm5_next`. A version bump can therefore change the ORACLE,
+# not just the tooling — pin it, and let `verify_sources.sh` fail loudly
+# if the pinned version's source no longer hashes to what was judged.
+torch==2.14.0
+transformers==5.16.1
+numpy==2.5.2
+safetensors==0.8.0
