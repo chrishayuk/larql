@@ -172,4 +172,51 @@ target.
 
 ## C0 results
 
-*(not yet run)*
+Run 2026-09-23 against freeze commit `47807926`, from a release build of that
+commit, with `LARQL_Q4K_ASM` unset. Another session was running builds and tests on
+the machine at the time. C0 measures numerical error, not timing, so that load does
+not affect it.
+
+### C0-a (projection), prompt A
+
+The 24 generated ids (S_A = prompt A ids followed by these):
+`19058,236764,1531,236789,236751,2541,1679,93036,1271,506,7646,1657,6485,1161,531,2490,26808,1131,2780,236888,5715,236789,236751,496`
+
+| Member | Calls | rel L2 median | p99 | max | max\|Δ\|/rms median | max |
+|---|---|---|---|---|---|---|
+| Q4_K | 1904 | 1.551e-2 | 4.260e-2 | 7.236e-2 | 7.136e-2 | 2.599e-1 |
+| Q6_K | 0 | — | — | — | — | — |
+
+The pack is Q4_K throughout, so no Q6_K calls exist. The Q6_K route is part of the
+arm, but this corpus does not exercise it.
+
+### C0-e (end to end), S_A, 44 positions
+
+KL(BF16 `production` ‖ `production-q4k`): **mean 2.2405e-1**, max 8.280 (position
+12), median 3.5e-3. Top-1 agreement 0.9091 (4 of 44 positions disagree).
+
+The mean is dominated by one prompt position: position 12 alone contributes 0.188
+of the 0.224. The frozen rule uses the mean, and it is applied as written. F2 is
+also a mean, so the arm is judged by the same statistic. The median is reported
+here for context only.
+
+### Thresholds (by the frozen rules)
+
+- **τ1** = 2 × 7.236e-2 = 0.1447, rounded up to one significant figure = **0.2**.
+- **τ2** = 0.25 × 2.2405e-1 = **5.60e-2**.
+
+### Instrument control (run with C0, before the arm)
+
+A median relative L2 of 1.5% from 8-bit activations with per-256 scales is larger
+than a uniform-rounding estimate would suggest, so C0-a was checked for
+confounding. The example also runs the f32 kernel on the Q8_K-**dequantised**
+activation and compares that with the Q8_K kernel:
+
+| Member | control rel L2 median | max |
+|---|---|---|
+| Q4_K | 2.254e-7 | 1.283e-6 |
+
+The two kernels agree to f32 rounding once they see the same activation. C0-a's
+error is therefore the activation's quantisation error alone, consistent with
+high-crest-factor projection inputs, where a few outlier channels set the block
+scale. The control changes no threshold.
