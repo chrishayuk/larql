@@ -2,8 +2,8 @@
 
 **Estate:** larql (VINDEX3, Metal MoE kernels, DEC funnel's union-byte accounting)
 **Status:** BW11-1 CLOSED and BANKED 2026-08-20 (real, controlled, modest — 2.40× logical ceiling at K=8,
-not large enough to justify the grouped-expert kernel now). Programme priority moves to BW12 — see
-[`bw12-static-subexpert-repack.md`](bw12-static-subexpert-repack.md).
+not large enough to justify the grouped-expert kernel now). Programme priority moves to BW12 — `bw12-static-subexpert-repack.md` is a
+planned follow-up specification, not a tracked document in this PR.
 **Predecessor context:** [`dec-funnel.md`](dec-funnel.md) (the R0–R14 standing rules this doc
 inherits wholesale rather than restating), [BW10 movement/causality ledger] and [BW-C expert-skip
 oracle] (both closed 2026-08-14, different questions — see naming note below).
@@ -104,7 +104,7 @@ the same units. BW11-1 measures gpt-oss's consecutive-position union fresh.
   enough to justify building the grouped-expert kernel — at that point the kernel itself needs GPU-side
   instrumentation anyway, and this trace becomes redundant.
 
-**Accounting.** `larql dec-bench window-union` (new, `crates/larql-cli/.../dec_bench/window_union.rs` +
+**Accounting.** `larql dec-bench window-union` (new, `crates/larql-cli/src/commands/primary/dec_bench/window_union.rs` +
 `window_union_runtime.rs`) parses one or more trace files, and for each layer and each `K`, slides
 K-position windows (stride 1) over that layer's `seq`-ordered rows. Each window is one "cell" fed to the
 **same, unmodified** `routed_weight_bytes_per_token` DEC already uses for its cross-prompt union (a cell's
