@@ -249,15 +249,15 @@ six.
 
 ## Results: performance verdict (P) and mechanism (M)
 
-Run 2026-09-23 from 00:52, on a release build of \`baa81944\` (the code at HEAD
-equals that commit), with \`LARQL_Q4K_ASM\` unset and 8 bench threads. By then the
+Run 2026-09-23 from 00:52, on a release build of `baa81944` (the code at HEAD
+equals that commit), with `LARQL_Q4K_ASM` unset and 8 bench threads. By then the
 earlier load had cleared: the 1-minute load average was between 3.4 and 4.3
 throughout, with no build, test or training process running. An earlier session at
 load 29 was disturbed and discarded (see below).
 
 ### P: workload W, 3 processes per arm, alternating
 
-| Run | load (1 min) | \`production-q4k\` (control) | \`production-q4k-q8k\` (arm) |
+| Run | load (1 min) | `production-q4k` (control) | `production-q4k-q8k` (arm) |
 |---|---|---|---|
 | 1 | 3.36 / 3.56 | 72.81 ms/token | 33.27 ms/token |
 | 2 | 3.35 / 3.78 | 70.40 ms/token | 33.35 ms/token |
@@ -266,12 +266,12 @@ load 29 was disturbed and discarded (see below).
 
 Prefill (27 tokens) is about 1.48 s for the control and about 0.49 s for the arm.
 Generation fingerprints are identical across all three processes of each arm
-(\`3f36dfba…\` control, \`3c4cbac7…\` arm).
+(`3f36dfba…` control, `3c4cbac7…` arm).
 
 **P verdict: HIT.** 33.35 ms/token is inside the frozen 25–35 ms/token. That is a
-2.11× decode speedup over \`production-q4k\` on the same stored Q4_K pack.
+2.11× decode speedup over `production-q4k` on the same stored Q4_K pack.
 
-### M: thread sweep, \`vindex3 exec --backend production-q4k-q8k --generate 16\`
+### M: thread sweep, `vindex3 exec --backend production-q4k-q8k --generate 16`
 
 | Threads | Steady ms/token | Projection throughput | f32 arm (predecessor sweep) |
 |---|---|---|---|
@@ -288,12 +288,12 @@ per-token fixed costs. This rung does not test which.
 
 ### Descriptive (not gated)
 
-- Free-running greedy output first diverges from \`production-q4k\` at generated
+- Free-running greedy output first diverges from `production-q4k` at generated
   token 1: the title word, a near-tie consistent with F3's single flipped position.
   From there the arm's text opens "## From Celtic Outpost to Global Icon: A History
   of Paris". V2's text opens the same way. That is a coincidence of a near-tie, not
   a parity claim: V2 holds different weights and feeds a doubled BOS.
-- V2 context from the 2026-09-22 session: \`larql-cpu\` 28.9 ms/token, \`standard\`
+- V2 context from the 2026-09-22 session: `larql-cpu` 28.9 ms/token, `standard`
   34.8 ms/token. The V3 arm now sits in that band. Those were different sessions on
   different weights, so this is not a head-to-head.
 
@@ -316,7 +316,7 @@ introduces.
 - It says nothing about Metal.
 - It says nothing about other models or corpora. Only one prompt was scored for F,
   and one workload for P.
-- It does not settle whether \`production-q4k-q8k\` should become a default. That is
+- It does not settle whether `production-q4k-q8k` should become a default. That is
   a separate decision, and it would need a wider fidelity corpus first.
 - The Q6_K route is implemented and passes F0, but this Q4_K-only pack never
   exercised it end to end.
@@ -327,6 +327,6 @@ At 00:45 the 1-minute load average was 29 (a GW-STATE-1 training run and a cargo
 test in another worktree). A smoke comparison had the control at 124 ms/token
 (+82%) and the arm at 185 ms/token. Under the frozen rule that session is not a
 reading. It is recorded because the arm degraded worse than the control there,
-which suggests the spin pool behind \`q4k_q8k_matvec_parallel\` is more
+which suggests the spin pool behind `q4k_q8k_matvec_parallel` is more
 contention-sensitive than the f32 path. That is a separate question, and this rung
 does not answer it.
