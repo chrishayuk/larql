@@ -67,6 +67,20 @@ struct Error {
     member: &'static str,
     rel_l2: f64,
     max_over_rms: f64,
+    /// Instrument control: the Q8_K kernel against the f32 kernel run on
+    /// the Q8_K-DEQUANTISED activation. Near rounding means `rel_l2` is
+    /// the activation's quantisation error and nothing else.
+    control_rel_l2: f64,
+}
+
+/// Q8_K super-block width: one f32 scale per 256 activations.
+const Q8K_BLOCK: usize = 256;
+
+fn dequantise(q: &larql_compute::cpu::ops::q4k_q8k_dot::Q8KActivation) -> Vec<f32> {
+    q.qs.iter()
+        .enumerate()
+        .map(|(i, &v)| f32::from(v) * q.d[i / Q8K_BLOCK])
+        .collect()
 }
 
 fn compare(reference: &[f32], candidate: &[f32]) -> (f64, f64) {
@@ -148,10 +162,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut candidate = vec![0.0f32; rows];
             q4k_q8k_matvec_parallel(&mut candidate, &q, blocks, rows, x.len(), member)?;
             let (rel_l2, max_over_rms) = compare(&reference, &candidate);
+            let control = codec
+                .gemv(blocks, &dequantise(&q), rows, x.len())
+                .ok_or("reference kernel refused the dequantised activation")?;
+            let (control_rel_l2, _) = compare(&control, &candidate);
             errors.push(Error {
                 member,
                 rel_l2,
                 max_over_rms,
+                control_rel_l2,
             });
         }
     }
@@ -192,8 +211,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .filter(|e| e.member == member)
             .map(|e| e.max_over_rms)
             .collect();
+        let mut control: Vec<f64> = errors
+            .iter()
+            .filter(|e| e.member == member)
+            .map(|e| e.control_rel_l2)
+            .collect();
         rel.sort_by(f64::total_cmp);
         worst.sort_by(f64::total_cmp);
+        control.sort_by(f64::total_cmp);
         println!(
             "  {member}: {} calls  rel_L2 median {:.3e}  p99 {:.3e}  max {:.3e}  |  max|Δ|/rms median {:.3e}  max {:.3e}",
             rel.len(),
@@ -202,6 +227,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rel[rel.len() - 1],
             quantile(&worst, 0.5),
             worst[worst.len() - 1],
+        );
+        println!(
+            "  {member} control (Q8_K kernel vs f32 kernel on dequantised x): rel_L2 median {:.3e}  max {:.3e}",
+            quantile(&control, 0.5),
+            control[control.len() - 1],
         );
     }
     Ok(())
