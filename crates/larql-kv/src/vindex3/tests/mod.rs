@@ -409,3 +409,96 @@ fn recurrent_layers_get_buffers_and_kv_layers_still_refuse() {
         "a resumed preparation must not reset the continuation"
     );
 }
+
+/// Spare matrix capacity must survive appends. This detects the old full-prefix
+/// allocation/copy without a noisy wall-clock performance assertion.
+#[test]
+fn appends_reuse_matrix_capacity_and_preserve_every_stored_bit() {
+    let mut cache = KvCache::with_layers(1);
+    let mut k = ndarray::Array2::zeros((0, 2));
+    let mut v = ndarray::Array2::zeros((0, 2));
+    k.reserve_rows(128).unwrap();
+    v.reserve_rows(128).unwrap();
+    let kp = k.as_ptr();
+    let vp = v.as_ptr();
+    cache.set_layer(0, (k, v));
+    let mut state = CanonicalKvState::from_cache(cache);
+    state.prepare(&[LayerKvGeometry {
+        kv_dim: 2,
+        window: Some(3),
+    }]);
+    for i in 0..128 {
+        let key = vec![i as f32, -0.0];
+        let value = vec![-(i as f32), f32::from_bits(0x7fc00001)];
+        state.append(0, key.clone(), value.clone());
+        let (k, v) = state.cache().get_layer(0).unwrap();
+        assert_eq!(k.as_ptr(), kp, "K reallocated with reserved capacity");
+        assert_eq!(v.as_ptr(), vp, "V reallocated with reserved capacity");
+        assert_eq!(
+            k.nrows(),
+            i + 1,
+            "the declared attention window must not evict state"
+        );
+        for j in 0..2 {
+            assert_eq!(k[(i, j)].to_bits(), key[j].to_bits());
+            assert_eq!(v[(i, j)].to_bits(), value[j].to_bits());
+            assert_eq!(state.keys(0)[i][j].to_bits(), key[j].to_bits());
+            assert_eq!(state.values(0)[i][j].to_bits(), value[j].to_bits());
+        }
+    }
+}
+
+#[test]
+fn append_accepts_an_adopted_column_major_cache() {
+    use ndarray::ShapeBuilder;
+    let mut cache = KvCache::with_layers(1);
+    let k = ndarray::Array2::from_shape_vec((2, 2).f(), vec![1., 3., 2., 4.]).unwrap();
+    cache.set_layer(0, (k.clone(), k));
+    let mut state = CanonicalKvState::from_cache(cache);
+    state.prepare(&[LayerKvGeometry {
+        kv_dim: 2,
+        window: None,
+    }]);
+    state.append(0, vec![5., 6.], vec![7., 8.]);
+    assert_eq!(state.keys(0), &[vec![1., 2.], vec![3., 4.], vec![5., 6.]]);
+    assert_eq!(state.values(0), &[vec![1., 2.], vec![3., 4.], vec![7., 8.]]);
+    assert_eq!(
+        state.cache().get_layer(0).unwrap().0.row(2).to_vec(),
+        vec![5., 6.]
+    );
+}
+
+#[test]
+fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation::{
+        LayerContinuationGeometry, LayerLatentKvGeometry,
+    };
+    use larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError;
+    let mut state = CanonicalKvState::new();
+    assert!(matches!(
+        state.latent_state(1),
+        Err(ContinuationError::LatentUnsupported { layer: 1, .. })
+    ));
+    let geometry = [
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 2,
+            window: None,
+        }),
+        LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 3 }),
+    ];
+    state.prepare_continuation(&geometry).unwrap();
+    assert!(matches!(
+        state.latent_state(0),
+        Err(ContinuationError::NotLatent { layer: 0, .. })
+    ));
+    assert!(state.latent_state(1).unwrap().is_empty());
+    state.latent_state(1).unwrap().append(vec![1.0, -0.0, 3.0]);
+    state.append(0, vec![4.0, 5.0], vec![6.0, 7.0]);
+    state.set_position(1);
+    state.prepare_continuation(&geometry).unwrap();
+    let rows = state.latent_state(1).unwrap().rows();
+    assert_eq!(rows, &[vec![1.0, -0.0, 3.0]]);
+    assert_eq!(rows[0][1].to_bits(), (-0.0f32).to_bits());
+    assert_eq!(state.keys(0), &[vec![4.0, 5.0]]);
+    assert_eq!(state.position(), 1);
+}

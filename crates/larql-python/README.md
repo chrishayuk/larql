@@ -34,12 +34,20 @@ graph = larql.Graph()
 graph.add_edge(larql.Edge("France", "capital", "Paris"))
 ```
 
-Direct `larql.load(...)` uses the `VectorIndex` path. The Python session wrapper
-also opens a direct `PyVindex` after its LQL `USE`, so it must not be advertised
-as a generic VINDEX3 session merely because the underlying Rust LQL layer can
-open V3. No Python wrapper here exposes the complete `Vindex3Runtime`,
-`observe --heads` or intervention-record API. Use the supported Rust/CLI
-interfaces for those workflows.
+`larql.session(path)` binds V2 or VINDEX3 through LQL. For example:
+
+```python
+session = larql.session("model.vindex3")
+print(session.query_text("STATS"))
+print(session.query_text('INFER "Hello" GENERATE 16'))
+```
+
+Direct `larql.load(...)` and `session.vindex` expose V2 `VectorIndex` arrays.
+The session loads that view lazily; accessing it on V3 raises
+`NotImplementedError` with guidance to use `query()`. A successful `USE` changes
+which artifact the session refers to and invalidates its cached array view.
+The full `Vindex3Runtime`, observation and intervention-record APIs remain
+available through Rust/CLI rather than separate Python wrappers.
 
 See the [Python interface guide](../../docs/larql-python.md),
 [tests](tests/) and [runtime surface map](../../docs/runtime-surfaces.md).

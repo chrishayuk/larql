@@ -142,6 +142,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
         };
 
     let load_opts = LoadVindexOptions {
+        v3_backend: cli.v3_backend,
         no_infer: cli.no_infer,
         ffn_only: cli.ffn_only,
         embed_only: cli.embed_only,

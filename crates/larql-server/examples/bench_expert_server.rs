@@ -271,6 +271,7 @@ fn main() {
 
     // ── Load primary shard ────────────────────────────────────────────────────
     let opts_a = LoadVindexOptions {
+        v3_backend: Default::default(),
         no_infer: false,
         ffn_only,
         embed_only: false,

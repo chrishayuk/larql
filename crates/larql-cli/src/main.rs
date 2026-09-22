@@ -414,6 +414,10 @@ struct ServeArgs {
     #[arg(value_name = "VINDEX_PATH")]
     vindex_path: Option<String>,
 
+    /// VINDEX3 execution backend (requires a matching larql-server build).
+    #[arg(long, value_parser = ["cpu", "metal"])]
+    v3_backend: Option<String>,
+
     /// Serve all .vindex directories in this folder.
     #[arg(long)]
     dir: Option<std::path::PathBuf>,
@@ -723,7 +727,7 @@ fn run_dev(cmd: DevCommand) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
+fn serve_command_args(args: &ServeArgs) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut cmd_args = Vec::new();
     if let Some(ref path) = args.vindex_path {
         // Resolve cache shorthands / owner-name / hf:// → actual path so
@@ -741,6 +745,10 @@ fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref dir) = args.dir {
         cmd_args.push("--dir".into());
         cmd_args.push(dir.display().to_string());
+    }
+    if let Some(ref backend) = args.v3_backend {
+        cmd_args.push("--v3-backend".into());
+        cmd_args.push(backend.clone());
     }
     cmd_args.push("--port".into());
     cmd_args.push(args.port.to_string());
@@ -839,6 +847,11 @@ fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         cmd_args.push(path.display().to_string());
     }
 
+    Ok(cmd_args)
+}
+
+fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let cmd_args = serve_command_args(&args)?;
     let exe = std::env::current_exe().ok();
     let server_bin = exe
         .as_ref()
@@ -1005,5 +1018,25 @@ mod documentation_tests {
         let mut names: Vec<_> = vindex3.get_subcommands().map(|c| c.get_name()).collect();
         names.sort_unstable();
         assert_eq!(facts["commands"]["larql_vindex3"], serde_json::json!(names));
+    }
+}
+
+#[cfg(test)]
+mod serve_backend_tests {
+    use super::*;
+
+    #[test]
+    fn serve_forwards_explicit_backend_and_rejects_unknown_names() {
+        for backend in ["cpu", "metal"] {
+            let cli = Cli::try_parse_from(["larql", "serve", "--v3-backend", backend]).unwrap();
+            let Commands::Serve(args) = cli.command else {
+                panic!("expected serve")
+            };
+            let command = serve_command_args(&args).unwrap();
+            assert!(command
+                .windows(2)
+                .any(|pair| pair == ["--v3-backend", backend]));
+        }
+        assert!(Cli::try_parse_from(["larql", "serve", "--v3-backend", "typo"]).is_err());
     }
 }

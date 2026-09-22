@@ -43,6 +43,69 @@ use larql_vindex::tokenizers;
 use crate::error::ServerError;
 use crate::state::model_id_from_name;
 
+/// Backend requested at V3 bind time. An unavailable device is an error;
+/// explicit Metal selection never silently becomes CPU execution.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    serde::Deserialize,
+    serde::Serialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum V3Backend {
+    #[default]
+    Cpu,
+    Metal,
+}
+
+impl V3Backend {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Metal => "metal",
+        }
+    }
+
+    /// Bindable backend names for this build. Device presence is checked at load.
+    pub const fn available() -> &'static [&'static str] {
+        if cfg!(all(feature = "vindex3-metal", target_os = "macos")) {
+            &["cpu", "metal"]
+        } else {
+            &["cpu"]
+        }
+    }
+
+    fn lowerings(self) -> Result<(LoweringRegistry, LoweringIdentity), crate::bootstrap::BoxError> {
+        let registry = LoweringRegistry::shipped();
+        match self {
+            Self::Cpu => Ok((registry, LoweringIdentity::cpu_production())),
+            #[cfg(all(feature = "vindex3-metal", target_os = "macos"))]
+            Self::Metal => {
+                use larql_vindex::format::vindex3::opplan::exec::{
+                    backend::WeightFormat, device::DevicePlanBackend,
+                };
+                let gpu = larql_compute_metal::MetalBackend::new()
+                    .ok_or("no Metal device available for VINDEX3 serving")?;
+                let device = DevicePlanBackend::new(gpu, "metal-r3-f16", WeightFormat::F16);
+                Ok((
+                    registry.register(Box::new(device))?,
+                    LoweringIdentity::device_matmul(),
+                ))
+            }
+            #[cfg(not(all(feature = "vindex3-metal", target_os = "macos")))]
+            Self::Metal => {
+                Err("VINDEX3 Metal serving requires macOS and the vindex3-metal feature".into())
+            }
+        }
+    }
+}
+
 /// Component id a container's text stack is served under.
 const SERVED_COMPONENT: &str = "target";
 
@@ -50,6 +113,8 @@ const SERVED_COMPONENT: &str = "target";
 /// glue (tokenizer, id). Holds no `ModelWeights` and no `VectorIndex`
 /// — structurally, the old inference path is unreachable from here.
 pub struct V3Model {
+    /// The backend selected for this prepared model.
+    pub backend: V3Backend,
     /// Model ID (derived from the container directory name).
     pub id: String,
     /// Container directory on disk.
@@ -134,13 +199,22 @@ pub fn resolve_chat_template(family: &str, id: &str) -> larql_inference::prompt:
 /// and operand store (refusing closure defects), and load the
 /// container's tokenizer — the text API cannot serve ids-only.
 pub fn load_v3_model(path: &Path) -> Result<V3Model, Box<dyn std::error::Error + Send + Sync>> {
+    load_v3_model_with_backend(path, V3Backend::Cpu)
+}
+
+/// Bind with an explicit provider selection; prepare once before serving.
+pub fn load_v3_model_with_backend(
+    path: &Path,
+    backend: V3Backend,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    let (registry, identity) = backend.lowerings()?;
     // The served provider is resolved from the shipped registry by
     // identity, never constructed here (LOWERING-PLUGIN-1, L3).
     let runtime = Vindex3Runtime::open_via(
         path,
         SERVED_COMPONENT,
-        std::sync::Arc::new(LoweringRegistry::shipped()),
-        &LoweringIdentity::cpu_production(),
+        std::sync::Arc::new(registry),
+        &identity,
     )
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
     .prepare()
@@ -160,6 +234,7 @@ pub fn load_v3_model(path: &Path) -> Result<V3Model, Box<dyn std::error::Error +
     };
     let family = runtime.family().to_string();
     let model = V3Model {
+        backend,
         id: model_id_from_name(&name),
         path: path.to_path_buf(),
         runtime,

@@ -9,10 +9,10 @@ surfaces and the checks that decide what a particular artifact can do.
 | `vindex` | Plan/encode/inspect/verify, representation compilation and supported export | No inference session or observation runner |
 | `larql vindex3` | Container operations, execution, representation instruments and observation/intervention | Backend, operator and representation support are explicit |
 | LQL | Parsed queries, lifecycle, mutation, tracing and generation-specific dispatch | Capability profile and artifact capabilities apply after parsing |
-| Python bindings | Native graph, direct index, LQL-session, walk and trace wrappers | Direct index/session wrappers still open `VectorIndex`; no general V3 runtime wrapper |
+| Python bindings | Native graph, direct index, LQL-session, walk and trace wrappers | LQL sessions bind V2/V3; direct NumPy arrays require V2; no general V3 runtime wrapper |
 | HTTP server | Bind V2/V3 artifacts, generation, query/profile-specific services and distributed execution | Mounted routes and loaded capabilities determine availability |
 | Router | Shard fan-out, grid membership and capability-based API proxying | A partial shard is not a whole-model generation backend |
-| Factory | Recipe validation, identity, estimation and staged build/publish execution | Current VERIFY is checksum integrity; MIRROR/REGISTER are external |
+| Factory | Recipe validation, identity, estimation and staged build/publish execution | Build preflight refuses unmet numeric/Hub verification requirements; MIRROR/REGISTER are external |
 | Observatory | Import, validate and replay recorded evidence | Import does not execute a model or independently prove parity |
 
 ## State and generation
@@ -34,9 +34,10 @@ array access does not implicitly produce the same evidence record. Use
 
 Query `/v1/capabilities` to discover the mounted server profile. The route
 assembly and capability code are authoritative; a reserved path or protocol
-message is not proof of an exposed operation. The current V3 server binding
-uses production CPU execution. Its `metal-experts` feature serves the separate
-V2 expert path and must not be advertised as V3 Metal serving.
+message is not proof of an exposed operation. V3 defaults to production CPU execution. The macOS `vindex3-metal` feature adds
+explicit Metal selection at startup (`--v3-backend`) and dynamic load (`backend`).
+The selected backend is reported in `/v1/runtime`. `metal-experts` alone still
+serves the separate V2 expert path. V3 sharding options remain refused.
 
 The router's whole-model API proxy uses capable grid registrations, while
 FFN/expert fan-out distributes partial work. Static layer maps do not supply
@@ -50,11 +51,14 @@ contracts. Transport options change delivery, not the artifact's semantics.
 
 ## Python and tooling
 
-The Python session constructor first executes LQL `USE` and then opens a
-`PyVindex` for direct arrays. That second step constrains its current artifact
-support even when Rust LQL can open V3. Use the
-[source build instructions](../crates/larql-python/README.md) and tests rather
-than interpreting the old draft API proposal as a shipped interface.
+Python sessions bind V2/V3 through LQL; `session.vindex` lazily opens a V2-only
+array view and explicitly refuses on V3. Rebinding with `USE` invalidates that
+view. See the [source build instructions](../crates/larql-python/README.md).
+
+Factory build preflight refuses required reconstruction, logit-match and Hub
+verification that the driver cannot execute. A checksum pass cannot authorize
+publication under those requirements. The [Factory README](../crates/larql-factory/README.md)
+describes the operational consequence and the remaining verifier work.
 
 The nested WASM experts and `model-compute` solver library have different ABIs
 and host implementations. Both execute explicit structured requests; a direct

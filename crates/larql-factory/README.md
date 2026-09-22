@@ -21,14 +21,14 @@ larql recipe build-id recipe.yaml
 larql recipe estimate recipe.yaml
 ```
 
-A build can fetch, extract and publish artifacts according to its recipe;
-inspect that recipe before invoking `larql recipe build`. Source revision,
-extractor identity and generation belong in the build contract. Capability
-manifests describe implemented architecture support, not proof that a particular
-artifact passed all numerical or behavioral gates.
+`larql recipe build` currently refuses at preflight: every recipe requires
+reconstruction and logit-agreement checks, while the driver only implements
+local checksum verification. No fetch, extraction or publication starts when
+these requirements cannot be enforced; `from_hub: true` is also reported as an
+unsupported verification requirement. Validation, identity, estimation and card
+APIs remain available. Completing the numerical verifier is required before
+build-and-publish execution can resume; checksum success is insufficient.
 
-The current VERIFY stage establishes checksum integrity. It must not be
-presented as source-forward parity or a representation-quality assessment.
 MIRROR and REGISTER remain external orchestration concerns. See the
 [Factory programme](../../docs/vindex-factory.md), including its explicit
 implemented/design boundaries, and [source-to-serving interfaces](../../docs/runtime-surfaces.md).

@@ -106,6 +106,21 @@ pub(crate) struct PatchRecording {
 }
 
 impl Session {
+    /// The active local artifact and its generation, as established by `USE`.
+    /// Remote servers, raw weights and unbound sessions have no local artifact.
+    /// Embedding surfaces should consult this binding instead of detecting the
+    /// format again or assuming that every LQL session owns a `VectorIndex`.
+    pub fn local_artifact(
+        &self,
+    ) -> Option<(&Path, larql_vindex::format::generation::ContainerGeneration)> {
+        use larql_vindex::format::generation::ContainerGeneration;
+        match &self.backend {
+            Backend::Vindex { path, .. } => Some((path, ContainerGeneration::V2)),
+            Backend::Vindex3 { path, .. } => Some((path, ContainerGeneration::V3)),
+            _ => None,
+        }
+    }
+
     // ── Backend accessors ──
 
     /// Get readonly access to the patched vindex (base + overlay).

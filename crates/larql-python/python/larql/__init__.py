@@ -67,9 +67,9 @@ def load(path: str, **kwargs) -> "Vindex":
 
 
 def session(path: str) -> "Session":
-    """Create an LQL session connected to a vindex.
+    """Create an LQL session connected to a V2 or VINDEX3 artifact.
 
-    Provides both LQL query execution and direct vindex access:
+    Provides LQL execution for both generations; .vindex arrays require V2:
         session = larql.session("gemma3-4b.vindex")
         session.query("DESCRIBE 'France'")
         session.vindex.embed("France")

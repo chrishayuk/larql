@@ -22,7 +22,22 @@ path is a placeholder. `larql serve` delegates to this binary. Use
 `larql-server --help` for authentication, bind address, TLS, CORS, concurrency,
 artifact-loading and shard options. The crate has no default GPU feature;
 `metal-experts` is an explicit macOS option for the supported V2 expert path.
-The current V3 server binding uses production CPU execution.
+V3 defaults to production CPU execution. On macOS, build with
+`--features vindex3-metal` and select `--v3-backend metal` to use the interpreter's
+Metal F16 projection provider. The interpreter still performs its CPU-side
+operations; this is separate from the CLI's `metal-lowered` executor.
+No device or unsupported operator means refusal, never a silent CPU fallback.
+The server's explicit backend composition in [vindex3.rs](src/vindex3.rs)
+registers its configured device provider, then opens the runtime by that
+provider's identity. This is an additional permitted construction site in the
+[lowering closure check](../larql-vindex/tests/lowering_closure.rs); the original
+LOWERING-PLUGIN-1 experimental construction inventory remains frozen.
+
+Dynamic loading accepts `POST /v1/runtime/model` with
+`{"path":"model.vindex3","backend":"metal"}` (backend defaults to `cpu`).
+`/v1/runtime` reports `backend.selected`; changing an existing binding's backend
+requires unloading it first. `/v1/capabilities` advertises the compiled V3 choices;
+device availability is checked at load time.
 
 ## Interface boundaries
 

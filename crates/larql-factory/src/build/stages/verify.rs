@@ -17,6 +17,21 @@ use std::path::Path;
 use crate::build::runner::{CommandOutput, CommandRunner, Invocation};
 use crate::build::stages::exec::run_checked;
 
+/// Refuse recipe requirements this driver cannot execute, before any side
+/// effects. Numeric checks are required by the recipe schema; no existing
+/// recipe may be silently downgraded to checksum-only verification.
+pub fn check_supported(verify: &crate::Verify) -> Result<(), String> {
+    let mut missing = vec!["spec.verify.reconstruction", "spec.verify.logit_match"];
+    if verify.from_hub {
+        missing.push("spec.verify.from_hub");
+    }
+    Err(format!(
+        "Factory build cannot execute required verification: {}. \
+         Only local checksum verification is implemented; no fetch, build or publication was started.",
+        missing.join(", ")
+    ))
+}
+
 /// Build the `larql verify <dir>` invocation.
 pub fn invocation(dir: &Path) -> Invocation {
     Invocation::new(&["verify"], vec![dir.to_string_lossy().into_owned()])

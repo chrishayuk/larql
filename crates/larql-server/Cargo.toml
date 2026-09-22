@@ -29,7 +29,6 @@ larql-router-protocol = { path = "../larql-router-protocol" }
 # `MetalBackend::run_experts_preselected_metal` to dispatch each layer's
 # selected experts on the GPU instead of running them per-expert on CPU.
 larql-compute = { path = "../larql-compute" }
-larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 
 axum = { version = "0.8", features = ["ws"] }
 half = "2"
@@ -69,6 +68,9 @@ base64 = "0.22"
 utoipa = { version = "5", features = ["axum_extras", "preserve_order"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+larql-compute-metal = { path = "../larql-compute-metal", optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 # Integration test wires a real GridServiceImpl alongside the server. Dev-only.
@@ -97,6 +99,8 @@ default = []
 # the `larql-compute-metal` sibling crate directly (distinct from the
 # `gpu` umbrella feature on larql-cli/inference/kv/vindex).  macOS-only.
 metal-experts = ["dep:larql-compute-metal"]
+# VINDEX3 interpreter with an explicitly selected Metal device provider.
+vindex3-metal = ["dep:larql-compute-metal"]
 # ADR-0010 QUIC transport for the grid `Join` stream. Servers can connect
 # to the router via `--join quic://router:PORT` when this is on. Forwards
 # to larql-router-protocol so all QUIC code paths share one feature flag.

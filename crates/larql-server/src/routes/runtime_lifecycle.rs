@@ -75,6 +75,9 @@ pub struct LoadModelRequest {
     /// resolution yet (`docs/runtime-lifecycle-design.md`'s explicit
     /// non-goals for this rung).
     pub path: String,
+    /// VINDEX3 backend; defaults to CPU. Refused for V2 when set to Metal.
+    #[serde(default)]
+    pub backend: crate::vindex3::V3Backend,
 }
 
 fn model_id_of(model: &ServedModel) -> &str {
@@ -174,14 +177,30 @@ async fn load_model(
         let mut lifecycle = state.lifecycle.lock().unwrap_or_else(|p| p.into_inner());
         match crate::state::decide_load(&lifecycle, &requested_path) {
             LoadDecision::Refuse(msg) => return Err(ServerError::Conflict(msg)),
-            LoadDecision::AlreadyBound => return Ok(Json(runtime_snapshot(state))),
+            LoadDecision::AlreadyBound => {
+                let current = state.served(None);
+                let same_backend = match current {
+                    Some(ServedModel::V3(ref model)) => model.backend == req.backend,
+                    _ => req.backend == crate::vindex3::V3Backend::Cpu,
+                };
+                if !same_backend {
+                    return Err(ServerError::Conflict("model is already bound with a different backend; unload it before changing backend".into()));
+                }
+                return Ok(Json(runtime_snapshot(state)));
+            }
             LoadDecision::Proceed => *lifecycle = LifecycleState::Loading,
         }
     }
 
     let load_path = req.path.clone();
     let load_result = tokio::task::spawn_blocking(move || {
-        load_artifact(&load_path, LoadVindexOptions::default())
+        load_artifact(
+            &load_path,
+            LoadVindexOptions {
+                v3_backend: req.backend,
+                ..Default::default()
+            },
+        )
     })
     .await;
 
@@ -501,7 +520,10 @@ mod tests {
         );
         let result = load_model(
             &state,
-            LoadModelRequest { path: "/a".into() },
+            LoadModelRequest {
+                path: "/a".into(),
+                backend: Default::default(),
+            },
             Duration::from_secs(1),
         )
         .await;
@@ -517,7 +539,10 @@ mod tests {
         );
         let result = load_model(
             &state,
-            LoadModelRequest { path: "/a".into() },
+            LoadModelRequest {
+                path: "/a".into(),
+                backend: Default::default(),
+            },
             Duration::from_secs(1),
         )
         .await;
@@ -539,6 +564,7 @@ mod tests {
         let result = load_model(
             &state,
             LoadModelRequest {
+                backend: Default::default(),
                 path: "/definitely/does/not/exist-runtime-lifecycle-test".into(),
             },
             Duration::from_secs(1),

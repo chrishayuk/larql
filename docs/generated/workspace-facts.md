@@ -28,7 +28,7 @@ target conditions, default-feature choices and explicit example targets.
 | [larql-python](../../crates/larql-python/Cargo.toml) | `0.2.0` | `larql-core`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-vindex` | None |
 | [larql-router](../../crates/larql-router/Cargo.toml) | `0.2.0` | `larql-inference`, `larql-router-protocol` | None |
 | [larql-router-protocol](../../crates/larql-router-protocol/Cargo.toml) | `0.2.0` | None | None |
-| [larql-server](../../crates/larql-server/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-compute-metal` (optional), `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router-protocol`, `larql-vindex` | None |
+| [larql-server](../../crates/larql-server/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router-protocol`, `larql-vindex`, `larql-compute-metal` (optional) (cfg(target_os = "macos")) | None |
 | [larql-vindex](../../crates/larql-vindex/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-execution`, `larql-models`, `larql-vindex-spec` | None |
 | [larql-vindex-spec](../../crates/larql-vindex-spec/Cargo.toml) | `0.2.0` | None | None |
 | [model-compute](../../crates/model-compute/Cargo.toml) | `0.2.0` | None | `native` |

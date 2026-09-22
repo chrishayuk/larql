@@ -287,27 +287,15 @@ impl KvState for CanonicalKvState {
             value.len()
         );
 
-        // Write into the matrices first…
-        let (k, v) = match self.cache.get_layer(layer) {
-            Some((k, v)) => {
-                let mut k_new = Array2::zeros((k.shape()[0] + 1, kv_dim));
-                k_new.slice_mut(ndarray::s![..k.shape()[0], ..]).assign(k);
-                k_new
-                    .row_mut(k.shape()[0])
-                    .assign(&ndarray::ArrayView1::from(key.as_slice()));
-                let mut v_new = Array2::zeros((v.shape()[0] + 1, kv_dim));
-                v_new.slice_mut(ndarray::s![..v.shape()[0], ..]).assign(v);
-                v_new
-                    .row_mut(v.shape()[0])
-                    .assign(&ndarray::ArrayView1::from(value.as_slice()));
-                (k_new, v_new)
-            }
-            None => (
-                Array2::from_shape_vec((1, kv_dim), key).expect("row width asserted above"),
-                Array2::from_shape_vec((1, kv_dim), value).expect("row width asserted above"),
-            ),
-        };
-        self.cache.set_layer(layer, (k, v));
+        // Grow row-major matrices amortized by one row. Rebuilding a matrix
+        // on every token copies the entire prefix and makes append quadratic.
+        // Adopted nonstandard layouts are normalized by ndarray on first push.
+        let (k, v) = self.cache.layers[layer]
+            .get_or_insert_with(|| (Array2::zeros((0, kv_dim)), Array2::zeros((0, kv_dim))));
+        k.push_row(ndarray::ArrayView1::from(key.as_slice()))
+            .expect("row width asserted above");
+        v.push_row(ndarray::ArrayView1::from(value.as_slice()))
+            .expect("row width asserted above");
 
         // …then materialise the served view from what the cache now
         // holds, so the view provably carries the stored bits.

@@ -167,6 +167,7 @@ fn discover_vindexes_returns_sorted_dirs_with_index_json() {
 #[test]
 fn load_options_are_copyable() {
     let opts = LoadVindexOptions {
+        v3_backend: Default::default(),
         no_infer: true,
         ffn_only: false,
         embed_only: false,
