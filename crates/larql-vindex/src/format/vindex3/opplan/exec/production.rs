@@ -918,6 +918,8 @@ impl ProductionBackend {
                 &concat,
                 &kept,
                 activated.as_deref(),
+                query,
+                &key_of,
                 &value_of,
             );
         }

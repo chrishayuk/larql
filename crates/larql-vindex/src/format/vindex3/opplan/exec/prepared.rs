@@ -51,11 +51,13 @@ use super::accounting::{
     Reconciliation, ResidencyBudget, ResourceLedger,
 };
 use super::backend::{MatrixClass, NormCall, PlanBackend, ProjectCall, WeightFormat, WeightSlice};
+use super::cpu::WeightRows;
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::kda::KdaOutputGateWeights;
 use super::lowering::{LoweringIdentity, LoweringRegistry};
 use super::operands::{OperandSource, SourceStamp};
+use super::quantise::SUM_BLOCK;
 use super::realization::{
     lowerings_stand_in, realization_residency, DependencyLifetime, DependencyPin, ExtentOption,
     ExtentPin, PinnedAuthorities, RealizationId, RealizationRecord, RepresentationFacts,
@@ -72,7 +74,8 @@ use larql_models::config::NormType;
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
     AttnResSiteOp, ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp,
-    LayerAttention, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp, OperandRef, OutputOp,
+    LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp, OperandRef,
+    OutputOp,
 };
 use super::attention_residual;
 use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
@@ -1974,7 +1977,263 @@ pub struct PreparedOperands {
     attention_residual_exit: Option<PreparedAttnResExit>,
 }
 
+/// A gathered subset of the prepared output head.
+///
+/// This is an offline evidence object: it preserves the exact resident
+/// representation selected for the production image, but contains only the
+/// declared vocabulary rows.  It exists so a frozen candidate lens does not
+/// have to execute the entire vocabulary projection at every captured state.
+pub struct SelectedOutputHead {
+    token_ids: Vec<u32>,
+    projection: SelectedProjection,
+    hidden: usize,
+    multiplier: Option<f64>,
+    softcapping: Option<f32>,
+}
+
+enum SelectedProjection {
+    F32(Vec<f32>),
+    Bf16(Vec<u16>),
+    Q8 {
+        codes: Vec<i8>,
+        scales: Vec<f32>,
+        sums: Vec<i16>,
+        block: usize,
+    },
+}
+
+impl SelectedProjection {
+    fn slice(&self) -> WeightSlice<'_> {
+        match self {
+            Self::F32(values) => WeightSlice::F32(values),
+            Self::Bf16(values) => WeightSlice::Bf16(values),
+            Self::Q8 {
+                codes,
+                scales,
+                sums,
+                block,
+            } => WeightSlice::Q8 {
+                codes,
+                scales,
+                sums,
+                block: *block,
+            },
+        }
+    }
+
+    fn representation(&self) -> &'static str {
+        match self {
+            Self::F32(_) => "f32",
+            Self::Bf16(_) => "bf16",
+            Self::Q8 { .. } => "q8",
+        }
+    }
+}
+
+impl SelectedOutputHead {
+    /// Gather `token_ids`' rows of a resident `[vocab, hidden]` head, in its
+    /// own representation. Every id must be a distinct row of the head.
+    pub(super) fn gather(
+        head: WeightSlice<'_>,
+        vocab: usize,
+        hidden: usize,
+        token_ids: &[u32],
+        multiplier: Option<f64>,
+        softcapping: Option<f32>,
+    ) -> Result<Self, VindexError> {
+        if token_ids.is_empty() {
+            return Err(VindexError::Parse(
+                "selected output head requires at least one token".into(),
+            ));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for &token in token_ids {
+            let index = token as usize;
+            if index >= vocab {
+                return Err(VindexError::Parse(format!(
+                    "selected output token {token} is outside vocabulary {vocab}"
+                )));
+            }
+            if !seen.insert(token) {
+                return Err(VindexError::Parse(format!(
+                    "selected output token {token} is duplicated"
+                )));
+            }
+        }
+
+        let projection = match head.rows(vocab, hidden)? {
+            WeightRows::F32(values) => {
+                let mut selected = Vec::with_capacity(token_ids.len() * hidden);
+                for &token in token_ids {
+                    let start = token as usize * hidden;
+                    selected.extend_from_slice(&values[start..start + hidden]);
+                }
+                SelectedProjection::F32(selected)
+            }
+            WeightRows::Bf16(values) => {
+                let mut selected = Vec::with_capacity(token_ids.len() * hidden);
+                for &token in token_ids {
+                    let start = token as usize * hidden;
+                    selected.extend_from_slice(&values[start..start + hidden]);
+                }
+                SelectedProjection::Bf16(selected)
+            }
+            WeightRows::Q8 {
+                codes,
+                scales,
+                sums,
+                block,
+            } => {
+                let scales_per_row = hidden.div_ceil(block);
+                let sums_per_row = hidden.div_ceil(SUM_BLOCK);
+                let mut selected_codes = Vec::with_capacity(token_ids.len() * hidden);
+                let mut selected_scales = Vec::with_capacity(token_ids.len() * scales_per_row);
+                let mut selected_sums = if sums.is_empty() {
+                    Vec::new()
+                } else {
+                    Vec::with_capacity(token_ids.len() * sums_per_row)
+                };
+                for &token in token_ids {
+                    let row = token as usize;
+                    selected_codes.extend_from_slice(&codes[row * hidden..(row + 1) * hidden]);
+                    selected_scales.extend_from_slice(
+                        &scales[row * scales_per_row..(row + 1) * scales_per_row],
+                    );
+                    if !sums.is_empty() {
+                        selected_sums
+                            .extend_from_slice(&sums[row * sums_per_row..(row + 1) * sums_per_row]);
+                    }
+                }
+                SelectedProjection::Q8 {
+                    codes: selected_codes,
+                    scales: selected_scales,
+                    sums: selected_sums,
+                    block,
+                }
+            }
+            _ => {
+                return Err(VindexError::Parse(
+                    "selected output-head evidence refuses this prepared representation".into(),
+                ))
+            }
+        };
+        Ok(Self {
+            token_ids: token_ids.to_vec(),
+            projection,
+            hidden,
+            multiplier,
+            softcapping,
+        })
+    }
+
+    pub fn token_ids(&self) -> &[u32] {
+        &self.token_ids
+    }
+
+    pub fn representation(&self) -> &'static str {
+        self.projection.representation()
+    }
+
+    /// The raw output-head row for the `index`-th selected token, dequantised
+    /// to f32 from the exact prepared production realization — never a
+    /// second, independently reloaded or widened copy. Dequantisation
+    /// (bf16 widening, Q8 `code * scale`) is arithmetic, not a different
+    /// weight authority: it is the same conversion `backend.project`/
+    /// `output_head` already apply on this exact resident data.
+    pub fn row_f32(&self, index: usize) -> Result<Vec<f32>, VindexError> {
+        if index >= self.token_ids.len() {
+            return Err(VindexError::Parse(format!(
+                "selected output head row {index} is outside {} selected tokens",
+                self.token_ids.len()
+            )));
+        }
+        match &self.projection {
+            SelectedProjection::F32(values) => {
+                let start = index * self.hidden;
+                Ok(values[start..start + self.hidden].to_vec())
+            }
+            SelectedProjection::Bf16(values) => {
+                let start = index * self.hidden;
+                Ok(values[start..start + self.hidden]
+                    .iter()
+                    .map(|&bits| f32::from_bits(u32::from(bits) << 16))
+                    .collect())
+            }
+            SelectedProjection::Q8 {
+                codes,
+                scales,
+                block,
+                ..
+            } => {
+                let scales_per_row = self.hidden.div_ceil(*block);
+                let code_start = index * self.hidden;
+                let scale_start = index * scales_per_row;
+                Ok(codes[code_start..code_start + self.hidden]
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, &code)| {
+                        let scale = scales[scale_start + offset / block];
+                        f32::from(code) * scale
+                    })
+                    .collect())
+            }
+        }
+    }
+}
+
+/// The effective dense FFN matrices selected for execution, widened only for
+/// offline contribution accounting. A Q8 image contains the dequantised Q8
+/// values, not the container's original BF16 values.
+pub struct PreparedDenseFfnImage {
+    pub gate: Option<Vec<f32>>,
+    pub up: Vec<f32>,
+    pub down: Vec<f32>,
+}
+
 impl PreparedOperands {
+    pub fn dense_ffn_image(
+        &self,
+        plan: &ComponentOpPlan,
+        layer: usize,
+    ) -> Result<PreparedDenseFfnImage, VindexError> {
+        let layer_plan = plan.layers.get(layer).ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} is outside the component plan"))
+        })?;
+        let LayerFfn::Dense(op) = layer_plan
+            .ffn
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse(format!("layer {layer} carries no FFN")))?
+        else {
+            return Err(VindexError::Parse(format!(
+                "layer {layer} is not a dense FFN"
+            )));
+        };
+        let local = layer.checked_sub(self.first_layer).ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} precedes this prepared slice"))
+        })?;
+        let prepared = self.layers.get(local).ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} is outside this prepared slice"))
+        })?;
+        let ffn = prepared
+            .ffn
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse(format!("prepared layer {layer} carries no FFN")))?;
+        let (gate, up, down) = ffn
+            .dense_slices(layer_plan.ffn.as_ref().unwrap())
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "prepared layer {layer} is not the plan's dense FFN"
+                ))
+            })?;
+        Ok(PreparedDenseFfnImage {
+            gate: gate
+                .map(|weight| weight.decode_f32(op.intermediate_size, self.hidden))
+                .transpose()?,
+            up: up.decode_f32(op.intermediate_size, self.hidden)?,
+            down: down.decode_f32(self.hidden, op.intermediate_size)?,
+        })
+    }
+
     /// Lower `slice` of `plan`'s operands into `backend`'s execution
     /// form, and give the backend its chance to place them (device
     /// residency). Every operand this slice needs is loaded here, and
@@ -2875,6 +3134,104 @@ impl PreparedOperands {
     /// slice does).
     pub fn has_output(&self) -> bool {
         self.output.is_some()
+    }
+
+    /// Vocabulary readout of an already reduced carrier. This performs only
+    /// the prepared final norm and output head, with their pinned realization,
+    /// multiplier and soft-capping. It does not execute layers or mutate KV.
+    ///
+    /// The caller owns boundary semantics: apply a recorded layer scale first
+    /// when reading a post-add/pre-scale observation. Bundle/history reduction
+    /// must not be guessed by an analysis caller.
+    pub fn readout_carrier<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        let normalized = self.normalize_carrier_for_readout(backend, carrier)?;
+        let (op, weight) = self
+            .output
+            .as_ref()
+            .expect("normalization requires an output head");
+        backend.output_head(
+            weight.slice(),
+            op.projection.shape[0],
+            self.hidden,
+            &normalized,
+            op.multiplier,
+            op.softcapping,
+        )
+    }
+
+    /// Gather declared vocabulary rows from the output head in the exact
+    /// representation held by this prepared image.
+    ///
+    /// The current evidence path admits the CPU production formats used by
+    /// the GW programme (f32, stored bf16 and realised Q8).  Any other format
+    /// refuses rather than widening or silently changing its arithmetic.
+    pub fn select_output_head(&self, token_ids: &[u32]) -> Result<SelectedOutputHead, VindexError> {
+        let (op, weight) = self
+            .output
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse("prepared slice has no output head".into()))?;
+        SelectedOutputHead::gather(
+            weight.slice(),
+            op.projection.shape[0],
+            self.hidden,
+            token_ids,
+            op.multiplier,
+            op.softcapping,
+        )
+    }
+
+    /// Read an already reduced carrier against a previously gathered output
+    /// head.  Final normalisation and the production backend's projection,
+    /// multiplier and softcap are identical to [`Self::readout_carrier`].
+    pub fn readout_carrier_selected<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+        head: &SelectedOutputHead,
+    ) -> Result<Vec<f32>, VindexError> {
+        if head.hidden != self.hidden {
+            return Err(VindexError::Parse(
+                "selected output head and prepared carrier widths differ".into(),
+            ));
+        }
+        let normalized = self.normalize_carrier_for_readout(backend, carrier)?;
+        backend.output_head(
+            head.projection.slice(),
+            head.token_ids.len(),
+            self.hidden,
+            &normalized,
+            head.multiplier,
+            head.softcapping,
+        )
+    }
+
+    /// The exact prepared final-norm input to the output head, for a vocabulary
+    /// geometry lens. Caller supplies an already reduced, layer-scaled carrier.
+    /// No layers, output projection, or KV mutation are executed here.
+    pub fn normalize_carrier_for_readout<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        self.ensure_lowered_by(backend)?;
+        if carrier.len() != self.hidden || carrier.iter().any(|v| !v.is_finite()) {
+            return Err(VindexError::Parse(
+                "readout requires a finite, hidden-width carrier".into(),
+            ));
+        }
+        if self.output.is_none() {
+            return Err(VindexError::Parse(
+                "prepared slice has no output head for readout".into(),
+            ));
+        }
+        Ok(match &self.final_norm {
+            Some(norm) => norm.apply(backend, carrier),
+            None => carrier.to_vec(),
+        })
     }
 
     pub(super) fn embed_table(&self) -> Option<&[f32]> {

@@ -1,0 +1,894 @@
+{
+  "schema": "larql.gwts1.population-manifest.v1",
+  "status": "materialized_pre_population_capture",
+  "authorities": {
+    "gwts1_protocol_sha256": "sha256:d873d238d99406dc8a549681aa746e750a9d4b802e24ff21a8eb26d152a97d55",
+    "attr1d_contract_identity": "sha256:4f48973807db0695d5f30b83a00c73637afbd0dc77d116b5a1f9eb6ec913431c",
+    "attr1d_witness": {
+      "identity": "sha256:88065f65ff3d596f4f3e6716309ccdbc02365ce76d92973dbc5838af4ebb0d73",
+      "overall_pass": true
+    },
+    "gw0_manifest_sha256": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c"
+  },
+  "population": {
+    "eligible_upstream_split": "train",
+    "transition_identity_count": 85,
+    "prompt_family_requirement": [
+      "alternate",
+      "canonical",
+      "question"
+    ],
+    "other_upstream_splits": "excluded_and_reserved_for_future_replication"
+  },
+  "assignment": {
+    "group": "transition_identity",
+    "stratify_by": [
+      "task_identity",
+      "semantic_operation"
+    ],
+    "task_identity_constant": "raw_text_completion_container_tokenizer_with_special_tokens",
+    "semantic_operation_field": "relation",
+    "method": "canonical_hash_order/v1",
+    "apportionment": "largest_remainder_ties_by_ascending_relation_name",
+    "discovery_fraction": 0.6,
+    "discovery_count": 51,
+    "held_out_count": 34,
+    "outcome_inputs": "forbidden",
+    "rows": [
+      {
+        "relation": "capital",
+        "subject": "Algeria",
+        "target": "Algiers",
+        "canonical_hash_order/v1": "sha256:a7b6c2e98b83706bd300b9b7bf535caa1cc0272cfdfe83ce1bfe4271709e5372",
+        "stratum": "capital",
+        "stratum_rank": 17,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Austria",
+        "target": "Vienna",
+        "canonical_hash_order/v1": "sha256:bd3c192409b421cb51df99df6e1b670f394d15f8ed88b05c6074f28f04683f3f",
+        "stratum": "capital",
+        "stratum_rank": 18,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Chile",
+        "target": "Santiago",
+        "canonical_hash_order/v1": "sha256:0300770f71dbe382831ba879ef17ced87eee16331cad7582bbd76c979f8534b2",
+        "stratum": "capital",
+        "stratum_rank": 0,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "China",
+        "target": "Beijing",
+        "canonical_hash_order/v1": "sha256:7b75229b30fc15bec648668fb20d04ddf38897d0e681895e72af9b54a2b2b464",
+        "stratum": "capital",
+        "stratum_rank": 13,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Denmark",
+        "target": "Copenhagen",
+        "canonical_hash_order/v1": "sha256:6b7073e348b012f6474bebc6e474917643104dbbaf0288a37a71bd0d66831a8b",
+        "stratum": "capital",
+        "stratum_rank": 11,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Egypt",
+        "target": "Cairo",
+        "canonical_hash_order/v1": "sha256:412438d53c0ac0c0a6f7d859b020414c399addc4f55012a2ed168ca95afb3ac2",
+        "stratum": "capital",
+        "stratum_rank": 6,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Finland",
+        "target": "Helsinki",
+        "canonical_hash_order/v1": "sha256:45805dfcc730af31c24760ab279d58e8f868778a73071fe9f1ae5191e59c9b3a",
+        "stratum": "capital",
+        "stratum_rank": 7,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "France",
+        "target": "Paris",
+        "canonical_hash_order/v1": "sha256:c61e72980dd753a6c009fcc9f0be90602effb6d841464b038fba1d3d7a709018",
+        "stratum": "capital",
+        "stratum_rank": 19,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Germany",
+        "target": "Berlin",
+        "canonical_hash_order/v1": "sha256:3215a69c5ef69a8862457c2a248eab7943c3fc57f6cf76e95acbde847027dc9e",
+        "stratum": "capital",
+        "stratum_rank": 5,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Italy",
+        "target": "Rome",
+        "canonical_hash_order/v1": "sha256:0eda2d8ec1efa31f78ee74d472f54b8c358e369cfe56bd1487f13e6953a5afad",
+        "stratum": "capital",
+        "stratum_rank": 1,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Japan",
+        "target": "Tokyo",
+        "canonical_hash_order/v1": "sha256:1afbc7ff14e04287a2bb9005521c3ae250e44356c41abab10632878cfda86b8f",
+        "stratum": "capital",
+        "stratum_rank": 4,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Kenya",
+        "target": "Nairobi",
+        "canonical_hash_order/v1": "sha256:7a0359d0ceeee38047286a83d1ef6e91b152692817bef70dc9937de9cdb23452",
+        "stratum": "capital",
+        "stratum_rank": 12,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Morocco",
+        "target": "Rabat",
+        "canonical_hash_order/v1": "sha256:9283cd83f4a25ba9279675090b881a5e7ee51b47df861b2281ab5bd45ef72863",
+        "stratum": "capital",
+        "stratum_rank": 14,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Peru",
+        "target": "Lima",
+        "canonical_hash_order/v1": "sha256:46b41b672137a192234fe7ec7c7d58012c0afe0dba08f8f247780544f856d1f0",
+        "stratum": "capital",
+        "stratum_rank": 8,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Poland",
+        "target": "Warsaw",
+        "canonical_hash_order/v1": "sha256:f9ed3b63ceb7d4fe4171bc5c505d4321926a2240a9f5464050f491c5bc0e35aa",
+        "stratum": "capital",
+        "stratum_rank": 22,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Portugal",
+        "target": "Lisbon",
+        "canonical_hash_order/v1": "sha256:ccf8049a70716352e0039afe352133dff24de63c74a46ed23c1513938271ee91",
+        "stratum": "capital",
+        "stratum_rank": 20,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Russia",
+        "target": "Moscow",
+        "canonical_hash_order/v1": "sha256:112a6a84a7cf5d54b12bdd7641f8fa53b9c938b60a463bf3c78e33b06261ef27",
+        "stratum": "capital",
+        "stratum_rank": 2,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Spain",
+        "target": "Madrid",
+        "canonical_hash_order/v1": "sha256:4c02b0f9c7dfbba4c977b5864fe76282c15d2e8e77902c7aa4eb6c4a7d532398",
+        "stratum": "capital",
+        "stratum_rank": 10,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Sweden",
+        "target": "Stockholm",
+        "canonical_hash_order/v1": "sha256:cf987ab529cd3d6ffa2e45f9d0a0a8b621669e83ac034d4236bc3d7fd7f5a16d",
+        "stratum": "capital",
+        "stratum_rank": 21,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Thailand",
+        "target": "Bangkok",
+        "canonical_hash_order/v1": "sha256:4ba1c8c8231f816c74cc6e4d57e0e6938be5d010bb759f39d7500d7bbc7ef96d",
+        "stratum": "capital",
+        "stratum_rank": 9,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "capital",
+        "subject": "Tunisia",
+        "target": "Tunis",
+        "canonical_hash_order/v1": "sha256:a0449a4dcfb7df4bb1c74271d08008c312cbd7d528e7e8dfbdd56a09d765bedf",
+        "stratum": "capital",
+        "stratum_rank": 15,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Turkey",
+        "target": "Ankara",
+        "canonical_hash_order/v1": "sha256:a5cd1618b54770f4d6e3b1972144e2774820ec1aba89cbfea357f2636eff1732",
+        "stratum": "capital",
+        "stratum_rank": 16,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "capital",
+        "subject": "Vietnam",
+        "target": "Hanoi",
+        "canonical_hash_order/v1": "sha256:12fc510beaaf7a42b4ca192f95141a59f0ff0d68b665ed772700b3c64b100217",
+        "stratum": "capital",
+        "stratum_rank": 3,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Austria",
+        "target": "Euro",
+        "canonical_hash_order/v1": "sha256:ab686c41049dbb1274cf82bce0a2471f30fcc57418796668fa7406acc513be29",
+        "stratum": "currency",
+        "stratum_rank": 15,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Bangladesh",
+        "target": "Taka",
+        "canonical_hash_order/v1": "sha256:76b9627b86e28c82c0a4d83c372e08088b273de05947f344b74651cc117d54c2",
+        "stratum": "currency",
+        "stratum_rank": 9,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Brazil",
+        "target": "Real",
+        "canonical_hash_order/v1": "sha256:11f811bcc408e64b3ea8c1b871d95de66aa9dc8bcce677958842dbb30e77afb2",
+        "stratum": "currency",
+        "stratum_rank": 2,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Denmark",
+        "target": "Krone",
+        "canonical_hash_order/v1": "sha256:461848e4fa25be5bfef8c6f3ebb3beed512f743dd37fd89bb8f559b8080cc29a",
+        "stratum": "currency",
+        "stratum_rank": 5,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "France",
+        "target": "Euro",
+        "canonical_hash_order/v1": "sha256:8c776f10790087672c45e69b15b6ccb08c06b94602e586c7c0bf43efe79270cf",
+        "stratum": "currency",
+        "stratum_rank": 11,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Germany",
+        "target": "Euro",
+        "canonical_hash_order/v1": "sha256:72944f59f0c9e96d3ddc295f505a50a97b8f476aeebe2bd7330132fb05ef0e6d",
+        "stratum": "currency",
+        "stratum_rank": 8,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Greece",
+        "target": "Euro",
+        "canonical_hash_order/v1": "sha256:b3594cdea3b6bfadc95fe1413bd8508100a65f34fcee42da9aa25e89af3fe946",
+        "stratum": "currency",
+        "stratum_rank": 16,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Hungary",
+        "target": "Forint",
+        "canonical_hash_order/v1": "sha256:4c82865b3b0b19ceeaebfea94918477d2e5c29e5fc7ebf21c87acd03ad811500",
+        "stratum": "currency",
+        "stratum_rank": 6,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Indonesia",
+        "target": "Rupiah",
+        "canonical_hash_order/v1": "sha256:517535fa76b8094006870d456845f9945bc9a29641dc3c01b7afa244555183eb",
+        "stratum": "currency",
+        "stratum_rank": 7,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Japan",
+        "target": "Yen",
+        "canonical_hash_order/v1": "sha256:a0e2292b6c4572e0e79e88503046e5a6afabf43181e8c2f85c0c978fb9159028",
+        "stratum": "currency",
+        "stratum_rank": 13,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Kenya",
+        "target": "Shilling",
+        "canonical_hash_order/v1": "sha256:fd2c1a20a48b5d5065e1ffe12f7200bdc1a3826a9e3e2059e1fdee65bbf46c98",
+        "stratum": "currency",
+        "stratum_rank": 19,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Malaysia",
+        "target": "Ringgit",
+        "canonical_hash_order/v1": "sha256:a30e62085cdced3ea89a750e693a2735bd723a960a62dcf20e62843221b73862",
+        "stratum": "currency",
+        "stratum_rank": 14,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Nigeria",
+        "target": "Naira",
+        "canonical_hash_order/v1": "sha256:815b93f4f00bf0c61edc4b2f8b07ea75e33eadf6eaccd5c433737670323a9765",
+        "stratum": "currency",
+        "stratum_rank": 10,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Norway",
+        "target": "Krone",
+        "canonical_hash_order/v1": "sha256:e8a08e454bf9e58ef231fc16ec453c811e1d86e300da6efd457b15bfe72c823a",
+        "stratum": "currency",
+        "stratum_rank": 18,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Pakistan",
+        "target": "Rupee",
+        "canonical_hash_order/v1": "sha256:034f4105d445a6816d8d3233067add3c1f02087c392c13247284ae6d364dfc27",
+        "stratum": "currency",
+        "stratum_rank": 0,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Portugal",
+        "target": "Euro",
+        "canonical_hash_order/v1": "sha256:2919fdf8d629005d0c006726b4085325bf0fb11ee027f9e2274ab73d101c9e57",
+        "stratum": "currency",
+        "stratum_rank": 4,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Spain",
+        "target": "Euro",
+        "canonical_hash_order/v1": "sha256:116a72a586f7c2009c71599d765fc882ac911423f28c84a5f6e9715c6cf86264",
+        "stratum": "currency",
+        "stratum_rank": 1,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "currency",
+        "subject": "Sweden",
+        "target": "Krona",
+        "canonical_hash_order/v1": "sha256:cfcb1a466221cddffe239375cd8f2087ae4d38f9f30df70ad770ce57fc7edc0d",
+        "stratum": "currency",
+        "stratum_rank": 17,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Thailand",
+        "target": "Baht",
+        "canonical_hash_order/v1": "sha256:9cf8654695f403a244ab4e75cf8ba221883ef8c701db17b90a17511798c4ab6b",
+        "stratum": "currency",
+        "stratum_rank": 12,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "currency",
+        "subject": "Turkey",
+        "target": "Lira",
+        "canonical_hash_order/v1": "sha256:19d8a0356a2a7696319ec05805f587051d62639e20788561ab82e6eb3a5dde40",
+        "stratum": "currency",
+        "stratum_rank": 3,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "barbarization",
+        "target": "degradation",
+        "canonical_hash_order/v1": "sha256:a24388e9c5cb6e981e72ca1026f3c0316ecfbe039cce1d6bd30a38a5e7a63d36",
+        "stratum": "hypernym",
+        "stratum_rank": 13,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "bathe",
+        "target": "swimming",
+        "canonical_hash_order/v1": "sha256:8b9cfef0bb58e3df7ac1ed978d56bf8c33b5123bfd44a167f446e77907b0766e",
+        "stratum": "hypernym",
+        "stratum_rank": 11,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "browse",
+        "target": "eating",
+        "canonical_hash_order/v1": "sha256:17c34d91459bdb4a0fd8c3c9bbdc54bb7f00b0e3ab44456b11f1258160279513",
+        "stratum": "hypernym",
+        "stratum_rank": 1,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "catharsis",
+        "target": "purge",
+        "canonical_hash_order/v1": "sha256:fd01cff9360b8a924845be758a0c16b6d43ceb3d4876d8d6bb7e9323b47427ed",
+        "stratum": "hypernym",
+        "stratum_rank": 23,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "cautery",
+        "target": "operation",
+        "canonical_hash_order/v1": "sha256:69d086b258d8ad70cfcc83832ff9726e6079ec56414a8c44206cb6f48a9ceb03",
+        "stratum": "hypernym",
+        "stratum_rank": 8,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "chop",
+        "target": "return",
+        "canonical_hash_order/v1": "sha256:c40f8ebf04daedbbd362f745c2e94860a35c3dc6fce48d6f630315d3ac1a9cd0",
+        "stratum": "hypernym",
+        "stratum_rank": 17,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "countermarch",
+        "target": "march",
+        "canonical_hash_order/v1": "sha256:e43262a4d8fd78c21803b0cdea57e645ae166299adae77eedea4e2aabed0d2e7",
+        "stratum": "hypernym",
+        "stratum_rank": 18,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "dichotomization",
+        "target": "division",
+        "canonical_hash_order/v1": "sha256:bce9512a8564bf44616a7eca77766e58ee82962d9add02d40e3dc47a6e952257",
+        "stratum": "hypernym",
+        "stratum_rank": 16,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "diversification",
+        "target": "change",
+        "canonical_hash_order/v1": "sha256:a6c1234232ed77361845e85c9a7326db0ca7ad9a7782b33df454854320f3b48b",
+        "stratum": "hypernym",
+        "stratum_rank": 15,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "editorship",
+        "target": "position",
+        "canonical_hash_order/v1": "sha256:f3e4ebdac9e302b8d07fc61256387ba767726f2bad4920fd6043f15889f3b5ee",
+        "stratum": "hypernym",
+        "stratum_rank": 21,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "exacta",
+        "target": "bet",
+        "canonical_hash_order/v1": "sha256:9a464b481abb4e39dbf47d81c2cdd760d5a454f13841e6d8628f29ce3992c6fc",
+        "stratum": "hypernym",
+        "stratum_rank": 12,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "fall",
+        "target": "sin",
+        "canonical_hash_order/v1": "sha256:fbb8dc20c19b64229f65c05ec74b5d404c160583f19d86c05ad4bc2e3fc95d22",
+        "stratum": "hypernym",
+        "stratum_rank": 22,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "fell",
+        "target": "killing",
+        "canonical_hash_order/v1": "sha256:040f9db29037f037d72aa73c4d09bbf54c1ac920957debfbf3c555cf5ad82eff",
+        "stratum": "hypernym",
+        "stratum_rank": 0,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "fielding",
+        "target": "handling",
+        "canonical_hash_order/v1": "sha256:3f1282c9ec95f5c67cbe3125f1627cad56e6b5feddcde8def5b8b80e4d481117",
+        "stratum": "hypernym",
+        "stratum_rank": 5,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "hustings",
+        "target": "campaigning",
+        "canonical_hash_order/v1": "sha256:a2f4cfc37babb05657a22959e69998abf06eecee40e50b8e5c0c1b2057b56db3",
+        "stratum": "hypernym",
+        "stratum_rank": 14,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "immolation",
+        "target": "sacrifice",
+        "canonical_hash_order/v1": "sha256:282e7a088819d7bce5951aa67b4ae453a9e7dcb137e5d545f9081747408d77c4",
+        "stratum": "hypernym",
+        "stratum_rank": 3,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "incineration",
+        "target": "burning",
+        "canonical_hash_order/v1": "sha256:ee484a422a02732a7edf5431d948578208e035cec589cc419b8f8900bbffe2a8",
+        "stratum": "hypernym",
+        "stratum_rank": 19,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "induction",
+        "target": "introduction",
+        "canonical_hash_order/v1": "sha256:ef75ac1944da936dfa38a9254e5646820fc892b634ffd0e5c680f15438332e6e",
+        "stratum": "hypernym",
+        "stratum_rank": 20,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "knuckleball",
+        "target": "pitch",
+        "canonical_hash_order/v1": "sha256:688e6379976c049df9752358150d5743adbeb8abd69fa4f86c9fbbab26b50213",
+        "stratum": "hypernym",
+        "stratum_rank": 7,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "laundering",
+        "target": "wash",
+        "canonical_hash_order/v1": "sha256:6109121ff20e2827b2e98ab6ad33812311788d0f16dee2919e54d5947d4eba89",
+        "stratum": "hypernym",
+        "stratum_rank": 6,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "leapfrog",
+        "target": "progress",
+        "canonical_hash_order/v1": "sha256:240c5134999e1d9f115c1e2fb9cfb099b9ffe6e9c1faa9be8442a59a9a1178d1",
+        "stratum": "hypernym",
+        "stratum_rank": 2,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "moderation",
+        "target": "decrease",
+        "canonical_hash_order/v1": "sha256:2e5a4174cfd73ca194550e3fa643ae2d84e8519f60034ba8206648b5657b194f",
+        "stratum": "hypernym",
+        "stratum_rank": 4,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "precaution",
+        "target": "measure",
+        "canonical_hash_order/v1": "sha256:7a186966633d85f49d1f16ec2f737ed580e446d8fb1ed2f18dc9e910aa074222",
+        "stratum": "hypernym",
+        "stratum_rank": 9,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "hypernym",
+        "subject": "tickle",
+        "target": "touch",
+        "canonical_hash_order/v1": "sha256:7e0e622c55e049ae3eced1fe3db5d2adc1985a033a1dddd71a9527a5c271a06c",
+        "stratum": "hypernym",
+        "stratum_rank": 10,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Austria",
+        "target": "German",
+        "canonical_hash_order/v1": "sha256:dce29533e3624450671350719754cda4701d0dffa3a4fa861d2c1f91ea5079ac",
+        "stratum": "language",
+        "stratum_rank": 16,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "language",
+        "subject": "Bulgaria",
+        "target": "Bulgarian",
+        "canonical_hash_order/v1": "sha256:0e1952444de0038397a8305bf54a904a90889861f419e211fa6e8f6aba09406c",
+        "stratum": "language",
+        "stratum_rank": 1,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Egypt",
+        "target": "Arabic",
+        "canonical_hash_order/v1": "sha256:3e13c807da1fa2dd7a9d2c1788dcad3f999009613456d09ac055b6df5fa3a790",
+        "stratum": "language",
+        "stratum_rank": 5,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Finland",
+        "target": "Finnish",
+        "canonical_hash_order/v1": "sha256:2e64740a5a024b7642c2d687e0c5c86180dc3328393f956ff83c67ce03cbab16",
+        "stratum": "language",
+        "stratum_rank": 4,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Germany",
+        "target": "German",
+        "canonical_hash_order/v1": "sha256:addb5d18491f1a0a086af6797102a874868a0759c8cc0ae146565f59acdeb6e0",
+        "stratum": "language",
+        "stratum_rank": 14,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "language",
+        "subject": "Hungary",
+        "target": "Hungarian",
+        "canonical_hash_order/v1": "sha256:f7790c0981149a14cfae8b55c7f83203505bb12ca9a863b724073a0f4251a550",
+        "stratum": "language",
+        "stratum_rank": 17,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "language",
+        "subject": "India",
+        "target": "Hindi",
+        "canonical_hash_order/v1": "sha256:632bc4a37b320923f39338801cf872cd22bb79e61598c46624b5db152ae51990",
+        "stratum": "language",
+        "stratum_rank": 8,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Iran",
+        "target": "Persian",
+        "canonical_hash_order/v1": "sha256:13b729db925932db74f761607ad70bea40f175b99b9119c473bcdc0ff3c53fda",
+        "stratum": "language",
+        "stratum_rank": 2,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Israel",
+        "target": "Hebrew",
+        "canonical_hash_order/v1": "sha256:241283c6e076ff35aa00be6f0de081181f31ae167f8a05a19dd014efd51eeeb0",
+        "stratum": "language",
+        "stratum_rank": 3,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Italy",
+        "target": "Italian",
+        "canonical_hash_order/v1": "sha256:7cfcdabf4fe6752416764865a1e2dde03a6d76b7aed1f83790331165263e3607",
+        "stratum": "language",
+        "stratum_rank": 10,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Morocco",
+        "target": "Arabic",
+        "canonical_hash_order/v1": "sha256:510fa6220cbfa22ed23eb70ef0685d8521bf96bfdce22a81281e0edfa6f80474",
+        "stratum": "language",
+        "stratum_rank": 7,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Portugal",
+        "target": "Portuguese",
+        "canonical_hash_order/v1": "sha256:3eb31cfc837273bcd8499f4a09172878595637170343ed23b5dd1e7967676ae9",
+        "stratum": "language",
+        "stratum_rank": 6,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Russia",
+        "target": "Russian",
+        "canonical_hash_order/v1": "sha256:6cbee40b7da3b3cdb69302f4236dfed801716fe2ef001c4500c0bed1cbc92557",
+        "stratum": "language",
+        "stratum_rank": 9,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Spain",
+        "target": "Spanish",
+        "canonical_hash_order/v1": "sha256:c14144cb6df7bacd217d5583f7a36fab89228b9ffff68436eb8528dc36021ff0",
+        "stratum": "language",
+        "stratum_rank": 15,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "language",
+        "subject": "Sweden",
+        "target": "Swedish",
+        "canonical_hash_order/v1": "sha256:89334ec09c594c5995d9df70320fcf8fadc8cd99788bb31db2049e7e5690ef26",
+        "stratum": "language",
+        "stratum_rank": 13,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "language",
+        "subject": "Thailand",
+        "target": "Thai",
+        "canonical_hash_order/v1": "sha256:0d130d73b27363af6f047e6d0129833466a1cf567b759222c52804afcdf8a164",
+        "stratum": "language",
+        "stratum_rank": 0,
+        "assignment": "discovery"
+      },
+      {
+        "relation": "language",
+        "subject": "Turkey",
+        "target": "Turkish",
+        "canonical_hash_order/v1": "sha256:82ab8daf009a08b0872878cd12d52d14ffe8b7e56415014735ada67b792d5c29",
+        "stratum": "language",
+        "stratum_rank": 12,
+        "assignment": "held_out"
+      },
+      {
+        "relation": "language",
+        "subject": "Vietnam",
+        "target": "Vietnamese",
+        "canonical_hash_order/v1": "sha256:7f8c8db4e349b7232c5fbcf81571d7cdd9a0ea63b61e1612d175851fb6083d72",
+        "stratum": "language",
+        "stratum_rank": 11,
+        "assignment": "held_out"
+      }
+    ]
+  },
+  "provenance_facts": [
+    {
+      "identity": {
+        "relation": "capital",
+        "subject": "Algeria",
+        "target": "Algiers"
+      },
+      "fact": "capital/Algeria/Algiers received prior instrument-validation exposure under ATTR-1D \u2014 the sealed descriptive-support witness ran on this identity's canonical prompt family.",
+      "assurance": "no GW-TS-1 population assignment, extraction rule, calibration, predictor, or gate was changed using that exposure",
+      "disposition": "retained at its deterministic canonical_hash_order/v1 position; not moved between discovery and held_out because of this exposure"
+    }
+  ],
+  "preregistered_sensitivity_checks": [
+    {
+      "name": "leave_algeria_out",
+      "excluded_identity": {
+        "relation": "capital",
+        "subject": "Algeria",
+        "target": "Algiers"
+      },
+      "definition": "recompute every held-out assessment metric (held-out path coverage, mean candidate fraction, the block-bootstrap mass-retention and operator-accuracy advantages, and the progression_gate verdict) with capital/Algeria/Algiers excluded from the held-out set",
+      "purpose": "demonstrate the primary verdict is not carried by the one held-out identity that received prior ATTR-1D instrument-validation exposure",
+      "authority": "reported alongside, never in place of, the primary held-out verdict; cannot promote or demote the primary progression_gate outcome",
+      "frozen_before": "population capture"
+    }
+  ],
+  "capture": {
+    "position": "final_prompt_position",
+    "layers": {
+      "first": 0,
+      "last": 33
+    },
+    "operators": [
+      "attention",
+      "ffn"
+    ],
+    "eligible_parent_sites_per_execution": 68,
+    "generated_positions": "excluded",
+    "site_order": "canonical_execution_order"
+  },
+  "reader": {
+    "transform": "selected_token_row/v1",
+    "normalization": "identity/v1",
+    "token_source": "preregistered_first_destination_continuation_token",
+    "token_field": "semantic_edge.target_token_ids[0]",
+    "observed_generation_token": "forbidden",
+    "weight_source": "exact_resident_prepared_output_head",
+    "accessor": "SelectedOutputHead::row_f32",
+    "bind": [
+      "token_id",
+      "vector_sha256",
+      "prepared_image_fingerprint",
+      "realization_policy"
+    ]
+  },
+  "observation": {
+    "level": "canonical_parent_plus_typed_child_support/v1",
+    "attention": {
+      "authority": "ATTR-1D",
+      "source_top_k_rule": "maximum_visible_prompt_length_in_frozen_gwts1_population",
+      "source_top_k": 14,
+      "source_top_k_derivation": "max(len(prompt.token_ids)) over the 3 x transition_identity_count rows in this manifest's discovery+held_out population only (not the wider GW-0 census, most of which is outside GW-TS-1)",
+      "source_truncation": "forbidden",
+      "retain_all_heads": true
+    },
+    "ffn": {
+      "authority": "production-effective GW-0B-style reconstruction",
+      "retained_exact_addresses": 64,
+      "retain_total_absolute_child_mass": true,
+      "retain_achieved_mass": true,
+      "mass_truncation_must_be_explicit": true
+    }
+  },
+  "byte_budget": {
+    "per_transition_instance": 67108864,
+    "aggregate": 17179869184,
+    "overflow": "refuse_instance",
+    "silent_truncation": "forbidden"
+  },
+  "refusal_policy": {
+    "join_mismatch": "refuse_path",
+    "missing_attention_evidence": "refuse_instance",
+    "missing_ffn_evidence": "refuse_instance",
+    "source_truncation": "refuse_instance",
+    "capture_budget_exceeded": "refuse_instance",
+    "unsupported_operator": "explicit_refusal",
+    "coverage_accounting": "all refusals count against held-out path coverage"
+  },
+  "manifest_sha256": "sha256:01795de6300c8d347cb6d4c371e71532e1bf17936f281ed58429772cbcef87ef"
+}

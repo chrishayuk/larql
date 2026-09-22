@@ -1,0 +1,79 @@
+{
+  "artifacts": [
+    {
+      "bytes": 49152,
+      "bytes_per_execution_record": 568,
+      "path": "output/gwv2-gemma3-4b-it-phase1-replay/before.f32",
+      "sha256": "sha256:ff8bb5472f0feb7564b0532b4f66ee5a4982b32f4eb059592608ae67dfe0012b",
+      "trailing_bytes": 304,
+      "whole_records_flushed": 86
+    },
+    {
+      "bytes": 0,
+      "bytes_per_execution_record": 4,
+      "path": "output/gwv2-gemma3-4b-it-phase1-replay/elapsed-seconds.f32",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trailing_bytes": 0,
+      "whole_records_flushed": 0
+    },
+    {
+      "bytes": 4022272,
+      "bytes_per_execution_record": 42600,
+      "path": "output/gwv2-gemma3-4b-it-phase1-replay/proximal.f32",
+      "sha256": "sha256:92c2bb43e1573e26feac2934a2e7e686299287b9509689b0b8bba5e79179aceb",
+      "trailing_bytes": 17872,
+      "whole_records_flushed": 94
+    },
+    {
+      "bytes": 4022272,
+      "bytes_per_execution_record": 42600,
+      "path": "output/gwv2-gemma3-4b-it-phase1-replay/terminal.f32",
+      "sha256": "sha256:6624b1aa671456f381448a1b17187ee6918bab241790b551ef30ac062aeb60d7",
+      "trailing_bytes": 17872,
+      "whole_records_flushed": 94
+    }
+  ],
+  "authoritative_replay": {
+    "path": "output/gwv2-gemma3-4b-it-phase1-replay2/replay.json",
+    "sha256": "sha256:b9f89ee87c482f95307ee8c461d232345b902b42a38b9154b75db9b9b9294559"
+  },
+  "candidate_values_examined_for_this_record": false,
+  "classification": "provenance/debug only; excluded from all scientific calculations",
+  "earlier_image_authority": {
+    "path": "output/gwv2-gemma3-4b-it-phase1-image/execution-image.json",
+    "qualification": "Hash reported by the earlier image manifest; not a newly hashed preserved full-replay executable.",
+    "reported_executable_sha256": "sha256:b359939d576bc54c5061f6cd84d145ce75cf2909cdd6e69642202c6dafe6ef38",
+    "sha256": "sha256:fa371f0139d0963c7772fb8f5436bc312c0cbc9e0d678d61741f4b57137685df"
+  },
+  "exclusions": [
+    "fitting",
+    "primary or sham surface summaries",
+    "bootstrap intervals",
+    "frontier and gate calculations",
+    "latency or efficiency claims"
+  ],
+  "file_access": "sizes and SHA-256 only; no floating-point values decoded",
+  "lineage": {
+    "amendment_sha256": "sha256:bb5ebb48e52768e50ff5a26954bf8873489c1ab01d0fec1272e2f52caa3b2d5b",
+    "donor_map_sha256": "sha256:3ed66fc2432fe2d967ab58243faea729d0dbd0ed19f211ae6b58d17d7afec45c",
+    "population_sha256": "sha256:d73e0783adc0c26777ed9f0e4b880133814c39d0283cd7d816cd72cd1d37c23c",
+    "protocol_sha256": "sha256:830c2ceb97fce4f2d03e74e207d04e54257cd5b38e830a93047a86b6bd4fd006"
+  },
+  "method_change": false,
+  "process": {
+    "checkpoint_source": "conversation execution record, not a persisted log",
+    "exact_completed_execution_count": null,
+    "exit_code": 130,
+    "last_retained_progress_checkpoint": 90,
+    "os_pid": null,
+    "os_pid_status": "not retained in the available execution record",
+    "termination": "targeted SIGINT",
+    "tool_exec_session_id": 76312
+  },
+  "provenance_sha256": "sha256:2000eb987dc2225d8f570bedc7ac3224ef4cea3b4874968d86c4b118c5462d41",
+  "recorded_date": "2026-09-22",
+  "replay_seal_present": false,
+  "schema": "larql.gwv2.superseded-replay-provenance.v1",
+  "stopping_point_evidence": "Proximal and terminal files each contain 94 whole execution-sized records plus a partial 95th. Independent buffers were not fully flushed; this is not a claim of complete row/control coverage. No replay.json seal exists.",
+  "supersession_reason": "Full layers and full vocabulary were recomputed per arm. Replaced by canonical cached-carrier tail replay after natural/no-op and full-exact/identity parity passed; the replacement restarted all 666 executions from zero."
+}

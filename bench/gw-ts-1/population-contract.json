@@ -1,0 +1,152 @@
+{
+  "schema": "larql.gwts1.population-contract.v1",
+  "status": "frozen_pre_population_capture",
+  "authorities": {
+    "gwts1_protocol": {
+      "sha256": "sha256:d873d238d99406dc8a549681aa746e750a9d4b802e24ff21a8eb26d152a97d55"
+    },
+    "attr1d_contract": {
+      "identity": "sha256:4f48973807db0695d5f30b83a00c73637afbd0dc77d116b5a1f9eb6ec913431c"
+    },
+    "attr1d_witness": {
+      "identity": "sha256:88065f65ff3d596f4f3e6716309ccdbc02365ce76d92973dbc5838af4ebb0d73",
+      "overall_pass": true
+    },
+    "gw0_population": {
+      "identity": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c"
+    },
+    "population_manifest": {
+      "sha256": "sha256:01795de6300c8d347cb6d4c371e71532e1bf17936f281ed58429772cbcef87ef"
+    }
+  },
+  "population": {
+    "eligible_upstream_split": "train",
+    "transition_identity_count": 85,
+    "prompt_family_requirement": [
+      "alternate",
+      "canonical",
+      "question"
+    ],
+    "other_upstream_splits": "excluded_and_reserved_for_future_replication"
+  },
+  "assignment": {
+    "group": "transition_identity",
+    "stratify_by": [
+      "task_identity",
+      "semantic_operation"
+    ],
+    "task_identity_constant": "raw_text_completion_container_tokenizer_with_special_tokens",
+    "semantic_operation_field": "relation",
+    "method": "canonical_hash_order/v1",
+    "apportionment": "largest_remainder_ties_by_ascending_relation_name",
+    "discovery_fraction": 0.6,
+    "discovery_count": 51,
+    "held_out_count": 34,
+    "outcome_inputs": "forbidden"
+  },
+  "provenance_facts": [
+    {
+      "identity": {
+        "relation": "capital",
+        "subject": "Algeria",
+        "target": "Algiers"
+      },
+      "fact": "capital/Algeria/Algiers received prior instrument-validation exposure under ATTR-1D \u2014 the sealed descriptive-support witness ran on this identity's canonical prompt family.",
+      "assurance": "no GW-TS-1 population assignment, extraction rule, calibration, predictor, or gate was changed using that exposure",
+      "disposition": "retained at its deterministic canonical_hash_order/v1 position; not moved between discovery and held_out because of this exposure"
+    }
+  ],
+  "preregistered_sensitivity_checks": [
+    {
+      "name": "leave_algeria_out",
+      "excluded_identity": {
+        "relation": "capital",
+        "subject": "Algeria",
+        "target": "Algiers"
+      },
+      "definition": "recompute every held-out assessment metric (held-out path coverage, mean candidate fraction, the block-bootstrap mass-retention and operator-accuracy advantages, and the progression_gate verdict) with capital/Algeria/Algiers excluded from the held-out set",
+      "purpose": "demonstrate the primary verdict is not carried by the one held-out identity that received prior ATTR-1D instrument-validation exposure",
+      "authority": "reported alongside, never in place of, the primary held-out verdict; cannot promote or demote the primary progression_gate outcome",
+      "frozen_before": "population capture"
+    }
+  ],
+  "capture": {
+    "position": "final_prompt_position",
+    "layers": {
+      "first": 0,
+      "last": 33
+    },
+    "operators": [
+      "attention",
+      "ffn"
+    ],
+    "eligible_parent_sites_per_execution": 68,
+    "generated_positions": "excluded",
+    "site_order": "canonical_execution_order"
+  },
+  "reader": {
+    "transform": "selected_token_row/v1",
+    "normalization": "identity/v1",
+    "token_source": "preregistered_first_destination_continuation_token",
+    "token_field": "semantic_edge.target_token_ids[0]",
+    "observed_generation_token": "forbidden",
+    "weight_source": "exact_resident_prepared_output_head",
+    "accessor": "SelectedOutputHead::row_f32",
+    "bind": [
+      "token_id",
+      "vector_sha256",
+      "prepared_image_fingerprint",
+      "realization_policy"
+    ]
+  },
+  "observation": {
+    "level": "canonical_parent_plus_typed_child_support/v1",
+    "attention": {
+      "authority": "ATTR-1D",
+      "source_top_k_rule": "maximum_visible_prompt_length_in_frozen_gwts1_population",
+      "source_top_k": 14,
+      "source_top_k_derivation": "max(len(prompt.token_ids)) over the 3 x transition_identity_count rows in this manifest's discovery+held_out population only (not the wider GW-0 census, most of which is outside GW-TS-1)",
+      "source_truncation": "forbidden",
+      "retain_all_heads": true
+    },
+    "ffn": {
+      "authority": "production-effective GW-0B-style reconstruction",
+      "retained_exact_addresses": 64,
+      "retain_total_absolute_child_mass": true,
+      "retain_achieved_mass": true,
+      "mass_truncation_must_be_explicit": true
+    }
+  },
+  "byte_budget": {
+    "per_transition_instance": 67108864,
+    "aggregate": 17179869184,
+    "overflow": "refuse_instance",
+    "silent_truncation": "forbidden"
+  },
+  "refusal_policy": {
+    "join_mismatch": "refuse_path",
+    "missing_attention_evidence": "refuse_instance",
+    "missing_ffn_evidence": "refuse_instance",
+    "source_truncation": "refuse_instance",
+    "capture_budget_exceeded": "refuse_instance",
+    "unsupported_operator": "explicit_refusal",
+    "coverage_accounting": "all refusals count against held-out path coverage"
+  },
+  "freeze": {
+    "before": "first_population_model_execution",
+    "binds": [
+      "transition rows and identities",
+      "prompt families and tokenizations",
+      "discovery and held-out assignments",
+      "model/container/realization/operation-plan identities",
+      "eligible sites and capture window",
+      "reader identities and hashes",
+      "observation level",
+      "source top_k",
+      "byte budgets",
+      "refusal policy"
+    ],
+    "note": "This contract's attr1d_witness authority currently names an uncommitted working-tree artifact. Population CAPTURE must not begin until that ATTR-1D closure commit has actually landed \u2014 this contract freezes the DESIGN, not the permission to execute."
+  },
+  "population_contract_sha256": "sha256:d469118c6640e38fe4aa64ffda1e501adb3c6da841bdb6cfbf786eb0760de584"
+}

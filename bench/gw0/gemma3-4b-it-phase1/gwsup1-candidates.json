@@ -1,0 +1,5263 @@
+{
+  "candidate_identity_sha256": "sha256:08600e83faf6c8aeb845b32eabfdfebf4d3a538e6e12eab295ece7656bf79f8d",
+  "control_rule": {
+    "match": [
+      "split",
+      "relation",
+      "prompt_semantic_family"
+    ],
+    "require": [
+      "different subject",
+      "different target_token_id"
+    ],
+    "seed": "gwsup1-control-v1",
+    "selection": "minimum sha256(seed|edge_id|candidate_edge_id)"
+  },
+  "counts": {
+    "execution_rows": 426,
+    "global_candidate_tokens": 126,
+    "primary_multi_destination_edges": 81,
+    "primary_multi_destination_rows": 243,
+    "primary_multi_destination_subjects": 32,
+    "secondary_single_destination_subjects": 61,
+    "subjects": 93,
+    "unique_semantic_edges": 142
+  },
+  "decoder_vocabulary": [
+    {
+      "destination": "Taka",
+      "token_id": 558
+    },
+    {
+      "destination": "Cedi",
+      "token_id": 565
+    },
+    {
+      "destination": "Lira",
+      "token_id": 639
+    },
+    {
+      "destination": "out",
+      "token_id": 855
+    },
+    {
+      "destination": "work",
+      "token_id": 981
+    },
+    {
+      "destination": "return",
+      "token_id": 994
+    },
+    {
+      "destination": "bet",
+      "token_id": 1146
+    },
+    {
+      "destination": "Algiers",
+      "token_id": 1429
+    },
+    {
+      "destination": "Zloty",
+      "token_id": 1491
+    },
+    {
+      "destination": "Forint",
+      "token_id": 1701
+    },
+    {
+      "destination": "Shilling",
+      "token_id": 1705
+    },
+    {
+      "destination": "change",
+      "token_id": 2352
+    },
+    {
+      "destination": "Shekel",
+      "token_id": 2625
+    },
+    {
+      "destination": "position",
+      "token_id": 2939
+    },
+    {
+      "destination": "measure",
+      "token_id": 4113
+    },
+    {
+      "destination": "sin",
+      "token_id": 4343
+    },
+    {
+      "destination": "activity",
+      "token_id": 4588
+    },
+    {
+      "destination": "operation",
+      "token_id": 5585
+    },
+    {
+      "destination": "progress",
+      "token_id": 5609
+    },
+    {
+      "destination": "throw",
+      "token_id": 6184
+    },
+    {
+      "destination": "touch",
+      "token_id": 6374
+    },
+    {
+      "destination": "culture",
+      "token_id": 6540
+    },
+    {
+      "destination": "French",
+      "token_id": 7830
+    },
+    {
+      "destination": "Franc",
+      "token_id": 8087
+    },
+    {
+      "destination": "Baht",
+      "token_id": 8475
+    },
+    {
+      "destination": "exercise",
+      "token_id": 8774
+    },
+    {
+      "destination": "Paris",
+      "token_id": 9079
+    },
+    {
+      "destination": "German",
+      "token_id": 9115
+    },
+    {
+      "destination": "Russian",
+      "token_id": 9203
+    },
+    {
+      "destination": "Real",
+      "token_id": 10170
+    },
+    {
+      "destination": "fly",
+      "token_id": 10240
+    },
+    {
+      "destination": "decrease",
+      "token_id": 11086
+    },
+    {
+      "destination": "division",
+      "token_id": 11247
+    },
+    {
+      "destination": "eating",
+      "token_id": 11293
+    },
+    {
+      "destination": "Japanese",
+      "token_id": 12139
+    },
+    {
+      "destination": "examination",
+      "token_id": 12644
+    },
+    {
+      "destination": "introduction",
+      "token_id": 12650
+    },
+    {
+      "destination": "handling",
+      "token_id": 12804
+    },
+    {
+      "destination": "pitch",
+      "token_id": 12861
+    },
+    {
+      "destination": "Italian",
+      "token_id": 12896
+    },
+    {
+      "destination": "Rome",
+      "token_id": 13706
+    },
+    {
+      "destination": "Spanish",
+      "token_id": 14361
+    },
+    {
+      "destination": "march",
+      "token_id": 14868
+    },
+    {
+      "destination": "wash",
+      "token_id": 15066
+    },
+    {
+      "destination": "Berlin",
+      "token_id": 15687
+    },
+    {
+      "destination": "Euro",
+      "token_id": 16152
+    },
+    {
+      "destination": "Ruble",
+      "token_id": 16339
+    },
+    {
+      "destination": "Greek",
+      "token_id": 16470
+    },
+    {
+      "destination": "swimming",
+      "token_id": 16820
+    },
+    {
+      "destination": "Hindi",
+      "token_id": 18642
+    },
+    {
+      "destination": "Rupee",
+      "token_id": 18704
+    },
+    {
+      "destination": "Moscow",
+      "token_id": 18749
+    },
+    {
+      "destination": "burning",
+      "token_id": 18830
+    },
+    {
+      "destination": "killing",
+      "token_id": 18905
+    },
+    {
+      "destination": "coupling",
+      "token_id": 19299
+    },
+    {
+      "destination": "Madrid",
+      "token_id": 19627
+    },
+    {
+      "destination": "Tokyo",
+      "token_id": 21038
+    },
+    {
+      "destination": "Korean",
+      "token_id": 21568
+    },
+    {
+      "destination": "Dutch",
+      "token_id": 23196
+    },
+    {
+      "destination": "breathing",
+      "token_id": 25638
+    },
+    {
+      "destination": "Ringgit",
+      "token_id": 26966
+    },
+    {
+      "destination": "Dublin",
+      "token_id": 27071
+    },
+    {
+      "destination": "departure",
+      "token_id": 27197
+    },
+    {
+      "destination": "degradation",
+      "token_id": 28237
+    },
+    {
+      "destination": "Thai",
+      "token_id": 28991
+    },
+    {
+      "destination": "sacrifice",
+      "token_id": 29817
+    },
+    {
+      "destination": "Turkish",
+      "token_id": 30395
+    },
+    {
+      "destination": "Rand",
+      "token_id": 30464
+    },
+    {
+      "destination": "Beijing",
+      "token_id": 30530
+    },
+    {
+      "destination": "Ukrainian",
+      "token_id": 32774
+    },
+    {
+      "destination": "Polish",
+      "token_id": 32968
+    },
+    {
+      "destination": "Vienna",
+      "token_id": 34493
+    },
+    {
+      "destination": "Arabic",
+      "token_id": 37369
+    },
+    {
+      "destination": "Swedish",
+      "token_id": 38431
+    },
+    {
+      "destination": "disruption",
+      "token_id": 38484
+    },
+    {
+      "destination": "Portuguese",
+      "token_id": 41082
+    },
+    {
+      "destination": "Athens",
+      "token_id": 43594
+    },
+    {
+      "destination": "Santiago",
+      "token_id": 44554
+    },
+    {
+      "destination": "Danish",
+      "token_id": 46553
+    },
+    {
+      "destination": "Dong",
+      "token_id": 47200
+    },
+    {
+      "destination": "Norwegian",
+      "token_id": 47524
+    },
+    {
+      "destination": "Lima",
+      "token_id": 49830
+    },
+    {
+      "destination": "Bangkok",
+      "token_id": 50214
+    },
+    {
+      "destination": "Hebrew",
+      "token_id": 51878
+    },
+    {
+      "destination": "Persian",
+      "token_id": 52825
+    },
+    {
+      "destination": "Stockholm",
+      "token_id": 54206
+    },
+    {
+      "destination": "Yuan",
+      "token_id": 54409
+    },
+    {
+      "destination": "Hungarian",
+      "token_id": 54930
+    },
+    {
+      "destination": "Vietnamese",
+      "token_id": 56773
+    },
+    {
+      "destination": "Won",
+      "token_id": 57770
+    },
+    {
+      "destination": "Cairo",
+      "token_id": 59546
+    },
+    {
+      "destination": "Warsaw",
+      "token_id": 60671
+    },
+    {
+      "destination": "Sofia",
+      "token_id": 67071
+    },
+    {
+      "destination": "Copenhagen",
+      "token_id": 68063
+    },
+    {
+      "destination": "Oslo",
+      "token_id": 68912
+    },
+    {
+      "destination": "Nairobi",
+      "token_id": 69628
+    },
+    {
+      "destination": "Finnish",
+      "token_id": 72398
+    },
+    {
+      "destination": "Lisbon",
+      "token_id": 72449
+    },
+    {
+      "destination": "Helsinki",
+      "token_id": 74520
+    },
+    {
+      "destination": "Romanian",
+      "token_id": 75680
+    },
+    {
+      "destination": "Ankara",
+      "token_id": 80554
+    },
+    {
+      "destination": "Yen",
+      "token_id": 81027
+    },
+    {
+      "destination": "Abuja",
+      "token_id": 82029
+    },
+    {
+      "destination": "Bulgarian",
+      "token_id": 84172
+    },
+    {
+      "destination": "Tehran",
+      "token_id": 84401
+    },
+    {
+      "destination": "Krona",
+      "token_id": 85758
+    },
+    {
+      "destination": "Havana",
+      "token_id": 99162
+    },
+    {
+      "destination": "Croatian",
+      "token_id": 100811
+    },
+    {
+      "destination": "Kabul",
+      "token_id": 101301
+    },
+    {
+      "destination": "campaigning",
+      "token_id": 102425
+    },
+    {
+      "destination": "purge",
+      "token_id": 103662
+    },
+    {
+      "destination": "Baghdad",
+      "token_id": 104349
+    },
+    {
+      "destination": "Doha",
+      "token_id": 109058
+    },
+    {
+      "destination": "Rupiah",
+      "token_id": 109420
+    },
+    {
+      "destination": "Accra",
+      "token_id": 111407
+    },
+    {
+      "destination": "Islamabad",
+      "token_id": 111742
+    },
+    {
+      "destination": "Hanoi",
+      "token_id": 112171
+    },
+    {
+      "destination": "Beirut",
+      "token_id": 117942
+    },
+    {
+      "destination": "wrongdoing",
+      "token_id": 128823
+    },
+    {
+      "destination": "Peso",
+      "token_id": 134806
+    },
+    {
+      "destination": "Quito",
+      "token_id": 152389
+    },
+    {
+      "destination": "Krone",
+      "token_id": 155054
+    },
+    {
+      "destination": "Tunis",
+      "token_id": 159353
+    },
+    {
+      "destination": "Amman",
+      "token_id": 167876
+    },
+    {
+      "destination": "Rabat",
+      "token_id": 207186
+    },
+    {
+      "destination": "Naira",
+      "token_id": 210682
+    }
+  ],
+  "different_destination_controls": [
+    {
+      "control_edge_id": "gw0e-f7d476bb35cbc76e",
+      "edge_id": "gw0e-01487f23dc3b50e5"
+    },
+    {
+      "control_edge_id": "gw0e-5633fb50d7872af6",
+      "edge_id": "gw0e-0629f5396a71d0cf"
+    },
+    {
+      "control_edge_id": "gw0e-eb239c3ab3ad178e",
+      "edge_id": "gw0e-0af54cef8a32f491"
+    },
+    {
+      "control_edge_id": "gw0e-378abedbdf117c15",
+      "edge_id": "gw0e-0c87141cc1e2ff98"
+    },
+    {
+      "control_edge_id": "gw0e-649f80024b76f69f",
+      "edge_id": "gw0e-0dc43a3bba367bb0"
+    },
+    {
+      "control_edge_id": "gw0e-8b52f945184ff72b",
+      "edge_id": "gw0e-112b6ef44de1825b"
+    },
+    {
+      "control_edge_id": "gw0e-718f419d19df8a9c",
+      "edge_id": "gw0e-1e4d5e9766214045"
+    },
+    {
+      "control_edge_id": "gw0e-f5681579ea649ace",
+      "edge_id": "gw0e-1ed9dad01d2a2f05"
+    },
+    {
+      "control_edge_id": "gw0e-2288c0b74ec3f63e",
+      "edge_id": "gw0e-204651bbb1555866"
+    },
+    {
+      "control_edge_id": "gw0e-afe8d382402ccfbf",
+      "edge_id": "gw0e-2288c0b74ec3f63e"
+    },
+    {
+      "control_edge_id": "gw0e-f5681579ea649ace",
+      "edge_id": "gw0e-233397fe151dc935"
+    },
+    {
+      "control_edge_id": "gw0e-e5bf50d73461d572",
+      "edge_id": "gw0e-25ea225b5c6055ab"
+    },
+    {
+      "control_edge_id": "gw0e-29b39ca3f9cf8e04",
+      "edge_id": "gw0e-27a34692ede16913"
+    },
+    {
+      "control_edge_id": "gw0e-b15cf30b12e8d0e5",
+      "edge_id": "gw0e-29b39ca3f9cf8e04"
+    },
+    {
+      "control_edge_id": "gw0e-8f38bc8a63eebbd4",
+      "edge_id": "gw0e-2b5dc75f4f9cd043"
+    },
+    {
+      "control_edge_id": "gw0e-e5bf50d73461d572",
+      "edge_id": "gw0e-2ff33fa61e59af4b"
+    },
+    {
+      "control_edge_id": "gw0e-4fb667b43b4e5741",
+      "edge_id": "gw0e-305e194220eb4821"
+    },
+    {
+      "control_edge_id": "gw0e-e38b599d0188d415",
+      "edge_id": "gw0e-31948630abaf4e30"
+    },
+    {
+      "control_edge_id": "gw0e-dcd07010670e7a04",
+      "edge_id": "gw0e-3309156fb0ddb588"
+    },
+    {
+      "control_edge_id": "gw0e-f8527e6392f95e2a",
+      "edge_id": "gw0e-3334087335df1cab"
+    },
+    {
+      "control_edge_id": "gw0e-9ea91d0da5efa652",
+      "edge_id": "gw0e-345c1a8d60d5aaa8"
+    },
+    {
+      "control_edge_id": "gw0e-93e2ee2a7efbc592",
+      "edge_id": "gw0e-372a358beaab0d4e"
+    },
+    {
+      "control_edge_id": "gw0e-0c87141cc1e2ff98",
+      "edge_id": "gw0e-378abedbdf117c15"
+    },
+    {
+      "control_edge_id": "gw0e-e5bf50d73461d572",
+      "edge_id": "gw0e-37cf4414a8d5e91e"
+    },
+    {
+      "control_edge_id": "gw0e-c2abf46d47d4db8f",
+      "edge_id": "gw0e-3c2e32d329f331d4"
+    },
+    {
+      "control_edge_id": "gw0e-6e581df79a6c35da",
+      "edge_id": "gw0e-3cb7222a09b6890c"
+    },
+    {
+      "control_edge_id": "gw0e-525d909bb9a6e940",
+      "edge_id": "gw0e-46c47557b0221ba4"
+    },
+    {
+      "control_edge_id": "gw0e-bc2dae92b1ac3330",
+      "edge_id": "gw0e-48b1a2f24d31bb66"
+    },
+    {
+      "control_edge_id": "gw0e-5f48535475a77d1b",
+      "edge_id": "gw0e-497fe05282d57c55"
+    },
+    {
+      "control_edge_id": "gw0e-345c1a8d60d5aaa8",
+      "edge_id": "gw0e-4d18905bc8d8a1de"
+    },
+    {
+      "control_edge_id": "gw0e-1e4d5e9766214045",
+      "edge_id": "gw0e-4dd1d08e27e7283a"
+    },
+    {
+      "control_edge_id": "gw0e-ed6086a1ec5664d7",
+      "edge_id": "gw0e-4fb667b43b4e5741"
+    },
+    {
+      "control_edge_id": "gw0e-7c07e66a029fbbd7",
+      "edge_id": "gw0e-525d909bb9a6e940"
+    },
+    {
+      "control_edge_id": "gw0e-1ed9dad01d2a2f05",
+      "edge_id": "gw0e-5633fb50d7872af6"
+    },
+    {
+      "control_edge_id": "gw0e-01487f23dc3b50e5",
+      "edge_id": "gw0e-5749e6c3e2cfc519"
+    },
+    {
+      "control_edge_id": "gw0e-b09f9d610833f26b",
+      "edge_id": "gw0e-57ad88a6e70ce602"
+    },
+    {
+      "control_edge_id": "gw0e-8943241398011179",
+      "edge_id": "gw0e-5872421668e90359"
+    },
+    {
+      "control_edge_id": "gw0e-1e4d5e9766214045",
+      "edge_id": "gw0e-5d06bab020a59e3d"
+    },
+    {
+      "control_edge_id": "gw0e-61281288a8f27081",
+      "edge_id": "gw0e-5f48535475a77d1b"
+    },
+    {
+      "control_edge_id": "gw0e-6d5ce370373a9d29",
+      "edge_id": "gw0e-61281288a8f27081"
+    },
+    {
+      "control_edge_id": "gw0e-3c2e32d329f331d4",
+      "edge_id": "gw0e-624831e83de7f210"
+    },
+    {
+      "control_edge_id": "gw0e-a1d2da297c5d0c41",
+      "edge_id": "gw0e-641979b215a75b25"
+    },
+    {
+      "control_edge_id": "gw0e-4dd1d08e27e7283a",
+      "edge_id": "gw0e-649f80024b76f69f"
+    },
+    {
+      "control_edge_id": "gw0e-eb9bfc89e03c6800",
+      "edge_id": "gw0e-682ec7e5a29d4ac2"
+    },
+    {
+      "control_edge_id": "gw0e-b4ea123cf9ee57ab",
+      "edge_id": "gw0e-6926f5a1ac3422a7"
+    },
+    {
+      "control_edge_id": "gw0e-e38b599d0188d415",
+      "edge_id": "gw0e-6b4ae88767dcc99a"
+    },
+    {
+      "control_edge_id": "gw0e-4dd1d08e27e7283a",
+      "edge_id": "gw0e-6d5ce370373a9d29"
+    },
+    {
+      "control_edge_id": "gw0e-f7d476bb35cbc76e",
+      "edge_id": "gw0e-6e581df79a6c35da"
+    },
+    {
+      "control_edge_id": "gw0e-eb239c3ab3ad178e",
+      "edge_id": "gw0e-718f419d19df8a9c"
+    },
+    {
+      "control_edge_id": "gw0e-497fe05282d57c55",
+      "edge_id": "gw0e-794d4753174e6dec"
+    },
+    {
+      "control_edge_id": "gw0e-b81f84e3d0709bda",
+      "edge_id": "gw0e-79d2418658bd058c"
+    },
+    {
+      "control_edge_id": "gw0e-f8527e6392f95e2a",
+      "edge_id": "gw0e-7a4707d6067fff5d"
+    },
+    {
+      "control_edge_id": "gw0e-6e581df79a6c35da",
+      "edge_id": "gw0e-7aa705550e6eb809"
+    },
+    {
+      "control_edge_id": "gw0e-794d4753174e6dec",
+      "edge_id": "gw0e-7c07e66a029fbbd7"
+    },
+    {
+      "control_edge_id": "gw0e-eb239c3ab3ad178e",
+      "edge_id": "gw0e-809185d49564ac33"
+    },
+    {
+      "control_edge_id": "gw0e-8943241398011179",
+      "edge_id": "gw0e-810008120b7355ad"
+    },
+    {
+      "control_edge_id": "gw0e-7aa705550e6eb809",
+      "edge_id": "gw0e-861f28339a6a362d"
+    },
+    {
+      "control_edge_id": "gw0e-e2caccb5923fc4ff",
+      "edge_id": "gw0e-87eddd2aa4d7bbc4"
+    },
+    {
+      "control_edge_id": "gw0e-861f28339a6a362d",
+      "edge_id": "gw0e-8943241398011179"
+    },
+    {
+      "control_edge_id": "gw0e-d542b91bd3a06596",
+      "edge_id": "gw0e-8af5ffcf83e086a9"
+    },
+    {
+      "control_edge_id": "gw0e-e5bf50d73461d572",
+      "edge_id": "gw0e-8b52f945184ff72b"
+    },
+    {
+      "control_edge_id": "gw0e-c2abf46d47d4db8f",
+      "edge_id": "gw0e-8e994e332e9d8204"
+    },
+    {
+      "control_edge_id": "gw0e-809185d49564ac33",
+      "edge_id": "gw0e-8f38bc8a63eebbd4"
+    },
+    {
+      "control_edge_id": "gw0e-bc2dae92b1ac3330",
+      "edge_id": "gw0e-93e2ee2a7efbc592"
+    },
+    {
+      "control_edge_id": "gw0e-eb239c3ab3ad178e",
+      "edge_id": "gw0e-9af5acc1747da4cb"
+    },
+    {
+      "control_edge_id": "gw0e-25ea225b5c6055ab",
+      "edge_id": "gw0e-9bfb164633bea468"
+    },
+    {
+      "control_edge_id": "gw0e-1ed9dad01d2a2f05",
+      "edge_id": "gw0e-9c1b01f00db4dc38"
+    },
+    {
+      "control_edge_id": "gw0e-6e581df79a6c35da",
+      "edge_id": "gw0e-9ea91d0da5efa652"
+    },
+    {
+      "control_edge_id": "gw0e-bc2dae92b1ac3330",
+      "edge_id": "gw0e-a1d2da297c5d0c41"
+    },
+    {
+      "control_edge_id": "gw0e-d87a7aef21974829",
+      "edge_id": "gw0e-ac52f4b90e02c6a7"
+    },
+    {
+      "control_edge_id": "gw0e-2b5dc75f4f9cd043",
+      "edge_id": "gw0e-ae310afb61ecb3ad"
+    },
+    {
+      "control_edge_id": "gw0e-112b6ef44de1825b",
+      "edge_id": "gw0e-afe8d382402ccfbf"
+    },
+    {
+      "control_edge_id": "gw0e-0c87141cc1e2ff98",
+      "edge_id": "gw0e-b09f9d610833f26b"
+    },
+    {
+      "control_edge_id": "gw0e-fe00b893c1337a87",
+      "edge_id": "gw0e-b15cf30b12e8d0e5"
+    },
+    {
+      "control_edge_id": "gw0e-d542b91bd3a06596",
+      "edge_id": "gw0e-b27a0441384f24d2"
+    },
+    {
+      "control_edge_id": "gw0e-3cb7222a09b6890c",
+      "edge_id": "gw0e-b2d5aa711d1d26a8"
+    },
+    {
+      "control_edge_id": "gw0e-2288c0b74ec3f63e",
+      "edge_id": "gw0e-b4ea123cf9ee57ab"
+    },
+    {
+      "control_edge_id": "gw0e-c54b3604aba977f0",
+      "edge_id": "gw0e-b81f84e3d0709bda"
+    },
+    {
+      "control_edge_id": "gw0e-624831e83de7f210",
+      "edge_id": "gw0e-bbc057fa4e2a83ec"
+    },
+    {
+      "control_edge_id": "gw0e-93e2ee2a7efbc592",
+      "edge_id": "gw0e-bc2dae92b1ac3330"
+    },
+    {
+      "control_edge_id": "gw0e-794d4753174e6dec",
+      "edge_id": "gw0e-c214fdab4108ea49"
+    },
+    {
+      "control_edge_id": "gw0e-bbc057fa4e2a83ec",
+      "edge_id": "gw0e-c2abf46d47d4db8f"
+    },
+    {
+      "control_edge_id": "gw0e-4fb667b43b4e5741",
+      "edge_id": "gw0e-c4c431460ff3f959"
+    },
+    {
+      "control_edge_id": "gw0e-e53152c02a071310",
+      "edge_id": "gw0e-c54b3604aba977f0"
+    },
+    {
+      "control_edge_id": "gw0e-fe00b893c1337a87",
+      "edge_id": "gw0e-c9095f68764003cc"
+    },
+    {
+      "control_edge_id": "gw0e-93e2ee2a7efbc592",
+      "edge_id": "gw0e-cbbcc86f0486ba02"
+    },
+    {
+      "control_edge_id": "gw0e-a1d2da297c5d0c41",
+      "edge_id": "gw0e-d04deaf0fa3d0540"
+    },
+    {
+      "control_edge_id": "gw0e-afe8d382402ccfbf",
+      "edge_id": "gw0e-d4866f3da873ea44"
+    },
+    {
+      "control_edge_id": "gw0e-d87a7aef21974829",
+      "edge_id": "gw0e-d542b91bd3a06596"
+    },
+    {
+      "control_edge_id": "gw0e-ec1c14197416d8d1",
+      "edge_id": "gw0e-d7d30222fb98e26b"
+    },
+    {
+      "control_edge_id": "gw0e-eb9bfc89e03c6800",
+      "edge_id": "gw0e-d87a7aef21974829"
+    },
+    {
+      "control_edge_id": "gw0e-0629f5396a71d0cf",
+      "edge_id": "gw0e-da393e67cee575c8"
+    },
+    {
+      "control_edge_id": "gw0e-fe00b893c1337a87",
+      "edge_id": "gw0e-dcd07010670e7a04"
+    },
+    {
+      "control_edge_id": "gw0e-f5681579ea649ace",
+      "edge_id": "gw0e-de9269670903857d"
+    },
+    {
+      "control_edge_id": "gw0e-b4ea123cf9ee57ab",
+      "edge_id": "gw0e-e26945c00777000a"
+    },
+    {
+      "control_edge_id": "gw0e-624831e83de7f210",
+      "edge_id": "gw0e-e2caccb5923fc4ff"
+    },
+    {
+      "control_edge_id": "gw0e-ed6086a1ec5664d7",
+      "edge_id": "gw0e-e38b599d0188d415"
+    },
+    {
+      "control_edge_id": "gw0e-d7d30222fb98e26b",
+      "edge_id": "gw0e-e53152c02a071310"
+    },
+    {
+      "control_edge_id": "gw0e-afe8d382402ccfbf",
+      "edge_id": "gw0e-e5bf50d73461d572"
+    },
+    {
+      "control_edge_id": "gw0e-0dc43a3bba367bb0",
+      "edge_id": "gw0e-eb239c3ab3ad178e"
+    },
+    {
+      "control_edge_id": "gw0e-b27a0441384f24d2",
+      "edge_id": "gw0e-eb9bfc89e03c6800"
+    },
+    {
+      "control_edge_id": "gw0e-e53152c02a071310",
+      "edge_id": "gw0e-ec1c14197416d8d1"
+    },
+    {
+      "control_edge_id": "gw0e-2288c0b74ec3f63e",
+      "edge_id": "gw0e-ed6086a1ec5664d7"
+    },
+    {
+      "control_edge_id": "gw0e-345c1a8d60d5aaa8",
+      "edge_id": "gw0e-f02a86625ba68256"
+    },
+    {
+      "control_edge_id": "gw0e-305e194220eb4821",
+      "edge_id": "gw0e-f03f950db61c9960"
+    },
+    {
+      "control_edge_id": "gw0e-8f38bc8a63eebbd4",
+      "edge_id": "gw0e-f44233e283801ff8"
+    },
+    {
+      "control_edge_id": "gw0e-de9269670903857d",
+      "edge_id": "gw0e-f5681579ea649ace"
+    },
+    {
+      "control_edge_id": "gw0e-d7d30222fb98e26b",
+      "edge_id": "gw0e-f7b86137357eeea4"
+    },
+    {
+      "control_edge_id": "gw0e-861f28339a6a362d",
+      "edge_id": "gw0e-f7d476bb35cbc76e"
+    },
+    {
+      "control_edge_id": "gw0e-b2d5aa711d1d26a8",
+      "edge_id": "gw0e-f8527e6392f95e2a"
+    },
+    {
+      "control_edge_id": "gw0e-810008120b7355ad",
+      "edge_id": "gw0e-f9b845a4a1931dfe"
+    },
+    {
+      "control_edge_id": "gw0e-87eddd2aa4d7bbc4",
+      "edge_id": "gw0e-fd78026696b314d8"
+    },
+    {
+      "control_edge_id": "gw0e-3309156fb0ddb588",
+      "edge_id": "gw0e-fe00b893c1337a87"
+    },
+    {
+      "control_edge_id": "gw0e-d4866f3da873ea44",
+      "edge_id": "gw0e-fe800d35c3ebcb0d"
+    },
+    {
+      "control_edge_id": "gw0e-0a8e7eed2b31f722",
+      "edge_id": "gw0e-008dea4be2cb323e"
+    },
+    {
+      "control_edge_id": "gw0e-50b1fff85a8c421c",
+      "edge_id": "gw0e-036c19a0f832fd3f"
+    },
+    {
+      "control_edge_id": "gw0e-1f8a0c4846d2ff8f",
+      "edge_id": "gw0e-072cd4e31e3b0158"
+    },
+    {
+      "control_edge_id": "gw0e-20da3af8e2837c66",
+      "edge_id": "gw0e-07e3a91fab2dabb4"
+    },
+    {
+      "control_edge_id": "gw0e-b7d07081fe5c5c65",
+      "edge_id": "gw0e-0a0f45ba70f9bc02"
+    },
+    {
+      "control_edge_id": "gw0e-8ad319fde02c738b",
+      "edge_id": "gw0e-0a4af97767b8653e"
+    },
+    {
+      "control_edge_id": "gw0e-2d20832c40d316b3",
+      "edge_id": "gw0e-0a8e7eed2b31f722"
+    },
+    {
+      "control_edge_id": "gw0e-e230d67d598db642",
+      "edge_id": "gw0e-0bb09ce944922baa"
+    },
+    {
+      "control_edge_id": "gw0e-c11238ebf125c5ca",
+      "edge_id": "gw0e-0d88b8e11eda6692"
+    },
+    {
+      "control_edge_id": "gw0e-d27e6bced04c056b",
+      "edge_id": "gw0e-0f65fba73608f868"
+    },
+    {
+      "control_edge_id": "gw0e-ae439a1d7e43966a",
+      "edge_id": "gw0e-11913b8c5572560f"
+    },
+    {
+      "control_edge_id": "gw0e-1d82efed91f51fc3",
+      "edge_id": "gw0e-120a2f396c782946"
+    },
+    {
+      "control_edge_id": "gw0e-0d88b8e11eda6692",
+      "edge_id": "gw0e-1d82efed91f51fc3"
+    },
+    {
+      "control_edge_id": "gw0e-cddbd98139fe7351",
+      "edge_id": "gw0e-1f8a0c4846d2ff8f"
+    },
+    {
+      "control_edge_id": "gw0e-0bb09ce944922baa",
+      "edge_id": "gw0e-1fd75eadb2264095"
+    },
+    {
+      "control_edge_id": "gw0e-77f7886fc02f1606",
+      "edge_id": "gw0e-20da3af8e2837c66"
+    },
+    {
+      "control_edge_id": "gw0e-7695f496f94a4de8",
+      "edge_id": "gw0e-214c777eb287a629"
+    },
+    {
+      "control_edge_id": "gw0e-e636bfd7d6623c48",
+      "edge_id": "gw0e-21eaccff083ba613"
+    },
+    {
+      "control_edge_id": "gw0e-842b65d8a5794181",
+      "edge_id": "gw0e-235b9dd7d87b2fe8"
+    },
+    {
+      "control_edge_id": "gw0e-6e9d870700745e1a",
+      "edge_id": "gw0e-25db089b647b46b1"
+    },
+    {
+      "control_edge_id": "gw0e-b26c4cdcd05b1050",
+      "edge_id": "gw0e-26cdf84cc7e15a8f"
+    },
+    {
+      "control_edge_id": "gw0e-e5a117936a5ef971",
+      "edge_id": "gw0e-2c4edca88874ad39"
+    },
+    {
+      "control_edge_id": "gw0e-fef09dc8ab1a613a",
+      "edge_id": "gw0e-2d20832c40d316b3"
+    },
+    {
+      "control_edge_id": "gw0e-df8bff1b16ed7c17",
+      "edge_id": "gw0e-2e0db002400e00b3"
+    },
+    {
+      "control_edge_id": "gw0e-448011d5ddb7e39e",
+      "edge_id": "gw0e-303c3b461eb876bb"
+    },
+    {
+      "control_edge_id": "gw0e-8889b7944247692b",
+      "edge_id": "gw0e-35a06724a104757c"
+    },
+    {
+      "control_edge_id": "gw0e-9c1349d7b791c78d",
+      "edge_id": "gw0e-3a1e6c72baa2e839"
+    },
+    {
+      "control_edge_id": "gw0e-e124c1813b9831f4",
+      "edge_id": "gw0e-3be324afa6a7061e"
+    },
+    {
+      "control_edge_id": "gw0e-ced45ca6e36970fc",
+      "edge_id": "gw0e-448011d5ddb7e39e"
+    },
+    {
+      "control_edge_id": "gw0e-637bdb2fd13d0d66",
+      "edge_id": "gw0e-4748799ad07e807b"
+    },
+    {
+      "control_edge_id": "gw0e-20da3af8e2837c66",
+      "edge_id": "gw0e-50b1fff85a8c421c"
+    },
+    {
+      "control_edge_id": "gw0e-2c4edca88874ad39",
+      "edge_id": "gw0e-561040944a8a9d53"
+    },
+    {
+      "control_edge_id": "gw0e-752bdcf8e72aeb81",
+      "edge_id": "gw0e-57cf504b1ceb4daa"
+    },
+    {
+      "control_edge_id": "gw0e-9659145d901f11dc",
+      "edge_id": "gw0e-5a7fa710ec4f682f"
+    },
+    {
+      "control_edge_id": "gw0e-95bbd31e8882ca1a",
+      "edge_id": "gw0e-5b0504721487f728"
+    },
+    {
+      "control_edge_id": "gw0e-b7d2c4ea0a871d1c",
+      "edge_id": "gw0e-5c7879d5a2497c07"
+    },
+    {
+      "control_edge_id": "gw0e-26cdf84cc7e15a8f",
+      "edge_id": "gw0e-637bdb2fd13d0d66"
+    },
+    {
+      "control_edge_id": "gw0e-7ac17df2e6435725",
+      "edge_id": "gw0e-661ca7552adf5f98"
+    },
+    {
+      "control_edge_id": "gw0e-be397cd824124c4a",
+      "edge_id": "gw0e-694b12b0485bef8b"
+    },
+    {
+      "control_edge_id": "gw0e-303c3b461eb876bb",
+      "edge_id": "gw0e-6b01d0615092ae5a"
+    },
+    {
+      "control_edge_id": "gw0e-fef09dc8ab1a613a",
+      "edge_id": "gw0e-6c13d0be0c7b612b"
+    },
+    {
+      "control_edge_id": "gw0e-0bb09ce944922baa",
+      "edge_id": "gw0e-6e9d870700745e1a"
+    },
+    {
+      "control_edge_id": "gw0e-8889b7944247692b",
+      "edge_id": "gw0e-72179e5870186b0e"
+    },
+    {
+      "control_edge_id": "gw0e-0a4af97767b8653e",
+      "edge_id": "gw0e-752bdcf8e72aeb81"
+    },
+    {
+      "control_edge_id": "gw0e-958a34cf1c6bc279",
+      "edge_id": "gw0e-7695f496f94a4de8"
+    },
+    {
+      "control_edge_id": "gw0e-036c19a0f832fd3f",
+      "edge_id": "gw0e-77f7886fc02f1606"
+    },
+    {
+      "control_edge_id": "gw0e-aba0d6f48fabe3ce",
+      "edge_id": "gw0e-7ac17df2e6435725"
+    },
+    {
+      "control_edge_id": "gw0e-a5b6d43e60e48368",
+      "edge_id": "gw0e-7bdf24a6b4f8b0a8"
+    },
+    {
+      "control_edge_id": "gw0e-adf0d7e612649738",
+      "edge_id": "gw0e-842b65d8a5794181"
+    },
+    {
+      "control_edge_id": "gw0e-35a06724a104757c",
+      "edge_id": "gw0e-8889b7944247692b"
+    },
+    {
+      "control_edge_id": "gw0e-b7d2c4ea0a871d1c",
+      "edge_id": "gw0e-8ad319fde02c738b"
+    },
+    {
+      "control_edge_id": "gw0e-3a1e6c72baa2e839",
+      "edge_id": "gw0e-942acf36a40f1df7"
+    },
+    {
+      "control_edge_id": "gw0e-448011d5ddb7e39e",
+      "edge_id": "gw0e-9435c881621c2a2c"
+    },
+    {
+      "control_edge_id": "gw0e-72179e5870186b0e",
+      "edge_id": "gw0e-958a34cf1c6bc279"
+    },
+    {
+      "control_edge_id": "gw0e-5b0504721487f728",
+      "edge_id": "gw0e-95bbd31e8882ca1a"
+    },
+    {
+      "control_edge_id": "gw0e-842b65d8a5794181",
+      "edge_id": "gw0e-9659145d901f11dc"
+    },
+    {
+      "control_edge_id": "gw0e-958a34cf1c6bc279",
+      "edge_id": "gw0e-9c1349d7b791c78d"
+    },
+    {
+      "control_edge_id": "gw0e-b7d07081fe5c5c65",
+      "edge_id": "gw0e-a0a174d0200a0b21"
+    },
+    {
+      "control_edge_id": "gw0e-a0a174d0200a0b21",
+      "edge_id": "gw0e-a10aec4b0dc28280"
+    },
+    {
+      "control_edge_id": "gw0e-d33c4134b831dd0c",
+      "edge_id": "gw0e-a3b1c546f751c06c"
+    },
+    {
+      "control_edge_id": "gw0e-df8bff1b16ed7c17",
+      "edge_id": "gw0e-a57524c5602b3995"
+    },
+    {
+      "control_edge_id": "gw0e-7bdf24a6b4f8b0a8",
+      "edge_id": "gw0e-a5b6d43e60e48368"
+    },
+    {
+      "control_edge_id": "gw0e-ae439a1d7e43966a",
+      "edge_id": "gw0e-ab52fb83f99ff349"
+    },
+    {
+      "control_edge_id": "gw0e-2c4edca88874ad39",
+      "edge_id": "gw0e-aba0d6f48fabe3ce"
+    },
+    {
+      "control_edge_id": "gw0e-b64565e82f8e5692",
+      "edge_id": "gw0e-adf0d7e612649738"
+    },
+    {
+      "control_edge_id": "gw0e-ab52fb83f99ff349",
+      "edge_id": "gw0e-ae439a1d7e43966a"
+    },
+    {
+      "control_edge_id": "gw0e-26cdf84cc7e15a8f",
+      "edge_id": "gw0e-b26c4cdcd05b1050"
+    },
+    {
+      "control_edge_id": "gw0e-25db089b647b46b1",
+      "edge_id": "gw0e-b59ab4f50c0f1ac0"
+    },
+    {
+      "control_edge_id": "gw0e-21eaccff083ba613",
+      "edge_id": "gw0e-b5ab0e572a04022d"
+    },
+    {
+      "control_edge_id": "gw0e-e014b1c3eedc27e8",
+      "edge_id": "gw0e-b64565e82f8e5692"
+    },
+    {
+      "control_edge_id": "gw0e-958a34cf1c6bc279",
+      "edge_id": "gw0e-b6ab3517c0a9f97c"
+    },
+    {
+      "control_edge_id": "gw0e-c09dd78d8d112121",
+      "edge_id": "gw0e-b7d07081fe5c5c65"
+    },
+    {
+      "control_edge_id": "gw0e-5c7879d5a2497c07",
+      "edge_id": "gw0e-b7d2c4ea0a871d1c"
+    },
+    {
+      "control_edge_id": "gw0e-11913b8c5572560f",
+      "edge_id": "gw0e-b8653970abf4c1f3"
+    },
+    {
+      "control_edge_id": "gw0e-a5b6d43e60e48368",
+      "edge_id": "gw0e-be397cd824124c4a"
+    },
+    {
+      "control_edge_id": "gw0e-b64565e82f8e5692",
+      "edge_id": "gw0e-c09dd78d8d112121"
+    },
+    {
+      "control_edge_id": "gw0e-1f8a0c4846d2ff8f",
+      "edge_id": "gw0e-c11238ebf125c5ca"
+    },
+    {
+      "control_edge_id": "gw0e-6e9d870700745e1a",
+      "edge_id": "gw0e-c5d13cd9fa67c213"
+    },
+    {
+      "control_edge_id": "gw0e-d33c4134b831dd0c",
+      "edge_id": "gw0e-c5fe6ed0a1b1ae44"
+    },
+    {
+      "control_edge_id": "gw0e-d33c4134b831dd0c",
+      "edge_id": "gw0e-ca5c249a68ddec7e"
+    },
+    {
+      "control_edge_id": "gw0e-036c19a0f832fd3f",
+      "edge_id": "gw0e-cc18bdd1b22e9444"
+    },
+    {
+      "control_edge_id": "gw0e-6c13d0be0c7b612b",
+      "edge_id": "gw0e-cddbd98139fe7351"
+    },
+    {
+      "control_edge_id": "gw0e-008dea4be2cb323e",
+      "edge_id": "gw0e-ced45ca6e36970fc"
+    },
+    {
+      "control_edge_id": "gw0e-7bdf24a6b4f8b0a8",
+      "edge_id": "gw0e-cf47700431e32502"
+    },
+    {
+      "control_edge_id": "gw0e-637bdb2fd13d0d66",
+      "edge_id": "gw0e-d27e6bced04c056b"
+    },
+    {
+      "control_edge_id": "gw0e-95bbd31e8882ca1a",
+      "edge_id": "gw0e-d33c4134b831dd0c"
+    },
+    {
+      "control_edge_id": "gw0e-be397cd824124c4a",
+      "edge_id": "gw0e-dd1b64934734775c"
+    },
+    {
+      "control_edge_id": "gw0e-942acf36a40f1df7",
+      "edge_id": "gw0e-de277c197b9ea419"
+    },
+    {
+      "control_edge_id": "gw0e-958a34cf1c6bc279",
+      "edge_id": "gw0e-df8bff1b16ed7c17"
+    },
+    {
+      "control_edge_id": "gw0e-c09dd78d8d112121",
+      "edge_id": "gw0e-e014b1c3eedc27e8"
+    },
+    {
+      "control_edge_id": "gw0e-cddbd98139fe7351",
+      "edge_id": "gw0e-e124c1813b9831f4"
+    },
+    {
+      "control_edge_id": "gw0e-235b9dd7d87b2fe8",
+      "edge_id": "gw0e-e230d67d598db642"
+    },
+    {
+      "control_edge_id": "gw0e-c09dd78d8d112121",
+      "edge_id": "gw0e-e40f8f039bd5a49c"
+    },
+    {
+      "control_edge_id": "gw0e-561040944a8a9d53",
+      "edge_id": "gw0e-e5a117936a5ef971"
+    },
+    {
+      "control_edge_id": "gw0e-ae439a1d7e43966a",
+      "edge_id": "gw0e-e636bfd7d6623c48"
+    },
+    {
+      "control_edge_id": "gw0e-b26c4cdcd05b1050",
+      "edge_id": "gw0e-ea4e0f0661d3d967"
+    },
+    {
+      "control_edge_id": "gw0e-2c4edca88874ad39",
+      "edge_id": "gw0e-f5abb646e989efcd"
+    },
+    {
+      "control_edge_id": "gw0e-07e3a91fab2dabb4",
+      "edge_id": "gw0e-f7ea508e9e75e764"
+    },
+    {
+      "control_edge_id": "gw0e-008dea4be2cb323e",
+      "edge_id": "gw0e-f9b0fa6ec6b5c4c1"
+    },
+    {
+      "control_edge_id": "gw0e-dd1b64934734775c",
+      "edge_id": "gw0e-fa0c3104c138f919"
+    },
+    {
+      "control_edge_id": "gw0e-8ad319fde02c738b",
+      "edge_id": "gw0e-fb70f0919a3b66a7"
+    },
+    {
+      "control_edge_id": "gw0e-9435c881621c2a2c",
+      "edge_id": "gw0e-fef09dc8ab1a613a"
+    },
+    {
+      "control_edge_id": "gw0e-75a5b686162740ac",
+      "edge_id": "gw0e-01e40b27f3d6b605"
+    },
+    {
+      "control_edge_id": "gw0e-4309f3e59c5cef29",
+      "edge_id": "gw0e-03afa06673c64968"
+    },
+    {
+      "control_edge_id": "gw0e-e73bf61831c47925",
+      "edge_id": "gw0e-0491724d6769414c"
+    },
+    {
+      "control_edge_id": "gw0e-4f691252bd18d2bb",
+      "edge_id": "gw0e-057f1b8971620287"
+    },
+    {
+      "control_edge_id": "gw0e-4549628b22d1fc46",
+      "edge_id": "gw0e-059f1ec2a8fa2ac9"
+    },
+    {
+      "control_edge_id": "gw0e-28aea877b9d91f22",
+      "edge_id": "gw0e-0af56131f9bb4fd4"
+    },
+    {
+      "control_edge_id": "gw0e-b0b622e2e1d211d2",
+      "edge_id": "gw0e-0f9816711fea186e"
+    },
+    {
+      "control_edge_id": "gw0e-514efb1b341159d5",
+      "edge_id": "gw0e-1252195b55a7735b"
+    },
+    {
+      "control_edge_id": "gw0e-56344cd7ef1ff267",
+      "edge_id": "gw0e-14a27c4ef6fb2a63"
+    },
+    {
+      "control_edge_id": "gw0e-167eb7a03b7992d0",
+      "edge_id": "gw0e-14d3531c207b84e7"
+    },
+    {
+      "control_edge_id": "gw0e-03afa06673c64968",
+      "edge_id": "gw0e-161162e293950f87"
+    },
+    {
+      "control_edge_id": "gw0e-14d3531c207b84e7",
+      "edge_id": "gw0e-167eb7a03b7992d0"
+    },
+    {
+      "control_edge_id": "gw0e-a759b5b97208b3a4",
+      "edge_id": "gw0e-1738a7f86b3f5a66"
+    },
+    {
+      "control_edge_id": "gw0e-7dbad5f15b84ec31",
+      "edge_id": "gw0e-18b07ca3fa847c4f"
+    },
+    {
+      "control_edge_id": "gw0e-9d5150d69af213a7",
+      "edge_id": "gw0e-1b9ffff5339a84c8"
+    },
+    {
+      "control_edge_id": "gw0e-3eb030b9efa0f378",
+      "edge_id": "gw0e-1d40a93230c1c5bc"
+    },
+    {
+      "control_edge_id": "gw0e-c56a6eb43e85ea7c",
+      "edge_id": "gw0e-1e252d4473c0c5db"
+    },
+    {
+      "control_edge_id": "gw0e-f226571670cd85b9",
+      "edge_id": "gw0e-22b9484b54407963"
+    },
+    {
+      "control_edge_id": "gw0e-d018e12852eae4c2",
+      "edge_id": "gw0e-2814ad999199f9ed"
+    },
+    {
+      "control_edge_id": "gw0e-6b1d090d8cb68b3d",
+      "edge_id": "gw0e-28aea877b9d91f22"
+    },
+    {
+      "control_edge_id": "gw0e-547116fe002a8257",
+      "edge_id": "gw0e-2bb419a557c25ce1"
+    },
+    {
+      "control_edge_id": "gw0e-514efb1b341159d5",
+      "edge_id": "gw0e-2c7bf6b8a218b120"
+    },
+    {
+      "control_edge_id": "gw0e-8bc2c704a196b45b",
+      "edge_id": "gw0e-307aaffb26a82b0f"
+    },
+    {
+      "control_edge_id": "gw0e-5458537e2619a9f6",
+      "edge_id": "gw0e-32032de53c2b3b49"
+    },
+    {
+      "control_edge_id": "gw0e-5905a51ee9a8da97",
+      "edge_id": "gw0e-32cd2a7c1bdcbdd8"
+    },
+    {
+      "control_edge_id": "gw0e-ce81e15c526c764a",
+      "edge_id": "gw0e-3468338413847f5f"
+    },
+    {
+      "control_edge_id": "gw0e-af17548df0e55e6d",
+      "edge_id": "gw0e-35f8da337b46921c"
+    },
+    {
+      "control_edge_id": "gw0e-7b0e4d51428b8d29",
+      "edge_id": "gw0e-36781bddaff4decd"
+    },
+    {
+      "control_edge_id": "gw0e-b97552004783e42c",
+      "edge_id": "gw0e-3ab785972e7990f7"
+    },
+    {
+      "control_edge_id": "gw0e-9d5150d69af213a7",
+      "edge_id": "gw0e-3ac82f343aab1433"
+    },
+    {
+      "control_edge_id": "gw0e-40f6bfe9fdfddc2e",
+      "edge_id": "gw0e-3c149bda4b07e1a5"
+    },
+    {
+      "control_edge_id": "gw0e-89ddb441f2c9ee97",
+      "edge_id": "gw0e-3d4b6524a258f068"
+    },
+    {
+      "control_edge_id": "gw0e-059f1ec2a8fa2ac9",
+      "edge_id": "gw0e-3de99bfceabad621"
+    },
+    {
+      "control_edge_id": "gw0e-0491724d6769414c",
+      "edge_id": "gw0e-3eb030b9efa0f378"
+    },
+    {
+      "control_edge_id": "gw0e-3468338413847f5f",
+      "edge_id": "gw0e-3ef4891bd0e7ab5f"
+    },
+    {
+      "control_edge_id": "gw0e-1e252d4473c0c5db",
+      "edge_id": "gw0e-3fc09016758cbfc1"
+    },
+    {
+      "control_edge_id": "gw0e-3d4b6524a258f068",
+      "edge_id": "gw0e-40f6bfe9fdfddc2e"
+    },
+    {
+      "control_edge_id": "gw0e-c5017ab862071c25",
+      "edge_id": "gw0e-422c0d81ff6d4121"
+    },
+    {
+      "control_edge_id": "gw0e-be8e3b7a48a07a02",
+      "edge_id": "gw0e-4309f3e59c5cef29"
+    },
+    {
+      "control_edge_id": "gw0e-7cacc984d197b2d9",
+      "edge_id": "gw0e-4549628b22d1fc46"
+    },
+    {
+      "control_edge_id": "gw0e-eb5b718eea5b99af",
+      "edge_id": "gw0e-45b28f12afe23ca5"
+    },
+    {
+      "control_edge_id": "gw0e-b0b622e2e1d211d2",
+      "edge_id": "gw0e-4acc1786e6fa8519"
+    },
+    {
+      "control_edge_id": "gw0e-d018e12852eae4c2",
+      "edge_id": "gw0e-4e1d65fbe287b23a"
+    },
+    {
+      "control_edge_id": "gw0e-d4acf9fb96e141da",
+      "edge_id": "gw0e-4f691252bd18d2bb"
+    },
+    {
+      "control_edge_id": "gw0e-307aaffb26a82b0f",
+      "edge_id": "gw0e-514efb1b341159d5"
+    },
+    {
+      "control_edge_id": "gw0e-61c2d2b54a7a73bc",
+      "edge_id": "gw0e-53aacacf356fc693"
+    },
+    {
+      "control_edge_id": "gw0e-5905a51ee9a8da97",
+      "edge_id": "gw0e-5458537e2619a9f6"
+    },
+    {
+      "control_edge_id": "gw0e-2814ad999199f9ed",
+      "edge_id": "gw0e-547116fe002a8257"
+    },
+    {
+      "control_edge_id": "gw0e-c5f52cdb36f044a3",
+      "edge_id": "gw0e-54a1d4fbe1ae8fb1"
+    },
+    {
+      "control_edge_id": "gw0e-9107c1265733bf19",
+      "edge_id": "gw0e-54a489facbae410b"
+    },
+    {
+      "control_edge_id": "gw0e-14a27c4ef6fb2a63",
+      "edge_id": "gw0e-56344cd7ef1ff267"
+    },
+    {
+      "control_edge_id": "gw0e-7b0e4d51428b8d29",
+      "edge_id": "gw0e-56c667a7ed2c4760"
+    },
+    {
+      "control_edge_id": "gw0e-32cd2a7c1bdcbdd8",
+      "edge_id": "gw0e-5905a51ee9a8da97"
+    },
+    {
+      "control_edge_id": "gw0e-307aaffb26a82b0f",
+      "edge_id": "gw0e-5a73868edf1377f4"
+    },
+    {
+      "control_edge_id": "gw0e-54a489facbae410b",
+      "edge_id": "gw0e-5edc48d8169c3a10"
+    },
+    {
+      "control_edge_id": "gw0e-a759b5b97208b3a4",
+      "edge_id": "gw0e-61c2d2b54a7a73bc"
+    },
+    {
+      "control_edge_id": "gw0e-75a5b686162740ac",
+      "edge_id": "gw0e-6b1d090d8cb68b3d"
+    },
+    {
+      "control_edge_id": "gw0e-ce81e15c526c764a",
+      "edge_id": "gw0e-6dc91d9c59932ca7"
+    },
+    {
+      "control_edge_id": "gw0e-54a1d4fbe1ae8fb1",
+      "edge_id": "gw0e-75a5b686162740ac"
+    },
+    {
+      "control_edge_id": "gw0e-1e252d4473c0c5db",
+      "edge_id": "gw0e-78075b859c249249"
+    },
+    {
+      "control_edge_id": "gw0e-af17548df0e55e6d",
+      "edge_id": "gw0e-7b0e4d51428b8d29"
+    },
+    {
+      "control_edge_id": "gw0e-b02d77f6a40ec4af",
+      "edge_id": "gw0e-7cacc984d197b2d9"
+    },
+    {
+      "control_edge_id": "gw0e-b0b622e2e1d211d2",
+      "edge_id": "gw0e-7dbad5f15b84ec31"
+    },
+    {
+      "control_edge_id": "gw0e-28aea877b9d91f22",
+      "edge_id": "gw0e-7e3802859aeab2b9"
+    },
+    {
+      "control_edge_id": "gw0e-ce81e15c526c764a",
+      "edge_id": "gw0e-85295c9406fa21b0"
+    },
+    {
+      "control_edge_id": "gw0e-c5017ab862071c25",
+      "edge_id": "gw0e-89ddb441f2c9ee97"
+    },
+    {
+      "control_edge_id": "gw0e-78075b859c249249",
+      "edge_id": "gw0e-8bc2c704a196b45b"
+    },
+    {
+      "control_edge_id": "gw0e-c56a6eb43e85ea7c",
+      "edge_id": "gw0e-8c50b66f91cc401d"
+    },
+    {
+      "control_edge_id": "gw0e-9ecc4f7264f86d85",
+      "edge_id": "gw0e-8d5b7f55881b85fc"
+    },
+    {
+      "control_edge_id": "gw0e-b02d77f6a40ec4af",
+      "edge_id": "gw0e-8e9aa68057097cf9"
+    },
+    {
+      "control_edge_id": "gw0e-bd7334fdee08d681",
+      "edge_id": "gw0e-90a87e427bec43fd"
+    },
+    {
+      "control_edge_id": "gw0e-be8e3b7a48a07a02",
+      "edge_id": "gw0e-9107c1265733bf19"
+    },
+    {
+      "control_edge_id": "gw0e-40f6bfe9fdfddc2e",
+      "edge_id": "gw0e-960272f4c63be903"
+    },
+    {
+      "control_edge_id": "gw0e-307aaffb26a82b0f",
+      "edge_id": "gw0e-98540a6ccea7da72"
+    },
+    {
+      "control_edge_id": "gw0e-ba8a1e1e1235abad",
+      "edge_id": "gw0e-9d5150d69af213a7"
+    },
+    {
+      "control_edge_id": "gw0e-8e9aa68057097cf9",
+      "edge_id": "gw0e-9d7d7421bfb34030"
+    },
+    {
+      "control_edge_id": "gw0e-32032de53c2b3b49",
+      "edge_id": "gw0e-9ecc4f7264f86d85"
+    },
+    {
+      "control_edge_id": "gw0e-ccaf03fb8bd99dd4",
+      "edge_id": "gw0e-a1608e8fd7f21ff8"
+    },
+    {
+      "control_edge_id": "gw0e-5905a51ee9a8da97",
+      "edge_id": "gw0e-a53c2690edb5bed3"
+    },
+    {
+      "control_edge_id": "gw0e-ca489f88c534f1f8",
+      "edge_id": "gw0e-a759b5b97208b3a4"
+    },
+    {
+      "control_edge_id": "gw0e-53aacacf356fc693",
+      "edge_id": "gw0e-abc7fe3f5e68f031"
+    },
+    {
+      "control_edge_id": "gw0e-5905a51ee9a8da97",
+      "edge_id": "gw0e-ac5380922332c436"
+    },
+    {
+      "control_edge_id": "gw0e-35f8da337b46921c",
+      "edge_id": "gw0e-af17548df0e55e6d"
+    },
+    {
+      "control_edge_id": "gw0e-8e9aa68057097cf9",
+      "edge_id": "gw0e-b02d77f6a40ec4af"
+    },
+    {
+      "control_edge_id": "gw0e-df57f6203ab20374",
+      "edge_id": "gw0e-b0b622e2e1d211d2"
+    },
+    {
+      "control_edge_id": "gw0e-3d4b6524a258f068",
+      "edge_id": "gw0e-b57cb306ee589c3e"
+    },
+    {
+      "control_edge_id": "gw0e-56c667a7ed2c4760",
+      "edge_id": "gw0e-b7c792a84ae10994"
+    },
+    {
+      "control_edge_id": "gw0e-0491724d6769414c",
+      "edge_id": "gw0e-b97552004783e42c"
+    },
+    {
+      "control_edge_id": "gw0e-8bc2c704a196b45b",
+      "edge_id": "gw0e-ba8a1e1e1235abad"
+    },
+    {
+      "control_edge_id": "gw0e-c393ac497d61e59d",
+      "edge_id": "gw0e-bd7334fdee08d681"
+    },
+    {
+      "control_edge_id": "gw0e-5edc48d8169c3a10",
+      "edge_id": "gw0e-be8e3b7a48a07a02"
+    },
+    {
+      "control_edge_id": "gw0e-547116fe002a8257",
+      "edge_id": "gw0e-c2d48acdf6239f2d"
+    },
+    {
+      "control_edge_id": "gw0e-7e3802859aeab2b9",
+      "edge_id": "gw0e-c35c413698047cbc"
+    },
+    {
+      "control_edge_id": "gw0e-ccd9e81a4d1f4011",
+      "edge_id": "gw0e-c393ac497d61e59d"
+    },
+    {
+      "control_edge_id": "gw0e-422c0d81ff6d4121",
+      "edge_id": "gw0e-c5017ab862071c25"
+    },
+    {
+      "control_edge_id": "gw0e-e181fc809be79f25",
+      "edge_id": "gw0e-c56a6eb43e85ea7c"
+    },
+    {
+      "control_edge_id": "gw0e-28aea877b9d91f22",
+      "edge_id": "gw0e-c5f52cdb36f044a3"
+    },
+    {
+      "control_edge_id": "gw0e-3ef4891bd0e7ab5f",
+      "edge_id": "gw0e-c851a87c60898df3"
+    },
+    {
+      "control_edge_id": "gw0e-abc7fe3f5e68f031",
+      "edge_id": "gw0e-ca489f88c534f1f8"
+    },
+    {
+      "control_edge_id": "gw0e-1e252d4473c0c5db",
+      "edge_id": "gw0e-ccaf03fb8bd99dd4"
+    },
+    {
+      "control_edge_id": "gw0e-d3c2d8522665a5ca",
+      "edge_id": "gw0e-ccd9e81a4d1f4011"
+    },
+    {
+      "control_edge_id": "gw0e-7e3802859aeab2b9",
+      "edge_id": "gw0e-ce81e15c526c764a"
+    },
+    {
+      "control_edge_id": "gw0e-6dc91d9c59932ca7",
+      "edge_id": "gw0e-cef26dc55418408d"
+    },
+    {
+      "control_edge_id": "gw0e-e2797375cd9317b3",
+      "edge_id": "gw0e-d018e12852eae4c2"
+    },
+    {
+      "control_edge_id": "gw0e-c393ac497d61e59d",
+      "edge_id": "gw0e-d3c2d8522665a5ca"
+    },
+    {
+      "control_edge_id": "gw0e-0491724d6769414c",
+      "edge_id": "gw0e-d4acf9fb96e141da"
+    },
+    {
+      "control_edge_id": "gw0e-df57f6203ab20374",
+      "edge_id": "gw0e-de3d12756f4c6c08"
+    },
+    {
+      "control_edge_id": "gw0e-eddf2cb1dfdcc5c4",
+      "edge_id": "gw0e-df57f6203ab20374"
+    },
+    {
+      "control_edge_id": "gw0e-c56a6eb43e85ea7c",
+      "edge_id": "gw0e-e181fc809be79f25"
+    },
+    {
+      "control_edge_id": "gw0e-d018e12852eae4c2",
+      "edge_id": "gw0e-e2797375cd9317b3"
+    },
+    {
+      "control_edge_id": "gw0e-be8e3b7a48a07a02",
+      "edge_id": "gw0e-e41b77ad086308bd"
+    },
+    {
+      "control_edge_id": "gw0e-3eb030b9efa0f378",
+      "edge_id": "gw0e-e73bf61831c47925"
+    },
+    {
+      "control_edge_id": "gw0e-3eb030b9efa0f378",
+      "edge_id": "gw0e-eb5b718eea5b99af"
+    },
+    {
+      "control_edge_id": "gw0e-de3d12756f4c6c08",
+      "edge_id": "gw0e-eddf2cb1dfdcc5c4"
+    },
+    {
+      "control_edge_id": "gw0e-b7c792a84ae10994",
+      "edge_id": "gw0e-f092e4dd86042c1a"
+    },
+    {
+      "control_edge_id": "gw0e-1252195b55a7735b",
+      "edge_id": "gw0e-f226571670cd85b9"
+    },
+    {
+      "control_edge_id": "gw0e-1252195b55a7735b",
+      "edge_id": "gw0e-f3ccfd698eb4207e"
+    },
+    {
+      "control_edge_id": "gw0e-85295c9406fa21b0",
+      "edge_id": "gw0e-f71af80123c239c3"
+    },
+    {
+      "control_edge_id": "gw0e-d018e12852eae4c2",
+      "edge_id": "gw0e-fd08ddadd360d945"
+    },
+    {
+      "control_edge_id": "gw0e-56c667a7ed2c4760",
+      "edge_id": "gw0e-ffdb00b1b278a495"
+    },
+    {
+      "control_edge_id": "gw0e-9e51d92c3680e7b2",
+      "edge_id": "gw0e-0351031c8f67b954"
+    },
+    {
+      "control_edge_id": "gw0e-f5b1cebd2f8da140",
+      "edge_id": "gw0e-055c27da60268632"
+    },
+    {
+      "control_edge_id": "gw0e-a8cf2df75d7f7457",
+      "edge_id": "gw0e-086e55357527b9b5"
+    },
+    {
+      "control_edge_id": "gw0e-f8fff070df6b1545",
+      "edge_id": "gw0e-0e50e4ebe4d04afe"
+    },
+    {
+      "control_edge_id": "gw0e-96ee765893781b24",
+      "edge_id": "gw0e-11ab911027d0c973"
+    },
+    {
+      "control_edge_id": "gw0e-ed6d4d97d422d5ea",
+      "edge_id": "gw0e-12e2abd6e8807449"
+    },
+    {
+      "control_edge_id": "gw0e-737c5ed59546e00a",
+      "edge_id": "gw0e-15ac4334492be5e0"
+    },
+    {
+      "control_edge_id": "gw0e-8dc2fb3278bfa897",
+      "edge_id": "gw0e-1909e1154ad3ed7a"
+    },
+    {
+      "control_edge_id": "gw0e-19f09753262fb01b",
+      "edge_id": "gw0e-192c49d695724638"
+    },
+    {
+      "control_edge_id": "gw0e-055c27da60268632",
+      "edge_id": "gw0e-19f09753262fb01b"
+    },
+    {
+      "control_edge_id": "gw0e-0e50e4ebe4d04afe",
+      "edge_id": "gw0e-1c45ecf77adf08d3"
+    },
+    {
+      "control_edge_id": "gw0e-adf32ba7131937c8",
+      "edge_id": "gw0e-1fc881780e6a3864"
+    },
+    {
+      "control_edge_id": "gw0e-1fc881780e6a3864",
+      "edge_id": "gw0e-24bcf463ad7a5f26"
+    },
+    {
+      "control_edge_id": "gw0e-68bc800a7e1970dd",
+      "edge_id": "gw0e-2f49628996cf621f"
+    },
+    {
+      "control_edge_id": "gw0e-e12fe269774a0982",
+      "edge_id": "gw0e-318eed19acd5a8f7"
+    },
+    {
+      "control_edge_id": "gw0e-8dcc5e3e4d691c54",
+      "edge_id": "gw0e-39c5d3288ae2cd9c"
+    },
+    {
+      "control_edge_id": "gw0e-ba57252291a76e1f",
+      "edge_id": "gw0e-3bf870e3abd59713"
+    },
+    {
+      "control_edge_id": "gw0e-055c27da60268632",
+      "edge_id": "gw0e-3d91c1332ae9f3e1"
+    },
+    {
+      "control_edge_id": "gw0e-192c49d695724638",
+      "edge_id": "gw0e-3db3917fe05921ef"
+    },
+    {
+      "control_edge_id": "gw0e-5fbce10747b644af",
+      "edge_id": "gw0e-3ef9a67e30096a79"
+    },
+    {
+      "control_edge_id": "gw0e-12e2abd6e8807449",
+      "edge_id": "gw0e-4468391fae2a09b4"
+    },
+    {
+      "control_edge_id": "gw0e-e12fe269774a0982",
+      "edge_id": "gw0e-44b205e156ea58e0"
+    },
+    {
+      "control_edge_id": "gw0e-f8fff070df6b1545",
+      "edge_id": "gw0e-44d403446b01f32c"
+    },
+    {
+      "control_edge_id": "gw0e-b5eafc297b20fb4a",
+      "edge_id": "gw0e-451c7860dd078743"
+    },
+    {
+      "control_edge_id": "gw0e-9b608d67d2278f8f",
+      "edge_id": "gw0e-45b819369a421167"
+    },
+    {
+      "control_edge_id": "gw0e-deb07a152ff03d88",
+      "edge_id": "gw0e-46e7831fa2db71a5"
+    },
+    {
+      "control_edge_id": "gw0e-f4ddfddeef84d360",
+      "edge_id": "gw0e-4a499afa884dd38b"
+    },
+    {
+      "control_edge_id": "gw0e-9b608d67d2278f8f",
+      "edge_id": "gw0e-4d8fd6e36ec9830a"
+    },
+    {
+      "control_edge_id": "gw0e-75c8fa128f163108",
+      "edge_id": "gw0e-520099340e05587b"
+    },
+    {
+      "control_edge_id": "gw0e-451c7860dd078743",
+      "edge_id": "gw0e-539ce6f132320bde"
+    },
+    {
+      "control_edge_id": "gw0e-a13445ae0f66d7a7",
+      "edge_id": "gw0e-54eb99696adf3fd2"
+    },
+    {
+      "control_edge_id": "gw0e-11ab911027d0c973",
+      "edge_id": "gw0e-57aae34f1590c543"
+    },
+    {
+      "control_edge_id": "gw0e-8f2b1412e436fe87",
+      "edge_id": "gw0e-580b45b1dd1b6576"
+    },
+    {
+      "control_edge_id": "gw0e-4d8fd6e36ec9830a",
+      "edge_id": "gw0e-5fbce10747b644af"
+    },
+    {
+      "control_edge_id": "gw0e-b8daf335ecdc4657",
+      "edge_id": "gw0e-6004c78bc4450f76"
+    },
+    {
+      "control_edge_id": "gw0e-caf1f56501395336",
+      "edge_id": "gw0e-68bc800a7e1970dd"
+    },
+    {
+      "control_edge_id": "gw0e-4468391fae2a09b4",
+      "edge_id": "gw0e-69777429aa7c91ee"
+    },
+    {
+      "control_edge_id": "gw0e-c61db6b5d738955c",
+      "edge_id": "gw0e-6a7406f44b1272ce"
+    },
+    {
+      "control_edge_id": "gw0e-9b608d67d2278f8f",
+      "edge_id": "gw0e-6c396df83ca9d1cb"
+    },
+    {
+      "control_edge_id": "gw0e-8dcc5e3e4d691c54",
+      "edge_id": "gw0e-6c99932cfc5b9ffc"
+    },
+    {
+      "control_edge_id": "gw0e-54eb99696adf3fd2",
+      "edge_id": "gw0e-6fde44f001e6348e"
+    },
+    {
+      "control_edge_id": "gw0e-d2e2e5f74d0e7411",
+      "edge_id": "gw0e-737c5ed59546e00a"
+    },
+    {
+      "control_edge_id": "gw0e-96ee765893781b24",
+      "edge_id": "gw0e-75504e37ceb1f2a7"
+    },
+    {
+      "control_edge_id": "gw0e-84059fff69345fd6",
+      "edge_id": "gw0e-75c8fa128f163108"
+    },
+    {
+      "control_edge_id": "gw0e-de8fe993bbcf56b8",
+      "edge_id": "gw0e-7ca3c23abbdabc29"
+    },
+    {
+      "control_edge_id": "gw0e-086e55357527b9b5",
+      "edge_id": "gw0e-7f1d4f25f616fbda"
+    },
+    {
+      "control_edge_id": "gw0e-75504e37ceb1f2a7",
+      "edge_id": "gw0e-84059fff69345fd6"
+    },
+    {
+      "control_edge_id": "gw0e-c556d90d1d2fceb2",
+      "edge_id": "gw0e-8dc2fb3278bfa897"
+    },
+    {
+      "control_edge_id": "gw0e-192c49d695724638",
+      "edge_id": "gw0e-8dcc5e3e4d691c54"
+    },
+    {
+      "control_edge_id": "gw0e-39c5d3288ae2cd9c",
+      "edge_id": "gw0e-8f2b1412e436fe87"
+    },
+    {
+      "control_edge_id": "gw0e-39c5d3288ae2cd9c",
+      "edge_id": "gw0e-9628fcc654570419"
+    },
+    {
+      "control_edge_id": "gw0e-2f49628996cf621f",
+      "edge_id": "gw0e-96ee765893781b24"
+    },
+    {
+      "control_edge_id": "gw0e-a18d885af4f8cdc6",
+      "edge_id": "gw0e-975b1e7b596764b4"
+    },
+    {
+      "control_edge_id": "gw0e-5fbce10747b644af",
+      "edge_id": "gw0e-9b608d67d2278f8f"
+    },
+    {
+      "control_edge_id": "gw0e-451c7860dd078743",
+      "edge_id": "gw0e-9e51d92c3680e7b2"
+    },
+    {
+      "control_edge_id": "gw0e-12e2abd6e8807449",
+      "edge_id": "gw0e-a0acc300e22859c3"
+    },
+    {
+      "control_edge_id": "gw0e-6fde44f001e6348e",
+      "edge_id": "gw0e-a13445ae0f66d7a7"
+    },
+    {
+      "control_edge_id": "gw0e-6004c78bc4450f76",
+      "edge_id": "gw0e-a18d885af4f8cdc6"
+    },
+    {
+      "control_edge_id": "gw0e-7ca3c23abbdabc29",
+      "edge_id": "gw0e-a8cf2df75d7f7457"
+    },
+    {
+      "control_edge_id": "gw0e-1fc881780e6a3864",
+      "edge_id": "gw0e-adf32ba7131937c8"
+    },
+    {
+      "control_edge_id": "gw0e-e12fe269774a0982",
+      "edge_id": "gw0e-af54428051074198"
+    },
+    {
+      "control_edge_id": "gw0e-3d91c1332ae9f3e1",
+      "edge_id": "gw0e-b5eafc297b20fb4a"
+    },
+    {
+      "control_edge_id": "gw0e-a8cf2df75d7f7457",
+      "edge_id": "gw0e-b80743f9f5e905ce"
+    },
+    {
+      "control_edge_id": "gw0e-ed6d4d97d422d5ea",
+      "edge_id": "gw0e-b8daf335ecdc4657"
+    },
+    {
+      "control_edge_id": "gw0e-d6f25aa879628ebc",
+      "edge_id": "gw0e-ba57252291a76e1f"
+    },
+    {
+      "control_edge_id": "gw0e-24bcf463ad7a5f26",
+      "edge_id": "gw0e-bbbbff4e5e4b4aa5"
+    },
+    {
+      "control_edge_id": "gw0e-75c8fa128f163108",
+      "edge_id": "gw0e-c229d5063a5ee728"
+    },
+    {
+      "control_edge_id": "gw0e-caf1f56501395336",
+      "edge_id": "gw0e-c556d90d1d2fceb2"
+    },
+    {
+      "control_edge_id": "gw0e-d6f25aa879628ebc",
+      "edge_id": "gw0e-c61db6b5d738955c"
+    },
+    {
+      "control_edge_id": "gw0e-8dc2fb3278bfa897",
+      "edge_id": "gw0e-caf1f56501395336"
+    },
+    {
+      "control_edge_id": "gw0e-15ac4334492be5e0",
+      "edge_id": "gw0e-cbe82d1a0d7e36d5"
+    },
+    {
+      "control_edge_id": "gw0e-adf32ba7131937c8",
+      "edge_id": "gw0e-d007bfbea5f67ae8"
+    },
+    {
+      "control_edge_id": "gw0e-cbe82d1a0d7e36d5",
+      "edge_id": "gw0e-d2e2e5f74d0e7411"
+    },
+    {
+      "control_edge_id": "gw0e-3bf870e3abd59713",
+      "edge_id": "gw0e-d6f25aa879628ebc"
+    },
+    {
+      "control_edge_id": "gw0e-84059fff69345fd6",
+      "edge_id": "gw0e-d803529b69d31072"
+    },
+    {
+      "control_edge_id": "gw0e-6c99932cfc5b9ffc",
+      "edge_id": "gw0e-db54d37ee788186e"
+    },
+    {
+      "control_edge_id": "gw0e-24bcf463ad7a5f26",
+      "edge_id": "gw0e-de64e03b4f662fdb"
+    },
+    {
+      "control_edge_id": "gw0e-7f1d4f25f616fbda",
+      "edge_id": "gw0e-de8fe993bbcf56b8"
+    },
+    {
+      "control_edge_id": "gw0e-54eb99696adf3fd2",
+      "edge_id": "gw0e-deb07a152ff03d88"
+    },
+    {
+      "control_edge_id": "gw0e-ed6d4d97d422d5ea",
+      "edge_id": "gw0e-e12fe269774a0982"
+    },
+    {
+      "control_edge_id": "gw0e-e12fe269774a0982",
+      "edge_id": "gw0e-ed6d4d97d422d5ea"
+    },
+    {
+      "control_edge_id": "gw0e-f0ca1c9a2ef7082a",
+      "edge_id": "gw0e-eeeca0c8243c6f22"
+    },
+    {
+      "control_edge_id": "gw0e-96ee765893781b24",
+      "edge_id": "gw0e-f0ca1c9a2ef7082a"
+    },
+    {
+      "control_edge_id": "gw0e-6a7406f44b1272ce",
+      "edge_id": "gw0e-f3171a1b19e6c5bb"
+    },
+    {
+      "control_edge_id": "gw0e-cbe82d1a0d7e36d5",
+      "edge_id": "gw0e-f4ddfddeef84d360"
+    },
+    {
+      "control_edge_id": "gw0e-8dcc5e3e4d691c54",
+      "edge_id": "gw0e-f5b1cebd2f8da140"
+    },
+    {
+      "control_edge_id": "gw0e-975b1e7b596764b4",
+      "edge_id": "gw0e-f8fff070df6b1545"
+    },
+    {
+      "control_edge_id": "gw0e-54eb99696adf3fd2",
+      "edge_id": "gw0e-fbf47e678f5050bd"
+    },
+    {
+      "control_edge_id": "gw0e-c556d90d1d2fceb2",
+      "edge_id": "gw0e-fdd4ee444054e4fd"
+    },
+    {
+      "control_edge_id": "gw0e-a0acc300e22859c3",
+      "edge_id": "gw0e-ff0df4390be685aa"
+    }
+  ],
+  "prompt_family_groups": [
+    {
+      "edge_ids": [
+        "gw0e-ac52f4b90e02c6a7",
+        "gw0e-79d2418658bd058c",
+        "gw0e-3309156fb0ddb588"
+      ],
+      "relation": "capital",
+      "subject": "Afghanistan",
+      "target": "Kabul"
+    },
+    {
+      "edge_ids": [
+        "gw0e-4dd1d08e27e7283a",
+        "gw0e-5749e6c3e2cfc519",
+        "gw0e-112b6ef44de1825b"
+      ],
+      "relation": "capital",
+      "subject": "Algeria",
+      "target": "Algiers"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1e4d5e9766214045",
+        "gw0e-3cb7222a09b6890c",
+        "gw0e-e38b599d0188d415"
+      ],
+      "relation": "capital",
+      "subject": "Austria",
+      "target": "Vienna"
+    },
+    {
+      "edge_ids": [
+        "gw0e-448011d5ddb7e39e",
+        "gw0e-c5fe6ed0a1b1ae44",
+        "gw0e-1fd75eadb2264095"
+      ],
+      "relation": "currency",
+      "subject": "Austria",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b8daf335ecdc4657",
+        "gw0e-f0ca1c9a2ef7082a",
+        "gw0e-8dcc5e3e4d691c54"
+      ],
+      "relation": "language",
+      "subject": "Austria",
+      "target": "German"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0d88b8e11eda6692",
+        "gw0e-9c1349d7b791c78d",
+        "gw0e-842b65d8a5794181"
+      ],
+      "relation": "currency",
+      "subject": "Bangladesh",
+      "target": "Taka"
+    },
+    {
+      "edge_ids": [
+        "gw0e-008dea4be2cb323e",
+        "gw0e-8889b7944247692b",
+        "gw0e-c5d13cd9fa67c213"
+      ],
+      "relation": "currency",
+      "subject": "Brazil",
+      "target": "Real"
+    },
+    {
+      "edge_ids": [
+        "gw0e-7ca3c23abbdabc29",
+        "gw0e-f4ddfddeef84d360",
+        "gw0e-ba57252291a76e1f"
+      ],
+      "relation": "language",
+      "subject": "Brazil",
+      "target": "Portuguese"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1ed9dad01d2a2f05",
+        "gw0e-48b1a2f24d31bb66",
+        "gw0e-3c2e32d329f331d4"
+      ],
+      "relation": "capital",
+      "subject": "Bulgaria",
+      "target": "Sofia"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ff0df4390be685aa",
+        "gw0e-1909e1154ad3ed7a",
+        "gw0e-6c99932cfc5b9ffc"
+      ],
+      "relation": "language",
+      "subject": "Bulgaria",
+      "target": "Bulgarian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-809185d49564ac33",
+        "gw0e-861f28339a6a362d",
+        "gw0e-c4c431460ff3f959"
+      ],
+      "relation": "capital",
+      "subject": "Chile",
+      "target": "Santiago"
+    },
+    {
+      "edge_ids": [
+        "gw0e-f44233e283801ff8",
+        "gw0e-4d18905bc8d8a1de",
+        "gw0e-6926f5a1ac3422a7"
+      ],
+      "relation": "capital",
+      "subject": "China",
+      "target": "Beijing"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b8653970abf4c1f3",
+        "gw0e-036c19a0f832fd3f",
+        "gw0e-f5abb646e989efcd"
+      ],
+      "relation": "currency",
+      "subject": "China",
+      "target": "Yuan"
+    },
+    {
+      "edge_ids": [
+        "gw0e-a8cf2df75d7f7457",
+        "gw0e-15ac4334492be5e0",
+        "gw0e-d6f25aa879628ebc"
+      ],
+      "relation": "language",
+      "subject": "Croatia",
+      "target": "Croatian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-5633fb50d7872af6",
+        "gw0e-372a358beaab0d4e",
+        "gw0e-fd78026696b314d8"
+      ],
+      "relation": "capital",
+      "subject": "Cuba",
+      "target": "Havana"
+    },
+    {
+      "edge_ids": [
+        "gw0e-7c07e66a029fbbd7",
+        "gw0e-7aa705550e6eb809",
+        "gw0e-2288c0b74ec3f63e"
+      ],
+      "relation": "capital",
+      "subject": "Denmark",
+      "target": "Copenhagen"
+    },
+    {
+      "edge_ids": [
+        "gw0e-f9b0fa6ec6b5c4c1",
+        "gw0e-b6ab3517c0a9f97c",
+        "gw0e-25db089b647b46b1"
+      ],
+      "relation": "currency",
+      "subject": "Denmark",
+      "target": "Krone"
+    },
+    {
+      "edge_ids": [
+        "gw0e-fbf47e678f5050bd",
+        "gw0e-6c396df83ca9d1cb",
+        "gw0e-1fc881780e6a3864"
+      ],
+      "relation": "language",
+      "subject": "Denmark",
+      "target": "Danish"
+    },
+    {
+      "edge_ids": [
+        "gw0e-de9269670903857d",
+        "gw0e-bc2dae92b1ac3330",
+        "gw0e-624831e83de7f210"
+      ],
+      "relation": "capital",
+      "subject": "Ecuador",
+      "target": "Quito"
+    },
+    {
+      "edge_ids": [
+        "gw0e-eb239c3ab3ad178e",
+        "gw0e-378abedbdf117c15",
+        "gw0e-e26945c00777000a"
+      ],
+      "relation": "capital",
+      "subject": "Egypt",
+      "target": "Cairo"
+    },
+    {
+      "edge_ids": [
+        "gw0e-975b1e7b596764b4",
+        "gw0e-11ab911027d0c973",
+        "gw0e-0351031c8f67b954"
+      ],
+      "relation": "language",
+      "subject": "Egypt",
+      "target": "Arabic"
+    },
+    {
+      "edge_ids": [
+        "gw0e-5d06bab020a59e3d",
+        "gw0e-b2d5aa711d1d26a8",
+        "gw0e-e5bf50d73461d572"
+      ],
+      "relation": "capital",
+      "subject": "Finland",
+      "target": "Helsinki"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ae439a1d7e43966a",
+        "gw0e-f7ea508e9e75e764",
+        "gw0e-aba0d6f48fabe3ce"
+      ],
+      "relation": "currency",
+      "subject": "Finland",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-6004c78bc4450f76",
+        "gw0e-68bc800a7e1970dd",
+        "gw0e-9628fcc654570419"
+      ],
+      "relation": "language",
+      "subject": "Finland",
+      "target": "Finnish"
+    },
+    {
+      "edge_ids": [
+        "gw0e-2b5dc75f4f9cd043",
+        "gw0e-f9b845a4a1931dfe",
+        "gw0e-204651bbb1555866"
+      ],
+      "relation": "capital",
+      "subject": "France",
+      "target": "Paris"
+    },
+    {
+      "edge_ids": [
+        "gw0e-6c13d0be0c7b612b",
+        "gw0e-7695f496f94a4de8",
+        "gw0e-b59ab4f50c0f1ac0"
+      ],
+      "relation": "currency",
+      "subject": "France",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-a13445ae0f66d7a7",
+        "gw0e-9b608d67d2278f8f",
+        "gw0e-adf32ba7131937c8"
+      ],
+      "relation": "language",
+      "subject": "France",
+      "target": "French"
+    },
+    {
+      "edge_ids": [
+        "gw0e-46c47557b0221ba4",
+        "gw0e-6e581df79a6c35da",
+        "gw0e-31948630abaf4e30"
+      ],
+      "relation": "capital",
+      "subject": "Germany",
+      "target": "Berlin"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1d82efed91f51fc3",
+        "gw0e-df8bff1b16ed7c17",
+        "gw0e-235b9dd7d87b2fe8"
+      ],
+      "relation": "currency",
+      "subject": "Germany",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-e12fe269774a0982",
+        "gw0e-75c8fa128f163108",
+        "gw0e-055c27da60268632"
+      ],
+      "relation": "language",
+      "subject": "Germany",
+      "target": "German"
+    },
+    {
+      "edge_ids": [
+        "gw0e-9c1b01f00db4dc38",
+        "gw0e-d04deaf0fa3d0540",
+        "gw0e-bbc057fa4e2a83ec"
+      ],
+      "relation": "capital",
+      "subject": "Ghana",
+      "target": "Accra"
+    },
+    {
+      "edge_ids": [
+        "gw0e-e636bfd7d6623c48",
+        "gw0e-07e3a91fab2dabb4",
+        "gw0e-661ca7552adf5f98"
+      ],
+      "relation": "currency",
+      "subject": "Ghana",
+      "target": "Cedi"
+    },
+    {
+      "edge_ids": [
+        "gw0e-682ec7e5a29d4ac2",
+        "gw0e-b81f84e3d0709bda",
+        "gw0e-29b39ca3f9cf8e04"
+      ],
+      "relation": "capital",
+      "subject": "Greece",
+      "target": "Athens"
+    },
+    {
+      "edge_ids": [
+        "gw0e-3be324afa6a7061e",
+        "gw0e-95bbd31e8882ca1a",
+        "gw0e-a0a174d0200a0b21"
+      ],
+      "relation": "currency",
+      "subject": "Greece",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-6fde44f001e6348e",
+        "gw0e-45b819369a421167",
+        "gw0e-d007bfbea5f67ae8"
+      ],
+      "relation": "language",
+      "subject": "Greece",
+      "target": "Greek"
+    },
+    {
+      "edge_ids": [
+        "gw0e-fef09dc8ab1a613a",
+        "gw0e-942acf36a40f1df7",
+        "gw0e-c09dd78d8d112121"
+      ],
+      "relation": "currency",
+      "subject": "Hungary",
+      "target": "Forint"
+    },
+    {
+      "edge_ids": [
+        "gw0e-4468391fae2a09b4",
+        "gw0e-2f49628996cf621f",
+        "gw0e-3db3917fe05921ef"
+      ],
+      "relation": "language",
+      "subject": "Hungary",
+      "target": "Hungarian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-21eaccff083ba613",
+        "gw0e-50b1fff85a8c421c",
+        "gw0e-e5a117936a5ef971"
+      ],
+      "relation": "currency",
+      "subject": "India",
+      "target": "Rupee"
+    },
+    {
+      "edge_ids": [
+        "gw0e-a18d885af4f8cdc6",
+        "gw0e-fdd4ee444054e4fd",
+        "gw0e-9e51d92c3680e7b2"
+      ],
+      "relation": "language",
+      "subject": "India",
+      "target": "Hindi"
+    },
+    {
+      "edge_ids": [
+        "gw0e-120a2f396c782946",
+        "gw0e-72179e5870186b0e",
+        "gw0e-e014b1c3eedc27e8"
+      ],
+      "relation": "currency",
+      "subject": "Indonesia",
+      "target": "Rupiah"
+    },
+    {
+      "edge_ids": [
+        "gw0e-eb9bfc89e03c6800",
+        "gw0e-c54b3604aba977f0",
+        "gw0e-b15cf30b12e8d0e5"
+      ],
+      "relation": "capital",
+      "subject": "Iran",
+      "target": "Tehran"
+    },
+    {
+      "edge_ids": [
+        "gw0e-af54428051074198",
+        "gw0e-75504e37ceb1f2a7",
+        "gw0e-3d91c1332ae9f3e1"
+      ],
+      "relation": "language",
+      "subject": "Iran",
+      "target": "Persian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-233397fe151dc935",
+        "gw0e-641979b215a75b25",
+        "gw0e-c2abf46d47d4db8f"
+      ],
+      "relation": "capital",
+      "subject": "Iraq",
+      "target": "Baghdad"
+    },
+    {
+      "edge_ids": [
+        "gw0e-da393e67cee575c8",
+        "gw0e-93e2ee2a7efbc592",
+        "gw0e-8e994e332e9d8204"
+      ],
+      "relation": "capital",
+      "subject": "Ireland",
+      "target": "Dublin"
+    },
+    {
+      "edge_ids": [
+        "gw0e-dd1b64934734775c",
+        "gw0e-57cf504b1ceb4daa",
+        "gw0e-b26c4cdcd05b1050"
+      ],
+      "relation": "currency",
+      "subject": "Ireland",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-694b12b0485bef8b",
+        "gw0e-fb70f0919a3b66a7",
+        "gw0e-26cdf84cc7e15a8f"
+      ],
+      "relation": "currency",
+      "subject": "Israel",
+      "target": "Shekel"
+    },
+    {
+      "edge_ids": [
+        "gw0e-f8fff070df6b1545",
+        "gw0e-520099340e05587b",
+        "gw0e-8f2b1412e436fe87"
+      ],
+      "relation": "language",
+      "subject": "Israel",
+      "target": "Hebrew"
+    },
+    {
+      "edge_ids": [
+        "gw0e-718f419d19df8a9c",
+        "gw0e-5872421668e90359",
+        "gw0e-4fb667b43b4e5741"
+      ],
+      "relation": "capital",
+      "subject": "Italy",
+      "target": "Rome"
+    },
+    {
+      "edge_ids": [
+        "gw0e-7bdf24a6b4f8b0a8",
+        "gw0e-0a4af97767b8653e",
+        "gw0e-0f65fba73608f868"
+      ],
+      "relation": "currency",
+      "subject": "Italy",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0e50e4ebe4d04afe",
+        "gw0e-96ee765893781b24",
+        "gw0e-db54d37ee788186e"
+      ],
+      "relation": "language",
+      "subject": "Italy",
+      "target": "Italian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-5f48535475a77d1b",
+        "gw0e-f7d476bb35cbc76e",
+        "gw0e-ed6086a1ec5664d7"
+      ],
+      "relation": "capital",
+      "subject": "Japan",
+      "target": "Tokyo"
+    },
+    {
+      "edge_ids": [
+        "gw0e-303c3b461eb876bb",
+        "gw0e-a57524c5602b3995",
+        "gw0e-adf0d7e612649738"
+      ],
+      "relation": "currency",
+      "subject": "Japan",
+      "target": "Yen"
+    },
+    {
+      "edge_ids": [
+        "gw0e-54eb99696adf3fd2",
+        "gw0e-4d8fd6e36ec9830a",
+        "gw0e-24bcf463ad7a5f26"
+      ],
+      "relation": "language",
+      "subject": "Japan",
+      "target": "Japanese"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b27a0441384f24d2",
+        "gw0e-d7d30222fb98e26b",
+        "gw0e-c9095f68764003cc"
+      ],
+      "relation": "capital",
+      "subject": "Jordan",
+      "target": "Amman"
+    },
+    {
+      "edge_ids": [
+        "gw0e-c214fdab4108ea49",
+        "gw0e-7a4707d6067fff5d",
+        "gw0e-d4866f3da873ea44"
+      ],
+      "relation": "capital",
+      "subject": "Kenya",
+      "target": "Nairobi"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0a8e7eed2b31f722",
+        "gw0e-a3b1c546f751c06c",
+        "gw0e-a10aec4b0dc28280"
+      ],
+      "relation": "currency",
+      "subject": "Kenya",
+      "target": "Shilling"
+    },
+    {
+      "edge_ids": [
+        "gw0e-d87a7aef21974829",
+        "gw0e-ec1c14197416d8d1",
+        "gw0e-dcd07010670e7a04"
+      ],
+      "relation": "capital",
+      "subject": "Lebanon",
+      "target": "Beirut"
+    },
+    {
+      "edge_ids": [
+        "gw0e-cddbd98139fe7351",
+        "gw0e-5b0504721487f728",
+        "gw0e-6e9d870700745e1a"
+      ],
+      "relation": "currency",
+      "subject": "Malaysia",
+      "target": "Ringgit"
+    },
+    {
+      "edge_ids": [
+        "gw0e-fa0c3104c138f919",
+        "gw0e-752bdcf8e72aeb81",
+        "gw0e-d27e6bced04c056b"
+      ],
+      "relation": "currency",
+      "subject": "Mexico",
+      "target": "Peso"
+    },
+    {
+      "edge_ids": [
+        "gw0e-8f38bc8a63eebbd4",
+        "gw0e-9ea91d0da5efa652",
+        "gw0e-6b4ae88767dcc99a"
+      ],
+      "relation": "capital",
+      "subject": "Morocco",
+      "target": "Rabat"
+    },
+    {
+      "edge_ids": [
+        "gw0e-69777429aa7c91ee",
+        "gw0e-c229d5063a5ee728",
+        "gw0e-19f09753262fb01b"
+      ],
+      "relation": "language",
+      "subject": "Morocco",
+      "target": "Arabic"
+    },
+    {
+      "edge_ids": [
+        "gw0e-deb07a152ff03d88",
+        "gw0e-5fbce10747b644af",
+        "gw0e-bbbbff4e5e4b4aa5"
+      ],
+      "relation": "language",
+      "subject": "Netherlands",
+      "target": "Dutch"
+    },
+    {
+      "edge_ids": [
+        "gw0e-8af5ffcf83e086a9",
+        "gw0e-f7b86137357eeea4",
+        "gw0e-27a34692ede16913"
+      ],
+      "relation": "capital",
+      "subject": "Nigeria",
+      "target": "Abuja"
+    },
+    {
+      "edge_ids": [
+        "gw0e-e124c1813b9831f4",
+        "gw0e-2e0db002400e00b3",
+        "gw0e-e40f8f039bd5a49c"
+      ],
+      "relation": "currency",
+      "subject": "Nigeria",
+      "target": "Naira"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0629f5396a71d0cf",
+        "gw0e-cbbcc86f0486ba02",
+        "gw0e-e2caccb5923fc4ff"
+      ],
+      "relation": "capital",
+      "subject": "Norway",
+      "target": "Oslo"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ced45ca6e36970fc",
+        "gw0e-d33c4134b831dd0c",
+        "gw0e-e230d67d598db642"
+      ],
+      "relation": "currency",
+      "subject": "Norway",
+      "target": "Krone"
+    },
+    {
+      "edge_ids": [
+        "gw0e-7f1d4f25f616fbda",
+        "gw0e-4a499afa884dd38b",
+        "gw0e-6a7406f44b1272ce"
+      ],
+      "relation": "language",
+      "subject": "Norway",
+      "target": "Norwegian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-f5681579ea649ace",
+        "gw0e-a1d2da297c5d0c41",
+        "gw0e-87eddd2aa4d7bbc4"
+      ],
+      "relation": "capital",
+      "subject": "Pakistan",
+      "target": "Islamabad"
+    },
+    {
+      "edge_ids": [
+        "gw0e-c11238ebf125c5ca",
+        "gw0e-958a34cf1c6bc279",
+        "gw0e-5a7fa710ec4f682f"
+      ],
+      "relation": "currency",
+      "subject": "Pakistan",
+      "target": "Rupee"
+    },
+    {
+      "edge_ids": [
+        "gw0e-6d5ce370373a9d29",
+        "gw0e-8943241398011179",
+        "gw0e-9bfb164633bea468"
+      ],
+      "relation": "capital",
+      "subject": "Peru",
+      "target": "Lima"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0dc43a3bba367bb0",
+        "gw0e-b09f9d610833f26b",
+        "gw0e-305e194220eb4821"
+      ],
+      "relation": "capital",
+      "subject": "Poland",
+      "target": "Warsaw"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ab52fb83f99ff349",
+        "gw0e-77f7886fc02f1606",
+        "gw0e-7ac17df2e6435725"
+      ],
+      "relation": "currency",
+      "subject": "Poland",
+      "target": "Zloty"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b80743f9f5e905ce",
+        "gw0e-cbe82d1a0d7e36d5",
+        "gw0e-3bf870e3abd59713"
+      ],
+      "relation": "language",
+      "subject": "Poland",
+      "target": "Polish"
+    },
+    {
+      "edge_ids": [
+        "gw0e-525d909bb9a6e940",
+        "gw0e-57ad88a6e70ce602",
+        "gw0e-afe8d382402ccfbf"
+      ],
+      "relation": "capital",
+      "subject": "Portugal",
+      "target": "Lisbon"
+    },
+    {
+      "edge_ids": [
+        "gw0e-6b01d0615092ae5a",
+        "gw0e-35a06724a104757c",
+        "gw0e-9659145d901f11dc"
+      ],
+      "relation": "currency",
+      "subject": "Portugal",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-44b205e156ea58e0",
+        "gw0e-caf1f56501395336",
+        "gw0e-b5eafc297b20fb4a"
+      ],
+      "relation": "language",
+      "subject": "Portugal",
+      "target": "Portuguese"
+    },
+    {
+      "edge_ids": [
+        "gw0e-d542b91bd3a06596",
+        "gw0e-e53152c02a071310",
+        "gw0e-fe00b893c1337a87"
+      ],
+      "relation": "capital",
+      "subject": "Qatar",
+      "target": "Doha"
+    },
+    {
+      "edge_ids": [
+        "gw0e-46e7831fa2db71a5",
+        "gw0e-3ef9a67e30096a79",
+        "gw0e-de64e03b4f662fdb"
+      ],
+      "relation": "language",
+      "subject": "Romania",
+      "target": "Romanian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-649f80024b76f69f",
+        "gw0e-f8527e6392f95e2a",
+        "gw0e-8b52f945184ff72b"
+      ],
+      "relation": "capital",
+      "subject": "Russia",
+      "target": "Moscow"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b5ab0e572a04022d",
+        "gw0e-cc18bdd1b22e9444",
+        "gw0e-2c4edca88874ad39"
+      ],
+      "relation": "currency",
+      "subject": "Russia",
+      "target": "Ruble"
+    },
+    {
+      "edge_ids": [
+        "gw0e-318eed19acd5a8f7",
+        "gw0e-84059fff69345fd6",
+        "gw0e-39c5d3288ae2cd9c"
+      ],
+      "relation": "language",
+      "subject": "Russia",
+      "target": "Russian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-a5b6d43e60e48368",
+        "gw0e-5c7879d5a2497c07",
+        "gw0e-ea4e0f0661d3d967"
+      ],
+      "relation": "currency",
+      "subject": "South Africa",
+      "target": "Rand"
+    },
+    {
+      "edge_ids": [
+        "gw0e-be397cd824124c4a",
+        "gw0e-8ad319fde02c738b",
+        "gw0e-637bdb2fd13d0d66"
+      ],
+      "relation": "currency",
+      "subject": "South Korea",
+      "target": "Won"
+    },
+    {
+      "edge_ids": [
+        "gw0e-086e55357527b9b5",
+        "gw0e-737c5ed59546e00a",
+        "gw0e-f3171a1b19e6c5bb"
+      ],
+      "relation": "language",
+      "subject": "South Korea",
+      "target": "Korean"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0af54cef8a32f491",
+        "gw0e-f02a86625ba68256",
+        "gw0e-fe800d35c3ebcb0d"
+      ],
+      "relation": "capital",
+      "subject": "Spain",
+      "target": "Madrid"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1f8a0c4846d2ff8f",
+        "gw0e-de277c197b9ea419",
+        "gw0e-b64565e82f8e5692"
+      ],
+      "relation": "currency",
+      "subject": "Spain",
+      "target": "Euro"
+    },
+    {
+      "edge_ids": [
+        "gw0e-12e2abd6e8807449",
+        "gw0e-8dc2fb3278bfa897",
+        "gw0e-539ce6f132320bde"
+      ],
+      "relation": "language",
+      "subject": "Spain",
+      "target": "Spanish"
+    },
+    {
+      "edge_ids": [
+        "gw0e-794d4753174e6dec",
+        "gw0e-01487f23dc3b50e5",
+        "gw0e-25ea225b5c6055ab"
+      ],
+      "relation": "capital",
+      "subject": "Sweden",
+      "target": "Stockholm"
+    },
+    {
+      "edge_ids": [
+        "gw0e-072cd4e31e3b0158",
+        "gw0e-3a1e6c72baa2e839",
+        "gw0e-b7d07081fe5c5c65"
+      ],
+      "relation": "currency",
+      "subject": "Sweden",
+      "target": "Krona"
+    },
+    {
+      "edge_ids": [
+        "gw0e-44d403446b01f32c",
+        "gw0e-d803529b69d31072",
+        "gw0e-451c7860dd078743"
+      ],
+      "relation": "language",
+      "subject": "Sweden",
+      "target": "Swedish"
+    },
+    {
+      "edge_ids": [
+        "gw0e-cf47700431e32502",
+        "gw0e-b7d2c4ea0a871d1c",
+        "gw0e-4748799ad07e807b"
+      ],
+      "relation": "currency",
+      "subject": "Switzerland",
+      "target": "Franc"
+    },
+    {
+      "edge_ids": [
+        "gw0e-497fe05282d57c55",
+        "gw0e-345c1a8d60d5aaa8",
+        "gw0e-37cf4414a8d5e91e"
+      ],
+      "relation": "capital",
+      "subject": "Thailand",
+      "target": "Bangkok"
+    },
+    {
+      "edge_ids": [
+        "gw0e-9435c881621c2a2c",
+        "gw0e-ca5c249a68ddec7e",
+        "gw0e-0bb09ce944922baa"
+      ],
+      "relation": "currency",
+      "subject": "Thailand",
+      "target": "Baht"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ed6d4d97d422d5ea",
+        "gw0e-c556d90d1d2fceb2",
+        "gw0e-580b45b1dd1b6576"
+      ],
+      "relation": "language",
+      "subject": "Thailand",
+      "target": "Thai"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ae310afb61ecb3ad",
+        "gw0e-3334087335df1cab",
+        "gw0e-2ff33fa61e59af4b"
+      ],
+      "relation": "capital",
+      "subject": "Tunisia",
+      "target": "Tunis"
+    },
+    {
+      "edge_ids": [
+        "gw0e-9af5acc1747da4cb",
+        "gw0e-0c87141cc1e2ff98",
+        "gw0e-b4ea123cf9ee57ab"
+      ],
+      "relation": "capital",
+      "subject": "Turkey",
+      "target": "Ankara"
+    },
+    {
+      "edge_ids": [
+        "gw0e-2d20832c40d316b3",
+        "gw0e-214c777eb287a629",
+        "gw0e-0a0f45ba70f9bc02"
+      ],
+      "relation": "currency",
+      "subject": "Turkey",
+      "target": "Lira"
+    },
+    {
+      "edge_ids": [
+        "gw0e-a0acc300e22859c3",
+        "gw0e-57aae34f1590c543",
+        "gw0e-f5b1cebd2f8da140"
+      ],
+      "relation": "language",
+      "subject": "Turkey",
+      "target": "Turkish"
+    },
+    {
+      "edge_ids": [
+        "gw0e-de8fe993bbcf56b8",
+        "gw0e-d2e2e5f74d0e7411",
+        "gw0e-c61db6b5d738955c"
+      ],
+      "relation": "language",
+      "subject": "Ukraine",
+      "target": "Ukrainian"
+    },
+    {
+      "edge_ids": [
+        "gw0e-61281288a8f27081",
+        "gw0e-810008120b7355ad",
+        "gw0e-f03f950db61c9960"
+      ],
+      "relation": "capital",
+      "subject": "Vietnam",
+      "target": "Hanoi"
+    },
+    {
+      "edge_ids": [
+        "gw0e-11913b8c5572560f",
+        "gw0e-20da3af8e2837c66",
+        "gw0e-561040944a8a9d53"
+      ],
+      "relation": "currency",
+      "subject": "Vietnam",
+      "target": "Dong"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1c45ecf77adf08d3",
+        "gw0e-eeeca0c8243c6f22",
+        "gw0e-192c49d695724638"
+      ],
+      "relation": "language",
+      "subject": "Vietnam",
+      "target": "Vietnamese"
+    },
+    {
+      "edge_ids": [
+        "gw0e-3c149bda4b07e1a5",
+        "gw0e-5905a51ee9a8da97",
+        "gw0e-7dbad5f15b84ec31"
+      ],
+      "relation": "hypernym",
+      "subject": "attempt",
+      "target": "activity"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1d40a93230c1c5bc",
+        "gw0e-54a1d4fbe1ae8fb1",
+        "gw0e-f3ccfd698eb4207e"
+      ],
+      "relation": "hypernym",
+      "subject": "barbarization",
+      "target": "degradation"
+    },
+    {
+      "edge_ids": [
+        "gw0e-61c2d2b54a7a73bc",
+        "gw0e-bd7334fdee08d681",
+        "gw0e-1252195b55a7735b"
+      ],
+      "relation": "hypernym",
+      "subject": "bathe",
+      "target": "swimming"
+    },
+    {
+      "edge_ids": [
+        "gw0e-547116fe002a8257",
+        "gw0e-4309f3e59c5cef29",
+        "gw0e-56c667a7ed2c4760"
+      ],
+      "relation": "hypernym",
+      "subject": "bodybuilding",
+      "target": "exercise"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b02d77f6a40ec4af",
+        "gw0e-3ef4891bd0e7ab5f",
+        "gw0e-514efb1b341159d5"
+      ],
+      "relation": "hypernym",
+      "subject": "browse",
+      "target": "eating"
+    },
+    {
+      "edge_ids": [
+        "gw0e-1738a7f86b3f5a66",
+        "gw0e-ce81e15c526c764a",
+        "gw0e-1e252d4473c0c5db"
+      ],
+      "relation": "hypernym",
+      "subject": "catharsis",
+      "target": "purge"
+    },
+    {
+      "edge_ids": [
+        "gw0e-4f691252bd18d2bb",
+        "gw0e-90a87e427bec43fd",
+        "gw0e-98540a6ccea7da72"
+      ],
+      "relation": "hypernym",
+      "subject": "cautery",
+      "target": "operation"
+    },
+    {
+      "edge_ids": [
+        "gw0e-7cacc984d197b2d9",
+        "gw0e-14a27c4ef6fb2a63",
+        "gw0e-22b9484b54407963"
+      ],
+      "relation": "hypernym",
+      "subject": "chop",
+      "target": "return"
+    },
+    {
+      "edge_ids": [
+        "gw0e-8e9aa68057097cf9",
+        "gw0e-c35c413698047cbc",
+        "gw0e-a1608e8fd7f21ff8"
+      ],
+      "relation": "hypernym",
+      "subject": "countermarch",
+      "target": "march"
+    },
+    {
+      "edge_ids": [
+        "gw0e-45b28f12afe23ca5",
+        "gw0e-0af56131f9bb4fd4",
+        "gw0e-c56a6eb43e85ea7c"
+      ],
+      "relation": "hypernym",
+      "subject": "dichotomization",
+      "target": "division"
+    },
+    {
+      "edge_ids": [
+        "gw0e-abc7fe3f5e68f031",
+        "gw0e-01e40b27f3d6b605",
+        "gw0e-8bc2c704a196b45b"
+      ],
+      "relation": "hypernym",
+      "subject": "diversification",
+      "target": "change"
+    },
+    {
+      "edge_ids": [
+        "gw0e-eb5b718eea5b99af",
+        "gw0e-6b1d090d8cb68b3d",
+        "gw0e-8c50b66f91cc401d"
+      ],
+      "relation": "hypernym",
+      "subject": "editorship",
+      "target": "position"
+    },
+    {
+      "edge_ids": [
+        "gw0e-3de99bfceabad621",
+        "gw0e-c393ac497d61e59d",
+        "gw0e-2c7bf6b8a218b120"
+      ],
+      "relation": "hypernym",
+      "subject": "exacta",
+      "target": "bet"
+    },
+    {
+      "edge_ids": [
+        "gw0e-960272f4c63be903",
+        "gw0e-5458537e2619a9f6",
+        "gw0e-18b07ca3fa847c4f"
+      ],
+      "relation": "hypernym",
+      "subject": "exit",
+      "target": "departure"
+    },
+    {
+      "edge_ids": [
+        "gw0e-4549628b22d1fc46",
+        "gw0e-d3c2d8522665a5ca",
+        "gw0e-307aaffb26a82b0f"
+      ],
+      "relation": "hypernym",
+      "subject": "fall",
+      "target": "sin"
+    },
+    {
+      "edge_ids": [
+        "gw0e-0491724d6769414c",
+        "gw0e-7e3802859aeab2b9",
+        "gw0e-1b9ffff5339a84c8"
+      ],
+      "relation": "hypernym",
+      "subject": "fell",
+      "target": "killing"
+    },
+    {
+      "edge_ids": [
+        "gw0e-9d7d7421bfb34030",
+        "gw0e-c851a87c60898df3",
+        "gw0e-f226571670cd85b9"
+      ],
+      "relation": "hypernym",
+      "subject": "fielding",
+      "target": "handling"
+    },
+    {
+      "edge_ids": [
+        "gw0e-53aacacf356fc693",
+        "gw0e-f71af80123c239c3",
+        "gw0e-14d3531c207b84e7"
+      ],
+      "relation": "hypernym",
+      "subject": "hustings",
+      "target": "campaigning"
+    },
+    {
+      "edge_ids": [
+        "gw0e-d018e12852eae4c2",
+        "gw0e-161162e293950f87",
+        "gw0e-35f8da337b46921c"
+      ],
+      "relation": "hypernym",
+      "subject": "hybridization",
+      "target": "coupling"
+    },
+    {
+      "edge_ids": [
+        "gw0e-d4acf9fb96e141da",
+        "gw0e-c5f52cdb36f044a3",
+        "gw0e-e181fc809be79f25"
+      ],
+      "relation": "hypernym",
+      "subject": "immolation",
+      "target": "sacrifice"
+    },
+    {
+      "edge_ids": [
+        "gw0e-3ab785972e7990f7",
+        "gw0e-ccd9e81a4d1f4011",
+        "gw0e-9d5150d69af213a7"
+      ],
+      "relation": "hypernym",
+      "subject": "incineration",
+      "target": "burning"
+    },
+    {
+      "edge_ids": [
+        "gw0e-e73bf61831c47925",
+        "gw0e-75a5b686162740ac",
+        "gw0e-167eb7a03b7992d0"
+      ],
+      "relation": "hypernym",
+      "subject": "induction",
+      "target": "introduction"
+    },
+    {
+      "edge_ids": [
+        "gw0e-2bb419a557c25ce1",
+        "gw0e-9107c1265733bf19",
+        "gw0e-ffdb00b1b278a495"
+      ],
+      "relation": "hypernym",
+      "subject": "inspection",
+      "target": "examination"
+    },
+    {
+      "edge_ids": [
+        "gw0e-057f1b8971620287",
+        "gw0e-56344cd7ef1ff267",
+        "gw0e-3ac82f343aab1433"
+      ],
+      "relation": "hypernym",
+      "subject": "knuckleball",
+      "target": "pitch"
+    },
+    {
+      "edge_ids": [
+        "gw0e-059f1ec2a8fa2ac9",
+        "gw0e-28aea877b9d91f22",
+        "gw0e-ccaf03fb8bd99dd4"
+      ],
+      "relation": "hypernym",
+      "subject": "laundering",
+      "target": "wash"
+    },
+    {
+      "edge_ids": [
+        "gw0e-ca489f88c534f1f8",
+        "gw0e-cef26dc55418408d",
+        "gw0e-ba8a1e1e1235abad"
+      ],
+      "relation": "hypernym",
+      "subject": "leapfrog",
+      "target": "progress"
+    },
+    {
+      "edge_ids": [
+        "gw0e-e2797375cd9317b3",
+        "gw0e-5edc48d8169c3a10",
+        "gw0e-b7c792a84ae10994"
+      ],
+      "relation": "hypernym",
+      "subject": "liner",
+      "target": "fly"
+    },
+    {
+      "edge_ids": [
+        "gw0e-89ddb441f2c9ee97",
+        "gw0e-32cd2a7c1bdcbdd8",
+        "gw0e-df57f6203ab20374"
+      ],
+      "relation": "hypernym",
+      "subject": "malpractice",
+      "target": "wrongdoing"
+    },
+    {
+      "edge_ids": [
+        "gw0e-2814ad999199f9ed",
+        "gw0e-54a489facbae410b",
+        "gw0e-36781bddaff4decd"
+      ],
+      "relation": "hypernym",
+      "subject": "manhood",
+      "target": "position"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b97552004783e42c",
+        "gw0e-6dc91d9c59932ca7",
+        "gw0e-3fc09016758cbfc1"
+      ],
+      "relation": "hypernym",
+      "subject": "moderation",
+      "target": "decrease"
+    },
+    {
+      "edge_ids": [
+        "gw0e-3d4b6524a258f068",
+        "gw0e-ac5380922332c436",
+        "gw0e-de3d12756f4c6c08"
+      ],
+      "relation": "hypernym",
+      "subject": "neurosurgery",
+      "target": "operation"
+    },
+    {
+      "edge_ids": [
+        "gw0e-c2d48acdf6239f2d",
+        "gw0e-03afa06673c64968",
+        "gw0e-f092e4dd86042c1a"
+      ],
+      "relation": "hypernym",
+      "subject": "overhead",
+      "target": "return"
+    },
+    {
+      "edge_ids": [
+        "gw0e-4e1d65fbe287b23a",
+        "gw0e-be8e3b7a48a07a02",
+        "gw0e-7b0e4d51428b8d29"
+      ],
+      "relation": "hypernym",
+      "subject": "paperwork",
+      "target": "work"
+    },
+    {
+      "edge_ids": [
+        "gw0e-3eb030b9efa0f378",
+        "gw0e-3468338413847f5f",
+        "gw0e-78075b859c249249"
+      ],
+      "relation": "hypernym",
+      "subject": "precaution",
+      "target": "measure"
+    },
+    {
+      "edge_ids": [
+        "gw0e-fd08ddadd360d945",
+        "gw0e-e41b77ad086308bd",
+        "gw0e-af17548df0e55e6d"
+      ],
+      "relation": "hypernym",
+      "subject": "putout",
+      "target": "out"
+    },
+    {
+      "edge_ids": [
+        "gw0e-422c0d81ff6d4121",
+        "gw0e-8d5b7f55881b85fc",
+        "gw0e-0f9816711fea186e"
+      ],
+      "relation": "hypernym",
+      "subject": "ringer",
+      "target": "throw"
+    },
+    {
+      "edge_ids": [
+        "gw0e-b57cb306ee589c3e",
+        "gw0e-a53c2690edb5bed3",
+        "gw0e-eddf2cb1dfdcc5c4"
+      ],
+      "relation": "hypernym",
+      "subject": "starter",
+      "target": "culture"
+    },
+    {
+      "edge_ids": [
+        "gw0e-c5017ab862071c25",
+        "gw0e-9ecc4f7264f86d85",
+        "gw0e-b0b622e2e1d211d2"
+      ],
+      "relation": "hypernym",
+      "subject": "surprise",
+      "target": "disruption"
+    },
+    {
+      "edge_ids": [
+        "gw0e-a759b5b97208b3a4",
+        "gw0e-85295c9406fa21b0",
+        "gw0e-5a73868edf1377f4"
+      ],
+      "relation": "hypernym",
+      "subject": "tickle",
+      "target": "touch"
+    },
+    {
+      "edge_ids": [
+        "gw0e-40f6bfe9fdfddc2e",
+        "gw0e-32032de53c2b3b49",
+        "gw0e-4acc1786e6fa8519"
+      ],
+      "relation": "hypernym",
+      "subject": "wheeze",
+      "target": "breathing"
+    }
+  ],
+  "schema": "larql.gwsup1.candidates.v1",
+  "source": {
+    "input_manifest_sha256": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c",
+    "input_rows_sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+  },
+  "subjects": [
+    {
+      "candidate_token_ids": [
+        101301
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Kabul",
+          "target_token_id": 101301
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Afghanistan"
+    },
+    {
+      "candidate_token_ids": [
+        1429
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Algiers",
+          "target_token_id": 1429
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Algeria"
+    },
+    {
+      "candidate_token_ids": [
+        9115,
+        16152,
+        34493
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Vienna",
+          "target_token_id": 34493
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "German",
+          "target_token_id": 9115
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Austria"
+    },
+    {
+      "candidate_token_ids": [
+        558
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Taka",
+          "target_token_id": 558
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Bangladesh"
+    },
+    {
+      "candidate_token_ids": [
+        10170,
+        41082
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Real",
+          "target_token_id": 10170
+        },
+        {
+          "relation": "language",
+          "target": "Portuguese",
+          "target_token_id": 41082
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Brazil"
+    },
+    {
+      "candidate_token_ids": [
+        67071,
+        84172
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Sofia",
+          "target_token_id": 67071
+        },
+        {
+          "relation": "language",
+          "target": "Bulgarian",
+          "target_token_id": 84172
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Bulgaria"
+    },
+    {
+      "candidate_token_ids": [
+        44554
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Santiago",
+          "target_token_id": 44554
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Chile"
+    },
+    {
+      "candidate_token_ids": [
+        30530,
+        54409
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Beijing",
+          "target_token_id": 30530
+        },
+        {
+          "relation": "currency",
+          "target": "Yuan",
+          "target_token_id": 54409
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "China"
+    },
+    {
+      "candidate_token_ids": [
+        100811
+      ],
+      "edges": [
+        {
+          "relation": "language",
+          "target": "Croatian",
+          "target_token_id": 100811
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Croatia"
+    },
+    {
+      "candidate_token_ids": [
+        99162
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Havana",
+          "target_token_id": 99162
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Cuba"
+    },
+    {
+      "candidate_token_ids": [
+        46553,
+        68063,
+        155054
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Copenhagen",
+          "target_token_id": 68063
+        },
+        {
+          "relation": "currency",
+          "target": "Krone",
+          "target_token_id": 155054
+        },
+        {
+          "relation": "language",
+          "target": "Danish",
+          "target_token_id": 46553
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Denmark"
+    },
+    {
+      "candidate_token_ids": [
+        152389
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Quito",
+          "target_token_id": 152389
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Ecuador"
+    },
+    {
+      "candidate_token_ids": [
+        37369,
+        59546
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Cairo",
+          "target_token_id": 59546
+        },
+        {
+          "relation": "language",
+          "target": "Arabic",
+          "target_token_id": 37369
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Egypt"
+    },
+    {
+      "candidate_token_ids": [
+        16152,
+        72398,
+        74520
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Helsinki",
+          "target_token_id": 74520
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "Finnish",
+          "target_token_id": 72398
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Finland"
+    },
+    {
+      "candidate_token_ids": [
+        7830,
+        9079,
+        16152
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Paris",
+          "target_token_id": 9079
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "French",
+          "target_token_id": 7830
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "France"
+    },
+    {
+      "candidate_token_ids": [
+        9115,
+        15687,
+        16152
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Berlin",
+          "target_token_id": 15687
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "German",
+          "target_token_id": 9115
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Germany"
+    },
+    {
+      "candidate_token_ids": [
+        565,
+        111407
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Accra",
+          "target_token_id": 111407
+        },
+        {
+          "relation": "currency",
+          "target": "Cedi",
+          "target_token_id": 565
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Ghana"
+    },
+    {
+      "candidate_token_ids": [
+        16152,
+        16470,
+        43594
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Athens",
+          "target_token_id": 43594
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "Greek",
+          "target_token_id": 16470
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Greece"
+    },
+    {
+      "candidate_token_ids": [
+        1701,
+        54930
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Forint",
+          "target_token_id": 1701
+        },
+        {
+          "relation": "language",
+          "target": "Hungarian",
+          "target_token_id": 54930
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Hungary"
+    },
+    {
+      "candidate_token_ids": [
+        18642,
+        18704
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Rupee",
+          "target_token_id": 18704
+        },
+        {
+          "relation": "language",
+          "target": "Hindi",
+          "target_token_id": 18642
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "India"
+    },
+    {
+      "candidate_token_ids": [
+        109420
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Rupiah",
+          "target_token_id": 109420
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Indonesia"
+    },
+    {
+      "candidate_token_ids": [
+        52825,
+        84401
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Tehran",
+          "target_token_id": 84401
+        },
+        {
+          "relation": "language",
+          "target": "Persian",
+          "target_token_id": 52825
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Iran"
+    },
+    {
+      "candidate_token_ids": [
+        104349
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Baghdad",
+          "target_token_id": 104349
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Iraq"
+    },
+    {
+      "candidate_token_ids": [
+        16152,
+        27071
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Dublin",
+          "target_token_id": 27071
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Ireland"
+    },
+    {
+      "candidate_token_ids": [
+        2625,
+        51878
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Shekel",
+          "target_token_id": 2625
+        },
+        {
+          "relation": "language",
+          "target": "Hebrew",
+          "target_token_id": 51878
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Israel"
+    },
+    {
+      "candidate_token_ids": [
+        12896,
+        13706,
+        16152
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Rome",
+          "target_token_id": 13706
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "Italian",
+          "target_token_id": 12896
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Italy"
+    },
+    {
+      "candidate_token_ids": [
+        12139,
+        21038,
+        81027
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Tokyo",
+          "target_token_id": 21038
+        },
+        {
+          "relation": "currency",
+          "target": "Yen",
+          "target_token_id": 81027
+        },
+        {
+          "relation": "language",
+          "target": "Japanese",
+          "target_token_id": 12139
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Japan"
+    },
+    {
+      "candidate_token_ids": [
+        167876
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Amman",
+          "target_token_id": 167876
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Jordan"
+    },
+    {
+      "candidate_token_ids": [
+        1705,
+        69628
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Nairobi",
+          "target_token_id": 69628
+        },
+        {
+          "relation": "currency",
+          "target": "Shilling",
+          "target_token_id": 1705
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Kenya"
+    },
+    {
+      "candidate_token_ids": [
+        117942
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Beirut",
+          "target_token_id": 117942
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Lebanon"
+    },
+    {
+      "candidate_token_ids": [
+        26966
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Ringgit",
+          "target_token_id": 26966
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Malaysia"
+    },
+    {
+      "candidate_token_ids": [
+        134806
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Peso",
+          "target_token_id": 134806
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Mexico"
+    },
+    {
+      "candidate_token_ids": [
+        37369,
+        207186
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Rabat",
+          "target_token_id": 207186
+        },
+        {
+          "relation": "language",
+          "target": "Arabic",
+          "target_token_id": 37369
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Morocco"
+    },
+    {
+      "candidate_token_ids": [
+        23196
+      ],
+      "edges": [
+        {
+          "relation": "language",
+          "target": "Dutch",
+          "target_token_id": 23196
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Netherlands"
+    },
+    {
+      "candidate_token_ids": [
+        82029,
+        210682
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Abuja",
+          "target_token_id": 82029
+        },
+        {
+          "relation": "currency",
+          "target": "Naira",
+          "target_token_id": 210682
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Nigeria"
+    },
+    {
+      "candidate_token_ids": [
+        47524,
+        68912,
+        155054
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Oslo",
+          "target_token_id": 68912
+        },
+        {
+          "relation": "currency",
+          "target": "Krone",
+          "target_token_id": 155054
+        },
+        {
+          "relation": "language",
+          "target": "Norwegian",
+          "target_token_id": 47524
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Norway"
+    },
+    {
+      "candidate_token_ids": [
+        18704,
+        111742
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Islamabad",
+          "target_token_id": 111742
+        },
+        {
+          "relation": "currency",
+          "target": "Rupee",
+          "target_token_id": 18704
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Pakistan"
+    },
+    {
+      "candidate_token_ids": [
+        49830
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Lima",
+          "target_token_id": 49830
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Peru"
+    },
+    {
+      "candidate_token_ids": [
+        1491,
+        32968,
+        60671
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Warsaw",
+          "target_token_id": 60671
+        },
+        {
+          "relation": "currency",
+          "target": "Zloty",
+          "target_token_id": 1491
+        },
+        {
+          "relation": "language",
+          "target": "Polish",
+          "target_token_id": 32968
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Poland"
+    },
+    {
+      "candidate_token_ids": [
+        16152,
+        41082,
+        72449
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Lisbon",
+          "target_token_id": 72449
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "Portuguese",
+          "target_token_id": 41082
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Portugal"
+    },
+    {
+      "candidate_token_ids": [
+        109058
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Doha",
+          "target_token_id": 109058
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Qatar"
+    },
+    {
+      "candidate_token_ids": [
+        75680
+      ],
+      "edges": [
+        {
+          "relation": "language",
+          "target": "Romanian",
+          "target_token_id": 75680
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Romania"
+    },
+    {
+      "candidate_token_ids": [
+        9203,
+        16339,
+        18749
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Moscow",
+          "target_token_id": 18749
+        },
+        {
+          "relation": "currency",
+          "target": "Ruble",
+          "target_token_id": 16339
+        },
+        {
+          "relation": "language",
+          "target": "Russian",
+          "target_token_id": 9203
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Russia"
+    },
+    {
+      "candidate_token_ids": [
+        30464
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Rand",
+          "target_token_id": 30464
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "South Africa"
+    },
+    {
+      "candidate_token_ids": [
+        21568,
+        57770
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Won",
+          "target_token_id": 57770
+        },
+        {
+          "relation": "language",
+          "target": "Korean",
+          "target_token_id": 21568
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "South Korea"
+    },
+    {
+      "candidate_token_ids": [
+        14361,
+        16152,
+        19627
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Madrid",
+          "target_token_id": 19627
+        },
+        {
+          "relation": "currency",
+          "target": "Euro",
+          "target_token_id": 16152
+        },
+        {
+          "relation": "language",
+          "target": "Spanish",
+          "target_token_id": 14361
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Spain"
+    },
+    {
+      "candidate_token_ids": [
+        38431,
+        54206,
+        85758
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Stockholm",
+          "target_token_id": 54206
+        },
+        {
+          "relation": "currency",
+          "target": "Krona",
+          "target_token_id": 85758
+        },
+        {
+          "relation": "language",
+          "target": "Swedish",
+          "target_token_id": 38431
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Sweden"
+    },
+    {
+      "candidate_token_ids": [
+        8087
+      ],
+      "edges": [
+        {
+          "relation": "currency",
+          "target": "Franc",
+          "target_token_id": 8087
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Switzerland"
+    },
+    {
+      "candidate_token_ids": [
+        8475,
+        28991,
+        50214
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Bangkok",
+          "target_token_id": 50214
+        },
+        {
+          "relation": "currency",
+          "target": "Baht",
+          "target_token_id": 8475
+        },
+        {
+          "relation": "language",
+          "target": "Thai",
+          "target_token_id": 28991
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Thailand"
+    },
+    {
+      "candidate_token_ids": [
+        159353
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Tunis",
+          "target_token_id": 159353
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Tunisia"
+    },
+    {
+      "candidate_token_ids": [
+        639,
+        30395,
+        80554
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Ankara",
+          "target_token_id": 80554
+        },
+        {
+          "relation": "currency",
+          "target": "Lira",
+          "target_token_id": 639
+        },
+        {
+          "relation": "language",
+          "target": "Turkish",
+          "target_token_id": 30395
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Turkey"
+    },
+    {
+      "candidate_token_ids": [
+        32774
+      ],
+      "edges": [
+        {
+          "relation": "language",
+          "target": "Ukrainian",
+          "target_token_id": 32774
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "Ukraine"
+    },
+    {
+      "candidate_token_ids": [
+        47200,
+        56773,
+        112171
+      ],
+      "edges": [
+        {
+          "relation": "capital",
+          "target": "Hanoi",
+          "target_token_id": 112171
+        },
+        {
+          "relation": "currency",
+          "target": "Dong",
+          "target_token_id": 47200
+        },
+        {
+          "relation": "language",
+          "target": "Vietnamese",
+          "target_token_id": 56773
+        }
+      ],
+      "primary_multi_destination": true,
+      "subject": "Vietnam"
+    },
+    {
+      "candidate_token_ids": [
+        4588
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "activity",
+          "target_token_id": 4588
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "attempt"
+    },
+    {
+      "candidate_token_ids": [
+        28237
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "degradation",
+          "target_token_id": 28237
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "barbarization"
+    },
+    {
+      "candidate_token_ids": [
+        16820
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "swimming",
+          "target_token_id": 16820
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "bathe"
+    },
+    {
+      "candidate_token_ids": [
+        8774
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "exercise",
+          "target_token_id": 8774
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "bodybuilding"
+    },
+    {
+      "candidate_token_ids": [
+        11293
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "eating",
+          "target_token_id": 11293
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "browse"
+    },
+    {
+      "candidate_token_ids": [
+        103662
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "purge",
+          "target_token_id": 103662
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "catharsis"
+    },
+    {
+      "candidate_token_ids": [
+        5585
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "operation",
+          "target_token_id": 5585
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "cautery"
+    },
+    {
+      "candidate_token_ids": [
+        994
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "return",
+          "target_token_id": 994
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "chop"
+    },
+    {
+      "candidate_token_ids": [
+        14868
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "march",
+          "target_token_id": 14868
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "countermarch"
+    },
+    {
+      "candidate_token_ids": [
+        11247
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "division",
+          "target_token_id": 11247
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "dichotomization"
+    },
+    {
+      "candidate_token_ids": [
+        2352
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "change",
+          "target_token_id": 2352
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "diversification"
+    },
+    {
+      "candidate_token_ids": [
+        2939
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "position",
+          "target_token_id": 2939
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "editorship"
+    },
+    {
+      "candidate_token_ids": [
+        1146
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "bet",
+          "target_token_id": 1146
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "exacta"
+    },
+    {
+      "candidate_token_ids": [
+        27197
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "departure",
+          "target_token_id": 27197
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "exit"
+    },
+    {
+      "candidate_token_ids": [
+        4343
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "sin",
+          "target_token_id": 4343
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "fall"
+    },
+    {
+      "candidate_token_ids": [
+        18905
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "killing",
+          "target_token_id": 18905
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "fell"
+    },
+    {
+      "candidate_token_ids": [
+        12804
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "handling",
+          "target_token_id": 12804
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "fielding"
+    },
+    {
+      "candidate_token_ids": [
+        102425
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "campaigning",
+          "target_token_id": 102425
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "hustings"
+    },
+    {
+      "candidate_token_ids": [
+        19299
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "coupling",
+          "target_token_id": 19299
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "hybridization"
+    },
+    {
+      "candidate_token_ids": [
+        29817
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "sacrifice",
+          "target_token_id": 29817
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "immolation"
+    },
+    {
+      "candidate_token_ids": [
+        18830
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "burning",
+          "target_token_id": 18830
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "incineration"
+    },
+    {
+      "candidate_token_ids": [
+        12650
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "introduction",
+          "target_token_id": 12650
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "induction"
+    },
+    {
+      "candidate_token_ids": [
+        12644
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "examination",
+          "target_token_id": 12644
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "inspection"
+    },
+    {
+      "candidate_token_ids": [
+        12861
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "pitch",
+          "target_token_id": 12861
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "knuckleball"
+    },
+    {
+      "candidate_token_ids": [
+        15066
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "wash",
+          "target_token_id": 15066
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "laundering"
+    },
+    {
+      "candidate_token_ids": [
+        5609
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "progress",
+          "target_token_id": 5609
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "leapfrog"
+    },
+    {
+      "candidate_token_ids": [
+        10240
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "fly",
+          "target_token_id": 10240
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "liner"
+    },
+    {
+      "candidate_token_ids": [
+        128823
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "wrongdoing",
+          "target_token_id": 128823
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "malpractice"
+    },
+    {
+      "candidate_token_ids": [
+        2939
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "position",
+          "target_token_id": 2939
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "manhood"
+    },
+    {
+      "candidate_token_ids": [
+        11086
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "decrease",
+          "target_token_id": 11086
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "moderation"
+    },
+    {
+      "candidate_token_ids": [
+        5585
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "operation",
+          "target_token_id": 5585
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "neurosurgery"
+    },
+    {
+      "candidate_token_ids": [
+        994
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "return",
+          "target_token_id": 994
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "overhead"
+    },
+    {
+      "candidate_token_ids": [
+        981
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "work",
+          "target_token_id": 981
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "paperwork"
+    },
+    {
+      "candidate_token_ids": [
+        4113
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "measure",
+          "target_token_id": 4113
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "precaution"
+    },
+    {
+      "candidate_token_ids": [
+        855
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "out",
+          "target_token_id": 855
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "putout"
+    },
+    {
+      "candidate_token_ids": [
+        6184
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "throw",
+          "target_token_id": 6184
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "ringer"
+    },
+    {
+      "candidate_token_ids": [
+        6540
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "culture",
+          "target_token_id": 6540
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "starter"
+    },
+    {
+      "candidate_token_ids": [
+        38484
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "disruption",
+          "target_token_id": 38484
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "surprise"
+    },
+    {
+      "candidate_token_ids": [
+        6374
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "touch",
+          "target_token_id": 6374
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "tickle"
+    },
+    {
+      "candidate_token_ids": [
+        25638
+      ],
+      "edges": [
+        {
+          "relation": "hypernym",
+          "target": "breathing",
+          "target_token_id": 25638
+        }
+      ],
+      "primary_multi_destination": false,
+      "subject": "wheeze"
+    }
+  ]
+}

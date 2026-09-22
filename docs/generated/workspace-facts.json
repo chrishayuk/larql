@@ -686,6 +686,14 @@
           "path": "examples/server/shard_query_demo.rs"
         },
         {
+          "name": "observatory_record",
+          "path": "examples/inference/observatory_record.rs"
+        },
+        {
+          "name": "attr1d_witness",
+          "path": "examples/inference/attr1d_witness.rs"
+        },
+        {
           "name": "demo_features",
           "path": "examples/vindex/demo_features.rs"
         },

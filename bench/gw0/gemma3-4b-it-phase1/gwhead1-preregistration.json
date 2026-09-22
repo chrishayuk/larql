@@ -1,0 +1,236 @@
+{
+  "adjudication": {
+    "causal_head_subset": "structural AND replication AND necessity AND sufficiency",
+    "concentrated_causal_head_subset": "causal_head_subset AND cardinality <= 4",
+    "necessity": "for the frozen global S, lower 95% bounds of N(S) are above zero for raw and z-scored candidate alignment on validation and test",
+    "no_post_hoc_head_or_intervention": true,
+    "per_relation": "report each relation before any shared-mechanism interpretation; relation-specific subsets are separately frozen descriptive causal routes",
+    "random_and_norm_matched_controls": "report the frozen subset against all same-cardinality subsets and the nearest-norm subset; these qualify specificity but cannot replace held-out necessity or sufficiency",
+    "replication": "I_full and I_identity reproduce the unintervened GW-CONV-1 proximal measurements within the frozen numerical tolerance; I_identity logits are bit-identical",
+    "shared_heads_not_required": true,
+    "structural": "exact_decomposition passes before semantic adjudication",
+    "sufficiency": "for the same S, lower 95% bounds of R(S) are at least 0.50 for raw and z-scored candidate alignment on validation and test",
+    "terminal_transport": "report necessity and sufficiency analogues on actual terminal candidate logits; adjudicate separately and do not use them to move S"
+  },
+  "authorities": {
+    "candidates": {
+      "identity_sha256": "sha256:08600e83faf6c8aeb845b32eabfdfebf4d3a538e6e12eab295ece7656bf79f8d",
+      "path": "gwsup1-candidates.json",
+      "sha256": "sha256:9888da65cde8836d6a43c8197934d5c018d51ffb216b3e5aa78149b7b8b8862f"
+    },
+    "container_identity": "sha256:3954b0380955b8e00501f4823d93f08fece49962d358eb08150f333c4c4fb506",
+    "gwconv1_adjudication": {
+      "identity_sha256": "sha256:398781476f37833a1cefd4a99d649e4e197fcbfd1e91771314a81f77c793b491",
+      "path": "../../../output/gwconv1-gemma3-4b-it-phase1/adjudication.json",
+      "sha256": "sha256:b35c79890f0f1a06a989df532a0292dc3f2ca520432d6cfb78fddf147ff7deb1",
+      "verdict": "observational_convergence_operator_supported"
+    },
+    "gwconv1_preregistration": {
+      "identity_sha256": "sha256:03a01d91bedd69a3ca825c5857a37f796daed088dd557582bbb049cd23fcf8ea",
+      "path": "gwconv1-preregistration.json",
+      "sha256": "sha256:b53523b028b63a4bb3c81bd04ca54cc728de18ad1efa55effe1183d2390ca2d0"
+    },
+    "input_manifest": {
+      "path": "manifest.json",
+      "sha256": "sha256:167d6bec75707e73c7afe392d1a7f036f81cff80be35ec9d34a0ae93e6da3ae6"
+    },
+    "input_rows": {
+      "declared_sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43",
+      "path": "input.jsonl",
+      "sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+    },
+    "plan_sha256": "sha256:f8f24893c784750598660b2ff724d1fa103fefa788ca791e4f464a6f2a225ddf",
+    "readout_basis": "prepared-production-effective-final-norm-and-q8-output-head/v1",
+    "system_graph": {
+      "path": "/Users/christopherhay/chris-models/gemma3-4b-it.vindex3/system_graph.json",
+      "sha256": "sha256:912298227396219423be39a1cb98ef3e18f062fb4f51f3fa58653c87ac9f2a57"
+    }
+  },
+  "causal_ladder": {
+    "current": "GW-HEAD-1: which L24 operators matter",
+    "excluded_successor": "GW-KEY-1: what information the frozen operators read",
+    "later_successor": "GW-READ-1: whether the frozen key-to-head path is a cheap read primitive"
+  },
+  "claim": "a frozen subset of L24 attention heads is necessary for and sufficient to recreate a substantial fraction of the control-adjusted semantic alignment",
+  "claim_boundary": "causal head attribution at the already-frozen L24 attention site only; not source-token or source-key attribution, not correctness, not a compact access key, and not authorization for partial-execution or WALK claims",
+  "cohort": {
+    "execution_rows": 426,
+    "prompt_reexecution": true,
+    "prompt_rows_per_edge": 3,
+    "prompt_semantic_families": {
+      "alternate": 142,
+      "canonical": 142,
+      "question": 142
+    },
+    "relation_by_split": {
+      "capital": {
+        "test": 7,
+        "train": 23,
+        "validation": 8
+      },
+      "currency": {
+        "test": 7,
+        "train": 20,
+        "validation": 7
+      },
+      "hypernym": {
+        "test": 8,
+        "train": 24,
+        "validation": 8
+      },
+      "language": {
+        "test": 6,
+        "train": 18,
+        "validation": 6
+      }
+    },
+    "semantic_edges": 142,
+    "splits": {
+      "test": 28,
+      "train": 85,
+      "validation": 29
+    },
+    "statistical_unit": "unique (subject, relation, target) semantic edge"
+  },
+  "exact_decomposition": {
+    "applied_max_relative_l2": 1e-05,
+    "failure_policy": "any missing head, duplicate head, non-finite value, geometry drift, parity failure or reconstruction failure aborts before subset search",
+    "head_contribution": "that head value through its matching column slice of the effective prepared-production W_O",
+    "head_value": "the actual production weighted-V output for one L24 query head, before W_O",
+    "identity_noop_logits": "bit-identical at every prompt position",
+    "norm_reconstruction": "apply the declared L24 post-attention RMSNorm and residual-delta scale, then compare with the actual applied attention delta",
+    "raw_max_relative_l2": 1e-05,
+    "raw_reconstruction": "sum all eight post-W_O head contributions and compare with the actual pre-post-attention-norm output",
+    "semantic_claim": false,
+    "weight_authority": "the effective prepared production Q8 W_O, not widened stored checkpoint rows"
+  },
+  "frozen_date": "2026-09-21",
+  "interpretation_contract": {
+    "causal_not_concentrated": "L24-localized but internally distributed",
+    "correctness": "never inferred; convergence toward a wrong continuation remains allowed",
+    "necessary_not_sufficient": "bottleneck or enabling component, not the complete operation",
+    "shared_global_subset": "candidate generic semantic-alignment mechanism",
+    "small_heterogeneous_subsets": "localized conditional mechanism",
+    "source_key": "never inferred; head sufficiency is not source-key sufficiency",
+    "stable_relation_specific_subsets": "candidate common routing stage with specialized operators",
+    "sufficient_not_necessary": "one redundant realization, not a unique causal operator",
+    "terminal_failure": "proximal alignment mechanism not shown to control later answer formation"
+  },
+  "interventions": {
+    "arms": {
+      "I_S": "heads in S natural/restored; every head outside S replaced",
+      "I_full": "all eight natural head values",
+      "I_full_minus_S": "heads in S replaced; every head outside S natural",
+      "I_identity": "run the intervention machinery while replacing every selected value with its exact original bytes",
+      "I_ref": "all eight heads replaced by their contribution-norm-matched train references"
+    },
+    "frozen_arm_execution": "reexecute I_full, I_ref, I_S, I_full_minus_S and I_identity by intervening inside canonical execution at L24 before W_O; capture the proximal carrier, then execute the L24 FFN and every later layer normally for terminal reporting",
+    "local_replay_parity": "on every frozen arm, local subset-search replay and intrusive canonical execution must agree on the proximal carrier and selected logits within the exact-decomposition tolerances",
+    "primary": "contribution-norm-matched replacement/restoration before W_O",
+    "pure_retain_only": "secondary only; all-other-heads-zero is not the primary sufficiency intervention",
+    "reference_bank": {
+      "direction": "mean production head-value direction from train rows only",
+      "grouping": "relation x prompt_semantic_family x head_id",
+      "held_out_evaluation": "single bank frozen from every train edge and no held-out row",
+      "scaling": "scale the bank vector so its effective W_O-slice contribution L2 equals the natural row/head contribution L2",
+      "train_candidate_evaluation": "leave-one-semantic-edge-out reference bank",
+      "zero_or_nonfinite_policy": "refuse; do not substitute zero or another grouping"
+    },
+    "secondary_arms": [
+      "zero S with every non-S head natural",
+      "cardinality-matched subsets",
+      "nearest-total-contribution-norm subsets at the same cardinality",
+      "aggregate-norm-preserving sham replacement"
+    ],
+    "train_search_execution": "capture each natural row's L24 entering carrier and eight production head values once; for every candidate subset, compose natural/reference head values before W_O, then execute the effective W_O, declared post-attention norm, residual write and frozen selected-row readout; this is the exact local operator path, not isolated-vector projection"
+  },
+  "measurements": {
+    "E": "for each arm I and proximal metric, E(I) = same-fact before-to-after gain under I minus the frozen matched-control gain under I; signs normalized so larger means more alignment",
+    "candidate_raw": {
+      "gain": "JS before minus JS after",
+      "similarity": "negative mean pairwise Jensen-Shannon divergence over the 126-token restricted softmax"
+    },
+    "candidate_zscore": {
+      "gain": "z-score JS before minus z-score JS after",
+      "similarity": "negative mean pairwise JS after independently z-scoring each state's 126 logits"
+    },
+    "carrier": {
+      "gain": "after similarity minus before similarity",
+      "similarity": "mean of the three pairwise carrier cosines in a same-fact prompt triplet"
+    },
+    "carrier_role": "qualification only: report absolute same-fact and adjusted carrier effects; it cannot rescue either semantic readout",
+    "matched_control": "the three frozen same-split, same-relation, same-prompt-family, different-subject-and-target rows already bound by GW-SUP-1",
+    "necessity": "N(S) = E(I_full) - E(I_full_minus_S)",
+    "proximal": "the recomputed real carrier immediately after the intervened L24 post-norm residual write, read through the unchanged frozen candidate basis",
+    "sufficiency": "R(S) = (E(I_S) - E(I_ref)) / (E(I_full) - E(I_ref)); refuse a non-positive or numerically unstable denominator",
+    "terminal": "the actual next-token logits after the remainder of canonical execution; mandatory report and qualification, not a substitute selection surface"
+  },
+  "preregistration_sha256": "sha256:922d8002a702393987db956aaa01e0ba1e86f726271c81e574220b31b4b78f90",
+  "question": "does a train-selected frozen subset of L24 attention heads causally account for the GW-CONV-1 control-adjusted semantic-alignment effect?",
+  "schema": "larql.gwhead1.preregistration.v1",
+  "selection": {
+    "discovery_split": "train only",
+    "eligible": "positive train E(I_full) and R(S) >= 0.80 independently for candidate_raw and candidate_zscore under the primary I_S intervention",
+    "global_subset": "select from all 85 train edges only",
+    "relation_subsets": "independently select within each relation's train stratum; each identity freezes before any validation/test execution",
+    "search": "exhaustive direct execution of all 256 subsets through the exact L24 W_O -> post-norm -> residual -> selected-readout path using once-captured natural head values; no singleton-score summation, isolated projection or top-k approximation",
+    "small_definition": "cardinality <= 4 of 8; fixed before search",
+    "tie_break": [
+      "minimum cardinality",
+      "higher minimum of raw and z-scored retained fractions",
+      "lower total natural contribution norm",
+      "lexicographically ascending head-ID tuple"
+    ],
+    "train_retention_fraction": 0.8,
+    "validation_or_test_may_not": [
+      "select, add, drop or reorder a head",
+      "change the reference bank",
+      "change an intervention arm, retention fraction or tie-break",
+      "choose global versus relation-specific reporting"
+    ]
+  },
+  "site": {
+    "component": "target",
+    "head_dim": 256,
+    "head_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "head_universe_size": 8,
+    "hidden_size": 2560,
+    "intervention_position": "the final prompt/capture position only; prefix positions and every other layer/site remain natural",
+    "layer": 24,
+    "norm_placement": "pre_post",
+    "num_kv_heads": 4,
+    "num_q_heads": 8,
+    "operator": "softmax",
+    "post_attention_norm": {
+      "eps": 9.999999974752427e-07,
+      "kind": "rms_norm",
+      "weight_offset": 1.0
+    },
+    "site_index": 48,
+    "span": "sliding",
+    "subset_universe_size": 256,
+    "window": 1024
+  },
+  "statistics": {
+    "candidate_metrics_are_conjunctive": [
+      "candidate_raw",
+      "candidate_zscore"
+    ],
+    "global_stratification": "relation-stratified",
+    "interval": "10000-sample percentile cluster bootstrap over semantic edges",
+    "relation_specific": "within-relation edge bootstrap",
+    "seed": 1398104331,
+    "train_search_is_discovery_only": true,
+    "validation_and_test_reported_separately": true
+  },
+  "status": "frozen_pre_execution"
+}

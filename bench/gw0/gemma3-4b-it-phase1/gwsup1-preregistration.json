@@ -1,0 +1,122 @@
+{
+  "adjudication": {
+    "candidate_coexistence": "at least half of primary semantic edges have median early effective neighbourhood count >= 1.5",
+    "concentration": "raw and z-score-control upper 95% bounds for emergence-minus-early normalized neighbourhood entropy are below zero",
+    "convergence": "raw and z-score-control upper 95% bounds for the within-fact versus control early-to-emergence JS difference-in-differences are below zero",
+    "full_support": "candidate_coexistence AND concentration AND localization AND convergence",
+    "interval": "relation-stratified cluster bootstrap, 10000 resamples, seed 1398100529, percentile 95% interval",
+    "localization": "observed median concentration-to-emergence site distance is below the 1st percentile of the localization null",
+    "localization_null": "relation-stratified permutation of sealed emergence landmarks across semantic edges, 10000 trials, same seed",
+    "no_post_hoc_thresholds": true,
+    "resampling_unit": "unique semantic edge"
+  },
+  "authorities": {
+    "candidates": {
+      "candidate_identity_sha256": "sha256:08600e83faf6c8aeb845b32eabfdfebf4d3a538e6e12eab295ece7656bf79f8d",
+      "file_sha256": "sha256:9888da65cde8836d6a43c8197934d5c018d51ffb216b3e5aa78149b7b8b8862f",
+      "path": "gwsup1-candidates.json"
+    },
+    "container_identity": "sha256:3954b0380955b8e00501f4823d93f08fece49962d358eb08150f333c4c4fb506",
+    "gw0b_reconciliation": {
+      "path": "../../../output/gw0b-gemma3-4b-it-phase1/reconciliation-report-final.json",
+      "sha256": "sha256:10c7af77077914c37b569d6a1c29ab06a8bec676c1e9686fe406c70873e956bc"
+    },
+    "gw3af_result": {
+      "path": "../../../output/gw3af-gemma3-4b-it-phase1/report-sealed.json",
+      "progression_passed": false,
+      "sha256": "sha256:0539b515953d93a2707261578069b712a32193e7a3ca7a6d15972ef3dd58e0e5"
+    },
+    "input_manifest": {
+      "file_sha256": "sha256:167d6bec75707e73c7afe392d1a7f036f81cff80be35ec9d34a0ae93e6da3ae6",
+      "manifest_sha256": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c",
+      "path": "manifest.json"
+    },
+    "input_rows": {
+      "path": "input.jsonl",
+      "sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+    },
+    "plan_sha256": "sha256:f8f24893c784750598660b2ff724d1fa103fefa788ca791e4f464a6f2a225ddf",
+    "readout_basis": "prepared-production-effective-final-norm-and-output-head/v1",
+    "sealed_gw0": {
+      "bundle_sha256": "sha256:ac9871abdaef1206298788fae15df9121542fb1f64496cccc07bc12b5751b6bf",
+      "census_sha256": "sha256:9db9f925d314554d03f6bae0e019694525b1840ddc7cfca22953e3b9885bbd3a",
+      "file_sha256": "sha256:a154a934046872eb43d9650e8a5fb639e1134e68e80c2dec79d63343a886ef7b",
+      "path": "../../../output/gw0-gemma3-4b-it-phase1/sealed/manifest.json"
+    }
+  },
+  "candidate_space": {
+    "construction_uses_trajectory_or_execution_outcome": false,
+    "global_distribution": "restricted softmax over all 126 frozen destination token IDs",
+    "raw_distribution": "softmax of prepared readout logits at temperature 1",
+    "reported_scale_diagnostics": [
+      "carrier_l2",
+      "candidate_logit_mean",
+      "candidate_logit_std",
+      "candidate_logit_range"
+    ],
+    "scale_control": "softmax of per-state candidate-logit z-scores; zero variance refuses",
+    "subject_neighbourhood": "conditional distribution over every frozen outgoing destination of the row subject",
+    "token_semantics": "first next-token destination; no multi-token continuation claim"
+  },
+  "claim_boundary": "observational candidate-basin concentration and prompt-path convergence; not quantum collapse, causal redundancy, or proof that decoded token basins are the model's native transition ontology",
+  "cohorts": {
+    "primary": {
+      "execution_rows": 243,
+      "rule": "subject has at least two distinct frozen semantic destination tokens",
+      "semantic_edges": 81,
+      "statistical_unit": "unique (subject, relation, target) semantic edge; prompt families are repeated measures",
+      "subjects": 32
+    },
+    "secondary": {
+      "rule": "single known subject destination; eligible for global convergence but not within-neighbourhood ambiguity",
+      "subjects": 61
+    }
+  },
+  "downstream_walk_metric_if_supported": "true semantic-basin survival versus candidate count, bytes and depth",
+  "frozen_date": "2026-09-21",
+  "frozen_landmarks": {
+    "concentration_site": "adjacent post-write step with the largest decrease in normalized subject-neighbourhood entropy; earliest tie",
+    "early_window": "post-FFN states at layers 0,1,2,3",
+    "emergence_state_per_row": "the post-write state at the sealed emergence layer and site",
+    "late_state": "post-FFN state at the final layer",
+    "shared_emergence_state_per_semantic_edge": "median ordered emergence site across its three prompt rows"
+  },
+  "interpretation_contract": {
+    "alternatives_plus_localized_concentration_plus_control_separated_convergence": "observational support for transition superposition",
+    "alternatives_without_convergence": "unresolved semantic mixture",
+    "compensation_after_suppression": "causal redundancy; deferred to GW-SUP-2/GW-5",
+    "convergence_without_alternatives": "prompt invariance, not transition superposition",
+    "entropy_drop_only": "confidence sharpening"
+  },
+  "metrics": {
+    "addressability": "reported from GW-3A-F and the eight-row audit; never substituted for entropy or support concentration",
+    "path_convergence": [
+      "three-prompt mean pairwise Jensen-Shannon divergence over the global candidate distribution by site",
+      "same statistic for frozen same-split/relation/family different-subject-and-target controls",
+      "within-fact minus control difference-in-differences from early to shared emergence"
+    ],
+    "physical_distribution": [
+      "GW-0B top-100 FFN support Jaccard where both prompt rows are eligible",
+      "post-write delta cosine by site from sealed delta carriers"
+    ],
+    "semantic_ambiguity": [
+      "global candidate entropy / log(126)",
+      "subject-neighbourhood conditional entropy / log(outdegree)",
+      "subject-neighbourhood effective candidate count exp(entropy)",
+      "subject-neighbourhood mass in the global restricted distribution",
+      "intended-target mass globally and conditional on the subject neighbourhood",
+      "target-versus-runner-up margin"
+    ]
+  },
+  "preregistration_sha256": "sha256:1ed1116eb2a800fe312f1c540ee396ddbb6dbe93aec553463f02a5a65690db73",
+  "schema": "larql.gwsup1.preregistration.v1",
+  "state_sequence": {
+    "order": "layer ascending, attention then FFN",
+    "post_write_rule": "apply the execution record's declared layer_scale before readout",
+    "reader": "prepared production-selected physical final norm and output head, including multiplier and softcap",
+    "sites_per_row": 68,
+    "source": "sealed carrier-after artifacts only; no prompt execution",
+    "source_weights_forbidden": true
+  },
+  "status": "frozen_pre_readout"
+}
