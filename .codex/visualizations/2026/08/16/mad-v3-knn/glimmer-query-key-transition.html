@@ -1,0 +1,76 @@
+<div id="mad-v3-key-transition">
+  <style>
+    #mad-v3-key-transition { color: var(--foreground); width: 100%; }
+    #mad-v3-key-transition .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 8px 58px; color: var(--muted-foreground); }
+    #mad-v3-key-transition .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    #mad-v3-key-transition .swatch { width: 18px; height: 3px; display: inline-block; }
+    #mad-v3-key-transition svg { display: block; width: 100%; height: auto; overflow: visible; }
+    #mad-v3-key-transition .grid { stroke: var(--border); stroke-width: 1; }
+    #mad-v3-key-transition .axis { fill: var(--muted-foreground); }
+    #mad-v3-key-transition .label { fill: var(--foreground); font-weight: 500; }
+    #mad-v3-key-transition .op-area { fill: var(--viz-series-1); opacity: 0.13; }
+    #mad-v3-key-transition .op-line { fill: none; stroke: var(--viz-series-1); stroke-width: 2; }
+    #mad-v3-key-transition .headroom-line { fill: none; stroke: var(--viz-series-3); stroke-width: 2; }
+    #mad-v3-key-transition .knn-line { fill: none; stroke: var(--viz-series-2); stroke-width: 2.5; }
+    #mad-v3-key-transition .base { stroke: var(--muted-foreground); stroke-width: 1; stroke-dasharray: 4 4; }
+    #mad-v3-key-transition .annotation { fill: var(--foreground); }
+    #mad-v3-key-transition .annotation-line { stroke: var(--muted-foreground); stroke-width: 1; }
+    #mad-v3-key-transition .highlight { fill: var(--background); stroke: var(--foreground); stroke-width: 2; }
+  </style>
+  <div class="legend" aria-hidden="true">
+    <span><i class="swatch" style="background:var(--viz-series-1)"></i>Hard-arm C operation purity, K=4</span>
+    <span><i class="swatch" style="background:var(--viz-series-2)"></i>kNN gain over popularity @5%</span>
+    <span><i class="swatch" style="background:var(--viz-series-3)"></i>Total oracle headroom @5%</span>
+  </div>
+  <svg viewBox="0 0 736 500" role="img" aria-labelledby="mad-v3-key-title mad-v3-key-desc">
+    <title id="mad-v3-key-title">Glimmer canonical operation-key transition and next-layer address prediction</title>
+    <desc id="mad-v3-key-desc">Hard-arm C operation purity abruptly reaches 97.5 percent at layer 31 and 100 percent at layer 32, remaining perfect thereafter. Next-layer FFN address headroom is small, but kNN captures most of it near source layers 46 through 48, peaking at layer 48.</desc>
+    <g id="mad-v3-key-plot"></g>
+  </svg>
+</div>
+<script>
+(() => {
+  const data = [{"l":0,"op":25,"gain":0,"head":1.39},{"l":1,"op":71.3,"gain":0.07,"head":0.09},{"l":2,"op":63.8,"gain":-0.13,"head":0.09},{"l":3,"op":67.5,"gain":-0.1,"head":0.11},{"l":4,"op":66.3,"gain":0.15,"head":0.64},{"l":5,"op":66.3,"gain":1.88,"head":4.04},{"l":6,"op":70,"gain":1.08,"head":4.47},{"l":7,"op":67.5,"gain":0.41,"head":1.94},{"l":8,"op":50,"gain":0.11,"head":1.43},{"l":9,"op":40,"gain":0.36,"head":0.82},{"l":10,"op":42.5,"gain":-1.26,"head":1.62},{"l":11,"op":38.8,"gain":-0.21,"head":1.73},{"l":12,"op":45,"gain":-1.58,"head":1.16},{"l":13,"op":46.3,"gain":-0.9,"head":1.5},{"l":14,"op":27.5,"gain":0.84,"head":2.07},{"l":15,"op":26.3,"gain":-1.1,"head":1.69},{"l":16,"op":25,"gain":0.76,"head":1.79},{"l":17,"op":26.3,"gain":0.07,"head":1.1},{"l":18,"op":57.5,"gain":0.01,"head":1.06},{"l":19,"op":40,"gain":-0.5,"head":0.66},{"l":20,"op":45,"gain":-0.32,"head":0.52},{"l":21,"op":47.5,"gain":0.39,"head":1},{"l":22,"op":52.5,"gain":-0.35,"head":0.69},{"l":23,"op":75,"gain":0.63,"head":1.77},{"l":24,"op":50,"gain":0.15,"head":2.15},{"l":25,"op":57.5,"gain":-0.25,"head":0.62},{"l":26,"op":66.3,"gain":0.43,"head":1.79},{"l":27,"op":58.8,"gain":-0.25,"head":0.44},{"l":28,"op":67.5,"gain":-0.43,"head":0.87},{"l":29,"op":68.8,"gain":0.21,"head":0.94},{"l":30,"op":70,"gain":0.26,"head":0.99},{"l":31,"op":97.5,"gain":0.16,"head":1.02},{"l":32,"op":100,"gain":0.11,"head":0.73},{"l":33,"op":100,"gain":0.43,"head":1.1},{"l":34,"op":100,"gain":1.96,"head":2.78},{"l":35,"op":100,"gain":-0.13,"head":0.7},{"l":36,"op":100,"gain":0.71,"head":0.98},{"l":37,"op":100,"gain":0.35,"head":0.66},{"l":38,"op":100,"gain":0.01,"head":0.49},{"l":39,"op":100,"gain":-0.04,"head":0.28},{"l":40,"op":100,"gain":0.42,"head":0.67},{"l":41,"op":100,"gain":0.76,"head":1.16},{"l":42,"op":100,"gain":1,"head":1.14},{"l":43,"op":100,"gain":0.7,"head":1},{"l":44,"op":100,"gain":0.68,"head":0.97},{"l":45,"op":100,"gain":1.15,"head":2.48},{"l":46,"op":100,"gain":2.86,"head":4.51},{"l":47,"op":100,"gain":1.93,"head":2.66},{"l":48,"op":100,"gain":3.09,"head":3.98},{"l":49,"op":100,"gain":0.78,"head":1.72},{"l":50,"op":100,"gain":-0.09,"head":0.9},{"l":51,"op":100,"gain":null,"head":null}];
+  const ns = "http://www.w3.org/2000/svg";
+  const plot = document.getElementById("mad-v3-key-plot");
+  const x0 = 58, x1 = 716, top0 = 28, top1 = 210, bottom0 = 276, bottom1 = 458;
+  const x = layer => x0 + layer / 51 * (x1 - x0);
+  const yPurity = value => top1 - value / 100 * (top1 - top0);
+  const yPoints = value => bottom1 - (value + 2) / 7 * (bottom1 - bottom0);
+  const el = (name, attrs = {}, text = "") => {
+    const node = document.createElementNS(ns, name);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const path = (key, y, filter = () => true) => data.filter(filter).map((d, i) => `${i ? "L" : "M"}${x(d.l).toFixed(1)},${y(d[key]).toFixed(1)}`).join(" ");
+  const area = `M${x(0)},${top1} ` + data.map(d => `L${x(d.l).toFixed(1)},${yPurity(d.op).toFixed(1)}`).join(" ") + ` L${x(51)},${top1} Z`;
+
+  [0,25,50,75,100].forEach(value => {
+    const y = yPurity(value);
+    plot.append(el("line", {x1:x0, x2:x1, y1:y, y2:y, class:value===25 ? "base" : "grid"}));
+    plot.append(el("text", {x:x0-9, y:y+4, "text-anchor":"end", class:"axis"}, `${value}%`));
+  });
+  [-2,0,2,4,5].forEach(value => {
+    const y = yPoints(value);
+    plot.append(el("line", {x1:x0, x2:x1, y1:y, y2:y, class:value===0 ? "base" : "grid"}));
+    plot.append(el("text", {x:x0-9, y:y+4, "text-anchor":"end", class:"axis"}, `${value}pp`));
+  });
+  [0,10,20,30,40,50].forEach(value => plot.append(el("text", {x:x(value), y:482, "text-anchor":"middle", class:"axis"}, String(value))));
+  plot.append(el("text", {x:x0, y:17, class:"label"}, "Operation-neighbour purity on unseen graph + unseen wording"));
+  plot.append(el("text", {x:x0, y:264, class:"label"}, "Next-layer contribution coverage over popularity, 5% byte budget"));
+  plot.append(el("text", {x:(x0+x1)/2, y:497, "text-anchor":"middle", class:"axis"}, "Source residual layer"));
+  plot.append(el("path", {d:area, class:"op-area"}));
+  plot.append(el("path", {d:path("op", yPurity), class:"op-line"}));
+  plot.append(el("path", {d:path("head", yPoints, d => d.head !== null), class:"headroom-line"}));
+  plot.append(el("path", {d:path("gain", yPoints, d => d.gain !== null), class:"knn-line"}));
+
+  plot.append(el("circle", {cx:x(31), cy:yPurity(97.5), r:4, class:"highlight"}));
+  plot.append(el("line", {x1:x(31)-3, x2:x(31)-52, y1:yPurity(97.5)+5, y2:yPurity(97.5)+34, class:"annotation-line"}));
+  plot.append(el("text", {x:x(31)-56, y:yPurity(97.5)+38, "text-anchor":"end", class:"annotation"}, "L31: abrupt 70% → 97.5% transition"));
+
+  plot.append(el("circle", {cx:x(48), cy:yPoints(3.09), r:4, class:"highlight"}));
+  plot.append(el("line", {x1:x(48)-4, x2:x(48)-74, y1:yPoints(3.09)+2, y2:yPoints(3.09)+30, class:"annotation-line"}));
+  plot.append(el("text", {x:x(48)-78, y:yPoints(3.09)+34, "text-anchor":"end", class:"annotation"}, "L48→49: kNN captures 3.1 of 4.0pp"));
+})();
+</script>

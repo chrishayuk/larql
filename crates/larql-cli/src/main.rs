@@ -275,6 +275,9 @@ enum DevCommand {
     /// OV rate-distortion and residual-table attention compilation experiments.
     OvRd(ov_rd::cmd::OvRdArgs),
 
+    /// Model-as-Database V3 residual-key and future-address oracle experiments.
+    MadKnn(mad_knn::MadKnnArgs),
+
     /// Discover attention → FFN circuits from weight decomposition.
     CircuitDiscover(circuit_discover_cmd::CircuitDiscoverArgs),
 
@@ -690,6 +693,7 @@ fn run_dev(cmd: DevCommand) -> Result<(), Box<dyn std::error::Error>> {
         DevCommand::QkModes(a) => qk_modes_cmd::run(a),
         DevCommand::OvGate(a) => ov_gate_cmd::run(a),
         DevCommand::OvRd(a) => ov_rd::cmd::run(a),
+        DevCommand::MadKnn(a) => mad_knn::run(a),
         DevCommand::CircuitDiscover(a) => circuit_discover_cmd::run(a),
         DevCommand::AttnBottleneck(a) => attn_bottleneck_cmd::run(a),
         DevCommand::FfnBottleneck(a) => ffn_bottleneck_cmd::run(a),

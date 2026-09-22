@@ -17,7 +17,7 @@ use super::golden::{miniature_glimmer, G_TOKENS};
 use crate::format::vindex3::encode::encode_system;
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::backend::{PlanBackend, WeightFormat};
-use crate::format::vindex3::opplan::exec::decode::DecodeSession;
+use crate::format::vindex3::opplan::exec::decode::{DecodeObserver, DecodeSession};
 use crate::format::vindex3::opplan::exec::device::DevicePlanBackend;
 use crate::format::vindex3::opplan::exec::execute_plan;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
@@ -102,4 +102,123 @@ fn f16_device_decode_matches_its_own_batch_traversal_bit_for_bit() {
         "loop-device-f16-decode",
         WeightFormat::F16,
     ));
+}
+
+#[test]
+fn reset_starts_an_independent_sequence_without_reloading_operands() {
+    let (_c, plan, store) = fixture();
+    let backend = ReferenceBackend::new();
+    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut first = None;
+    for &token in G_TOKENS.iter() {
+        first = session.step(token).unwrap().logits;
+    }
+    session.reset();
+    assert_eq!(session.position(), 0);
+    let mut second = None;
+    for &token in G_TOKENS.iter() {
+        second = session.step(token).unwrap().logits;
+    }
+    assert_eq!(first, second);
+}
+
+#[derive(Default)]
+struct TapCounter {
+    layer_inputs: Vec<usize>,
+    attention_inputs: Vec<usize>,
+    attention_outputs: Vec<usize>,
+    post_attention: Vec<usize>,
+    ffn_calls: Vec<usize>,
+    ffn_outputs: Vec<usize>,
+    post_layers: Vec<usize>,
+}
+
+impl DecodeObserver for TapCounter {
+    fn layer_input(
+        &mut self,
+        layer: usize,
+        _residual: &[f32],
+    ) -> Result<(), crate::error::VindexError> {
+        self.layer_inputs.push(layer);
+        Ok(())
+    }
+
+    fn attention_input(
+        &mut self,
+        layer: usize,
+        _input: &[f32],
+    ) -> Result<(), crate::error::VindexError> {
+        self.attention_inputs.push(layer);
+        Ok(())
+    }
+
+    fn attention_output(
+        &mut self,
+        layer: usize,
+        _output: &[f32],
+    ) -> Result<(), crate::error::VindexError> {
+        self.attention_outputs.push(layer);
+        Ok(())
+    }
+
+    fn post_attention(
+        &mut self,
+        layer: usize,
+        _residual: &[f32],
+    ) -> Result<(), crate::error::VindexError> {
+        self.post_attention.push(layer);
+        Ok(())
+    }
+
+    fn ffn_call(
+        &mut self,
+        layer: usize,
+        _call: &crate::format::vindex3::opplan::exec::backend::FfnCall<'_>,
+    ) -> Result<(), crate::error::VindexError> {
+        self.ffn_calls.push(layer);
+        Ok(())
+    }
+
+    fn ffn_output(
+        &mut self,
+        layer: usize,
+        _output: &[f32],
+    ) -> Result<(), crate::error::VindexError> {
+        self.ffn_outputs.push(layer);
+        Ok(())
+    }
+
+    fn post_layer(
+        &mut self,
+        layer: usize,
+        _residual: &[f32],
+    ) -> Result<(), crate::error::VindexError> {
+        self.post_layers.push(layer);
+        Ok(())
+    }
+}
+
+#[test]
+fn observed_step_has_one_read_only_tap_per_layer() {
+    let (_c, plan, store) = fixture();
+    let backend = ReferenceBackend::new();
+    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let baseline = session.step(G_TOKENS[0]).unwrap().logits;
+    session.reset();
+    let mut taps = TapCounter::default();
+    let observed = session
+        .step_observed(G_TOKENS[0], &mut taps)
+        .unwrap()
+        .logits;
+    assert_eq!(baseline, observed, "observer changed execution");
+    assert_eq!(
+        taps.layer_inputs,
+        (0..plan.layers.len()).collect::<Vec<_>>()
+    );
+    assert_eq!(taps.attention_inputs, taps.layer_inputs);
+    assert_eq!(taps.attention_outputs, taps.layer_inputs);
+    assert_eq!(taps.post_attention, taps.layer_inputs);
+    assert_eq!(taps.ffn_calls, (0..plan.layers.len()).collect::<Vec<_>>());
+    assert_eq!(taps.ffn_outputs, taps.layer_inputs);
+    assert_eq!(taps.post_layers, taps.layer_inputs);
 }

@@ -20,6 +20,7 @@ pub mod bias_add;
 pub mod causal_attention;
 pub mod f16_gemv;
 pub mod f32_gemv;
+pub mod ffn_block_contribution;
 pub mod fused_attention;
 pub mod fused_ops;
 pub mod geglu;
@@ -87,6 +88,7 @@ pub fn all_shaders() -> String {
     src.push_str(&f32_gemv::argmax_shader_source());
     src.push_str(&f32_gemv::topk_shader_source());
     src.push_str(f16_gemv::SHADER);
+    src.push_str(ffn_block_contribution::SHADER);
     // MoE GPU router (rungs A+B+C of the GPU-dataflow routing ladder)
     src.push_str(moe_router::SHADER);
     src.push_str(moe_router_select::SHADER);

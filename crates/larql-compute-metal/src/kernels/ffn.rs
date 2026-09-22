@@ -27,6 +27,8 @@ use crate::shaders;
 
 /// Pipeline registry for FFN dispatch (gate+up, activation, down).
 pub struct FfnKernels {
+    /// Observer-only dense FFN channel-block contribution census.
+    pub block_contribution_pipeline: ComputePipelineState,
     // Gated FFN activations (`act(gate) * up`).
     pub geglu_pipeline: ComputePipelineState,
     pub geglu_gelu_tanh_pipeline: ComputePipelineState,
@@ -82,6 +84,9 @@ impl FfnKernels {
     pub fn build(device: &Device, library: &Library) -> Self {
         use crate::kernels::{compile_required as r, compile_required_handle as h};
         Self {
+            block_contribution_pipeline: r::<shaders::ffn_block_contribution::Kernel>(
+                device, library,
+            ),
             geglu_pipeline: r::<shaders::geglu::SiluKernel>(device, library),
             geglu_gelu_tanh_pipeline: r::<shaders::geglu::GeluTanhKernel>(device, library),
             clamped_glu_bias_pipeline: r::<shaders::geglu::ClampedGluBiasKernel>(device, library),

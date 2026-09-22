@@ -112,6 +112,28 @@ pub trait MatMul {
         self.f16_gemv(w_f16, x, n, k)
     }
 
+    /// Exact-schema diagnostic for dense FFNs: split the columns of a
+    /// row-major f16 `[hidden, intermediate]` down projection into fixed
+    /// channel blocks and return the squared L2 norm of each block's raw
+    /// output vector.
+    ///
+    /// For block `b`, this computes
+    /// `sum_o (sum_c W[o,c] * inner[c])^2` over that block's channel range.
+    /// It is an observer primitive, not an execution shortcut: callers still
+    /// run the complete FFN normally. Backends without a specialised kernel
+    /// return `None` and diagnostic callers must either use their scalar
+    /// authority or fail loudly.
+    fn f16_ffn_block_contributions(
+        &self,
+        _down_f16: &[u8],
+        _inner: &[f32],
+        _hidden: usize,
+        _intermediate: usize,
+        _block_channels: usize,
+    ) -> Option<Vec<f32>> {
+        None
+    }
+
     /// Several f16 matrices applied to **one** input vector, as one
     /// device submission where the backend supports it.
     ///

@@ -47,9 +47,9 @@ use larql_compute::backend::MatMul;
 use larql_models::config::{Activation, GateActivation, GateCombine, GatePlacement, GateSource};
 
 use super::backend::{
-    AttentionCall, AttentionStepCall, AttentionStepOut, DispatchStats, FfnCall, GateCall,
-    MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, WeightFormat, WeightFormats,
-    WeightSlice,
+    AttentionCall, AttentionStepCall, AttentionStepOut, DispatchStats, FfnBlockContributionCall,
+    FfnCall, GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, WeightFormat,
+    WeightFormats, WeightSlice,
 };
 use super::production::{aggregate_heads, condition_qk_in_place, ProductionBackend};
 use crate::error::VindexError;
@@ -358,6 +358,31 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
 
     fn project(&self, call: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
         self.gemv(call.weight, call.out_dim, call.in_dim, call.x)
+    }
+
+    fn ffn_block_contributions(
+        &self,
+        call: FfnBlockContributionCall<'_>,
+    ) -> Result<Option<Vec<f32>>, VindexError> {
+        let WeightSlice::F16(down) = call.down else {
+            return Ok(None);
+        };
+        let started = std::time::Instant::now();
+        let result = self
+            .device
+            .lock()
+            .expect("device dispatch lock")
+            .f16_ffn_block_contributions(
+                down,
+                call.inner,
+                call.hidden,
+                call.intermediate,
+                call.block_channels,
+            );
+        if result.is_some() {
+            self.record(started, 1);
+        }
+        Ok(result)
     }
 
     fn attention(&self, call: AttentionCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {

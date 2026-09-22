@@ -222,6 +222,17 @@ pub struct FfnCall<'a> {
     pub activation: Activation,
 }
 
+/// Observer-only decomposition of one dense FFN down projection into
+/// contiguous intermediate-channel blocks. The ordinary [`FfnCall`] still
+/// executes in full; this call only measures its logical object contributions.
+pub struct FfnBlockContributionCall<'a> {
+    pub down: WeightSlice<'a>,
+    pub inner: &'a [f32],
+    pub hidden: usize,
+    pub intermediate: usize,
+    pub block_channels: usize,
+}
+
 /// One position's attention against interpreter-owned K/V state — the
 /// decode step.
 ///
@@ -337,6 +348,16 @@ pub trait PlanBackend: Sync {
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// Optional accelerated observer primitive. `Ok(None)` means this
+    /// backend has no specialised implementation; callers choose explicitly
+    /// whether to use their scalar authority or fail.
+    fn ffn_block_contributions(
+        &self,
+        _call: FfnBlockContributionCall<'_>,
+    ) -> Result<Option<Vec<f32>>, VindexError> {
+        Ok(None)
+    }
 
     /// Vocabulary projection plus the head's optional multiplier and
     /// softcap, in that order.

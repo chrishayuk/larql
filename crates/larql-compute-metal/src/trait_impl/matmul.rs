@@ -66,6 +66,83 @@ impl MatMul for MetalBackend {
         self.encode_f16_gemv(w_f16, x, n, k)
     }
 
+    fn f16_ffn_block_contributions(
+        &self,
+        down_f16: &[u8],
+        inner: &[f32],
+        hidden: usize,
+        intermediate: usize,
+        block_channels: usize,
+    ) -> Option<Vec<f32>> {
+        let weight_elements = hidden.checked_mul(intermediate)?;
+        let weight_bytes = weight_elements.checked_mul(2)?;
+        if down_f16.len() < weight_bytes
+            || inner.len() != intermediate
+            || hidden == 0
+            || intermediate == 0
+            || block_channels == 0
+            || hidden > u32::MAX as usize
+            || intermediate > u32::MAX as usize
+            || block_channels > u32::MAX as usize
+        {
+            return None;
+        }
+
+        let blocks = intermediate.div_ceil(block_channels);
+        let down_buf = self.bufs.get_bytes(down_f16);
+        let inner_buf = self.bufs.output((intermediate * 4) as u64);
+        let inner_ptr = inner_buf.contents() as *mut f32;
+        if inner_ptr.is_null() {
+            return None;
+        }
+        // SAFETY: the pooled buffer is at least `intermediate * 4` bytes and
+        // is not visible to a command encoder until after this copy.
+        unsafe { std::ptr::copy_nonoverlapping(inner.as_ptr(), inner_ptr, intermediate) };
+        let output_buf = self.bufs.output((blocks * 4) as u64);
+
+        let hidden_u32 = hidden as u32;
+        let intermediate_u32 = intermediate as u32;
+        let block_channels_u32 = block_channels as u32;
+        let cmd = self.queue.new_command_buffer();
+        let enc = cmd.new_compute_command_encoder();
+        enc.set_compute_pipeline_state(&self.ffn.block_contribution_pipeline);
+        enc.set_buffer(0, Some(&down_buf), 0);
+        enc.set_buffer(1, Some(&inner_buf), 0);
+        enc.set_buffer(2, Some(&output_buf), 0);
+        enc.set_bytes(3, 4, &hidden_u32 as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(
+            4,
+            4,
+            &intermediate_u32 as *const u32 as *const std::ffi::c_void,
+        );
+        enc.set_bytes(
+            5,
+            4,
+            &block_channels_u32 as *const u32 as *const std::ffi::c_void,
+        );
+        enc.dispatch_thread_groups(
+            metal::MTLSize::new(blocks as u64, 1, 1),
+            metal::MTLSize::new(crate::shaders::ffn_block_contribution::THREADS_PER_TG, 1, 1),
+        );
+        enc.end_encoding();
+        cmd.commit();
+        if crate::cb_status::wait_checked(
+            cmd,
+            "crates/larql-compute-metal/src/trait_impl/matmul.rs:f16_ffn_block_contributions",
+        )
+        .is_err()
+        {
+            self.bufs.recycle(output_buf);
+            self.bufs.recycle(inner_buf);
+            return None;
+        }
+
+        let result = crate::buffers::try_read_buffer_f32(&output_buf, blocks);
+        self.bufs.recycle(output_buf);
+        self.bufs.recycle(inner_buf);
+        result
+    }
+
     /// One command buffer, one encoder, one input upload, N dispatches,
     /// one wait — same kernel and same per-dispatch arguments as the
     /// sequential path, so the results are bit-identical to N separate
@@ -1081,6 +1158,63 @@ mod tests {
         let w = larql_models::quant::half::encode_f16(&[0.0f32; 16]);
         let x = vec![0.0f32; 3];
         assert!(m.f16_gemv_force(&w, &x, 4, 4).is_none());
+    }
+
+    #[test]
+    fn f16_ffn_block_contributions_match_scalar_f16_authority() {
+        let metal = MetalBackend::new().expect("Metal device");
+        let hidden = 5;
+        let intermediate = 7;
+        let block_channels = 3;
+        let weights: Vec<f32> = (0..hidden * intermediate)
+            .map(|index| (index as f32 - 13.0) * 0.03125)
+            .collect();
+        let encoded = larql_models::quant::half::encode_f16(&weights);
+        let inner = [0.5, -1.25, 0.75, 0.125, -0.5, 1.5, -0.25];
+
+        let got = metal
+            .f16_ffn_block_contributions(&encoded, &inner, hidden, intermediate, block_channels)
+            .expect("accelerated contribution kernel");
+
+        let decoded: Vec<f32> = encoded
+            .chunks_exact(2)
+            .map(|raw| larql_models::quant::half::f16_to_f32(u16::from_le_bytes([raw[0], raw[1]])))
+            .collect();
+        let expected: Vec<f32> = (0..intermediate)
+            .step_by(block_channels)
+            .map(|start| {
+                let end = (start + block_channels).min(intermediate);
+                let mut norm2 = 0.0f64;
+                for output in 0..hidden {
+                    let mut value = 0.0f32;
+                    for channel in start..end {
+                        value += decoded[output * intermediate + channel] * inner[channel];
+                    }
+                    norm2 += f64::from(value) * f64::from(value);
+                }
+                norm2 as f32
+            })
+            .collect();
+
+        assert_eq!(got.len(), expected.len());
+        for (block, (&actual, &want)) in got.iter().zip(&expected).enumerate() {
+            let relative = (actual - want).abs() / want.abs().max(1e-12);
+            assert!(
+                relative < 2e-5,
+                "block {block}: actual={actual} expected={want} relative={relative}"
+            );
+        }
+    }
+
+    #[test]
+    fn f16_ffn_block_contributions_reject_invalid_geometry() {
+        let metal = MetalBackend::new().expect("Metal device");
+        assert!(metal
+            .f16_ffn_block_contributions(&[], &[], 0, 0, 0)
+            .is_none());
+        assert!(metal
+            .f16_ffn_block_contributions(&[0; 8], &[0.0; 3], 2, 3, 2)
+            .is_none());
     }
 
     /// `f16_gemv` falls back below the FLOP threshold (line 57).

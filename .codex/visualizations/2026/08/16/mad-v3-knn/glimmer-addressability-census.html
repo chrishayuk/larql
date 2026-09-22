@@ -1,0 +1,83 @@
+<div id="mad-v3-census">
+  <style>
+    #mad-v3-census { color: var(--foreground); width: 100%; }
+    #mad-v3-census .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 8px 58px; color: var(--muted-foreground); }
+    #mad-v3-census .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    #mad-v3-census .swatch { width: 18px; height: 3px; display: inline-block; }
+    #mad-v3-census svg { display: block; width: 100%; height: auto; overflow: visible; }
+    #mad-v3-census .grid { stroke: var(--border); stroke-width: 1; }
+    #mad-v3-census .axis { fill: var(--muted-foreground); }
+    #mad-v3-census .label { fill: var(--foreground); font-weight: 500; }
+    #mad-v3-census .annotation { fill: var(--foreground); }
+    #mad-v3-census .annotation-line { stroke: var(--muted-foreground); stroke-width: 1; }
+    #mad-v3-census .effective-area { fill: var(--viz-series-1); opacity: 0.13; }
+    #mad-v3-census .effective-line { fill: none; stroke: var(--viz-series-1); stroke-width: 2; }
+    #mad-v3-census .line-05 { fill: none; stroke: var(--viz-series-2); stroke-width: 2; }
+    #mad-v3-census .line-10 { fill: none; stroke: var(--viz-series-3); stroke-width: 2; }
+    #mad-v3-census .line-20 { fill: none; stroke: var(--viz-series-4); stroke-width: 2; }
+    #mad-v3-census .highlight { fill: var(--background); stroke: var(--foreground); stroke-width: 2; }
+  </style>
+  <div class="legend" aria-hidden="true">
+    <span><i class="swatch" style="background:var(--viz-series-1)"></i>Effective FFN blocks</span>
+    <span><i class="swatch" style="background:var(--viz-series-2)"></i>Oracle advantage @ 5% bytes</span>
+    <span><i class="swatch" style="background:var(--viz-series-3)"></i>@ 10%</span>
+    <span><i class="swatch" style="background:var(--viz-series-4)"></i>@ 20%</span>
+  </div>
+  <svg viewBox="0 0 736 500" role="img" aria-labelledby="mad-v3-census-title mad-v3-census-desc">
+    <title id="mad-v3-census-title">Glimmer FFN block sparsity and oracle headroom by layer</title>
+    <desc id="mad-v3-census-desc">The upper plot shows effective contributing blocks out of 156. Layers 4 and 36 through 42 are sparse. The lower plot shows oracle coverage minus popularity coverage at 5, 10, and 20 percent byte budgets. Headroom remains below four percentage points and peaks around layers 47 through 50.</desc>
+    <g id="mad-v3-census-plot"></g>
+  </svg>
+</div>
+<script>
+(() => {
+  const data = [{"l":0,"e":52.526,"a05":0.12,"a10":0.21,"a20":0.11},{"l":1,"e":103.293,"a05":0.52,"a10":0.19,"a20":0.38},{"l":2,"e":111.311,"a05":0.11,"a10":0.35,"a20":0.25},{"l":3,"e":114.339,"a05":0.05,"a10":0.23,"a20":0.67},{"l":4,"e":30.305,"a05":0.2,"a10":0.36,"a20":0.28},{"l":5,"e":38.899,"a05":0.29,"a10":0.49,"a20":0.47},{"l":6,"e":93.444,"a05":2.02,"a10":2.52,"a20":1.83},{"l":7,"e":97.796,"a05":2.52,"a10":2.25,"a20":2.21},{"l":8,"e":123.354,"a05":1.34,"a10":1.74,"a20":1.42},{"l":9,"e":126.517,"a05":0.77,"a10":0.84,"a20":1.73},{"l":10,"e":121.182,"a05":0.54,"a10":2.06,"a20":1.72},{"l":11,"e":136.074,"a05":0.92,"a10":1.82,"a20":2.16},{"l":12,"e":113.774,"a05":0.93,"a10":1.46,"a20":1.71},{"l":13,"e":119.767,"a05":1.5,"a10":2.19,"a20":1.86},{"l":14,"e":123.811,"a05":1.61,"a10":2.17,"a20":3.14},{"l":15,"e":140.935,"a05":1.8,"a10":1.44,"a20":1.33},{"l":16,"e":141.965,"a05":1.11,"a10":1.48,"a20":1.35},{"l":17,"e":131.246,"a05":1.13,"a10":1.14,"a20":1.64},{"l":18,"e":140.351,"a05":0.73,"a10":1.14,"a20":1.04},{"l":19,"e":148.253,"a05":0.89,"a10":1.06,"a20":1.52},{"l":20,"e":144.235,"a05":0.61,"a10":0.82,"a20":1.14},{"l":21,"e":139.459,"a05":0.61,"a10":0.66,"a20":1.28},{"l":22,"e":135.327,"a05":0.78,"a10":1.3,"a20":1.78},{"l":23,"e":145.161,"a05":0.7,"a10":1.13,"a20":1.38},{"l":24,"e":143.902,"a05":1.51,"a10":1.13,"a20":1.75},{"l":25,"e":122.181,"a05":1.07,"a10":1.4,"a20":1.69},{"l":26,"e":139.335,"a05":0.38,"a10":0.86,"a20":1.83},{"l":27,"e":145.646,"a05":1.02,"a10":1.37,"a20":1.76},{"l":28,"e":141.58,"a05":0.54,"a10":0.92,"a20":1.53},{"l":29,"e":141.122,"a05":1.02,"a10":0.93,"a20":1.55},{"l":30,"e":143.919,"a05":1.11,"a10":1.32,"a20":2.23},{"l":31,"e":125.781,"a05":0.76,"a10":1.37,"a20":1.98},{"l":32,"e":147.218,"a05":1.31,"a10":1.81,"a20":1.77},{"l":33,"e":144.444,"a05":0.83,"a10":1.16,"a20":1.91},{"l":34,"e":123.133,"a05":1.2,"a10":1.49,"a20":1.29},{"l":35,"e":97.825,"a05":2.62,"a10":3.44,"a20":2.9},{"l":36,"e":42.443,"a05":0.94,"a10":1.4,"a20":1.6},{"l":37,"e":43.208,"a05":1.02,"a10":1.51,"a20":1.47},{"l":38,"e":38.07,"a05":0.66,"a10":0.81,"a20":1.11},{"l":39,"e":33.672,"a05":0.43,"a10":0.94,"a20":1.25},{"l":40,"e":74.973,"a05":0.49,"a10":1.6,"a20":1.1},{"l":41,"e":31.585,"a05":0.68,"a10":0.89,"a20":0.8},{"l":42,"e":38.793,"a05":1.15,"a10":1.19,"a20":1.12},{"l":43,"e":83.22,"a05":1.16,"a10":1.57,"a20":2.47},{"l":44,"e":74.251,"a05":1.64,"a10":2.04,"a20":1.49},{"l":45,"e":64.657,"a05":0.77,"a10":1.35,"a20":1.76},{"l":46,"e":86.527,"a05":2.56,"a10":3.22,"a20":2.16},{"l":47,"e":84.909,"a05":3.47,"a10":2.76,"a20":2.76},{"l":48,"e":97.347,"a05":2.9,"a10":2.81,"a20":3.23},{"l":49,"e":99.511,"a05":3.75,"a10":3.33,"a20":3.33},{"l":50,"e":113.111,"a05":1.81,"a10":2.88,"a20":3.16},{"l":51,"e":114.507,"a05":1.12,"a10":2.05,"a20":2.05}];
+  const ns = "http://www.w3.org/2000/svg";
+  const plot = document.getElementById("mad-v3-census-plot");
+  const x0 = 58, x1 = 716, top0 = 28, top1 = 210, bottom0 = 276, bottom1 = 458;
+  const x = layer => x0 + layer / 51 * (x1 - x0);
+  const yEffective = value => top1 - value / 156 * (top1 - top0);
+  const yAdvantage = value => bottom1 - value / 4 * (bottom1 - bottom0);
+  const el = (name, attrs = {}, text = "") => {
+    const node = document.createElementNS(ns, name);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const linePath = (key, y) => data.map((d, i) => `${i ? "L" : "M"}${x(d.l).toFixed(1)},${y(d[key]).toFixed(1)}`).join(" ");
+  const area = `M${x(0)},${top1} ` + data.map(d => `L${x(d.l).toFixed(1)},${yEffective(d.e).toFixed(1)}`).join(" ") + ` L${x(51)},${top1} Z`;
+
+  [0, 52, 104, 156].forEach(value => {
+    const y = yEffective(value);
+    plot.append(el("line", {x1:x0, x2:x1, y1:y, y2:y, class:"grid"}));
+    plot.append(el("text", {x:x0-9, y:y+4, "text-anchor":"end", class:"axis"}, String(value)));
+  });
+  [0, 1, 2, 3, 4].forEach(value => {
+    const y = yAdvantage(value);
+    plot.append(el("line", {x1:x0, x2:x1, y1:y, y2:y, class:"grid"}));
+    plot.append(el("text", {x:x0-9, y:y+4, "text-anchor":"end", class:"axis"}, `${value}pp`));
+  });
+  [0,10,20,30,40,50].forEach(value => {
+    const xx = x(value);
+    plot.append(el("text", {x:xx, y:482, "text-anchor":"middle", class:"axis"}, String(value)));
+  });
+  plot.append(el("text", {x:x0, y:17, class:"label"}, "Effective contributing blocks (out of 156)"));
+  plot.append(el("text", {x:x0, y:264, class:"label"}, "Oracle coverage advantage over popularity (percentage points)"));
+  plot.append(el("text", {x:(x0+x1)/2, y:497, "text-anchor":"middle", class:"axis"}, "Glimmer FFN layer"));
+  plot.append(el("path", {d:area, class:"effective-area"}));
+  plot.append(el("path", {d:linePath("e", yEffective), class:"effective-line"}));
+  plot.append(el("path", {d:linePath("a05", yAdvantage), class:"line-05"}));
+  plot.append(el("path", {d:linePath("a10", yAdvantage), class:"line-10"}));
+  plot.append(el("path", {d:linePath("a20", yAdvantage), class:"line-20"}));
+
+  const sparse = data[4];
+  plot.append(el("circle", {cx:x(4), cy:yEffective(sparse.e), r:4, class:"highlight"}));
+  plot.append(el("line", {x1:x(4)+4, x2:x(4)+42, y1:yEffective(sparse.e)-3, y2:yEffective(sparse.e)-27, class:"annotation-line"}));
+  plot.append(el("text", {x:x(4)+45, y:yEffective(sparse.e)-29, class:"annotation"}, "L4: 30 blocks, but only +0.3pp @20%"));
+
+  const peak = data[49];
+  plot.append(el("circle", {cx:x(49), cy:yAdvantage(peak.a05), r:4, class:"highlight"}));
+  plot.append(el("line", {x1:x(49)-4, x2:x(49)-86, y1:yAdvantage(peak.a05)+2, y2:yAdvantage(peak.a05)+25, class:"annotation-line"}));
+  plot.append(el("text", {x:x(49)-90, y:yAdvantage(peak.a05)+29, "text-anchor":"end", class:"annotation"}, "L49: largest headroom, +3.8pp @5%"));
+})();
+</script>

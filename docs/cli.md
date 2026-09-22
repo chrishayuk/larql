@@ -25,6 +25,7 @@ a local directory path — see [Model resolution](#model-resolution) below.
 | `bench <model>` | Benchmark decode throughput on a real vindex (Metal / CPU / Ollama). |
 | `accuracy <model>` | Split-axis accuracy suite for KV engines — parametric vs in-context vs conflict, scored by top-1 match and Shannon bits/token. |
 | `dec-bench <subcmd>` | DEC residual-replay loadgen — `capture` a residual pool, `replay` batch × wire × dispatch sweeps, `drift` the C6 wire-fidelity gate. |
+| `dev mad-knn <subcmd>` | MAD-V3 oracle — resumable `capture` of residual keys, optional ADDR-1 execution seams, and FFN-block contributions; `census` per-layer physical opportunity; then `evaluate` semantic purity and future-address byte coverage. |
 | `shannon <subcmd>` | Next-token bit scoring, slot probes, repetition probes, layer lens, demo arithmetic coding. |
 | `serve <model>` | Serve a vindex over HTTP + gRPC. |
 

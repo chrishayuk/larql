@@ -75,6 +75,57 @@ pub struct StepOutput {
     pub logits: Option<Vec<f32>>,
 }
 
+/// Read-only taps on one incremental position.
+///
+/// Observers are diagnostics, not execution policy: they see the resolved
+/// values and calls but cannot replace them. [`DecodeSession::step`] uses the
+/// same traversal with a no-op observer, so enabling a capture cannot change
+/// which operation runs or what value reaches the next layer.
+pub trait DecodeObserver {
+    /// Residual entering `layer`, before its pre-attention norm.
+    fn layer_input(&mut self, _layer: usize, _residual: &[f32]) -> Result<(), VindexError> {
+        Ok(())
+    }
+
+    /// Normalised vector consumed by the attention projections.
+    fn attention_input(&mut self, _layer: usize, _input: &[f32]) -> Result<(), VindexError> {
+        Ok(())
+    }
+
+    /// Attention branch output after any judged branch norm, before the
+    /// residual addition.
+    fn attention_output(&mut self, _layer: usize, _output: &[f32]) -> Result<(), VindexError> {
+        Ok(())
+    }
+
+    /// Residual after the attention branch has been added.
+    fn post_attention(&mut self, _layer: usize, _residual: &[f32]) -> Result<(), VindexError> {
+        Ok(())
+    }
+
+    /// Fully resolved FFN call before execution. This is the diagnostic seam
+    /// for exact channel-block contribution accounting: the observer sees the
+    /// same normalised input and resident operands the backend will consume.
+    fn ffn_call(&mut self, _layer: usize, _call: &FfnCall<'_>) -> Result<(), VindexError> {
+        Ok(())
+    }
+
+    /// FFN branch output after any judged branch norm, before the residual
+    /// addition.
+    fn ffn_output(&mut self, _layer: usize, _output: &[f32]) -> Result<(), VindexError> {
+        Ok(())
+    }
+
+    /// Residual leaving `layer`, after its FFN branch has been added.
+    fn post_layer(&mut self, _layer: usize, _residual: &[f32]) -> Result<(), VindexError> {
+        Ok(())
+    }
+}
+
+struct NoopObserver;
+
+impl DecodeObserver for NoopObserver {}
+
 /// Incremental executor over one component plan (see module docs).
 pub struct DecodeSession<'a, B: PlanBackend> {
     plan: &'a ComponentOpPlan,
@@ -181,8 +232,19 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             output,
             position: 0,
         };
+        session.prepare_residency();
+        Ok(session)
+    }
+
+    /// Re-issue the backend's numerical no-op residency hint for every loaded
+    /// matrix operand. Long diagnostic corpora start independent sequences
+    /// after clearing KV state; on unified-memory devices that boundary is
+    /// long enough for a driver to begin unwiring a 60 GB working set and
+    /// enter a self-reinforcing slow-step cycle. Callers decide when the hint
+    /// is worthwhile; ordinary decode does not add it per token.
+    pub fn prepare_residency(&self) {
         let mut weights: Vec<super::backend::WeightSlice<'_>> = Vec::new();
-        for state in &session.layers {
+        for state in &self.layers {
             weights.extend(state.attention.weight_slices());
             if let Some(gate) = &state.ffn_gate {
                 weights.push(gate.slice());
@@ -190,16 +252,28 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             weights.push(state.ffn_up.slice());
             weights.push(state.ffn_down.slice());
         }
-        if let Some((_, projection)) = &session.output {
+        if let Some((_, projection)) = &self.output {
             weights.push(projection.slice());
         }
-        backend.prepare(&weights);
-        Ok(session)
+        self.backend.prepare(&weights);
     }
 
     /// Positions consumed so far.
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    /// Start an independent sequence while retaining every resident operand.
+    ///
+    /// Only sequence state is cleared. This is what makes a large oracle
+    /// corpus practical: prompts do not share attention history, but they also
+    /// do not reload the model between rows.
+    pub fn reset(&mut self) {
+        self.position = 0;
+        for layer in &mut self.layers {
+            layer.keys.clear();
+            layer.values.clear();
+        }
     }
 
     /// Advance one token: embed it, run it through every layer against
@@ -208,6 +282,16 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// Operation ordering mirrors the batch traversal exactly — the
     /// decode-vs-batch parity tests are the guarantee.
     pub fn step(&mut self, token: u32) -> Result<StepOutput, VindexError> {
+        self.step_observed(token, &mut NoopObserver)
+    }
+
+    /// Advance one token through the identical decode traversal while
+    /// exposing read-only diagnostic taps.
+    pub fn step_observed<O: DecodeObserver + ?Sized>(
+        &mut self,
+        token: u32,
+        observer: &mut O,
+    ) -> Result<StepOutput, VindexError> {
         let embedding = self
             .plan
             .embedding
@@ -231,10 +315,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             });
         }
 
-        for (state, layer) in self.layers.iter_mut().zip(&self.plan.layers) {
+        for (layer_index, (state, layer)) in
+            self.layers.iter_mut().zip(&self.plan.layers).enumerate()
+        {
+            observer.layer_input(layer_index, &h)?;
             // Attention input is normalised once and handed over; the
             // judged gate reads the same vector (same as the batch path).
             let inputs = [state.pre_attention.apply(self.backend, &h)];
+            observer.attention_input(layer_index, &inputs[0])?;
             let call = state.attention.call(
                 &layer.attention,
                 &inputs,
@@ -253,10 +341,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 Some(norm) => norm.apply(self.backend, &out.output),
                 None => out.output,
             };
+            observer.attention_output(layer_index, &attn_out)?;
             self.backend.residual_add(&mut h, &attn_out);
+            observer.post_attention(layer_index, &h)?;
 
             let normed = state.pre_ffn.apply(self.backend, &h);
-            let ffn_out = self.backend.ffn(FfnCall {
+            let call = FfnCall {
                 x: &normed,
                 hidden: self.hidden,
                 intermediate: layer.ffn.intermediate_size,
@@ -264,12 +354,16 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 up: state.ffn_up.slice(),
                 down: state.ffn_down.slice(),
                 activation: layer.ffn.activation,
-            })?;
+            };
+            observer.ffn_call(layer_index, &call)?;
+            let ffn_out = self.backend.ffn(call)?;
             let ffn_out = match &state.post_ffn {
                 Some(norm) => norm.apply(self.backend, &ffn_out),
                 None => ffn_out,
             };
+            observer.ffn_output(layer_index, &ffn_out)?;
             self.backend.residual_add(&mut h, &ffn_out);
+            observer.post_layer(layer_index, &h)?;
         }
 
         let final_hidden = match &self.final_norm {
