@@ -118,6 +118,33 @@ impl Captured {
         self.primary.0
     }
 
+    /// The activation the decode projected.
+    pub fn x(&self) -> &[f32] {
+        &self.x
+    }
+
+    /// Output rows of the projection.
+    pub fn out_dim(&self) -> usize {
+        self.out_dim
+    }
+
+    /// A stored K-quant call's block stream and codec; `None` for every
+    /// other representation. For characterising an alternative kernel
+    /// against the exact operand and activation the decode used.
+    ///
+    /// # Safety
+    /// The operands must still be resident and unmoved — the caller holds
+    /// the session that owns them, as for [`replay`].
+    pub unsafe fn kquant(&self) -> Option<(&[u8], KQuant)> {
+        match (self.kind, self.codec) {
+            (Kind::KQuant, Some(codec)) => {
+                let (p, n) = self.primary;
+                Some((std::slice::from_raw_parts(p as *const u8, n), codec))
+            }
+            _ => None,
+        }
+    }
+
     /// Rebuild the row view.
     ///
     /// # Safety
