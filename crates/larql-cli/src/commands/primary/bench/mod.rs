@@ -32,6 +32,8 @@
 //!   remote_ffn — remote FFN HTTP path + `--concurrent` aggregation.
 //!   remote_moe — remote MoE expert path + `--concurrent` aggregation.
 //!   ollama     — Ollama side-by-side comparison.
+//!   vindex3    — VINDEX3 container arm (serving path: prepared operands,
+//!                batch prefill, decode session), same statistic as V2 rows.
 //!   output     — table printer.
 
 pub mod args;
@@ -53,6 +55,8 @@ pub(super) mod remote_ffn;
 pub(super) mod remote_ffn_runtime;
 pub(super) mod remote_moe;
 pub(super) mod remote_moe_runtime;
+pub(super) mod vindex3;
+pub(super) mod vindex3_runtime;
 
 // Public surface kept identical to the pre-split bench_cmd: callers only
 // see `BenchArgs` and `run`.

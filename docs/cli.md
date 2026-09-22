@@ -22,7 +22,7 @@ a local directory path — see [Model resolution](#model-resolution) below.
 | `slice <source>` | Carve a subset of a vindex (`client` / `attn` / `embed` / `server` / `browse` / `router` / `expert-server`). |
 | `publish <source>` | Publish a vindex to HuggingFace — full + slice siblings + collections. |
 | `rm <model>` | Evict a cached vindex. |
-| `bench <model>` | Benchmark decode throughput on a real vindex (Metal / CPU / Ollama). |
+| `bench <model>` | Benchmark decode throughput on a real vindex or VINDEX3 container (Metal / CPU / Ollama). |
 | `accuracy <model>` | Split-axis accuracy suite for KV engines — parametric vs in-context vs conflict, scored by top-1 match and Shannon bits/token. |
 | `dec-bench <subcmd>` | DEC residual-replay loadgen — `capture` a residual pool, `replay` batch × wire × dispatch sweeps, `drift` the C6 wire-fidelity gate. |
 | `k3-ledger <subcmd>` | K3 serving ledger — miss budget, weight touch, dense-precision frontier and speculative block economics, derived from the checkpoint's own tensor table. |
@@ -221,7 +221,27 @@ larql bench gemma3-4b-it-vindex --backends metal,cpu
 larql bench gemma3-4b-it-vindex --ollama gemma3:4b
 larql bench gemma4-26b-a4b.vindex --moe-shards "0-63=http://a:8081,64-127=http://b:8082"
 LARQL_GPU_ROUTE=1 larql bench gpt-oss-20b-q4k.vindex --warmup 16 -n 256 --routed-from ~/models/gpt-oss-20b-experts-mxfp4.v3
+larql bench model.vindex3 --backends cpu,metal,production-q4k --ollama gemma3:4b
 ```
+
+**VINDEX3 containers.** A V3 container is detected by generation and benched
+through its own program on the serving path: operands prepared once, a batch
+prefill into fresh continuation state, then a decode session stepping one
+greedy token at a time. Opening and preparation are reported on stderr and
+excluded from the row. The row statistic is the V2 one (mean, p50 and p99 over
+every step after `--warmup`), so V2 and V3 rows are the same measurement;
+`larql vindex3 exec --generate` reports a last-half mean instead.
+
+In `--backends`, `cpu` is the `production` kernels that `larql run` and
+`larql serve` execute, and `metal` is the Metal realization (`larql run
+--metal`). Any `larql vindex3 exec --backend` name is also accepted, for
+example `production-q4k` or `metal-lowered`. Rows are labelled
+`vindex3-<backend>`. On device backends, the note splits each token into
+device time, interpreter glue and submissions per token. Flags that configure
+the V2 engine or its remote paths (`--engine`, `--ffn`, `--wire`,
+`--ffn-policy`, `--moe-shards`, `--routed-from`, `--bench-grid`,
+`--via-executor`, `--profile`, `--metal`, `--concurrent`) are refused by name.
+`--ollama` remains available as an external baseline.
 
 ### `larql accuracy`
 

@@ -15,6 +15,7 @@
     "crates/larql-cli/src/commands/primary/bench/remote_ffn_runtime.rs",
     "crates/larql-cli/src/commands/primary/bench/remote_moe_runtime.rs",
     "crates/larql-cli/src/commands/primary/bench/local_moe_runtime.rs",
+    "crates/larql-cli/src/commands/primary/bench/vindex3_runtime.rs",
     "crates/larql-cli/src/commands/primary/dec_bench/mod.rs",
     "crates/larql-cli/src/commands/primary/dec_bench/args.rs",
     "crates/larql-cli/src/commands/primary/dec_bench/capture_runtime.rs",

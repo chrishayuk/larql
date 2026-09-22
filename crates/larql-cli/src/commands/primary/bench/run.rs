@@ -17,6 +17,9 @@ use super::output::print_table;
 use super::remote_ffn_runtime::run_concurrent_ffn;
 use super::remote_moe_runtime::run_concurrent_moe;
 use super::row::{BenchJsonLatency, BenchJsonResult, BenchJsonRow, BenchJsonStages, BenchRow};
+use super::vindex3;
+use super::vindex3_runtime::run_vindex3;
+use crate::commands::primary::run_cmd_vindex3::is_vindex3_container;
 
 pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     // QUARANTINED — and NOT because `--repeat` causes anything. It does
@@ -71,6 +74,11 @@ pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     // `bench/baselines/cpu/DIAGNOSIS-2026-05-16-thread-scaling.md`).
     // `RAYON_NUM_THREADS` in the environment overrides everything.
     configure_rayon_threads(args.threads);
+
+    // The flags as the user gave them, before `--cpu` injects the V2
+    // `standard` engine below — the VINDEX3 arm refuses `--engine` by
+    // name and must not refuse one the user never passed.
+    let as_given = args.clone();
 
     // `--cpu` is shorthand for a CPU-only run. Two normalisations:
     //  1. Force `backends = "cpu"` so the engine path (which decides
@@ -141,7 +149,18 @@ pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     let want_engine = args.engine.is_some();
     let want_ffn = args.ffn.is_some();
     let want_moe = args.moe_shards.is_some();
-    if !want_metal && !want_cpu && args.ollama.is_none() && !want_engine && !want_ffn && !want_moe {
+    // A VINDEX3 container names its backends in its own vocabulary
+    // (`production-q4k`, `metal-lowered`, …); `vindex3::resolve_backends`
+    // judges those, so the V2 emptiness check below is not its gate.
+    let is_v3 = is_vindex3_container(&vindex_path);
+    if !is_v3
+        && !want_metal
+        && !want_cpu
+        && args.ollama.is_none()
+        && !want_engine
+        && !want_ffn
+        && !want_moe
+    {
         return Err(
             "no backends selected: pass --backends metal,cpu, --ollama, --engine, --ffn, or --moe-shards".into(),
         );
@@ -168,6 +187,23 @@ pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_default(),
     );
     println!();
+
+    if is_v3 {
+        vindex3::refuse_inapplicable_flags(&as_given)?;
+        let mut rows = Vec::new();
+        for backend in vindex3::resolve_backends(&requested_backends)? {
+            rows.push(run_vindex3(&vindex_path, &args, backend)?);
+        }
+        if let Some(ref ollama_model) = args.ollama {
+            rows.push(run_ollama(
+                ollama_model,
+                &args.prompt,
+                args.tokens,
+                args.ollama_cpu.then(rayon::current_num_threads),
+            ));
+        }
+        return emit(&rows, &args, &vindex_path);
+    }
 
     let mut rows: Vec<BenchRow> = Vec::new();
 
@@ -399,7 +435,16 @@ pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    print_table(&rows);
+    emit(&rows, &args, &vindex_path)
+}
+
+/// Print the table and, when asked, the ADR-0012 JSON envelope.
+fn emit(
+    rows: &[BenchRow],
+    args: &BenchArgs,
+    vindex_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    print_table(rows);
 
     // JSON output (ADR-0012).
     let want_json = args

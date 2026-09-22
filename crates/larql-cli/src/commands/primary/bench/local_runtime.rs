@@ -147,6 +147,14 @@ pub(super) fn run_larql(
         }
 
         if args.verbose {
+            let text: String = result.tokens.iter().map(|(t, _)| t.as_str()).collect();
+            eprintln!(
+                "[bench] {} prompt ids ({}): {:?}",
+                backend_name_for(metal),
+                token_ids.len(),
+                token_ids
+            );
+            eprintln!("[bench] {} generated: {text:?}", backend_name_for(metal));
             let (slots, bytes) = index.kquant_ffn_cache_stats();
             eprintln!(
                 "{}",
