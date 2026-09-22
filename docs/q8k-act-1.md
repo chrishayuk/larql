@@ -249,8 +249,84 @@ six.
 
 ## Results: performance verdict (P) and mechanism (M)
 
-*Not yet run.* P and M need a machine quiet enough for the control to hold within
-15% of 68.2 ms/token. At 00:45 the load average was 29, and a smoke comparison had
-the control at 124 ms/token (+82%). Under the frozen rule that session is disturbed
-and is not a reading. The smoke numbers are recorded here only so they cannot be
-quoted later as evidence either way.
+Run 2026-09-23 from 00:52, on a release build of \`baa81944\` (the code at HEAD
+equals that commit), with \`LARQL_Q4K_ASM\` unset and 8 bench threads. By then the
+earlier load had cleared: the 1-minute load average was between 3.4 and 4.3
+throughout, with no build, test or training process running. An earlier session at
+load 29 was disturbed and discarded (see below).
+
+### P: workload W, 3 processes per arm, alternating
+
+| Run | load (1 min) | \`production-q4k\` (control) | \`production-q4k-q8k\` (arm) |
+|---|---|---|---|
+| 1 | 3.36 / 3.56 | 72.81 ms/token | 33.27 ms/token |
+| 2 | 3.35 / 3.78 | 70.40 ms/token | 33.35 ms/token |
+| 3 | 3.99 / 4.05 | 69.22 ms/token | 33.37 ms/token |
+| **median** | | **70.40** (+3.2% vs 68.2, within the 15% bound: session valid) | **33.35** |
+
+Prefill (27 tokens) is about 1.48 s for the control and about 0.49 s for the arm.
+Generation fingerprints are identical across all three processes of each arm
+(\`3f36dfba…\` control, \`3c4cbac7…\` arm).
+
+**P verdict: HIT.** 33.35 ms/token is inside the frozen 25–35 ms/token. That is a
+2.11× decode speedup over \`production-q4k\` on the same stored Q4_K pack.
+
+### M: thread sweep, \`vindex3 exec --backend production-q4k-q8k --generate 16\`
+
+| Threads | Steady ms/token | Projection throughput | f32 arm (predecessor sweep) |
+|---|---|---|---|
+| 1 | 87 | 29 GB/s | 372 ms/token, 7 GB/s |
+| 2 | 53 | 48 GB/s | 196 ms/token, 13 GB/s |
+| 4 | 35 | 71 GB/s | 107 ms/token, 24 GB/s |
+| 8 | 32 | **78 GB/s** | 66 ms/token, 39 GB/s |
+
+**M forecast held:** 78 GB/s ≥ 58 GB/s, which is 2.0× the baseline's 39 GB/s.
+Scaling is now clearly sub-linear, and it flattens between 4 and 8 threads. The f32
+arm scaled almost linearly across the same range. The Q8_K arm has moved from a
+compute-bound regime toward a shared limit, most likely memory bandwidth or
+per-token fixed costs. This rung does not test which.
+
+### Descriptive (not gated)
+
+- Free-running greedy output first diverges from \`production-q4k\` at generated
+  token 1: the title word, a near-tie consistent with F3's single flipped position.
+  From there the arm's text opens "## From Celtic Outpost to Global Icon: A History
+  of Paris". V2's text opens the same way. That is a coincidence of a near-tie, not
+  a parity claim: V2 holds different weights and feeds a doubled BOS.
+- V2 context from the 2026-09-22 session: \`larql-cpu\` 28.9 ms/token, \`standard\`
+  34.8 ms/token. The V3 arm now sits in that band. Those were different sessions on
+  different weights, so this is not a head-to-head.
+
+## Adjudication
+
+| Verdict | Result |
+|---|---|
+| **P** (performance) | **HIT**: 33.35 ms/token in [25, 35] |
+| **M** (mechanism) | **HOLDS**: 78 GB/s ≥ 58 GB/s |
+| **F** (fidelity) | **PASS**: F0–F3 |
+| **Hypothesis** | **SUPPORTED**: P HIT and M holds, with fidelity inside the frozen contract |
+
+V3's CPU Q4_K gap to V2 was mostly the activation form of the kernel. It was not
+an executor-wide cost and not a threading defect. With V2's Q8_K integer-dot route,
+the same stored pack decodes at 33.4 ms/token instead of 70.4. Activation
+quantisation costs about a tenth of the divergence weight quantisation already
+introduces.
+
+**What this does not establish:**
+- It says nothing about Metal.
+- It says nothing about other models or corpora. Only one prompt was scored for F,
+  and one workload for P.
+- It does not settle whether \`production-q4k-q8k\` should become a default. That is
+  a separate decision, and it would need a wider fidelity corpus first.
+- The Q6_K route is implemented and passes F0, but this Q4_K-only pack never
+  exercised it end to end.
+
+### The disturbed session (not a reading)
+
+At 00:45 the 1-minute load average was 29 (a GW-STATE-1 training run and a cargo
+test in another worktree). A smoke comparison had the control at 124 ms/token
+(+82%) and the arm at 185 ms/token. Under the frozen rule that session is not a
+reading. It is recorded because the arm degraded worse than the control there,
+which suggests the spin pool behind \`q4k_q8k_matvec_parallel\` is more
+contention-sensitive than the f32 path. That is a separate question, and this rung
+does not answer it.
