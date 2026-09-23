@@ -73,6 +73,21 @@ pub struct MeasureArgs {
     /// Component to measure.
     #[arg(long, default_value = DEFAULT_COMPONENT)]
     pub component: String,
+    /// Extra provenance recorded verbatim in the report, as `key=value`.
+    /// Repeat for several. `larql_version` is always recorded.
+    #[arg(long = "provenance", value_parser = parse_provenance)]
+    pub provenance: Vec<(String, String)>,
+}
+
+/// The report key for this binary's version.
+const VERSION_KEY: &str = "larql_version";
+
+/// Parse one `key=value` provenance entry.
+fn parse_provenance(entry: &str) -> Result<(String, String), String> {
+    match entry.split_once('=') {
+        Some((key, value)) if !key.is_empty() => Ok((key.to_string(), value.to_string())),
+        _ => Err(format!("`{entry}` is not key=value")),
+    }
 }
 
 /// One arm's inputs, resolved.
@@ -110,6 +125,12 @@ pub fn run(args: MeasureArgs) -> Result<(), BoxErr> {
         sequences: args.sequences,
         label: args.label.clone(),
         output: args.output.clone(),
+        provenance: std::iter::once((
+            VERSION_KEY.to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        ))
+        .chain(args.provenance.iter().cloned())
+        .collect(),
     };
     let outcome = with_arms(
         (&reference, &reference_opened),

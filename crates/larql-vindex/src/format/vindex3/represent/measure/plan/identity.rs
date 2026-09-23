@@ -109,18 +109,30 @@ pub fn seal_break(
     })
 }
 
-/// Recorded digests by representation id, for the report.
-pub fn recorded_digests(
+/// A bound representation as the container's directory records it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RecordedRepresentation {
+    pub payload_sha256: String,
+    pub payload_bytes: u64,
+}
+
+/// The directory's record of every bound representation, for the report.
+pub fn recorded_representations(
     index: &Vindex3Index,
     bound: &BTreeSet<String>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<String, RecordedRepresentation> {
     bound
         .iter()
         .filter_map(|id| {
-            index
-                .representations
-                .get(id)
-                .map(|e| (id.clone(), e.payload_sha256.clone()))
+            index.representations.get(id).map(|e| {
+                (
+                    id.clone(),
+                    RecordedRepresentation {
+                        payload_sha256: e.payload_sha256.clone(),
+                        payload_bytes: e.payload_bytes,
+                    },
+                )
+            })
         })
         .collect()
 }

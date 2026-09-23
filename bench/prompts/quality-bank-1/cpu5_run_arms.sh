@@ -4,7 +4,7 @@
 #   ./cpu5_run_arms.sh <container> <outdir> [arm ...]
 #
 # The reference (exact bf16 weights, f32 activation) must already be
-# banked with `run_bank.py reference` under LARQL_CPU_MAX_FORMAT=bf16.
+# banked with `run_bank_legacy.py reference` under LARQL_CPU_MAX_FORMAT=bf16.
 # Every arm below is compared against THAT bank, so the canonical arm is
 # run once and never re-run — which is what makes a six-arm sweep over a
 # 51 GB model affordable.
@@ -41,7 +41,7 @@ for arm in "${ARMS[@]}"; do
   # `--keep` retains each arm's logits: the interaction analysis needs
   # the ERROR VECTORS, and a per-position KL cannot say whether two
   # perturbations reinforce, cancel, or are independent.
-  python3 "$HERE/run_bank.py" compare "$CONTAINER" "$OUT" \
+  python3 "$HERE/run_bank_legacy.py" compare "$CONTAINER" "$OUT" \
       --backend production --source auto --keep --label "$arm"
-  python3 "$HERE/run_bank.py" report "$OUT" --label "$arm"
+  python3 "$HERE/run_bank_legacy.py" report "$OUT" --label "$arm"
 done

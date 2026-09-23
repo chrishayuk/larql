@@ -18,6 +18,7 @@ fn identical_rows_have_zero_kl_and_full_agreement() {
     assert!(s.top1_agree);
     assert_eq!(s.top5_overlap, TOP_K_OVERLAP);
     assert_eq!(s.delta_nll, Some(0.0));
+    assert_eq!((s.max_abs_delta, s.mean_abs_delta), (0.0, 0.0));
 }
 
 /// Reference p = (1/4, 3/4), candidate q = (1/2, 1/2), next token 0.
@@ -38,6 +39,9 @@ fn a_two_token_distribution_matches_its_closed_form() {
     assert!(!s.top1_agree);
     // A two-token vocabulary has two top tokens, and both are shared.
     assert_eq!(s.top5_overlap, 2);
+    // |Δlogit| is (0, ln 3): max ln 3, mean ln 3 / 2.
+    assert!((s.max_abs_delta - 3f64.ln()).abs() < 1e-6);
+    assert!((s.mean_abs_delta - 3f64.ln() / 2.0).abs() < 1e-6);
 }
 
 #[test]
@@ -84,6 +88,8 @@ fn metric(sample: usize, category: &str, kl: f64, agree: bool, margin: f64) -> P
         delta_nll: if agree { Some(0.5) } else { None },
         reference_margin: margin,
         reference_entropy: 1.0,
+        max_abs_delta: kl * 2.0,
+        mean_abs_delta: kl,
     }
 }
 
@@ -102,6 +108,9 @@ fn aggregates_use_nearest_rank_percentiles() {
     assert!(close(a.top5_overlap_mean, 4.0));
     // Only the agreeing positions carried a next-token ΔNLL of 0.5.
     assert!(close(a.delta_nll_mean.unwrap(), 0.5));
+    // Each position's max |Δlogit| is twice its KL here: mean 101, p99 198.
+    assert!(close(a.max_abs_delta_mean, 101.0));
+    assert_eq!(a.max_abs_delta_p99, 198.0);
     assert_eq!(aggregate(&[]), None);
 }
 

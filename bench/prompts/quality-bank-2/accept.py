@@ -116,7 +116,7 @@ def main():
     for cmd in (["compare", container, outdir, "--backend", "production", "--source",
                  "auto", "--label", LABEL],
                 ["report", outdir, "--label", LABEL]):
-        subprocess.run([sys.executable, os.path.join(BANK1, "run_bank.py"), *cmd],
+        subprocess.run([sys.executable, os.path.join(BANK1, "run_bank_legacy.py"), *cmd],
                        check=True, env=env)
 
     out = json.load(open(result))

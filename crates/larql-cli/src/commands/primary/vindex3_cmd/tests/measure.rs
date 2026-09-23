@@ -92,6 +92,7 @@ fn args(f: &Fixture, candidate: &Path, backend: ExecBackend, output: &str) -> Me
         label: output.into(),
         output: f.root.join(output),
         component: "target".into(),
+        provenance: vec![("source_commit".into(), "fixture".into())],
     }
 }
 
@@ -111,6 +112,13 @@ fn measure_runs_the_procedure_on_the_arms_exec_would_build() {
     assert_eq!(
         receipt["receipt"]["candidate"]["requested_pack"],
         DTYPE_NVFP4
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join(REPORT_FILE)).unwrap()).unwrap();
+    assert_eq!(report["provenance"]["source_commit"], "fixture");
+    assert_eq!(
+        report["provenance"]["larql_version"],
+        env!("CARGO_PKG_VERSION")
     );
 }
 

@@ -44,6 +44,8 @@ def position(ref_row, cand_row, next_token):
         "delta_nll": None if next_token is None else float(lp[next_token] - lq[next_token]),
         "reference_margin": float(ps[0] - (ps[1] if len(ps) > 1 else 0.0)),
         "reference_entropy": float(-(p * lp).sum()),
+        "max_abs_delta": float(np.abs(cand_row.astype(np.float64) - ref_row.astype(np.float64)).max()),
+        "mean_abs_delta": float(np.abs(cand_row.astype(np.float64) - ref_row.astype(np.float64)).mean()),
     }
 
 
