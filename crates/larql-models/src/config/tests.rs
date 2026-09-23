@@ -931,6 +931,22 @@ fn the_direct_form_carries_neither_a_rank_nor_an_epsilon() {
     assert_eq!(form.norm_eps(), None);
 }
 
+/// An architecture that never mentions the DSA indexer answers `None` on
+/// every one of its seven accessors — `None` means "not a DSA
+/// architecture" the same way it means "unjudged" for the epsilon
+/// accessors above.
+#[test]
+fn dsa_accessors_default_to_none_for_a_non_dsa_architecture() {
+    let arch = DefaultsArch(base_config());
+    assert_eq!(arch.dsa_index_topk(), None);
+    assert_eq!(arch.dsa_index_n_heads(), None);
+    assert_eq!(arch.dsa_index_head_dim(), None);
+    assert_eq!(arch.dsa_indexer_wq_b_key(0), None);
+    assert_eq!(arch.dsa_indexer_wk_key(0), None);
+    assert_eq!(arch.dsa_indexer_k_norm_key(0), None);
+    assert_eq!(arch.dsa_indexer_weights_proj_key(0), None);
+}
+
 // ── tie_word_embeddings ──────────────────────────────────────────────
 //
 // Parsed as a *check* on the loader's tie-on-absence behaviour, not as a
