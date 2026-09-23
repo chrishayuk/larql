@@ -30,7 +30,17 @@ use crate::format::vindex3::represent::codec::RepresentationExtent;
 
 /// Shapes from one group to a real Gemma 3 4B width, with odd row counts
 /// so a slab cut at the wrong row shows.
-const SHAPES: [(usize, usize); 6] = [(1, 16), (3, 32), (5, 48), (7, 112), (4, 2560), (3, 8192)];
+/// `(2, 368)` is 23 groups: two eight-group steps, then the pair and
+/// single tails, all in one row.
+const SHAPES: [(usize, usize); 7] = [
+    (1, 16),
+    (3, 32),
+    (5, 48),
+    (7, 112),
+    (2, 368),
+    (4, 2560),
+    (3, 8192),
+];
 const TENSOR_SCALE: f32 = 0.0371;
 /// The seed the quantisation bound is recorded on.
 const BOUND_SEED: u32 = 0x5eed_0001;

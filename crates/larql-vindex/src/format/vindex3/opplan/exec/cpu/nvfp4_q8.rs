@@ -141,6 +141,45 @@ unsafe fn nvfp4_q8_row_sdot(
     let (mut acc0, mut acc1) = (vdupq_n_f32(0.0), vdupq_n_f32(0.0));
     let groups = scales.len();
     let mut g = 0usize;
+    // Eight groups — one 64-byte line of codes — per step. Each group's
+    // int32 lanes reduce pairwise into ONE lane of a vector holding four
+    // groups, so the conversion and the scale FMA run once per four
+    // groups instead of once per group.
+    let decode2 = |at: usize| {
+        let raw = vld1q_u8(pp.add(at * NVFP4_GROUP_BYTES));
+        let lo = vandq_u8(raw, vdupq_n_u8(0x0f));
+        let hi = vshrq_n_u8::<4>(raw);
+        (
+            vqtbl1q_s8(lut, vzip1q_u8(lo, hi)),
+            vqtbl1q_s8(lut, vzip2q_u8(lo, hi)),
+        )
+    };
+    let dot =
+        |c: int8x16_t, at: usize| vdotq_s32(zero, c, vld1q_s8(qp.add(at * NVFP4_GROUP_ELEMS)));
+    let four = |at: usize| {
+        let (c0, c1) = decode2(at);
+        let (c2, c3) = decode2(at + 2);
+        let sums = vpaddq_s32(
+            vpaddq_s32(dot(c0, at), dot(c1, at + 1)),
+            vpaddq_s32(dot(c2, at + 2), dot(c3, at + 3)),
+        );
+        // Straight into lanes from the table: an array built on the stack
+        // and reloaded as a vector stalls on store-to-load forwarding.
+        let step = |i: usize| steps.as_ptr().add(*scales.get_unchecked(at + i) as usize);
+        let mut w = vld1q_dup_f32(step(0));
+        w = vld1q_lane_f32::<1>(step(1), w);
+        w = vld1q_lane_f32::<2>(step(2), w);
+        w = vld1q_lane_f32::<3>(step(3), w);
+        let scale = vmulq_f32(w, vld1q_f32(xs.as_ptr().add(at)));
+        (vcvtq_f32_s32(sums), scale)
+    };
+    while g + 8 <= groups {
+        let (s0, k0) = four(g);
+        let (s1, k1) = four(g + 4);
+        acc0 = vfmaq_f32(acc0, s0, k0);
+        acc1 = vfmaq_f32(acc1, s1, k1);
+        g += 8;
+    }
     while g + 2 <= groups {
         let raw = vld1q_u8(pp.add(g * NVFP4_GROUP_BYTES));
         let lo = vandq_u8(raw, vdupq_n_u8(0x0f));
