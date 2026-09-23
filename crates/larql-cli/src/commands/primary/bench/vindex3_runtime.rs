@@ -26,6 +26,8 @@ use larql_vindex::tokenizers::Tokenizer;
 use super::args::BenchArgs;
 use super::local::generation_fingerprint;
 use super::row::BenchRow;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+use super::vindex3::check_reset_witness;
 use super::vindex3::{
     backend_name, is_device_backend, representation_note, row_label, summarise, DeviceWindow,
     TimedRun,
@@ -35,6 +37,12 @@ use crate::commands::primary::vindex3_cmd::prepare::{
     prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT,
 };
 use crate::commands::primary::vindex3_cmd::ExecBackend;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+use crate::commands::primary::vindex3_cmd::{lowered::LoweredSession, prepare::lowered_formats};
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+use larql_compute_metal::MetalBackend;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+use larql_vindex::format::vindex3::opplan::exec::backend::WeightFormats;
 
 type BoxErr = Box<dyn std::error::Error>;
 
@@ -84,18 +92,22 @@ pub(super) fn run_vindex3(
             prompt_ids
         );
     }
-    with_plan_backend(
-        backend,
-        Timed {
-            which: backend,
-            opened: &opened,
-            args,
-            tokenizer: &tokenizer,
-            eos: &eos,
-            prompt_ids: &prompt_ids,
-            representation: representation.as_deref(),
-        },
-    )
+    let timed = Timed {
+        which: backend,
+        opened: &opened,
+        args,
+        tokenizer: &tokenizer,
+        eos: &eos,
+        prompt_ids: &prompt_ids,
+        representation: representation.as_deref(),
+    };
+    // A lowered arm does not execute through the interpreter; it has its
+    // own session, timed by the same statistic.
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
+    if let Some((formats, _)) = lowered_formats(backend) {
+        return timed.lowered(formats);
+    }
+    with_plan_backend(backend, timed)
 }
 
 /// The prompt as the V2 bench sends it: through the container's chat
@@ -255,6 +267,146 @@ fn device_window(
         device_ms: after.device_nanos.saturating_sub(before.device_nanos) as f64 / 1e6,
         submissions: after.submissions.saturating_sub(before.submissions),
     })
+}
+
+/// The chosen-logit slot of a lowered step's fingerprint entry. The
+/// lowered decode returns only the device argmax id; reading the logit
+/// back would put a host copy on the timed path. So a lowered fingerprint
+/// covers the generated text alone. It compares lowered repeats with each
+/// other, never with an interpreter row, whose fingerprint carries logits.
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+const UNREAD_LOGIT: f64 = 0.0;
+
+/// What one lowered generation measured, plus the id sequence the reset
+/// witness compares.
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+struct LoweredGeneration {
+    generation: Generation,
+    /// Every id emitted, then the id the last step produced.
+    ids: Vec<u32>,
+}
+
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+impl Timed<'_> {
+    /// Bench a lowered arm: load resident once, pre-warm with one token
+    /// as every device arm is, reset to position 0, then one timed
+    /// generation.
+    ///
+    /// The session is reset rather than rebuilt, so the weights are loaded
+    /// once. The reset is checked on every run rather than assumed: the
+    /// warm-up and the timed run condition on the same prompt from a fresh
+    /// state, so their first ids must agree, or the row is refused.
+    fn lowered(&self, formats: WeightFormats) -> Result<BenchRow, BoxErr> {
+        let gpu = MetalBackend::new().ok_or("no Metal device available for a lowered arm")?;
+        let max_tokens = self.args.warmup + self.args.tokens;
+        let capacity = self.prompt_ids.len() + max_tokens;
+        let loading = Instant::now();
+        let mut keep = Vec::new();
+        let mut session = LoweredSession::new(
+            &gpu,
+            &self.opened.plan,
+            &self.opened.store,
+            formats,
+            capacity,
+            &mut keep,
+        )?;
+        eprintln!(
+            "[bench] {}: operands resident in {:.1} s",
+            row_label(self.which),
+            loading.elapsed().as_secs_f64()
+        );
+
+        let warm = self.lowered_generate(&mut session, 1)?;
+        session.reset();
+        let started = Instant::now();
+        let timed = self.lowered_generate(&mut session, max_tokens)?;
+        let wall_ms = started.elapsed().as_secs_f64() * 1e3;
+        session.quiesce();
+
+        check_reset_witness(self.which, &warm.ids, &timed.ids)?;
+
+        let generation = timed.generation;
+        if self.args.verbose {
+            let text: String = generation.emitted.iter().map(|(t, _)| t.as_str()).collect();
+            eprintln!("[bench] {} generated: {text:?}", backend_name(self.which));
+        }
+        Ok(summarise(&TimedRun {
+            backend: self.which,
+            prefill_ms: generation.prefill_ms,
+            step_ms: &generation.step_ms,
+            warmup: self.args.warmup,
+            target_tokens: self.args.tokens,
+            wall_ms,
+            prompt_tokens: self.prompt_ids.len(),
+            device: generation.device,
+            representation: self.representation,
+            fingerprint: &generation_fingerprint(&generation.emitted),
+        }))
+    }
+
+    /// The prompt one position per step, as the lowered path executes
+    /// it; then up to `max_tokens` greedy steps chained from the device
+    /// argmax, each timed exactly as the interpreter's are.
+    fn lowered_generate(
+        &self,
+        session: &mut LoweredSession<'_>,
+        max_tokens: usize,
+    ) -> Result<LoweredGeneration, BoxErr> {
+        let prefill_started = Instant::now();
+        let mut next = None;
+        for &token in self.prompt_ids {
+            next = session.step(token)?;
+        }
+        let mut next = next.ok_or(NO_HEAD)?;
+        let prefill_ms = prefill_started.elapsed().as_secs_f64() * 1e3;
+
+        session.begin_decode();
+        let mut detok = Detokenizer::new(self.tokenizer);
+        detok.seed(self.prompt_ids);
+        let mut emitted = Vec::with_capacity(max_tokens);
+        let mut step_ms = Vec::with_capacity(max_tokens);
+        let mut ids = Vec::with_capacity(max_tokens + 1);
+        // The window starts at the first measured step, as the
+        // interpreter's device snapshot does.
+        let mut submissions_before = None;
+        let mut device_ms = 0.0;
+        for step in 0..max_tokens {
+            let id = next;
+            if self.eos.eos_token_ids.contains(&id) {
+                break;
+            }
+            if step == self.args.warmup {
+                submissions_before = Some(session.submissions());
+            }
+            let started = Instant::now();
+            next = session.step(id)?.ok_or(NO_HEAD)?;
+            let text = detok.push(id);
+            step_ms.push(started.elapsed().as_secs_f64() * 1e3);
+            if step >= self.args.warmup {
+                device_ms += session.last_gpu_ms();
+            }
+            let stop = self.eos.is_eos_with_tokenizer(id, &text, self.tokenizer);
+            emitted.push((text, UNREAD_LOGIT));
+            ids.push(id);
+            if stop {
+                break;
+            }
+        }
+        ids.push(next);
+        let device = submissions_before.map(|before| DeviceWindow {
+            device_ms,
+            submissions: session.submissions().saturating_sub(before),
+        });
+        Ok(LoweredGeneration {
+            generation: Generation {
+                prefill_ms,
+                step_ms,
+                emitted,
+                device,
+            },
+            ids,
+        })
+    }
 }
 
 const NO_HEAD: &str = "plan carries no output head — cannot generate";

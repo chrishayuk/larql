@@ -556,7 +556,7 @@ mod exec;
 mod generate;
 mod intervention;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
-mod lowered;
+pub(crate) mod lowered;
 mod observe;
 mod ops;
 mod optional_op;
