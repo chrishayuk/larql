@@ -171,12 +171,20 @@ pub struct ObserveArgs {
 
 pub fn run(args: ObserveArgs) -> Result<(), BoxErr> {
     let source = parse_representation_source(&args.representation_source)?;
-    let opened = prepare(&args.container, &args.component, args.backend, source)?;
+    let plugins = super::plugins::Plugins::none();
+    let opened = prepare(
+        &args.container,
+        &args.component,
+        args.backend,
+        source,
+        &plugins,
+    )?;
     let tokenizer = load_tokenizer(&args.container);
     let tokens = prompt_ids(&args, tokenizer.as_ref())?;
     let run_id = args.run_id.clone().unwrap_or_else(default_run_id);
     let outcome = with_plan_backend(
         args.backend,
+        &plugins,
         Observe {
             args: &args,
             opened: &opened,

@@ -16,12 +16,13 @@
 
 use std::path::Path;
 
-use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
+use larql_inference::vindex3::{open_component_in, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::lowering::{LoweringIdentity, LoweringRegistry};
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 
+use super::plugins::Plugins;
 use super::ExecBackend;
 
 type BoxErr = Box<dyn std::error::Error>;
@@ -46,12 +47,18 @@ pub(crate) fn prepare(
     component: &str,
     backend: ExecBackend,
     source: RepresentationSource,
+    plugins: &Plugins,
 ) -> Result<OpenedComponent, BoxErr> {
     let policy = OpenPolicy {
         want: wanted_representation(backend).map(str::to_string),
         source,
     };
-    Ok(open_component(container, component, policy)?)
+    Ok(open_component_in(
+        container,
+        component,
+        policy,
+        plugins.codecs,
+    )?)
 }
 
 /// Parse `--representation-source`.
@@ -366,10 +373,28 @@ pub(crate) fn lowerings_for(
 /// constructed for it.
 pub(crate) fn with_plan_backend<V: BackendVisitor>(
     backend: ExecBackend,
+    plugins: &Plugins,
     visitor: V,
 ) -> Result<V::Out, BoxErr> {
-    let (lowerings, identity) = lowerings_for(backend)?;
+    let (lowerings, identity) = lowerings_with(backend, plugins)?;
     with_lowerings(&lowerings, &identity, visitor)
+}
+
+/// [`lowerings_for`], plus every lowering provider a `--plugin`
+/// registered, asked for the provider `--lowering` names when it names
+/// one. A plugin provider joins the registry under the identity it
+/// states, so a clash with a shipped or `--backend`-configured provider
+/// is refused as a duplicate, never a replacement.
+pub(crate) fn lowerings_with(
+    backend: ExecBackend,
+    plugins: &Plugins,
+) -> Result<(LoweringRegistry, LoweringIdentity), BoxErr> {
+    let (mut lowerings, identity) = lowerings_for(backend)?;
+    for factory in &plugins.lowerings {
+        lowerings = lowerings.register(factory())?;
+    }
+    let identity = plugins.select.clone().unwrap_or(identity);
+    Ok((lowerings, identity))
 }
 
 /// Hand `visitor` the provider `identity` names in `lowerings`, or

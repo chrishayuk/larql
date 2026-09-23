@@ -12,6 +12,7 @@ use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use larql_vindex::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
 
 use super::super::decode::{greedy_decode, Flow};
+use super::super::plugins::Plugins;
 use larql_inference::vindex3::OpenedComponent;
 
 use super::super::prepare::{
@@ -35,6 +36,7 @@ fn prepared_dense(root: &Path) -> OpenedComponent {
         DEFAULT_COMPONENT,
         ExecBackend::Reference,
         RepresentationSource::Auto,
+        &Plugins::none(),
     )
     .unwrap()
 }
@@ -157,16 +159,16 @@ impl BackendVisitor for NameOf {
 #[test]
 fn the_dispatch_hands_the_visitor_the_named_realisation() {
     assert_eq!(
-        with_plan_backend(ExecBackend::Reference, NameOf).unwrap(),
+        with_plan_backend(ExecBackend::Reference, &Plugins::none(), NameOf).unwrap(),
         "reference-f32"
     );
     assert_eq!(
-        with_plan_backend(ExecBackend::Production, NameOf).unwrap(),
+        with_plan_backend(ExecBackend::Production, &Plugins::none(), NameOf).unwrap(),
         "production-larql-compute"
     );
     // Same kernels as `production`; the representation is chosen upstream.
     assert_eq!(
-        with_plan_backend(ExecBackend::ProductionNvfp4, NameOf).unwrap(),
+        with_plan_backend(ExecBackend::ProductionNvfp4, &Plugins::none(), NameOf).unwrap(),
         "production-larql-compute"
     );
 }
@@ -174,7 +176,7 @@ fn the_dispatch_hands_the_visitor_the_named_realisation() {
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 #[test]
 fn a_lowered_arm_is_refused_by_the_interpreter_dispatch() {
-    let err = with_plan_backend(ExecBackend::MetalLowered, NameOf)
+    let err = with_plan_backend(ExecBackend::MetalLowered, &Plugins::none(), NameOf)
         .expect_err("a lowered arm does not run through the interpreter");
     assert!(err.to_string().contains("lowered"), "{err}");
 }
@@ -215,6 +217,7 @@ fn a_directory_that_is_not_a_container_cannot_be_prepared() {
         DEFAULT_COMPONENT,
         ExecBackend::Reference,
         RepresentationSource::Auto,
+        &Plugins::none(),
     )
     .is_err());
 }
@@ -222,7 +225,8 @@ fn a_directory_that_is_not_a_container_cannot_be_prepared() {
 /// The one-opening-authority invariant, pinned at the source: the CLI's
 /// preparation names no inspection, no plan construction and no operand
 /// store opening of its own. Everything a container *is* when it runs
-/// comes from `larql_inference::vindex3::open_component`.
+/// comes from `larql_inference::vindex3::open_component_in` — the same
+/// opener, handed the codec registry `--plugin` composed.
 #[test]
 fn the_cli_preparation_opens_nothing_itself() {
     let source = include_str!("../prepare.rs");
@@ -236,7 +240,7 @@ fn the_cli_preparation_opens_nothing_itself() {
             "prepare.rs re-implements the opener: found `{forbidden}`"
         );
     }
-    assert!(source.contains("open_component("));
+    assert!(source.contains("open_component_in("));
 }
 
 /// The CLI's policy reaches the store: what `--representation-source`
@@ -255,6 +259,7 @@ fn the_prepared_store_carries_the_requested_source_policy() {
         DEFAULT_COMPONENT,
         ExecBackend::ProductionNvfp4,
         RepresentationSource::Transient,
+        &Plugins::none(),
     )
     .unwrap();
     assert_eq!(

@@ -392,6 +392,7 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             // Chat is text-only today; speech arrives via `run --speak`
             // (and later a chat session feeding the speech stream).
             speak: false,
+            plugin: Default::default(),
             voice: None,
             codec_cmd: None,
             speech_out: None,
