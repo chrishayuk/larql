@@ -44,14 +44,20 @@
 //! for large containers is deliberately later, perf-shaped work.
 
 pub mod overlay;
+pub mod postings;
+pub mod reconcile;
 
 #[cfg(test)]
 mod tests;
 
 pub use overlay::KnowledgeOverlay;
+pub use postings::{FeatureAddress, PostingIndex, PostingLookup};
+pub use reconcile::{
+    DenseFfnAttribution, DenseFfnLayerView, FeatureContribution, ReconstructionProof,
+};
 
 use larql_models::TopKEntry;
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Axis};
 
 use crate::error::VindexError;
 use crate::index::types::FeatureMeta;
@@ -198,6 +204,46 @@ impl KnowledgeView {
         )
     }
 
+    /// Annotate a declared set of feature addresses in one batched matrix
+    /// product. This is the GW-0B1 path: unlike repeated [`Self::feature_meta`]
+    /// calls it reads the embedding table once per batch rather than once per
+    /// feature, while preserving the exact `embedding · feature_down` ranking
+    /// and stable token-id tie break of the browse contract.
+    pub fn feature_promotions(
+        &self,
+        layer: usize,
+        features: &[usize],
+    ) -> Result<Vec<Option<FeatureMeta>>, VindexError> {
+        const BATCH: usize = 64;
+        let knowledge = self
+            .layers
+            .get(layer)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| {
+                VindexError::Parse(format!("layer {layer} has no dense feature space"))
+            })?;
+        if let Some(feature) = features
+            .iter()
+            .copied()
+            .find(|&feature| feature >= knowledge.down.ncols())
+        {
+            return Err(VindexError::Parse(format!(
+                "feature {layer}:{feature} is outside width {}",
+                knowledge.down.ncols()
+            )));
+        }
+
+        let mut output = Vec::with_capacity(features.len());
+        for batch in features.chunks(BATCH) {
+            let selected = knowledge.down.select(Axis(1), batch);
+            let logits = self.embedding.dot(&selected);
+            for column in logits.axis_iter(Axis(1)) {
+                output.push(annotate_logits(&column.to_vec(), &self.tokenizer));
+            }
+        }
+        Ok(output)
+    }
+
     /// Every feature annotation of one layer (LQL's raw-token views),
     /// derived on first access.
     pub fn feature_metas(&self, layer: usize) -> Option<&[Option<FeatureMeta>]> {
@@ -329,6 +375,16 @@ fn annotate_feature(
     tokenizer: &crate::tokenizers::Tokenizer,
 ) -> Option<FeatureMeta> {
     let logits = embedding.dot(down_col);
+    annotate_logits(
+        logits.as_slice().expect("matvec result is contiguous"),
+        tokenizer,
+    )
+}
+
+fn annotate_logits(
+    logits: &[f32],
+    tokenizer: &crate::tokenizers::Tokenizer,
+) -> Option<FeatureMeta> {
     let mut ranked: Vec<(usize, f32)> = Vec::with_capacity(ANNOTATION_TOP_K + 1);
     for (id, &logit) in logits.iter().enumerate() {
         // Insert before the first strictly-smaller entry: equal logits

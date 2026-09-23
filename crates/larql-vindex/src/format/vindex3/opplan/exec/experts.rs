@@ -242,6 +242,20 @@ impl ExpertMatrices {
 }
 
 impl FfnOperands {
+    pub(super) fn dense_slices<'a>(
+        &'a self,
+        ffn: &'a LayerFfn,
+    ) -> Option<(Option<WeightSlice<'a>>, WeightSlice<'a>, WeightSlice<'a>)> {
+        match (self, ffn) {
+            (Self::Dense(dense), LayerFfn::Dense(_)) => Some((
+                dense.gate.as_ref().map(LoadedWeight::slice),
+                dense.up.slice(),
+                dense.down.slice(),
+            )),
+            _ => None,
+        }
+    }
+
     pub(super) fn load(
         ffn: &LayerFfn,
         store: OperandSource<'_>,

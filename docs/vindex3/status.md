@@ -49,7 +49,8 @@ dates, frozen scopes and stated limitations:
   including the additive-versus-counterfactual comparison.
 - **Walk:** [transition-support protocol](../gw-transition-support-paths.md)
   and [dependency freeze](../gw-ts-1-dependencies.md), which separate
-  observational prediction, causal attribution and eventual executability.
+  observational prediction, causal attribution and eventual executability;
+  the separate causal-read chain records the [GW-V2 result](../gw-v2-results.md).
 - **Represent:** [representation contracts](../represent-v1-contract-index.md)
   and [optimizer contracts](../optimizer-contract-index.md).
 

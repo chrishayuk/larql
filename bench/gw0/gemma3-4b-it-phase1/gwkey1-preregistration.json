@@ -1,0 +1,141 @@
+{
+  "adjudication": {
+    "K": "held-out necessity lower 95% > 0 and sufficiency lower 95% >= 0.50 for both candidate metrics on validation and test",
+    "V": "same separate gate",
+    "compact_candidate_read_path": "joint gate passes and union role cardinality <= 3",
+    "joint": "same conjunctive gate; only this earns candidate read path",
+    "shared_roles_across_relations": "reported, not required",
+    "source_identity": "exact positions reported descriptively beneath frozen roles"
+  },
+  "authorities": {
+    "candidate_identity": "sha256:08600e83faf6c8aeb845b32eabfdfebf4d3a538e6e12eab295ece7656bf79f8d",
+    "gwhead1_adjudication": {
+      "identity": "sha256:4a29885f500ffdb8b4a0aab568d25b9ede0651310b914a021038b1b65bff54dd",
+      "path": "../../../output/gwhead1-gemma3-4b-it-phase1-heldout-full/adjudication.json",
+      "sha256": "sha256:520daa0726b6924ab2551650f84245d5271aad8a4860693a8f9cfeca5a8bf8b5"
+    },
+    "gwhead1_selection": {
+      "identity": "sha256:801ce102cca4a0d3a7fc6675d0d14161f29c371c3c1746bfb7b1ba8ab96997bf",
+      "path": "../../../output/gwhead1-gemma3-4b-it-phase1/selection.json",
+      "sha256": "sha256:98414482be94b67d83177d9cdde7bdf6570bf8edee297ed71eec0c4c7344cfc1"
+    },
+    "input_rows": {
+      "path": "input.jsonl",
+      "sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+    }
+  },
+  "causal_ladder": {
+    "current": "GW-KEY-1 source-role causality through frozen L24H1",
+    "source_key_is_not_efficiency": true,
+    "successor": "GW-READ-1 natural-Q cost and partial execution"
+  },
+  "claim": "a frozen compact set of source roles is jointly necessary and sufficient, through L24H1, for held-out control-adjusted semantic alignment",
+  "claim_boundary": "source K/V roles through frozen L24H1 only; natural final-position Q; not Q construction, correctness, cheap partial execution, an access primitive, or WALK",
+  "frozen_date": "2026-09-21",
+  "interventions": {
+    "K": "replace source K vectors before H1 scoring, then rerun real score scaling, softcap if declared, and softmax over every source position",
+    "V": "hold the arm's routing weights fixed and replace source V vectors before weighted-V aggregation",
+    "arms": [
+      "I_full",
+      "I_ref",
+      "I_S",
+      "I_full_minus_S",
+      "I_identity"
+    ],
+    "downstream": "effective prepared-production Q8 W_O, declared post-attention norm and residual write, then canonical L24 FFN and every later layer",
+    "families": {
+      "K": "selected roles natural K, other roles reference K; every V natural",
+      "V": "every K natural; selected roles natural V, other roles reference V",
+      "joint": "selected K roles and selected V roles natural; their complements reference"
+    },
+    "natural_q": "immutable in every arm",
+    "other_heads": "all seven non-H1 query heads remain natural",
+    "reference_bank": {
+      "direction": "mean conditioned source vector from train rows only across every position in the cell",
+      "failure": "zero/non-finite direction or norm refuses",
+      "grouping": "template_id x source_role x K-or-V",
+      "heldout": "all train rows; no validation/test donor",
+      "scaling": "scale each reference vector to the natural source-vector L2 norm",
+      "train": "leave-one-semantic-edge-out"
+    }
+  },
+  "measurements": {
+    "E": "same-fact before-to-after gain minus matched different-fact gain; larger means more alignment",
+    "carrier": "qualification only; cannot rescue either candidate metric",
+    "inherited": "GW-HEAD-1 matched controls, 126 candidates, carrier cosine, raw candidate JS and z-scored candidate JS",
+    "necessity": "N(S)=E(I_full)-E(I_full_minus_S)",
+    "sufficiency": "R(S)=(E(I_S)-E(I_ref))/(E(I_full)-E(I_ref))",
+    "terminal": "mandatory separate transport report"
+  },
+  "preregistration_sha256": "sha256:87e80308a9cc684f875a0b16684f3cf2965e3e22b34a50338273c4e1935732d8",
+  "question": "which template-derived source roles causally supply L24H1 routing and content for the GW-HEAD-1 alignment effect?",
+  "roles": {
+    "artifact": {
+      "path": "gwkey1-source-roles.jsonl",
+      "rows": 426,
+      "sha256": "sha256:1efcc11b5f6afbf3a1b8e69344a1386c8d304499fa5f01b31cc95b0f3c5296be"
+    },
+    "assignment": "fixed template table; exhaustive, non-overlapping, outcome-blind",
+    "count": 6,
+    "empty_roles": "allowed only for punctuation_separator and instruction_template; semantic roles subject_entity, relation_query, and answer_cue are always populated",
+    "exact_positions": "recorded beneath roles and never searched independently",
+    "ordered_vocabulary": [
+      "bos_system",
+      "subject_entity",
+      "relation_query",
+      "answer_cue",
+      "punctuation_separator",
+      "instruction_template"
+    ]
+  },
+  "schema": "larql.gwkey1.preregistration.v1",
+  "search": {
+    "K_subsets": 64,
+    "V_subsets": 64,
+    "compact": "union of K and V selected roles has cardinality <= 3 of 6",
+    "eligibility": "R(S) >= 0.80 independently for raw and z-scored candidate JS with positive E(I_full)",
+    "execution": "direct H1 scoring/softmax/aggregation for every candidate; no summed singleton attribution",
+    "heldout_may_not": [
+      "change H1",
+      "change roles or positions",
+      "change K/V masks",
+      "change reference bank",
+      "change estimands or thresholds"
+    ],
+    "joint_pairs": 4096,
+    "retention_fraction": 0.8,
+    "split": "train_only",
+    "tie_break_K_or_V": [
+      "minimum role cardinality",
+      "higher minimum retained fraction",
+      "lower replaced-vector norm",
+      "lexicographic role-bit mask"
+    ],
+    "tie_break_joint": [
+      "minimum union role cardinality",
+      "minimum total K-plus-V cardinality",
+      "higher minimum retained fraction",
+      "lower replaced-vector norm",
+      "lexicographic K mask then V mask"
+    ]
+  },
+  "site": {
+    "component": "target",
+    "head": 1,
+    "head_numbering": "zero_based",
+    "layer": 24,
+    "query": "natural final-position Q",
+    "source_window": "all naturally attended prompt positions including the final position"
+  },
+  "statistics": {
+    "global_stratification": "relation",
+    "interval": "10000-sample percentile cluster bootstrap",
+    "seed": 1398114331,
+    "splits": [
+      "validation",
+      "test"
+    ],
+    "unit": "semantic edge"
+  },
+  "status": "frozen_pre_execution"
+}

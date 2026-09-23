@@ -477,6 +477,8 @@ impl ReferenceBackend {
                     &concat,
                     &kept,
                     Some(&activated),
+                    query,
+                    &key_of,
                     &value_of,
                 );
                 fired = true;
@@ -522,6 +524,8 @@ impl ReferenceBackend {
                 &concat,
                 &kept,
                 None,
+                query,
+                &key_of,
                 &value_of,
             );
         }

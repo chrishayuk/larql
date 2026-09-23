@@ -1,0 +1,347 @@
+{
+  "schema": "larql.gwv2.protocol.v1",
+  "status": "frozen_pre_capture_fit_replay_and_effect_observation",
+  "frozen_date": "2026-09-21",
+  "protocol_sha256": "sha256:830c2ceb97fce4f2d03e74e207d04e54257cd5b38e830a93047a86b6bd4fd006",
+  "question": "At what source depth and predictor rank does the L24H1 subject/entity V payload become causally usable?",
+  "claim": "GW-V2 measures the held-out causal-effect-retention surface over a frozen source-depth by predictor-rank grid; it does not select or optimize a V predictor.",
+  "central_rule": "Reconstruction accuracy is diagnostic; preservation of the inherited causal effect is the claim metric.",
+  "human_spec": {
+    "path": "../../../docs/gw-v2.md",
+    "sha256": "sha256:acf6e4186ebf0e7c7103c0ee4f1303ef38de3f25caedaa524433ae42c4c0a552"
+  },
+  "authorities": {
+    "population": {
+      "path": "population-manifest.json",
+      "sha256": "sha256:92d9611ed22719c3a00cf72b3e545440c7e17ad3b2bc42d2129b6860503ee94a",
+      "identity": "sha256:d73e0783adc0c26777ed9f0e4b880133814c39d0283cd7d816cd72cd1d37c23c"
+    },
+    "input_rows": {
+      "path": "input.jsonl",
+      "sha256": "sha256:6645a45f926e356230dee71be4fc406176030eccfa4fe0c7036a23ddb26b6c19"
+    },
+    "gwkey1_preregistration": {
+      "path": "../../gw0/gemma3-4b-it-phase1/gwkey1-preregistration.json",
+      "sha256": "sha256:372f6f56a87f5d579d4b47d8cb890d1f83477e7ed33b6c9efb28ea3842dee32a",
+      "identity": "sha256:87e80308a9cc684f875a0b16684f3cf2965e3e22b34a50338273c4e1935732d8"
+    },
+    "gwkey1_selection": {
+      "path": "../../../output/gwkey1-gemma3-4b-it-phase1-search/selection-v2.json",
+      "sha256": "sha256:6cae920c092180102ec2880a7c365e1a3c8217aadfe54b5fd4c357799cec64fe",
+      "identity": "sha256:eed14eb42f5432960677d47bd328a6b3b74777f542011f7b77b58469cfe69f6f"
+    },
+    "gwkey1_adjudication": {
+      "path": "../../../output/gwkey1-gemma3-4b-it-phase1-heldout2/adjudication.json",
+      "sha256": "sha256:04b083c3e113b3f7d4b2efe2886f660d06b9b72b5d34c22e6291dc3ca6d35351",
+      "identity": "sha256:a554877b15b69467a6c4f5ecca9427669a1536ff5b9e88056000cf2bb78dd60a"
+    },
+    "gwread1_protocol": {
+      "path": "../../gw-read-1/gwread1-protocol.json",
+      "sha256": "sha256:1c6824395535ff7392717dcc02b8cbde8ce50554ea015df079f1a6adb13d3b26",
+      "identity": "sha256:92947e60d1e831183346b2336053e1d10990c7bfb0c65f3fe31f4858b0cfc0ee"
+    },
+    "gwread1_adjudication": {
+      "path": "../../../output/gwread1-gemma3-4b-it-phase1-heldout/adjudication.json",
+      "sha256": "sha256:4ef0d9962172293c609efa05b2d19ac8d4671c55523dc25e3723113b2bc92231",
+      "identity": "sha256:a9154e18942ed407dc1da6b672e5976331c3f07f1b55baf1728cfc24760f75bb"
+    },
+    "code_main_at_freeze": "6be537d630149b6a465efc8c92707642aec7da89"
+  },
+  "population": {
+    "fresh": true,
+    "prior_gw0_subject_identity_overlap": 0,
+    "subjects": 74,
+    "semantic_edges": 222,
+    "executions": 666,
+    "relations": [
+      "capital",
+      "currency",
+      "language"
+    ],
+    "prompt_families": [
+      "canonical",
+      "question",
+      "alternate"
+    ],
+    "split_unit": "resolved ISO-3166 alpha-3 subject country identity",
+    "splits": {
+      "train": {
+        "subjects": 44,
+        "semantic_edges": 132,
+        "executions": 396
+      },
+      "validation": {
+        "subjects": 15,
+        "semantic_edges": 45,
+        "executions": 135
+      },
+      "test": {
+        "subjects": 15,
+        "semantic_edges": 45,
+        "executions": 135
+      }
+    },
+    "train_use": "predictor fitting and descriptive leave-one-subject-out surface only",
+    "validation_use": "frozen-cell measurement only; no tuning, ranking, selection or grid change",
+    "test_use": "frozen-cell measurement only; no tuning, ranking, selection or grid change",
+    "candidate_readout_tokens": 142,
+    "hypernym": "out of scope; no mechanism-generalization claim"
+  },
+  "frozen_interface": {
+    "component": "target",
+    "layer": 24,
+    "head": 1,
+    "head_numbering": "zero_based",
+    "query": "natural final-position L24H1 Q from the target execution",
+    "keys": "GW-KEY-1 joint-arm template_id x source_role train reference direction at every source position, scaled to the target execution's natural K-row L2 norm",
+    "subject_values": "the sole varied component: exact natural L24H1 subject_entity V or the declared depth/rank predictor output",
+    "other_values": "GW-KEY-1 template_id x source_role train reference V direction outside subject_entity, scaled to the target execution's natural V-row L2 norm",
+    "carrier_before": "natural L24 carrier-before from the target execution",
+    "other_heads": "natural contributions from all seven non-H1 L24 attention heads",
+    "attention": "rerun real H1 score scaling, attention softcap and softmax, then weighted-V aggregation",
+    "downstream": "effective prepared-production Q8 W_O, canonical post-attention transform and residual write, L24 FFN and every later layer",
+    "dynamic_natural_inputs": [
+      "natural final-position L24H1 Q",
+      "every target natural source K-row norm",
+      "every target natural non-subject V-row norm",
+      "natural L24 carrier-before",
+      "natural contributions from the seven non-H1 heads"
+    ],
+    "efficiency_claim_allowed": false,
+    "reason": "natural carrier, other heads, Q and reference-bank row norms deliberately isolate V but retain full pre-L24 execution state"
+  },
+  "grid": {
+    "source_depths": [
+      0,
+      4,
+      8,
+      12,
+      16,
+      20,
+      23
+    ],
+    "ranks": [
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "cells": 35,
+    "construction": "Cartesian product in source_depth major, rank minor order",
+    "adaptive_expansion": false,
+    "cell_status": "every cell is a first-class result",
+    "selection": "none",
+    "winner": "undefined",
+    "pareto_frontier": "forbidden"
+  },
+  "predictor": {
+    "family": "centred ridge map followed by deterministic reduced-rank truncation",
+    "input": "natural H1 subject_entity V at the declared source attention layer and frozen subject-token position",
+    "target": "natural L24H1 subject_entity V at the identical subject-token position",
+    "fit_row": "one equally weighted subject-token position per fresh-population execution",
+    "fit_population": "train subjects only",
+    "fit_precision": "f64",
+    "inference_precision": "f32",
+    "centering": true,
+    "ridge_lambda": "1e-3 * trace(X^T X) / input_dimension",
+    "decomposition": "full fitted weight SVD with deterministic sign canonicalization before rank truncation",
+    "rank_representation": "x_mean, y_mean, A=U_r*singular_r, B=V_r^T; prediction=(x-x_mean)@A@B+y_mean",
+    "cached_floats": "2 * head_dim * rank + 2 * head_dim",
+    "train_prediction": "leave-one-subject-out for descriptive train reporting only",
+    "heldout_artifact": "one all-train-subject fit per source depth; five frozen rank truncations share that fit",
+    "identical_across_cells_except": [
+      "source depth",
+      "rank"
+    ],
+    "forbidden_inputs": [
+      "semantic target labels as predictor features or objectives",
+      "candidate readout effects",
+      "validation or test V tensors during fitting",
+      "validation or test outcomes",
+      "carrier-before or non-H1 state",
+      "Q or K vectors",
+      "cross-depth ensembles",
+      "post-hoc scale or norm matching"
+    ]
+  },
+  "controls": {
+    "positive": "exact natural L24H1 subject_entity V through the identical intervention machinery",
+    "zero": "zero subject_entity V",
+    "identity": "captured exact subject_entity V reinserted through the intervention machinery",
+    "fit_sham": "subject-identity permutation within train relation strata, seed 27022031",
+    "required_parity": "identity/no-op proximal and terminal candidate logits are bit-exact with the bound natural reference path",
+    "coverage": "every cell, execution and subject-token position; no fallback or imputation"
+  },
+  "estimand": {
+    "unit": "semantic edge with three prompt-family repeated executions",
+    "same_fact": "the three prompt families of one subject/relation/target",
+    "matched_control": "different subject at the same split, relation and prompt family",
+    "effect": "E(I)=(JS_before-JS_after)_same_fact-(JS_before-JS_after)_matched_control; larger is more alignment",
+    "surfaces": {
+      "raw": "restricted softmax over the 142 frozen fresh-population first-target-token candidates",
+      "zscored": "independently z-score each 142-logit row, then restricted softmax"
+    },
+    "retention": "R(depth,rank)=E(candidate depth,rank)/E(exact natural V)",
+    "denominator_refusal": "refuse a split/surface ratio if the exact-arm point effect is non-positive",
+    "terminal_transport": "repeat the adjusted raw and z-scored candidate effect at terminal logits",
+    "carrier": "qualification only; cannot rescue a semantic-effect failure",
+    "reconstruction": "cosine and MSE are diagnostic only; neither enters a claim gate"
+  },
+  "analysis": {
+    "all_cells_reported": true,
+    "splits_reported_separately": [
+      "validation",
+      "test"
+    ],
+    "relations_reported_separately": true,
+    "aggregate_scope": "equal-weight factual relations capital, currency and language",
+    "bootstrap": {
+      "replicates": 10000,
+      "seed": 27022032,
+      "unit": "subject country identity",
+      "method": "resample subjects with replacement within each split and carry all three relations and all three prompt families",
+      "pointwise_interval": "two-sided percentile 95%",
+      "simultaneous_method": "one-sided studentized max-t lower band",
+      "retention_family": "all 35 cells x raw/zscored surfaces within one split",
+      "terminal_family": "all 35 cells x raw/zscored terminal effects within one split",
+      "max_t": "for each replicate take max over the family of (estimate - bootstrap_estimate) / bootstrap_standard_error; lower=estimate-q95(max_t)*bootstrap_standard_error",
+      "nonfinite_or_zero_se": "hard refusal"
+    },
+    "no_selection_semantics": [
+      "no primary cell",
+      "no best depth",
+      "no best rank",
+      "no heldout tuning",
+      "no deployment candidate",
+      "no Pareto frontier"
+    ]
+  },
+  "cell_gate": {
+    "applies_independently_to": [
+      "validation",
+      "test"
+    ],
+    "raw_retention_estimate_min": 0.8,
+    "zscored_retention_estimate_min": 0.8,
+    "raw_retention_simultaneous_lower_95_min": 0.5,
+    "zscored_retention_simultaneous_lower_95_min": 0.5,
+    "exact_raw_effect_point_min_exclusive": 0.0,
+    "exact_zscored_effect_point_min_exclusive": 0.0,
+    "exact_raw_effect_lower_95_min_exclusive": 0.0,
+    "exact_zscored_effect_lower_95_min_exclusive": 0.0,
+    "terminal_raw_effect_simultaneous_lower_95_min_exclusive": 0.0,
+    "terminal_zscored_effect_simultaneous_lower_95_min_exclusive": 0.0,
+    "complete_coverage": true,
+    "identity_and_exact_controls": "pass",
+    "heldout_clearance": "cell clears held out only if every gate passes independently on validation and test"
+  },
+  "early_frontier": {
+    "purpose": "preregistered region-level interpretation, not predictor selection",
+    "cell_status": "heldout-clearing under cell_gate",
+    "shape": "one contiguous 2x2 tile in the frozen depth x rank grid",
+    "depth_adjacency": "adjacent entries in [0,4,8,12,16,20,23]",
+    "rank_adjacency": "adjacent entries in [8,16,32,64,128]",
+    "early_depth_rule": "both tile depths are <= 12",
+    "declaration": "EARLY PAYLOAD FRONTIER EXISTS only if at least one such tile has all four cells heldout-clearing",
+    "coordinate_rule": "report the qualifying tile with smallest upper depth, then smallest lower rank; descriptive only",
+    "isolated_cell": "reported but cannot establish a frontier",
+    "failure": "NO EARLY PAYLOAD FRONTIER ON THE FROZEN GRID"
+  },
+  "report_fields_per_cell": [
+    "source depth",
+    "rank",
+    "raw effect and retention",
+    "z-scored effect and retention",
+    "proximal and terminal transport",
+    "pointwise and simultaneous subject-clustered uncertainty",
+    "relation-specific effects",
+    "source-prefix boundary",
+    "minimal payload-constructor shared-prefix frontier",
+    "predictor FLOPs",
+    "dynamic bytes",
+    "cached parameter bytes",
+    "resident bytes",
+    "predictor-only latency",
+    "prefix-construction latency",
+    "intervention-replay latency",
+    "end-to-end latency",
+    "canonical work avoided under counterfactual composition",
+    "reconstruction cosine marked diagnostic",
+    "reconstruction MSE marked diagnostic"
+  ],
+  "cost_model": {
+    "canonical_baseline": "original-prompt target-model L0-L23 execution once",
+    "source_prefix_boundary": "embeddings plus complete canonical layers 0..d-1 plus layer d pre-attention normalization and required H1 V projection at subject positions",
+    "prefix_is_not_free": true,
+    "actual_v2_replay": "retains full natural pre-L24 state and therefore does not claim avoided execution",
+    "constructor_cost": "report isolated payload-construction work for later composition, separately from actual V2 replay cost",
+    "shared_frontier": "a successor executes common canonical prefix work once through the deepest component requirement; component costs are not naively summed",
+    "avoided_work_rule": "report candidate constructor work and counterfactual canonical work avoided, explicitly labelled as non-realized in V2",
+    "efficiency_visualization": "min(raw retention,zscored retention)/(payload-constructor shared-prefix cost/canonical L0-L23 cost)",
+    "efficiency_visualization_use": "visualization only; never a gate, ranking or selection metric",
+    "fields": [
+      "canonical layers fully executed",
+      "partial source-layer operations",
+      "matvec/GEMV/GEMM count",
+      "matvec-equivalent FLOPs",
+      "dynamic bytes read and written",
+      "cached bytes",
+      "resident bytes",
+      "predictor latency",
+      "prefix latency",
+      "replay latency",
+      "end-to-end latency"
+    ],
+    "run_hygiene": {
+      "block": "warmed baseline/candidate/baseline",
+      "void_baseline_drift_fraction": 0.01,
+      "peer_exclusivity_handshake": true,
+      "measurement_resolution": "strictly finer than every reported comparison"
+    }
+  },
+  "execution_order": [
+    "validate frozen protocol and population identities",
+    "capture outcome-free natural Q/K/V, carrier, non-H1 and source-depth V tensors for all frozen rows",
+    "seal capture before fitting",
+    "fit every declared depth/rank cell from train subjects only",
+    "seal all 35 predictor identities before any validation or test replay",
+    "execute all 35 cells and controls on validation and test without inspection-driven changes",
+    "adjudicate the complete surface and frozen frontier rule"
+  ],
+  "hard_refusals": [
+    "adaptive source-depth or rank expansion",
+    "cell removal after any partial result",
+    "candidate ranking or selection",
+    "validation or test fitting",
+    "validation or test predictor-state donor",
+    "changed K or non-subject V reference treatment",
+    "changed natural carrier-before or non-H1 treatment",
+    "post-hoc norm matching or rescaling",
+    "cross-depth ensemble",
+    "missing-cell fallback or imputation",
+    "cross-split matched control",
+    "non-finite value",
+    "incomplete subject or subject-token coverage",
+    "failed population/protocol/artifact identity",
+    "failed exact or identity/no-op parity",
+    "efficiency claim from the isolation replay"
+  ],
+  "claim_boundary": {
+    "pass_establishes": "a causally useful L24H1 subject/entity V payload is available by a shallow frozen depth/rank region under the natural L24 execution environment",
+    "not_established": [
+      "compressible carrier-before",
+      "compressible non-H1 attention context",
+      "separable joint state construction",
+      "end-to-end cost reduction",
+      "production correctness or calibration",
+      "hypernym mechanism",
+      "architecture generality",
+      "efficient WALK"
+    ],
+    "successors": [
+      "GW-STATE-1",
+      "GW-MAT-1"
+    ]
+  }
+}

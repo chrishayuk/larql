@@ -20,6 +20,20 @@ cargo run -p larql-demos --example attention_demo
 | `inference_demo` | Forward pass from safetensors weights. | needs weights · 6s |
 | `mech_interp_demo` | Capture, lens, neighbours, ablate, steer, patch. | weight-free · 0.1s |
 | `pair_matching_demo` | Pair-based relation matching. | weight-free · 0.2s |
+| `observatory_record` | Canonical VINDEX3 Standard JSON capture + separate observed/unobserved bit-parity witness. | `CONTAINER OUTPUT.json PROMPT [PROBE_TEXT ...]` · real model |
+| `observatory_record --gw0-batch` | Manifest-bound GW-0 final-position carrier census with per-row parity and content-addressed before/after/delta artifacts. | `CONTAINER MANIFEST INPUT OUTPUT_DIR [START [LIMIT]]` · real model |
+| `observatory_record --gw0-walk` | Frozen GW-0 exact dense V3 gate-ranking reference, cached by subject. | `CONTAINER MANIFEST INPUT OUTPUT.jsonl` · real model |
+| `observatory_record --gw0b-attribute` | Reconstruct sealed candidate FFN writes as ranked `(layer, feature)` contributions; refuses failed sum checks. | `CONTAINER SEALED_MANIFEST OUTPUT_DIR [START_LAYER [LIMIT]]` · sealed artifacts + real model |
+| `observatory_record --gw0b-promote` | Batch-annotate exact-WALK and optional attributed feature addresses with frozen promoted targets. | `CONTAINER SEALED_MANIFEST OUTPUT.jsonl [ATTRIBUTION_DIR]` · real model |
+| `observatory_record --gw3af-postings` | Build the frozen GW-3A-F width ladder once and emit subject postings plus matched exact-WALK controls. | `CONTAINER SEALED_MANIFEST PREREGISTRATION OUTPUT.jsonl` · real model |
+| `observatory_record --gwsup1-readout` | Read the frozen GW-SUP-1 candidate vocabulary through every sealed post-write carrier using the prepared output head. | `CONTAINER PREREG CANDIDATES SEALED_MANIFEST OUTPUT_DIR` · sealed artifacts + real model |
+| `observatory_record --gwconv1-readout` | Read the same frozen candidates through every sealed pre-write carrier for before/after convergence localization. | `CONTAINER PREREG CANDIDATES SEALED_MANIFEST OUTPUT_DIR` · sealed artifacts + real model |
+| `observatory_record --gwhead1-capture` | Re-execute the frozen cohort, capture natural L24 head values, and prove effective-W_O/post-norm reconstruction before subset search. | `CONTAINER PREREG CANDIDATES INPUT_MANIFEST OUTPUT_DIR` · frozen inputs + real model |
+| `observatory_record --gwhead1-train-search` | Build leave-one-edge-out contribution-matched references and replay all 256 L24 head subsets on train only. | `CONTAINER PREREG CAPTURE_MANIFEST OUTPUT_DIR` · frozen natural capture + real model |
+| `observatory_record --gwhead1-heldout` | Execute frozen global/relation necessity and sufficiency arms plus all singleton and zero controls on validation/test, including canonical downstream carrier interventions. | `CONTAINER PREREG SELECTION CAPTURE_MANIFEST OUTPUT_DIR` · frozen selection + real model |
+| `observatory_record --gwkey1-capture` | Capture frozen L24H1 natural Q and every conditioned source K/V vector with bit-exact source replay. | `CONTAINER PREREG HEAD_CAPTURE_MANIFEST OUTPUT_DIR` · frozen roles + real model |
+| `observatory_record --gwkey1-train-search` | Build leave-one-semantic-edge-out source K/V references and directly execute all 4,096 K/V role-mask pairs on train only. | `CONTAINER PREREG SOURCE_CAPTURE HEAD_CAPTURE OUTPUT_DIR` · frozen roles + real model |
+| `observatory_record --gwkey1-heldout` | Execute the frozen K, V, and joint necessity/sufficiency arms on validation/test and transport each carrier through the canonical later model. | `CONTAINER PREREG SELECTION SOURCE_CAPTURE HEAD_CAPTURE OUTPUT_DIR` · frozen selection + real model |
 | `sampling_demo` | Greedy vs temperature vs top-p on one prompt. | `--vindex PATH` · 9s |
 | `streaming_demo` | Print each token as the model emits it. | needs a vindex · 5s |
 

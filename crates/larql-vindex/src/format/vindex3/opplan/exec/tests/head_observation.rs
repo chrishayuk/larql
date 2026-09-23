@@ -40,6 +40,8 @@ struct Head {
     values: Vec<f32>,
     gate: Option<Vec<f32>>,
     source_values: Vec<Vec<f32>>,
+    query: Vec<f32>,
+    source_keys: Vec<Vec<f32>>,
 }
 
 /// Everything a run says: writes, events with positions, logits, and —
@@ -47,6 +49,8 @@ struct Head {
 #[derive(Default)]
 struct Witness {
     heads: bool,
+    /// Narrow an armed capture to one `(layer, position)`.
+    only: Option<(usize, usize)>,
     position: usize,
     delta: BTreeMap<Key, Vec<f32>>,
     after: BTreeMap<Key, Vec<f32>>,
@@ -67,6 +71,13 @@ impl StepObserver for Witness {
         self.heads
     }
 
+    fn wants_attention_heads_at(&self, layer: usize, position: usize) -> bool {
+        match self.only {
+            Some(address) => self.heads && address == (layer, position),
+            None => self.heads,
+        }
+    }
+
     fn attention_head(&mut self, layer: usize, record: AttentionHeadRecord<'_>) {
         self.records.push(Head {
             layer,
@@ -79,6 +90,8 @@ impl StepObserver for Witness {
             values: record.values.to_vec(),
             gate: record.gate.map(<[f32]>::to_vec),
             source_values: record.source_values.iter().map(|v| v.to_vec()).collect(),
+            query: record.query.to_vec(),
+            source_keys: record.source_keys.iter().map(|k| k.to_vec()).collect(),
         });
     }
 
@@ -96,9 +109,20 @@ fn run<B: PlanBackend>(
     backend: &B,
     heads: bool,
 ) -> (Vec<Vec<f32>>, Witness) {
+    run_narrowed(plan, store, backend, heads, None)
+}
+
+fn run_narrowed<B: PlanBackend>(
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    backend: &B,
+    heads: bool,
+    only: Option<(usize, usize)>,
+) -> (Vec<Vec<f32>>, Witness) {
     let mut session = DecodeSession::new(plan, store, backend).unwrap();
     let mut witness = Witness {
         heads,
+        only,
         ..Witness::default()
     };
     let logits = G_TOKENS
@@ -179,6 +203,56 @@ fn hp1_heads_armed_leave_logits_writes_and_events_bit_identical() {
             G_TOKENS.len() * G_LAYERS * G_Q_HEADS,
             "one record per head per softmax layer per position"
         );
+    });
+}
+
+/// A narrowed capture is a capture-cost filter, never an arithmetic
+/// change: it fires only at the selected address, leaves the logits
+/// bit-identical, and hands over exactly the records a full capture
+/// fires there — including the conditioned query and key rows the GW
+/// head replay reconstructs from.
+#[test]
+fn a_narrowed_capture_fires_only_where_asked_and_changes_nothing() {
+    let (_c, plan, store) = fixture();
+    let target = (G_LAYERS - 1, G_TOKENS.len() - 1);
+    on_both_backends!(|backend| {
+        let (plain_logits, _) = run(&plan, &store, backend, false);
+        let (_, full) = run(&plan, &store, backend, true);
+        let (narrow_logits, narrow) = run_narrowed(&plan, &store, backend, true, Some(target));
+        for (p, (a, b)) in plain_logits.iter().zip(&narrow_logits).enumerate() {
+            assert!(
+                bits_equal(a, b),
+                "{}: narrowing moved logits at position {p}",
+                backend.name()
+            );
+        }
+        assert_eq!(narrow.records.len(), G_Q_HEADS, "one record per head, once");
+        let expected: Vec<&Head> = full
+            .records
+            .iter()
+            .filter(|h| (h.layer, h.position) == target)
+            .collect();
+        assert_eq!(narrow.records.iter().collect::<Vec<_>>(), expected);
+        let observed: Vec<_> = narrow
+            .events
+            .iter()
+            .filter(|(_, e)| matches!(e, StepEvent::HeadsObserved { .. }))
+            .collect();
+        assert_eq!(
+            observed,
+            vec![&(
+                target.1,
+                StepEvent::HeadsObserved {
+                    layer: target.0,
+                    heads: G_Q_HEADS
+                }
+            )]
+        );
+        for head in &full.records {
+            assert_eq!(head.query.len(), G_HEAD_DIM);
+            assert_eq!(head.source_keys.len(), head.weights.len());
+            assert!(head.source_keys.iter().all(|k| k.len() == G_HEAD_DIM));
+        }
     });
 }
 
@@ -598,6 +672,10 @@ fn synthetic_record<'a>(
         values,
         gate: None,
         source_values,
+        // The reader never reads keys or the query; aligned stand-ins
+        // keep the record's own shape contract.
+        query: values,
+        source_keys: source_values,
     }
 }
 
