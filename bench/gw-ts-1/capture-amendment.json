@@ -1,0 +1,92 @@
+{
+  "schema": "larql.gwts1.population-capture-amendment.v1",
+  "status": "frozen_before_population_capture",
+  "amends": {
+    "population_contract_sha256": "sha256:d469118c6640e38fe4aa64ffda1e501adb3c6da841bdb6cfbf786eb0760de584",
+    "population_manifest_sha256": "sha256:01795de6300c8d347cb6d4c371e71532e1bf17936f281ed58429772cbcef87ef",
+    "gwts1_protocol_sha256": "sha256:d873d238d99406dc8a549681aa746e750a9d4b802e24ff21a8eb26d152a97d55"
+  },
+  "attr1d_authority": {
+    "contract_identity": "sha256:4f48973807db0695d5f30b83a00c73637afbd0dc77d116b5a1f9eb6ec913431c",
+    "witness_path": "bench/attr-1d/gemma3-4b-it-witness/attr1d-witness.json",
+    "witness_sha256": "sha256:88065f65ff3d596f4f3e6716309ccdbc02365ce76d92973dbc5838af4ebb0d73",
+    "overall_pass": true,
+    "repository_commit": "5dabdea6695b8268ce2c7baf9ed4e60b2d330720",
+    "commit_requirement": "carries every frozen file byte-identically and is an ancestor of both origin/main and the capture source commit",
+    "frozen_files": {
+      "bench/attr-1d/gemma3-4b-it-witness/attr1d-witness.json": "sha256:88065f65ff3d596f4f3e6716309ccdbc02365ce76d92973dbc5838af4ebb0d73",
+      "bench/gw-ts-1/population-contract.json": "sha256:03e2488209161ad384c57902667de16e7153703db3803875f1bc89115ddf08cc",
+      "bench/gw-ts-1/population-manifest.json": "sha256:3024ede64fe9b854fba2d0bcde0c4c5c530f8a90be52695e782bb6ef12dc642c",
+      "bench/gw-ts-1/gwts1-protocol.json": "sha256:2ec70b6ca1ad754321af0f18a3f73eab7dcd0281add1b7f4825fc75d0ac97e62"
+    }
+  },
+  "change": {
+    "kind": "authority_binding_and_reading_only",
+    "population_design_changed": false,
+    "assignment_changed": false,
+    "capture_window_changed": false,
+    "reader_changed": false,
+    "observation_contract_changed": false,
+    "thresholds_changed": false,
+    "budgets_changed": false
+  },
+  "child_contribution_reading": {
+    "basis": "gwts1-protocol SupportMeasurement.signed_contribution is signed, so a child's contribution is a scalar reader projection; a vector norm cannot be signed. This records that reading; it changes no frozen field.",
+    "reader": "the population contract's selected_token_row/v1 + identity/v1 row",
+    "signed_contribution": "dot(reader, child_write)",
+    "absolute_contribution": "abs(signed_contribution)",
+    "child_write": {
+      "attention": "one query head's contribution through the effective prepared W_O slice, exactly ATTR-1D HeadContribution.contribution",
+      "ffn": "one exact feature's write: activation(gate)*up times its down column, carried through the post-FFN norm at the complete output's statistic and the plan's residual scale, exactly the per-feature vector GW-0B reconstruction sums to the observed write"
+    },
+    "mass_denominator": "abs(dot(reader, bias_write)) + sum over the COMPLETE child space of absolute_contribution, the ATTR-1D absolute_head_denominator law; bias_write is zero when the plan declares no bias; the bias counts toward mass but is never a selectable child",
+    "selection_order": "descending absolute_contribution, ties by ascending physical address",
+    "vector_l2_mass": {
+      "role": "recorded diagnostic only",
+      "record": [
+        "per-child contribution L2",
+        "complete-space total L2 mass"
+      ],
+      "may_select_or_admit": false
+    }
+  },
+  "bridge_witness": {
+    "reason": "main changed AttentionHeadRecord.source_values from &[Vec<f32>] to &[&[f32]]; the sealed witness's overall_pass was produced on the owned path and does not by itself qualify a capture built on the borrowed path",
+    "case": "the sealed ATTR-1D witness case: its edge, prompt, L24 attention site, final prompt position and reader",
+    "binary": "the candidate capture binary, built from the capture source commit",
+    "backend": "the production CPU backend (ProductionBackend), as the sealed witness records in gates.backend_agreement; never Metal or another backend",
+    "platform": "the bridge qualifies a binary on ONE target: production-backend reductions differ in summation order between x86 SIMD and aarch64 (#510, 54d07e91), so bit-identity is expected only on the target the sealed witness ran on, and population capture must run on the same target triple as the passing bridge run, which the bridge record binds",
+    "candidate_arm": {
+      "must_pass": "every ATTR-1D gate and overall_pass",
+      "must_match": "every witness field except the run-specific identities, compared exactly",
+      "run_specific_fields_allowed_to_differ": [
+        "support_observation.execution_identity",
+        "support_observation.observation_receipt_digest",
+        "support_observation.provenance_fingerprint",
+        "support_observation_id"
+      ],
+      "gate_prose": "reported when changed, never compared as a measurement"
+    },
+    "control_arm": {
+      "perturbation": "rotate each head's source_values by one source position before description",
+      "must": "fail gates.source_split_max_relative_l2 and overall_pass while every other gate passes: the complete gate vector is compared",
+      "same_case_fields": [
+        "support_coordinate_id",
+        "reader_identity",
+        "edge_id"
+      ],
+      "why_only_that_gate": "head contributions are projected from mixed_values and only the per-source splits read source values; rotating values keeps every position and width, so coverage, head-sum, probability and projection gates cannot move",
+      "purpose": "prove the bridge rejects the one failure it exists to catch, and that an unrelated breakage cannot satisfy the control"
+    },
+    "outcomes": {
+      "bit_identical": "capture authorized",
+      "measurements_differ": "capture NOT authorized; no cross-run tolerance is frozen, so a difference needs its own amendment naming the cause",
+      "control_not_rejected": "capture NOT authorized; the bridge is blind"
+    }
+  },
+  "authorization": {
+    "population_capture": "permitted after preflight passes and the bridge witness is bit_identical",
+    "gwts1_extraction_or_assessment": "not authorized by this amendment"
+  },
+  "amendment_sha256": "sha256:ef83086a42e4f86c791fc4fea3956e46eb8461280e66babce659054d0bc68c90"
+}

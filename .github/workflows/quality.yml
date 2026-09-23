@@ -12,6 +12,8 @@
 #   proto-lint  — buf lint over the four gRPC schemas            (blocking)
 #   docs-integrity — Markdown links resolve, code references resolve,
 #                   and contract indexes name real tests       (blocking)
+#   research-contracts — GW-TS-1 preregistration, population and
+#                   capture-amendment tests                    (blocking)
 #
 # Mutation testing lives in `mutants.yml`, not here: it is informational,
 # and a job cancelled by `timeout-minutes` concludes the whole run as
@@ -335,6 +337,28 @@ jobs:
       # not.
       - name: Conformance evidence guard selftest
         run: python3 scripts/conformance_evidence.py selftest
+
+  research-contracts:
+    name: research contracts (GW-TS-1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # GW-TS-1's preregistration, population manifest and capture amendment
+      # are the authority a population capture runs under: they reproduce
+      # the sealed identities byte for byte, refuse a tampered or unbound
+      # authority, and decide whether a bridge witness authorizes capture.
+      # Until this job existed those tests ran only when someone typed them.
+      #
+      # The pattern is `test_gwts1_*` on purpose, not `test_gw*`: several
+      # older GW experiments' tests (gw4b, gwread1, ...) error on a clean
+      # checkout because they read inputs that are not committed. Widen the
+      # pattern only by name, never by prefix. These tests need no history
+      # beyond the checked-out commit and no model weights; the committed
+      # GW-0 census is their only input.
+      - name: GW-TS-1 contract tests
+        run: python3 -m unittest discover -s scripts -p 'test_gwts1_*.py'
 
   proto-lint:
     name: buf lint
