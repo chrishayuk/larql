@@ -1670,6 +1670,11 @@ fn select_records<B: PlanBackend + ?Sized>(
         if store.is_overridden(&planned.operand) {
             facts = facts.overlaid();
         }
+        facts = facts.with_nvfp4_at_source(
+            store
+                .store()
+                .nvfp4_request_binds_at_source(&planned.operand, stored),
+        );
         let codec_provider = facts.registered.as_ref().map(|r| r.identity.clone());
         // What the ARTIFACT offers, priced per extent from the codec's own
         // declaration. The pin starts on the whole of it; a budget may

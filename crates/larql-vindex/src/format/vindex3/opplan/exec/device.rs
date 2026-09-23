@@ -413,7 +413,15 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         }
         // This backend's class table is its own declaration for its own
         // target: the one candidate it offers, named as such.
-        let format = self.formats.for_class(class);
+        let asked = self.formats.for_class(class);
+        // An NVFP4 class format over an operand the container holds at
+        // source precision binds at f16 — the loader's rule, read from the
+        // same fact — so the pin names what will actually be resident.
+        let (format, reason) = if asked == WeightFormat::Nvfp4 && facts.nvfp4_at_source {
+            (WeightFormat::F16, SelectionReason::SourcePrecisionHeld)
+        } else {
+            (asked, SelectionReason::DeviceClassTable)
+        };
         let id = RealizationId {
             backend: RealizationBackend::Device,
             form: RealizationForm::DeviceResident(format),
@@ -421,7 +429,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         Ok(Selection {
             realization: id,
             residency: resident_profile(format),
-            reason: SelectionReason::DeviceClassTable,
+            reason,
             candidates: vec![id],
         })
     }
