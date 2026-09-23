@@ -488,6 +488,7 @@ fn reasons_and_refusal_kinds_carry_distinct_names() {
         SelectionReason::ReferenceOracle,
         SelectionReason::OverlaidEdit,
         SelectionReason::SourcePrecisionHeld,
+        SelectionReason::CompiledPrecisionHeld,
     ];
     let names: std::collections::BTreeSet<&str> = reasons.iter().map(|r| r.name()).collect();
     assert_eq!(names.len(), reasons.len());

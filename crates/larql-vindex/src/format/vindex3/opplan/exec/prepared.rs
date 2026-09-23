@@ -56,7 +56,7 @@ use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::kda::KdaOutputGateWeights;
 use super::lowering::{LoweringIdentity, LoweringRegistry};
-use super::operands::{OperandSource, SourceStamp};
+use super::operands::{OperandSource, OperandStore, SourceStamp};
 use super::quantise::SUM_BLOCK;
 use super::realization::{
     lowerings_stand_in, realization_residency, DependencyLifetime, DependencyPin, ExtentOption,
@@ -1675,6 +1675,7 @@ fn select_records<B: PlanBackend + ?Sized>(
                 .store()
                 .nvfp4_request_binds_at_source(&planned.operand, stored),
         );
+        facts = facts.with_nvfp4_compiled(OperandStore::f16_request_binds_compiled_nvfp4(stored));
         let codec_provider = facts.registered.as_ref().map(|r| r.identity.clone());
         // What the ARTIFACT offers, priced per extent from the codec's own
         // declaration. The pin starts on the whole of it; a budget may

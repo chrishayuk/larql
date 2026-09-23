@@ -18,7 +18,7 @@
 
 use super::backend::{KQuantActivation, WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
-use super::operands::{OperandSource, RawOperand};
+use super::operands::{OperandSource, OperandStore, RawOperand};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
@@ -708,6 +708,15 @@ pub fn load_weight(
         WeightFormat::KQuantQ8k => kquant_from_stored(store, operand, KQuantActivation::Q8k),
         WeightFormat::F16 => {
             let raw = store.load_raw(operand)?;
+            // A compiled NVFP4 pack has no source bytes to narrow; it binds
+            // as stored — the same fact selection pins by, see
+            // `OperandStore::f16_request_binds_compiled_nvfp4`.
+            if OperandStore::f16_request_binds_compiled_nvfp4(&raw.dtype) {
+                check_pack_conforms(store, operand, &raw.dtype)?;
+                let rows = operand.shape.first().copied().unwrap_or(0);
+                let k = operand.shape.get(1).copied().unwrap_or(0);
+                return nvfp4_from_stored(&raw.bytes, rows, k, &operand.tensor);
+            }
             match raw.dtype.as_str() {
                 DTYPE_BF16 => Ok(LoadedWeight::F16(bf16_bytes_to_f16(
                     &raw.bytes,

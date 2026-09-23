@@ -561,6 +561,22 @@ impl OperandStore {
         }
     }
 
+    /// Whether an f16 request for an operand stored as `stored_dtype`
+    /// binds the compiled NVFP4 image as stored — the mirror of
+    /// [`Self::nvfp4_request_binds_at_source`], and likewise the one
+    /// derivation read by the loader and by selection.
+    ///
+    /// True when the stored bytes ARE an NVFP4 pack. A pack replaces the
+    /// tensor, so the container holds no source bytes to narrow: no
+    /// realization is more faithful than the compiled one, and widening it
+    /// to f16 would compute the same values at four times the bytes. The
+    /// map wins in this direction too — below the precision the arm asked
+    /// for, because nothing above it exists — and nothing is manufactured.
+    pub fn f16_request_binds_compiled_nvfp4(stored_dtype: &str) -> bool {
+        use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
+        stored_dtype == DTYPE_NVFP4
+    }
+
     /// The role the plan binds this tensor to, falling back to the name
     /// heuristics for anything the plan does not cover — the same order
     /// the representation compiler resolves in.
