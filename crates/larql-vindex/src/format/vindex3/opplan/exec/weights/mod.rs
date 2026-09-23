@@ -18,7 +18,7 @@
 
 use super::backend::{KQuantActivation, WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
-use super::operands::{OperandSource, RawOperand, RepresentationSource};
+use super::operands::{OperandSource, RawOperand};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
@@ -688,33 +688,15 @@ pub fn load_weight(
             if raw.dtype == DTYPE_NVFP4 {
                 return nvfp4_from_stored(&raw.bytes, rows, k, &operand.tensor);
             }
-            // A compiled pack is a precision map, and a backend arm names a
-            // format per class — attention, FFN, head — which cannot express
-            // one. Under `stored` the map wins: a tensor its policy held at
-            // source precision runs at source precision, which is higher
-            // than the arm asked for and manufactures nothing.
-            let src_policy = store.store().representation_source();
-            // A compiled map protected this tensor: honour that under
-            // `stored` (bind what is there) and under `transient` (bind the
-            // canonical bytes at the same precision, manufacturing nothing).
-            // The two arms must run the same precision program or the
-            // parity claim stops meaning anything the moment a map is mixed.
-            // The declared program is the authority. Only a container
-            // written before the map was explicit falls back to what its
-            // pack's tensor table happens to say.
-            let map_protects = match store.store().program() {
-                Some(program) => {
-                    use crate::format::vindex3::represent::map::Precision;
-                    use crate::format::vindex3::represent::policy::classify;
-                    let role = classify(&operand.object, &operand.tensor, &operand.shape);
-                    matches!(program.resolve(role, &operand.tensor), Precision::Source)
-                }
-                None => matches!(
-                    store.store().mapped_encoding(&operand.object, &operand.tensor),
-                    Some(enc) if enc != DTYPE_NVFP4
-                ),
-            };
-            if src_policy == RepresentationSource::Stored || map_protects {
+            // Whether this request binds at source precision is ONE fact,
+            // derived once on the store and read identically by selection
+            // — see `OperandStore::nvfp4_request_binds_at_source`. A second
+            // derivation here is how the device selector came to pin NVFP4
+            // on a head this loader then bound at f16.
+            if store
+                .store()
+                .nvfp4_request_binds_at_source(operand, &raw.dtype)
+            {
                 store.store().note_stored_precision();
                 return narrow_to_f16(&raw, &operand.tensor);
             }
