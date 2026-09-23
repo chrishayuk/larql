@@ -74,6 +74,9 @@ pub struct FfnShape {
     /// The gate activation, from the plan's `FfnOp`: SiLU or tanh-GELU,
     /// each its own served kernel.
     pub activation: FfnActivation,
+    /// The plan's residual-scale op (`LayerPlan::residual_scale`), as on
+    /// `AttnShape`. `None` = the op is absent.
+    pub residual_scale: Option<f32>,
 }
 
 /// The gate/up COMBINE the lowering has a kernel for.
@@ -117,7 +120,7 @@ impl MetalBackend {
         // into the down-projection write (bit-identical), one dispatch
         // fewer per layer. Four-norm placement keeps the branch norm.
         let fused_down = match w.post_norm.as_ref() {
-            None if nvfp4_residual_fusion_enabled() => {
+            None if shape.residual_scale.is_none() && nvfp4_residual_fusion_enabled() => {
                 nvfp4_segment(&w.down, h_out, 0, shape.hidden)
             }
             _ => None,
@@ -154,9 +157,8 @@ impl MetalBackend {
             None => {
                 self.encode_gated_ffn_branch(enc, h_in, w, s, shape);
                 // 5. post-FFN norm (four-norm placement only), then the
-                //    residual. `b_scale` is 1.0: a residual multiplier is a
-                //    judged plan fact and Glimmer's FFN residual has none,
-                //    so passing anything else here would invent semantics.
+                //    residual, scaled by the plan's residual-scale op when
+                //    it carries one (Granite `residual_multiplier`).
                 self.encode_branch_norm_then_residual(
                     enc,
                     h_in,
@@ -164,6 +166,7 @@ impl MetalBackend {
                     h_out,
                     w.post_norm.as_ref(),
                     shape.hidden,
+                    shape.residual_scale.unwrap_or(1.0),
                 );
             }
         }

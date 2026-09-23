@@ -233,6 +233,36 @@ fn run_lowered_act(
     post_eps: f32,
     activation: FfnActivation,
 ) -> Vec<f32> {
+    run_lowered_scaled(
+        gpu,
+        h,
+        norm_w,
+        gate,
+        up,
+        down,
+        offset,
+        post_norm_w,
+        post_eps,
+        activation,
+        None,
+    )
+}
+
+/// The same run, with the plan's residual-scale op stated explicitly.
+#[allow(clippy::too_many_arguments)]
+fn run_lowered_scaled(
+    gpu: &larql_compute_metal::MetalBackend,
+    h: &[f32],
+    norm_w: &[f32],
+    gate: &nvfp4::Nvfp4Matrix,
+    up: &nvfp4::Nvfp4Matrix,
+    down: &nvfp4::Nvfp4Matrix,
+    offset: f32,
+    post_norm_w: Option<&[f32]>,
+    post_eps: f32,
+    activation: FfnActivation,
+    residual_scale: Option<f32>,
+) -> Vec<f32> {
     let h_in = gpu.lowering_upload(h).expect("upload");
     let norm_buf = gpu.lowering_upload(norm_w).expect("upload");
     let h_out = gpu.lowering_scratch(HIDDEN);
@@ -290,6 +320,7 @@ fn run_lowered_act(
         norm_eps: EPS,
         norm_weight_offset: offset,
         activation,
+        residual_scale,
     };
 
     let cmd = gpu.new_lowering_command_buffer();
@@ -749,4 +780,69 @@ fn the_lowering_dispatches_situ_glu_and_binds_its_parameters() {
         &wide,
         m.rel_rms,
     );
+}
+
+/// A plan's residual-scale op (Granite `residual_multiplier`) scales the
+/// FFN branch before it joins the residual stream: `h + s * ffn(h)`.
+/// The lowering once hard-coded the add at 1.0 and ran Granite silently
+/// wrong; the control is that unscaled add.
+#[test]
+fn a_residual_scale_scales_the_ffn_branch_before_the_add() {
+    let Some(gpu) = larql_compute_metal::MetalBackend::new() else {
+        eprintln!("no Metal device; skipping");
+        return;
+    };
+    const SCALE: f32 = 0.22;
+    let h = deterministic(HIDDEN, 11);
+    let norm_w = deterministic(HIDDEN, 12);
+    let gate_f = deterministic(INTER * HIDDEN, 13);
+    let up_f = deterministic(INTER * HIDDEN, 14);
+    let down_f = deterministic(HIDDEN * INTER, 15);
+    let gate = nvfp4::quantize(&gate_f, INTER, HIDDEN).unwrap();
+    let up = nvfp4::quantize(&up_f, INTER, HIDDEN).unwrap();
+    let down = nvfp4::quantize(&down_f, HIDDEN, INTER).unwrap();
+    let gate_q = nvfp4::round_trip(&gate_f, INTER, HIDDEN).unwrap();
+    let up_q = nvfp4::round_trip(&up_f, INTER, HIDDEN).unwrap();
+    let down_q = nvfp4::round_trip(&down_f, HIDDEN, INTER).unwrap();
+
+    // The branch alone, then the scaled and the unscaled residual adds.
+    let branch = cpu_reference(
+        &h,
+        &norm_w,
+        &gate_q,
+        &up_q,
+        &down_q,
+        NORM_OFFSET,
+        true,
+        false,
+        PostNormMode::None,
+    );
+    let reference: Vec<f32> = h.iter().zip(&branch).map(|(a, d)| a + SCALE * d).collect();
+    let unscaled: Vec<f32> = h.iter().zip(&branch).map(|(a, d)| a + d).collect();
+
+    let got = run_lowered_scaled(
+        &gpu,
+        &h,
+        &norm_w,
+        &gate,
+        &up,
+        &down,
+        NORM_OFFSET,
+        None,
+        EPS,
+        FfnActivation::Silu,
+        Some(SCALE),
+    );
+    let m = compare(&reference, &got);
+    eprintln!(
+        "lowered FFN, residual scale {SCALE}: max_abs {:.3e}  rel_rms {:.3e}  cosine {:.9}",
+        m.max_abs, m.rel_rms, m.cosine
+    );
+    assert!(
+        m.rel_rms < 1e-4 && m.cosine > 0.999_999,
+        "lowered FFN ignores the residual scale: rel_rms {:.3e}, cosine {:.9}",
+        m.rel_rms,
+        m.cosine
+    );
+    assert_control("residual scale", &unscaled, &got, m.rel_rms);
 }

@@ -377,6 +377,7 @@ fn run_lowered(
         softcap: None,
         position_index: POS,
         kv_len: T,
+        residual_scale: None,
     };
 
     let cmd = gpu.new_lowering_command_buffer();

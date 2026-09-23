@@ -220,6 +220,7 @@ fn run_attention(gpu: &MetalBackend, fx: &AttnFixture, arms: AttnArms) -> Vec<f3
         softcap: None,
         position_index: A_POS,
         kv_len: A_T,
+        residual_scale: None,
     };
     run_once(gpu, |enc| {
         gpu.encode_attention(&mut SingleEncoder(enc), &h_in, &h_out, &w, &s, &shape)
@@ -360,6 +361,7 @@ fn run_ffn(
         norm_eps: EPS,
         norm_weight_offset: RAW_OFFSET,
         activation: act,
+        residual_scale: None,
     };
     run_once(gpu, |enc| {
         gpu.encode_gated_ffn(
@@ -512,6 +514,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[StackLayer]) -> Vec<Vec<f32>>
                     norm_eps: EPS,
                     norm_weight_offset: CENTRED_OFFSET,
                     activation: FfnActivation::GeluTanh,
+                    residual_scale: None,
                 },
                 routed: RoutedFfnLowering {
                     moe: l.moe(),
