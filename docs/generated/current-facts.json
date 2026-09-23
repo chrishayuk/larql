@@ -30,6 +30,7 @@
       "encode",
       "exec",
       "inspect",
+      "measure",
       "observe",
       "ops",
       "plan",

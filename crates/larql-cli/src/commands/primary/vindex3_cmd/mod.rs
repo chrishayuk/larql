@@ -75,6 +75,11 @@ pub enum Vindex3Command {
     /// a container's tokenizer into a bank; `check` reads every sample
     /// against its seal and the container's tokenizer.
     TokenBank(token_bank::TokenBankArgs),
+
+    /// MEASURE-PLAN-1: teacher-force a candidate realization against a
+    /// reference over a token bank, with every validity proof, and write a
+    /// report, per-position records and a receipt.
+    Measure(measure::MeasureArgs),
 }
 
 /// Which numerical realisation runs the plan. Both execute the *same*
@@ -551,6 +556,7 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
         Vindex3Command::Sensitivity(args) => sensitivity::run(args),
         Vindex3Command::Consequence(args) => consequence::run(args),
         Vindex3Command::TokenBank(args) => token_bank::run(args),
+        Vindex3Command::Measure(args) => measure::run(args),
     }
 }
 
@@ -563,6 +569,7 @@ mod generate;
 mod intervention;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub(crate) mod lowered;
+pub(crate) mod measure;
 mod observe;
 mod ops;
 mod optional_op;
