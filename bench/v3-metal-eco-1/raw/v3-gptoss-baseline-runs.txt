@@ -1,0 +1,129 @@
+## run 1 rep 1 mxfp4 metal-lowered-mxfp4 16:22:21 load=2.10 2.09 2.07 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered-mxfp4
+
+[bench] vindex3-metal-lowered-mxfp4: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 194 weight streams in 0.0 s
+[bench] vindex3-metal-lowered-mxfp4: operands resident in 5.2 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered-mxfp4     669.6ms      8.74ms      8.73ms     114.4     256  prompt 75 tok; gpu 8.74 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=69310171dc7891a7
+## run 2 rep 1 C metal-lowered 16:23:31 load=1.83 2.00 2.04 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 49 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.6 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        764.6ms     10.07ms     10.06ms      99.3     256  prompt 75 tok; NVFP4 pack 1/5 objects; gpu 10.07 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=e0f0a815e4a30e6a
+## run 3 rep 1 H metal-lowered 16:24:40 load=1.83 1.99 2.03 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4-head.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 50 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.3 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        665.3ms      8.62ms      8.63ms     116.1     256  prompt 75 tok; NVFP4 pack 2/5 objects; gpu 8.61 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=66da153c033f3ac8
+## run 4 rep 1 interp metal 16:25:48 load=2.28 2.04 2.04 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal
+
+[bench] vindex3-metal: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+[bench] vindex3-metal: operands prepared in 24.6 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal               6071.4ms     93.67ms     91.55ms      10.7     256  prompt 75 tok; device 82.88 ms/tok (host 1.73 + queue 59.27 + gpu 21.88) + glue 10.80 ms/tok, 265.0 submissions/tok; fp=ac7af1f324e9b143
+## run 5 rep 2 mxfp4 metal-lowered-mxfp4 16:27:53 load=1.64 1.92 1.99 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered-mxfp4
+
+[bench] vindex3-metal-lowered-mxfp4: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 194 weight streams in 0.0 s
+[bench] vindex3-metal-lowered-mxfp4: operands resident in 5.0 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered-mxfp4     719.7ms      9.20ms      9.33ms     108.7     256  prompt 75 tok; gpu 9.20 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=69310171dc7891a7
+## run 6 rep 2 C metal-lowered 16:29:03 load=1.45 1.80 1.94 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 49 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.5 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        814.4ms     10.36ms     10.44ms      96.6     256  prompt 75 tok; NVFP4 pack 1/5 objects; gpu 10.35 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=e0f0a815e4a30e6a
+## run 7 rep 2 H metal-lowered 16:30:12 load=1.44 1.72 1.90 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4-head.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 50 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.3 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        662.2ms      8.38ms      8.53ms     119.4     256  prompt 75 tok; NVFP4 pack 2/5 objects; gpu 8.38 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=66da153c033f3ac8
+## run 8 rep 2 interp metal 16:31:20 load=1.71 1.73 1.89 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal
+
+[bench] vindex3-metal: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+[bench] vindex3-metal: operands prepared in 23.6 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal               6091.9ms     91.15ms     89.28ms      11.0     256  prompt 75 tok; device 80.72 ms/tok (host 1.60 + queue 58.06 + gpu 21.06) + glue 10.43 ms/tok, 265.0 submissions/tok; fp=ac7af1f324e9b143
+## run 9 rep 3 mxfp4 metal-lowered-mxfp4 16:33:23 load=2.20 1.91 1.93 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered-mxfp4
+
+[bench] vindex3-metal-lowered-mxfp4: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 194 weight streams in 0.0 s
+[bench] vindex3-metal-lowered-mxfp4: operands resident in 5.0 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered-mxfp4     717.0ms      9.39ms      9.41ms     106.5     256  prompt 75 tok; gpu 9.39 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=69310171dc7891a7
+## run 10 rep 3 C metal-lowered 16:34:33 load=2.30 2.01 1.97 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 49 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.5 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        818.6ms     10.67ms     10.68ms      93.7     256  prompt 75 tok; NVFP4 pack 1/5 objects; gpu 10.67 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=e0f0a815e4a30e6a
+## run 11 rep 3 H metal-lowered 16:35:43 load=3.82 2.38 2.10 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4-head.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 50 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.3 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        660.3ms      8.54ms      8.56ms     117.1     256  prompt 75 tok; NVFP4 pack 2/5 objects; gpu 8.54 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=66da153c033f3ac8
+## run 12 rep 3 interp metal 16:36:51 load=3.30 2.49 2.16 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal
+
+[bench] vindex3-metal: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+[bench] vindex3-metal: operands prepared in 24.4 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal               5846.9ms     87.79ms     86.65ms      11.4     256  prompt 75 tok; device 77.25 ms/tok (host 1.61 + queue 54.57 + gpu 21.07) + glue 10.54 ms/tok, 265.0 submissions/tok; fp=ac7af1f324e9b143

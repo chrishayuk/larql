@@ -1,0 +1,30 @@
+representation: NVFP4  source: auto  objects from a compiled pack: 1/5
+wired 273 weight streams in 0.1 s
+weights resident in 1.4 s
+head geometry: [262208, 2560]
+plan: 2 rope base(s), final norm present
+engine: vindex3-metal-lowered-nvfp4-all
+weights loaded: 1.4 s
+prompt: 24 tokens in 4.1 s (169 ms/token)
+decode tokens: 256
+first token: 16.07 ms
+decode p50: 14.69 ms  p95: 15.89 ms
+steady (last half): 15.37 ms/token (65.048 tok/s)
+steady GPU span: 15.08 ms/token  host on critical path: 0.29 ms/token  (encode 0.96 ms/token, overlapped)
+generated ids: [1408, 669, 53474, 532, 16175, 529, 506, 10995, 23436, 236787, 562, 48756, 10358, 108, 818, 10995, 23436, 236764, 496, 39084, 600, 27222, 506, 32920, 1902, 573, 24744, 236764, 39169, 496, 4083, 529, 19374, 10534, 236764, 13862, 236764, 532, 15334, 236764, 16670, 236761, 9567, 3925, 563, 886, 529, 43661, 236764, 7820, 104941, 236764, 5255, 114597, 236764, 532, 9226, 7630, 600, 9885, 531, 114542, 3124, 236761, 5715, 236858, 236751, 496, 9813, 25890, 529, 1061, 9338, 236764, 699, 1061, 112852, 38320, 531, 1061, 1626, 24976, 236787, 108, 1018, 236777, 236761, 669, 10995, 15305, 568, 236832, 236810, 236800, 19339, 1271, 236743, 236810, 236771, 236819, 19339, 1473, 67970, 532, 11032, 1018, 108, 236829, 5213, 65089, 835, 85596, 53121, 10995, 14385, 8787, 1061, 37813, 528, 236743, 236832, 236810, 236800, 19339, 684, 12557, 14918, 532, 6663, 605, 236764, 25276, 19340, 8675, 684, 496, 1304, 236772, 70711, 236761, 1174, 27642, 236764, 1651, 13298, 42988, 236764, 9282, 506, 112483, 529, 3572, 16403, 42608, 2101, 496, 6082, 19960, 580, 506, 6203, 81794, 10892, 236761, 107, 236829, 5213, 236788, 1168, 605, 4881, 55245, 53121, 669, 3649, 10995, 15305, 691, 18677, 21202, 684, 506, 136518, 26515, 743, 236764, 496, 26446, 39084, 531, 506, 8339, 236761, 136518, 605, 4881, 44858, 26668, 13706, 573, 496, 2846, 236764, 25635, 4820, 529, 910, 6540, 1271, 13217, 236764, 15831, 236764, 532, 27414, 1271, 837, 1093, 3209, 577, 13148, 1131, 10995, 7299, 236761, 107, 236829, 5213, 75683, 27328, 53121, 13706, 691, 26668, 684, 6819, 44858, 236764, 506, 1774, 529, 8761, 236764, 18725, 17492, 506, 115894, 236764, 691, 207493, 528, 236743, 236810, 236771, 236819, 19339]
+attention dispatches: serial 9554  seqpar 0
+stage profile over 256 token(s) — per token, GPU time; floor = bytes / 367 GB/s
+  stage           ms/tok      %   runs     MB/tok      GB/s floor ms
+  attn.norm        0.316   2.4%   34.0          -         -        -
+  attn.proj        0.801   6.0%   34.0      200.5       250     0.55
+  attn.qk_ops      0.484   3.6%   34.0          -         -        -
+  attn.core        2.253  16.9%   34.0          -         -        -
+  attn.out         0.864   6.5%   34.0      100.3       116     0.27
+  ffn.dense        5.179  38.9%   34.0     1504.1       290     4.10
+  head             3.412  25.6%    1.0     1342.5       394     3.66
+  attributed      13.309                   3147.4               8.58
+  sampled span 14.410 ms/tok (gaps between stages 1.101); command-buffer GPU span 14.410 ms/tok
+  residual over byte floor: 4.733 ms/tok — compare with an unprofiled run: sampling drains at each stage boundary
+logits: 262208, argmax 236764 (+30.8847) — device argmax agrees
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+stored precision: 1 tensor(s) ran above the requested format (the pack's precision map)

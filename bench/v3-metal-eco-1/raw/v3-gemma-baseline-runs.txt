@@ -1,0 +1,63 @@
+## run 1 rep 1 metal-nvfp4 15:42:55 load=1.78 1.83 2.39 power=AC Power
+larql bench: ~/chris-models/gemma3-4b-it.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-nvfp4
+
+[bench] vindex3-metal-nvfp4: opened 093f9f388b31de276ce2de164bdc2081324b9767 (gemma3_text) in 0.0 s
+[bench] vindex3-metal-nvfp4: operands prepared in 1.4 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-nvfp4         1012.1ms     49.69ms     49.26ms      20.1     256  prompt 24 tok; NVFP4 pack 1/5 objects; device 37.16 ms/tok (host 0.90 + queue 25.13 + gpu 11.13) + glue 12.53 ms/tok, 137.0 submissions/tok; fp=95f72d818daa59ed
+## run 2 rep 1 metal-lowered 15:44:12 load=1.51 1.73 2.29 power=AC Power
+larql bench: ~/chris-models/gemma3-4b-it.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 093f9f388b31de276ce2de164bdc2081324b9767 (gemma3_text) in 0.0 s
+wired 273 weight streams in 0.1 s
+[bench] vindex3-metal-lowered: operands resident in 1.5 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        284.4ms     13.34ms     13.33ms      75.0     256  prompt 24 tok; NVFP4 pack 1/5 objects; gpu 13.34 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=c461d48a1647b01f
+## run 3 rep 2 metal-nvfp4 15:45:19 load=1.41 1.66 2.22 power=AC Power
+larql bench: ~/chris-models/gemma3-4b-it.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-nvfp4
+
+[bench] vindex3-metal-nvfp4: opened 093f9f388b31de276ce2de164bdc2081324b9767 (gemma3_text) in 0.0 s
+[bench] vindex3-metal-nvfp4: operands prepared in 1.4 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-nvfp4          927.9ms     49.79ms     49.31ms      20.1     256  prompt 24 tok; NVFP4 pack 1/5 objects; device 37.05 ms/tok (host 0.91 + queue 25.02 + gpu 11.11) + glue 12.74 ms/tok, 137.0 submissions/tok; fp=95f72d818daa59ed
+## run 4 rep 2 metal-lowered 15:46:37 load=1.76 1.70 2.19 power=AC Power
+larql bench: ~/chris-models/gemma3-4b-it.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 093f9f388b31de276ce2de164bdc2081324b9767 (gemma3_text) in 0.0 s
+wired 273 weight streams in 0.1 s
+[bench] vindex3-metal-lowered: operands resident in 1.4 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        287.1ms     13.32ms     13.25ms      75.1     256  prompt 24 tok; NVFP4 pack 1/5 objects; gpu 13.32 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=c461d48a1647b01f
+## run 5 rep 3 metal-nvfp4 15:47:43 load=2.18 1.84 2.20 power=AC Power
+larql bench: ~/chris-models/gemma3-4b-it.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-nvfp4
+
+[bench] vindex3-metal-nvfp4: opened 093f9f388b31de276ce2de164bdc2081324b9767 (gemma3_text) in 0.0 s
+[bench] vindex3-metal-nvfp4: operands prepared in 1.5 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-nvfp4          928.8ms     49.46ms     49.36ms      20.2     256  prompt 24 tok; NVFP4 pack 1/5 objects; device 36.86 ms/tok (host 0.90 + queue 24.85 + gpu 11.10) + glue 12.61 ms/tok, 137.0 submissions/tok; fp=95f72d818daa59ed
+## run 6 rep 3 metal-lowered 15:49:01 load=1.60 1.74 2.13 power=AC Power
+larql bench: ~/chris-models/gemma3-4b-it.nvfp4.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 093f9f388b31de276ce2de164bdc2081324b9767 (gemma3_text) in 0.0 s
+wired 273 weight streams in 0.1 s
+[bench] vindex3-metal-lowered: operands resident in 1.5 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        287.7ms     13.37ms     13.39ms      74.8     256  prompt 24 tok; NVFP4 pack 1/5 objects; gpu 13.37 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=c461d48a1647b01f
