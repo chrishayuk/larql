@@ -224,6 +224,39 @@ pub(super) fn summarise(run: &TimedRun<'_>) -> BenchRow {
     }
 }
 
+/// Ids the reset witness compares: the prefill argmax, and the id the
+/// first decode step produces.
+#[cfg(any(test, all(feature = "gpu", target_os = "macos")))]
+const RESET_WITNESS_IDS: usize = 2;
+
+/// Refuse a lowered row whose timed run did not start where a fresh
+/// session starts.
+///
+/// The warm-up runs from a fresh session and the timed run from a reset
+/// one, over the same prompt, so their leading ids must agree. A reset
+/// that leaked state (a position, a stale look-ahead, a decode chain)
+/// would time a different generation and still print a plausible row.
+/// Compared over the ids both runs produced, so an early EOS shortens
+/// the check rather than failing it.
+#[cfg(any(test, all(feature = "gpu", target_os = "macos")))]
+pub(super) fn check_reset_witness(
+    backend: ExecBackend,
+    warm: &[u32],
+    timed: &[u32],
+) -> Result<(), String> {
+    let n = RESET_WITNESS_IDS.min(warm.len()).min(timed.len());
+    if warm[..n] == timed[..n] {
+        return Ok(());
+    }
+    Err(format!(
+        "{}: the run after reset began {:?}, the warm-up from a fresh session {:?} — \
+         the reset leaked state, so the row would time a different generation",
+        row_label(backend),
+        &timed[..n],
+        &warm[..n]
+    ))
+}
+
 /// Device share of a decode token: time inside device calls, the rest
 /// (the interpreter's glue), and submissions per token.
 fn format_device_note(device: DeviceWindow, steps: usize, mean_ms: f64) -> String {
@@ -250,6 +283,27 @@ mod tests {
     fn args(extra: &[&str]) -> BenchArgs {
         let argv = ["bench", "model.vindex3"].iter().chain(extra);
         Harness::parse_from(argv).args
+    }
+
+    #[test]
+    fn the_reset_witness_passes_matching_leading_ids() {
+        let b = ExecBackend::Production;
+        assert!(check_reset_witness(b, &[5, 9], &[5, 9, 11, 13]).is_ok());
+        // Only the leading ids are compared; what follows may differ.
+        assert!(check_reset_witness(b, &[5, 9, 1], &[5, 9, 2]).is_ok());
+        // An early EOS shortens the comparison instead of failing it.
+        assert!(check_reset_witness(b, &[5], &[5, 9]).is_ok());
+        assert!(check_reset_witness(b, &[], &[5, 9]).is_ok());
+    }
+
+    #[test]
+    fn the_reset_witness_refuses_a_run_that_began_elsewhere() {
+        let b = ExecBackend::Production;
+        let err = check_reset_witness(b, &[5, 9], &[7, 9]).unwrap_err();
+        assert!(err.contains("reset leaked state"), "{err}");
+        assert!(err.contains("[7, 9]") && err.contains("[5, 9]"), "{err}");
+        // The second id is inside the window too.
+        assert!(check_reset_witness(b, &[5, 9], &[5, 8]).is_err());
     }
 
     #[test]

@@ -243,6 +243,21 @@ the V2 engine or its remote paths (`--engine`, `--ffn`, `--wire`,
 `--via-executor`, `--profile`, `--metal`, `--concurrent`) are refused by name.
 `--ollama` remains available as an external baseline.
 
+The lowered Metal arms (`metal-lowered`, `metal-lowered-ffn`,
+`metal-lowered-no-head`, `metal-lowered-mxfp4`, `metal-lowered-mxfp4-ffn`,
+`metal-lowered-f16`) execute outside the interpreter, one command buffer per
+token, and are timed by the same row statistic:
+- **Loading:** weights are made resident once.
+- **Warm-up:** one untimed token, then the session is reset to position 0.
+- **Prompt:** executed one position per step. There is no batch prefill on
+  this path, so its prefill column is not comparable with an interpreter row's.
+- **Device note:** the command buffers' GPU span, and submissions counted at
+  each commit.
+- **Reset check:** the timed run must begin with the same ids as the warm-up
+  from a fresh session, or the row is refused.
+- **Fingerprint:** covers the generated text only. The lowered decode reads
+  back the device argmax id, not the logits.
+
 ### `larql accuracy`
 
 Split-axis accuracy suite for KV engines. Runs each selected engine through

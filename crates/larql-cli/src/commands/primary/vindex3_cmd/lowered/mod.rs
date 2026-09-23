@@ -187,6 +187,11 @@ pub struct LoweredSession<'a> {
     /// caller's, not the argmax's, and a committed wrong-token step
     /// would execute (and burn GPU time) before being discarded.
     decode_chain: bool,
+    /// Command buffers committed, cumulative — a look-ahead that is later
+    /// discarded included, since the device ran it. Counted where `commit`
+    /// is called, so a submission rate is observed, never inferred from
+    /// the one-buffer-per-token design.
+    submissions: u64,
 }
 
 /// Set to keep the argmax on the host (full-logits readback + scan) —
@@ -594,6 +599,7 @@ impl<'a> LoweredSession<'a> {
             device_embed,
             last_device_id: None,
             decode_chain: false,
+            submissions: 0,
         })
     }
 

@@ -115,7 +115,7 @@ pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str
 /// pre-lowering numbers could not (they mixed kernel families and
 /// starvation). `None` for every interpreted arm.
 #[cfg(all(feature = "gpu", target_os = "macos"))]
-pub(super) fn lowered_formats(
+pub(crate) fn lowered_formats(
     backend: ExecBackend,
 ) -> Option<(
     larql_vindex::format::vindex3::opplan::exec::backend::WeightFormats,

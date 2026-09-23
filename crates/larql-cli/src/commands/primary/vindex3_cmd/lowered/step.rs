@@ -104,6 +104,23 @@ impl LoweredSession<'_> {
         id
     }
 
+    /// Command buffers committed so far (see the field).
+    pub fn submissions(&self) -> u64 {
+        self.submissions
+    }
+
+    /// Return to position 0 with the weights still resident: wait out any
+    /// look-ahead, then forget the decode chain and the last device id.
+    /// Attention reads the KV cache only below the current position, so
+    /// the next prompt overwrites every row it will read, and a run after
+    /// `reset` starts from the state a fresh session would.
+    pub fn reset(&mut self) {
+        self.quiesce();
+        self.position = 0;
+        self.last_device_id = None;
+        self.decode_chain = false;
+    }
+
     /// The logits of the most recent completed step, read from the
     /// device. Valid until the next step commits; `None` without a head.
     pub fn last_logits(&self) -> Option<Vec<f32>> {
@@ -188,6 +205,7 @@ impl LoweredSession<'_> {
         self.last_encode_ms = prepared.encode_ms;
         if !prepared.committed {
             prepared.cmd.commit();
+            self.submissions += 1;
         }
 
         // Overlap: encode the next position while this one executes. Only
@@ -206,6 +224,7 @@ impl LoweredSession<'_> {
             let next = self.prepare(t + 1, false, gather_next)?;
             if next.gather {
                 next.cmd.commit();
+                self.submissions += 1;
             }
             self.prepared = Some(PreparedStep {
                 committed: gather_next,
