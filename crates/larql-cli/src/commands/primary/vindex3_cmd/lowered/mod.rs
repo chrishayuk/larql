@@ -37,6 +37,7 @@ use larql_vindex::format::vindex3::opplan::{ComponentOpPlan, LayerPlan};
 
 /// One matrix operand, resident on the device.
 mod dump;
+pub(crate) mod measure_arm;
 mod profile;
 mod resident;
 mod routed;

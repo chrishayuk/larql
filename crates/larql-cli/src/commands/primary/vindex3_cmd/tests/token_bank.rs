@@ -7,25 +7,9 @@ use std::path::Path;
 use crate::commands::primary::vindex3_cmd::token_bank::*;
 use larql_vindex::format::vindex3::represent::token_bank::TOKENIZER_FILE;
 
-/// A tokenizer the `tokenizers` crate can load, over a handful of words.
+/// A container directory holding only a tokenizer over a handful of words.
 fn write_container(dir: &Path) {
-    use std::collections::HashMap;
-    use tokenizers::models::wordlevel::WordLevel;
-    use tokenizers::pre_tokenizers::whitespace::Whitespace;
-    std::fs::create_dir_all(dir).unwrap();
-    let vocab: HashMap<String, u32> = ["[UNK]", "one", "two", "three", "four"]
-        .iter()
-        .enumerate()
-        .map(|(i, w)| ((*w).to_string(), i as u32))
-        .collect();
-    let model = WordLevel::builder()
-        .vocab(vocab.into_iter().collect())
-        .unk_token("[UNK]".into())
-        .build()
-        .unwrap();
-    let mut tk = tokenizers::Tokenizer::new(model);
-    tk.with_pre_tokenizer(Some(Whitespace {}));
-    tk.save(dir.join(TOKENIZER_FILE), false).unwrap();
+    super::write_word_tokenizer(dir, &["one", "two", "three", "four"]);
 }
 
 fn write_prompts(path: &Path) {
