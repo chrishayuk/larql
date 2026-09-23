@@ -47,6 +47,11 @@ use larql_models::config::KdaGateForm;
 static O_PROJ_SINGLE_SLOT: [ExpertOffset; 1] = [ExpertOffset(0)];
 /// The three convolved streams: q, k, v.
 const CONV_STREAMS: usize = 3;
+/// The narrowest convolution the short-conv kernel defines: it keeps
+/// `kernel - 1` inputs of history, and the current input is the last tap.
+const MIN_CONV_KERNEL: usize = 1;
+/// Bytes per bf16 code.
+const BF16_BYTES: usize = 2;
 
 /// The geometry one KDA layer runs at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,12 +146,24 @@ impl SmallMatrix<'_> {
     pub fn len(&self) -> usize {
         match self {
             SmallMatrix::F32(v) => v.len(),
-            SmallMatrix::Bf16(b) => b.len() / 2,
+            SmallMatrix::Bf16(b) => b.len() / BF16_BYTES,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Elements, or `None` for a bf16 slice that is not a whole number
+    /// of codes — which [`len`](Self::len) would silently round down.
+    fn exact_len(&self) -> Option<usize> {
+        match self {
+            SmallMatrix::F32(v) => Some(v.len()),
+            SmallMatrix::Bf16(b) => b
+                .len()
+                .is_multiple_of(BF16_BYTES)
+                .then_some(b.len() / BF16_BYTES),
+        }
     }
 }
 
@@ -445,6 +462,8 @@ impl MetalBackend {
                 found: state.shape.width(),
             });
         }
+        Self::validate_kda_geometry(shape)?;
+        Self::validate_kda_operands(w, shape)?;
         // Bounds at the ENCODING's own stride — a bf16 validator run
         // over a smaller quantised bank would over-demand and refuse
         // valid banks; the reverse would under-demand and read past.
@@ -477,6 +496,76 @@ impl MetalBackend {
             });
         }
 
+        Ok(())
+    }
+
+    /// The geometry the device kernels can execute at all.
+    ///
+    /// `kda_recurrence` gives each value column one thread of a single
+    /// threadgroup and does not stride, so `head_dim` is bounded by that
+    /// threadgroup. `kda_short_conv_silu` keeps `kernel - 1` inputs of
+    /// history, so a zero-width kernel has no defined history length.
+    fn validate_kda_geometry(shape: KdaShape) -> Result<(), GroupedError> {
+        let max_head_dim = kda_shader::RECURRENCE_THREADS_PER_TG as usize;
+        let limits = [
+            ("head_dim", shape.head_dim, 1, max_head_dim),
+            ("num_heads", shape.num_heads, 1, usize::MAX),
+            ("hidden", shape.hidden, 1, usize::MAX),
+            (
+                "conv_kernel",
+                shape.conv_kernel,
+                MIN_CONV_KERNEL,
+                usize::MAX,
+            ),
+        ];
+        for (field, value, min, max) in limits {
+            if value < min || value > max {
+                return Err(GroupedError::KdaGeometryUnsupported {
+                    field,
+                    value,
+                    min,
+                    max,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Every operand bound whole against the element count the shape
+    /// declares for it — exact, not at-least, because a longer tensor is
+    /// a mis-bound one rather than a safe one.
+    fn validate_kda_operands(w: KdaDeviceWeights<'_>, shape: KdaShape) -> Result<(), GroupedError> {
+        let (hidden, width, dim, heads) =
+            (shape.hidden, shape.width(), shape.head_dim, shape.num_heads);
+        let conv = width * shape.conv_kernel;
+        let vectors = [
+            ("q_conv1d", conv, w.q_conv1d.len()),
+            ("k_conv1d", conv, w.k_conv1d.len()),
+            ("v_conv1d", conv, w.v_conv1d.len()),
+            ("a_log", heads, w.a_log.len()),
+            ("dt_bias", width, w.dt_bias.len()),
+            ("o_norm", dim, w.o_norm.len()),
+        ];
+        let matrices = [
+            ("f_a_proj", dim * hidden, w.f_a_proj),
+            ("f_b_proj", width * dim, w.f_b_proj),
+            ("g_a_proj", dim * hidden, w.g_a_proj),
+            ("g_b_proj", width * dim, w.g_b_proj),
+            ("b_proj", heads * hidden, w.b_proj),
+        ];
+        let lengths = vectors
+            .into_iter()
+            .map(|(operand, need, have)| (operand, need, Some(have)))
+            .chain(matrices.map(|(operand, need, m)| (operand, need, m.exact_len())));
+        for (operand, need, have) in lengths {
+            if have != Some(need) {
+                return Err(GroupedError::KdaOperandShape {
+                    operand,
+                    need,
+                    have: have.unwrap_or(0),
+                });
+            }
+        }
         Ok(())
     }
 

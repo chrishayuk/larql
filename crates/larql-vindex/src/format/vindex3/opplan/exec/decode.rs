@@ -105,7 +105,11 @@ pub struct StepOutput {
 /// decode form of the layer-range contract.
 enum Entry {
     Token(u32),
+    /// An external embedding row standing in for the token lookup; it
+    /// enters the declared topology exactly as an embedding would.
     Hidden(Vec<f32>),
+    /// A single-stream entering carrier at the first executed layer.
+    Single(Vec<f32>),
     #[cfg(test)]
     Bundle(Bundle),
 }
@@ -458,6 +462,56 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         interventions: &InterventionPlan,
         head_interventions: &HeadInterventionPlan,
     ) -> Result<InterventionStepOutput, VindexError> {
+        self.step_entered(
+            Entry::Token(token),
+            observer,
+            interventions,
+            head_interventions,
+        )
+    }
+
+    /// Resume a single-stream layer-range image from its entering carrier
+    /// (the GW programme's carrier entry). The caller supplies the
+    /// canonical continuation state at this position; the layer loop,
+    /// backend refusals and intervention admission are exactly
+    /// [`Self::step_intervened`]'s. A full image, a multi-stream
+    /// topology, or a carrier of the wrong width or with a non-finite
+    /// value refuses before anything executes.
+    pub fn step_from_carrier_intervened(
+        &mut self,
+        carrier: &[f32],
+        observer: &mut dyn StepObserver,
+        interventions: &InterventionPlan,
+        head_interventions: &HeadInterventionPlan,
+    ) -> Result<InterventionStepOutput, VindexError> {
+        let ops = self.ops.get();
+        if !matches!(ops.slice(), ExecutionSlice::LayerRange { .. })
+            || !self.plan.residual_topology.is_single_stream()
+            || carrier.len() != ops.hidden()
+            || carrier.iter().any(|v| !v.is_finite())
+        {
+            return Err(VindexError::Parse(
+                "carrier entry requires a finite, correctly sized single-stream layer-range input"
+                    .into(),
+            ));
+        }
+        self.step_entered(
+            Entry::Single(carrier.to_vec()),
+            observer,
+            interventions,
+            head_interventions,
+        )
+    }
+
+    /// The one admitted entry both public intervened steps share: backend
+    /// capability refusals, then both plans' admission, then the run.
+    fn step_entered(
+        &mut self,
+        entry: Entry,
+        observer: &mut dyn StepObserver,
+        interventions: &InterventionPlan,
+        head_interventions: &HeadInterventionPlan,
+    ) -> Result<InterventionStepOutput, VindexError> {
         if observer.wants_attention_heads() && !self.backend.serves_attention_heads() {
             return Err(VindexError::Parse(format!(
                 "per-head attention observation is not served by the {} backend; observe \
@@ -474,7 +528,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         interventions.admit(self.plan, self.ops.get())?;
         head_interventions.admit(self.plan, self.ops.get())?;
         let run = self.run(
-            Entry::Token(token),
+            entry,
             observer,
             Mutation::None,
             interventions,
@@ -545,6 +599,10 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let block_size = ops.attention_residual_block_size();
         let position = self.kv.state().position();
         let mut carrier = match entry {
+            Entry::Single(values) => {
+                observer.entering_carrier(position, &values);
+                Carrier::Single(values)
+            }
             Entry::Token(token) => {
                 let h = ops.embed_token(self.plan, self.backend, token)?;
                 observer.event(StepEvent::Embedded { position });
@@ -809,7 +867,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     // nothing at this layer costs nothing (J4/JF1).
                     let out = if head_interventions.touches_layer(index) {
                         let heads = step.op.num_q_heads;
-                        let wants_heads = observer.wants_attention_heads();
+                        let wants_heads = observer.wants_attention_heads_at(index, position);
                         let mut fired_heads: Vec<HeadFiring> = Vec::new();
                         let mut head_intervene = |head: usize, ctx_h: &mut [f32]| {
                             if let Some(intervention) = head_interventions.at(index, head, position)
@@ -851,7 +909,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         }
                         head_firings.extend(fired_heads);
                         out
-                    } else if observer.wants_attention_heads() {
+                    } else if observer.wants_attention_heads_at(index, position) {
                         let heads = step.op.num_q_heads;
                         let out = self.backend.attention_step_observed(step, &mut |record| {
                             observer.attention_head(index, record)
@@ -879,6 +937,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 observer.event(StepEvent::HeadsUncovered { layer: index });
             }
             drop(_attention_stage);
+            observer.attention_output(index, position, &raw_attn);
             let mut attn_out = match &state.post_attention {
                 Some(norm) => norm.apply(self.backend, &raw_attn),
                 None => raw_attn,

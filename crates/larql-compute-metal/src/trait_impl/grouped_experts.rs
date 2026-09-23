@@ -110,6 +110,39 @@ pub enum GroupedError {
     /// missing — plausible numbers from half an expert, which is worse
     /// than any refusal.
     SharedBranchInconsistent,
+    /// An expert's byte offset does not fit the `u32` the device offset
+    /// table and address kernel carry.
+    ///
+    /// Refused rather than truncated: a wrapped offset is a valid address
+    /// inside the bank — another expert's weights — so the read would
+    /// neither fault nor look wrong.
+    OffsetExceedsAddressWidth {
+        slot: usize,
+        offset: u64,
+    },
+    /// A KDA geometry the device kernels cannot execute faithfully.
+    ///
+    /// Refused before encoding because the kernels would not fault: a
+    /// `head_dim` above the recurrence's threadgroup leaves the upper
+    /// value columns and half the state untouched, and a zero-width
+    /// convolution underflows its history length. Both complete as
+    /// ordinary command buffers.
+    KdaGeometryUnsupported {
+        field: &'static str,
+        value: usize,
+        min: usize,
+        max: usize,
+    },
+    /// A KDA operand whose length disagrees with the declared geometry.
+    ///
+    /// Every operand is bound whole and indexed by the shape, so a short
+    /// one is an out-of-bounds device read and a long one is a mis-bound
+    /// tensor. Named per operand so the refusal points at the tensor.
+    KdaOperandShape {
+        operand: &'static str,
+        need: usize,
+        have: usize,
+    },
 }
 
 impl std::fmt::Display for GroupedError {
@@ -157,6 +190,19 @@ impl std::fmt::Display for GroupedError {
                 f,
                 "grouped experts: gate/up/down disagree about whether a shared expert \
                  exists; the branch is declared per projection but is one semantic fact"
+            ),
+            Self::OffsetExceedsAddressWidth { slot, offset } => write!(
+                f,
+                "grouped experts: slot {slot} byte offset {offset} exceeds the 32-bit device \
+                 offset table"
+            ),
+            Self::KdaGeometryUnsupported { field, value, min, max } => write!(
+                f,
+                "KDA: {field}={value} is outside what the device kernels execute ({min}..={max})"
+            ),
+            Self::KdaOperandShape { operand, need, have } => write!(
+                f,
+                "KDA: operand {operand} must be {need} elements for the declared geometry, got {have}"
             ),
         }
     }

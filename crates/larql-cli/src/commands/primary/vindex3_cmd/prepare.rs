@@ -20,6 +20,7 @@ use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::lowering::{LoweringIdentity, LoweringRegistry};
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 
 use super::ExecBackend;
 
@@ -89,7 +90,7 @@ pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str
         ExecBackend::ProductionNvfp4 => Some(DTYPE_NVFP4),
         ExecBackend::ProductionQ8 => Some(kquant::Q8_0.name),
         ExecBackend::ProductionQ6k => Some(kquant::Q6_K.name),
-        ExecBackend::ProductionQ4k => Some(kquant::Q4_K.name),
+        ExecBackend::ProductionQ4k | ExecBackend::ProductionQ4kQ8k => Some(kquant::Q4_K.name),
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::Metal
         | ExecBackend::MetalMxfp4
@@ -163,6 +164,7 @@ pub(super) fn lowered_formats(
         | ExecBackend::ProductionQ8
         | ExecBackend::ProductionQ6k
         | ExecBackend::ProductionQ4k
+        | ExecBackend::ProductionQ4kQ8k
         | ExecBackend::Metal
         | ExecBackend::MetalMxfp4
         | ExecBackend::MetalMxfp4All
@@ -214,6 +216,15 @@ pub(crate) fn lowerings_for(
         | ExecBackend::ProductionQ8
         | ExecBackend::ProductionQ6k
         | ExecBackend::ProductionQ4k => Ok((shipped, LoweringIdentity::cpu_production())),
+        // Q8K-ACT-1: the production executor constructed for the Q8_K
+        // activation, registered under its OWN identity — the same pins
+        // compute different numbers under it, so an image prepared for
+        // one provider must never execute under the other.
+        ExecBackend::ProductionQ4kQ8k => {
+            let q8k = ProductionBackend::q8k_activation();
+            let identity = q8k.identity();
+            Ok((shipped.register(Box::new(q8k))?, identity))
+        }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalLowered
         | ExecBackend::MetalLoweredFfn

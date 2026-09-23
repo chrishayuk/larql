@@ -1,0 +1,107 @@
+{
+  "controls": {
+    "execution_policy": "paired rows are already in the positive input manifest; controls add no executions",
+    "kinds": [
+      "same_fact_different_prompt_family",
+      "same_relation_different_subject"
+    ],
+    "per_execution": 2
+  },
+  "counts": {
+    "by_relation_executions": {
+      "capital": 114,
+      "currency": 102,
+      "hypernym": 120,
+      "language": 90
+    },
+    "by_relation_semantic_edges": {
+      "capital": 38,
+      "currency": 34,
+      "hypernym": 40,
+      "language": 30
+    },
+    "by_split_executions": {
+      "test": 84,
+      "train": 255,
+      "validation": 87
+    },
+    "controls": 852,
+    "executions": 426,
+    "semantic_edges": 142
+  },
+  "frozen_date": "2026-09-20",
+  "manifest_sha256": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c",
+  "model": {
+    "container_identity": "sha256:4d0287a4e15de26cc52e355497609d30f7764c42047179486aed2b6fd774c693",
+    "container_root": "/Users/christopherhay/chris-models/gemma3-4b-it.vindex3",
+    "family": "gemma3_text",
+    "hidden_size": 2560,
+    "index_sha256": "sha256:4d0287a4e15de26cc52e355497609d30f7764c42047179486aed2b6fd774c693",
+    "model_identity": "093f9f388b31de276ce2de164bdc2081324b9767",
+    "name": "Gemma 3 4B IT",
+    "num_layers": 34,
+    "profiles": [
+      {
+        "name": "exact"
+      }
+    ],
+    "system_graph_sha256": "sha256:912298227396219423be39a1cb98ef3e18f062fb4f51f3fa58653c87ac9f2a57",
+    "text_component": "target",
+    "tokenizer_sha256": "sha256:4667f2089529e8e7657cfb6d1c19910ae71ff5f28aa7ab2ff2763330affad795"
+  },
+  "prompt_protocol": "raw_text_completion_container_tokenizer_with_special_tokens",
+  "rows": {
+    "count": 426,
+    "path": "input.jsonl",
+    "sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+  },
+  "schema": "larql.gw0.input-manifest.v1",
+  "selection": {
+    "factual": "all E20 verified GOLD entries for capital/currency/language",
+    "hypernym": "first 40 single-target test subjects in sealed SG-1 source order",
+    "prompt_families": [
+      "canonical",
+      "question",
+      "alternate"
+    ],
+    "target_token_rule": "encode(prompt + ' ' + target) minus the exact encode(prompt) prefix; target_token_ids contains the first next-token target and target_continuation_token_ids preserves the full suffix"
+  },
+  "sources": [
+    {
+      "bytes": 49441,
+      "path": "/Users/christopherhay/chris-source/chris-experiments/fleet/E20_banked_highway/e20_banked_highway.py",
+      "sha256": "sha256:90edefa8fedbd397abf6ca841c6a82d7876ffcefe596e8423133a7c4bf79215b"
+    },
+    {
+      "bytes": 2636392,
+      "path": "/Users/christopherhay/chris-source/chris-experiments/semantic_graph/captures/sg1_manifest_full.jsonl",
+      "sha256": "sha256:9797c9c3902c855719bb85613b0debe9469697301c31486f0945e1d7edf52138"
+    },
+    {
+      "bytes": 25222,
+      "path": "/Users/christopherhay/chris-source/chris-experiments/mechinterp/MI13_attention_graph_walk/run_mi13.py",
+      "sha256": "sha256:b02df2561b2210318c3acc04b1464fb99ce4db31d70655c5718f139595891117"
+    },
+    {
+      "bytes": 48592,
+      "path": "/Users/christopherhay/chris-source/chris-experiments/semantic_graph/sg_rep1.py",
+      "sha256": "sha256:ec3cc03ad3445947bfdfcdc501c4d5f871a34a4a56f55d7d56a18ae05dda52ed"
+    },
+    {
+      "bytes": 16804,
+      "path": "/Users/christopherhay/chris-source/chris-experiments/mechinterp/MI11_cascade_trie/discover_templates_from_kg.py",
+      "sha256": "sha256:b4de0c91bd748d424885b9b40807b4de9c6f7c9b68aae6254fd391d2e79fa012"
+    }
+  ],
+  "split_policy": {
+    "fractions": {
+      "test": 0.2,
+      "train": 0.6,
+      "validation": 0.2
+    },
+    "method": "relation-stratified deterministic SHA-256 ordering",
+    "seed": "larql-gw0-gemma3-4b-phase1-v1",
+    "unit": "semantic triple; all three prompt families remain on one side"
+  },
+  "status": "frozen_input_unexecuted"
+}

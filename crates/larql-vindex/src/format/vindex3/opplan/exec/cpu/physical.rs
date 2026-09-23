@@ -19,14 +19,21 @@
 //! the observation, and a projection helper that sat somewhere else would
 //! be one refactor away from choosing its own kernel again.
 
-use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, WeightRep};
+use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, ScaleSpan, WeightRep};
 use super::integer::{activation_scaling, Bf16xQ8, Q4xQ8, Q8xQ8};
 use super::kernels::{
-    BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32,
+    BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedKQuantQ8k, FusedNvfp4, FusedQ4, FusedQ8,
+    ScalarF32,
 };
 use super::projector::{DenseProjector, WeightRows};
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat, WeightSlice};
+use crate::format::vindex3::opplan::exec::backend::{
+    KQuantActivation, MatrixClass, WeightFormat, WeightSlice,
+};
+
+/// Q8_K's activation block: one f32 scale per this many elements. A
+/// property of the ggml format the `q4k_q8k` kernels read, not a policy.
+pub const Q8K_ACTIVATION_BLOCK: usize = 256;
 
 /// Default performance-cluster L2, used where the machine does not
 /// report one. The value this rung measured against (Apple M3 Max).
@@ -77,6 +84,11 @@ pub enum PhysicalProjectionPlan {
     /// policy's only say is whether a stored pack executes in place at
     /// all — [`kquant_execution`] — never which codec.
     FusedKQuant,
+    /// The same stored K-quant blocks against a **Q8_K activation**: the
+    /// integer-dot kernel V2's CPU decode uses (Q8K-ACT-1). Reached by
+    /// OBSERVATION of the resident binding, which the
+    /// `production-q4k-q8k` provider pins; never chosen by a policy.
+    FusedKQuantQ8k,
     /// Fine-grained FP8 resident, decoded and tile-scaled in registers.
     ///
     /// Reached by OBSERVATION like [`Self::FusedKQuant`], and with less
@@ -251,6 +263,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
             Self::FusedNvfp4 => WeightFormat::Nvfp4,
             Self::FusedKQuant => WeightFormat::KQuant,
+            Self::FusedKQuantQ8k => WeightFormat::KQuantQ8k,
             Self::FusedFp8Block => WeightFormat::Fp8Block,
         }
     }
@@ -300,6 +313,16 @@ impl PhysicalProjectionPlan {
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
             },
+            // Q8_K is its own geometry — one scale per 256, whatever the
+            // process's CPU-5 arm says — so it is stated here, not read
+            // through `activation_scaling`.
+            Self::FusedKQuantQ8k => Arithmetic {
+                weight: WeightRep::KQuant,
+                activation: ActivationRep::Q8 {
+                    span: ScaleSpan::Block(Q8K_ACTIVATION_BLOCK),
+                },
+                accumulator: AccumulatorRep::I32,
+            },
             Self::FusedFp8Block => Arithmetic {
                 weight: WeightRep::Fp8Block,
                 activation: ActivationRep::F32,
@@ -340,6 +363,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ4 => &FusedQ4,
             Self::FusedNvfp4 => &FusedNvfp4,
             Self::FusedKQuant => &FusedKQuant,
+            Self::FusedKQuantQ8k => &FusedKQuantQ8k,
             Self::FusedFp8Block => &FusedFp8Block,
             Self::Q8xQ8 => &Q8xQ8,
             Self::Q4xQ8 => &Q4xQ8,
@@ -472,7 +496,10 @@ impl PhysicalProjectionPlan {
             // One kernel per codec and no integer arm, so the bytes
             // determine execution outright — and the codec they name
             // travels with them rather than with the plan.
-            WeightRows::KQuant { .. } => Self::FusedKQuant,
+            WeightRows::KQuant { activation, .. } => match activation {
+                KQuantActivation::F32 => Self::FusedKQuant,
+                KQuantActivation::Q8k => Self::FusedKQuantQ8k,
+            },
             // Fine-grained FP8 has exactly one arm: the format is the
             // checkpoint's own and there is no policy choice to make —
             // unlike bf16 above, whose bytes are ambiguous between two
@@ -630,6 +657,15 @@ pub enum KQuantExecution {
     Direct,
     /// Decode to f32 at load and run the f32 path, as v2 did.
     Widen,
+    /// Execute the stored blocks in place against a Q8_K activation:
+    /// [`PhysicalProjectionPlan::FusedKQuantQ8k`] (Q8K-ACT-1). Members
+    /// with no Q8_K kernel keep [`Self::Direct`]'s realization.
+    ///
+    /// Deliberately NOT reachable from [`KQUANT_EXEC_ENV`]: it is a
+    /// provider — `ProductionBackend::q8k_activation`, under its own
+    /// lowering identity — so a run's arm is named by what executed it,
+    /// never by an environment a later reader has to reconstruct.
+    DirectQ8k,
 }
 
 impl KQuantExecution {

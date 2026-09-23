@@ -663,3 +663,45 @@ fn batch_and_decode_agree_through_the_layer_scale_on_the_gemma4_stack() {
         "the batch plane is post-scale; the record's `after` is pre-scale"
     );
 }
+
+#[test]
+fn recorded_carrier_readout_matches_canonical_exit_and_refuses_bad_inputs() {
+    fn check<B: PlanBackend>(backend: &B) {
+        let (_c, mut plan, store) = golden_fixture();
+        plan.output.as_mut().unwrap().multiplier = Some(0.37);
+        plan.output.as_mut().unwrap().softcapping = Some(1.5);
+        let ops = PreparedOperands::load(&plan, &store, backend, ExecutionSlice::Full).unwrap();
+        let mut kv = RowKvState::default();
+        let mut session = DecodeSession::over_prepared(&plan, &ops, backend, &mut kv).unwrap();
+        let mut witness = ChainWitness::default();
+        for token in G_TOKENS {
+            let expected = session
+                .step_observed(token, &mut witness)
+                .unwrap()
+                .logits
+                .unwrap();
+            let exit = witness.writes.last().unwrap().layer_output();
+            let actual = ops.readout_carrier(backend, &exit).unwrap();
+            assert_eq!(
+                actual.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+            );
+        }
+        let shard = PreparedOperands::load(
+            &plan,
+            &store,
+            backend,
+            ExecutionSlice::LayerRange { start: 0, end: 1 },
+        )
+        .unwrap();
+        assert!(shard
+            .readout_carrier(backend, &vec![0.; ops.hidden()])
+            .is_err());
+        assert!(ops.readout_carrier(backend, &[]).is_err());
+        assert!(ops
+            .readout_carrier(backend, &vec![f32::NAN; ops.hidden()])
+            .is_err());
+    }
+    check(&ReferenceBackend::new());
+    check(&ProductionBackend::new());
+}

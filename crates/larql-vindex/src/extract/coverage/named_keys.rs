@@ -38,7 +38,7 @@ use larql_models::ModelArchitecture;
 /// fails a test here rather than surfacing as spurious "unrecognised" tensors
 /// on somebody's extraction run.
 #[cfg(test)]
-pub(crate) const KEY_ACCESSOR_COUNT: usize = 63;
+pub(crate) const KEY_ACCESSOR_COUNT: usize = 67;
 
 /// Output projection, resolved by `WeightSource::lm_head()` rather than by a
 /// key accessor. Mirrors the name the safetensors loader looks up.
@@ -138,6 +138,10 @@ pub fn collect(arch: &dyn ModelArchitecture, num_layers: usize) -> HashSet<Strin
             arch.mla_kv_b_key(layer),
             arch.mla_q_a_key(layer),
             arch.mla_q_b_key(layer),
+            arch.dsa_indexer_wq_b_key(layer),
+            arch.dsa_indexer_wk_key(layer),
+            arch.dsa_indexer_k_norm_key(layer),
+            arch.dsa_indexer_weights_proj_key(layer),
         ] {
             push_opt(k, &mut keys);
         }
@@ -296,5 +300,42 @@ mod tests {
         let keys = collect(&*a, 1);
         assert!(keys.contains(a.embed_key()));
         assert!(keys.contains(a.final_norm_key()));
+    }
+
+    /// GLM-5.2 layers a DSA indexer over MLA. Its four per-layer tensors are
+    /// named by trait accessors, so an extraction audit must count them as
+    /// recognised rather than report them as unrecognised.
+    #[test]
+    fn names_the_glm52_dsa_indexer_tensors() {
+        let a = arch(serde_json::json!({
+            "architectures": ["GlmMoeDsaForCausalLM"],
+            "model_type": "glm_moe_dsa",
+            "num_hidden_layers": 1,
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 4,
+            "kv_lora_rank": 16,
+            "q_lora_rank": 32,
+            "qk_nope_head_dim": 8,
+            "qk_rope_head_dim": 8,
+            "v_head_dim": 8,
+            "index_topk": 4,
+            "index_n_heads": 2,
+            "index_head_dim": 8,
+        }));
+        let keys = collect(&*a, 1);
+        for k in [
+            a.dsa_indexer_wq_b_key(0),
+            a.dsa_indexer_wk_key(0),
+            a.dsa_indexer_k_norm_key(0),
+            a.dsa_indexer_weights_proj_key(0),
+        ] {
+            let k = k.expect("a glm_moe_dsa architecture names every indexer tensor");
+            assert!(
+                keys.contains(&k),
+                "collect() does not name indexer tensor {k}"
+            );
+        }
     }
 }

@@ -522,6 +522,45 @@ impl OperandStore {
         self.program.as_ref()
     }
 
+    /// Whether an NVFP4 request for `operand`, stored as `stored_dtype`,
+    /// binds at SOURCE precision (narrowed to f16) instead of an NVFP4
+    /// image — the one derivation of that fact, read by the loader when
+    /// it binds and by preparation when a backend selects, so the pinned
+    /// realization and the resident bytes cannot disagree.
+    ///
+    /// True when the stored bytes are not an NVFP4 pack AND either the
+    /// store may not manufacture a representation (`stored`), or the
+    /// container's precision program holds the tensor at source. A
+    /// compiled pack is a precision map, and a backend arm names a format
+    /// per class — attention, FFN, head — which cannot express one; the
+    /// map wins, at a precision higher than the arm asked for, and
+    /// nothing is manufactured.
+    ///
+    /// The declared program is the authority. Only a container written
+    /// before the map was explicit falls back to what its pack's tensor
+    /// table happens to say.
+    pub fn nvfp4_request_binds_at_source(&self, operand: &OperandRef, stored_dtype: &str) -> bool {
+        use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
+        if stored_dtype == DTYPE_NVFP4 {
+            return false;
+        }
+        if self.source == RepresentationSource::Stored {
+            return true;
+        }
+        match self.program() {
+            Some(program) => {
+                use crate::format::vindex3::represent::map::Precision;
+                use crate::format::vindex3::represent::policy::classify;
+                let role = classify(&operand.object, &operand.tensor, &operand.shape);
+                matches!(program.resolve(role, &operand.tensor), Precision::Source)
+            }
+            None => matches!(
+                self.mapped_encoding(&operand.object, &operand.tensor),
+                Some(enc) if enc != DTYPE_NVFP4
+            ),
+        }
+    }
+
     /// The role the plan binds this tensor to, falling back to the name
     /// heuristics for anything the plan does not cover — the same order
     /// the representation compiler resolves in.

@@ -242,6 +242,20 @@ impl ExpertMatrices {
 }
 
 impl FfnOperands {
+    pub(super) fn dense_slices<'a>(
+        &'a self,
+        ffn: &'a LayerFfn,
+    ) -> Option<(Option<WeightSlice<'a>>, WeightSlice<'a>, WeightSlice<'a>)> {
+        match (self, ffn) {
+            (Self::Dense(dense), LayerFfn::Dense(_)) => Some((
+                dense.gate.as_ref().map(LoadedWeight::slice),
+                dense.up.slice(),
+                dense.down.slice(),
+            )),
+            _ => None,
+        }
+    }
+
     pub(super) fn load(
         ffn: &LayerFfn,
         store: OperandSource<'_>,
@@ -1012,7 +1026,7 @@ fn from_f32(
             "expert bank `{name}` cannot be made q4-resident: the bank is widened to f32 on \
              the way in, so there is nothing compact left to keep"
         ))),
-        WeightFormat::KQuant => Err(VindexError::Parse(format!(
+        WeightFormat::KQuant | WeightFormat::KQuantQ8k => Err(VindexError::Parse(format!(
             "expert bank `{name}` cannot bind a stored K-quant: the bank is widened to f32 on \
              the way in, so the stored blocks are no longer what is being bound"
         ))),

@@ -46,6 +46,13 @@ distributed).
 | [v3-intervene-1-carrier-intervention.md](v3-intervene-1-carrier-intervention.md) | Frozen V3-INTERVENE-1 rung: Zero/Add/Replace on one declared carrier address, vector provenance, the no-op law, receipt fields, and the first causal arm (HEAD-1 CARRIED) |
 | [v3-intervene-2-head-intervention.md](v3-intervene-2-head-intervention.md) | Closed V3-INTERVENE-2 rung: in-kernel softmax head Zero/Scale/Replace, provenance and the additive-versus-counterfactual comparison |
 | [v3-attr-1d-descriptive-support.md](v3-attr-1d-descriptive-support.md) | ATTR-1D normalization contract for descriptive head/source support |
+| [gw-vindex3-walk-phase1.md](gw-vindex3-walk-phase1.md) | VINDEX3 graph-walk programme — sealed GW-0 through the operator-aware transition-support successor |
+| [gw-head-1.md](gw-head-1.md) | GW-HEAD-1 — frozen L24H1 necessity/sufficiency result and the boundary before source-key attribution |
+| [gw-key-1.md](gw-key-1.md) | GW-KEY-1 — frozen source-role K/V causality protocol through immutable L24H1 |
+| [gw-read-1-results.md](gw-read-1-results.md) | GW-READ-1 — cached Q/K pass, while V construction, composition and economical execution fail |
+| [gw-v2-results.md](gw-v2-results.md) | GW-V2 — sealed 35-cell causal payload surface with no registered early frontier |
+| [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
+| [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |
 | [vindex3-ontology-drill.md](vindex3-ontology-drill.md) | The four-architecture ontology drill (candidate §17.4) — run 2026-08-30, findings F1–F16 |
 | [lyrw-v2.md](lyrw-v2.md) | LYRW v2 — the K3 routed-layer physical-layout gate (storage half of K3) |

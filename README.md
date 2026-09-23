@@ -11,7 +11,10 @@ claims about its behavior.
 **Encode · Run · Represent · Observe · Intervene · Query** describes the
 project's scope. Each surface has its own maturity and evidence boundary;
 [status](docs/vindex3/status.md) distinguishes supported interfaces from active
-research. The graph-database thesis remains: the model itself is the object
+research. **Planned:** sharded/partial execution and multimodal embedding
+handoff; both are explicitly refused until their execution contracts and parity
+gates exist ([planned capabilities](docs/vindex3/status.md#planned-capabilities)).
+The graph-database thesis remains: the model itself is the object
 being queried, rather than a separate database of extracted facts.
 
 **Class: CURRENT.** Start with [What is VINDEX3?](docs/vindex3/what-is-vindex3.md).

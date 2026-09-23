@@ -235,7 +235,12 @@ kernel void kimi_expert_addresses(
         offsets[slot] = 0u;
         return;
     }}
-    const uint off = stride != 0u ? id * stride : table[id];
+    // The product is formed in 64 bits. The host refuses any identity
+    // bank whose offsets exceed 32 bits, so this never truncates on an
+    // admitted bank; if it ever would, the slot is refused here rather
+    // than wrapped onto another expert's weights.
+    const ulong wide = stride != 0u ? (ulong)id * (ulong)stride : (ulong)table[id];
+    const uint off = wide >= (ulong)KIMI_NOT_RESIDENT ? KIMI_NOT_RESIDENT : (uint)wide;
     if (off == KIMI_NOT_RESIDENT) {{
         // No address for this expert in THIS projection. Reading anyway
         // would be a plausible wrong answer from another expert's

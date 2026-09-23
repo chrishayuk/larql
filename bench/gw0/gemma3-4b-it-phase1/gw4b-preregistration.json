@@ -1,0 +1,127 @@
+{
+  "schema": "larql.gw4b.preregistration.v1",
+  "status": "frozen_pre_key_measurement",
+  "frozen_date": "2026-09-21",
+  "preregistration_sha256": "sha256:54f975a64a167a9afc18d8dab95774ad587aa35a75e26b5351635bb11baf9e53",
+  "claim_boundary": "observational pre-write retrieval of held-out FFN write-family exemplars; not causal support or sparse execution",
+  "authorities": {
+    "gw4a_preregistration": {
+      "path": "gw4a-preregistration.json",
+      "file_sha256": "sha256:f40054cc0736471da72db5f1ee455cc87772d112064a1186e2880c638b3ad3ff",
+      "identity_sha256": "sha256:c0fa06c358b486919842faa931fc442555bda9aeca0aaab2dc3eb6b7bc46d4e0"
+    },
+    "gw4a_report": {
+      "path": "../../../output/gw4a-gemma3-4b-it-phase1/report.json",
+      "sha256": "sha256:bca0ce2e473879b1899fdcf584fe8fe2e51ded9ec99ba4e71a4881588015d9fb"
+    },
+    "sealed_gw0": {
+      "path": "../../../output/gw0-gemma3-4b-it-phase1/sealed/manifest.json",
+      "file_sha256": "sha256:a154a934046872eb43d9650e8a5fb639e1134e68e80c2dec79d63343a886ef7b",
+      "bundle_sha256": "sha256:ac9871abdaef1206298788fae15df9121542fb1f64496cccc07bc12b5751b6bf"
+    }
+  },
+  "cohort": {
+    "unit": "reconstructed (edge_id, layer, ffn) transition-candidate site",
+    "eligible_sites": 231,
+    "training_rows": 143,
+    "assessment_rows": 88,
+    "hidden_size": 2560,
+    "semantic_relations": [
+      "capital",
+      "currency",
+      "hypernym",
+      "language"
+    ],
+    "training_split": "train",
+    "assessment_splits": [
+      "validation",
+      "test"
+    ],
+    "causal_status": "untested"
+  },
+  "query_contract": {
+    "available_before_lookup": [
+      "carrier-before vector at the selected FFN site",
+      "semantic relation/query class",
+      "exact layer and site"
+    ],
+    "forbidden_during_key_construction_and_ranking": [
+      "carrier delta",
+      "carrier after",
+      "target entity or target token",
+      "gate scores or feature promotions",
+      "GW-4A assessment labels beyond the supplied relation"
+    ],
+    "carrier_artifact_kind": "carrier-before",
+    "dtype": "f32-le",
+    "slice_binding": "execution_record.sites exact layer/site index",
+    "direction_transform": "l2_normalize",
+    "carrier_norm_check": "selected FFN carrier-before norm equals the preceding attention site's recorded carrier_norm",
+    "norm_relative_tolerance": 0.0001
+  },
+  "target_contract": {
+    "candidate_universe": "training rows at the exact layer and FFN site with the supplied relation and a different semantic triple",
+    "oracle_order": "descending cosine between held-out observed delta and candidate observed delta",
+    "primary_quality": "best delta cosine among retrieved candidates",
+    "oracle_gap": "oracle-best delta cosine minus retrieved-best delta cosine",
+    "identity_diagnostics": [
+      "oracle-top-1 exemplar retention",
+      "oracle-top-4 exemplar recall"
+    ],
+    "refusal_rule": "no structurally eligible training exemplar is an explicit miss and remains in the 88-row denominator",
+    "candidate_fraction_denominator": "structurally eligible exact-layer, same-relation training exemplar count for that assessment row"
+  },
+  "key_arms": {
+    "structure_only": "the complete exact-layer, same-relation candidate universe",
+    "raw_carrier": "cosine of l2-normalized carrier-before vectors within the structural universe",
+    "relation_centered_full": "cosine after subtracting the training relation mean from normalized carrier-before vectors and renormalizing",
+    "relation_centered_pca": "training-only SVD of relation-centered normalized carrier-before vectors; project and renormalize at each frozen width",
+    "state_only_ablation": "raw carrier cosine at the exact layer without the relation mask",
+    "matched_random": "uniform candidates without replacement from the same structural universe and at the same candidate count"
+  },
+  "operating_points": {
+    "pca_widths": [
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "candidate_k": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "oracle_neighbourhood_k": 4,
+    "random_trials": 1000,
+    "bootstrap_trials": 2000,
+    "random_seed": 1196897346,
+    "bytes_per_scalar": 4,
+    "metadata_bytes_per_index_row": 24
+  },
+  "accounting": {
+    "report_separately": [
+      "eligible candidate count",
+      "returned candidate count",
+      "candidate fraction over the eligible universe",
+      "candidate fraction over all training rows",
+      "key dot products",
+      "key bytes touched",
+      "returned delta bytes touched",
+      "index bytes",
+      "projection basis bytes"
+    ],
+    "wall_time": "descriptive only"
+  },
+  "progression_gate": {
+    "minimum_query_coverage": 0.8,
+    "maximum_mean_candidate_fraction": 0.25,
+    "minimum_median_best_delta_cosine": 0.8,
+    "maximum_median_oracle_gap": 0.05,
+    "minimum_block_bootstrap_p05_advantage_over_matched_random": 0.1
+  },
+  "branch_rule": "open GW-4C only if at least one frozen pre-write key and candidate-count point passes every progression threshold; otherwise retire direct carrier-before exemplar indexing and move to multi-site trajectories or semantic basins"
+}

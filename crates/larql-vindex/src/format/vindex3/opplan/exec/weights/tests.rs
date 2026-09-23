@@ -229,6 +229,7 @@ fn every_loaded_variant_accounts_for_itself() {
             LoadedWeight::KQuant {
                 blocks: vec![0u8; 2 * kquant::Q6_K.bytes_per_block],
                 codec: kquant::Q6_K,
+                activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
             },
             2 * kquant::Q6_K.bytes_per_block,
             false,

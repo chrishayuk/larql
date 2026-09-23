@@ -226,6 +226,15 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         quant_formats: MLA_QUANT_FORMATS,
         components: &[],
     },
+    // GLM-5.2 — MoE + MLA, same tensor naming as `deepseek` (V3), plus a
+    // DSA sparse-attention indexer represented in config only.
+    ArchitectureEntry {
+        model_type: "glm_moe_dsa",
+        patterns: &[ModelTypeMatch::Exact("glm_moe_dsa")],
+        attention_kind: AttentionKind::Mla,
+        quant_formats: MLA_QUANT_FORMATS,
+        components: &[],
+    },
     ArchitectureEntry {
         model_type: "starcoder2",
         patterns: &[ModelTypeMatch::Exact("starcoder2")],

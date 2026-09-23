@@ -34,7 +34,9 @@ use crate::format::vindex3::represent::physical::{
     RoutedProjection,
 };
 use larql_compute_metal::trait_impl::grouped_experts::{ExpertOffset, GroupedError};
-use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
+use larql_compute_metal::trait_impl::kda::{
+    KdaDeviceState, KdaDeviceWeights, KdaShape, SmallMatrix,
+};
 use larql_compute_metal::trait_impl::kimi_layer::{
     AttentionSpec, EncodedRegion as DeviceRegion, ExecutionTrace, ExpertAddressing, ExpertEncoding,
     FfnSpec, KimiDenseFfn, KimiHead, KimiLayerCall, KimiLayerWeights, KimiMoeWeights,
@@ -66,6 +68,7 @@ pub enum DeviceAttn {
         /// conv1d x3, f_a, f_b, g_a, g_b, b_proj, a_log, dt_bias, o_norm
         /// — `KdaDeviceWeights`'s own field order.
         f32s: Vec<Vec<f32>>,
+        gate_form: larql_models::config::KdaGateForm,
     },
     Mla {
         q: Vec<u8>,
@@ -173,6 +176,7 @@ impl DeviceLayer {
                     o_proj,
                     encoding,
                     f32s: f,
+                    gate_form,
                 },
                 DeviceState::Kda(state),
             ) => AttentionSpec::Kda {
@@ -184,15 +188,16 @@ impl DeviceLayer {
                     q_conv1d: &f[0],
                     k_conv1d: &f[1],
                     v_conv1d: &f[2],
-                    f_a_proj: &f[3],
-                    f_b_proj: &f[4],
-                    g_a_proj: &f[5],
-                    g_b_proj: &f[6],
-                    b_proj: &f[7],
+                    f_a_proj: SmallMatrix::F32(&f[3]),
+                    f_b_proj: SmallMatrix::F32(&f[4]),
+                    g_a_proj: SmallMatrix::F32(&f[5]),
+                    g_b_proj: SmallMatrix::F32(&f[6]),
+                    b_proj: SmallMatrix::F32(&f[7]),
                     a_log: &f[8],
                     dt_bias: &f[9],
                     o_norm: &f[10],
                     norm_eps: self.norm_eps,
+                    gate_form: *gate_form,
                 },
                 shape: self.kda_shape,
                 state,

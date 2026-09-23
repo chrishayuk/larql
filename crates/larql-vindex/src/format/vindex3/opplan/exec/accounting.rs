@@ -112,7 +112,11 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
         },
         WeightFormat::Nvfp4 => ResidencyProfile::rebound(NVFP4_BITS_PER_WEIGHT),
         WeightFormat::Mxfp4 => ResidencyProfile::stored(MXFP4_BITS_PER_WEIGHT),
-        WeightFormat::KQuant => ResidencyProfile::stored(KQUANT_WIDEST_BITS_PER_WEIGHT),
+        // The Q8_K binding is the same stored blocks; only the activation
+        // it runs against differs.
+        WeightFormat::KQuant | WeightFormat::KQuantQ8k => {
+            ResidencyProfile::stored(KQUANT_WIDEST_BITS_PER_WEIGHT)
+        }
         // Bound AS STORED, like a K-quant pack: the checkpoint's own
         // bytes, never widened at rest. That is the whole reason the
         // format is carried natively — a widened GLM-5.3-Flash would be
@@ -185,6 +189,7 @@ pub fn requantised_image_bytes(
         | WeightFormat::Nvfp4
         | WeightFormat::Mxfp4
         | WeightFormat::KQuant
+        | WeightFormat::KQuantQ8k
         // Stored as-is: there is no re-quantised image, so no bytes to price.
         | WeightFormat::Fp8Block => None,
     }

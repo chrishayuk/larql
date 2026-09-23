@@ -1,0 +1,102 @@
+{
+  "schema": "larql.gw4a.preregistration.v1",
+  "status": "frozen_pre_similarity",
+  "frozen_date": "2026-09-21",
+  "preregistration_sha256": "sha256:c0fa06c358b486919842faa931fc442555bda9aeca0aaab2dc3eb6b7bc46d4e0",
+  "claim_boundary": "observational FFN write-family structure; not causal support",
+  "authorities": {
+    "input_manifest": {
+      "path": "manifest.json",
+      "file_sha256": "sha256:167d6bec75707e73c7afe392d1a7f036f81cff80be35ec9d34a0ae93e6da3ae6",
+      "manifest_sha256": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c"
+    },
+    "sealed_gw0": {
+      "path": "../../../output/gw0-gemma3-4b-it-phase1/sealed/manifest.json",
+      "file_sha256": "sha256:a154a934046872eb43d9650e8a5fb639e1134e68e80c2dec79d63343a886ef7b",
+      "bundle_sha256": "sha256:ac9871abdaef1206298788fae15df9121542fb1f64496cccc07bc12b5751b6bf",
+      "census_sha256": "sha256:9db9f925d314554d03f6bae0e019694525b1840ddc7cfca22953e3b9885bbd3a"
+    },
+    "gw0b_reconciliation": {
+      "path": "../../../output/gw0b-gemma3-4b-it-phase1/reconciliation-report-final.json",
+      "sha256": "sha256:10c7af77077914c37b569d6a1c29ab06a8bec676c1e9686fe406c70873e956bc",
+      "attribution_root": "../../../output/gw0b-gemma3-4b-it-phase1/attributions-final"
+    }
+  },
+  "cohort": {
+    "unit": "reconstructed (edge_id, layer, ffn) transition-candidate site",
+    "eligible_sites": 231,
+    "hidden_size": 2560,
+    "semantic_relations": [
+      "capital",
+      "currency",
+      "hypernym",
+      "language"
+    ],
+    "training_split": "train",
+    "assessment_splits": [
+      "validation",
+      "test"
+    ],
+    "causal_status": "untested"
+  },
+  "vector_rule": {
+    "artifact_kind": "delta",
+    "site": "ffn",
+    "dtype": "f32-le",
+    "slice_binding": "execution_record.sites exact layer/site index",
+    "direction_transform": "l2_normalize",
+    "write_norm_relative_tolerance": 0.0001,
+    "forbidden_inputs": [
+      "gate scores",
+      "feature promotions",
+      "GW-3A-F outcomes",
+      "target labels during vector construction"
+    ]
+  },
+  "operating_points": {
+    "subspace_ranks": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "family_top_k": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "permutation_trials": 1000,
+    "bootstrap_trials": 2000,
+    "random_seed": 1196897345
+  },
+  "controls": {
+    "prompt_repeatability": "same relation and exact layer, different semantic triple",
+    "relation_neighbourhood": "different relation and exact layer",
+    "retrieval": "training-set majority relation at the exact layer",
+    "subspace": "matched-rank Gaussian orthonormal bases",
+    "random_write": "Gaussian direction scaled to the observed write norm"
+  },
+  "gates": {
+    "prompt_stable_fact_direction": {
+      "minimum_exact_layer_same_fact_median_cosine": 0.5,
+      "minimum_median_gap_over_same_relation_control": 0.1
+    },
+    "relation_direction": {
+      "minimum_exact_layer_pair_auc": 0.75,
+      "maximum_permutation_p": 0.01
+    },
+    "neighbour_retrieval": {
+      "minimum_top1_balanced_accuracy": 0.75,
+      "minimum_improvement_over_layer_prior": 0.15,
+      "minimum_query_coverage": 0.8
+    },
+    "shared_subspace": {
+      "minimum_balanced_accuracy": 0.75,
+      "minimum_improvement_over_layer_prior": 0.15,
+      "minimum_mean_correct_minus_wrong_projection": 0.05
+    }
+  },
+  "branch_rule": "open GW-4B if prompt-stable fact direction, direct relation-conditioned delta indexing, or shared-subspace family passes; otherwise move to multi-site trajectories or semantic basins"
+}

@@ -44,7 +44,7 @@ kernel void q4k_grouped_experts(
 
     const uint superblocks   = K / 256u;
     const uint bytes_per_row = superblocks * Q4KGE_BLOCK_SIZE;
-    device const uchar* row_w = W4K + offsets[slot] + row_idx * bytes_per_row;
+    device const uchar* row_w = W4K + (ulong)offsets[slot] + (ulong)row_idx * bytes_per_row;
     device const float* Xs = X + (ulong)slot * XSTRIDE;
 
     // 2-way inter-superblock interleaving.

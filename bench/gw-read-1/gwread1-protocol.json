@@ -1,0 +1,264 @@
+{
+  "schema": "larql.gwread1.protocol.v2",
+  "status": "amended_frozen_pre_candidate_capture_fit_and_execution",
+  "frozen_date": "2026-09-21",
+  "protocol_sha256": "sha256:92947e60d1e831183346b2336053e1d10990c7bfb0c65f3fe31f4858b0cfc0ee",
+  "amends": {
+    "identity": "sha256:43d9f85e2d4a57d7d1badcf55e06c01989d81748cf5d1c1f199b7009b801ac9f",
+    "timing": "before any candidate capture, fit or effect execution",
+    "reasons": [
+      "move all candidate and hyperparameter selection from validation to train",
+      "adjudicate frozen components on both held-out splits",
+      "make target-natural reference norm reads explicit dynamic inputs",
+      "freeze minimum shared Q/V execution-frontier accounting",
+      "use READ-1Q/K/V/E rung names"
+    ]
+  },
+  "central_rule": "GW-KEY-1 found a compact causal interface. GW-READ-1 prices that interface honestly.",
+  "human_spec": {
+    "path": "../../docs/gw-read-1.md",
+    "sha256": "sha256:8f2cb21fc473d7008ee36f87a91b0d4706b0285ba65776a01af0887b5c991bd1"
+  },
+  "authorities": {
+    "gwkey1_preregistration_identity": "sha256:87e80308a9cc684f875a0b16684f3cf2965e3e22b34a50338273c4e1935732d8",
+    "gwkey1_selection_identity": "sha256:eed14eb42f5432960677d47bd328a6b3b74777f542011f7b77b58469cfe69f6f",
+    "gwkey1_selection_file": {
+      "path": "../../output/gwkey1-gemma3-4b-it-phase1-search/selection-v2.json",
+      "sha256": "sha256:6cae920c092180102ec2880a7c365e1a3c8217aadfe54b5fd4c357799cec64fe"
+    },
+    "gwkey1_adjudication_identity": "sha256:a554877b15b69467a6c4f5ecca9427669a1536ff5b9e88056000cf2bb78dd60a",
+    "gwkey1_adjudication_file": {
+      "path": "../../output/gwkey1-gemma3-4b-it-phase1-heldout2/adjudication.json",
+      "sha256": "sha256:04b083c3e113b3f7d4b2efe2886f660d06b9b72b5d34c22e6291dc3ca6d35351"
+    },
+    "gwkey1_source_capture": {
+      "path": "../../output/gwkey1-gemma3-4b-it-phase1-capture5/source-capture-manifest.json",
+      "sha256": "sha256:165868615b77956e9d40298218da9c4af06dc2328ed6ce81f51d9ab52d7dc51e"
+    },
+    "gwhead1_natural_capture": {
+      "path": "../../output/gwhead1-gemma3-4b-it-phase1/natural-capture-manifest.json",
+      "sha256": "sha256:1522c5941b2fbb1f8fed66e6cb21e86d8e1b10d3e19e6ccc2140436d0645e5cc"
+    },
+    "input_rows": {
+      "path": "../gw0/gemma3-4b-it-phase1/input.jsonl",
+      "sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+    },
+    "source_roles": {
+      "path": "../gw0/gemma3-4b-it-phase1/gwkey1-source-roles.jsonl",
+      "sha256": "sha256:1efcc11b5f6afbf3a1b8e69344a1386c8d304499fa5f01b31cc95b0f3c5296be"
+    },
+    "code_main_at_freeze": "6be537d630149b6a465efc8c92707642aec7da89"
+  },
+  "frozen_interface": {
+    "component": "target",
+    "layer": 24,
+    "head": 1,
+    "head_numbering": "zero_based",
+    "query": "natural final-position L24H1 Q",
+    "keys": "GW-KEY-1 template/role reference directions at every source position scaled to each target natural K-row norm",
+    "values": "natural subject_entity V; template/role reference directions elsewhere scaled to each target natural V-row norm",
+    "dynamic_inputs_in_positive_control": [
+      "natural final-position L24H1 Q",
+      "every target natural source K-row norm",
+      "natural subject_entity V rows",
+      "every target natural non-entity V-row norm"
+    ],
+    "downstream": "real H1 softmax and aggregation, effective prepared W_O, post-attention transform, residual write, L24 FFN and every later layer"
+  },
+  "population": {
+    "rows": 426,
+    "splits": {"train": 255, "validation": 87, "test": 84},
+    "unit": "semantic edge clustered across three prompt families",
+    "stratification": "relation",
+    "primary_scope": ["capital", "currency", "language"],
+    "transfer_diagnostic": "hypernym",
+    "capture_rule": "outcome-free candidate inputs from all splits may be captured and sealed before fitting",
+    "selection_rule": "train only",
+    "heldout_rule": "validation and test adjudicate already-sealed candidate identities only"
+  },
+  "common_predictor": {
+    "fit_rows": "train only",
+    "numeric_fit": "f64",
+    "ridge_lambda": "1e-3 * trace(X^T X) / d",
+    "centering": true,
+    "rank_method": "deterministic sign-canonicalized SVD truncation",
+    "ranks": [8, 16, 32, 64, 128],
+    "train_prediction": "leave-one-semantic-edge-out",
+    "heldout_artifact": "one fit on all train rows after selection",
+    "forbidden_supervision": [
+      "validation or test fitting",
+      "candidate causal effects",
+      "semantic targets",
+      "answers or target recovery",
+      "cross-arm or joint Q/K/V fitting",
+      "post-hoc rescaling"
+    ]
+  },
+  "READ-1Q": {
+    "varied": "Q",
+    "held_fixed": ["exact GW-KEY-1 K", "exact GW-KEY-1 V"],
+    "positive_control": "natural final-position L24H1 Q",
+    "source_layers": [0, 4, 8, 12, 16, 20, 23],
+    "families": [
+      {"id": "q/train-mean/{template_relation|relation|global}", "cost_class": "cached/materialized"},
+      {"id": "q/layer{layer}-native", "cost_class": "per-query computed"},
+      {"id": "q/layer{layer}-ridge-r{rank}", "cost_class": "per-query computed"}
+    ],
+    "controls": ["exact Q", "zero Q", "global train-mean Q", "relation-label permutation seed 18012031"],
+    "cost_warning": "held-fixed exact K/V dynamic natural rows and norms are charged and prevent a Q-only end-to-end efficiency claim"
+  },
+  "READ-1K": {
+    "varied": "K",
+    "held_fixed": ["natural Q", "exact GW-KEY-1 V"],
+    "positive_control": "GW-KEY-1 reference K directions with target-natural row norms",
+    "candidate_scale": "train cell-mean norm stored in cache; no target-natural norm",
+    "families": [
+      "k/template-role-ordinal-mean",
+      "k/prompt-family-role-ordinal-mean",
+      "k/relation-role-ordinal-mean",
+      "k/global-role-ordinal-mean"
+    ],
+    "missing_cell": "refuse",
+    "controls": ["exact K", "zero K", "role-label permutation seed 18012032", "source-position permutation preserving cached rows"]
+  },
+  "READ-1V": {
+    "varied": "subject_entity V",
+    "held_fixed": ["natural Q", "static train template/role K including static norms", "static train template/role non-entity V including static norms"],
+    "source_layers": [0, 4, 8, 12, 16, 20, 23],
+    "families": [
+      {"id": "v/same-fact-cross-prompt-cycle", "cost_class": "diagnostic", "eligible_for_E": false},
+      {"id": "v/cache-entity-mean", "cost_class": "cached/materialized", "eligible_for_E": true},
+      {"id": "v/cache-entity-relation-mean", "cost_class": "cached/materialized", "eligible_for_E": true},
+      {"id": "v/entity-only-L24", "cost_class": "per-query computed", "eligible_for_E": true},
+      {"id": "v/cache-entity-only-L24", "cost_class": "cached/materialized", "eligible_for_E": true},
+      {"id": "v/layer{layer}-native", "cost_class": "per-query computed", "eligible_for_E": true},
+      {"id": "v/layer{layer}-ridge-r{rank}", "cost_class": "per-query computed", "eligible_for_E": true}
+    ],
+    "entity_only_recipe": "BOS followed by the frozen subject_entity token IDs, once per unique token sequence",
+    "controls": ["exact subject V", "zero subject V", "global entity-role mean V", "cross-fact entity-V permutation seed 18012033"]
+  },
+  "cache_record": [
+    "construction source",
+    "construction compute",
+    "refresh policy",
+    "entry key",
+    "entry count",
+    "bytes per entry",
+    "total footprint",
+    "lookup bytes",
+    "lookup latency",
+    "amortization denominator"
+  ],
+  "selection": {
+    "population": "train only",
+    "effect": "same-fact minus matched-control before-to-after semantic alignment gain",
+    "surfaces": ["raw candidate JS", "z-scored candidate JS"],
+    "retention": "candidate effect / exact-arm effect; non-positive denominator refuses",
+    "train_eligibility": "raw and z-scored factual retention estimates each >= 0.80",
+    "pareto_axes": ["minimum raw/z retention", "dynamic matvec-equivalent FLOPs", "dynamic bytes touched"],
+    "primary_order": [
+      "least dynamic matvec-equivalent FLOPs",
+      "least dynamic bytes touched",
+      "highest minimum raw/z retention",
+      "lexicographically smallest candidate ID"
+    ],
+    "seal_timing": "before any validation or test candidate replay",
+    "seal_bindings": ["protocol identity", "capture identity", "candidate IDs", "fitted artifact hashes", "Pareto frontier", "heldout row identity"]
+  },
+  "heldout_component_gate": {
+    "applies_to": ["READ-1Q", "READ-1K", "READ-1V"],
+    "splits": ["validation", "test"],
+    "scope": "factual relations",
+    "raw_retention_estimate_min": 0.8,
+    "zscored_retention_estimate_min": 0.8,
+    "raw_retention_lower_95_min": 0.5,
+    "zscored_retention_lower_95_min": 0.5,
+    "terminal_transport_lower_95_min_exclusive": 0.0,
+    "bootstrap": "10000-sample percentile semantic-edge cluster bootstrap stratified by relation; seed 18012034",
+    "coverage": "complete",
+    "semantic_target_recovery": "report separately; cannot rescue a failed causal gate"
+  },
+  "READ-1E": {
+    "purpose": "composition only",
+    "inputs": "unchanged train-selected and sealed Q, K and V primaries",
+    "forbidden": ["joint fit", "candidate swap", "rescaling", "recalibration", "combination search"],
+    "diagnostic_factorial": "fixed 2x2x2 exact/candidate Q/K/V; all-candidate cell alone determines verdict",
+    "splits": ["validation", "test"],
+    "quality_gate": "same as heldout component gate on both splits",
+    "dynamic_bytes_ratio_max": 0.25,
+    "matvec_equivalent_flops_ratio_max": 0.25,
+    "warmed_p50_latency_ratio_max": 0.5,
+    "warmed_p95_latency_ratio_max": 0.67,
+    "no_hidden_inputs": true,
+    "cache_accounting_complete": true,
+    "verdict": "CREDIBLE MODEL-NATIVE READ PRIMITIVE",
+    "conjunction": "all quality, transport, hidden-input, cost, latency and cache gates must pass"
+  },
+  "cost_model": {
+    "baseline": "canonical original-prompt L0-L23 execution once",
+    "separate_common_cost": "L24H1 operation and canonical downstream continuation",
+    "fields": [
+      "offline build time",
+      "offline bytes read",
+      "offline bytes written",
+      "dynamic construction time",
+      "lookup/use time",
+      "bytes touched",
+      "resident bytes",
+      "incremental resident bytes",
+      "matvec count",
+      "projection count",
+      "dot-product count",
+      "matvec-equivalent FLOPs",
+      "routing/injection overhead",
+      "downstream continuation cost",
+      "end-to-end latency"
+    ],
+    "amortization_horizons": [1, 1000, 1000000],
+    "avoided_work_rule": "report candidate work and canonical work avoided",
+    "shared_frontier": {
+      "original_prompt": "Q and V prefixes share L0 through max(required Q layer, required V layer)",
+      "entity_only": "entity-only execution cannot share an original-prompt prefix and is added",
+      "cached": "lookup is dynamic; build and refresh are separately amortized",
+      "example": "Q from L12 plus original-prompt V from L18 executes L0-L18 once, not two prefixes"
+    },
+    "run_hygiene": {
+      "block": "warmed baseline/candidate/baseline",
+      "void_baseline_drift_fraction": 0.01,
+      "peer_exclusivity_handshake": true,
+      "measurement_resolution": "strictly finer than every evaluated gate"
+    }
+  },
+  "hard_refusals": [
+    "heldout fitting or selection",
+    "undeclared natural-state read",
+    "target-natural norm in a static candidate",
+    "heldout cache donor",
+    "fallback or imputation",
+    "non-finite value",
+    "missing cache cell",
+    "failed identity or exact control"
+  ],
+  "claim_boundary": {
+    "not_established": [
+      "production correctness",
+      "calibration",
+      "actual saved scheduler work under traffic",
+      "safe layer skipping or substitution",
+      "architecture generality",
+      "universal database interpretation"
+    ],
+    "requires_separate_successor": true
+  },
+  "negative_verdicts": [
+    "q_not_economical",
+    "k_not_cacheable",
+    "v_not_economical",
+    "components_do_not_compose",
+    "quality_retained_without_cost_advantage",
+    "cost_advantage_without_causal_retention",
+    "factual_only_access_method",
+    "insufficient_coverage",
+    "measurement_invalid"
+  ]
+}

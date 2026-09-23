@@ -100,6 +100,7 @@ fn the_observation_lands_on_the_direct_plan_for_every_codec() {
         let rows = WeightRows::KQuant {
             blocks: &blocks,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         };
         let plan = PhysicalProjectionPlan::for_resident(rows, IN_DIM);
         assert_eq!(plan, PhysicalProjectionPlan::FusedKQuant, "{}", codec.name);
@@ -143,6 +144,7 @@ fn slicing_rows_keeps_each_row_under_its_own_blocks() {
         let all = WeightRows::KQuant {
             blocks: &blocks,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         };
         let per_row = codec.row_bytes(IN_DIM).expect("512 is on every grid");
         let tail = all.slice_rows(IN_DIM, 1, 2);
@@ -178,6 +180,7 @@ fn a_width_off_the_block_grid_has_no_rows() {
         let rows = WeightRows::KQuant {
             blocks: &blocks,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         };
         // 512 - 32 is on Q8_0's grid but not on a super-block's.
         assert_eq!(rows.rows(IN_DIM - 32), 0, "{}", codec.name);

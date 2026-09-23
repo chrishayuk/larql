@@ -327,11 +327,26 @@ pub trait StepObserver {
         false
     }
 
+    /// Narrow an armed head capture to selected layer/position pairs. The
+    /// default is [`Self::wants_attention_heads`], every softmax write.
+    /// A capture-cost filter only: it may not alter execution arithmetic,
+    /// and admission still judges [`Self::wants_attention_heads`].
+    fn wants_attention_heads_at(&self, _layer: usize, _position: usize) -> bool {
+        self.wants_attention_heads()
+    }
+
     /// One query head's distribution and mixed value, borrowed from
     /// inside the kernel between aggregation and the output gate. Fires
     /// only when [`Self::wants_attention_heads`] is true, once per head,
     /// before the layer's `HeadsObserved` event and its attention write.
     fn attention_head(&mut self, _layer: usize, _record: AttentionHeadRecord<'_>) {}
+
+    /// The attention branch after the output projection and bias, before
+    /// a declared post-attention norm or residual-delta scale: the
+    /// reconstruction authority for norm-aware head replay, where the
+    /// per-head `W_O` contributions must sum to this value. Borrowed and
+    /// observation-only, like [`Self::attention_head`]. Default: ignore.
+    fn attention_output(&mut self, _layer: usize, _position: usize, _values: &[f32]) {}
 }
 
 /// One query head at one attention write (V3-HEAD-OBS-1, property A2):
@@ -365,6 +380,12 @@ pub struct AttentionHeadRecord<'a> {
     /// `Σ_t weights[t] · source_values[t]` is computable from the record
     /// alone (property A3). Same length as `weights`.
     pub source_values: &'a [&'a [f32]],
+    /// The conditioned query slice this head scored with, `head_dim` wide
+    /// (after any q-norm and RoPE the plan declares).
+    pub query: &'a [f32],
+    /// The KV head's conditioned key rows at the attended sources,
+    /// aligned one-for-one with [`Self::source_values`].
+    pub source_keys: &'a [&'a [f32]],
 }
 
 /// Build and fire one [`AttentionHeadRecord`] per query head — ONE place,
@@ -385,6 +406,8 @@ pub(super) fn fire_head_records<'k>(
     concat: &[f32],
     kept: &[Vec<f32>],
     activated_gate: Option<&[f32]>,
+    query: &[f32],
+    key_of: impl Fn(usize) -> &'k [f32],
     value_of: impl Fn(usize) -> &'k [f32],
 ) {
     let group = num_q_heads / num_kv_heads;
@@ -398,6 +421,9 @@ pub(super) fn fire_head_records<'k>(
         let source_values: Vec<&[f32]> = (source_start..=position)
             .map(|t| &value_of(t)[kv_head * head_dim..(kv_head + 1) * head_dim])
             .collect();
+        let source_keys: Vec<&[f32]> = (source_start..=position)
+            .map(|t| &key_of(t)[kv_head * head_dim..(kv_head + 1) * head_dim])
+            .collect();
         tap(AttentionHeadRecord {
             position,
             head,
@@ -408,6 +434,8 @@ pub(super) fn fire_head_records<'k>(
             values: &concat[head * head_dim..(head + 1) * head_dim],
             gate: activated_gate.map(|g| &g[head * head_dim..(head + 1) * head_dim]),
             source_values: &source_values,
+            query: &query[head * head_dim..(head + 1) * head_dim],
+            source_keys: &source_keys,
         });
     }
 }

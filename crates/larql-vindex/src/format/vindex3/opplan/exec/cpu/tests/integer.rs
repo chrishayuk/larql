@@ -915,6 +915,100 @@ fn the_indexed_asymmetric_row_is_bit_identical_to_the_recomputing_one() {
     }
 }
 
+/// **A ragged final activation block reads only its own sums.**
+///
+/// When `in_dim % ablock != 0` the row's last block is short, and so is
+/// its run of `SUM_BLOCK` sums. The index used to be strided by
+/// `ablock / SUM_BLOCK` regardless, so the last block read past the row:
+/// the next row's sums, or — on the terminal row through the unchecked
+/// SDOT path — past the slice.
+///
+/// Each row's sums are handed over as an exact-length slice of a buffer
+/// whose tail is a CANARY, so an over-read lands on a value that moves
+/// the answer instead of on plausible neighbouring sums. Both the
+/// portable and the dispatched (SDOT on aarch64) rows are judged, bit
+/// for bit, against the recomputing row.
+#[test]
+fn a_ragged_final_block_reads_only_its_own_sums() {
+    use super::super::integer::{
+        q8_row_asym_exact, q8_row_asym_indexed, q8_row_asym_indexed_portable,
+        quantise_activation_asymmetric,
+    };
+    use crate::format::vindex3::opplan::exec::quantise::{quantise_q8_indexed_for_test, SUM_BLOCK};
+
+    /// Far outside any real `SUM_BLOCK` sum (`|sum| <= 16 * 127`).
+    const CANARY: i16 = i16::MAX;
+    const CANARY_LEN: usize = 64 / SUM_BLOCK;
+    const OUT: usize = 3;
+    // 80: one full 64-block plus a 16-wide tail. 88: a tail that is not
+    // itself a multiple of SUM_BLOCK. 40: a single short block.
+    for in_dim in [80usize, 88, 40] {
+        let w = lcg_values(OUT * in_dim, 81);
+        let x = outlier_activation(in_dim, 82);
+        let LoadedWeight::Q8 {
+            codes,
+            scales,
+            sums,
+        } = quantise_q8_indexed_for_test(&w, in_dim)
+        else {
+            panic!("the indexed quantiser must produce the q8 variant");
+        };
+        let per_row = in_dim.div_ceil(Q8_BLOCK);
+        let per_sum = in_dim.div_ceil(SUM_BLOCK);
+        for ablock in [32usize, 64] {
+            assert_ne!(in_dim % ablock, 0, "the shape must leave a ragged block");
+            let (qx, ascales, amids) = quantise_activation_asymmetric(&x, ablock);
+            let per_weight = Q8_BLOCK / ablock;
+            for o in 0..OUT {
+                let ws = &scales[o * per_row..(o + 1) * per_row];
+                let fs: Vec<f32> = ascales
+                    .iter()
+                    .enumerate()
+                    .map(|(b, a)| ws[b / per_weight] * *a)
+                    .collect();
+                let fm: Vec<f32> = amids
+                    .iter()
+                    .enumerate()
+                    .map(|(b, m)| ws[b / per_weight] * *m)
+                    .collect();
+                let row = &codes[o * in_dim..(o + 1) * in_dim];
+                let mut guarded = sums[o * per_sum..(o + 1) * per_sum].to_vec();
+                guarded.extend([CANARY; CANARY_LEN]);
+                let own = &guarded[..per_sum];
+
+                let want = q8_row_asym_exact(row, &fs, &fm, &qx, in_dim, ablock);
+                let portable =
+                    q8_row_asym_indexed_portable(row, &fs, &fm, &qx, own, in_dim, ablock);
+                let dispatched = q8_row_asym_indexed(row, &fs, &fm, &qx, own, in_dim, ablock);
+                for (arm, got) in [("portable", portable), ("dispatched", dispatched)] {
+                    assert_eq!(
+                        got.to_bits(),
+                        want.to_bits(),
+                        "{arm} indexed row {o}, in_dim {in_dim}, ablock {ablock}: {got} vs \
+                         recomputed {want}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The indexed row refuses a sums slice shorter than its geometry
+/// BEFORE the unchecked kernel dereferences it.
+#[test]
+#[should_panic(expected = "indexed Q8 row needs")]
+fn the_indexed_row_refuses_a_short_sums_slice() {
+    use super::super::integer::q8_row_asym_indexed;
+    use crate::format::vindex3::opplan::exec::quantise::SUM_BLOCK;
+    const IN: usize = 80;
+    let codes = vec![1i8; IN];
+    let qx = vec![1i8; IN];
+    let fold = vec![1.0f32; IN.div_ceil(SUM_BLOCK)];
+    // One sum short of the row's geometry.
+    let sums = vec![0i16; IN.div_ceil(SUM_BLOCK) - 1];
+    q8_row_asym_indexed(&codes, &fold, &fold, &qx, &sums, IN, SUM_BLOCK);
+}
+
 /// The index is EXACT and fits i16, which is what makes it one bit per
 /// weight rather than two.
 #[test]
