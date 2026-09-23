@@ -42,9 +42,11 @@ fn a_two_token_distribution_matches_its_closed_form() {
 
 #[test]
 fn kl_is_invariant_to_a_constant_shift_of_either_row() {
-    let reference = [0.3f32, -1.2, 2.2, 0.0];
-    let candidate = [0.1f32, -1.0, 2.0, 0.4];
-    let shifted: Vec<f32> = candidate.iter().map(|v| v + 40.0).collect();
+    // Dyadic values, so adding 32 in f32 is exact and the shifted row is
+    // the same distribution to the last bit.
+    let reference = [0.25f32, -1.25, 2.25, 0.0];
+    let candidate = [0.125f32, -1.0, 2.0, 0.5];
+    let shifted: Vec<f32> = candidate.iter().map(|v| v + 32.0).collect();
     let a = position_metrics(&reference, &candidate, None).unwrap();
     let b = position_metrics(&reference, &shifted, None).unwrap();
     assert!((a.kl - b.kl).abs() < 1e-9);

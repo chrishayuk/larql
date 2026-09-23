@@ -13,8 +13,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::format::vindex3::opplan::exec::backend::PlanBackend;
+use crate::format::vindex3::opplan::exec::decode::DecodeSession;
+use crate::format::vindex3::opplan::exec::kv::RowKvState;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
-use crate::format::vindex3::opplan::exec::prepared::PreparedOperands;
+use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::ComponentOpPlan;
 
 /// What an arm bound for one object.
@@ -73,16 +75,35 @@ impl<B: PlanBackend> InterpreterArm<B> {
         store: &OperandStore,
         backend: B,
     ) -> Result<Self, String> {
-        let _ = (
-            arm,
+        let ops = PreparedOperands::load(&plan, store, &backend, ExecutionSlice::Full)
+            .map_err(|e| format!("{arm}: preparation refused: {e}"))?;
+        let objects = store
+            .selection()
+            .iter()
+            .map(|(object, selected)| {
+                (
+                    object.clone(),
+                    BoundObject {
+                        encoding: selected.encoding.clone(),
+                        stored: selected.stored,
+                    },
+                )
+            })
+            .collect();
+        let description = ArmDescription {
+            arm: arm.to_string(),
             container,
             requested_pack,
             stored_only,
+            objects,
+            runtime_quantised: store.runtime_quantised(),
+        };
+        Ok(Self {
             plan,
-            store,
+            ops,
             backend,
-        );
-        todo!("MEASURE-PLAN-1 PR 2")
+            description,
+        })
     }
 }
 
@@ -92,7 +113,19 @@ impl<B: PlanBackend> TeacherForcedArm for InterpreterArm<B> {
     }
 
     fn score(&mut self, ids: &[u32]) -> Result<Vec<Vec<f32>>, String> {
-        let _ = (ids, &self.plan, &self.ops, &self.backend);
-        todo!("MEASURE-PLAN-1 PR 2")
+        let mut kv = RowKvState::default();
+        let mut session =
+            DecodeSession::over_prepared(&self.plan, &self.ops, &self.backend, &mut kv)
+                .map_err(|e| e.to_string())?;
+        ids.iter()
+            .enumerate()
+            .map(|(i, &id)| {
+                session
+                    .step(id)
+                    .map_err(|e| format!("position {i}: {e}"))?
+                    .logits
+                    .ok_or_else(|| format!("position {i}: the plan carries no output head"))
+            })
+            .collect()
     }
 }

@@ -1,0 +1,189 @@
+{
+ "generator": "scripts/measure_plan_w3_reference.py",
+ "positions": [
+  {
+   "kl": 0.0009113596406070102,
+   "top1_agree": true,
+   "top5_overlap": 4,
+   "delta_nll": -0.06401101643132101,
+   "reference_margin": 0.0018320658782981138,
+   "reference_entropy": 4.825558213629179
+  },
+  {
+   "kl": 0.0014318028907898282,
+   "top1_agree": false,
+   "top5_overlap": 3,
+   "delta_nll": 0.014090326669659703,
+   "reference_margin": 9.924082134917488e-05,
+   "reference_entropy": 4.825087770075439
+  },
+  {
+   "kl": 0.0010037198379106037,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.01314927655700604,
+   "reference_margin": 0.0010920798718491546,
+   "reference_entropy": 4.824963535505846
+  },
+  {
+   "kl": 0.0007504340471546386,
+   "top1_agree": true,
+   "top5_overlap": 4,
+   "delta_nll": 0.019047925933538323,
+   "reference_margin": 0.0009639364142375335,
+   "reference_entropy": 4.822333928463257
+  },
+  {
+   "kl": 0.000689115603895329,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.022102011825969825,
+   "reference_margin": 1.2005567157547317e-05,
+   "reference_entropy": 4.827446684778982
+  },
+  {
+   "kl": 0.0010133897017258345,
+   "top1_agree": false,
+   "top5_overlap": 4,
+   "delta_nll": 0.05452384588906334,
+   "reference_margin": 8.630035784832485e-07,
+   "reference_entropy": 4.824448334398985
+  },
+  {
+   "kl": 0.0007442723976496106,
+   "top1_agree": false,
+   "top5_overlap": 4,
+   "delta_nll": 0.08548964267775006,
+   "reference_margin": 2.928916519302424e-06,
+   "reference_entropy": 4.831686331632852
+  },
+  {
+   "kl": 0.0011133866761571282,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.004564534052714286,
+   "reference_margin": 0.0028846840641591487,
+   "reference_entropy": 4.822565549635203
+  },
+  {
+   "kl": 0.0009900798807906674,
+   "top1_agree": true,
+   "top5_overlap": 4,
+   "delta_nll": -0.004054625781686916,
+   "reference_margin": 0.003232980888514373,
+   "reference_entropy": 4.82341795648846
+  },
+  {
+   "kl": 0.0008024091311852161,
+   "top1_agree": true,
+   "top5_overlap": 3,
+   "delta_nll": null,
+   "reference_margin": 0.002527012779521144,
+   "reference_entropy": 4.824679937077343
+  },
+  {
+   "kl": 0.0009113596406070102,
+   "top1_agree": true,
+   "top5_overlap": 4,
+   "delta_nll": -0.06642499709414373,
+   "reference_margin": 0.0018320658782981138,
+   "reference_entropy": 4.825558213629179
+  },
+  {
+   "kl": 0.0007444444540030478,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": 0.007451415466832145,
+   "reference_margin": 0.0009571317608511459,
+   "reference_entropy": 4.82287947246516
+  },
+  {
+   "kl": 0.000712291207110008,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": 0.0018419536084506305,
+   "reference_margin": 0.0012694329356352837,
+   "reference_entropy": 4.8236032480873074
+  },
+  {
+   "kl": 0.0006460110116005059,
+   "top1_agree": true,
+   "top5_overlap": 3,
+   "delta_nll": 0.06192594591199274,
+   "reference_margin": 0.0018011871644958571,
+   "reference_entropy": 4.82248769816772
+  },
+  {
+   "kl": 0.0006116081556653247,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": 0.02412519701276672,
+   "reference_margin": 0.0014843048929438218,
+   "reference_entropy": 4.830115999912594
+  },
+  {
+   "kl": 0.00039134354307918123,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": null,
+   "reference_margin": 0.00011996124196254898,
+   "reference_entropy": 4.823412376728937
+  },
+  {
+   "kl": 0.0031125664001366926,
+   "top1_agree": false,
+   "top5_overlap": 5,
+   "delta_nll": 0.061926612714186646,
+   "reference_margin": 0.0005114245220023631,
+   "reference_entropy": 4.831991411143747
+  },
+  {
+   "kl": 0.0013846523272425246,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.06507723977046975,
+   "reference_margin": 0.0004716564144199402,
+   "reference_entropy": 4.825681982260036
+  },
+  {
+   "kl": 0.0006450148239245765,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.02159984707373841,
+   "reference_margin": 0.003317496557378308,
+   "reference_entropy": 4.820802266905876
+  },
+  {
+   "kl": 0.0006541083959552584,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.02193180245355464,
+   "reference_margin": 0.000574770255817085,
+   "reference_entropy": 4.821387163419125
+  },
+  {
+   "kl": 0.0005983174298212683,
+   "top1_agree": true,
+   "top5_overlap": 5,
+   "delta_nll": -0.03164703355200604,
+   "reference_margin": 0.001394337116281518,
+   "reference_entropy": 4.824577562339062
+  },
+  {
+   "kl": 0.0009394348535180924,
+   "top1_agree": true,
+   "top5_overlap": 4,
+   "delta_nll": 0.0035677230875466037,
+   "reference_margin": 0.0009199439929334606,
+   "reference_entropy": 4.8262320295624885
+  },
+  {
+   "kl": 0.0011183312294666058,
+   "top1_agree": false,
+   "top5_overlap": 4,
+   "delta_nll": null,
+   "reference_margin": 0.0004759022889013059,
+   "reference_entropy": 4.827167226628312
+  }
+ ]
+}

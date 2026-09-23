@@ -325,6 +325,21 @@ impl PositionObservation {
     }
 }
 
+/// Nearest-rank percentile of an ascending `sorted` sample: the smallest
+/// observed value at or above which `p` of the sample lies.
+///
+/// Nearest-rank rather than interpolated, because a p99 that reports a
+/// number no position actually produced is a worse instrument for a tail
+/// statistic than one that names a real observation. The one derivation,
+/// shared by the quality bank and MEASURE-PLAN-1's procedure.
+pub(crate) fn nearest_rank_percentile(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let rank = (p * sorted.len() as f64).ceil().max(1.0) as usize;
+    sorted[rank.min(sorted.len()) - 1]
+}
+
 /// Accumulates observations into a [`QualityBank`].
 #[derive(Debug, Default)]
 pub struct BankBuilder {
@@ -436,18 +451,8 @@ impl BankBuilder {
         self.min_covered_mass
     }
 
-    /// Nearest-rank percentile: the smallest observed value at or above
-    /// which `p` of the sample lies.
-    ///
-    /// Nearest-rank rather than interpolated because a p99 that reports
-    /// a number no position actually produced is a worse instrument for
-    /// a tail statistic than one that names a real observation.
     fn percentile(sorted: &[f64], p: f64) -> f64 {
-        if sorted.is_empty() {
-            return 0.0;
-        }
-        let rank = (p * sorted.len() as f64).ceil().max(1.0) as usize;
-        sorted[rank.min(sorted.len()) - 1]
+        nearest_rank_percentile(sorted, p)
     }
 
     /// State where this bank's activations came from.
