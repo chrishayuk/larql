@@ -58,6 +58,7 @@ pub mod inspect;
 pub mod knowledge;
 pub mod opplan;
 pub mod plan;
+pub mod plugin;
 pub mod profile;
 pub mod read;
 pub mod remote;

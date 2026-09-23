@@ -26,6 +26,7 @@ use larql_vindex::format::vindex3::opplan::exec::{
     execute_plan_streaming, prefill_plan, prefill_prepared, FinalOutput, PlaneEvent,
 };
 use larql_vindex::format::vindex3::opplan::{plan_component_ops, ClosureDefect, ComponentOpPlan};
+use larql_vindex::format::vindex3::represent::codec::CodecRegistry;
 
 use crate::error::InferenceError;
 
@@ -82,6 +83,18 @@ pub fn open_component(
     component: &str,
     policy: OpenPolicy,
 ) -> Result<OpenedComponent, InferenceError> {
+    open_component_in(container, component, policy, CodecRegistry::builtin())
+}
+
+/// [`open_component`], with the operand store decoding through `codecs`
+/// from the first byte — the path a caller holding codecs this build
+/// does not ship (a loaded plugin) opens through.
+pub fn open_component_in(
+    container: &Path,
+    component: &str,
+    policy: OpenPolicy,
+    codecs: &'static CodecRegistry,
+) -> Result<OpenedComponent, InferenceError> {
     let inspection = inspect_container(container, false)?;
     let outcome = plan_component_ops(&inspection, container, component)?;
     if !outcome.closed() {
@@ -90,11 +103,12 @@ pub fn open_component(
     let plan = outcome.plan.ok_or_else(|| {
         InferenceError::Parse(format!("component `{component}` produced no plan"))
     })?;
-    let store = OperandStore::open_for(
+    let store = OperandStore::open_in(
         container,
         &inspection,
         policy.want.as_deref(),
         policy.source,
+        codecs,
     )?;
     // The container names itself (`index.model`) — identity travels
     // with the artifact, never a sidecar or a directory name — and

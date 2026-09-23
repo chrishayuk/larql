@@ -26,6 +26,7 @@ use larql_vindex::format::vindex3::represent::measure::plan::{
     run as run_procedure, PlanMeasureRequest, PlanReceipt, PlanRefusal,
 };
 
+use super::plugins::Plugins;
 use super::prepare::{lowerings_for, parse_representation_source, prepare, DEFAULT_COMPONENT};
 use super::ExecBackend;
 
@@ -108,17 +109,22 @@ pub fn run(args: MeasureArgs) -> Result<(), BoxErr> {
         backend: args.candidate_backend,
         source: parse_representation_source(&args.candidate_source)?,
     };
+    // No `--plugin` here yet, as `larql bench` and `vindex3 observe`: both
+    // arms open through the shipped registries only.
+    let plugins = Plugins::none();
     let reference_opened = prepare(
         reference.container,
         &args.component,
         reference.backend,
         reference.source,
+        &plugins,
     )?;
     let candidate_opened = prepare(
         candidate.container,
         &args.component,
         candidate.backend,
         candidate.source,
+        &plugins,
     )?;
     let request = PlanMeasureRequest {
         bank: args.bank.clone(),

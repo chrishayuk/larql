@@ -44,6 +44,8 @@ use larql_compute_metal::MetalBackend;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 use larql_vindex::format::vindex3::opplan::exec::backend::WeightFormats;
 
+use crate::commands::primary::vindex3_cmd::plugins::Plugins;
+
 type BoxErr = Box<dyn std::error::Error>;
 
 /// Bench one V3 backend: open, prepare, pre-warm (device backends only),
@@ -59,11 +61,13 @@ pub(super) fn run_vindex3(
     let eos = EosConfig::from_vindex_dir(container);
 
     let opening = Instant::now();
+    let plugins = Plugins::none();
     let opened = prepare(
         container,
         DEFAULT_COMPONENT,
         backend,
         RepresentationSource::Auto,
+        &plugins,
     )?;
     eprintln!(
         "[bench] {}: opened {} ({}) in {:.1} s",
@@ -107,7 +111,7 @@ pub(super) fn run_vindex3(
     if let Some((formats, _)) = lowered_formats(backend) {
         return timed.lowered(formats);
     }
-    with_plan_backend(backend, timed)
+    with_plan_backend(backend, &plugins, timed)
 }
 
 /// The prompt as the V2 bench sends it: through the container's chat

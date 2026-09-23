@@ -44,6 +44,7 @@ use super::super::shannon_trace::dump::{
 };
 use larql_inference::vindex3::OpenedComponent;
 
+use super::plugins::Plugins;
 use super::prepare::{
     parse_representation_source, prepare, with_plan_backend, BackendVisitor, ENGINE_PREFIX,
 };
@@ -74,9 +75,16 @@ pub(super) struct ResumeSidecar {
 pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
+    let plugins = Plugins::load(&args.plugin)?;
     let OpenedComponent {
         plan, store, want, ..
-    } = prepare(&args.container, &args.component, args.backend, source)?;
+    } = prepare(
+        &args.container,
+        &args.component,
+        args.backend,
+        source,
+        &plugins,
+    )?;
 
     let from_pack = store.selection().values().filter(|s| s.stored).count();
     if let Some(want) = &want {
@@ -91,6 +99,14 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(all(feature = "gpu", target_os = "macos"))]
     {
         if let Some((formats, label)) = super::prepare::lowered_formats(args.backend) {
+            if plugins.select.is_some() {
+                return Err(format!(
+                    "--lowering does not apply to `{:?}`: a lowered arm does not execute \
+                     through a lowering provider",
+                    args.backend
+                )
+                .into());
+            }
             let r = super::lowered::run_lowered(&args, &tokens, &plan, &store, formats, label);
             report_representation_work(&store, want.as_deref(), r.is_ok());
             return r;
@@ -98,6 +114,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
     let outcome = with_plan_backend(
         args.backend,
+        &plugins,
         ExecVisitor {
             args: &args,
             tokens: &tokens,

@@ -209,6 +209,9 @@ pub struct ExecArgs {
     #[arg(long, value_enum, default_value_t = ExecBackend::Reference)]
     pub backend: ExecBackend,
 
+    #[command(flatten)]
+    pub plugin: plugins::PluginArgs,
+
     /// Where an execution representation may come from.
     ///
     /// Separate from `--backend` on purpose: the backend says *what*
@@ -573,6 +576,7 @@ pub(crate) mod measure;
 mod observe;
 mod ops;
 mod optional_op;
+pub(crate) mod plugins;
 pub(crate) mod prepare;
 mod realizations;
 mod sensitivity;

@@ -364,6 +364,11 @@ pub struct RunArgs {
     /// docs/tts-funnel.md — check voice quality before trusting speed.
     #[arg(long)]
     pub q4: bool,
+
+    /// `--plugin` / `--lowering`: codecs and lowering providers loaded
+    /// from shared libraries, for a VINDEX3 container.
+    #[command(flatten)]
+    pub plugin: super::vindex3_cmd::plugins::PluginArgs,
 }
 
 pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
