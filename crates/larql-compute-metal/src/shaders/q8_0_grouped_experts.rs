@@ -52,7 +52,7 @@ kernel void q8_0_grouped_experts(
 
     const uint blocks        = K / 32u;
     const uint bytes_per_row = blocks * Q80G_BLOCK_BYTES;
-    device const uchar* row = W8 + offsets[slot] + row_idx * bytes_per_row;
+    device const uchar* row = W8 + (ulong)offsets[slot] + (ulong)row_idx * bytes_per_row;
     device const float* Xs  = X + (ulong)slot * XSTRIDE;
 
     float acc = 0.0f;
