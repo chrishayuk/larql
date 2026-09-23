@@ -1,0 +1,62 @@
+{
+  "programme": "residency-into-k3",
+  "wave": "PREFETCH-2: the access realization conditioned on residency, and its distributions",
+  "forecast": "k3-prefetch-2.json (frozen before the gating implementation; the contention addendum frozen after the preliminary round and before its own arm ran; neither edited afterwards)",
+  "status": "CODE COMPLETE AND GATED; MEASUREMENT PAUSED 2026-09-06 at the user's instruction — the performance lane waits for a qualified quiet window, and nothing below claims a latency result. What is recorded here is (a) what was built, (b) what its witnesses prove, (c) one preliminary round on a machine the instrument itself labelled UNQUALIFIED, kept because it already falsified one carried-over belief.",
+  "built": {
+    "gate": "`MappedAccess::Gated` — a fifth access realization on `RealizationForm::MappedStored`, named in the realization's identity (`mapped-stored/Bf16/gated`), selected like the others (`--expert-access gated`, `ResidencyBudget.expert_access`). It takes the coalesced runs of the selected experts, PROBES each for residency, and advises only the runs the probe says are not already in memory.",
+    "probe": "`prefetch::probed_resident` reads `GATE_PROBE_PAGES` = 4 pages per run through mincore — the first, the last and evenly spaced pages between — and counts a run resident only when every probed page is. O(runs), never O(pages): the full residency witness walks every selected page and costs ~70 ms per token (PF-N4), which is more than the request it would save. A reading that FAILS is not evidence of residency: it answers false and the run is asked for.",
+    "report": "`PrefetchReport` now separates coverage from request: `ranges`/`bytes` are what the token will read either way, `requests`/`requested_bytes` are what the realization asked the kernel for. The two part company exactly when a request is skipped, which is the observable that distinguishes a gated arm from an unconditional one. `routing_trace` carries the whole report rather than a (ranges, requests) tuple, and the curve prints and summarises both.",
+    "carried_in_from_prefetch_1": "The residency witness (`--witness-residency`, opt-in, outside every stage) and `MappedAccess::Coalesced`, both built after #433's head was cut and stranded uncommitted in the old worktree; ported forward here with the V4 closure and the witnessed cold distributions they produced.",
+    "protocol_script": "`scripts/evict-bank.sh` — the cold-state protocol, previously a session scratch file the notes referred to by name and nothing on disk could reproduce."
+  },
+  "witnesses": {
+    "library": "exec/tests/prefetch.rs — the probe samples the ends and the span between and is bounded (`the_gate_probes_the_ends_and_the_span_between`); a warm run costs no request and a cold one is asked for, over an ANONYMOUS mapping so a test can hold a cold page beside a warm one without evicting the machine (`a_gate_asks_only_for_the_runs_the_os_does_not_already_hold`); a run resident only at its ends is still asked for (`a_run_resident_only_at_its_ends_is_still_asked_for`); coalescing asks for the union of the page-aligned ranges, which is smaller than their sum exactly when two round onto a shared boundary page; all FIVE policies execute the miniature's token to the same bits; an unknown policy is refused by name, and the refusal now lists gated.",
+    "cli": "`the_curve_runs_under_the_gated_access_policy` — the policy reaches execution through the flag; `--expert-access`'s own help text names all five policies rather than the three it shipped with."
+  },
+  "gates_2026_09_06": {
+    "fmt": "PASS",
+    "clippy_vindex": "PASS (`-p larql-vindex --all-targets -- -D warnings`)",
+    "clippy_cli": "PASS (default and `--no-default-features`)",
+    "check_x86_64_apple_darwin": "PASS (larql-vindex --all-targets, larql-cli bins+tests)",
+    "test_larql_vindex": "PASS (full suite)",
+    "test_larql_cli": "PASS (full suite)",
+    "coverage": "PASS — policy green (total 93.64% lines, 437 files checked); touched files prefetch.rs 96.69%, production.rs 91.82%, realization.rs 95.10%, routing_trace.rs 98.41%"
+  },
+  "preliminary_round_UNQUALIFIED": {
+    "why_it_is_here": "It was taken before the pause, on a machine carrying a peer session's compile (rustc 78-100%) and post-boot indexing (mediaanalysisd ~80%, mds_stores ~33%). The instrument REFUSED all four qualified warm arms outright (load 9.42, background 273%). The cold arms ran under --unquiet-ok. One demand sample came back at 3044 ms cold and 2677 ms WARM — the V4-N1 whole-process regime — and the campaign was stopped rather than banked.",
+    "machine": "AC power; the probe's label on every arm below: UNQUALIFIED, with the reasons recorded in each log.",
+    "one_clean_round_all_three_arms_same_minutes": {
+      "cold_token_ms": {
+        "demand": 602,
+        "coalesced": 591,
+        "gated": 607
+      },
+      "cold_prompt_3_positions_ms": {
+        "demand": 4906,
+        "coalesced": 3927,
+        "gated": 3429
+      },
+      "prefetch_stage_ms": {
+        "demand": 0.0,
+        "coalesced": 514,
+        "gated": 528
+      },
+      "identical_in_every_arm": "73,518 major faults, 1.206 GB paged in, routing fingerprint ebe045dc40cce5b1, generated ids [276, 6690], bank 0.000 GB resident at binding (the cold witness)."
+    },
+    "warm_pass_of_the_same_samples": {
+      "demand": "74 ms token, prefetch stage 0.0 ms, no requests",
+      "coalesced": "83 ms token, prefetch stage 8.0 ms, 202 requests for 2.948 GB",
+      "gated": "80 ms token, prefetch stage 0.9 ms, 0 requests over 624 ranges spanning 2.955 GB",
+      "reading": "PF-N3's warm tax reproduced at 8.0 ms, and the gate removed it for 0.9 ms of probing — about 1% of the full witness's ~70 ms. The token figures themselves are single passes on a contended machine and are NOT a latency result; what is solid here is the REQUEST SHAPE, which is deterministic: 202 requests against 0."
+    },
+    "the_gate_is_selective_not_silent": "On the cold sample's own token the gate issued 84 of the 202 possible requests, asking for 1.219 GB of the 2.955 GB span — the part the three-position prompt had not already paged in (PREFETCH-1 measured that reuse at 59.1%). It skips what is resident without skipping what is not.",
+    "PF2-N1_the_carried_cold_claim_did_not_reproduce": "PREFETCH-1's headline — advise halves the cold token — did not appear in this round: 602 / 591 / 607 ms across demand / coalesced / gated. The advised arms are unchanged from PREFETCH-1 (prefetch stage 514 ms against its 504, ~2.4 GB/s); it is the DEMAND arm that moved, from 16.4 us per fault to 8.2 us for the same 73,518 faults. So the open question is why demand-faulting doubled in speed, not why advising stopped helping. The addendum in the forecast pre-registers the control: PREFETCH-1's arms ran with `mds_stores` indexing the 184 GB its own eviction stream had just read, so the cold-state protocol may manufacture the I/O contention that only the one-fault-at-a-time arm is sensitive to. Until that control runs, no cold latency claim from either wave should be quoted without its campaign's own demand baseline beside it."
+  },
+  "still_to_run_when_the_window_opens": [
+    "The qualified warm distributions: demand / advise / coalesced / gated, `--repeat 33 --warmup 3`, machine probe ENFORCED, `--witness-residency` off. G1 and G6 rest on these, and so does the pre-registered default rule.",
+    "A clean cold campaign: demand / coalesced / gated, three samples each, eviction verified by the binding line, on a machine with no peer work.",
+    "The contention control of the addendum: demand cold with the device quiet, and demand cold against a deliberate competing sequential read (`contention.sh` is written and unrun)."
+  ],
+  "not_claimed": "No tokens-per-second, no cold latency verdict, no default change: the pre-registered rule (gated becomes the default only if G1 and G2 both hold) is unresolved because G1 needs the qualified arms. The gate's REQUEST behaviour — 0 requests warm, 84 of 202 partially warm, 202 cold — is measured and deterministic; its LATENCY consequence is not yet measured on a machine that could carry the claim."
+}
