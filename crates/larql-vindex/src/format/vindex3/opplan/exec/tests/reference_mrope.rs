@@ -56,7 +56,7 @@ fn fixture() -> (
 fn with_position(plan: &ComponentOpPlan, position: PositionPolicy) -> ComponentOpPlan {
     let mut plan = plan.clone();
     for layer in &mut plan.layers {
-        layer.attention.softmax_mut().unwrap().position = position.clone();
+        layer.attention.softmax_mut().unwrap().position = position;
     }
     plan
 }
