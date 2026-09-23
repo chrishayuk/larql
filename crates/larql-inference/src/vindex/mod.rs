@@ -42,6 +42,6 @@ pub use l1_cache::FfnL1Cache;
 pub use loader::{open_inference_vindex, ENV_VINDEX_PATH};
 pub use walk_config::{CellRouter, FeatureSelector, WalkFfnConfig};
 pub use walk_ffn::{
-    FfnPlan, LayerTraceRecord, PhaseTimingsHandle, PlanReason, PlanRung, SkippedRung,
-    ThresholdCheck, TracedFeature, WalkFfn,
+    CompactDenseLayer, FfnPlan, LayerTraceRecord, PhaseTimingsHandle, PlanReason, PlanRung,
+    SkippedRung, ThresholdCheck, TracedFeature, WalkFfn,
 };

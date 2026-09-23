@@ -117,6 +117,14 @@ required-features = ["gpu"]
 name = "stage_bisect"
 required-features = ["gpu"]
 
+[[example]]
+name = "glm8_divergence_pilot"
+required-features = ["gpu"]
+
+[[example]]
+name = "glm3_moe_route_stability"
+required-features = ["gpu"]
+
 [dev-dependencies]
 assert_approx_eq = "1"
 tempfile = "3"
