@@ -1,0 +1,181 @@
+## larql-H rep 1 17:36:56 load=1.39 2.54 3.15 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4-head.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 50 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.4 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        661.8ms      8.61ms      8.62ms     116.2     256  prompt 75 tok; NVFP4 pack 2/5 objects; gpu 8.60 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=66da153c033f3ac8
+## llama.cpp rep 1 17:38:05 load=1.82 2.43 3.06 power=AC Power
+load_backend: loaded BLAS backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-blas.so
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_init: loaded in 0.012 sec
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M3 Max)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal3  (5001)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 103079.22 MB
+load_backend: loaded MTL backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-metal.so
+load_backend: loaded CPU backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-cpu-apple_m2_m3.so
+| model                          |       size |     params | backend    | threads | fa |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | -: | --------------: | -------------------: |
+| gpt-oss 20B MXFP4 MoE          |  11.27 GiB |    20.91 B | BLAS,MTL   |      12 |  1 |      pp75 @ d91 |        656.61 ± 0.00 |
+| gpt-oss 20B MXFP4 MoE          |  11.27 GiB |    20.91 B | BLAS,MTL   |      12 |  1 |     tg256 @ d91 |         96.03 ± 0.00 |
+
+build: d48a56eff (9430)
+## mlx-Q8 rep 1 17:39:09 load=2.35 2.43 3.01 power=AC Power
+Running warmup..
+Timing with prompt_tokens=91, generation_tokens=256, batch_size=1.
+Trial 1:  prompt_tps=655.271, generation_tps=101.480, peak_memory=12.213
+Averages: prompt_tps=655.271, generation_tps=101.480, peak_memory=12.213
+## ollama rep 1 17:40:20 load=1.76 2.22 2.88 power=AC Power
+OLLAMA eval_count 272 eval_s 3.502906 tok_s 77.65 prompt_count 82
+## larql-mxfp4 rep 1 17:41:26 load=1.82 2.12 2.79 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered-mxfp4
+
+[bench] vindex3-metal-lowered-mxfp4: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 194 weight streams in 0.0 s
+[bench] vindex3-metal-lowered-mxfp4: operands resident in 5.4 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered-mxfp4     731.2ms      9.41ms      9.42ms     106.2     256  prompt 75 tok; gpu 9.41 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=69310171dc7891a7
+## mlx-Q4 rep 1 17:42:37 load=1.71 1.99 2.69 power=AC Power
+Running warmup..
+Timing with prompt_tokens=91, generation_tokens=256, batch_size=1.
+Trial 1:  prompt_tps=699.891, generation_tps=122.389, peak_memory=11.315
+Averages: prompt_tps=699.891, generation_tps=122.389, peak_memory=11.315
+## larql-H rep 2 17:43:47 load=1.64 1.92 2.60 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4-head.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 50 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.3 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        658.6ms      8.61ms      8.62ms     116.1     256  prompt 75 tok; NVFP4 pack 2/5 objects; gpu 8.61 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=66da153c033f3ac8
+## llama.cpp rep 2 17:44:55 load=1.82 1.90 2.54 power=AC Power
+load_backend: loaded BLAS backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-blas.so
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_init: loaded in 0.011 sec
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M3 Max)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal3  (5001)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 103079.22 MB
+load_backend: loaded MTL backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-metal.so
+load_backend: loaded CPU backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-cpu-apple_m2_m3.so
+| model                          |       size |     params | backend    | threads | fa |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | -: | --------------: | -------------------: |
+| gpt-oss 20B MXFP4 MoE          |  11.27 GiB |    20.91 B | BLAS,MTL   |      12 |  1 |      pp75 @ d91 |        656.49 ± 0.00 |
+| gpt-oss 20B MXFP4 MoE          |  11.27 GiB |    20.91 B | BLAS,MTL   |      12 |  1 |     tg256 @ d91 |         98.60 ± 0.00 |
+
+build: d48a56eff (9430)
+## mlx-Q8 rep 2 17:45:59 load=2.20 2.00 2.53 power=AC Power
+Running warmup..
+Timing with prompt_tokens=91, generation_tokens=256, batch_size=1.
+Trial 1:  prompt_tps=656.374, generation_tps=102.077, peak_memory=12.213
+Averages: prompt_tps=656.374, generation_tps=102.077, peak_memory=12.213
+## ollama rep 2 17:47:13 load=1.80 1.90 2.44 power=AC Power
+OLLAMA eval_count 272 eval_s 3.529101 tok_s 77.07 prompt_count 82
+## larql-mxfp4 rep 2 17:48:19 load=2.02 1.99 2.44 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered-mxfp4
+
+[bench] vindex3-metal-lowered-mxfp4: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 194 weight streams in 0.0 s
+[bench] vindex3-metal-lowered-mxfp4: operands resident in 5.2 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered-mxfp4     717.4ms      8.95ms      8.88ms     111.7     256  prompt 75 tok; gpu 8.95 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=69310171dc7891a7
+## mlx-Q4 rep 2 17:49:29 load=1.90 1.98 2.40 power=AC Power
+Running warmup..
+Timing with prompt_tokens=91, generation_tokens=256, batch_size=1.
+Trial 1:  prompt_tps=691.670, generation_tps=122.166, peak_memory=11.315
+Averages: prompt_tps=691.670, generation_tps=122.166, peak_memory=11.315
+## larql-H rep 3 17:50:39 load=1.84 1.98 2.37 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.nvfp4-head.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered
+
+[bench] vindex3-metal-lowered: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 50 weight streams in 0.0 s
+[bench] vindex3-metal-lowered: operands resident in 3.3 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered        665.0ms      8.63ms      8.63ms     115.9     256  prompt 75 tok; NVFP4 pack 2/5 objects; gpu 8.63 ms/tok + off-gpu 0.00 ms/tok, 1.0 submissions/tok; fp=66da153c033f3ac8
+## llama.cpp rep 3 17:51:47 load=1.85 1.96 2.33 power=AC Power
+load_backend: loaded BLAS backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-blas.so
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_init: loaded in 0.012 sec
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M3 Max)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal3  (5001)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 103079.22 MB
+load_backend: loaded MTL backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-metal.so
+load_backend: loaded CPU backend from /opt/homebrew/Cellar/ggml/0.13.1/libexec/libggml-cpu-apple_m2_m3.so
+| model                          |       size |     params | backend    | threads | fa |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | -: | --------------: | -------------------: |
+| gpt-oss 20B MXFP4 MoE          |  11.27 GiB |    20.91 B | BLAS,MTL   |      12 |  1 |      pp75 @ d91 |        657.98 ± 0.00 |
+| gpt-oss 20B MXFP4 MoE          |  11.27 GiB |    20.91 B | BLAS,MTL   |      12 |  1 |     tg256 @ d91 |         96.07 ± 0.00 |
+
+build: d48a56eff (9430)
+## mlx-Q8 rep 3 17:52:52 load=1.67 1.89 2.27 power=AC Power
+Running warmup..
+Timing with prompt_tokens=91, generation_tokens=256, batch_size=1.
+Trial 1:  prompt_tps=660.620, generation_tps=102.186, peak_memory=12.213
+Averages: prompt_tps=660.620, generation_tps=102.186, peak_memory=12.213
+## ollama rep 3 17:54:03 load=1.91 1.92 2.25 power=AC Power
+OLLAMA eval_count 272 eval_s 3.524122 tok_s 77.18 prompt_count 82
+## larql-mxfp4 rep 3 17:55:09 load=1.91 1.92 2.23 power=AC Power
+larql bench: ~/chris-models/gpt-oss-20b.vindex3
+Prompt: "Write a detailed history of the Roman Empire from its founding to its fall."
+Decode: 256 tokens after 16 warmup; backends=metal-lowered-mxfp4
+
+[bench] vindex3-metal-lowered-mxfp4: opened 6cee5e81ee83917806bbde320786a8fb61efebee (gpt_oss) in 0.0 s
+wired 194 weight streams in 0.0 s
+[bench] vindex3-metal-lowered-mxfp4: operands resident in 5.2 s
+  Backend                     prefill       mean        p50      tok/s  steps  notes
+  ─────────────────────────────────────────────────────────────────────────────────────
+  vindex3-metal-lowered-mxfp4     723.2ms      8.83ms      8.71ms     113.3     256  prompt 75 tok; gpu 8.82 ms/tok + off-gpu 0.01 ms/tok, 1.0 submissions/tok; fp=69310171dc7891a7
+## mlx-Q4 rep 3 17:56:19 load=1.99 1.96 2.22 power=AC Power
+Running warmup..
+Timing with prompt_tokens=91, generation_tokens=256, batch_size=1.
+Trial 1:  prompt_tps=683.924, generation_tps=122.212, peak_memory=11.315
+Averages: prompt_tps=683.924, generation_tps=122.212, peak_memory=11.315
+DONE

@@ -1,0 +1,4 @@
+larql b77ec0e19b1716fb5acecf0d25bc3387142c8409 binary Sep 23 17:25:30 2026
+'first-last' or 'first-last+step' or 'first-last*mult'.
+mlx_lm 0.29.1 mlx 0.30.1
+ollama version is 0.33.3

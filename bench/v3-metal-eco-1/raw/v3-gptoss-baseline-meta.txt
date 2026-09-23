@@ -1,0 +1,3 @@
+sha 24cd6ecba2dd47d28dde48df0f090845e3abfe3c dirty=0
+binary Sep 23 15:50:23 2026
+prompt: Write a detailed history of the Roman Empire from its founding to its fall.
