@@ -336,6 +336,7 @@ fn prepare_wires_one_stream_per_f16_weight_and_two_per_packed_weight() {
         packed: nv_packed,
         scales: nv_scales,
         tensor_scale,
+        ..
     } = quantize_nvfp4(&f32_weight, ROWS, COLS, "nv").unwrap()
     else {
         unreachable!()
@@ -351,6 +352,7 @@ fn prepare_wires_one_stream_per_f16_weight_and_two_per_packed_weight() {
             packed: nv_packed.as_slice(),
             scales: nv_scales.as_slice(),
             tensor_scale,
+            activation: Default::default(),
         },
     ]);
     let seen = streams.lock().unwrap().clone();
@@ -425,6 +427,7 @@ fn single_gemv_refusals_name_the_kernel_and_shape_for_every_packed_format() {
         packed: nv_packed,
         scales: nv_scales,
         tensor_scale,
+        ..
     } = quantize_nvfp4(&f32_weight, ROWS, COLS, "nv").unwrap()
     else {
         unreachable!()
@@ -444,6 +447,7 @@ fn single_gemv_refusals_name_the_kernel_and_shape_for_every_packed_format() {
                 packed: nv_packed.as_slice(),
                 scales: nv_scales.as_slice(),
                 tensor_scale,
+                activation: Default::default(),
             },
         ),
     ];
@@ -488,6 +492,7 @@ fn an_nvfp4_multi_dispatch_refusal_names_the_matrix_count() {
         packed,
         scales,
         tensor_scale,
+        ..
     } = quantize_nvfp4(&values, FFN_INTERMEDIATE, FFN_HIDDEN, "nv").unwrap()
     else {
         unreachable!()
@@ -496,6 +501,7 @@ fn an_nvfp4_multi_dispatch_refusal_names_the_matrix_count() {
         packed: packed.as_slice(),
         scales: scales.as_slice(),
         tensor_scale,
+        activation: Default::default(),
     };
     let x = lcg_values(FFN_HIDDEN, 11);
     let err = backend
@@ -632,6 +638,7 @@ fn an_nvfp4_projection_matches_the_round_tripped_matrix() {
         packed,
         scales,
         tensor_scale,
+        ..
     } = quantize_nvfp4(&values, ROWS, COLS, "nv").unwrap()
     else {
         unreachable!()
@@ -642,6 +649,7 @@ fn an_nvfp4_projection_matches_the_round_tripped_matrix() {
             packed: packed.as_slice(),
             scales: scales.as_slice(),
             tensor_scale,
+            activation: Default::default(),
         },
         &x,
     )
@@ -1010,11 +1018,13 @@ fn an_nvfp4_ffn_device_prepares_a_pack_whose_attention_is_compiled() {
                         packed: a,
                         scales: sa,
                         tensor_scale: ta,
+                        ..
                     },
                     LoadedWeight::Nvfp4 {
                         packed: b,
                         scales: sb,
                         tensor_scale: tb,
+                        ..
                     },
                 ) => {
                     assert_eq!(a.as_slice(), b.as_slice(), "{source:?}");

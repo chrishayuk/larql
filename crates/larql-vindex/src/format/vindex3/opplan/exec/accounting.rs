@@ -111,6 +111,9 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
             bytes_per_weight: 0.5 + SCALE_WIDTH / geometry.q4_block as f64,
         },
         WeightFormat::Nvfp4 => ResidencyProfile::rebound(NVFP4_BITS_PER_WEIGHT),
+        // The same pack, copied into aligned buffers the same way; only the
+        // activation it runs against differs.
+        WeightFormat::Nvfp4Q8 => ResidencyProfile::rebound(NVFP4_BITS_PER_WEIGHT),
         WeightFormat::Mxfp4 => ResidencyProfile::stored(MXFP4_BITS_PER_WEIGHT),
         // The Q8_K binding is the same stored blocks; only the activation
         // it runs against differs.
@@ -199,6 +202,7 @@ pub fn requantised_image_bytes(
         | WeightFormat::Bf16
         | WeightFormat::F16
         | WeightFormat::Nvfp4
+        | WeightFormat::Nvfp4Q8
         | WeightFormat::Mxfp4
         | WeightFormat::KQuant
         | WeightFormat::KQuantQ8k

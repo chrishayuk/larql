@@ -94,7 +94,7 @@ pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str
     // states which representation it executes.
     match backend {
         ExecBackend::Reference | ExecBackend::Production => None,
-        ExecBackend::ProductionNvfp4 => Some(DTYPE_NVFP4),
+        ExecBackend::ProductionNvfp4 | ExecBackend::ProductionNvfp4Q8 => Some(DTYPE_NVFP4),
         ExecBackend::ProductionQ8 => Some(kquant::Q8_0.name),
         ExecBackend::ProductionQ6k => Some(kquant::Q6_K.name),
         ExecBackend::ProductionQ4k | ExecBackend::ProductionQ4kQ8k => Some(kquant::Q4_K.name),
@@ -172,6 +172,7 @@ pub(crate) fn lowered_formats(
         | ExecBackend::ProductionQ6k
         | ExecBackend::ProductionQ4k
         | ExecBackend::ProductionQ4kQ8k
+        | ExecBackend::ProductionNvfp4Q8
         | ExecBackend::Metal
         | ExecBackend::MetalMxfp4
         | ExecBackend::MetalMxfp4All
@@ -231,6 +232,13 @@ pub(crate) fn lowerings_for(
             let q8k = ProductionBackend::q8k_activation();
             let identity = q8k.identity();
             Ok((shipped.register(Box::new(q8k))?, identity))
+        }
+        // NVFP4-Q8-1: the same construction for the NVFP4 pack's Q8
+        // activation, under its own identity for the same reason.
+        ExecBackend::ProductionNvfp4Q8 => {
+            let q8 = ProductionBackend::nvfp4_q8_activation();
+            let identity = q8.identity();
+            Ok((shipped.register(Box::new(q8))?, identity))
         }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalLowered

@@ -106,6 +106,7 @@ fn as_f32_returns_f32_and_refuses_every_other_representation() {
                 packed: &FOREIGN_BYTES,
                 scales: &FOREIGN_BYTES,
                 tensor_scale: NVFP4_TENSOR_SCALE,
+                activation: Default::default(),
             },
         ),
         (

@@ -25,10 +25,11 @@ use super::kernels::{
     BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedKQuantQ8k, FusedNvfp4, FusedQ4, FusedQ8,
     ScalarF32,
 };
+use super::nvfp4_q8::{FusedNvfp4Q8, NVFP4_Q8_ACTIVATION_BLOCK};
 use super::projector::{CpuParallelism, DenseProjector, WeightRows};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::backend::{
-    KQuantActivation, MatrixClass, WeightFormat, WeightSlice,
+    KQuantActivation, MatrixClass, Nvfp4Activation, WeightFormat, WeightSlice,
 };
 
 /// Q8_K's activation block: one f32 scale per this many elements. A
@@ -74,6 +75,11 @@ pub enum PhysicalProjectionPlan {
     /// representation with no execution path cannot be measured, and
     /// before this arm every NVFP4 backend was a device backend.
     FusedNvfp4,
+    /// The same stored NVFP4 pack against a **Q8 activation**, one scale
+    /// per 16-element group, with an exact int32 sum per group
+    /// (NVFP4-Q8-1). Reached by OBSERVATION of the resident binding, which
+    /// the `production-nvfp4-q8` provider pins; never chosen by a policy.
+    FusedNvfp4Q8,
     /// A stored ggml K-quant — Q8_0, Q6_K or Q4_K — executed in place by
     /// the kernel its codec names. PARETO-1's v3 arm.
     ///
@@ -294,6 +300,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ8 | Self::Q8xQ8 => WeightFormat::Q8,
             Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
             Self::FusedNvfp4 => WeightFormat::Nvfp4,
+            Self::FusedNvfp4Q8 => WeightFormat::Nvfp4Q8,
             Self::FusedKQuant => WeightFormat::KQuant,
             Self::FusedKQuantQ8k => WeightFormat::KQuantQ8k,
             Self::FusedFp8Block => WeightFormat::Fp8Block,
@@ -340,6 +347,16 @@ impl PhysicalProjectionPlan {
                 weight: WeightRep::Nvfp4,
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
+            },
+            // One activation scale per NVFP4 group, stated here for
+            // `FusedKQuantQ8k`'s reason: the geometry is the kernel's, not
+            // the process's CPU-5 arm.
+            Self::FusedNvfp4Q8 => Arithmetic {
+                weight: WeightRep::Nvfp4,
+                activation: ActivationRep::Q8 {
+                    span: ScaleSpan::Block(NVFP4_Q8_ACTIVATION_BLOCK),
+                },
+                accumulator: AccumulatorRep::I32,
             },
             Self::FusedKQuant => Arithmetic {
                 weight: WeightRep::KQuant,
@@ -403,6 +420,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ8 => &FusedQ8,
             Self::FusedQ4 => &FusedQ4,
             Self::FusedNvfp4 => &FusedNvfp4,
+            Self::FusedNvfp4Q8 => &FusedNvfp4Q8,
             Self::FusedKQuant => &FusedKQuant,
             Self::FusedKQuantQ8k => &FusedKQuantQ8k,
             Self::FusedFp8Block => &FusedFp8Block,
@@ -530,11 +548,14 @@ impl PhysicalProjectionPlan {
                 ArithmeticArm::Q4TimesQ8 => Self::Q4xQ8,
                 _ => Self::FusedQ4,
             },
-            // No integer arm consumes NVFP4: its two scale levels are not
-            // expressible as the single per-block f32 the SDOT paths
-            // assume, so there is one kernel and the arm does not enter
-            // into it.
-            WeightRows::Nvfp4 { .. } => Self::FusedNvfp4,
+            // No CPU-5 integer arm consumes NVFP4: its two scale levels are
+            // not expressible as the single per-block f32 those SDOT paths
+            // assume, so the arm does not enter into it. The binding does:
+            // a pack bound for a Q8 activation runs NVFP4-Q8-1's kernel.
+            WeightRows::Nvfp4 { activation, .. } => match activation {
+                Nvfp4Activation::F32 => Self::FusedNvfp4,
+                Nvfp4Activation::Q8 => Self::FusedNvfp4Q8,
+            },
             // One kernel per codec and no integer arm, so the bytes
             // determine execution outright — and the codec they name
             // travels with them rather than with the plan.

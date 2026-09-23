@@ -26,6 +26,7 @@ pub mod executor;
 pub mod integer;
 pub mod kernels;
 pub mod ledger;
+pub mod nvfp4_q8;
 pub mod physical;
 pub mod projector;
 pub mod replay;

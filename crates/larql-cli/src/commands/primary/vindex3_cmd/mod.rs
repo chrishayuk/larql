@@ -123,6 +123,11 @@ pub enum ExecBackend {
     /// declaration; [`Self::ProductionQ4k`] keeps its f32-activation
     /// meaning.
     ProductionQ4kQ8k,
+    /// The same compiled NVFP4 pack as [`Self::ProductionNvfp4`], executed
+    /// against a **Q8 activation** with integer dot products (NVFP4-Q8-1,
+    /// `docs/nvfp4-q8-1.md`). Lossy in the activation by declaration;
+    /// [`Self::ProductionNvfp4`] keeps its f32-activation meaning.
+    ProductionNvfp4Q8,
     /// GPU matmuls via `larql-compute-metal` (rung 1: matrix work on
     /// the device, elementwise glue on the CPU).
     #[cfg(all(feature = "gpu", target_os = "macos"))]

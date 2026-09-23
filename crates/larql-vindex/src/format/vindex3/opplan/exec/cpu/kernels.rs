@@ -231,6 +231,7 @@ impl DenseProjector for FusedNvfp4 {
             packed,
             scales,
             tensor_scale,
+            ..
         } = weight_rows
         else {
             panic!("the fused nvfp4 kernel consumes nvfp4 weights only");
@@ -269,7 +270,7 @@ pub(super) fn e4m3_steps() -> &'static [f32; 256] {
 /// E2M1 codes as TWICE their value, so every entry is an exact integer:
 /// `0, 0.5, 1, 1.5, 2, 3, 4, 6` and their negatives, doubled. The group
 /// sum is halved back when its scale is applied.
-const E2M1_DOUBLED: [i8; 16] = [0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12];
+pub(super) const E2M1_DOUBLED: [i8; 16] = [0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12];
 
 /// One row's dot product against its NVFP4 codes.
 #[inline]

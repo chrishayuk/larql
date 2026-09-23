@@ -260,7 +260,9 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         WeightFormat::F32 => Some("F32"),
         WeightFormat::Bf16 => Some("BF16"),
         WeightFormat::F16 => Some("F16"),
-        WeightFormat::Nvfp4 => Some("NVFP4"),
+        // The Q8-activation binding is the same stored pack, so the same
+        // codec answers to it.
+        WeightFormat::Nvfp4 | WeightFormat::Nvfp4Q8 => Some("NVFP4"),
         WeightFormat::Mxfp4 => Some("MXFP4"),
         // Runtime re-quantisations of a float source: no stored codec.
         WeightFormat::Q8 | WeightFormat::Q4 => None,

@@ -117,6 +117,15 @@ pub enum WeightFormat {
     /// size worth nothing and the scale format worth 1.27x in relative RMS
     /// and 1.7x in worst-element error.
     Nvfp4,
+    /// The same stored NVFP4 pack as [`Self::Nvfp4`], bound to run against a
+    /// **Q8 activation** (NVFP4-Q8-1, `docs/nvfp4-q8-1.md`).
+    ///
+    /// Byte-for-byte the same residency, and like [`Self::KQuantQ8k`] a
+    /// separate format only because the executor OBSERVES its kernel from
+    /// what is resident: the activation form is fixed at load, by the
+    /// realization the provider pinned. Stored packs only; nothing is
+    /// quantised at load.
+    Nvfp4Q8,
     /// A stored ggml K-quant pack — Q8_0, Q6_K or Q4_K — kept as the
     /// container holds it and executed in place by the codec's kernel.
     ///
@@ -171,6 +180,19 @@ pub enum KQuantActivation {
     /// per 256), multiplied by the integer-dot `q4k_q8k` family. Lossy in
     /// the activation, by declaration.
     Q8k,
+}
+
+/// The activation form a stored NVFP4 pack is bound to run against, fixed
+/// at load from the pinned realization.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Nvfp4Activation {
+    /// f32 activation: FP4 codes widened and multiplied in f32.
+    #[default]
+    F32,
+    /// The activation quantised once per call to int8, one scale per
+    /// 16-element NVFP4 group, and multiplied by an integer dot product.
+    /// The weight side stays exact; lossy in the activation, by declaration.
+    Q8,
 }
 
 /// Which matrix a format question is about. Formats are declared per
@@ -261,6 +283,7 @@ pub enum WeightSlice<'a> {
         packed: &'a [u8],
         scales: &'a [u8],
         tensor_scale: f32,
+        activation: Nvfp4Activation,
     },
     /// A stored ggml K-quant block stream, still compact, with the codec
     /// that names its layout. Scales live inside the blocks, so this is
@@ -425,6 +448,7 @@ impl<'a> WeightSlice<'a> {
                 packed,
                 scales,
                 tensor_scale,
+                activation,
             } => {
                 // Groups run along the input axis and the group size is
                 // the format's, not a policy's: `k/16` scale bytes and
@@ -445,6 +469,7 @@ impl<'a> WeightSlice<'a> {
                         packed,
                         scales,
                         tensor_scale: *tensor_scale,
+                        activation: *activation,
                     }),
                     _ => Err(short(packed.len() * 2)),
                 }

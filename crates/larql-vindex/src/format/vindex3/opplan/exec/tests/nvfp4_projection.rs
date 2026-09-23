@@ -62,6 +62,7 @@ fn the_fused_nvfp4_arm_matches_decode_then_multiply() {
             packed: &matrix.packed,
             scales: &matrix.scales,
             tensor_scale: matrix.tensor_scale,
+            activation: Default::default(),
         },
         &x,
         &mut fused,

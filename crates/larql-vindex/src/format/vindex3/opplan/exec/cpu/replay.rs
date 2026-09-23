@@ -36,7 +36,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use super::super::backend::KQuantActivation;
+use super::super::backend::{KQuantActivation, Nvfp4Activation};
 use super::executor::CpuExecutor;
 use super::physical::PhysicalProjectionPlan;
 use super::projector::WeightRows;
@@ -95,6 +95,9 @@ pub struct Captured {
     /// blocks through the f32 kernel would price a kernel the decode never
     /// ran, the substitution this harness exists to rule out.
     kquant_activation: KQuantActivation,
+    /// Which arithmetic the NVFP4 call ran, for the same reason: the
+    /// f32-activation kernel over the same bytes is a different kernel.
+    nvfp4_activation: Nvfp4Activation,
     /// Fine-grained FP8's tile and grid, and where the slab starts
     /// within its first tile.
     ///
@@ -179,6 +182,7 @@ impl Captured {
                 packed: std::slice::from_raw_parts(p as *const u8, n),
                 scales: std::slice::from_raw_parts(s as *const u8, m),
                 tensor_scale: self.tensor_scale,
+                activation: self.nvfp4_activation,
             },
             Kind::KQuant => WeightRows::KQuant {
                 blocks: std::slice::from_raw_parts(p as *const u8, n),
@@ -273,6 +277,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
     let mut tensor_scale = 0.0f32;
     let mut codec = None;
     let mut kquant_activation = KQuantActivation::F32;
+    let mut nvfp4_activation = Nvfp4Activation::F32;
     let mut fp8 = None;
     let (kind, primary, secondary, tertiary, block) = match weight {
         WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
@@ -310,8 +315,10 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
             packed,
             scales,
             tensor_scale: ts,
+            activation,
         } => {
             tensor_scale = ts;
+            nvfp4_activation = activation;
             (
                 Kind::Nvfp4,
                 (packed.as_ptr() as usize, packed.len()),
@@ -373,6 +380,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
         tensor_scale,
         codec,
         kquant_activation,
+        nvfp4_activation,
         fp8,
         primary,
         secondary,

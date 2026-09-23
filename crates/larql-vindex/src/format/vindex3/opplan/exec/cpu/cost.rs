@@ -85,6 +85,9 @@ pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> Option<f64> {
         // Unmeasured: Q8K-ACT-1 measures it, and its result is not a
         // harness rate until that experiment has adjudicated.
         PhysicalProjectionPlan::FusedKQuantQ8k => None,
+        // Unmeasured for the same reason: NVFP4-Q8-1 measures it, and a
+        // forecast is not a rate until that experiment has adjudicated.
+        PhysicalProjectionPlan::FusedNvfp4Q8 => None,
         // Unpriced, deliberately, and not by omission: no harness has run
         // this kernel at a rate yet. Quoting a number here would let a
         // roofline claim a throughput nothing measured — the FP8 rung's

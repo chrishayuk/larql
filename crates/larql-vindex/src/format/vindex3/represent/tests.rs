@@ -115,6 +115,7 @@ fn compiled_bytes_equal_what_the_loader_would_have_quantised() {
                 packed: want_packed,
                 scales: want_scales,
                 tensor_scale: want_scale,
+                ..
             } = &loaded
             else {
                 panic!("asked for NVFP4, got another format");
@@ -694,11 +695,13 @@ fn stored_and_transient_bind_identical_weights() {
             packed: sp,
             scales: ss,
             tensor_scale: st,
+            ..
         },
         LoadedWeight::Nvfp4 {
             packed: tp,
             scales: ts,
             tensor_scale: tt,
+            ..
         },
     ) = (&stored, &transient)
     else {
@@ -1155,11 +1158,13 @@ fn a_mixed_precision_map_runs_identically_on_both_arms() {
                     packed: p1,
                     scales: s1,
                     tensor_scale: t1,
+                    ..
                 },
                 LoadedWeight::Nvfp4 {
                     packed: p2,
                     scales: s2,
                     tensor_scale: t2,
+                    ..
                 },
             ) => {
                 assert!(!t.name.contains("q_proj"), "{} should be protected", t.name);

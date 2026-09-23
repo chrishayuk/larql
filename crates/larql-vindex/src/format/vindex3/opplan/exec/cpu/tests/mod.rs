@@ -12,6 +12,7 @@ mod kquant_plan;
 mod kquant_q8k;
 mod ledger;
 mod nvfp4_kernel;
+mod nvfp4_q8;
 mod nvfp4_slab;
 mod physical;
 mod projection_cost;

@@ -209,10 +209,13 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
                          geometry, or out of memory"
                     ))
                 }),
+            // The device kernel reads the codes; the activation binding is a
+            // CPU realization, and no device class table ever pins it.
             WeightSlice::Nvfp4 {
                 packed,
                 scales,
                 tensor_scale,
+                ..
             } => device
                 .nvfp4_gemv(packed, scales, tensor_scale, x, out_dim, in_dim)
                 .ok_or_else(|| {
@@ -291,6 +294,7 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
                     packed,
                     scales,
                     tensor_scale,
+                    ..
                 } => Some((packed, scales, tensor_scale, n, k)),
                 _ => None,
             })
