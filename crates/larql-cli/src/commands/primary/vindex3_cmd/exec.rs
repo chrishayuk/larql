@@ -44,10 +44,10 @@ use super::super::shannon_trace::dump::{
 };
 use larql_inference::vindex3::OpenedComponent;
 
+use super::plugins::Plugins;
 use super::prepare::{
     parse_representation_source, prepare, with_plan_backend, BackendVisitor, ENGINE_PREFIX,
 };
-use super::plugins::Plugins;
 use super::ExecArgs;
 
 /// Extra planes beyond the layer table, matching

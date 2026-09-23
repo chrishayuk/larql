@@ -209,7 +209,15 @@ mod tests {
 
     #[test]
     fn malformed_lowering_identities_refuse() {
-        for bad in ["", "family", "family/v", "family/vx", "/v1", "fam ily/v1", "f/v0"] {
+        for bad in [
+            "",
+            "family",
+            "family/v",
+            "family/vx",
+            "/v1",
+            "fam ily/v1",
+            "f/v0",
+        ] {
             assert!(parse_lowering_identity(bad).is_err(), "{bad}");
         }
     }

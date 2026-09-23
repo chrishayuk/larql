@@ -47,10 +47,10 @@ use larql_vindex::tokenizers::Tokenizer;
 
 use super::run_cmd::{KvCacheKind, RunArgs};
 use super::vindex3_cmd::decode::{greedy_decode, DecodeReport, Flow};
+use super::vindex3_cmd::plugins::Plugins;
 use super::vindex3_cmd::prepare::{
     prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT, ENGINE_PREFIX,
 };
-use super::vindex3_cmd::plugins::Plugins;
 use super::vindex3_cmd::ExecBackend;
 
 mod inputs;

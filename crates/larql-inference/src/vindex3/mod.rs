@@ -61,7 +61,8 @@ pub use larql_vindex::format::vindex3::opplan::exec::lowering::{
 };
 pub use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 pub use runtime::{
-    open_component, open_component_in, OpenPolicy, OpenedComponent, PreparedVindex3, Vindex3Runtime};
+    open_component, open_component_in, OpenPolicy, OpenedComponent, PreparedVindex3, Vindex3Runtime,
+};
 pub use session::{LogitsSession, Vindex3Session};
 
 pub use explain::{

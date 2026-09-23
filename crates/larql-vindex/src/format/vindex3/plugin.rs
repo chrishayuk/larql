@@ -153,6 +153,8 @@ mod tests {
         assert_eq!(abi_compatible(abi()), !abi().ends_with("commit unknown"));
         assert!(!abi_compatible(""));
         assert!(!abi_compatible(&format!("{} ", abi())));
-        assert!(!abi_compatible("larql-plugin/1 larql-vindex/0.0.0 (rustc x) commit unknown"));
+        assert!(!abi_compatible(
+            "larql-plugin/1 larql-vindex/0.0.0 (rustc x) commit unknown"
+        ));
     }
 }
