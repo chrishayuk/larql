@@ -55,6 +55,8 @@ mod gwread1_replay;
 mod gwsup1_readout;
 #[path = "gwv2.rs"]
 mod gwv2;
+#[path = "gwstate1.rs"]
+mod gwstate1;
 #[path = "observatory_heads.rs"]
 mod heads;
 #[path = "observatory_token_map.rs"]
@@ -411,6 +413,9 @@ fn main() -> Result<()> {
     let v2_args: Vec<String> = std::env::args().skip(1).collect();
     if v2_args.first().is_some_and(|arg| arg == "--gwv2") {
         return gwv2::run(&v2_args[1..]);
+    }
+    if v2_args.first().is_some_and(|arg| arg == "--gwstate1") {
+        return gwstate1::run(&v2_args[1..]);
     }
     let mut args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--gw0-batch") {
