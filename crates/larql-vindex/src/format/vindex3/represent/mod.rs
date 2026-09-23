@@ -86,6 +86,7 @@ pub mod source_bank;
 pub mod source_identity;
 pub mod state;
 pub mod statistic;
+pub mod token_bank;
 pub mod view;
 
 use std::collections::{BTreeMap, BTreeSet};
