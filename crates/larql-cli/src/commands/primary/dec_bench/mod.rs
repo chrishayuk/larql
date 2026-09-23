@@ -14,6 +14,9 @@
 //!   drift_runtime  — teacher-forced scoring driver (I/O, excluded).
 //!   pulse          — `dec/*` JSONL emission (pure, gated).
 //!   output         — full JSON run record (pure, gated).
+//!   window_union   — BW11-1 same-sequence consecutive-position expert-union
+//!                    ceiling: parsing, windowing, percentiles (pure, gated).
+//!   window_union_runtime — trace-file driver (plain file I/O, tempfile-testable).
 
 pub mod args;
 pub mod capture_format;
@@ -24,6 +27,8 @@ pub mod output;
 pub mod pulse;
 pub mod replay;
 mod replay_runtime;
+pub mod window_union;
+mod window_union_runtime;
 
 pub use args::DecBenchArgs;
 
@@ -32,5 +37,6 @@ pub fn run(args: DecBenchArgs) -> Result<(), Box<dyn std::error::Error>> {
         args::DecBenchCmd::Capture(a) => capture_runtime::run_capture(&a),
         args::DecBenchCmd::Replay(a) => replay_runtime::run_replay(&a),
         args::DecBenchCmd::Drift(a) => drift_runtime::run_drift(&a),
+        args::DecBenchCmd::WindowUnion(a) => window_union_runtime::run_window_union(&a),
     }
 }
