@@ -226,6 +226,7 @@ pub(super) fn summarise(run: &TimedRun<'_>) -> BenchRow {
 
 /// Ids the reset witness compares: the prefill argmax, and the id the
 /// first decode step produces.
+#[cfg(any(test, all(feature = "gpu", target_os = "macos")))]
 const RESET_WITNESS_IDS: usize = 2;
 
 /// Refuse a lowered row whose timed run did not start where a fresh
@@ -237,6 +238,7 @@ const RESET_WITNESS_IDS: usize = 2;
 /// would time a different generation and still print a plausible row.
 /// Compared over the ids both runs produced, so an early EOS shortens
 /// the check rather than failing it.
+#[cfg(any(test, all(feature = "gpu", target_os = "macos")))]
 pub(super) fn check_reset_witness(
     backend: ExecBackend,
     warm: &[u32],
