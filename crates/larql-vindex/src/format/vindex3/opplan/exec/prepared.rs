@@ -3185,8 +3185,10 @@ impl PreparedOperands {
     }
 
     /// Read an already reduced carrier against a previously gathered output
-    /// head.  Final normalisation and the production backend's projection,
-    /// multiplier and softcap are identical to [`Self::readout_carrier`].
+    /// head.  Final normalisation, multiplier and softcap are identical to
+    /// [`Self::readout_carrier`]; the projection is the same backend call over
+    /// fewer rows, so it agrees up to that backend's summation order — equal
+    /// on aarch64, within an ulp on x86 SIMD — not bit for bit in general.
     pub fn readout_carrier_selected<B: PlanBackend + ?Sized>(
         &self,
         backend: &B,

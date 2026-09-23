@@ -2,8 +2,12 @@
 //!
 //! GW lenses read a carrier against a few declared vocabulary rows instead
 //! of the whole head. The authority is the full readout: at every selected
-//! token, the selected readout must equal it bit for bit, and each gathered
-//! row must be that token's row of the resident head.
+//! token, the selected readout must equal it up to summation order, and each
+//! gathered row must be that token's row of the resident head.
+//!
+//! Not bit for bit: a backend may reduce a 3-row matrix and a full-vocabulary
+//! one in different orders (x86 SIMD did, by one ulp; aarch64 did not). The
+//! bound below is that reordering and nothing larger.
 
 use crate::format::vindex3::fixtures::{
     dense_f32_model, encode_fixture_container, DENSE_HIDDEN, DENSE_VOCAB,
@@ -19,6 +23,8 @@ use crate::format::vindex3::opplan::exec::quantise::SUM_BLOCK;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
 
+/// Summation-order headroom between the full and the gathered projection.
+const READOUT_ULPS: u32 = 4;
 /// Declared rows, deliberately out of vocabulary order.
 const SELECTED: [u32; 3] = [17, 3, 60];
 /// A synthetic head for the representations the fixture never makes
@@ -74,10 +80,11 @@ fn assert_selected_is_the_full_head_restricted<B: PlanBackend>(
     let selected = ops.readout_carrier_selected(backend, &x, &head).unwrap();
     assert_eq!(selected.len(), SELECTED.len());
     for (index, &token) in SELECTED.iter().enumerate() {
-        assert_eq!(
-            selected[index].to_bits(),
-            full[token as usize].to_bits(),
-            "{}: token {token}",
+        let (a, b) = (selected[index], full[token as usize]);
+        assert!(
+            a.is_sign_positive() == b.is_sign_positive()
+                && a.to_bits().abs_diff(b.to_bits()) <= READOUT_ULPS,
+            "{}: token {token}: {a} vs {b}",
             backend.name()
         );
     }
