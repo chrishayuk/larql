@@ -365,9 +365,15 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
 
     fn dispatch_stats(&self) -> Option<DispatchStats> {
         use std::sync::atomic::Ordering;
+        let device_clock = self
+            .device
+            .lock()
+            .expect("device dispatch lock")
+            .submission_clock();
         Some(DispatchStats {
             device_nanos: self.device_nanos.load(Ordering::Relaxed),
             submissions: self.submissions.load(Ordering::Relaxed),
+            device_clock,
         })
     }
 

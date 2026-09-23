@@ -162,11 +162,23 @@ pub(super) fn representation_note(
 }
 
 /// Device time over the measured window, as a difference of the
-/// backend's cumulative counters.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// backend's cumulative counters. Each part is present only where the
+/// path measures it, so a row never labels one quantity as another.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct DeviceWindow {
-    pub device_ms: f64,
+    /// Wall ms inside the backend's device calls. `None` on a path with
+    /// no such call: the lowered session commits once per token and the
+    /// host never blocks inside a dispatch.
+    pub call_ms: Option<f64>,
+    /// Submissions the backend counted.
     pub submissions: u64,
+    /// Commit to completion, summed, as the device measured it.
+    pub commit_to_done_ms: Option<f64>,
+    /// The GPU's own execution span, summed.
+    pub gpu_ms: Option<f64>,
+    /// Submissions the device counted, when it counts them. Reported
+    /// beside `submissions` only if the two disagree.
+    pub device_submissions: Option<u64>,
 }
 
 /// One timed V3 generation, before it becomes a row.
@@ -257,16 +269,54 @@ pub(super) fn check_reset_witness(
     ))
 }
 
-/// Device share of a decode token: time inside device calls, the rest
-/// (the interpreter's glue), and submissions per token.
+/// Device share of a decode token, per token.
+///
+/// With a call boundary: time inside device calls, split into host work,
+/// queue latency and GPU execution when the device measures them, and the
+/// rest as the interpreter's glue. Without one: the GPU span and the rest
+/// of the step. Then submissions per token.
 fn format_device_note(device: DeviceWindow, steps: usize, mean_ms: f64) -> String {
-    let per_tok = device.device_ms / steps as f64;
-    format!(
-        "device {:.2} ms/tok + glue {:.2} ms/tok, {:.1} submissions/tok",
-        per_tok,
-        (mean_ms - per_tok).max(0.0),
-        device.submissions as f64 / steps as f64,
-    )
+    let per_tok = |ms: f64| ms / steps as f64;
+    let mut note = match (device.call_ms, device.gpu_ms) {
+        (Some(call), gpu) => {
+            let call = per_tok(call);
+            let split = match (device.commit_to_done_ms, gpu) {
+                (Some(done), Some(gpu)) => {
+                    let (done, gpu) = (per_tok(done), per_tok(gpu));
+                    format!(
+                        " (host {:.2} + queue {:.2} + gpu {:.2})",
+                        (call - done).max(0.0),
+                        (done - gpu).max(0.0),
+                        gpu
+                    )
+                }
+                _ => String::new(),
+            };
+            format!(
+                "device {call:.2} ms/tok{split} + glue {:.2} ms/tok",
+                (mean_ms - call).max(0.0)
+            )
+        }
+        (None, Some(gpu)) => {
+            let gpu = per_tok(gpu);
+            format!(
+                "gpu {gpu:.2} ms/tok + off-gpu {:.2} ms/tok",
+                (mean_ms - gpu).max(0.0)
+            )
+        }
+        (None, None) => String::from("device time not measured"),
+    };
+    note.push_str(&format!(
+        ", {:.1} submissions/tok",
+        device.submissions as f64 / steps as f64
+    ));
+    if let Some(counted) = device
+        .device_submissions
+        .filter(|&n| n != device.submissions)
+    {
+        note.push_str(&format!(" (device counted {counted})"));
+    }
+    note
 }
 
 #[cfg(test)]
@@ -456,8 +506,9 @@ mod tests {
     #[test]
     fn summary_with_no_measured_steps_has_no_rate() {
         let device = DeviceWindow {
-            device_ms: 5.0,
+            call_ms: Some(5.0),
             submissions: 3,
+            ..DeviceWindow::default()
         };
         let row = summarise(&run(&[100.0], Some(device)));
         assert_eq!(row.n_steps, 0);
@@ -470,8 +521,9 @@ mod tests {
     fn summary_splits_device_from_glue() {
         let steps = [100.0, 90.0, 10.0, 10.0];
         let device = DeviceWindow {
-            device_ms: 16.0,
+            call_ms: Some(16.0),
             submissions: 70,
+            ..DeviceWindow::default()
         };
         let row = summarise(&run(&steps, Some(device)));
         assert!(
@@ -486,12 +538,86 @@ mod tests {
     fn glue_never_reads_negative() {
         let note = format_device_note(
             DeviceWindow {
-                device_ms: 30.0,
+                call_ms: Some(30.0),
                 submissions: 1,
+                ..DeviceWindow::default()
             },
             1,
             20.0,
         );
         assert!(note.contains("glue 0.00"), "{note}");
+    }
+
+    #[test]
+    fn a_device_clock_splits_calls_into_host_queue_and_gpu() {
+        // Two steps: 10 ms inside calls, 8 commit-to-done, 3 of it GPU.
+        let note = format_device_note(
+            DeviceWindow {
+                call_ms: Some(20.0),
+                submissions: 274,
+                commit_to_done_ms: Some(16.0),
+                gpu_ms: Some(6.0),
+                device_submissions: Some(274),
+            },
+            2,
+            12.0,
+        );
+        assert!(
+            note.contains(
+                "device 10.00 ms/tok (host 2.00 + queue 5.00 + gpu 3.00) + glue 2.00 ms/tok, \
+                 137.0 submissions/tok"
+            ),
+            "{note}"
+        );
+        assert!(!note.contains("device counted"), "{note}");
+    }
+
+    #[test]
+    fn disagreeing_submission_counts_are_both_reported() {
+        let note = format_device_note(
+            DeviceWindow {
+                call_ms: Some(10.0),
+                submissions: 137,
+                device_submissions: Some(140),
+                ..DeviceWindow::default()
+            },
+            1,
+            12.0,
+        );
+        assert!(
+            note.ends_with("137.0 submissions/tok (device counted 140)"),
+            "{note}"
+        );
+    }
+
+    #[test]
+    fn a_path_without_calls_reports_gpu_not_device() {
+        let note = format_device_note(
+            DeviceWindow {
+                submissions: 64,
+                gpu_ms: Some(768.0),
+                ..DeviceWindow::default()
+            },
+            64,
+            12.5,
+        );
+        assert!(
+            note.starts_with("gpu 12.00 ms/tok + off-gpu 0.50 ms/tok, 1.0 submissions/tok"),
+            "{note}"
+        );
+        assert!(!note.contains("device"), "{note}");
+    }
+
+    #[test]
+    fn an_unmeasured_window_says_so() {
+        let note = format_device_note(
+            DeviceWindow {
+                submissions: 2,
+                ..DeviceWindow::default()
+            },
+            1,
+            5.0,
+        );
+        assert!(note.starts_with("device time not measured"), "{note}");
     }
 }

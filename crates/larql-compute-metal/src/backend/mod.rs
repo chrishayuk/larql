@@ -133,6 +133,9 @@ pub struct MetalBackend {
     /// signatures don't grow an extra arg for a feature only Gemma 4 E2B
     /// uses today.
     pub(crate) ple_inputs: std::sync::Mutex<Option<PleInputBuffer>>,
+    /// Commit-to-done and GPU time of every buffer `commit_and_wait`
+    /// submitted, cumulative for this instance.
+    pub(crate) submission_counters: crate::submission_clock::SubmissionCounters,
     // (rms_norm_q8 / residual_norm{,_q8,_store} — moved into
     //  `NormKernels` (the `norms` field).)
     /// Dedicated row-per-simdgroup f32 gemv for the LM head. Used in
@@ -435,6 +438,7 @@ impl MetalBackend {
             moe_scratch: std::sync::Mutex::new(None),
             moe_descriptor_tables: std::sync::Mutex::new(std::collections::HashMap::new()),
             ple_inputs: std::sync::Mutex::new(None),
+            submission_counters: Default::default(),
             f32_gemv_pipeline,
             f32_argmax_partial_pipeline,
             f32_topk_partial_pipeline,

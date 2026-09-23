@@ -821,6 +821,11 @@ pub struct DispatchStats {
     pub device_nanos: u64,
     /// Device submissions made (one per command buffer).
     pub submissions: u64,
+    /// The device's own account of the buffers it waited on: commit to
+    /// completion, and GPU execution. `None` when the device does not
+    /// measure. With `device_nanos`, it splits a device call into host
+    /// work, queue latency and GPU time.
+    pub device_clock: Option<larql_compute::SubmissionClock>,
 }
 
 /// A shared handle IS the provider it holds: every method, the provided

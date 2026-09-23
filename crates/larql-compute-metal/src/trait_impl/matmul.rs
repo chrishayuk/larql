@@ -158,8 +158,7 @@ impl MatMul for MetalBackend {
             out_bufs.push((out_buf, n));
         }
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:125",
         );
@@ -181,6 +180,10 @@ impl MatMul for MetalBackend {
     /// gemv gives the encoder real work — an encoder with no dispatch
     /// may not trigger residency — and reads two bytes of the first
     /// buffer without writing anywhere a caller can see.
+    fn submission_clock(&self) -> Option<larql_compute::SubmissionClock> {
+        Some(self.submission_counters.snapshot())
+    }
+
     fn wire_resident(&self, buffers: &[&[u8]]) {
         let Some(first) = buffers.first() else {
             return;
@@ -217,8 +220,7 @@ impl MatMul for MetalBackend {
             metal::MTLSize::new(kernel.threads_per_tg, 1, 1),
         );
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:181",
         );
@@ -308,8 +310,7 @@ impl MatMul for MetalBackend {
             out_bufs.push((out_buf, n));
         }
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:269",
         );
@@ -396,8 +397,7 @@ impl MatMul for MetalBackend {
             out_bufs.push((out_buf, n));
         }
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:354",
         );
@@ -483,8 +483,7 @@ impl MetalBackend {
             metal::MTLSize::new(kernel.threads_per_tg, 1, 1),
         );
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:140",
         );
@@ -540,8 +539,7 @@ impl MetalBackend {
 
         let (partial_vals, partial_idxs, n_partials) = self.encode_argmax_partial(enc, &scores, n);
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:194",
         );
@@ -587,8 +585,7 @@ impl MetalBackend {
 
         let (partial_vals, partial_idxs, n_partials) = self.encode_argmax_partial(enc, &scores, n);
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:238",
         );
@@ -802,8 +799,7 @@ impl MetalBackend {
 
         let (partial_vals, partial_idxs, num_tgs) = self.encode_topk_partial(enc, &scores, n);
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:450",
         );
@@ -853,8 +849,7 @@ impl MetalBackend {
             metal::MTLSize::new(kh.threads_per_tg, 1, 1),
         );
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:498",
         );
@@ -898,8 +893,7 @@ impl MetalBackend {
             metal::MTLSize::new(kernel.threads_per_tg, 1, 1),
         );
         enc.end_encoding();
-        cmd.commit();
-        crate::cb_status::wait_or_abort(
+        self.commit_and_wait(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/matmul.rs:530",
         );

@@ -37,7 +37,7 @@ pub use capability::Capability;
 pub use decode::{DecodeBackend, DecodeHeadPlan, DecodeStateDump, ProfileTimings, StateDumpMask};
 pub use factory::{backend_from_spec, BackendCtor, BackendKind, BackendSelectError};
 pub use helpers::{dot_proj_gpu, matmul_gpu};
-pub use matmul::{MatMul, MatMulOp};
+pub use matmul::{MatMul, MatMulOp, SubmissionClock};
 pub use quant_matvec::QuantMatVec;
 
 /// Hardware compute backend — the umbrella trait every caller binds.

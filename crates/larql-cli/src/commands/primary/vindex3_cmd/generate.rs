@@ -114,6 +114,23 @@ pub(super) fn run_generate<B: PlanBackend>(
                 per_token * 1e6
                     / (stats.submissions as f64 / (report.decode_tokens + prompt.len()) as f64),
             );
+            // The device's own clock splits a call three ways: host work
+            // around the submission, queue latency (commit to completion
+            // that is not GPU execution), and the GPU's own span.
+            if let Some(clock) = stats.device_clock {
+                let positions = (report.decode_tokens + prompt.len()) as f64;
+                let ms = |nanos: u64| nanos as f64 / 1e6 / positions;
+                let done = ms(clock.commit_to_done_nanos);
+                let gpu = ms(clock.gpu_nanos);
+                println!(
+                    "  split: host {:.1} + queue {:.1} + gpu {:.1} ms/token \
+                     ({} submissions counted by the device)",
+                    (per_token * 1e3 - done).max(0.0),
+                    (done - gpu).max(0.0),
+                    gpu,
+                    clock.submissions,
+                );
+            }
             println!(
                 "glue:   {:.0} ms/token (everything not inside a device call)",
                 (report.mean_seconds_per_token - per_token) * 1e3,
