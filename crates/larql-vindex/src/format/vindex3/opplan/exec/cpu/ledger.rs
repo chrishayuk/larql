@@ -113,7 +113,19 @@ pub struct PlanTally {
     pub nanos_many: u64,
 }
 
+/// Nanoseconds per second, and bytes per decimal gigabyte, for rates.
+const NANOS_PER_SECOND: f64 = 1e9;
+const BYTES_PER_GB: f64 = 1e9;
+
 impl PlanTally {
+    /// The plan's effective streaming rate in decimal GB/s: bytes read over
+    /// the plan's OWN projection time. `None` when no time was recorded, so
+    /// an unmeasured plan cannot read as a rate of zero.
+    pub fn rate_gbps(&self) -> Option<f64> {
+        (self.nanos > 0)
+            .then(|| (self.bytes as f64 / BYTES_PER_GB) / (self.nanos as f64 / NANOS_PER_SECOND))
+    }
+
     /// Positions served per call — the REALISED group width.
     ///
     /// The number that turns a disappointing CPU-7C clock into a

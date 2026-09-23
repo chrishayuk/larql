@@ -297,12 +297,17 @@ fn report_projections(seconds: f64, tallies: &[(PhysicalProjectionPlan, PlanTall
         if t.calls == 0 {
             continue;
         }
+        let rate = t
+            .rate_gbps()
+            .map_or_else(|| "unmeasured".to_string(), |r| format!("{r:.1} GB/s"));
         println!(
-            "  {:<12} {:>8.2} GB over {:>4} calls, {:>5} worker slabs   {}",
+            "  {:<12} {:>8.2} GB over {:>4} calls, {:>5} worker slabs, {:>7.1} ms, {:>11}   {}",
             format!("{plan:?}"),
             t.bytes as f64 / 1e9,
             t.calls,
             t.slabs,
+            t.nanos as f64 / 1e6,
+            rate,
             plan.arithmetic(),
         );
     }

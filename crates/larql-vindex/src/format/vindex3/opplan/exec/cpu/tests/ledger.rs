@@ -339,3 +339,18 @@ fn every_site_has_a_distinct_name() {
     bits.dedup();
     assert_eq!(bits.len(), 4, "two classes share a mask bit");
 }
+
+/// A plan's rate is its bytes over its own time, and a plan with no
+/// recorded time has no rate rather than a rate of zero.
+#[test]
+fn a_plan_rate_is_its_bytes_over_its_own_time() {
+    use crate::format::vindex3::opplan::exec::cpu::ledger::PlanTally;
+    let tally = PlanTally {
+        bytes: 3_000_000_000,
+        nanos: 250_000_000,
+        ..PlanTally::default()
+    };
+    let rate = tally.rate_gbps().expect("a timed plan has a rate");
+    assert!((rate - 12.0).abs() < 1e-9, "{rate}");
+    assert_eq!(PlanTally::default().rate_gbps(), None);
+}
