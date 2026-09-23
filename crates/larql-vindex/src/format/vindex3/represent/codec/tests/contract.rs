@@ -273,6 +273,9 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         // codec that answers to it is the one registered under the
         // safetensors dtype the encoder carries through.
         WeightFormat::Fp8Block => Some("F8_E4M3"),
+        // Generic pass-through: any codec's label may request this
+        // format, so no single label answers to it here.
+        WeightFormat::CodecOwned => None,
     }
 }
 

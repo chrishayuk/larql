@@ -23,6 +23,7 @@ mod bf16_zlib_execution;
 mod carrier_entry;
 mod carrier_write;
 mod carrier_write_real;
+mod codec_owned_weight;
 mod compact_consumption;
 mod composed_floor;
 mod continuation;

@@ -239,6 +239,14 @@ pub enum LoadedWeight {
         /// pinned realization — see [`WeightFormat::KQuantQ8k`].
         activation: KQuantActivation,
     },
+    /// The stored bytes for an operand whose representation this loader
+    /// does not know how to widen, quantise, or otherwise interpret —
+    /// read and kept exactly as [`WeightFormat::CodecOwned`] promises,
+    /// with a copy of the operand's own stored representation name.
+    CodecOwned {
+        bytes: Vec<u8>,
+        label: String,
+    },
 }
 
 pub mod staged;
@@ -283,6 +291,7 @@ impl LoadedWeight {
             LoadedWeight::Fp8Block { codes, scales, .. } => {
                 codes.as_slice().len() + scales.len() * 4
             }
+            LoadedWeight::CodecOwned { bytes, .. } => bytes.len(),
         }
     }
 
@@ -332,6 +341,7 @@ impl LoadedWeight {
                 of(codes.as_slice().as_ptr(), codes.as_slice().len()),
                 of(scales.as_ptr().cast::<u8>(), scales.len() * 4),
             ],
+            LoadedWeight::CodecOwned { bytes, .. } => vec![of(bytes.as_ptr(), bytes.len())],
         }
     }
 
@@ -349,7 +359,8 @@ impl LoadedWeight {
             | LoadedWeight::Mxfp4 { .. }
             | LoadedWeight::Nvfp4 { .. }
             | LoadedWeight::KQuant { .. }
-            | LoadedWeight::Fp8Block { .. } => 0,
+            | LoadedWeight::Fp8Block { .. }
+            | LoadedWeight::CodecOwned { .. } => 0,
         }
     }
 
@@ -372,7 +383,8 @@ impl LoadedWeight {
             LoadedWeight::F32(_)
             | LoadedWeight::Q8 { .. }
             | LoadedWeight::Q4 { .. }
-            | LoadedWeight::Mapped { .. } => 0,
+            | LoadedWeight::Mapped { .. }
+            | LoadedWeight::CodecOwned { .. } => 0,
             LoadedWeight::Bf16(_) | LoadedWeight::F16(_) => 1,
             LoadedWeight::Mxfp4 { .. } | LoadedWeight::Nvfp4 { .. } => 2,
             LoadedWeight::KQuant { .. } => 0,
@@ -399,6 +411,7 @@ impl LoadedWeight {
                 KQuantActivation::Q8k => WeightFormat::KQuantQ8k,
             },
             LoadedWeight::Fp8Block { .. } => WeightFormat::Fp8Block,
+            LoadedWeight::CodecOwned { .. } => WeightFormat::CodecOwned,
         }
     }
 
@@ -483,6 +496,10 @@ impl LoadedWeight {
                 blocks,
                 codec: *codec,
                 activation: *activation,
+            },
+            LoadedWeight::CodecOwned { bytes, label } => WeightSlice::CodecOwned {
+                bytes,
+                label: label.as_str(),
             },
         }
     }
@@ -706,6 +723,18 @@ pub fn load_weight(
         }
         WeightFormat::KQuant => kquant_from_stored(store, operand, KQuantActivation::F32),
         WeightFormat::KQuantQ8k => kquant_from_stored(store, operand, KQuantActivation::Q8k),
+        // Generic pass-through: whatever the container recorded as this
+        // operand's stored representation, read and kept as bytes plus
+        // its own name. No dtype is judged, no conversion attempted —
+        // that is the point of the format, and why it is the only arm
+        // here with no per-dtype match on `raw.dtype`.
+        WeightFormat::CodecOwned => {
+            let raw = store.load_raw(operand)?;
+            Ok(LoadedWeight::CodecOwned {
+                bytes: raw.bytes,
+                label: raw.dtype,
+            })
+        }
         WeightFormat::F16 => {
             let raw = store.load_raw(operand)?;
             // A compiled NVFP4 pack has no source bytes to narrow; it binds

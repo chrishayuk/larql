@@ -396,8 +396,12 @@ pub(super) fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// The variant name of every matrix the operands expose.
-pub(super) fn slice_kinds(operands: &FfnOperands) -> Vec<&'static str> {
-    operands.weight_slices().iter().map(slice_kind).collect()
+pub(super) fn slice_kinds(operands: &FfnOperands) -> Vec<String> {
+    operands
+        .weight_slices()
+        .iter()
+        .map(|s| slice_kind(s).to_string())
+        .collect()
 }
 
 /// The two MXFP4 streams of every matrix, for byte comparison.
@@ -417,6 +421,6 @@ pub(super) fn mxfp4_bytes(operands: &FfnOperands) -> Vec<(Vec<u8>, Vec<u8>)> {
 /// Delegates rather than matching again: this used to be a second copy of
 /// the same table, and a copy is one variant away from disagreeing with
 /// the one the refusals print.
-pub(super) fn slice_kind(slice: &WeightSlice<'_>) -> &'static str {
+pub(super) fn slice_kind<'a>(slice: &WeightSlice<'a>) -> &'a str {
     slice.representation()
 }

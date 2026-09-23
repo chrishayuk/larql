@@ -25,7 +25,7 @@ use super::kernels::{
     BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedKQuantQ8k, FusedNvfp4, FusedQ4, FusedQ8,
     ScalarF32,
 };
-use super::projector::{DenseProjector, WeightRows};
+use super::projector::{CpuParallelism, DenseProjector, WeightRows};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::backend::{
     KQuantActivation, MatrixClass, WeightFormat, WeightSlice,
@@ -117,6 +117,16 @@ pub enum PhysicalProjectionPlan {
     /// arm: it isolates activation quantisation from weight
     /// quantisation, and is never chosen for speed.
     Bf16xQ8,
+    /// A kernel this crate does not implement, over
+    /// [`WeightFormat::CodecOwned`](super::super::backend::WeightFormat::CodecOwned)
+    /// bytes. Nothing in `larql-vindex` ever pins or executes this
+    /// variant — [`PlanBackend::select`](super::super::backend::PlanBackend::select)
+    /// exists precisely so an external backend can pin its OWN kernel
+    /// without this crate knowing what it is; this arm exists only so
+    /// the enum has somewhere to name that possibility, the same reason
+    /// [`WeightFormat::CodecOwned`](super::super::backend::WeightFormat::CodecOwned)
+    /// does.
+    CodecOwned,
 }
 
 /// **Which arithmetic the projections run in**, for the whole process.
@@ -253,6 +263,28 @@ pub fn arithmetic_arm() -> ArithmeticArm {
     })
 }
 
+/// [`PhysicalProjectionPlan::CodecOwned`]'s kernel slot. This crate never
+/// selects that plan (only an external `PlanBackend` pins it, and such a
+/// backend runs its own arithmetic in its own `project`/`ffn`/
+/// `output_head` methods without ever calling `PhysicalProjectionPlan::
+/// kernel`), so this exists only to keep [`PhysicalProjectionPlan::kernel`]
+/// total; reaching it is an interpreter bug, not a codec's doing, and it
+/// says so rather than guessing at an answer.
+struct NoInTreeKernel;
+
+impl DenseProjector for NoInTreeKernel {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::Serial
+    }
+
+    fn project_rows(&self, _weight_rows: WeightRows<'_>, _x: &[f32], _out: &mut [f32]) {
+        unreachable!(
+            "PhysicalProjectionPlan::CodecOwned has no in-tree kernel; an external PlanBackend \
+             must pin this plan and run its own arithmetic without calling `kernel()`"
+        );
+    }
+}
+
 impl PhysicalProjectionPlan {
     /// The representation the loader must make resident for this plan.
     pub fn format(self) -> WeightFormat {
@@ -265,6 +297,7 @@ impl PhysicalProjectionPlan {
             Self::FusedKQuant => WeightFormat::KQuant,
             Self::FusedKQuantQ8k => WeightFormat::KQuantQ8k,
             Self::FusedFp8Block => WeightFormat::Fp8Block,
+            Self::CodecOwned => WeightFormat::CodecOwned,
         }
     }
 
@@ -345,6 +378,14 @@ impl PhysicalProjectionPlan {
                 activation: int8_act,
                 accumulator: AccumulatorRep::I32,
             },
+            // Never pinned by this crate's own `select` — an external
+            // backend that pins it states its own arithmetic, which this
+            // enum has no field to carry.
+            Self::CodecOwned => Arithmetic {
+                weight: WeightRep::CodecOwned,
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
         }
     }
 
@@ -368,6 +409,7 @@ impl PhysicalProjectionPlan {
             Self::Q8xQ8 => &Q8xQ8,
             Self::Q4xQ8 => &Q4xQ8,
             Self::Bf16xQ8 => &Bf16xQ8,
+            Self::CodecOwned => &NoInTreeKernel,
         }
     }
 

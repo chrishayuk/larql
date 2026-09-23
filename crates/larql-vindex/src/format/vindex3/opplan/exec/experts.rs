@@ -1041,6 +1041,15 @@ fn from_f32(
             "tensor `{name}`: compact residency needs the stored bytes, and this expert path \
              has already widened to f32"
         ))),
+        // Same reasoning as Bf16/Q8/KQuant above, and sharper: this
+        // format's bytes are whatever a codec's own encoder produced, and
+        // this path has neither a codec to ask nor the stored bytes left
+        // to keep — only an already-widened f32 image.
+        WeightFormat::CodecOwned => Err(VindexError::Parse(format!(
+            "expert bank `{name}` cannot bind codec-owned bytes: the bank is widened to f32 on \
+             the way in, so there are no stored bytes left to hand back, and this loader has no \
+             codec to re-encode them through"
+        ))),
     }
 }
 

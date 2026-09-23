@@ -144,6 +144,19 @@ pub enum WeightFormat {
     /// Fine-grained (block-wise) FP8: the checkpoint's own E4M3 codes
     /// against a two-dimensional grid of f32 scales.
     Fp8Block,
+    /// The stored bytes themselves, uninterpreted, for whichever codec
+    /// the operand's representation names — carried with a copy of that
+    /// name, never decoded, widened, or otherwise judged here.
+    ///
+    /// Like [`Self::KQuant`], the format names a capability, not a
+    /// member: which codec produced the bytes is a property of the
+    /// operand, read from the container and handed back alongside them.
+    /// This loader has no registry of what any codec's bytes mean and
+    /// asks none — a backend requesting this format is the only party
+    /// that can interpret what comes back, by matching the returned name
+    /// itself. Only ever declared by a backend prepared to do that; a
+    /// backend that says nothing here never receives it.
+    CodecOwned,
 }
 
 /// The activation form a stored K-quant is bound to run against — fixed
@@ -266,6 +279,15 @@ pub enum WeightSlice<'a> {
         block_rows: usize,
         block_cols: usize,
         scale_cols: usize,
+    },
+    /// The stored bytes themselves, exactly as [`WeightFormat::CodecOwned`]
+    /// promises: one stream, one name, zero interpretation. `label` is
+    /// the operand's own stored representation name (a container's
+    /// `dtype`/encoding field) — a plain string this loader read and
+    /// passed through, not a type it knows the meaning of.
+    CodecOwned {
+        bytes: &'a [u8],
+        label: &'a str,
     },
 }
 
@@ -511,7 +533,7 @@ impl<'a> WeightSlice<'a> {
     /// This slice's representation, for diagnostics. Never dispatched on
     /// — a backend that branched on the name instead of the variant would
     /// be one `match` away from silently accepting a format it cannot run.
-    pub fn representation(&self) -> &'static str {
+    pub fn representation(&self) -> &'a str {
         match self {
             WeightSlice::F32(_) => "f32",
             WeightSlice::Bf16(_) => "bf16",
@@ -522,6 +544,7 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::Nvfp4 { .. } => "nvfp4",
             WeightSlice::KQuant { codec, .. } => codec.name,
             WeightSlice::Fp8Block { .. } => "fp8-block",
+            WeightSlice::CodecOwned { label, .. } => label,
         }
     }
 
@@ -535,7 +558,8 @@ impl<'a> WeightSlice<'a> {
             | WeightSlice::Mxfp4 { .. }
             | WeightSlice::Nvfp4 { .. }
             | WeightSlice::KQuant { .. }
-            | WeightSlice::Fp8Block { .. } => Err(VindexError::Parse(
+            | WeightSlice::Fp8Block { .. }
+            | WeightSlice::CodecOwned { .. } => Err(VindexError::Parse(
                 "backend declared f32 weights but was handed another format — interpreter \
                  loaded the wrong representation"
                     .to_string(),

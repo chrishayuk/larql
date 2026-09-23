@@ -73,6 +73,11 @@ pub enum WeightRep {
     /// arithmetic is exact against what the reference loader would have
     /// materialised.
     Fp8Block,
+    /// Whatever an external kernel reads from
+    /// [`WeightSlice::CodecOwned`](super::super::backend::WeightSlice::CodecOwned) —
+    /// this crate has no arithmetic to state, since it has no kernel over
+    /// these bytes at all.
+    CodecOwned,
 }
 
 /// Over how many elements ONE activation scale applies.
@@ -131,6 +136,7 @@ impl fmt::Display for WeightRep {
             Self::Nvfp4 => write!(f, "NVFP4"),
             Self::KQuant => write!(f, "KQUANT"),
             Self::Fp8Block => write!(f, "FP8_BLOCK"),
+            Self::CodecOwned => write!(f, "CODEC_OWNED"),
         }
     }
 }
@@ -210,5 +216,9 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
             PhysicalProjectionPlan::FusedQ4,
             PhysicalProjectionPlan::Q4xQ8,
         ],
+        // One kernel, for the strongest reason yet: this crate has none
+        // of its own over these bytes, so the only plan resident-as-this
+        // makes possible is the one that hands off to an external one.
+        WeightRep::CodecOwned => &[PhysicalProjectionPlan::CodecOwned],
     }
 }
