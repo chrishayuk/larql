@@ -229,3 +229,91 @@ fn an_export_never_writes_over_an_existing_directory() {
         Err(TokenBankError::OutputExists { .. })
     ));
 }
+
+#[test]
+fn an_unreadable_or_malformed_manifest_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        TokenBank::open(&tmp.path().join("absent")),
+        Err(TokenBankError::Io { .. })
+    ));
+    std::fs::write(tmp.path().join(MANIFEST_FILE), b"not json").unwrap();
+    assert!(matches!(
+        TokenBank::open(tmp.path()),
+        Err(TokenBankError::Malformed { .. })
+    ));
+}
+
+#[test]
+fn reading_past_the_last_sample_is_refused() {
+    let f = fixture();
+    let bank = TokenBank::open(&f.bank).unwrap();
+    assert_eq!(bank.dir(), f.bank.as_path());
+    assert!(matches!(
+        bank.read(bank.sample_count()),
+        Err(TokenBankError::Malformed { .. })
+    ));
+}
+
+/// A manifest can seal a payload whose length disagrees with its declared
+/// id count: the seal passes, so the count is its own check.
+#[test]
+fn a_payload_whose_length_disagrees_with_its_count_is_malformed() {
+    let f = fixture();
+    rewrite_manifest(&f.bank, |v| {
+        let tokens = v["samples"][0]["tokens"].as_u64().unwrap();
+        v["samples"][0]["tokens"] = serde_json::json!(tokens + 1);
+    });
+    // Re-derive the id so the edit is not caught as a renamed bank first.
+    let path = f.bank.join(MANIFEST_FILE);
+    let mut manifest: TokenBankManifest =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    manifest.bank_id = bank_id(&manifest).unwrap();
+    std::fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    let bank = TokenBank::open(&f.bank).unwrap();
+    assert!(matches!(
+        bank.read(0),
+        Err(TokenBankError::Malformed { .. })
+    ));
+}
+
+#[test]
+fn an_export_needs_readable_prompts_and_a_tokenizer() {
+    let f = fixture();
+    let dir = f.bank.parent().unwrap();
+
+    let empty = dir.join("empty.json");
+    std::fs::write(&empty, br#"{"bank": "empty", "prompts": []}"#).unwrap();
+    assert!(matches!(
+        export(&empty, &f.tokenizer, CAP, &dir.join("b1")),
+        Err(TokenBankError::Malformed { .. })
+    ));
+
+    let garbled = dir.join("garbled.json");
+    std::fs::write(&garbled, b"{").unwrap();
+    assert!(matches!(
+        export(&garbled, &f.tokenizer, CAP, &dir.join("b2")),
+        Err(TokenBankError::Malformed { .. })
+    ));
+
+    let not_a_tokenizer = dir.join("not-a-tokenizer.json");
+    std::fs::write(&not_a_tokenizer, b"{}").unwrap();
+    assert!(matches!(
+        export(&f.prompts, &not_a_tokenizer, CAP, &dir.join("b3")),
+        Err(TokenBankError::Malformed { .. })
+    ));
+
+    assert!(matches!(
+        export(&dir.join("absent.json"), &f.tokenizer, CAP, &dir.join("b4")),
+        Err(TokenBankError::Io { .. })
+    ));
+}
+
+#[test]
+fn a_container_without_a_tokenizer_has_no_digest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let err = container_tokenizer_sha256(tmp.path()).unwrap_err();
+    assert!(matches!(err, TokenBankError::Io { .. }));
+    // The error names itself when printed.
+    assert!(err.to_string().contains("Io"), "{err}");
+}
