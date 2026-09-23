@@ -70,6 +70,11 @@ pub enum Vindex3Command {
     /// frozen capture. Emits numbers only — aggregation and the bar live in
     /// `bench/prompts/quality-bank-1/`.
     Consequence(consequence::ConsequenceArgs),
+
+    /// MEASURE-PLAN-1's sealed corpus: `export` tokenises a prompt file with
+    /// a container's tokenizer into a bank; `check` reads every sample
+    /// against its seal and the container's tokenizer.
+    TokenBank(token_bank::TokenBankArgs),
 }
 
 /// Which numerical realisation runs the plan. Both execute the *same*
@@ -545,6 +550,7 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
         Vindex3Command::Observe(args) => observe::run(args),
         Vindex3Command::Sensitivity(args) => sensitivity::run(args),
         Vindex3Command::Consequence(args) => consequence::run(args),
+        Vindex3Command::TokenBank(args) => token_bank::run(args),
     }
 }
 
@@ -564,6 +570,7 @@ pub(crate) mod prepare;
 mod realizations;
 mod sensitivity;
 mod teacher_force;
+mod token_bank;
 use exec::run_exec;
 use ops::run_ops;
 

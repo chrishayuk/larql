@@ -8,6 +8,7 @@ mod lowerings;
 mod observe;
 mod realizations;
 mod sizes;
+mod token_bank;
 
 use super::*;
 use std::io::Write;

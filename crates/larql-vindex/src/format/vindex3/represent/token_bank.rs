@@ -32,6 +32,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// The manifest schema this module reads and writes.
 pub const TOKEN_BANK_SCHEMA: &str = "teacher-forced-token-bank/v1";
@@ -151,8 +152,41 @@ pub struct TokenBank {
 impl TokenBank {
     /// Open and check a bank directory.
     pub fn open(dir: &Path) -> Result<Self, TokenBankError> {
-        let _ = dir;
-        todo!("MEASURE-PLAN-1 PR 1")
+        let path = dir.join(MANIFEST_FILE);
+        let bytes = read_file(&path)?;
+        let manifest: TokenBankManifest =
+            serde_json::from_slice(&bytes).map_err(|e| TokenBankError::Malformed {
+                detail: format!("{}: {e}", path.display()),
+            })?;
+        if manifest.schema != TOKEN_BANK_SCHEMA {
+            return Err(TokenBankError::UnknownSchema {
+                found: manifest.schema,
+            });
+        }
+        if manifest.payload_authority != TOKEN_BANK_PAYLOAD_AUTHORITY {
+            return Err(TokenBankError::UnknownPayloadAuthority {
+                found: manifest.payload_authority,
+            });
+        }
+        for (index, sample) in manifest.samples.iter().enumerate() {
+            if sample.id != sample_id(index) {
+                return Err(TokenBankError::SampleOrder {
+                    index,
+                    found: sample.id.clone(),
+                });
+            }
+        }
+        let derived = bank_id(&manifest)?;
+        if manifest.bank_id != derived {
+            return Err(TokenBankError::BankIdMismatch {
+                recorded: manifest.bank_id,
+                derived,
+            });
+        }
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            manifest,
+        })
     }
 
     /// The checked manifest.
@@ -173,22 +207,59 @@ impl TokenBank {
     /// Refuse unless the bank was tokenised by the tokenizer whose digest
     /// is `model_tokenizer_sha256`.
     pub fn check_tokenizer(&self, model_tokenizer_sha256: &str) -> Result<(), TokenBankError> {
-        let _ = model_tokenizer_sha256;
-        todo!("MEASURE-PLAN-1 PR 1")
+        if self.manifest.tokenizer_sha256 == model_tokenizer_sha256 {
+            return Ok(());
+        }
+        Err(TokenBankError::CorpusNotForThisModel {
+            bank: self.manifest.tokenizer_sha256.clone(),
+            model: model_tokenizer_sha256.to_string(),
+        })
     }
 
     /// Sample `index`'s ids, after checking its bytes against the seal.
     pub fn read(&self, index: usize) -> Result<Vec<u32>, TokenBankError> {
-        let _ = index;
-        todo!("MEASURE-PLAN-1 PR 1")
+        let sample = self
+            .manifest
+            .samples
+            .get(index)
+            .ok_or_else(|| TokenBankError::Malformed {
+                detail: format!("no sample {index}; the bank has {}", self.sample_count()),
+            })?;
+        let bytes = read_file(&self.dir.join(payload_file(&sample.id)))?;
+        let found = sha256_hex(&bytes);
+        if found != sample.sha256 {
+            return Err(TokenBankError::SealMismatch {
+                sample: sample.id.clone(),
+                expected: sample.sha256.clone(),
+                found,
+            });
+        }
+        let ids: Vec<u32> = bytes
+            .chunks_exact(TOKEN_BYTES)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        if ids.len() != sample.tokens || bytes.len() % TOKEN_BYTES != 0 {
+            return Err(TokenBankError::Malformed {
+                detail: format!(
+                    "{}: {} bytes for {} ids",
+                    sample.id,
+                    bytes.len(),
+                    sample.tokens
+                ),
+            });
+        }
+        Ok(ids)
     }
 }
 
 /// sha256 of a container's tokenizer file, the digest a bank is checked
 /// against.
 pub fn container_tokenizer_sha256(container: &Path) -> Result<String, TokenBankError> {
-    let _ = container;
-    todo!("MEASURE-PLAN-1 PR 1")
+    let path = container.join(TOKENIZER_FILE);
+    crate::format::checksums::sha256_file(&path).map_err(|e| TokenBankError::Io {
+        path,
+        detail: e.to_string(),
+    })
 }
 
 /// Tokenise a prompt file into a new bank at `out`, which must not exist.
@@ -198,8 +269,137 @@ pub fn export(
     max_tokens: usize,
     out: &Path,
 ) -> Result<TokenBankManifest, TokenBankError> {
-    let _ = (prompts, tokenizer, max_tokens, out, TOKEN_BYTES);
-    todo!("MEASURE-PLAN-1 PR 1")
+    if out.exists() {
+        return Err(TokenBankError::OutputExists {
+            path: out.to_path_buf(),
+        });
+    }
+    let prompt_bytes = read_file(prompts)?;
+    let prompt_file: PromptFile =
+        serde_json::from_slice(&prompt_bytes).map_err(|e| TokenBankError::Malformed {
+            detail: format!("{}: {e}", prompts.display()),
+        })?;
+    if prompt_file.prompts.is_empty() {
+        return Err(TokenBankError::Malformed {
+            detail: format!("{}: no prompts", prompts.display()),
+        });
+    }
+    let tk = crate::tokenizers::Tokenizer::from_file(tokenizer).map_err(|e| {
+        TokenBankError::Malformed {
+            detail: format!("{}: {e}", tokenizer.display()),
+        }
+    })?;
+    let tokenizer_sha256 = sha256_hex(&read_file(tokenizer)?);
+
+    let mut samples = Vec::new();
+    let mut payloads = Vec::new();
+    for prompt in &prompt_file.prompts {
+        let encoded = tk
+            .encode(prompt.text.as_str(), ADD_SPECIAL_TOKENS)
+            .map_err(|e| TokenBankError::Malformed {
+                detail: format!("prompt {}: {e}", prompt.id),
+            })?;
+        let mut ids = encoded.get_ids().to_vec();
+        ids.truncate(max_tokens);
+        if ids.len() < MIN_SAMPLE_TOKENS {
+            continue;
+        }
+        let bytes: Vec<u8> = ids.iter().flat_map(|id| id.to_le_bytes()).collect();
+        let id = sample_id(samples.len());
+        samples.push(TokenBankSample {
+            id: id.clone(),
+            prompt_id: prompt.id.clone(),
+            category: prompt.category.clone(),
+            tokens: ids.len(),
+            sha256: sha256_hex(&bytes),
+        });
+        payloads.push((id, bytes));
+    }
+    let mut manifest = TokenBankManifest {
+        schema: TOKEN_BANK_SCHEMA.to_string(),
+        bank_id: String::new(),
+        prompts: PromptSource {
+            bank: prompt_file.bank,
+            sha256: sha256_hex(&prompt_bytes),
+        },
+        tokenizer_sha256,
+        template: TemplatePolicy::Raw,
+        add_special_tokens: ADD_SPECIAL_TOKENS,
+        max_tokens,
+        payload_authority: TOKEN_BANK_PAYLOAD_AUTHORITY.to_string(),
+        samples,
+    };
+    manifest.bank_id = bank_id(&manifest)?;
+
+    std::fs::create_dir_all(out).map_err(|e| io_error(out, e))?;
+    for (id, bytes) in &payloads {
+        let path = out.join(payload_file(id));
+        std::fs::write(&path, bytes).map_err(|e| io_error(&path, e))?;
+    }
+    // The manifest last: a bank directory without one is visibly
+    // incomplete, never a bank that names payloads it does not have.
+    let path = out.join(MANIFEST_FILE);
+    let json = serde_json::to_vec_pretty(&manifest).map_err(|e| TokenBankError::Malformed {
+        detail: e.to_string(),
+    })?;
+    std::fs::write(&path, json).map_err(|e| io_error(&path, e))?;
+    Ok(manifest)
+}
+
+/// Whether the exporter adds the tokenizer's special tokens, as
+/// `run_bank.py` does (`tokenizers`' `encode` default).
+const ADD_SPECIAL_TOKENS: bool = true;
+
+/// The prompt file the exporter reads: Q-BANK-1's `prompts.json` shape.
+#[derive(Deserialize)]
+struct PromptFile {
+    bank: String,
+    prompts: Vec<PromptEntry>,
+}
+
+#[derive(Deserialize)]
+struct PromptEntry {
+    id: String,
+    category: String,
+    text: String,
+}
+
+/// `seq-NNN` for sample `index`.
+fn sample_id(index: usize) -> String {
+    format!("seq-{index:03}")
+}
+
+/// A sample's payload file name.
+fn payload_file(id: &str) -> String {
+    format!("{id}.u32")
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// The id a manifest's contents derive: sha256 of its serialisation with
+/// the id field empty.
+fn bank_id(manifest: &TokenBankManifest) -> Result<String, TokenBankError> {
+    let unnamed = TokenBankManifest {
+        bank_id: String::new(),
+        ..manifest.clone()
+    };
+    let bytes = serde_json::to_vec(&unnamed).map_err(|e| TokenBankError::Malformed {
+        detail: e.to_string(),
+    })?;
+    Ok(sha256_hex(&bytes))
+}
+
+fn read_file(path: &Path) -> Result<Vec<u8>, TokenBankError> {
+    std::fs::read(path).map_err(|e| io_error(path, e))
+}
+
+fn io_error(path: &Path, e: std::io::Error) -> TokenBankError {
+    TokenBankError::Io {
+        path: path.to_path_buf(),
+        detail: e.to_string(),
+    }
 }
 
 #[cfg(test)]
