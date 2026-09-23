@@ -105,18 +105,22 @@ fn f0_the_q8k_plan_runs_exactly_the_declared_kernel() {
 }
 
 /// The executor's own dispatch — the path a decode takes — lands on the
-/// same bits, and the ledger books the call under the new plan, never
-/// under `FusedKQuant`.
+/// codec's Q8_K kernel.
+///
+/// This does NOT read the process-wide ledger. An earlier form asserted
+/// the `FusedKQuantQ8k` call count rose across the call, and raced: the
+/// ledger is global, tests run in parallel, and any of them may
+/// `reset()` it between the two reads. That the call is booked under its
+/// own plan is pinned without the global instrument — F0 asserts
+/// `for_resident` observes `FusedKQuantQ8k`, and `ledger.rs` pins that the
+/// plan has a slot of its own.
 #[test]
-fn the_executor_books_the_q8k_plan_under_its_own_name() {
+fn the_executor_dispatch_reaches_the_q8k_kernel() {
     let x = activation();
     let blocks = Q4_K.encode(&weights(), "t").expect("encode");
-    let before = ledger().get(PhysicalProjectionPlan::FusedKQuantQ8k).calls;
     let out =
         super::super::physical::project_rows(rows(&blocks, Q4_K, KQuantActivation::Q8k), &x, ROWS)
             .expect("executor");
-    let after = ledger().get(PhysicalProjectionPlan::FusedKQuantQ8k).calls;
-    assert!(after > before, "the Q8_K call was booked elsewhere");
     let direct = Q4_K
         .gemv_q8k(&blocks, &x, ROWS, IN_DIM)
         .expect("codec kernel");
