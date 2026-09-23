@@ -13,6 +13,11 @@ live in `larql-compute`; Metal is a peer backend in `larql-compute-metal`.
 This crate composes them with sessions, tokenizers, routing and engine state.
 Re-exports retained for compatibility do not change ownership.
 
+[input](src/vindex3/input.rs) supplies checked external rows, cached input
+sessions and exact full-history replay. [distributed](src/vindex3/distributed.rs)
+composes endpoint operands with stateless CPU layer workers through a transport
+trait. See [scopes and tests](../../docs/vindex3/runtime-followups.md).
+
 ## VINDEX3 runtime
 
 The [vindex3 module](src/vindex3/) opens a container's declared component

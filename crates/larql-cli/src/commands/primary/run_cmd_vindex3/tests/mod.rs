@@ -1,6 +1,8 @@
 //! `larql run` on a VINDEX3 container: detection, the refusals, and text
 //! out of the dense fixture through the container's own tokenizer.
 
+mod images;
+
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -201,7 +203,7 @@ fn dense_engine_flags_are_refused_by_name_before_anything_loads() {
     let container = fixture_container(root.path(), false);
     let err = run_capturing(
         &container,
-        &[PROMPT, "--experts", "--top", "5", "--engine", "standard"],
+        &[PROMPT, "--experts", "--top", "5", "--engine", "turbo-quant"],
         "",
     )
     .expect_err("dense-engine flags are not honoured");
@@ -338,4 +340,73 @@ fn ids_and_timings_go_to_the_status_stream() {
     assert!(status.contains("prompt ids: [1, 2, 3]"), "{status}");
     assert!(status.contains("generated ids: ["), "{status}");
     assert!(status.contains("prompt tokens in"), "{status}");
+}
+
+#[test]
+fn explicit_kv_providers_preserve_text_ids_and_stop_strings() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    let baseline =
+        run_capturing_with_status(&container, &[PROMPT, "--max-tokens", "9", "--emit-ids"], "")
+            .unwrap();
+    for flags in [
+        vec!["--engine", "standard"],
+        vec!["--engine", "row"],
+        vec!["--engine", "no-cache"],
+        vec!["--kv-cache", "none"],
+    ] {
+        let argv = [vec![PROMPT, "--max-tokens", "9", "--emit-ids"], flags].concat();
+        assert_eq!(
+            run_capturing_with_status(&container, &argv, "").unwrap(),
+            baseline
+        );
+    }
+    let first = baseline.0.split_whitespace().next().unwrap();
+    declare_stop(&container, serde_json::json!({"stop_strings":[first]}));
+    for engine in ["standard", "row", "no-cache"] {
+        assert_eq!(
+            run_capturing(&container, &[PROMPT, "--engine", engine], "").unwrap(),
+            "\n"
+        );
+    }
+}
+
+#[test]
+fn v3_input_flags_reject_conflicting_or_unusable_requests() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for flags in [
+        vec!["--context-window", "10"],
+        vec!["--mm-weights", "missing"],
+        vec!["--engine", "standard", "--kv-cache", "none"],
+        vec!["--v3-shards", "http://127.0.0.1:1", "--metal"],
+        vec!["--image", "missing.png"],
+    ] {
+        assert!(run_capturing(&container, &[vec![PROMPT], flags].concat(), "").is_err());
+    }
+}
+
+#[test]
+fn multimodal_plan_preserves_position_order_and_precomputed_scaling() {
+    use larql_compute::forward::{EmbeddingChunk, EmbeddingPlan, PositionScheme};
+    use larql_inference::vindex3::input::InputPosition;
+    let rows = ndarray::arr2(&[[0.25, -0.5], [0.75, 1.0]]);
+    let plan = EmbeddingPlan {
+        chunks: vec![
+            EmbeddingChunk::Tokens(vec![1]),
+            EmbeddingChunk::Precomputed {
+                rows,
+                modality: larql_models::Modality::Image,
+            },
+            EmbeddingChunk::Tokens(vec![2, 3]),
+        ],
+        positions: PositionScheme::Sequential,
+    };
+    let inputs = super::inputs::from_embedding_plan(plan).unwrap();
+    assert_eq!(inputs.len(), 5);
+    assert!(matches!(inputs[0], InputPosition::Token(1)));
+    assert!(matches!(&inputs[1],InputPosition::Embedding(row) if row==&[0.25,-0.5]));
+    assert!(matches!(&inputs[2],InputPosition::Embedding(row) if row==&[0.75,1.0]));
+    assert!(matches!(inputs[3], InputPosition::Token(2)));
+    assert!(matches!(inputs[4], InputPosition::Token(3)));
 }

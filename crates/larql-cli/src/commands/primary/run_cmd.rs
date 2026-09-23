@@ -114,6 +114,7 @@ pub struct RunArgs {
     #[arg(long, default_value = "0")]
     pub context_window: usize,
 
+    /// VINDEX3 accepts row, standard and no-cache; other engine specs refuse.
     /// KV engine spec, overrides `--kv-cache` when set. Accepts the same
     /// syntax `larql bench --engine` parses:
     ///
@@ -286,7 +287,8 @@ pub struct RunArgs {
     ///   larql run gemma-3-4b-it --image cat.jpg --image stop_sign.jpg "describe both"
     ///
     /// Currently supported on Gemma 3 multimodal checkpoints only.
-    /// Requires `--engine standard` (other engines lack
+    /// VINDEX3 supports row, standard and no-cache on CPU. V2
+    /// requires `--engine standard` (other engines lack
     /// `prefill_from_hidden`; the CLI will fail fast with a clear
     /// message if `--image` is combined with an MM-incapable engine —
     /// see ADR-0023). Also requires `--mm-weights` to point at the
@@ -306,6 +308,14 @@ pub struct RunArgs {
     /// key prefix.
     #[arg(long, value_name = "DIR")]
     pub mm_weights: Option<PathBuf>,
+
+    /// Ordered VINDEX3 CPU layer workers. Replays the full prefix each step.
+    #[arg(long, value_delimiter = ',', value_name = "URL,...")]
+    pub v3_shards: Vec<String>,
+
+    /// Environment variable holding the bearer token for V3 layer workers.
+    #[arg(long, requires = "v3_shards", value_name = "ENV")]
+    pub v3_shard_token_env: Option<String>,
 
     /// Speak the prompt: run the model as a speech generator
     /// (MOSS-TTS-Realtime) and synthesise audio tokens instead of text.
@@ -356,7 +366,7 @@ pub struct RunArgs {
     pub q4: bool,
 }
 
-pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Speech mode routes before vindex resolution: the speech model lives
     // in its safetensors directory until TTS funnel step 6.
     if args.speak {
@@ -377,7 +387,15 @@ pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     // reader is asked to open it. A directory that is not a VINDEX3
     // container falls through so the dense path surfaces its own error.
     if super::run_cmd_vindex3::is_vindex3_container(&vindex_path) {
+        if args.engine.is_none() {
+            args.engine = std::env::var("LARQL_KV_ENGINE")
+                .ok()
+                .filter(|s| !s.is_empty());
+        }
         return super::run_cmd_vindex3::run(&vindex_path, &args);
+    }
+    if !args.v3_shards.is_empty() {
+        return Err("--v3-shards requires a VINDEX3 container".into());
     }
 
     if args.experts {

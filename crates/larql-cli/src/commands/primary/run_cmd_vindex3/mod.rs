@@ -15,8 +15,8 @@
 //! template: the prompt is encoded raw, exactly as the BitNet arm does
 //! (a template is a follow-up on both). No sampler: greedy, so a run
 //! doubles as a fixture. And no flag it cannot honour is accepted
-//! silently — the dense path's engine, composition, expert and image
-//! flags are refused by name rather than dropped.
+//! silently. Scoped image inputs, exact state providers and CPU layer
+//! workers compose with the interpreter; unsupported engine flags refuse.
 //!
 //! Weights are loaded once, at model lifetime; every prompt — the one on
 //! the command line, or each line of the chat loop — gets a brand-new
@@ -52,6 +52,7 @@ use super::vindex3_cmd::prepare::{
 };
 use super::vindex3_cmd::ExecBackend;
 
+mod inputs;
 #[cfg(test)]
 mod tests;
 
@@ -155,14 +156,31 @@ pub(super) fn run_to(
 /// The dense path's flags this arm cannot honour, refused by name.
 ///
 /// The container's own program runs through the VINDEX3 interpreter with
-/// its own continuation state; the engine, composition, expert and image
-/// flags all describe the dense VINDEX2 engine. Refused together, so one
-/// message names every flag that has to go.
+/// its own continuation state. Only explicitly integrated providers and
+/// input/distribution protocols are accepted; other engine flags refuse.
 fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
+    if !args.v3_shards.is_empty()
+        && (args.metal || args.engine.is_some() || args.kv_cache != KvCacheKind::Standard)
+    {
+        return Err("--v3-shards uses CPU stateless prefix replay; do not combine with --metal, --engine or --kv-cache".into());
+    }
+    if args.mm_weights.is_some() && args.image.is_empty() {
+        return Err("--mm-weights requires --image".into());
+    }
+    if args.kv_cache == KvCacheKind::None && args.engine.as_deref().is_some_and(|e| e != "no-cache")
+    {
+        return Err("--kv-cache none conflicts with the selected --engine".into());
+    }
     let set: Vec<&str> = [
         ("--top", args.top != SINGLE_PREDICTION),
-        ("--kv-cache", args.kv_cache != KvCacheKind::Standard),
-        ("--engine", args.engine.is_some()),
+        ("--context-window", args.context_window != 0),
+        ("--kv-cache", args.kv_cache == KvCacheKind::MarkovBounded),
+        (
+            "--engine",
+            args.engine
+                .as_deref()
+                .is_some_and(|s| !matches!(s, "standard" | "row" | "no-cache")),
+        ),
         ("--ffn", args.ffn.is_some()),
         ("--routed-from", args.routed_from.is_some()),
         ("--experts", args.experts),
@@ -171,8 +189,6 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
         ("--constrained", args.constrained),
         ("--moe-shards", args.moe_shards.is_some()),
         ("--moe-units-manifest", args.moe_units_manifest.is_some()),
-        ("--image", !args.image.is_empty()),
-        ("--mm-weights", args.mm_weights.is_some()),
     ]
     .into_iter()
     .filter_map(|(flag, given)| given.then_some(flag))
@@ -232,7 +248,11 @@ impl BackendVisitor for Runner<'_> {
             &self.prepared.plan,
             &self.prepared.store,
             backend,
-            ExecutionSlice::Full,
+            if self.args.v3_shards.is_empty() {
+                ExecutionSlice::Full
+            } else {
+                ExecutionSlice::Endpoints
+            },
         )?;
         let engine = format!("{ENGINE_PREFIX}-{}", backend.name());
         let identity = resolved_display_name(&self.prepared.model_name, self.container);
@@ -245,6 +265,8 @@ impl BackendVisitor for Runner<'_> {
             )?;
         }
         let model = ResidentModel {
+            container: self.container,
+            family: &self.prepared.family,
             plan: &self.prepared.plan,
             ops: &ops,
             backend,
@@ -262,6 +284,8 @@ impl BackendVisitor for Runner<'_> {
 
 /// One loaded model, ready to answer any number of prompts.
 struct ResidentModel<'a, B: PlanBackend> {
+    container: &'a Path,
+    family: &'a str,
     plan: &'a ComponentOpPlan,
     ops: &'a PreparedOperands,
     backend: &'a B,
@@ -280,6 +304,13 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         out: &mut dyn Write,
         status: &mut dyn Write,
     ) -> Result<(), BoxErr> {
+        if !self.args.v3_shards.is_empty()
+            || self.args.engine.is_some()
+            || self.args.kv_cache == KvCacheKind::None
+            || !self.args.image.is_empty()
+        {
+            return inputs::generate(self, prompt, out, status);
+        }
         let encoded = self
             .tokenizer
             .encode(prompt, true)

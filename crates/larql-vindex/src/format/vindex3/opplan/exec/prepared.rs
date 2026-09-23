@@ -89,6 +89,9 @@ use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopo
 pub enum ExecutionSlice {
     /// Embedding, every layer, final norm and head — a whole model.
     Full,
+    /// Only token embedding and final norm/head, for a distributed coordinator.
+    /// No transformer layer operands are loaded.
+    Endpoints,
     /// Layers `[start, end)` of the stack and nothing else: no
     /// embedding, no final norm, no head. Hidden states in, hidden
     /// states out — the shape a layer-range shard executes.
@@ -121,6 +124,7 @@ impl ExecutionSlice {
     pub fn layers(&self, plan: &ComponentOpPlan) -> std::ops::Range<usize> {
         match self {
             Self::Full => 0..plan.layers.len(),
+            Self::Endpoints => 0..0,
             Self::LayerRange { start, end } => *start..*end,
             Self::Draft { end } => 0..*end,
         }
@@ -129,7 +133,7 @@ impl ExecutionSlice {
     /// Whether the slice carries the stack's ends — embedding on the
     /// way in, final norm and output head on the way out.
     pub fn is_whole_stack(&self) -> bool {
-        matches!(self, Self::Full | Self::Draft { .. })
+        matches!(self, Self::Full | Self::Endpoints | Self::Draft { .. })
     }
 
     /// Refuse a slice the plan cannot satisfy. A shard asked for layers
@@ -3127,6 +3131,41 @@ impl PreparedOperands {
             })
     }
 
+    /// The declared embedding operation, including its scale and optional norm.
+    /// Shared by local token execution and distributed coordinators.
+    pub fn embed_token<B: PlanBackend + ?Sized>(
+        &self,
+        plan: &ComponentOpPlan,
+        backend: &B,
+        token: u32,
+    ) -> Result<Vec<f32>, VindexError> {
+        let embedding = plan
+            .embedding
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse("component has no embedding op".into()))?;
+        let table = self.embed_table().ok_or_else(|| {
+            VindexError::Parse("this prepared image has no embedding table".into())
+        })?;
+        let hidden = self.hidden();
+        if hidden == 0 || token as usize >= table.len() / hidden {
+            return Err(VindexError::Parse(format!(
+                "token id {token} is outside the embedding table"
+            )));
+        }
+        let mut row = backend.embed(table, hidden, token, embedding.scale);
+        if let Some(norm) = embedding.norm {
+            row = backend.norm(NormCall {
+                kind: norm.kind,
+                x: &row,
+                weight: &[],
+                weight_offset: 0.0,
+                eps: norm.eps,
+            });
+        }
+        Ok(row)
+    }
+
+    /// Width of one residual row.
     pub fn hidden(&self) -> usize {
         self.hidden
     }

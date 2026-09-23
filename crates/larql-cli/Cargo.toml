@@ -12,6 +12,7 @@ name = "larql"
 path = "src/main.rs"
 
 [dependencies]
+larql-router = { path = "../larql-router", default-features = false }
 larql-core = { path = "../larql-core" }
 larql-compute = { path = "../larql-compute" }
 larql-compute-metal = { path = "../larql-compute-metal", optional = true }

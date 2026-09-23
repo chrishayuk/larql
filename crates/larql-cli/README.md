@@ -39,3 +39,6 @@ is supplementary and does not enumerate the complete VINDEX3 surface.
 ```bash
 cargo test -p larql-cli --bin larql
 ```
+`larql run` supports explicit V3 `row`, `standard` and `no-cache` modes,
+CPU Gemma 3 image prefixes, and `--v3-shards` for ordered CPU layer workers.
+See [the scoped runtime guide](../../docs/vindex3/runtime-followups.md).

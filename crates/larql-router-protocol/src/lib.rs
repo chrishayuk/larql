@@ -33,3 +33,5 @@ pub use proto::*;
 pub use shard_proto::shard_service_client::ShardServiceClient;
 pub use shard_proto::shard_service_server::{ShardService, ShardServiceServer};
 pub use shard_proto::{ShardQuery, ShardResult};
+
+pub mod vindex3;

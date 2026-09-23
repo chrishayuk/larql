@@ -105,3 +105,5 @@ pub(crate) const RESIDENCY: &str = "/v1/residency";
 /// server will and will not do, enforced here rather than guessed by
 /// the client from a hostname.
 pub(crate) const CAPABILITIES: &str = "/v1/capabilities";
+
+pub const VINDEX3_LAYERS: &str = larql_router_protocol::vindex3::PATH;

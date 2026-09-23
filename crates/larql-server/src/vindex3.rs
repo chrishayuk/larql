@@ -115,6 +115,8 @@ const SERVED_COMPONENT: &str = "target";
 pub struct V3Model {
     /// The backend selected for this prepared model.
     pub backend: V3Backend,
+    /// Present only on a stateless layer-prefix worker.
+    pub shard: Option<larql_router_protocol::vindex3::Binding>,
     /// Model ID (derived from the container directory name).
     pub id: String,
     /// Container directory on disk.
@@ -155,6 +157,31 @@ pub struct V3Model {
 }
 
 impl V3Model {
+    /// Execute a stateless prefix while retaining the model's in-flight guard.
+    pub(crate) fn execute_layer_prefix(
+        &self,
+        request: larql_router_protocol::vindex3::Request,
+    ) -> Result<larql_router_protocol::vindex3::Response, ServerError> {
+        let binding = self
+            .shard
+            .as_ref()
+            .ok_or_else(|| ServerError::Unsupported("not a VINDEX3 layer shard".into()))?;
+        if request.binding != *binding {
+            return Err(ServerError::BadRequest(
+                "layer request binding mismatch".into(),
+            ));
+        }
+        let _guard = V3GenerationGuard::enter(Arc::clone(&self.requests_in_flight));
+        larql_inference::vindex3::distributed::forward(
+            self.runtime.plan(),
+            self.runtime.operands(),
+            self.runtime.backend(),
+            binding,
+            request.rows,
+        )
+        .map_err(|e| ServerError::BadRequest(e.to_string()))
+    }
+
     /// Current count of in-flight generations on this model. One
     /// relaxed atomic load — cheap enough to call from a status
     /// endpoint on every request, no lock. Exact count of what's
@@ -207,6 +234,26 @@ pub fn load_v3_model_with_backend(
     path: &Path,
     backend: V3Backend,
 ) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_slice(path, backend, None)
+}
+
+/// Inclusive startup layer range, prepared without embeddings or output head.
+pub fn load_v3_model_slice(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    if range.is_some() && backend != V3Backend::Cpu {
+        return Err("V3 layer sharding currently requires --v3-backend cpu".into());
+    }
+    let slice = match range {
+        Some((start, end)) => ExecutionSlice::LayerRange {
+            start,
+            end: end.checked_add(1).ok_or("layer range overflow")?,
+        },
+        None => ExecutionSlice::Full,
+    };
     let (registry, identity) = backend.lowerings()?;
     // The served provider is resolved from the shipped registry by
     // identity, never constructed here (LOWERING-PLUGIN-1, L3).
@@ -217,7 +264,7 @@ pub fn load_v3_model_with_backend(
         &identity,
     )
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
-    .prepare()
+    .prepare_slice(slice)
     .map_err(|e| format!("prepare VINDEX3 operands: {e}"))?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(path)
         .map_err(|e| format!("VINDEX3 container has no servable tokenizer.json: {e}"))?;
@@ -233,7 +280,17 @@ pub fn load_v3_model_with_backend(
         named => named.to_string(),
     };
     let family = runtime.family().to_string();
+    let shard = if range.is_some() {
+        Some(larql_inference::vindex3::distributed::binding(
+            path,
+            runtime.plan(),
+            runtime.operands(),
+        )?)
+    } else {
+        None
+    };
     let model = V3Model {
+        shard,
         backend,
         id: model_id_from_name(&name),
         path: path.to_path_buf(),
@@ -406,6 +463,12 @@ pub fn generate_v3_request(
     // `V3GenerationGuard`'s doc comment for why entering here (rather
     // than in each route handler) is load-bearing for streaming
     // callers.
+    if model.shard.is_some() {
+        return Err(ServerError::InferenceUnavailable(
+            "this VINDEX3 binding is a layer shard; use /v1/vindex3/layers through a coordinator"
+                .into(),
+        ));
+    }
     let _gen_guard = V3GenerationGuard::enter(Arc::clone(&model.requests_in_flight));
 
     // A handoff is resumable only when the new prompt extends exactly

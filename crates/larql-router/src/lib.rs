@@ -9,3 +9,5 @@ pub mod metrics;
 pub mod openai;
 pub mod shards;
 pub mod tasks;
+
+pub mod vindex3;
