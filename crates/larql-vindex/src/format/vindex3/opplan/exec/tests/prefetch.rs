@@ -7,7 +7,7 @@
 use super::super::accounting::ResidencyBudget;
 use super::super::decode::DecodeSession;
 use super::super::kv::RowKvState;
-use super::super::prefetch::{prefetch, PrefetchReport, Range};
+use super::super::prefetch::{prefetch, residency, runs_of, PrefetchReport, Range};
 use super::super::prepared::{select_realizations_within, ExecutionSlice, PreparedOperands};
 use super::super::production::ProductionBackend;
 use super::super::realization::{MappedAccess, RealizationForm};
@@ -183,7 +183,51 @@ fn an_access_policy_is_named_or_refused_by_name() {
     }
     let err = MappedAccess::parse("prescient").unwrap_err();
     assert!(
-        err.contains("prescient") && err.contains("demand, advise, touch"),
+        err.contains("prescient") && err.contains("demand, advise, touch, coalesced"),
         "{err}"
     );
+}
+
+/// Adjacent tensors become one run and one request; a gap keeps them
+/// apart. The runs are what every arm's residency is read over.
+#[test]
+fn coalescing_merges_adjacent_ranges_into_fewer_requests() {
+    let (_dir, mapped) = mapped_file(1024 * 1024);
+    let bytes: &[u8] = mapped[..].as_ref();
+    let first = Range::of(&bytes[0..300_000]);
+    let second = Range::of(&bytes[300_000..600_000]);
+    let far = Range::of(&bytes[900_000..1_000_000]);
+    let runs = runs_of(&[far, second, first]);
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(
+        runs[0].address < runs[1].address,
+        "runs are in address order"
+    );
+    assert!(runs[0].bytes >= 600_000 && runs[0].bytes < 600_000 + 2 * 64 * 1024);
+    let coalesced = prefetch(MappedAccess::Coalesced, &[far, second, first], 2);
+    assert_eq!((coalesced.ranges, coalesced.requests), (3, 2));
+    let advised = prefetch(MappedAccess::Advise, &[far, second, first], 2);
+    assert_eq!((advised.ranges, advised.requests), (3, 3));
+    assert_eq!(coalesced.bytes, advised.bytes, "the same pages either way");
+}
+
+/// After a touch, the residency reader finds every page of the runs.
+#[test]
+fn residency_reads_the_runs_after_a_touch() {
+    let len = 512 * 1024;
+    let (_dir, mapped) = mapped_file(len);
+    let bytes: &[u8] = mapped[..].as_ref();
+    let ranges = [
+        Range::of(&bytes[10..200_000]),
+        Range::of(&bytes[300_000..len]),
+    ];
+    prefetch(MappedAccess::Touch, &ranges, 3);
+    #[cfg(unix)]
+    {
+        let seen = residency(&ranges).expect("unix can read residency");
+        assert!(seen.span_bytes >= 200_000 - 10 + len - 300_000);
+        assert_eq!(seen.resident_bytes, seen.span_bytes, "{seen:?}");
+    }
+    #[cfg(not(unix))]
+    assert!(residency(&ranges).is_none());
 }

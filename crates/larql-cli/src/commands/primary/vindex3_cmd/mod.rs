@@ -236,6 +236,12 @@ pub struct ExecArgs {
     /// the loop). The same lossless bytes under every policy.
     #[arg(long, default_value = "demand", requires = "residency_curve")]
     pub expert_access: String,
+    /// Read how much of the selected experts' pages are resident after the
+    /// prefetch and before the routed loop, every token. A page-table walk
+    /// over every selected page (≈70 ms on a 3 GB selection) that the
+    /// token then carries, so it is a witness arm, not a latency arm.
+    #[arg(long, requires = "residency_curve")]
+    pub witness_residency: bool,
 
     /// Teacher-force a whole quality bank through ONE resident model,
     /// writing `<--dump-dir>/<id>.f32` per entry.

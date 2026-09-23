@@ -86,3 +86,38 @@ fn a_fingerprint_is_order_sensitive_and_layer_aware() {
     assert_ne!(a, c);
     assert_eq!(a, routing_trace::fingerprint(&[vec![3, 1], vec![0]]));
 }
+
+/// The residency channel records only under an open capture and empties
+/// on take, like the selections beside it.
+#[test]
+fn residency_readings_ride_the_capture() {
+    let _serial = SERIAL.lock().unwrap();
+    use super::super::prefetch::Residency;
+    let reading = Residency {
+        span_bytes: 8,
+        resident_bytes: 4,
+    };
+    routing_trace::record_residency(reading);
+    assert!(
+        routing_trace::take_residency().is_empty(),
+        "closed: nothing recorded"
+    );
+    routing_trace::start_capture();
+    assert!(routing_trace::is_capturing());
+    assert!(
+        !routing_trace::wants_residency(),
+        "the witness is asked for by name"
+    );
+    routing_trace::set_witness_residency(true);
+    assert!(routing_trace::wants_residency());
+    routing_trace::record_residency(reading);
+    routing_trace::record_residency(reading);
+    routing_trace::record_requests(24, 8);
+    let _ = routing_trace::take_capture();
+    assert!(!routing_trace::is_capturing());
+    assert!(!routing_trace::wants_residency(), "no capture, no witness");
+    assert_eq!(routing_trace::take_residency(), vec![reading, reading]);
+    assert!(routing_trace::take_residency().is_empty(), "taken once");
+    assert_eq!(routing_trace::take_requests(), vec![(24, 8)]);
+    routing_trace::set_witness_residency(false);
+}

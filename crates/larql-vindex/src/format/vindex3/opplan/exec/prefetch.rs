@@ -33,6 +33,9 @@ impl Range {
 pub struct PrefetchReport {
     pub ranges: usize,
     pub bytes: usize,
+    /// Requests issued: advise calls, or touch runs. Fewer than `ranges`
+    /// when adjacent ranges were coalesced.
+    pub requests: usize,
 }
 
 /// The page the OS faults by, read once.
@@ -48,6 +51,77 @@ fn page_size() -> usize {
     // Every platform this runs on pages by at least 4 KiB; a platform
     // that will not say pages by that.
     4096
+}
+
+/// `ranges` page-aligned, in address order, with adjacent or overlapping
+/// ranges merged into one run — the request shape of the coalesced arm,
+/// and the exact set of pages any arm brings in.
+pub fn runs_of(ranges: &[Range]) -> Vec<Range> {
+    let page = page_size();
+    let mut aligned_ranges: Vec<Range> = ranges.iter().map(|r| aligned(*r, page)).collect();
+    aligned_ranges.sort_by_key(|r| r.address);
+    let mut runs: Vec<Range> = Vec::with_capacity(aligned_ranges.len());
+    for r in aligned_ranges {
+        match runs.last_mut() {
+            Some(last) if r.address <= last.address + last.bytes => {
+                let end = (r.address + r.bytes).max(last.address + last.bytes);
+                last.bytes = end - last.address;
+            }
+            _ => runs.push(r),
+        }
+    }
+    runs
+}
+
+/// The bytes of `ranges` the OS reports resident right now, over their
+/// page-aligned runs, beside the runs' total: the witness that a prefetch
+/// made the requested pages resident before anything read them. `None`
+/// where the platform cannot say.
+pub fn residency(ranges: &[Range]) -> Option<Residency> {
+    let runs = runs_of(ranges);
+    let span: usize = runs.iter().map(|r| r.bytes).sum();
+    let resident = resident_bytes(&runs)?;
+    Some(Residency {
+        span_bytes: span,
+        resident_bytes: resident,
+    })
+}
+
+/// What [`residency`] read: the runs' total and the resident part of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Residency {
+    pub span_bytes: usize,
+    pub resident_bytes: usize,
+}
+
+#[cfg(unix)]
+fn resident_bytes(runs: &[Range]) -> Option<usize> {
+    let page = page_size();
+    let mut resident = 0usize;
+    for r in runs {
+        let pages = r.bytes / page;
+        let mut vec = vec![0u8; pages];
+        // SAFETY: the run is page-aligned and lies inside a mapping this
+        // process owns for the life of the prepared image; `vec` holds one
+        // byte per page as `mincore` requires.
+        let rc = unsafe {
+            libc::mincore(
+                r.address as *mut libc::c_void,
+                r.bytes,
+                vec.as_mut_ptr().cast(),
+            )
+        };
+        if rc != 0 {
+            return None;
+        }
+        resident += vec.iter().filter(|b| **b & 1 == 1).count() * page;
+    }
+    Some(resident)
+}
+
+#[cfg(not(unix))]
+fn resident_bytes(_runs: &[Range]) -> Option<usize> {
+    None
 }
 
 /// `range` rounded out to whole pages.
@@ -72,14 +146,26 @@ pub fn prefetch(access: MappedAccess, ranges: &[Range], parallelism: usize) -> P
     // In address order, so the request follows the file's physical layout.
     aligned_ranges.sort_by_key(|r| r.address);
     let bytes = aligned_ranges.iter().map(|r| r.bytes).sum();
-    match access {
+    let requests = match access {
         MappedAccess::Demand => unreachable!("returned above"),
-        MappedAccess::Advise => advise(&aligned_ranges),
-        MappedAccess::Touch => touch(&aligned_ranges, page, parallelism.max(1)),
-    }
+        MappedAccess::Advise => {
+            advise(&aligned_ranges);
+            aligned_ranges.len()
+        }
+        MappedAccess::Touch => {
+            touch(&aligned_ranges, page, parallelism.max(1));
+            aligned_ranges.len()
+        }
+        MappedAccess::Coalesced => {
+            let runs = runs_of(ranges);
+            advise(&runs);
+            runs.len()
+        }
+    };
     PrefetchReport {
         ranges: aligned_ranges.len(),
         bytes,
+        requests,
     }
 }
 

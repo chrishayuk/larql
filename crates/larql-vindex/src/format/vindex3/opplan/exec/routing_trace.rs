@@ -9,10 +9,18 @@ use std::sync::Mutex;
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static CAPTURE: Mutex<Option<Vec<Vec<usize>>>> = Mutex::new(None);
+static RESIDENCY: Mutex<Vec<super::prefetch::Residency>> = Mutex::new(Vec::new());
+/// Whether an open capture also reads residency — a page-table walk over
+/// every selected page, ≈70 ms on a 3 GB selection, so it is asked for
+/// by name and never rides a latency measurement unasked.
+static WITNESS_RESIDENCY: AtomicBool = AtomicBool::new(false);
+static REQUESTS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
 
 /// Begin capturing; any earlier capture is discarded.
 pub fn start_capture() {
     *CAPTURE.lock().expect("routing capture lock") = Some(Vec::new());
+    RESIDENCY.lock().expect("residency capture lock").clear();
+    REQUESTS.lock().expect("request capture lock").clear();
     ACTIVE.store(true, Ordering::Release);
 }
 
@@ -60,4 +68,59 @@ pub fn fingerprint(capture: &[Vec<usize>]) -> u64 {
         }
     }
     h
+}
+
+/// Whether a capture is open — so a caller can skip a measurement that
+/// only a capture would read.
+pub fn is_capturing() -> bool {
+    ACTIVE.load(Ordering::Acquire)
+}
+
+/// Ask the next captures to read residency too (see
+/// [`record_residency`]); off by default because the reading has a cost
+/// a latency figure must not carry unannounced.
+pub fn set_witness_residency(on: bool) {
+    WITNESS_RESIDENCY.store(on, Ordering::Release);
+}
+
+/// Whether an open capture wants residency read.
+pub fn wants_residency() -> bool {
+    ACTIVE.load(Ordering::Acquire) && WITNESS_RESIDENCY.load(Ordering::Acquire)
+}
+
+/// Record one routed call's request shape: how many ranges its prefetch
+/// covered and how many requests it issued for them. A no-op unless a
+/// capture is open.
+pub fn record_requests(ranges: usize, requests: usize) {
+    if !ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
+    REQUESTS
+        .lock()
+        .expect("request capture lock")
+        .push((ranges, requests));
+}
+
+/// Every routed call's (ranges, requests) since the capture opened.
+pub fn take_requests() -> Vec<(usize, usize)> {
+    std::mem::take(&mut *REQUESTS.lock().expect("request capture lock"))
+}
+
+/// Record what one routed call found resident of its selected experts
+/// after its prefetch and before its loop. A no-op unless a capture is
+/// open.
+pub fn record_residency(residency: super::prefetch::Residency) {
+    if !ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
+    RESIDENCY
+        .lock()
+        .expect("residency capture lock")
+        .push(residency);
+}
+
+/// Every routed call's residency reading since the capture opened, in
+/// call order; empty when nothing recorded one.
+pub fn take_residency() -> Vec<super::prefetch::Residency> {
+    std::mem::take(&mut *RESIDENCY.lock().expect("residency capture lock"))
 }

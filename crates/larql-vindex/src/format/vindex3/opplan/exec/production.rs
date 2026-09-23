@@ -1081,7 +1081,18 @@ impl PlanBackend for ProductionBackend {
                 })
                 .collect();
             let parallelism = super::cpu::shared().map(|e| e.workers()).unwrap_or(1);
-            prefetch::prefetch(*access, &ranges, parallelism);
+            let report = prefetch::prefetch(*access, &ranges, parallelism);
+            drop(_prefetch);
+            routing_trace::record_requests(report.ranges, report.requests);
+            // What the loop is about to find resident — read only when a
+            // capture asked for the witness by name: the reading is a
+            // page-table walk over every selected page, and a latency
+            // figure must not carry it unannounced. Outside every stage.
+            if routing_trace::wants_residency() {
+                if let Some(residency) = prefetch::residency(&ranges) {
+                    routing_trace::record_residency(residency);
+                }
+            }
         }
         let _stage = stage(Stage::RoutedExperts);
         let mut out = vec![0.0f32; call.hidden];

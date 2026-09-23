@@ -62,5 +62,49 @@
     "PF-N3": "An access realization has a warm cost: 24 advise calls on resident pages cost 8 ms of an 80 ms token. The realization must be conditioned on the mapping's residency (the instrument's own mincore reader), which is exactly the reconciliation V2 built — the prefetch should consult it, not repeat it."
   },
   "next": "(1) Gate the advise on residency and re-measure the warm token (P4 to hold cleanly). (2) One arm of larger requests: advise per contiguous run rather than per tensor, and a pread-into-cache variant, to see whether 2.4 GB/s → 3.8 GB/s. (3) Then the resident quantised expert-bank arms (Q6_K, Q4_K) against these numbers: cold 0.60 s advised vs a resident bank's 0 s cold, priced by resident footprint and HF divergence.",
-  "not_claimed": "No tokens-per-second. The AC-power quiet arm of V4 with 30 passes has still not run under a quiet load (Spotlight was indexing after the eviction stream)."
+  "not_claimed": "No tokens-per-second. The AC-power quiet arm of V4 with 30 passes has still not run under a quiet load (Spotlight was indexing after the eviction stream).",
+  "follow_ups": {
+    "residency_witness": "`prefetch::residency(ranges)`: mincore over the selected experts' page-aligned coalesced runs, recorded per routed call AFTER the prefetch and BEFORE the loop, only when a capture asks for it by name (`--witness-residency`). Its own cost is ≈70 ms per token on a 2.95 GB selection (a page-table walk over ≈180k pages) — measured as the demand arm's 'prefetch stage' of 69 ms in the witnessed runs, which is why that reading now lives outside every stage and off by default (PF-N4).",
+    "coalesced_arm": "`MappedAccess::Coalesced`: advise once per contiguous run of the page-aligned selected regions (`prefetch::runs_of`); `PrefetchReport.requests` counts the calls and the capture records (ranges, requests) per routed call.",
+    "witnessed_distributions_5_samples_each_eviction_verified_cold": {
+      "demand": {
+        "cold_token_ms": {
+          "p50": 1205,
+          "min": 1141,
+          "max": 1250
+        },
+        "cold_prompt_ms_p50": 5461,
+        "major_faults_p50": 73520,
+        "paged_gb_p50": 1.204,
+        "resident_before_loop": "59.1% of 2.948 GB in every sample — the prompt's cross-position expert reuse, measured"
+      },
+      "advise": {
+        "cold_token_ms": {
+          "p50": 634,
+          "min": 627,
+          "max": 864
+        },
+        "cold_prompt_ms_p50": 3342,
+        "major_faults_p50": 73518,
+        "paged_gb_p50": 1.206,
+        "prefetch_stage_ms_p50": 557,
+        "resident_before_loop": "100.0% in every sample"
+      },
+      "coalesced": {
+        "cold_token_ms": {
+          "p50": 619,
+          "min": 612,
+          "max": 628
+        },
+        "cold_prompt_ms_p50": 3263,
+        "major_faults_p50": 73518,
+        "paged_gb_p50": 1.206,
+        "prefetch_stage_ms_p50": 544,
+        "resident_before_loop": "100.0% in every sample"
+      },
+      "caveat": "every figure here carries the ≈70 ms witness cost inside the token wall (and inside the prefetch stage for the advised arms); the warm passes read ≈150 ms for the same reason. The unwitnessed distributions below are the latency record."
+    },
+    "PF-N4": "An observer that walks page tables is not free: the residency witness cost ≈70 ms per token and doubled the warm figure. It is now opt-in and outside every stage; the residency claim rests on the witnessed runs, the latency claim on unwitnessed ones, and the report says which is which.",
+    "PF-N5": "Coalescing 24 per-tensor requests into contiguous runs moved the cold token from 634 to 619 ms p50 (prefetch stage 557 → 544 ms, ≈2.2 GB/s either way) and removed the advise arm's outlier (864 ms) — a tighter distribution, not a faster one. The request-size knob a mapping offers through madvise saturates near 2.2–2.4 GB/s on this device (≈3.8 sequential); the remaining gap needs a different primitive (a file-descriptor read path into the page cache), which is outside this milestone."
+  }
 }

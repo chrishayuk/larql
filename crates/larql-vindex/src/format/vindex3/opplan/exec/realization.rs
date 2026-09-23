@@ -222,13 +222,19 @@ pub enum MappedAccess {
     /// address, before the loop; every fault is taken in parallel and
     /// the loop then finds resident pages.
     Touch,
+    /// `Advise`, but one request per contiguous run of the selected
+    /// regions after page alignment rather than one per tensor — the
+    /// larger-request arm: the same bytes asked for in fewer, longer
+    /// pieces.
+    Coalesced,
 }
 
 impl MappedAccess {
-    pub const ALL: [MappedAccess; 3] = [
+    pub const ALL: [MappedAccess; 4] = [
         MappedAccess::Demand,
         MappedAccess::Advise,
         MappedAccess::Touch,
+        MappedAccess::Coalesced,
     ];
 
     pub fn name(self) -> &'static str {
@@ -236,6 +242,7 @@ impl MappedAccess {
             MappedAccess::Demand => "demand",
             MappedAccess::Advise => "advise",
             MappedAccess::Touch => "touch",
+            MappedAccess::Coalesced => "coalesced",
         }
     }
 
