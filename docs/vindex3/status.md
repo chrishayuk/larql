@@ -18,6 +18,21 @@ owns the versioned format contract; its byte-level ABI remains candidate.
 | Graph walks | Active transition-support research; its prediction, attribution and executability claims have separate gates |
 | V2 / LQL | Existing extraction, query, patch and compilation surfaces remain supported; generation selection is deliberate |
 
+## Planned capabilities
+
+Two capabilities are on the [VINDEX3 roadmap](../../ROADMAP.md#planned-v3-capabilities-added-2026-09-22)
+and are **not** part of the current surface. Both are refused explicitly rather
+than approximated; the refusal is the truthful boundary until each has a frozen
+execution contract and parity gates.
+
+| Planned | Current behaviour |
+|---|---|
+| **Partial execution / sharding** | `larql serve` refuses `--layers`, `--experts`, `--units`, `--moe-remote`, `--ffn-only`, `--embed-only` and `--no-infer` on a VINDEX3 container, and a V3 server joining a grid announces no shards. Preparation has an internal layer-range slice that consumes hidden states and refuses token ids; it is research substrate, not a supported sharding contract. |
+| **Multimodal embedding handoff** | `larql run` refuses `--image` and `--mm-weights` on a VINDEX3 container. Perception towers can be admitted as components, but no V3 execution path accepts externally produced embeddings. Text generation is scoped so that it does not depend on the tower. |
+
+Partial execution comes first: the multimodal handoff should reuse its
+boundary, identity and provenance rules rather than add a special-case path.
+
 ## Current research
 
 The format is the stable conceptual foundation; research tests what can be

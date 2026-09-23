@@ -113,6 +113,7 @@ fn as_f32_returns_f32_and_refuses_every_other_representation() {
             WeightSlice::KQuant {
                 blocks: &FOREIGN_BYTES,
                 codec: crate::format::vindex3::represent::kquant::Q8_0,
+                activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
             },
         ),
     ];

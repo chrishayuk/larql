@@ -426,7 +426,7 @@ mod probe {
         let positions = xs.len() / hidden;
         eprintln!("  input: {positions} position(s) x {hidden}\n");
 
-        let backend = ProductionBackend;
+        let backend = ProductionBackend::new();
         // Which experts THIS token selects — read once, from a run whose
         // residency is not being measured, so the predicted set is known
         // before any arm executes.

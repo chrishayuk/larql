@@ -9,6 +9,7 @@ mod fp8_slab;
 mod integer;
 mod kernels;
 mod kquant_plan;
+mod kquant_q8k;
 mod ledger;
 mod nvfp4_slab;
 mod physical;

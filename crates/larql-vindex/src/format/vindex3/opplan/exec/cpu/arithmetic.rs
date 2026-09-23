@@ -190,7 +190,14 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
         // One kernel, so residency determines execution outright — the
         // invariant this function exists to expose, satisfied trivially.
         WeightRep::Nvfp4 => &[PhysicalProjectionPlan::FusedNvfp4],
-        WeightRep::KQuant => &[PhysicalProjectionPlan::FusedKQuant],
+        // Two kernels over the same stored blocks: the f32 activation
+        // and the Q8_K one (Q8K-ACT-1). Residency does NOT determine
+        // execution here by the weight rep alone — the resident binding's
+        // activation form does, fixed at load from the pinned realization.
+        WeightRep::KQuant => &[
+            PhysicalProjectionPlan::FusedKQuant,
+            PhysicalProjectionPlan::FusedKQuantQ8k,
+        ],
         // One kernel, for a stronger reason than NVFP4's: these are the
         // checkpoint's own bytes, so no policy produced them and none can
         // choose otherwise.

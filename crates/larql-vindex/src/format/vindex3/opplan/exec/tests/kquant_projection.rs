@@ -278,7 +278,7 @@ fn the_direct_projection_reads_the_stored_bytes() {
     let (_src, out) = compiled(&tmp, Q8_0);
     let op = a_stored_matrix(&out, Q8_0);
     let store = open(&out, Q8_0);
-    let LoadedWeight::KQuant { blocks, codec } =
+    let LoadedWeight::KQuant { blocks, codec, .. } =
         load_weight((&store).into(), &op, WeightFormat::KQuant).unwrap()
     else {
         panic!("the direct arm binds blocks");
@@ -289,6 +289,7 @@ fn the_direct_projection_reads_the_stored_bytes() {
         &WeightSlice::KQuant {
             blocks: &blocks,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         },
         &x,
         out_dim,
@@ -303,6 +304,7 @@ fn the_direct_projection_reads_the_stored_bytes() {
         &WeightSlice::KQuant {
             blocks: &dirty,
             codec,
+            activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
         },
         &x,
         out_dim,
@@ -414,7 +416,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let (_src, out) = compiled(&tmp, Q6_K);
     let op = a_stored_matrix(&out, Q6_K);
     let store = open(&out, Q6_K);
-    let LoadedWeight::KQuant { blocks, codec } =
+    let LoadedWeight::KQuant { blocks, codec, .. } =
         load_weight((&store).into(), &op, WeightFormat::KQuant).unwrap()
     else {
         panic!("the direct arm binds blocks");
@@ -425,6 +427,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let as_q6 = WeightSlice::KQuant {
         blocks: &blocks,
         codec: Q6_K,
+        activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
     };
     assert!(as_q6.rows(out_dim, in_dim).is_ok(), "the control case");
 
@@ -432,6 +435,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let as_q4 = WeightSlice::KQuant {
         blocks: &blocks,
         codec: Q4_K,
+        activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
     };
     let err = as_q4
         .rows(out_dim, in_dim)
@@ -448,6 +452,7 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     let as_q8 = WeightSlice::KQuant {
         blocks: &blocks,
         codec: Q8_0,
+        activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
     };
     let err = as_q8
         .rows(out_dim, in_dim)
@@ -566,4 +571,80 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
             .form,
         RealizationForm::Direct(PhysicalProjectionPlan::FusedKQuant)
     ));
+}
+
+/// Q8K-ACT-1 at the loader: `WeightFormat::KQuantQ8k` binds the SAME
+/// stored blocks as `KQuant`, carries the Q8_K activation to the slice
+/// and back out as the format, and projects through the declared kernel.
+#[test]
+fn the_q8k_binding_is_the_same_bytes_bound_for_a_q8k_activation() {
+    use crate::format::vindex3::opplan::exec::backend::KQuantActivation;
+    for codec in [Q4_K, Q6_K] {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_src, out) = compiled(&tmp, codec);
+        let op = a_stored_matrix(&out, codec);
+        let store = open(&out, codec);
+        let f32_bound = load_weight((&store).into(), &op, WeightFormat::KQuant).unwrap();
+        let q8k_bound = load_weight((&store).into(), &op, WeightFormat::KQuantQ8k).unwrap();
+        assert_eq!(f32_bound.format(), WeightFormat::KQuant, "{}", codec.name);
+        assert_eq!(
+            q8k_bound.format(),
+            WeightFormat::KQuantQ8k,
+            "{}",
+            codec.name
+        );
+        let (
+            LoadedWeight::KQuant { blocks: a, .. },
+            LoadedWeight::KQuant {
+                blocks: b,
+                activation: bound,
+                ..
+            },
+        ) = (&f32_bound, &q8k_bound)
+        else {
+            panic!("both arms bind stored blocks");
+        };
+        assert_eq!(
+            a, b,
+            "{}: the Q8_K binding must be the stored bytes",
+            codec.name
+        );
+        assert_eq!(*bound, KQuantActivation::Q8k);
+        // One backing allocation, exactly the stored blocks: the Q8_K
+        // activation is made per call, never held beside the weights.
+        assert_eq!(
+            q8k_bound.allocations(),
+            vec![(b.as_ptr() as usize, b.len())],
+            "{}",
+            codec.name
+        );
+        let WeightSlice::KQuant {
+            activation: sliced, ..
+        } = q8k_bound.slice()
+        else {
+            panic!("a K-quant binding slices as a K-quant");
+        };
+        assert_eq!(sliced, KQuantActivation::Q8k, "{}", codec.name);
+
+        let (out_dim, in_dim) = (op.shape[0], op.shape[1]);
+        let x = activation(in_dim);
+        let y = project_matrix(&q8k_bound.slice(), &x, out_dim, in_dim).unwrap();
+        let want = codec.gemv_q8k(b, &x, out_dim, in_dim).unwrap();
+        assert_eq!(y, want, "{}", codec.name);
+    }
+}
+
+/// A member with no Q8_K kernel is refused a Q8_K binding at LOAD, by
+/// name — never pinned to a kernel that would refuse at the first token.
+#[test]
+fn a_q8k_binding_of_a_member_without_a_q8k_kernel_is_refused_at_load() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_src, out) = compiled(&tmp, Q8_0);
+    let op = a_stored_matrix(&out, Q8_0);
+    let store = open(&out, Q8_0);
+    let err = match load_weight((&store).into(), &op, WeightFormat::KQuantQ8k) {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("Q8_0 has no Q8_K kernel and must not bind for one"),
+    };
+    assert!(err.contains("Q8_0") && err.contains("Q8_K"), "{err}");
 }

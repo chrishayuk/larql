@@ -107,6 +107,12 @@ pub enum ExecBackend {
     ProductionQ6k,
     /// The `larql-compute` kernels, asking for a compiled Q4_K pack.
     ProductionQ4k,
+    /// The same compiled Q4_K pack, executed against a **Q8_K
+    /// activation** by the integer-dot kernel V2's CPU decode uses
+    /// (Q8K-ACT-1, `docs/q8k-act-1.md`). Lossy in the activation by
+    /// declaration; [`Self::ProductionQ4k`] keeps its f32-activation
+    /// meaning.
+    ProductionQ4kQ8k,
     /// GPU matmuls via `larql-compute-metal` (rung 1: matrix work on
     /// the device, elementwise glue on the CPU).
     #[cfg(all(feature = "gpu", target_os = "macos"))]
