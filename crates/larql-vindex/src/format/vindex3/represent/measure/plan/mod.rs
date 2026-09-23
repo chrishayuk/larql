@@ -66,6 +66,11 @@ pub struct PlanMeasureRequest {
     /// Directory the report, positions and receipt are written to. It must
     /// not already hold a report.
     pub output: PathBuf,
+    /// What produced this run, declared by the caller (the binary's version,
+    /// a source commit) and recorded verbatim in the report. The procedure
+    /// cannot know its own build; it can refuse to lose the caller's word.
+    #[serde(default)]
+    pub provenance: BTreeMap<String, String>,
 }
 
 /// Nothing was measured. Worth retrying once the cause is fixed.
@@ -281,6 +286,35 @@ fn attribute(arm: &ArmDescription) -> Result<(), PlanRefusal> {
     Ok(())
 }
 
+/// A container that declares a compiled program is only measured through
+/// it: the arm must request the program's encoding and bind at least one
+/// object from the pack. Otherwise the run compares the reference against
+/// canonical bytes and would look like perfect fidelity. That happened once,
+/// as KL 0.00000 over 1,740 positions (`run_bank.py`'s check, carried here).
+fn executes_declared_program(
+    arm: &ArmDescription,
+    index: &Vindex3Index,
+) -> Result<(), PlanRefusal> {
+    let Some(program) = &index.precision_map else {
+        return Ok(());
+    };
+    let from_pack = arm.objects.values().filter(|b| b.stored).count();
+    if arm.requested_pack.as_deref() == Some(program.encoding.as_str()) && from_pack > 0 {
+        return Ok(());
+    }
+    Err(inadmissible(PlanInadmissible::UnexpectedPhysicalRead {
+        arm: arm.arm.clone(),
+        detail: format!(
+            "the container declares a {} program; the arm requested {} and bound {from_pack} \
+             object(s) from a pack",
+            program.encoding,
+            arm.requested_pack
+                .as_deref()
+                .unwrap_or("the canonical representation")
+        ),
+    }))
+}
+
 fn read_index(container: &Path) -> Result<Vindex3Index, PlanRefusal> {
     let path = container.join(INDEX_JSON);
     let text = std::fs::read_to_string(&path)
@@ -350,11 +384,15 @@ fn measure(
         facts.tokenizer_checked_arms += 1;
     }
 
-    // Each arm bound what it declared.
+    // Each arm bound what it declared, and the candidate executed the
+    // program its container declares.
+    let reference_index = read_index(&reference_desc.container)?;
+    let candidate_index = read_index(&candidate_desc.container)?;
     for arm in [&reference_desc, &candidate_desc] {
         attribute(arm)?;
         facts.attributed_arms += 1;
     }
+    executes_declared_program(&candidate_desc, &candidate_index)?;
 
     // The changed variable exists.
     let reference_bound = identity::bound_representations(&reference_desc);
@@ -368,8 +406,6 @@ fn measure(
 
     // What both arms bound is the same bytes, and every bound
     // representation matches its seal.
-    let reference_index = read_index(&reference_desc.container)?;
-    let candidate_index = read_index(&candidate_desc.container)?;
     let reference_digests = identity::recompute_digests(
         &reference_desc.container,
         &reference_index,
@@ -473,6 +509,8 @@ fn measure(
                 delta_nll: scored.delta_nll,
                 reference_margin: scored.reference_margin,
                 reference_entropy: scored.reference_entropy,
+                max_abs_delta: scored.max_abs_delta,
+                mean_abs_delta: scored.mean_abs_delta,
             });
         }
     }
@@ -498,8 +536,14 @@ fn measure(
         &receipt,
         &positions,
         [
-            identity::recorded_digests(&reference_index, &reference_bound),
-            identity::recorded_digests(&candidate_index, &candidate_bound),
+            (
+                identity::recorded_representations(&reference_index, &reference_bound),
+                reference_index.precision_map.clone(),
+            ),
+            (
+                identity::recorded_representations(&candidate_index, &candidate_bound),
+                candidate_index.precision_map.clone(),
+            ),
         ],
     )
     .map_err(|e| {
@@ -515,17 +559,25 @@ fn write_json(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
     std::fs::write(path, bytes)
 }
 
+/// A container's bound representations and its declared program, for the
+/// report.
+type ContainerRecord = (
+    BTreeMap<String, identity::RecordedRepresentation>,
+    Option<crate::format::vindex3::represent::map::PrecisionMap>,
+);
+
 /// The report, then the positions. The receipt is `run`'s.
 fn write_record(
     request: &PlanMeasureRequest,
     bank: &TokenBank,
     receipt: &PlanReceipt,
     positions: &[PositionMetrics],
-    digests: [BTreeMap<String, String>; ARMS],
+    containers: [ContainerRecord; ARMS],
 ) -> std::io::Result<()> {
     use std::io::Write;
     std::fs::create_dir_all(&request.output)?;
-    let [reference_digests, candidate_digests] = digests;
+    let [(reference_digests, reference_program), (candidate_digests, candidate_program)] =
+        containers;
     let report = serde_json::json!({
         "procedure": PROCEDURE,
         "label": request.label,
@@ -537,8 +589,17 @@ fn write_record(
             "sequences": request.sequences,
             "of": bank.sample_count(),
         },
-        "reference": { "arm": receipt.reference, "digests": reference_digests },
-        "candidate": { "arm": receipt.candidate, "digests": candidate_digests },
+        "provenance": request.provenance,
+        "reference": {
+            "arm": receipt.reference,
+            "representations": reference_digests,
+            "precision_map": reference_program,
+        },
+        "candidate": {
+            "arm": receipt.candidate,
+            "representations": candidate_digests,
+            "precision_map": candidate_program,
+        },
         "facts": receipt.facts,
         "summary": receipt.summary,
         "sample_size": {

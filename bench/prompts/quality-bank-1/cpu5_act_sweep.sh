@@ -31,7 +31,7 @@ export LARQL_CPU_ARITHMETIC=bf16xq8b
 for b in "${BLOCKS[@]}"; do
   echo "===== activation block ${b} (exact bf16 weights) ====="
   export LARQL_CPU_ACT_BLOCK="$b"
-  python3 "$HERE/run_bank.py" compare "$CONTAINER" "$SCREEN" \
+  python3 "$HERE/run_bank_legacy.py" compare "$CONTAINER" "$SCREEN" \
       --backend production --source auto --label "act${b}"
-  python3 "$HERE/run_bank.py" report "$SCREEN" --label "act${b}"
+  python3 "$HERE/run_bank_legacy.py" report "$SCREEN" --label "act${b}"
 done

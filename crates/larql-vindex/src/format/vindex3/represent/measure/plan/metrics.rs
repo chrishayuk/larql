@@ -42,6 +42,10 @@ pub struct PositionMetrics {
     pub reference_margin: f64,
     /// The reference's entropy, nats.
     pub reference_entropy: f64,
+    /// Largest |candidate − reference| over the vocabulary, in logit units.
+    pub max_abs_delta: f64,
+    /// Mean |candidate − reference| over the vocabulary, in logit units.
+    pub mean_abs_delta: f64,
 }
 
 /// Why two logit rows cannot be compared.
@@ -103,6 +107,12 @@ pub fn position_metrics(
     let p1 = lr[reference_top[0]].exp();
     let p2 = reference_top.get(1).map_or(0.0, |&i| lr[i].exp());
     let reference_entropy = -lr.iter().map(|&l| l.exp() * l).sum::<f64>();
+    let deltas = reference
+        .iter()
+        .zip(candidate)
+        .map(|(&r, &c)| (f64::from(c) - f64::from(r)).abs());
+    let (max_abs_delta, sum_abs_delta) =
+        deltas.fold((0.0f64, 0.0f64), |(m, s), d| (m.max(d), s + d));
     Ok(PositionScore {
         kl,
         top1_agree: reference_top[0] == candidate_top[0],
@@ -110,6 +120,8 @@ pub fn position_metrics(
         delta_nll,
         reference_margin: p1 - p2,
         reference_entropy,
+        max_abs_delta,
+        mean_abs_delta: sum_abs_delta / reference.len() as f64,
     })
 }
 
@@ -143,6 +155,8 @@ pub struct PositionScore {
     pub delta_nll: Option<f64>,
     pub reference_margin: f64,
     pub reference_entropy: f64,
+    pub max_abs_delta: f64,
+    pub mean_abs_delta: f64,
 }
 
 /// Aggregates over a set of positions.
@@ -160,6 +174,10 @@ pub struct Aggregate {
     pub top5_overlap_mean: f64,
     /// Mean over positions that have a next token; `None` if none do.
     pub delta_nll_mean: Option<f64>,
+    /// Mean, over positions, of each position's largest |Δlogit|.
+    pub max_abs_delta_mean: f64,
+    /// Nearest-rank p99 of each position's largest |Δlogit|.
+    pub max_abs_delta_p99: f64,
 }
 
 /// Aggregate `positions`. `None` for an empty set, because a mean of
@@ -174,6 +192,9 @@ pub fn aggregate(positions: &[PositionMetrics]) -> Option<Aggregate> {
     let kl_mean = kls.iter().sum::<f64>() / n;
     kls.sort_by(f64::total_cmp);
     let deltas: Vec<f64> = positions.iter().filter_map(|p| p.delta_nll).collect();
+    let mut max_deltas: Vec<f64> = positions.iter().map(|p| p.max_abs_delta).collect();
+    let max_abs_delta_mean = max_deltas.iter().sum::<f64>() / n;
+    max_deltas.sort_by(f64::total_cmp);
     Some(Aggregate {
         positions: positions.len(),
         kl_mean,
@@ -184,6 +205,8 @@ pub fn aggregate(positions: &[PositionMetrics]) -> Option<Aggregate> {
         top5_overlap_mean: positions.iter().map(|p| p.top5_overlap as f64).sum::<f64>() / n,
         delta_nll_mean: (!deltas.is_empty())
             .then(|| deltas.iter().sum::<f64>() / deltas.len() as f64),
+        max_abs_delta_mean,
+        max_abs_delta_p99: nearest_rank_percentile(&max_deltas, 0.99),
     })
 }
 

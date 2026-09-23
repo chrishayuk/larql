@@ -44,6 +44,22 @@ one where it was certain, and a KL of 0.05 means something different over
 a sharp distribution than over a flat one. Reporting the mean alone hides
 both.
 
+## Running it
+
+`run_bank.py` is a client of `larql vindex3 measure`, MEASURE-PLAN-1's procedure
+(`docs/measure-plan-1.md`). It exports these prompts as a sealed token bank,
+tokenised by the reference container's own tokenizer, then runs the procedure,
+which proves its arms before any number counts. Numbers are in nats, over the
+full vocabulary, and split by category and by the reference's top-1 margin.
+The reference container must stay on disk: the procedure re-runs it every time,
+twice for its null arm.
+
+`run_bank_legacy.py` is the runner that produced the results recorded before
+2026-09-23 (CPU-5, CPU-6, the QB-2 acceptance). It is kept only to reproduce
+them. It banked reference logits, computed its own numbers in bits, and
+compared arithmetic modes chosen by environment variables across processes,
+which the procedure cannot express.
+
 ## What this bank does NOT cover
 
 **Multimodal.** `vindex3 exec` takes token ids and has no image path, so

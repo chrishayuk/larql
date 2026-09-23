@@ -151,6 +151,7 @@ fn request(f: &Fixture) -> PlanMeasureRequest {
         sequences: SEQUENCES,
         label: "fixture".into(),
         output: f.output.clone(),
+        provenance: [("larql_version".to_string(), "fixture".to_string())].into(),
     }
 }
 
@@ -517,6 +518,8 @@ fn the_metrics_agree_with_an_independent_numpy_computation() {
             close(ours.kl, "kl");
             close(ours.reference_margin, "reference_margin");
             close(ours.reference_entropy, "reference_entropy");
+            close(ours.max_abs_delta, "max_abs_delta");
+            close(ours.mean_abs_delta, "mean_abs_delta");
             match (ours.delta_nll, theirs["delta_nll"].as_f64()) {
                 (Some(a), Some(_)) => close(a, "delta_nll"),
                 (None, None) => {}
@@ -710,4 +713,40 @@ fn reading_a_pack_of_another_encoding_is_refused() {
         }
         other => panic!("expected UnexpectedPhysicalRead, got {other:?}"),
     }
+}
+
+/// A container that declares a compiled program, read through canonical
+/// bytes by a differently named arm: once the reference against itself in
+/// disguise, scored KL 0.00000. Refused, not measured.
+#[test]
+fn a_candidate_that_skips_its_declared_program_is_refused() {
+    let f = fixture();
+    let mut r = arm(&f.source, None, REFERENCE_ARM);
+    let mut c = arm(&f.pack, None, "production-canonical");
+    match inadmissible(run(&request(&f), &mut r, &mut c)) {
+        PlanInadmissible::UnexpectedPhysicalRead { arm, detail } => {
+            assert_eq!(arm, "production-canonical");
+            assert!(detail.contains("declares a NVFP4 program"), "{detail}");
+        }
+        other => panic!("expected UnexpectedPhysicalRead, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_report_records_provenance_bytes_and_programs() {
+    let f = fixture();
+    let (mut r, mut c) = reference_and_candidate(&f);
+    run(&request(&f), &mut r, &mut c).expect("admissible");
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(f.output.join(REPORT_FILE)).unwrap()).unwrap();
+    assert_eq!(report["provenance"]["larql_version"], "fixture");
+    assert_eq!(
+        report["candidate"]["precision_map"]["encoding"],
+        DTYPE_NVFP4
+    );
+    assert!(report["reference"]["precision_map"].is_null());
+    let reps = report["candidate"]["representations"].as_object().unwrap();
+    assert!(reps
+        .values()
+        .all(|r| r["payload_bytes"].as_u64().unwrap() > 0));
 }
