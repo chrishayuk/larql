@@ -926,3 +926,175 @@ fn an_all_nvfp4_device_prepares_a_conservative_pack_with_held_operands_at_f16() 
         }
     }
 }
+
+/// End to end, the mirror of the held-at-source failure: `nvfp4-ffn`
+/// asks f16 attention, the NVFP4 pack stores attention compiled and holds
+/// no source bytes for it, and the F16 loader had no judged narrowing for
+/// an NVFP4 pack ("no judged f16 narrowing for dtype NVFP4"). Preparation
+/// now binds the compiled bytes as stored, and the pin says so.
+#[test]
+fn an_nvfp4_ffn_device_prepares_a_pack_whose_attention_is_compiled() {
+    use crate::format::vindex3::opplan::exec::operands::RepresentationSource;
+    use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+    use crate::format::vindex3::opplan::exec::realization::SelectionReason;
+    use crate::format::vindex3::opplan::exec::weights::load_weight;
+    use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
+    use crate::format::vindex3::represent::{compile_representation, policy, RepresentSpec};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("nvfp4.vindex3");
+    crate::format::vindex3::fixtures::encode_fixture_container(
+        dense_f32_model,
+        &checkpoint,
+        &src,
+        "target",
+    );
+    compile_representation(
+        &src,
+        &out,
+        &RepresentSpec {
+            encoding: DTYPE_NVFP4.to_string(),
+            objects: Vec::new(),
+            roles: policy::RolePolicy::default(),
+            deployment: false,
+            protect: policy::Protections::default(),
+        },
+    )
+    .expect("the fixture compiles to NVFP4");
+    let inspection = inspect_container(&out, false).unwrap();
+    let plan = plan_component_ops(&inspection, &out, "target")
+        .unwrap()
+        .plan
+        .expect("a plan");
+    let backend = DevicePlanBackend::with_formats(
+        Nvfp4LoopDevice,
+        "nvfp4-ffn-loop",
+        WeightFormats {
+            attention: WeightFormat::F16,
+            ffn: WeightFormat::Nvfp4,
+            head: WeightFormat::F16,
+        },
+    );
+    for source in [RepresentationSource::Auto, RepresentationSource::Stored] {
+        let store = OperandStore::open_for(&out, &inspection, Some(DTYPE_NVFP4), source).unwrap();
+        let ops = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full)
+            .unwrap_or_else(|e| panic!("{source:?}: preparation refused: {e}"));
+        ops.verify_pins().unwrap();
+        let compiled: Vec<_> = ops
+            .realizations()
+            .iter()
+            .filter(|r| r.selection.reason == SelectionReason::CompiledPrecisionHeld)
+            .collect();
+        assert!(
+            !compiled.is_empty(),
+            "{source:?}: the pack compiled no attention operand — the witness is vacuous"
+        );
+        for r in &compiled {
+            assert_eq!(
+                r.selection.realization.format(),
+                WeightFormat::Nvfp4,
+                "{source:?}"
+            );
+            // The loader, asked f16 directly as a class-table caller asks
+            // it, binds the same compiled bytes an NVFP4 request does.
+            let operand = &r.planned.operand;
+            let asked = load_weight((&store).into(), operand, WeightFormat::F16)
+                .unwrap_or_else(|e| panic!("{source:?}: f16 over a compiled operand: {e}"));
+            let stored = load_weight((&store).into(), operand, WeightFormat::Nvfp4).unwrap();
+            match (&asked, &stored) {
+                (
+                    LoadedWeight::Nvfp4 {
+                        packed: a,
+                        scales: sa,
+                        tensor_scale: ta,
+                    },
+                    LoadedWeight::Nvfp4 {
+                        packed: b,
+                        scales: sb,
+                        tensor_scale: tb,
+                    },
+                ) => {
+                    assert_eq!(a.as_slice(), b.as_slice(), "{source:?}");
+                    assert_eq!(sa.as_slice(), sb.as_slice(), "{source:?}");
+                    assert_eq!(ta.to_bits(), tb.to_bits(), "{source:?}");
+                }
+                other => panic!("{source:?}: expected two NVFP4 bindings, got {other:?}"),
+            }
+        }
+        // The source-held head is untouched: an f16 class over bf16 bytes.
+        assert!(
+            ops.realizations()
+                .iter()
+                .all(|r| r.selection.reason != SelectionReason::SourcePrecisionHeld),
+            "{source:?}: nothing here asked NVFP4 over a held operand"
+        );
+    }
+}
+
+/// An f16 class over an operand stored compiled to NVFP4 pins NVFP4,
+/// naming why; an NVFP4 class over it, and an f16 class over anything
+/// else, answer as before.
+#[test]
+fn an_f16_class_over_a_compiled_nvfp4_operand_pins_nvfp4() {
+    use crate::format::vindex3::opplan::exec::realization::{
+        RealizationForm, RepresentationFacts, SelectionReason,
+    };
+    use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
+    use crate::format::vindex3::opplan::OperandRef;
+    use crate::format::vindex3::represent::codec::RepresentationExtent;
+
+    let planned = |operation: Operation| PlannedOperand {
+        operand: OperandRef {
+            object: "target.decoder_stack".into(),
+            tensor: "0.w".into(),
+            dtype: String::new(),
+            shape: vec![8, 8],
+        },
+        operation,
+        access: operation.access(),
+        extent: RepresentationExtent::BASE,
+        layer: Some(0),
+        declared_representation: None,
+        logical_elements: 64,
+    };
+    let compiled = RepresentationFacts::resolve("BF16").with_nvfp4_compiled(true);
+    let free = RepresentationFacts::resolve("BF16");
+    let f16 = DevicePlanBackend::with_formats(
+        Nvfp4LoopDevice,
+        "f16-loop-compiled",
+        WeightFormats::uniform(WeightFormat::F16),
+    );
+    for operation in [
+        Operation::OutputHead,
+        Operation::Project(MatrixClass::FfnProjection),
+        Operation::Project(MatrixClass::AttentionProjection),
+    ] {
+        let pinned = f16.select(&planned(operation), &compiled).unwrap();
+        assert_eq!(
+            pinned.realization.form,
+            RealizationForm::DeviceResident(WeightFormat::Nvfp4),
+            "{operation:?}"
+        );
+        assert_eq!(pinned.reason, SelectionReason::CompiledPrecisionHeld);
+        let asked = f16.select(&planned(operation), &free).unwrap();
+        assert_eq!(
+            asked.realization.form,
+            RealizationForm::DeviceResident(WeightFormat::F16),
+            "{operation:?}"
+        );
+        assert_eq!(asked.reason, SelectionReason::DeviceClassTable);
+    }
+    // An NVFP4 class already asks for what is stored, so the fact changes nothing.
+    let nvfp4 = DevicePlanBackend::with_formats(
+        Nvfp4LoopDevice,
+        "nvfp4-loop-compiled",
+        WeightFormats::uniform(WeightFormat::Nvfp4),
+    );
+    let head = nvfp4
+        .select(&planned(Operation::OutputHead), &compiled)
+        .unwrap();
+    assert_eq!(head.reason, SelectionReason::DeviceClassTable);
+}

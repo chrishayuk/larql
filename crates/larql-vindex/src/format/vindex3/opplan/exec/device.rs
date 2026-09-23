@@ -417,8 +417,13 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         // An NVFP4 class format over an operand the container holds at
         // source precision binds at f16 — the loader's rule, read from the
         // same fact — so the pin names what will actually be resident.
+        // And the mirror: an f16 class format over an operand the container
+        // stores compiled to NVFP4 binds the compiled image, since no source
+        // bytes exist to narrow.
         let (format, reason) = if asked == WeightFormat::Nvfp4 && facts.nvfp4_at_source {
             (WeightFormat::F16, SelectionReason::SourcePrecisionHeld)
+        } else if asked == WeightFormat::F16 && facts.nvfp4_compiled {
+            (WeightFormat::Nvfp4, SelectionReason::CompiledPrecisionHeld)
         } else {
             (asked, SelectionReason::DeviceClassTable)
         };
