@@ -385,6 +385,25 @@ realisation is the next engineering hypothesis; it remains a separate change und
 not a redefinition of this result. The borrowed kernel tap itself satisfies HF1's cost
 forecast on both subjects.
 
+**Additional measurements (this session, `vindex3 observe --heads`, recorded after the
+execution commit 58eb342d; the HP5 and HP7 sections above were recorded by the owner's
+witness driver, committed separately as 74181943 and not part of this rung's gated paths).**
+Realisation is not a constraint of this rung: under the **default policy** (Q8-requantised
+projections and head, the witness chain's realisation) on Gemma 3 4B IT, `The capital of
+France is` plus 8 greedy tokens, the generated ids are identical with and without heads,
+all 952 carrier-stats rows are bit-equal between the two arms, the provenance fingerprint
+is identical between them and different from the bf16 arm's, the worst head-sum residual
+is 1.13e-6 over 476 writes, and the stats-level cost is +9% (103.9 → 113.4 ms per
+position, single runs) against +34% under the bf16 cap on the same prompt. On Granite 4.2
+3B (`granite-4.2-3b.s6.vindex3`, schema v6, model id `b7e94730…`; the v5 sibling
+`granite-4.2-3b.vindex3` still refuses by declaration) with this session's gated binary:
+generated ids identical across arms, 1040 carrier-stats rows bit-equal, 20800 records per
+run, worst residual 3.5e-7 under the default policy and 3.26e-7 under bf16 (the driver's
+number, reproduced), cost +289% under the default policy on forty query heads — the
+reconstruction's price scales with the head count, as the padded-`W_o` cause predicts.
+The driver's HP7 artifact was reproduced from its committed source: every four-role share
+within 1e-6 of `bench/head-obs-1/hp7-denmark.json`, residuals identical.
+
 **HP7 (recorded 2026-09-20).** Gemma 3 4B IT, production CPU,
 `LARQL_CPU_MAX_FORMAT=bf16`; recipient A `The currency of Denmark is`, donor B `The
 capital of Denmark is`, both stepped as six ids with BOS. The witness consumes the
@@ -431,7 +450,21 @@ file; a Python surface.
 ## Verdict rule
 
 V3-HEAD-OBS-1 is complete only when HP1–HP6 PASS and HP7 is recorded with its declared
-arm and pair. It unlocks ATTR-1D (source-token and head attribution on the executor)
+arm and pair.
+
+**Closed 2026-09-20.** HP1–HP6 PASS on the golden plan (both backends) and on the real
+subjects; HP5 and HP7 recorded above. The evidence freeze's Witness A and B ran on the
+execution commit `58eb342d` under the default policy (22 records, `--heads-top-k 89` with
+the reader rows): every record passed the schema gate, the head-sum residual was at worst
+1.03e-6 on 4B and 6.6e-7 on 12B, the reader-projected reconstruction of each site's step
+from the head rows held within 5.1e-6, sources plus sink summed to one within 1e-7, the
+carriers were bit-equal to the INSTRUMENT-1a records at all 89 positions, and the
+fingerprint equalled the 1b record's. The adjudication (HF1, HF3, HF4 and HF5 held six of
+six; HF2 failed on cost, with the default-policy and tap-versus-reconstruction measurements
+recorded beside it) and the findings, by head index and site only, are in the evidence
+freeze's results on branch `instrument-1` and the INSTRUMENT-1 bundle; the database entry
+`head-obs-1-per-head-observation` is completed. The candidate set for V3-INTERVENE-1 is
+named there without role words. It unlocks ATTR-1D (source-token and head attribution on the executor)
 and, with V3-INTERVENE-1, ATTR-1C. If HP3 cannot be brought inside `1e-3` on any
 realization, the rung records that the per-head split is not reconstructible on that
 realization and ATTR-1D declares the same; it does not relax the identity.

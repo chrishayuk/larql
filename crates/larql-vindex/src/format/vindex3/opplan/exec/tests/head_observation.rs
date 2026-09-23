@@ -285,17 +285,31 @@ fn hp3_the_head_sum_law_holds_through_the_post_norm_on_the_golden_plan() {
             );
             assert_eq!(write.rows.len(), G_Q_HEADS);
             let delta = &plain.delta[&(write.layer, SublayerSite::Attention, write.position)];
-            // The reader-projected form: Σ_h ⟨r, c′_h⟩ = ⟨r, delta⟩.
+            // The reader-projected form: Σ_h ⟨r, c′_h⟩ = ⟨r, delta⟩. The bound is
+            // relative to the L1 scale of the f32 terms being summed, never to the
+            // cancelled sum: each stored ⟨r, c′_h⟩ carries f32 rounding proportional
+            // to its own magnitude, so the identity's error scales with Σ_h |⟨r, c′_h⟩|
+            // (the largest term alone is only a factor ≤ H tighter, with no analytic
+            // reason). At the golden plan's first write the heads cancel 44x
+            // (Σ_h |·| = 0.948 against a sum of 0.0217); bounded on |⟨r, delta⟩| this
+            // read 1.07e-5 on Windows against 3.3e-6 / 7.2e-6 (production / reference)
+            // on macOS — reduction order, not a defect. Against the term scale the
+            // worst observed margin is 2.4e-7, and a wrong head moves the sum by ~1e-1.
             for (d, row) in basis.iter().enumerate() {
                 let lhs: f64 = write.rows.iter().map(|r| f64::from(r.projection[d])).sum();
+                let term_scale: f64 = write
+                    .rows
+                    .iter()
+                    .map(|r| f64::from(r.projection[d]).abs())
+                    .sum();
                 let rhs: f64 = row
                     .iter()
                     .zip(delta)
                     .map(|(r, x)| f64::from(*r) * f64::from(*x))
                     .sum();
                 assert!(
-                    (lhs - rhs).abs() <= 1e-5 * rhs.abs().max(1e-3),
-                    "projection {d}: {lhs} vs {rhs}"
+                    (lhs - rhs).abs() <= 1e-5 * term_scale.max(1e-3),
+                    "projection {d}: {lhs} vs {rhs} (term scale {term_scale})"
                 );
             }
             for row in &write.rows {
@@ -561,4 +575,178 @@ fn the_reader_decomposes_only_the_write_whose_heads_it_saw() {
     );
     assert_eq!(HeadReader::records(&stats), 0);
     assert!(HeadReader::failure(&stats).is_none());
+}
+
+// ── The reader's refusals and degenerate branches, driven directly ──
+
+/// A synthetic head record over borrowed buffers, for driving the reader
+/// without the executor: what the kernel would hand it, spelled by hand.
+fn synthetic_record<'a>(
+    head: usize,
+    position: usize,
+    weights: &'a [f32],
+    values: &'a [f32],
+    source_values: &'a [&'a [f32]],
+) -> AttentionHeadRecord<'a> {
+    AttentionHeadRecord {
+        position,
+        head,
+        kv_head: head / (G_Q_HEADS / G_KV_HEADS),
+        source_start: 0,
+        weights,
+        sink: 0.0,
+        values,
+        gate: None,
+        source_values,
+    }
+}
+
+#[test]
+fn the_reader_refuses_a_write_whose_head_count_is_not_the_layers_and_stays_failed() {
+    let (_c, plan, store) = fixture();
+    let backend = ProductionBackend::new();
+    let ops = prepared(&plan, &store, &backend);
+    let mut stats = HeadStats::new(&ops, &plan, &backend, None, 1);
+    let weights = [1.0f32];
+    let values = [0.5f32; G_HEAD_DIM];
+    let row: &[f32] = &values;
+    let sources = [row];
+    // Two records for a three-head layer.
+    for head in 0..2 {
+        HeadReader::attention_head(
+            &mut stats,
+            0,
+            synthetic_record(head, 0, &weights, &values, &sources),
+        );
+    }
+    assert_eq!(HeadReader::records(&stats), 2);
+    let delta = vec![0.25f32; ops.hidden()];
+    let write = CarrierWriteRecord {
+        layer: 0,
+        site: SublayerSite::Attention,
+        position: 0,
+        delta: &delta,
+        after: &delta,
+        layer_scale: None,
+    };
+    assert!(stats.finish_write(&write).is_none());
+    let failure = HeadReader::failure(&stats)
+        .expect("the count mismatch is a failure")
+        .to_string();
+    assert!(failure.contains("2 head records for 3 heads"), "{failure}");
+    // Failed stays failed: later records and writes are refused, the
+    // failure is not overwritten, and the pending heads were cleared.
+    for head in 0..G_Q_HEADS {
+        HeadReader::attention_head(
+            &mut stats,
+            1,
+            synthetic_record(head, 0, &weights, &values, &sources),
+        );
+    }
+    let write_1 = CarrierWriteRecord {
+        layer: 1,
+        site: SublayerSite::Attention,
+        position: 0,
+        delta: &delta,
+        after: &delta,
+        layer_scale: None,
+    };
+    assert!(stats.finish_write(&write_1).is_none());
+    assert!(HeadReader::failure(&stats)
+        .unwrap()
+        .to_string()
+        .contains("2 head records for 3 heads"));
+    assert_eq!(
+        HeadReader::records(&stats),
+        2 + G_Q_HEADS,
+        "records are still counted"
+    );
+}
+
+#[test]
+fn the_reader_refuses_a_layer_without_softmax_heads() {
+    let (_c, plan, store) = hybrid();
+    let backend = ReferenceBackend::new();
+    let ops = prepared(&plan, &store, &backend);
+    let other = (0..plan.layers.len())
+        .find(|&i| plan.layers[i].attention.softmax().is_none())
+        .expect("the hybrid fixture has a non-softmax layer");
+    let mut stats = HeadStats::new(&ops, &plan, &backend, None, 1);
+    let weights = [1.0f32];
+    let values = [0.5f32; G_HEAD_DIM];
+    let row: &[f32] = &values;
+    let sources = [row];
+    HeadReader::attention_head(
+        &mut stats,
+        other,
+        synthetic_record(0, 0, &weights, &values, &sources),
+    );
+    let delta = vec![0.25f32; ops.hidden()];
+    let write = CarrierWriteRecord {
+        layer: other,
+        site: SublayerSite::Attention,
+        position: 0,
+        delta: &delta,
+        after: &delta,
+        layer_scale: None,
+    };
+    assert!(stats.finish_write(&write).is_none());
+    let failure = HeadReader::failure(&stats).unwrap().to_string();
+    assert!(failure.contains("has no softmax attention"), "{failure}");
+}
+
+#[test]
+fn a_zero_delta_yields_an_absolute_residual_and_the_projection_is_empty_without_a_basis() {
+    let (_c, plan, store) = fixture();
+    let backend = ReferenceBackend::new();
+    let ops = prepared(&plan, &store, &backend);
+    let mut stats = HeadStats::new(&ops, &plan, &backend, None, 2).retaining_children();
+    let weights = [0.25f32, 0.75];
+    let values = [0.5f32; G_HEAD_DIM];
+    let row: &[f32] = &values;
+    let sources = [row, row];
+    for head in 0..G_Q_HEADS {
+        HeadReader::attention_head(
+            &mut stats,
+            0,
+            synthetic_record(head, 1, &weights, &values, &sources),
+        );
+    }
+    let zero = vec![0.0f32; ops.hidden()];
+    let write = CarrierWriteRecord {
+        layer: 0,
+        site: SublayerSite::Attention,
+        position: 1,
+        delta: &zero,
+        after: &zero,
+        layer_scale: None,
+    };
+    let decomposed = stats
+        .finish_write(&write)
+        .expect("a full set of heads decomposes");
+    assert!(HeadReader::failure(&stats).is_none());
+    // With a zero delta the residual is the absolute head-sum norm, not a ratio.
+    let children = decomposed.children.as_ref().unwrap();
+    let hidden = ops.hidden();
+    let mut sum = vec![0.0f64; hidden];
+    for child in children {
+        for (acc, c) in sum.iter_mut().zip(child) {
+            *acc += f64::from(*c);
+        }
+    }
+    let expected: f64 = sum.iter().map(|v| v * v).sum::<f64>().sqrt();
+    assert!((decomposed.residual - expected).abs() <= 1e-9 * expected.max(1.0));
+    assert!(
+        decomposed.residual > 0.0,
+        "the heads wrote something the zero delta did not"
+    );
+    for row in &decomposed.rows {
+        assert!(row.projection.is_empty(), "no basis, no projection");
+        assert_eq!(row.sources.len(), 2);
+        assert_eq!(row.sources[0], (1, 0.75), "sources descend by weight");
+        assert_eq!(row.sources[1], (0, 0.25));
+    }
+    // The pending heads were consumed: the same write again decomposes nothing.
+    assert!(stats.finish_write(&write).is_none());
+    assert!(stats.basis().is_none());
 }
