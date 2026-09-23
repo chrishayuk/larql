@@ -729,34 +729,44 @@ pub fn load_weight(
             quantize_nvfp4(&values, rows, k, &operand.tensor)
         }
         WeightFormat::Nvfp4Q8 => {
-            // Stored packs only. The Q8-activation arm exists to run the
-            // persisted bytes under integer arithmetic; binding it to a
-            // runtime quantisation, or to an f16 narrowing, would measure
-            // a different weight under this arm's name.
+            // The Q8-activation arm runs a PERSISTED pack under integer
+            // arithmetic, and changes nothing else: a tensor the pack holds
+            // at source precision binds there, exactly as under
+            // `WeightFormat::Nvfp4`. What it never does is quantise at
+            // load — that would measure a different weight under this
+            // arm's name.
             let rows = operand.shape.first().copied().unwrap_or(0);
             let k = operand.shape.get(1).copied().unwrap_or(0);
             let raw = store.load_raw(operand)?;
             check_pack_conforms(store, operand, &raw.dtype)?;
-            if raw.dtype != DTYPE_NVFP4 {
-                return Err(VindexError::Parse(format!(
-                    "{}: NVFP4 x Q8 binds a stored NVFP4 pack; the operand is stored as {}",
-                    operand.tensor, raw.dtype
-                )));
+            if raw.dtype == DTYPE_NVFP4 {
+                return match nvfp4_from_stored(&raw.bytes, rows, k, &operand.tensor)? {
+                    LoadedWeight::Nvfp4 {
+                        packed,
+                        scales,
+                        tensor_scale,
+                        ..
+                    } => Ok(LoadedWeight::Nvfp4 {
+                        packed,
+                        scales,
+                        tensor_scale,
+                        activation: Nvfp4Activation::Q8,
+                    }),
+                    other => Ok(other),
+                };
             }
-            match nvfp4_from_stored(&raw.bytes, rows, k, &operand.tensor)? {
-                LoadedWeight::Nvfp4 {
-                    packed,
-                    scales,
-                    tensor_scale,
-                    ..
-                } => Ok(LoadedWeight::Nvfp4 {
-                    packed,
-                    scales,
-                    tensor_scale,
-                    activation: Nvfp4Activation::Q8,
-                }),
-                other => Ok(other),
+            if store
+                .store()
+                .nvfp4_request_binds_at_source(operand, &raw.dtype)
+            {
+                store.store().note_stored_precision();
+                return narrow_to_f16(&raw, &operand.tensor);
             }
+            Err(VindexError::Parse(format!(
+                "{}: NVFP4 x Q8 executes a stored NVFP4 pack; the operand is stored as {} \
+                 and would have to be quantised at load",
+                operand.tensor, raw.dtype
+            )))
         }
         WeightFormat::KQuant => kquant_from_stored(store, operand, KQuantActivation::F32),
         WeightFormat::KQuantQ8k => kquant_from_stored(store, operand, KQuantActivation::Q8k),

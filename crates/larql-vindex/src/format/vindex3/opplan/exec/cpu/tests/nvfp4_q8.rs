@@ -132,11 +132,16 @@ fn the_int8_decode_times_scale_is_the_reference_decode_exactly() {
                 for (e, &code) in codes.iter().enumerate() {
                     let want = reference[row * k + g * NVFP4_GROUP_ELEMS + e];
                     let got = code as f32 * half_step;
-                    assert_eq!(
-                        got.to_bits(),
-                        want.to_bits(),
+                    // Exact by value. The one bit pattern that can differ is
+                    // E2M1's -0 (code 8): an int8 has no negative zero, and
+                    // no dot product can observe the sign of a zero term.
+                    assert!(
+                        got == want,
                         "[{n},{k}] row {row} group {g} element {e}: {got} vs {want}"
                     );
+                    if want != 0.0 {
+                        assert_eq!(got.to_bits(), want.to_bits(), "[{n},{k}] {row}/{g}/{e}");
+                    }
                 }
             }
         }

@@ -1523,3 +1523,120 @@ fn an_uncompilable_kquant_names_the_ones_that_are() {
         assert!(err.contains(name), "the refusal must list {name}: {err}");
     }
 }
+
+// NVFP4-Q8-1 at the loader: the Q8 arm binds the SAME stored pack for a
+// Q8 activation, keeps every source-precision binding the f32 arm makes,
+// and refuses to quantise at load under its name.
+
+fn load_as(
+    dir: &std::path::Path,
+    source: RepresentationSource,
+    op: &OperandRef,
+    format: WeightFormat,
+) -> Result<(LoadedWeight, OperandStore), VindexError> {
+    let inspection = inspect_container(dir, false).unwrap();
+    let store = OperandStore::open_for(dir, &inspection, Some(DTYPE_NVFP4), source).unwrap();
+    let loaded = load_weight((&store).into(), op, format)?;
+    Ok((loaded, store))
+}
+
+fn operand_of(src: &std::path::Path) -> OperandRef {
+    let (object, tensor, dtype, shape) = a_compiled_tensor(src);
+    OperandRef {
+        object,
+        tensor,
+        dtype,
+        shape,
+    }
+}
+
+#[test]
+fn the_q8_arm_binds_the_stored_pack_for_a_q8_activation() {
+    use crate::format::vindex3::opplan::exec::backend::{Nvfp4Activation, WeightSlice};
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, _) = compiled_pair(&tmp);
+    let op = operand_of(&src);
+    let (f32_arm, _) =
+        load_as(&out, RepresentationSource::Stored, &op, WeightFormat::Nvfp4).unwrap();
+    let (q8_arm, store) = load_as(
+        &out,
+        RepresentationSource::Stored,
+        &op,
+        WeightFormat::Nvfp4Q8,
+    )
+    .unwrap();
+    assert_eq!(f32_arm.format(), WeightFormat::Nvfp4);
+    assert_eq!(q8_arm.format(), WeightFormat::Nvfp4Q8);
+    let (
+        LoadedWeight::Nvfp4 {
+            packed: ap,
+            scales: a_s,
+            tensor_scale: at,
+            ..
+        },
+        LoadedWeight::Nvfp4 {
+            packed: bp,
+            scales: bs,
+            tensor_scale: bt,
+            activation,
+        },
+    ) = (&f32_arm, &q8_arm)
+    else {
+        panic!("both arms bind the NVFP4 pack");
+    };
+    assert_eq!(
+        &ap.as_slice()[..ap.logical_len()],
+        &bp.as_slice()[..bp.logical_len()]
+    );
+    assert_eq!(
+        &a_s.as_slice()[..a_s.logical_len()],
+        &bs.as_slice()[..bs.logical_len()]
+    );
+    assert_eq!(at.to_bits(), bt.to_bits());
+    assert_eq!(*activation, Nvfp4Activation::Q8);
+    let WeightSlice::Nvfp4 {
+        activation: sliced, ..
+    } = q8_arm.slice()
+    else {
+        panic!("an NVFP4 binding slices as NVFP4");
+    };
+    assert_eq!(sliced, Nvfp4Activation::Q8);
+    assert_eq!(store.runtime_quantised(), 0, "the Q8 arm quantised at load");
+}
+
+#[test]
+fn the_q8_arm_keeps_a_source_precision_binding() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, _, _) = compiled_pair(&tmp);
+    let op = operand_of(&src);
+    let (loaded, store) = load_as(
+        &src,
+        RepresentationSource::Stored,
+        &op,
+        WeightFormat::Nvfp4Q8,
+    )
+    .unwrap();
+    assert!(matches!(loaded, LoadedWeight::F16(_)));
+    assert_eq!(store.runtime_quantised(), 0);
+    assert_eq!(store.bound_at_stored_precision(), 1);
+}
+
+#[test]
+fn the_q8_arm_refuses_to_quantise_at_load() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, _) = compiled_pair(&tmp);
+    let op = operand_of(&src);
+    let err = match load_as(
+        &out,
+        RepresentationSource::Transient,
+        &op,
+        WeightFormat::Nvfp4Q8,
+    ) {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("a transient request would quantise at load and must be refused"),
+    };
+    assert!(
+        err.contains("NVFP4 x Q8") && err.contains("quantised at load"),
+        "{err}"
+    );
+}

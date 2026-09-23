@@ -12,6 +12,8 @@
 use larql_models::quant::nvfp4::{NVFP4_GROUP_BYTES, NVFP4_GROUP_ELEMS};
 
 use super::super::backend::Nvfp4Activation;
+#[cfg(target_arch = "aarch64")]
+use super::integer::has_dotprod;
 use super::integer::quantise_activation_blocked;
 use super::kernels::{e4m3_steps, E2M1_DOUBLED};
 use super::projector::{CpuParallelism, DenseProjector, WeightRows};
@@ -21,6 +23,11 @@ use super::projector::{CpuParallelism, DenseProjector, WeightRows};
 /// folding the activation's scale into the same multiply costs nothing,
 /// and no coarser block could be cheaper while being less exact.
 pub const NVFP4_Q8_ACTIVATION_BLOCK: usize = NVFP4_GROUP_ELEMS;
+
+// The row kernels read activation scale `g` for NVFP4 group `g`, so the
+// block IS the group; a different value must fail to build, not index
+// past the scale vector.
+const _: () = assert!(NVFP4_Q8_ACTIVATION_BLOCK == NVFP4_GROUP_ELEMS);
 
 /// The fused NVFP4 × Q8 kernel.
 ///
@@ -57,6 +64,7 @@ impl DenseProjector for FusedNvfp4Q8 {
             out.len()
         );
         let (qx, xs) = quantise_activation_blocked(x, NVFP4_Q8_ACTIVATION_BLOCK);
+        assert_eq!(xs.len(), groups, "one activation scale per NVFP4 group");
         let steps = e4m3_steps();
         for (row, slot) in out.iter_mut().enumerate() {
             *slot = nvfp4_q8_row_dot(
@@ -79,8 +87,12 @@ impl DenseProjector for FusedNvfp4Q8 {
 /// decoder's value: doubling and halving are exact in binary floating
 /// point, so the only rounding either side performs is the same one.
 pub fn nvfp4_group_codes(group: &[u8]) -> [i8; NVFP4_GROUP_ELEMS] {
-    let _ = (group, E2M1_DOUBLED);
-    todo!("NVFP4-Q8-1: the decode lands after its witness is RED")
+    let mut out = [0i8; NVFP4_GROUP_ELEMS];
+    for (b, byte) in group[..NVFP4_GROUP_BYTES].iter().enumerate() {
+        out[2 * b] = E2M1_DOUBLED[(byte & 0x0f) as usize];
+        out[2 * b + 1] = E2M1_DOUBLED[(byte >> 4) as usize];
+    }
+    out
 }
 
 /// One row against the quantised activation.
@@ -93,8 +105,65 @@ fn nvfp4_q8_row_dot(
     qx: &[i8],
     xs: &[f32],
 ) -> f32 {
-    let _ = (packed, scales, tensor_scale, steps, qx, xs);
-    todo!("NVFP4-Q8-1: the row dot lands after its witnesses are RED")
+    #[cfg(target_arch = "aarch64")]
+    if has_dotprod() {
+        // SAFETY: guarded by the runtime feature check; the caller cut
+        // `packed`/`scales` to one row and `qx`/`xs` to the whole input
+        // (8 bytes, one scale, 16 codes and one activation scale per group).
+        return unsafe { nvfp4_q8_row_sdot(packed, scales, tensor_scale, steps, qx, xs) };
+    }
+    nvfp4_q8_row_portable(packed, scales, tensor_scale, steps, qx, xs)
+}
+
+/// The SDOT row: two groups per 16-byte load, decoded to int8 by one
+/// table lookup each, dotted against 16 activation codes into int32
+/// lanes, converted (exactly: `|sum| <= 16 * 12 * 127`) and scaled into
+/// two f32 accumulators so consecutive groups' FMAs do not serialise.
+///
+/// `dotprod` intrinsics are stable since 1.98; see `integer::q8_row_sdot`
+/// for why the MSRV lint is allowed here rather than raised.
+#[cfg(target_arch = "aarch64")]
+#[allow(clippy::incompatible_msrv)]
+#[target_feature(enable = "dotprod")]
+unsafe fn nvfp4_q8_row_sdot(
+    packed: &[u8],
+    scales: &[u8],
+    tensor_scale: f32,
+    steps: &[f32; 256],
+    qx: &[i8],
+    xs: &[f32],
+) -> f32 {
+    use std::arch::aarch64::*;
+    let lut = vld1q_s8(E2M1_DOUBLED.as_ptr());
+    let (pp, qp) = (packed.as_ptr(), qx.as_ptr());
+    let zero = vdupq_n_s32(0);
+    let scale = |g: usize| steps[*scales.get_unchecked(g) as usize] * *xs.get_unchecked(g);
+    let (mut acc0, mut acc1) = (vdupq_n_f32(0.0), vdupq_n_f32(0.0));
+    let groups = scales.len();
+    let mut g = 0usize;
+    while g + 2 <= groups {
+        let raw = vld1q_u8(pp.add(g * NVFP4_GROUP_BYTES));
+        let lo = vandq_u8(raw, vdupq_n_u8(0x0f));
+        let hi = vshrq_n_u8::<4>(raw);
+        // Element 2b is byte b's low nibble, 2b+1 its high one: the first
+        // zip is group g in element order, the second group g + 1.
+        let c0 = vqtbl1q_s8(lut, vzip1q_u8(lo, hi));
+        let c1 = vqtbl1q_s8(lut, vzip2q_u8(lo, hi));
+        let d0 = vdotq_s32(zero, c0, vld1q_s8(qp.add(g * NVFP4_GROUP_ELEMS)));
+        let d1 = vdotq_s32(zero, c1, vld1q_s8(qp.add((g + 1) * NVFP4_GROUP_ELEMS)));
+        acc0 = vfmaq_n_f32(acc0, vcvtq_f32_s32(d0), scale(g));
+        acc1 = vfmaq_n_f32(acc1, vcvtq_f32_s32(d1), scale(g + 1));
+        g += 2;
+    }
+    if g < groups {
+        let raw = vld1_u8(pp.add(g * NVFP4_GROUP_BYTES));
+        let lo = vand_u8(raw, vdup_n_u8(0x0f));
+        let hi = vshr_n_u8::<4>(raw);
+        let c0 = vqtbl1q_s8(lut, vcombine_u8(vzip1_u8(lo, hi), vzip2_u8(lo, hi)));
+        let d0 = vdotq_s32(zero, c0, vld1q_s8(qp.add(g * NVFP4_GROUP_ELEMS)));
+        acc0 = vfmaq_n_f32(acc0, vcvtq_f32_s32(d0), scale(g));
+    }
+    0.5 * tensor_scale * vaddvq_f32(vaddq_f32(acc0, acc1))
 }
 
 /// **The DEFINITION** the vector path must agree with: per group, the
@@ -108,6 +177,16 @@ pub fn nvfp4_q8_row_portable(
     qx: &[i8],
     xs: &[f32],
 ) -> f32 {
-    let _ = (packed, scales, tensor_scale, steps, qx, xs);
-    todo!("NVFP4-Q8-1: the definition lands after its witnesses are RED")
+    let mut acc = 0.0f32;
+    for (g, &scale) in scales.iter().enumerate() {
+        let codes = nvfp4_group_codes(&packed[g * NVFP4_GROUP_BYTES..]);
+        let q = &qx[g * NVFP4_GROUP_ELEMS..][..NVFP4_GROUP_ELEMS];
+        let sum: i32 = codes
+            .iter()
+            .zip(q)
+            .map(|(&w, &a)| w as i32 * a as i32)
+            .sum();
+        acc += sum as f32 * (steps[scale as usize] * xs[g]);
+    }
+    0.5 * tensor_scale * acc
 }
