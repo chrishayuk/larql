@@ -152,6 +152,10 @@ pub struct AttnShape {
     pub window: Option<usize>,
     /// `None` = the softcap op is absent.
     pub softcap: Option<f32>,
+    /// The plan's residual-scale op (`LayerPlan::residual_scale`): the
+    /// branch output (after any post-norm) is multiplied by this before
+    /// its residual add. `None` = the op is absent, not a multiply by one.
+    pub residual_scale: Option<f32>,
     /// Absolute position of the token being decoded.
     pub position_index: usize,
     /// Cache length **including** this position.
@@ -360,7 +364,7 @@ impl MetalBackend {
         // same fp32 add), saving one dispatch per layer. Otherwise the
         // projection, bias and branch-norm/residual encode as before.
         let fused_out = match (w.post_norm.as_ref(), w.o_bias) {
-            (None, None) if nvfp4_residual_fusion_enabled() => {
+            (None, None) if shape.residual_scale.is_none() && nvfp4_residual_fusion_enabled() => {
                 nvfp4_segment(&w.o, h_out, 0, shape.hidden)
             }
             _ => None,
@@ -410,6 +414,7 @@ impl MetalBackend {
                     h_out,
                     w.post_norm.as_ref(),
                     shape.hidden,
+                    shape.residual_scale.unwrap_or(1.0),
                 );
             }
         }

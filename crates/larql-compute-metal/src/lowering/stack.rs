@@ -455,6 +455,7 @@ impl MetalBackend {
             dst,
             h.post_ffn_norm.as_ref(),
             hidden,
+            h.dense_shape.residual_scale.unwrap_or(1.0),
         );
         if let Some(scale) = h.layer_scale {
             self.encode_scale_vector(enc, dst, hidden, scale);

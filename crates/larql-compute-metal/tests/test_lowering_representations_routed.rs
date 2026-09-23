@@ -478,6 +478,7 @@ fn attn_shape() -> AttnShape {
         softcap: None,
         position_index: POS,
         kv_len: T,
+        residual_scale: None,
     }
 }
 

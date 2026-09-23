@@ -283,6 +283,23 @@ impl<'a> LoweredSession<'a> {
                 l.layer
             )));
         }
+        // A residual-scale op (Granite `residual_multiplier`) rides the
+        // attention and dense/hybrid FFN residual adds; the routed FFN's
+        // served MoE path owns its own residual combine and has no slot
+        // for it, so refuse rather than silently add the branch unscaled.
+        if let Some(l) = plan.layers.iter().find(|l| {
+            l.residual_scale.is_some()
+                && matches!(
+                    l.ffn,
+                    Some(larql_vindex::format::vindex3::opplan::LayerFfn::Routed(_))
+                )
+        }) {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries a residual scale on a routed FFN, whose served combine has \
+                 no residual-scale slot; refusing",
+                l.layer
+            )));
+        }
         for l in &plan.layers {
             let activation = match &l.ffn {
                 Some(larql_vindex::format::vindex3::opplan::LayerFfn::Dense(op)) => {
@@ -732,6 +749,7 @@ impl<'a> LoweredSession<'a> {
                     _ => None,
                 },
                 softcap: a.logit_softcapping,
+                residual_scale: plan_layer.residual_scale,
                 position_index: t,
                 kv_len: t + 1,
             },
@@ -769,6 +787,7 @@ impl<'a> LoweredSession<'a> {
                                     .expect("checked in `new`")
                             },
                         ),
+                        residual_scale: plan_layer.residual_scale,
                     },
                 },
                 FfnResident::Routed(routed) => {
@@ -810,6 +829,7 @@ impl<'a> LoweredSession<'a> {
                                 .weight_offset,
                             activation: ffn_activation(op.dense.activation, op.dense.gate_policy)
                                 .expect("checked in `new`"),
+                            residual_scale: plan_layer.residual_scale,
                         },
                         routed: RoutedFfnLowering {
                             moe: h.routed.moe(),
