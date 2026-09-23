@@ -72,6 +72,7 @@ pub use explain::{
 
 // The continuation-state seam, re-exported so engine authors reach it
 // from the runtime module without deep `larql_vindex` paths.
+pub use larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity;
 pub use larql_vindex::format::vindex3::opplan::exec::kv::{
     plan_kv_geometry, KvState, LayerKvGeometry, RowKvState,
 };

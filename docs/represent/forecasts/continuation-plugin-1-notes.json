@@ -1,0 +1,48 @@
+{
+  "programme": "CONTINUATION-PLUGIN-1",
+  "forecast": "continuation-plugin-1.json (frozen at 93f5bfe3)",
+  "rule": "The execution record. The forecast is not edited; a wave that finds the design must change writes the change and the reason here.",
+  "merge_policy": "One small PR per wave; each wave's gates (the forecast's gates_before_each_push) run before its push.",
+  "waves": {
+    "C1": {
+      "name": "continuation identity",
+      "status": "built and held",
+      "branch": "v3-state-2",
+      "base": "93f5bfe3 (the freeze, on main 43b2e9d9)",
+      "date": "2026-09-24",
+      "what_landed": [
+        "`exec/continuation_identity.rs`: `ContinuationIdentity { family: String, revision: u32 }` — Eq/Ord/Hash/serde, Display `family/vN`, `validate()`.",
+        "`exec/provider_identity.rs`: the ONE family/revision rule, taking the plane name for its messages. `LoweringIdentity::validate` now delegates to it; its refusal texts are byte-identical to before (the existing `lowering::tests` pass unchanged).",
+        "Built-in identities as `pub const` pairs in each provider's own module, read through an inherent `identity()`: `RowKvState::identity()` = `row/v1` (`exec/kv.rs`), `CanonicalKvState::identity()` = `canonical/v1` (`larql-kv/src/vindex3/mod.rs`).",
+        "`ContinuationIdentity` re-exported from `larql_inference::vindex3` beside the rest of the continuation seam."
+      ],
+      "witnesses": {
+        "the_row_provider_states_a_valid_identity": "exec/tests/continuation_identity.rs",
+        "identity_is_family_and_revision_both": "same file — revision and family each distinguish; ordering is by family then revision",
+        "identity_round_trips_through_serde": "same file — the exact JSON a handoff (C4) will carry",
+        "continuation_and_lowering_share_one_rule": "same file — the control: one table of eight inputs driven through BOTH planes; every verdict agrees, each refusal names its own plane, and the reason text after the plane prefix is identical",
+        "canonical_states_a_valid_identity_distinct_from_row": "larql-kv/src/vindex3/tests/mod.rs"
+      },
+      "departure_from_the_lowering_pattern": "LOWERING-PLUGIN-1 L1 made `PlanBackend::identity()` a REQUIRED trait method, so the compiler proved every implementor stated one. C1 cannot: F3 holds the ContinuationProvider contract at nine methods. 'Every production provider states an identity' is therefore witnessed by enumeration (two production impls at baseline, both covered) rather than by the type system. C2 closes the gap structurally: a provider becomes selectable only through a factory, and a factory states its identity to register.",
+      "falsifiers": {
+        "F3": "held — `ContinuationProvider` has 9 methods; `AttentionStepCall` unchanged",
+        "F1": "not yet exercised (C4)",
+        "F2": "not yet exercised (C3); construction sites unchanged at 16",
+        "F4": "not yet exercised (C2)",
+        "F5": "not yet exercised (C2/C5)"
+      },
+      "measured_at_merge": {
+        "trait_methods": 9,
+        "non_test_construction_sites": 16
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy -p larql-vindex -p larql-kv -p larql-inference -p larql-server -p larql-cli -p larql-lql --all-targets -D warnings": "clean",
+        "cargo test -p larql-vindex -p larql-kv": "exit 0; larql-vindex lib 4943 passed, 0 failed, 9 ignored",
+        "cargo check --workspace --all-targets": "clean",
+        "trait method count / construction sites": "9 / 16",
+        "doc gates": "check_doc_links, check_doc_references, check_contract_index — clean"
+      }
+    }
+  }
+}

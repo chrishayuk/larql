@@ -27,6 +27,7 @@ mod codec_owned_weight;
 mod compact_consumption;
 mod composed_floor;
 mod continuation;
+mod continuation_identity;
 mod controls;
 mod coverage_backend_decode;
 mod coverage_device;
