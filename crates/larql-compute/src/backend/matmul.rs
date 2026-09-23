@@ -23,6 +23,24 @@ pub struct MatMulOp {
 pub type Nvfp4Operand<'a> = (&'a [u8], &'a [u8], f32, usize, usize);
 
 /// Dense linear-algebra primitives that don't depend on quantisation.
+/// Where a backend's device submissions spent their time, cumulative.
+///
+/// A device call's wall time has three parts, and they need different
+/// fixes: host work around the submission (staging, encode, readback),
+/// the wait between commit and the GPU finishing that is not GPU work
+/// (queue and scheduling latency), and the GPU's own execution. This
+/// carries the last two per submission. The caller's own wall time
+/// supplies the first.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SubmissionClock {
+    /// Command buffers committed and waited on.
+    pub submissions: u64,
+    /// Wall nanoseconds from `commit` to completion.
+    pub commit_to_done_nanos: u64,
+    /// Nanoseconds the GPU reports executing (`GPUEndTime - GPUStartTime`).
+    pub gpu_nanos: u64,
+}
+
 pub trait MatMul {
     /// C = A × B where A is [m, k] and B is [k, n].
     fn matmul(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32>;
@@ -187,6 +205,17 @@ pub trait MatMul {
     /// speed, and steps fast enough to stay under the collector's idle
     /// threshold keep themselves wired thereafter.
     fn wire_resident(&self, _buffers: &[&[u8]]) {}
+
+    /// Cumulative timing of the command buffers this backend's gemv and
+    /// matmul calls committed and waited on. `None` for a backend that
+    /// submits nothing, or does not measure; a reader must not read
+    /// `None` as zero.
+    ///
+    /// Diagnostic only: it is never read by arithmetic, so it cannot
+    /// change a result.
+    fn submission_clock(&self) -> Option<SubmissionClock> {
+        None
+    }
 
     /// MXFP4 gemv: `out[N] = W[N, K] · x[K]` consuming the packed
     /// nibble stream and the e8m0 scale stream directly (the two live

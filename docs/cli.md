@@ -237,7 +237,12 @@ In `--backends`, `cpu` is the `production` kernels that `larql run` and
 --metal`). Any `larql vindex3 exec --backend` name is also accepted, for
 example `production-q4k` or `metal-lowered`. Rows are labelled
 `vindex3-<backend>`. On device backends, the note splits each token into
-device time, interpreter glue and submissions per token. Flags that configure
+time inside device calls, interpreter glue and submissions per token. When
+the device measures its own command buffers (Metal does), the device time is
+split further, as `device D ms/tok (host H + queue Q + gpu G)`:
+- **host:** work around each submission (staging, encode, readback);
+- **queue:** commit to completion that is not GPU execution;
+- **gpu:** the GPU's own span. Flags that configure
 the V2 engine or its remote paths (`--engine`, `--ffn`, `--wire`,
 `--ffn-policy`, `--moe-shards`, `--routed-from`, `--bench-grid`,
 `--via-executor`, `--profile`, `--metal`, `--concurrent`) are refused by name.
@@ -251,8 +256,9 @@ token, and are timed by the same row statistic:
 - **Warm-up:** one untimed token, then the session is reset to position 0.
 - **Prompt:** executed one position per step. There is no batch prefill on
   this path, so its prefill column is not comparable with an interpreter row's.
-- **Device note:** the command buffers' GPU span, and submissions counted at
-  each commit.
+- **Device note:** `gpu G ms/tok + off-gpu O ms/tok`. The note sums the command
+  buffers' GPU span, and counts submissions at each commit. The host never
+  blocks inside a device call on this path, so there is no call time to split.
 - **Reset check:** the timed run must begin with the same ids as the warm-up
   from a fresh session, or the row is refused.
 - **Fingerprint:** covers the generated text only. The lowered decode reads

@@ -257,15 +257,24 @@ impl Timed<'_> {
     }
 }
 
-/// Device time between two cumulative snapshots.
+/// Nanoseconds to milliseconds.
+const NANOS_PER_MS: f64 = 1e6;
+
+/// Device time between two cumulative snapshots, the device's own clock
+/// included when both snapshots carry it.
 fn device_window(
     before: Option<DispatchStats>,
     after: Option<DispatchStats>,
 ) -> Option<DeviceWindow> {
     let (before, after) = (before?, after?);
+    let ms = |a: u64, b: u64| a.saturating_sub(b) as f64 / NANOS_PER_MS;
+    let clock = before.device_clock.zip(after.device_clock);
     Some(DeviceWindow {
-        device_ms: after.device_nanos.saturating_sub(before.device_nanos) as f64 / 1e6,
+        call_ms: Some(ms(after.device_nanos, before.device_nanos)),
         submissions: after.submissions.saturating_sub(before.submissions),
+        commit_to_done_ms: clock.map(|(b, a)| ms(a.commit_to_done_nanos, b.commit_to_done_nanos)),
+        gpu_ms: clock.map(|(b, a)| ms(a.gpu_nanos, b.gpu_nanos)),
+        device_submissions: clock.map(|(b, a)| a.submissions.saturating_sub(b.submissions)),
     })
 }
 
@@ -369,7 +378,7 @@ impl Timed<'_> {
         // The window starts at the first measured step, as the
         // interpreter's device snapshot does.
         let mut submissions_before = None;
-        let mut device_ms = 0.0;
+        let mut gpu_ms = 0.0;
         for step in 0..max_tokens {
             let id = next;
             if self.eos.eos_token_ids.contains(&id) {
@@ -383,7 +392,7 @@ impl Timed<'_> {
             let text = detok.push(id);
             step_ms.push(started.elapsed().as_secs_f64() * 1e3);
             if step >= self.args.warmup {
-                device_ms += session.last_gpu_ms();
+                gpu_ms += session.last_gpu_ms();
             }
             let stop = self.eos.is_eos_with_tokenizer(id, &text, self.tokenizer);
             emitted.push((text, UNREAD_LOGIT));
@@ -393,9 +402,12 @@ impl Timed<'_> {
             }
         }
         ids.push(next);
+        // The lowered host never blocks inside a device call, so there is
+        // no call wall to report; the GPU span is what it measures.
         let device = submissions_before.map(|before| DeviceWindow {
-            device_ms,
             submissions: session.submissions().saturating_sub(before),
+            gpu_ms: Some(gpu_ms),
+            ..DeviceWindow::default()
         });
         Ok(LoweredGeneration {
             generation: Generation {

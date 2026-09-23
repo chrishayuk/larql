@@ -64,6 +64,10 @@ pub mod calibration;
 #[cfg(target_os = "macos")]
 pub mod cb_status;
 
+/// Where `MatMul` submissions spend their time, per backend instance.
+#[cfg(target_os = "macos")]
+mod submission_clock;
+
 #[cfg(target_os = "macos")]
 pub mod decode;
 #[cfg(target_os = "macos")]

@@ -15,6 +15,11 @@
     "record"
   ],
   [
+    "larql-compute-metal/src/submission_clock.rs",
+    "MetalBackend::commit_and_wait",
+    "record"
+  ],
+  [
     "larql-compute/src/ffn/expert_weight/block_contrib_trace.rs",
     "record_into",
     "record"
