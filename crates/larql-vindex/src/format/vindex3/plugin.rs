@@ -148,6 +148,35 @@ mod tests {
         assert!(abi.contains(" commit "), "{abi}");
     }
 
+    fn reference_lowering() -> Box<dyn PlanBackend + Send> {
+        Box::new(crate::format::vindex3::opplan::exec::reference::ReferenceBackend::new())
+    }
+
+    /// A registrar hands back exactly what the plugin registered, in order.
+    #[test]
+    fn a_registrar_returns_its_registrations_in_order() {
+        use crate::format::vindex3::represent::codec::codecs::mxfp4::Mxfp4Codec;
+        use crate::format::vindex3::represent::codec::codecs::nvfp4::Nvfp4Codec;
+        let mut registrar = PluginRegistrar::new();
+        registrar.codec(Box::new(Nvfp4Codec));
+        registrar.codec(Box::new(Mxfp4Codec));
+        registrar.lowering(reference_lowering);
+        let (codecs, lowerings) = registrar.into_parts();
+        let labels: Vec<&str> = codecs.iter().map(|c| c.encoding_label()).collect();
+        assert_eq!(
+            labels,
+            [Nvfp4Codec.encoding_label(), Mxfp4Codec.encoding_label()]
+        );
+        assert_eq!(lowerings.len(), 1);
+        assert_eq!(
+            lowerings[0]().identity(),
+            reference_lowering().identity(),
+            "the factory builds the provider it was registered as"
+        );
+        let (none, empty) = PluginRegistrar::default().into_parts();
+        assert!(none.is_empty() && empty.is_empty());
+    }
+
     #[test]
     fn only_the_hosts_own_stamp_is_compatible() {
         assert_eq!(abi_compatible(abi()), !abi().ends_with("commit unknown"));

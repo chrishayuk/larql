@@ -12,14 +12,17 @@
 //! a `--backend` names, in [`super::prepare::lowerings_with`]. Nothing is
 //! discovered: a plugin not named on the command line is not loaded.
 
+#[cfg(unix)]
 use std::ffi::CStr;
 use std::path::PathBuf;
 
 use clap::Args;
 use larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity;
-use larql_vindex::format::vindex3::plugin::{
-    self, AbiFn, LoweringFactory, PluginRegistrar, RegisterFn,
-};
+// The ABI and registration symbols are only read by the unix loader;
+// `load_one` refuses by name everywhere else.
+#[cfg(unix)]
+use larql_vindex::format::vindex3::plugin::{self, AbiFn, RegisterFn};
+use larql_vindex::format::vindex3::plugin::{LoweringFactory, PluginRegistrar};
 use larql_vindex::format::vindex3::represent::codec::CodecRegistry;
 
 type BoxErr = Box<dyn std::error::Error>;
