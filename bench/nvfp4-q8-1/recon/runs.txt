@@ -1,0 +1,958 @@
+## bf16 rep 1 22:44:16 load=2.60 3.07 2.82 power=AC Power
+weights resident in 2.9 s
+residency: 10.80 GB total — 7.40 GB compact, 3.40 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      1.43 GB  (0.71 compact / 0.71 widened f32)
+  ffn            5.35 GB  (5.35 compact / 0.00 widened f32)
+  head           1.34 GB  (1.34 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 239 holding 8.12 GB — 239 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  BF16       → cpu:direct/FusedBf16              171 operand(s)   3701637120 weights  (size policy over a float source)
+  BF16       → cpu:decode-f32+BlasF32             68 operand(s)    178257920 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.684)  context 25
+token   2/32  id 669      (+72.753)  context 26
+token   3/32  id 53474    (+55.527)  context 27
+token   4/32  id 532      (+60.446)  context 28
+token   5/32  id 16175    (+58.342)  context 29
+token   6/32  id 529      (+72.241)  context 30
+token   7/32  id 506      (+74.075)  context 31
+token   8/32  id 10995    (+74.116)  context 32
+token   9/32  id 23436    (+76.653)  context 33
+token  10/32  id 236787   (+75.362)  context 34
+token  11/32  id 562      (+83.859)  context 35
+token  12/32  id 48756    (+46.243)  context 36
+token  13/32  id 10358    (+69.262)  context 37
+token  14/32  id 108      (+59.437)  context 38
+token  15/32  id 818      (+84.112)  context 39
+token  16/32  id 10995    (+51.680)  context 40
+token  17/32  id 23436    (+56.343)  context 41
+token  18/32  id 236764   (+47.654)  context 42
+token  19/32  id 496      (+43.967)  context 43
+token  20/32  id 39084    (+40.101)  context 44
+token  21/32  id 600      (+38.384)  context 45
+token  22/32  id 27222    (+37.380)  context 46
+token  23/32  id 506      (+43.614)  context 47
+token  24/32  id 32920    (+50.854)  context 48
+token  25/32  id 1902     (+50.222)  context 49
+token  26/32  id 573      (+50.462)  context 50
+token  27/32  id 24744    (+54.158)  context 51
+token  28/32  id 236764   (+50.397)  context 52
+token  29/32  id 39169    (+36.468)  context 53
+token  30/32  id 496      (+45.909)  context 54
+token  31/32  id 4083     (+32.396)  context 55
+token  32/32  id 529      (+33.387)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 2.9 s
+prompt: 24 tokens in 1.9 s (78 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 2.4 s
+mean: 79 ms/token (12.709 tok/s)
+steady (last half): 79 ms/token (12.621 tok/s)
+projections (one steady step): 8.12 GB over 239 calls in 80 ms — 102 GB/s
+  BlasF32          0.71 GB over   68 calls,    68 worker slabs,     6.9 ms,  103.4 GB/s   F32 x F32 -> F32 -> F32
+  FusedBf16        7.40 GB over  171 calls,  1026 worker slabs,    64.7 ms,  114.5 GB/s   BF16 x F32 -> F32 -> F32
+predicted from bytes: 63.6 ms synthetic, 66.6 ms real (x1.047, measured CPU-PERF-3B)
+  BlasF32          0.71 GB at 262.00 GB/s =     2.7 ms
+  FusedBf16        7.40 GB at 121.66 GB/s =    60.9 ms
+  +   17 ms non-projection floor ->   83.6 ms/token, 11.97 tok/s
+  +   24 ms non-projection floor ->   90.6 ms/token, 11.04 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     71.58     299.49    89.9%
+  AttentionCore           34      2.94      86.43     3.7%
+  FfnActivation           34      2.92      85.87     3.7%
+  Norm                   205      0.92       4.46     1.1%
+  RoPE                    34      0.69      20.32     0.9%
+  Residual                68      0.03       0.40     0.0%
+  Embed                    1      0.00       1.00     0.0%
+  Logits                   1      0.00       0.08     0.0%
+  ----------------------------------------------------------
+  timed leaves                              79.07 ms
+  unattributed                               0.55 ms     0.7%
+  steady token wall                         79.61 ms
+## q8xq8 rep 1 22:45:24 load=1.89 2.76 2.72 power=AC Power
+weights resident in 7.1 s
+residency: 7.67 GB total — 4.27 GB compact, 3.40 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      1.43 GB  (0.71 compact / 0.71 widened f32)
+  ffn            2.84 GB  (2.84 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 342 holding 4.98 GB — 342 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  BF16       → cpu:direct/FusedBf16               68 operand(s)    356515840 weights  (size policy over a float source)
+  BF16       → cpu:decode-f32+BlasF32             68 operand(s)    178257920 weights  (size policy over a float source)
+  BF16       → cpu:requantise/FusedQ8            103 operand(s)   3345121280 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.660)  context 25
+token   2/32  id 669      (+72.483)  context 26
+token   3/32  id 53474    (+55.638)  context 27
+token   4/32  id 532      (+60.529)  context 28
+token   5/32  id 16175    (+58.245)  context 29
+token   6/32  id 529      (+71.700)  context 30
+token   7/32  id 506      (+73.935)  context 31
+token   8/32  id 10995    (+74.016)  context 32
+token   9/32  id 23436    (+76.484)  context 33
+token  10/32  id 236787   (+74.966)  context 34
+token  11/32  id 562      (+83.565)  context 35
+token  12/32  id 48756    (+46.175)  context 36
+token  13/32  id 10358    (+69.172)  context 37
+token  14/32  id 108      (+59.172)  context 38
+token  15/32  id 818      (+83.876)  context 39
+token  16/32  id 10995    (+51.715)  context 40
+token  17/32  id 23436    (+56.362)  context 41
+token  18/32  id 236764   (+47.610)  context 42
+token  19/32  id 496      (+44.072)  context 43
+token  20/32  id 39084    (+40.157)  context 44
+token  21/32  id 600      (+38.453)  context 45
+token  22/32  id 27222    (+37.250)  context 46
+token  23/32  id 506      (+43.939)  context 47
+token  24/32  id 32920    (+50.628)  context 48
+token  25/32  id 1902     (+50.233)  context 49
+token  26/32  id 573      (+50.470)  context 50
+token  27/32  id 24744    (+54.390)  context 51
+token  28/32  id 236764   (+50.478)  context 52
+token  29/32  id 39169    (+36.397)  context 53
+token  30/32  id 496      (+45.985)  context 54
+token  31/32  id 4083     (+32.381)  context 55
+token  32/32  id 529      (+33.353)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 7.1 s
+prompt: 24 tokens in 1.5 s (65 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 2.0 s
+mean: 66 ms/token (15.208 tok/s)
+steady (last half): 66 ms/token (15.108 tok/s)
+projections (one steady step): 4.98 GB over 239 calls in 66 ms — 76 GB/s
+  BlasF32          0.71 GB over   68 calls,    68 worker slabs,     7.0 ms,  101.8 GB/s   F32 x F32 -> F32 -> F32
+  FusedBf16        0.71 GB over   68 calls,   408 worker slabs,     8.1 ms,   88.1 GB/s   BF16 x F32 -> F32 -> F32
+  FusedQ8          3.55 GB over  103 calls,   618 worker slabs,    43.2 ms,   82.2 GB/s   Q8[64] x F32 -> F32 -> F32
+predicted from bytes: 52.1 ms synthetic, 54.5 ms real (x1.047, measured CPU-PERF-3B)
+  BlasF32          0.71 GB at 262.00 GB/s =     2.7 ms
+  FusedBf16        0.71 GB at 121.66 GB/s =     5.9 ms
+  FusedQ8          3.55 GB at  81.69 GB/s =    43.5 ms
+  +   17 ms non-projection floor ->   71.5 ms/token, 13.98 tok/s
+  +   24 ms non-projection floor ->   78.5 ms/token, 12.73 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     58.37     244.21    88.7%
+  AttentionCore           34      2.87      84.33     4.4%
+  FfnActivation           34      2.72      79.94     4.1%
+  Norm                   205      0.77       3.78     1.2%
+  RoPE                    34      0.69      20.24     1.0%
+  Residual                68      0.02       0.33     0.0%
+  Embed                    1      0.00       0.79     0.0%
+  Logits                   1      0.00       0.00     0.0%
+  ----------------------------------------------------------
+  timed leaves                              65.44 ms
+  unattributed                               0.40 ms     0.6%
+  steady token wall                         65.84 ms
+## nvfp4 rep 1 22:46:35 load=2.65 2.78 2.73 power=AC Power
+representation: NVFP4  source: auto  objects from a compiled pack: 1/5
+weights resident in 2.4 s
+residency: 5.20 GB total — 2.52 GB compact, 2.69 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      0.30 GB  (0.30 compact / 0.00 widened f32)
+  ffn            1.50 GB  (1.50 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 478 holding 2.52 GB — 478 page-aligned (100%), common alignment 32768 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  NVFP4      → cpu:direct/FusedNvfp4             238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+token   1/32  id 1408     (+73.222)  context 25
+token   2/32  id 669      (+73.423)  context 26
+token   3/32  id 53474    (+55.366)  context 27
+token   4/32  id 532      (+62.026)  context 28
+token   5/32  id 16175    (+58.747)  context 29
+token   6/32  id 529      (+71.244)  context 30
+token   7/32  id 506      (+69.433)  context 31
+token   8/32  id 10995    (+72.069)  context 32
+token   9/32  id 23436    (+78.899)  context 33
+token  10/32  id 236787   (+73.069)  context 34
+token  11/32  id 562      (+82.255)  context 35
+token  12/32  id 48756    (+47.636)  context 36
+token  13/32  id 10358    (+63.751)  context 37
+token  14/32  id 108      (+57.644)  context 38
+token  15/32  id 818      (+77.303)  context 39
+token  16/32  id 10995    (+51.504)  context 40
+token  17/32  id 23436    (+60.664)  context 41
+token  18/32  id 236764   (+50.596)  context 42
+token  19/32  id 496      (+44.863)  context 43
+token  20/32  id 39084    (+41.406)  context 44
+token  21/32  id 600      (+38.669)  context 45
+token  22/32  id 27222    (+39.468)  context 46
+token  23/32  id 506      (+43.642)  context 47
+token  24/32  id 32920    (+49.035)  context 48
+token  25/32  id 1902     (+49.506)  context 49
+token  26/32  id 573      (+49.781)  context 50
+token  27/32  id 24744    (+52.966)  context 51
+token  28/32  id 236764   (+48.643)  context 52
+token  29/32  id 39169    (+37.519)  context 53
+token  30/32  id 496      (+44.368)  context 54
+token  31/32  id 4083     (+32.477)  context 55
+token  32/32  id 529      (+34.283)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 2.4 s
+prompt: 24 tokens in 2.5 s (103 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 3.2 s
+mean: 104 ms/token (9.594 tok/s)
+steady (last half): 105 ms/token (9.565 tok/s)
+projections (one steady step): 2.52 GB over 239 calls in 107 ms — 24 GB/s
+  FusedQ8          0.71 GB over    1 calls,     6 worker slabs,    10.6 ms,   67.5 GB/s   Q8[64] x F32 -> F32 -> F32
+  FusedNvfp4       1.80 GB over  238 calls,   748 worker slabs,    88.9 ms,   20.3 GB/s   NVFP4 x F32 -> F32 -> F32
+predicted from bytes: 8.7 ms synthetic, 9.1 ms real (x1.047, measured CPU-PERF-3B)
+  FusedQ8          0.71 GB at  81.69 GB/s =     8.7 ms
+  +   17 ms non-projection floor ->   26.1 ms/token, 38.25 tok/s
+  +   24 ms non-projection floor ->   33.1 ms/token, 30.17 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     99.45     416.11    93.3%
+  AttentionCore           34      2.82      83.06     2.6%
+  FfnActivation           34      2.70      79.39     2.5%
+  Norm                   205      0.69       3.39     0.7%
+  RoPE                    34      0.64      18.82     0.6%
+  Residual                68      0.03       0.43     0.0%
+  Embed                    1      0.00       0.62     0.0%
+  Logits                   1      0.00       0.04     0.0%
+  ----------------------------------------------------------
+  timed leaves                             106.34 ms
+  unattributed                               0.29 ms     0.3%
+  steady token wall                        106.63 ms
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedNvfp4 238 calls 1.80 GB
+## q4k-q8k rep 1 22:47:43 load=3.17 2.92 2.79 power=AC Power
+representation: Q4_K  source: auto  objects from a compiled pack: 1/5
+weights resident in 2.3 s
+residency: 5.20 GB total — 2.52 GB compact, 2.69 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      0.30 GB  (0.30 compact / 0.00 widened f32)
+  ffn            1.50 GB  (1.50 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 240 holding 2.52 GB — 240 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  Q4_K       → cpu:direct/FusedKQuantQ8k         238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.337)  context 25
+token   2/32  id 669      (+77.726)  context 26
+token   3/32  id 53474    (+57.296)  context 27
+token   4/32  id 532      (+63.048)  context 28
+token   5/32  id 16175    (+62.548)  context 29
+token   6/32  id 529      (+82.633)  context 30
+token   7/32  id 506      (+75.017)  context 31
+token   8/32  id 10995    (+79.283)  context 32
+token   9/32  id 23436    (+73.353)  context 33
+token  10/32  id 236787   (+80.615)  context 34
+token  11/32  id 562      (+87.245)  context 35
+token  12/32  id 48756    (+45.811)  context 36
+token  13/32  id 10358    (+76.618)  context 37
+token  14/32  id 108      (+64.709)  context 38
+token  15/32  id 818      (+88.667)  context 39
+token  16/32  id 10995    (+53.274)  context 40
+token  17/32  id 23436    (+58.027)  context 41
+token  18/32  id 236764   (+53.440)  context 42
+token  19/32  id 496      (+47.218)  context 43
+token  20/32  id 39084    (+42.726)  context 44
+token  21/32  id 600      (+40.321)  context 45
+token  22/32  id 85739    (+38.260)  context 46
+token  23/32  id 21735    (+49.168)  context 47
+token  24/32  id 10063    (+47.414)  context 48
+token  25/32  id 6540     (+41.785)  context 49
+token  26/32  id 236764   (+44.771)  context 50
+token  27/32  id 2621     (+36.548)  context 51
+token  28/32  id 236764   (+53.945)  context 52
+token  29/32  id 532      (+38.336)  context 53
+token  30/32  id 27414    (+38.656)  context 54
+token  31/32  id 236764   (+49.267)  context 55
+token  32/32  id 7289     (+39.261)  context 56
+engine: vindex3-production-larql-compute-q8k
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,85739,21735,10063,6540,236764,2621,236764,532,27414,236764,7289
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,85739,21735,10063,6540,236764,2621,236764,532,27414,236764,7289
+weights loaded: 2.3 s
+prompt: 24 tokens in 0.8 s (32 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 1.0 s
+mean: 33 ms/token (30.244 tok/s)
+steady (last half): 33 ms/token (29.984 tok/s)
+projections (one steady step): 2.52 GB over 239 calls in 33 ms — 76 GB/s
+  FusedQ8          0.71 GB over    1 calls,     6 worker slabs,    10.1 ms,   70.7 GB/s   Q8[64] x F32 -> F32 -> F32
+  FusedKQuantQ8k     1.80 GB over  238 calls,   238 worker slabs,    16.3 ms,  110.8 GB/s   KQUANT x Q8[256] -> I32 -> F32
+predicted from bytes: 8.7 ms synthetic, 9.1 ms real (x1.047, measured CPU-PERF-3B)
+  FusedQ8          0.71 GB at  81.69 GB/s =     8.7 ms
+  +   17 ms non-projection floor ->   26.1 ms/token, 38.25 tok/s
+  +   24 ms non-projection floor ->   33.1 ms/token, 30.17 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     26.38     110.40    79.4%
+  AttentionCore           34      2.67      78.45     8.0%
+  FfnActivation           34      2.56      75.25     7.7%
+  Norm                   205      0.69       3.36     2.1%
+  RoPE                    34      0.68      20.10     2.1%
+  Residual                68      0.02       0.26     0.1%
+  Embed                    1      0.00       4.17     0.0%
+  Logits                   1      0.00       0.04     0.0%
+  ----------------------------------------------------------
+  timed leaves                              33.00 ms
+  unattributed                               0.21 ms     0.6%
+  steady token wall                         33.21 ms
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedKQuantQ8k 238 calls 1.80 GB
+## bf16 rep 2 22:48:47 load=2.22 2.71 2.71 power=AC Power
+weights resident in 2.9 s
+residency: 10.80 GB total — 7.40 GB compact, 3.40 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      1.43 GB  (0.71 compact / 0.71 widened f32)
+  ffn            5.35 GB  (5.35 compact / 0.00 widened f32)
+  head           1.34 GB  (1.34 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 239 holding 8.12 GB — 239 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  BF16       → cpu:direct/FusedBf16              171 operand(s)   3701637120 weights  (size policy over a float source)
+  BF16       → cpu:decode-f32+BlasF32             68 operand(s)    178257920 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.684)  context 25
+token   2/32  id 669      (+72.753)  context 26
+token   3/32  id 53474    (+55.527)  context 27
+token   4/32  id 532      (+60.446)  context 28
+token   5/32  id 16175    (+58.342)  context 29
+token   6/32  id 529      (+72.241)  context 30
+token   7/32  id 506      (+74.075)  context 31
+token   8/32  id 10995    (+74.116)  context 32
+token   9/32  id 23436    (+76.653)  context 33
+token  10/32  id 236787   (+75.362)  context 34
+token  11/32  id 562      (+83.859)  context 35
+token  12/32  id 48756    (+46.243)  context 36
+token  13/32  id 10358    (+69.262)  context 37
+token  14/32  id 108      (+59.437)  context 38
+token  15/32  id 818      (+84.112)  context 39
+token  16/32  id 10995    (+51.680)  context 40
+token  17/32  id 23436    (+56.343)  context 41
+token  18/32  id 236764   (+47.654)  context 42
+token  19/32  id 496      (+43.967)  context 43
+token  20/32  id 39084    (+40.101)  context 44
+token  21/32  id 600      (+38.384)  context 45
+token  22/32  id 27222    (+37.380)  context 46
+token  23/32  id 506      (+43.614)  context 47
+token  24/32  id 32920    (+50.854)  context 48
+token  25/32  id 1902     (+50.222)  context 49
+token  26/32  id 573      (+50.462)  context 50
+token  27/32  id 24744    (+54.158)  context 51
+token  28/32  id 236764   (+50.397)  context 52
+token  29/32  id 39169    (+36.468)  context 53
+token  30/32  id 496      (+45.909)  context 54
+token  31/32  id 4083     (+32.396)  context 55
+token  32/32  id 529      (+33.387)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 2.9 s
+prompt: 24 tokens in 1.9 s (77 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 2.4 s
+mean: 79 ms/token (12.702 tok/s)
+steady (last half): 79 ms/token (12.634 tok/s)
+projections (one steady step): 8.12 GB over 239 calls in 80 ms — 102 GB/s
+  BlasF32          0.71 GB over   68 calls,    68 worker slabs,     7.0 ms,  101.2 GB/s   F32 x F32 -> F32 -> F32
+  FusedBf16        7.40 GB over  171 calls,  1026 worker slabs,    64.7 ms,  114.4 GB/s   BF16 x F32 -> F32 -> F32
+predicted from bytes: 63.6 ms synthetic, 66.6 ms real (x1.047, measured CPU-PERF-3B)
+  BlasF32          0.71 GB at 262.00 GB/s =     2.7 ms
+  FusedBf16        7.40 GB at 121.66 GB/s =    60.9 ms
+  +   17 ms non-projection floor ->   83.6 ms/token, 11.97 tok/s
+  +   24 ms non-projection floor ->   90.6 ms/token, 11.04 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     71.78     300.32    90.1%
+  FfnActivation           34      2.96      87.20     3.7%
+  AttentionCore           34      2.81      82.64     3.5%
+  Norm                   205      0.89       4.35     1.1%
+  RoPE                    34      0.70      20.58     0.9%
+  Residual                68      0.03       0.43     0.0%
+  Embed                    1      0.00       0.79     0.0%
+  Logits                   1      0.00       0.04     0.0%
+  ----------------------------------------------------------
+  timed leaves                              79.17 ms
+  unattributed                               0.48 ms     0.6%
+  steady token wall                         79.65 ms
+## q8xq8 rep 2 22:49:55 load=2.01 2.57 2.66 power=AC Power
+weights resident in 6.8 s
+residency: 7.67 GB total — 4.27 GB compact, 3.40 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      1.43 GB  (0.71 compact / 0.71 widened f32)
+  ffn            2.84 GB  (2.84 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 342 holding 4.98 GB — 342 page-aligned (100%), common alignment 32768 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  BF16       → cpu:direct/FusedBf16               68 operand(s)    356515840 weights  (size policy over a float source)
+  BF16       → cpu:decode-f32+BlasF32             68 operand(s)    178257920 weights  (size policy over a float source)
+  BF16       → cpu:requantise/FusedQ8            103 operand(s)   3345121280 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.660)  context 25
+token   2/32  id 669      (+72.483)  context 26
+token   3/32  id 53474    (+55.638)  context 27
+token   4/32  id 532      (+60.529)  context 28
+token   5/32  id 16175    (+58.245)  context 29
+token   6/32  id 529      (+71.700)  context 30
+token   7/32  id 506      (+73.935)  context 31
+token   8/32  id 10995    (+74.016)  context 32
+token   9/32  id 23436    (+76.484)  context 33
+token  10/32  id 236787   (+74.966)  context 34
+token  11/32  id 562      (+83.565)  context 35
+token  12/32  id 48756    (+46.175)  context 36
+token  13/32  id 10358    (+69.172)  context 37
+token  14/32  id 108      (+59.172)  context 38
+token  15/32  id 818      (+83.876)  context 39
+token  16/32  id 10995    (+51.715)  context 40
+token  17/32  id 23436    (+56.362)  context 41
+token  18/32  id 236764   (+47.610)  context 42
+token  19/32  id 496      (+44.072)  context 43
+token  20/32  id 39084    (+40.157)  context 44
+token  21/32  id 600      (+38.453)  context 45
+token  22/32  id 27222    (+37.250)  context 46
+token  23/32  id 506      (+43.939)  context 47
+token  24/32  id 32920    (+50.628)  context 48
+token  25/32  id 1902     (+50.233)  context 49
+token  26/32  id 573      (+50.470)  context 50
+token  27/32  id 24744    (+54.390)  context 51
+token  28/32  id 236764   (+50.478)  context 52
+token  29/32  id 39169    (+36.397)  context 53
+token  30/32  id 496      (+45.985)  context 54
+token  31/32  id 4083     (+32.381)  context 55
+token  32/32  id 529      (+33.353)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 6.8 s
+prompt: 24 tokens in 1.6 s (65 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 2.1 s
+mean: 66 ms/token (15.103 tok/s)
+steady (last half): 67 ms/token (15.013 tok/s)
+projections (one steady step): 4.98 GB over 239 calls in 67 ms — 74 GB/s
+  BlasF32          0.71 GB over   68 calls,    68 worker slabs,     6.9 ms,  102.6 GB/s   F32 x F32 -> F32 -> F32
+  FusedBf16        0.71 GB over   68 calls,   408 worker slabs,     8.3 ms,   86.0 GB/s   BF16 x F32 -> F32 -> F32
+  FusedQ8          3.55 GB over  103 calls,   618 worker slabs,    44.2 ms,   80.4 GB/s   Q8[64] x F32 -> F32 -> F32
+predicted from bytes: 52.1 ms synthetic, 54.5 ms real (x1.047, measured CPU-PERF-3B)
+  BlasF32          0.71 GB at 262.00 GB/s =     2.7 ms
+  FusedBf16        0.71 GB at 121.66 GB/s =     5.9 ms
+  FusedQ8          3.55 GB at  81.69 GB/s =    43.5 ms
+  +   17 ms non-projection floor ->   71.5 ms/token, 13.98 tok/s
+  +   24 ms non-projection floor ->   78.5 ms/token, 12.73 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     59.45     248.75    88.5%
+  FfnActivation           34      2.82      82.93     4.2%
+  AttentionCore           34      2.79      82.19     4.2%
+  Norm                   205      0.81       3.96     1.2%
+  RoPE                    34      0.70      20.51     1.0%
+  Residual                68      0.02       0.34     0.0%
+  Embed                    1      0.00       0.71     0.0%
+  Logits                   1      0.00       0.00     0.0%
+  ----------------------------------------------------------
+  timed leaves                              66.60 ms
+  unattributed                               0.58 ms     0.9%
+  steady token wall                         67.18 ms
+## nvfp4 rep 2 22:51:05 load=1.98 2.48 2.62 power=AC Power
+representation: NVFP4  source: auto  objects from a compiled pack: 1/5
+weights resident in 2.3 s
+residency: 5.20 GB total — 2.52 GB compact, 2.69 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      0.30 GB  (0.30 compact / 0.00 widened f32)
+  ffn            1.50 GB  (1.50 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 478 holding 2.52 GB — 478 page-aligned (100%), common alignment 32768 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  NVFP4      → cpu:direct/FusedNvfp4             238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+token   1/32  id 1408     (+73.222)  context 25
+token   2/32  id 669      (+73.423)  context 26
+token   3/32  id 53474    (+55.366)  context 27
+token   4/32  id 532      (+62.026)  context 28
+token   5/32  id 16175    (+58.747)  context 29
+token   6/32  id 529      (+71.244)  context 30
+token   7/32  id 506      (+69.433)  context 31
+token   8/32  id 10995    (+72.069)  context 32
+token   9/32  id 23436    (+78.899)  context 33
+token  10/32  id 236787   (+73.069)  context 34
+token  11/32  id 562      (+82.255)  context 35
+token  12/32  id 48756    (+47.636)  context 36
+token  13/32  id 10358    (+63.751)  context 37
+token  14/32  id 108      (+57.644)  context 38
+token  15/32  id 818      (+77.303)  context 39
+token  16/32  id 10995    (+51.504)  context 40
+token  17/32  id 23436    (+60.664)  context 41
+token  18/32  id 236764   (+50.596)  context 42
+token  19/32  id 496      (+44.863)  context 43
+token  20/32  id 39084    (+41.406)  context 44
+token  21/32  id 600      (+38.669)  context 45
+token  22/32  id 27222    (+39.468)  context 46
+token  23/32  id 506      (+43.642)  context 47
+token  24/32  id 32920    (+49.035)  context 48
+token  25/32  id 1902     (+49.506)  context 49
+token  26/32  id 573      (+49.781)  context 50
+token  27/32  id 24744    (+52.966)  context 51
+token  28/32  id 236764   (+48.643)  context 52
+token  29/32  id 39169    (+37.519)  context 53
+token  30/32  id 496      (+44.368)  context 54
+token  31/32  id 4083     (+32.477)  context 55
+token  32/32  id 529      (+34.283)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 2.3 s
+prompt: 24 tokens in 2.5 s (103 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 3.3 s
+mean: 105 ms/token (9.517 tok/s)
+steady (last half): 106 ms/token (9.443 tok/s)
+projections (one steady step): 2.52 GB over 239 calls in 107 ms — 24 GB/s
+  FusedQ8          0.71 GB over    1 calls,     6 worker slabs,     8.6 ms,   83.1 GB/s   Q8[64] x F32 -> F32 -> F32
+  FusedNvfp4       1.80 GB over  238 calls,   748 worker slabs,    90.9 ms,   19.8 GB/s   NVFP4 x F32 -> F32 -> F32
+predicted from bytes: 8.7 ms synthetic, 9.1 ms real (x1.047, measured CPU-PERF-3B)
+  FusedQ8          0.71 GB at  81.69 GB/s =     8.7 ms
+  +   17 ms non-projection floor ->   26.1 ms/token, 38.25 tok/s
+  +   24 ms non-projection floor ->   33.1 ms/token, 30.17 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     99.54     416.49    93.0%
+  FfnActivation           34      2.82      83.08     2.6%
+  AttentionCore           34      2.79      81.99     2.6%
+  Norm                   205      0.78       3.81     0.7%
+  RoPE                    34      0.64      18.86     0.6%
+  Residual                68      0.03       0.37     0.0%
+  Embed                    1      0.00       0.75     0.0%
+  Logits                   1      0.00       0.04     0.0%
+  ----------------------------------------------------------
+  timed leaves                             106.60 ms
+  unattributed                               0.40 ms     0.4%
+  steady token wall                        107.00 ms
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedNvfp4 238 calls 1.80 GB
+## q4k-q8k rep 2 22:52:13 load=2.00 2.37 2.56 power=AC Power
+representation: Q4_K  source: auto  objects from a compiled pack: 1/5
+weights resident in 2.2 s
+residency: 5.20 GB total — 2.52 GB compact, 2.69 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      0.30 GB  (0.30 compact / 0.00 widened f32)
+  ffn            1.50 GB  (1.50 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 240 holding 2.52 GB — 240 page-aligned (100%), common alignment 32768 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  Q4_K       → cpu:direct/FusedKQuantQ8k         238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.337)  context 25
+token   2/32  id 669      (+77.726)  context 26
+token   3/32  id 53474    (+57.296)  context 27
+token   4/32  id 532      (+63.048)  context 28
+token   5/32  id 16175    (+62.548)  context 29
+token   6/32  id 529      (+82.633)  context 30
+token   7/32  id 506      (+75.017)  context 31
+token   8/32  id 10995    (+79.283)  context 32
+token   9/32  id 23436    (+73.353)  context 33
+token  10/32  id 236787   (+80.615)  context 34
+token  11/32  id 562      (+87.245)  context 35
+token  12/32  id 48756    (+45.811)  context 36
+token  13/32  id 10358    (+76.618)  context 37
+token  14/32  id 108      (+64.709)  context 38
+token  15/32  id 818      (+88.667)  context 39
+token  16/32  id 10995    (+53.274)  context 40
+token  17/32  id 23436    (+58.027)  context 41
+token  18/32  id 236764   (+53.440)  context 42
+token  19/32  id 496      (+47.218)  context 43
+token  20/32  id 39084    (+42.726)  context 44
+token  21/32  id 600      (+40.321)  context 45
+token  22/32  id 85739    (+38.260)  context 46
+token  23/32  id 21735    (+49.168)  context 47
+token  24/32  id 10063    (+47.414)  context 48
+token  25/32  id 6540     (+41.785)  context 49
+token  26/32  id 236764   (+44.771)  context 50
+token  27/32  id 2621     (+36.548)  context 51
+token  28/32  id 236764   (+53.945)  context 52
+token  29/32  id 532      (+38.336)  context 53
+token  30/32  id 27414    (+38.656)  context 54
+token  31/32  id 236764   (+49.267)  context 55
+token  32/32  id 7289     (+39.261)  context 56
+engine: vindex3-production-larql-compute-q8k
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,85739,21735,10063,6540,236764,2621,236764,532,27414,236764,7289
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,85739,21735,10063,6540,236764,2621,236764,532,27414,236764,7289
+weights loaded: 2.2 s
+prompt: 24 tokens in 0.7 s (31 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 1.0 s
+mean: 33 ms/token (30.646 tok/s)
+steady (last half): 33 ms/token (30.329 tok/s)
+projections (one steady step): 2.52 GB over 239 calls in 33 ms — 76 GB/s
+  FusedQ8          0.71 GB over    1 calls,     6 worker slabs,    10.2 ms,   69.7 GB/s   Q8[64] x F32 -> F32 -> F32
+  FusedKQuantQ8k     1.80 GB over  238 calls,   238 worker slabs,    16.2 ms,  111.7 GB/s   KQUANT x Q8[256] -> I32 -> F32
+predicted from bytes: 8.7 ms synthetic, 9.1 ms real (x1.047, measured CPU-PERF-3B)
+  FusedQ8          0.71 GB at  81.69 GB/s =     8.7 ms
+  +   17 ms non-projection floor ->   26.1 ms/token, 38.25 tok/s
+  +   24 ms non-projection floor ->   33.1 ms/token, 30.17 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     26.41     110.49    79.6%
+  AttentionCore           34      2.62      77.19     7.9%
+  FfnActivation           34      2.55      75.04     7.7%
+  Norm                   205      0.70       3.43     2.1%
+  RoPE                    34      0.68      20.02     2.1%
+  Residual                68      0.02       0.26     0.1%
+  Embed                    1      0.00       0.79     0.0%
+  Logits                   1      0.00       0.00     0.0%
+  ----------------------------------------------------------
+  timed leaves                              32.98 ms
+  unattributed                               0.21 ms     0.6%
+  steady token wall                         33.20 ms
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedKQuantQ8k 238 calls 1.80 GB
+## bf16 rep 3 22:53:18 load=2.48 2.51 2.61 power=AC Power
+weights resident in 2.9 s
+residency: 10.80 GB total — 7.40 GB compact, 3.40 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      1.43 GB  (0.71 compact / 0.71 widened f32)
+  ffn            5.35 GB  (5.35 compact / 0.00 widened f32)
+  head           1.34 GB  (1.34 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 239 holding 8.12 GB — 239 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  BF16       → cpu:direct/FusedBf16              171 operand(s)   3701637120 weights  (size policy over a float source)
+  BF16       → cpu:decode-f32+BlasF32             68 operand(s)    178257920 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.684)  context 25
+token   2/32  id 669      (+72.753)  context 26
+token   3/32  id 53474    (+55.527)  context 27
+token   4/32  id 532      (+60.446)  context 28
+token   5/32  id 16175    (+58.342)  context 29
+token   6/32  id 529      (+72.241)  context 30
+token   7/32  id 506      (+74.075)  context 31
+token   8/32  id 10995    (+74.116)  context 32
+token   9/32  id 23436    (+76.653)  context 33
+token  10/32  id 236787   (+75.362)  context 34
+token  11/32  id 562      (+83.859)  context 35
+token  12/32  id 48756    (+46.243)  context 36
+token  13/32  id 10358    (+69.262)  context 37
+token  14/32  id 108      (+59.437)  context 38
+token  15/32  id 818      (+84.112)  context 39
+token  16/32  id 10995    (+51.680)  context 40
+token  17/32  id 23436    (+56.343)  context 41
+token  18/32  id 236764   (+47.654)  context 42
+token  19/32  id 496      (+43.967)  context 43
+token  20/32  id 39084    (+40.101)  context 44
+token  21/32  id 600      (+38.384)  context 45
+token  22/32  id 27222    (+37.380)  context 46
+token  23/32  id 506      (+43.614)  context 47
+token  24/32  id 32920    (+50.854)  context 48
+token  25/32  id 1902     (+50.222)  context 49
+token  26/32  id 573      (+50.462)  context 50
+token  27/32  id 24744    (+54.158)  context 51
+token  28/32  id 236764   (+50.397)  context 52
+token  29/32  id 39169    (+36.468)  context 53
+token  30/32  id 496      (+45.909)  context 54
+token  31/32  id 4083     (+32.396)  context 55
+token  32/32  id 529      (+33.387)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 2.9 s
+prompt: 24 tokens in 1.9 s (77 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 2.4 s
+mean: 79 ms/token (12.661 tok/s)
+steady (last half): 79 ms/token (12.606 tok/s)
+projections (one steady step): 8.12 GB over 239 calls in 80 ms — 101 GB/s
+  BlasF32          0.71 GB over   68 calls,    68 worker slabs,     7.0 ms,  101.7 GB/s   F32 x F32 -> F32 -> F32
+  FusedBf16        7.40 GB over  171 calls,  1026 worker slabs,    65.0 ms,  113.8 GB/s   BF16 x F32 -> F32 -> F32
+predicted from bytes: 63.6 ms synthetic, 66.6 ms real (x1.047, measured CPU-PERF-3B)
+  BlasF32          0.71 GB at 262.00 GB/s =     2.7 ms
+  FusedBf16        7.40 GB at 121.66 GB/s =    60.9 ms
+  +   17 ms non-projection floor ->   83.6 ms/token, 11.97 tok/s
+  +   24 ms non-projection floor ->   90.6 ms/token, 11.04 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     72.07     301.53    90.0%
+  FfnActivation           34      2.91      85.53     3.6%
+  AttentionCore           34      2.84      83.62     3.6%
+  Norm                   205      0.86       4.21     1.1%
+  RoPE                    34      0.70      20.49     0.9%
+  Residual                68      0.03       0.43     0.0%
+  Embed                    1      0.00       0.83     0.0%
+  Logits                   1      0.00       0.08     0.0%
+  ----------------------------------------------------------
+  timed leaves                              79.41 ms
+  unattributed                               0.63 ms     0.8%
+  steady token wall                         80.04 ms
+## q8xq8 rep 3 22:54:25 load=2.19 2.41 2.56 power=AC Power
+weights resident in 6.8 s
+residency: 7.67 GB total — 4.27 GB compact, 3.40 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      1.43 GB  (0.71 compact / 0.71 widened f32)
+  ffn            2.84 GB  (2.84 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 342 holding 4.98 GB — 342 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  BF16       → cpu:direct/FusedBf16               68 operand(s)    356515840 weights  (size policy over a float source)
+  BF16       → cpu:decode-f32+BlasF32             68 operand(s)    178257920 weights  (size policy over a float source)
+  BF16       → cpu:requantise/FusedQ8            103 operand(s)   3345121280 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.660)  context 25
+token   2/32  id 669      (+72.483)  context 26
+token   3/32  id 53474    (+55.638)  context 27
+token   4/32  id 532      (+60.529)  context 28
+token   5/32  id 16175    (+58.245)  context 29
+token   6/32  id 529      (+71.700)  context 30
+token   7/32  id 506      (+73.935)  context 31
+token   8/32  id 10995    (+74.016)  context 32
+token   9/32  id 23436    (+76.484)  context 33
+token  10/32  id 236787   (+74.966)  context 34
+token  11/32  id 562      (+83.565)  context 35
+token  12/32  id 48756    (+46.175)  context 36
+token  13/32  id 10358    (+69.172)  context 37
+token  14/32  id 108      (+59.172)  context 38
+token  15/32  id 818      (+83.876)  context 39
+token  16/32  id 10995    (+51.715)  context 40
+token  17/32  id 23436    (+56.362)  context 41
+token  18/32  id 236764   (+47.610)  context 42
+token  19/32  id 496      (+44.072)  context 43
+token  20/32  id 39084    (+40.157)  context 44
+token  21/32  id 600      (+38.453)  context 45
+token  22/32  id 27222    (+37.250)  context 46
+token  23/32  id 506      (+43.939)  context 47
+token  24/32  id 32920    (+50.628)  context 48
+token  25/32  id 1902     (+50.233)  context 49
+token  26/32  id 573      (+50.470)  context 50
+token  27/32  id 24744    (+54.390)  context 51
+token  28/32  id 236764   (+50.478)  context 52
+token  29/32  id 39169    (+36.397)  context 53
+token  30/32  id 496      (+45.985)  context 54
+token  31/32  id 4083     (+32.381)  context 55
+token  32/32  id 529      (+33.353)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 6.8 s
+prompt: 24 tokens in 1.6 s (65 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 2.1 s
+mean: 66 ms/token (15.074 tok/s)
+steady (last half): 67 ms/token (14.971 tok/s)
+projections (one steady step): 4.98 GB over 239 calls in 67 ms — 74 GB/s
+  BlasF32          0.71 GB over   68 calls,    68 worker slabs,     7.0 ms,  101.8 GB/s   F32 x F32 -> F32 -> F32
+  FusedBf16        0.71 GB over   68 calls,   408 worker slabs,     8.4 ms,   85.0 GB/s   BF16 x F32 -> F32 -> F32
+  FusedQ8          3.55 GB over  103 calls,   618 worker slabs,    44.4 ms,   80.1 GB/s   Q8[64] x F32 -> F32 -> F32
+predicted from bytes: 52.1 ms synthetic, 54.5 ms real (x1.047, measured CPU-PERF-3B)
+  BlasF32          0.71 GB at 262.00 GB/s =     2.7 ms
+  FusedBf16        0.71 GB at 121.66 GB/s =     5.9 ms
+  FusedQ8          3.55 GB at  81.69 GB/s =    43.5 ms
+  +   17 ms non-projection floor ->   71.5 ms/token, 13.98 tok/s
+  +   24 ms non-projection floor ->   78.5 ms/token, 12.73 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     59.79     250.16    88.8%
+  AttentionCore           34      2.83      83.15     4.2%
+  FfnActivation           34      2.82      82.92     4.2%
+  Norm                   205      0.82       4.02     1.2%
+  RoPE                    34      0.68      20.01     1.0%
+  Residual                68      0.02       0.33     0.0%
+  Embed                    1      0.00       0.79     0.0%
+  Logits                   1      0.00       0.12     0.0%
+  ----------------------------------------------------------
+  timed leaves                              66.96 ms
+  unattributed                               0.37 ms     0.6%
+  steady token wall                         67.33 ms
+## nvfp4 rep 3 22:55:36 load=2.04 2.33 2.52 power=AC Power
+representation: NVFP4  source: auto  objects from a compiled pack: 1/5
+weights resident in 2.2 s
+residency: 5.20 GB total — 2.52 GB compact, 2.69 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      0.30 GB  (0.30 compact / 0.00 widened f32)
+  ffn            1.50 GB  (1.50 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 478 holding 2.52 GB — 478 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  NVFP4      → cpu:direct/FusedNvfp4             238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+token   1/32  id 1408     (+73.222)  context 25
+token   2/32  id 669      (+73.423)  context 26
+token   3/32  id 53474    (+55.366)  context 27
+token   4/32  id 532      (+62.026)  context 28
+token   5/32  id 16175    (+58.747)  context 29
+token   6/32  id 529      (+71.244)  context 30
+token   7/32  id 506      (+69.433)  context 31
+token   8/32  id 10995    (+72.069)  context 32
+token   9/32  id 23436    (+78.899)  context 33
+token  10/32  id 236787   (+73.069)  context 34
+token  11/32  id 562      (+82.255)  context 35
+token  12/32  id 48756    (+47.636)  context 36
+token  13/32  id 10358    (+63.751)  context 37
+token  14/32  id 108      (+57.644)  context 38
+token  15/32  id 818      (+77.303)  context 39
+token  16/32  id 10995    (+51.504)  context 40
+token  17/32  id 23436    (+60.664)  context 41
+token  18/32  id 236764   (+50.596)  context 42
+token  19/32  id 496      (+44.863)  context 43
+token  20/32  id 39084    (+41.406)  context 44
+token  21/32  id 600      (+38.669)  context 45
+token  22/32  id 27222    (+39.468)  context 46
+token  23/32  id 506      (+43.642)  context 47
+token  24/32  id 32920    (+49.035)  context 48
+token  25/32  id 1902     (+49.506)  context 49
+token  26/32  id 573      (+49.781)  context 50
+token  27/32  id 24744    (+52.966)  context 51
+token  28/32  id 236764   (+48.643)  context 52
+token  29/32  id 39169    (+37.519)  context 53
+token  30/32  id 496      (+44.368)  context 54
+token  31/32  id 4083     (+32.477)  context 55
+token  32/32  id 529      (+34.283)  context 56
+engine: vindex3-production-larql-compute
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,27222,506,32920,1902,573,24744,236764,39169,496,4083,529
+weights loaded: 2.2 s
+prompt: 24 tokens in 2.5 s (103 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 3.3 s
+mean: 105 ms/token (9.533 tok/s)
+steady (last half): 105 ms/token (9.502 tok/s)
+projections (one steady step): 2.52 GB over 239 calls in 105 ms — 24 GB/s
+  FusedQ8          0.71 GB over    1 calls,     6 worker slabs,     8.1 ms,   88.0 GB/s   Q8[64] x F32 -> F32 -> F32
+  FusedNvfp4       1.80 GB over  238 calls,   748 worker slabs,    90.0 ms,   20.1 GB/s   NVFP4 x F32 -> F32 -> F32
+predicted from bytes: 8.7 ms synthetic, 9.1 ms real (x1.047, measured CPU-PERF-3B)
+  FusedQ8          0.71 GB at  81.69 GB/s =     8.7 ms
+  +   17 ms non-projection floor ->   26.1 ms/token, 38.25 tok/s
+  +   24 ms non-projection floor ->   33.1 ms/token, 30.17 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     98.08     410.36    93.1%
+  AttentionCore           34      2.84      83.57     2.7%
+  FfnActivation           34      2.81      82.70     2.7%
+  Norm                   205      0.74       3.61     0.7%
+  RoPE                    34      0.65      19.14     0.6%
+  Residual                68      0.02       0.33     0.0%
+  Embed                    1      0.00       0.75     0.0%
+  Logits                   1      0.00       0.00     0.0%
+  ----------------------------------------------------------
+  timed leaves                             105.14 ms
+  unattributed                               0.25 ms     0.2%
+  steady token wall                        105.40 ms
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedNvfp4 238 calls 1.80 GB
+## q4k-q8k rep 3 22:56:44 load=2.00 2.29 2.49 power=AC Power
+representation: Q4_K  source: auto  objects from a compiled pack: 1/5
+weights resident in 2.2 s
+residency: 5.20 GB total — 2.52 GB compact, 2.69 GB widened f32
+  embedding      2.69 GB  (0.00 compact / 2.69 widened f32)
+  attention      0.30 GB  (0.30 compact / 0.00 widened f32)
+  ffn            1.50 GB  (1.50 compact / 0.00 widened f32)
+  head           0.71 GB  (0.71 compact / 0.00 widened f32)
+  glue           0.00 GB  (0.00 compact / 0.00 widened f32)
+allocations: 240 holding 2.52 GB — 240 page-aligned (100%), common alignment 16384 B
+realizations:
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  Q4_K       → cpu:direct/FusedKQuantQ8k         238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+token   1/32  id 1408     (+78.337)  context 25
+token   2/32  id 669      (+77.726)  context 26
+token   3/32  id 53474    (+57.296)  context 27
+token   4/32  id 532      (+63.048)  context 28
+token   5/32  id 16175    (+62.548)  context 29
+token   6/32  id 529      (+82.633)  context 30
+token   7/32  id 506      (+75.017)  context 31
+token   8/32  id 10995    (+79.283)  context 32
+token   9/32  id 23436    (+73.353)  context 33
+token  10/32  id 236787   (+80.615)  context 34
+token  11/32  id 562      (+87.245)  context 35
+token  12/32  id 48756    (+45.811)  context 36
+token  13/32  id 10358    (+76.618)  context 37
+token  14/32  id 108      (+64.709)  context 38
+token  15/32  id 818      (+88.667)  context 39
+token  16/32  id 10995    (+53.274)  context 40
+token  17/32  id 23436    (+58.027)  context 41
+token  18/32  id 236764   (+53.440)  context 42
+token  19/32  id 496      (+47.218)  context 43
+token  20/32  id 39084    (+42.726)  context 44
+token  21/32  id 600      (+40.321)  context 45
+token  22/32  id 85739    (+38.260)  context 46
+token  23/32  id 21735    (+49.168)  context 47
+token  24/32  id 10063    (+47.414)  context 48
+token  25/32  id 6540     (+41.785)  context 49
+token  26/32  id 236764   (+44.771)  context 50
+token  27/32  id 2621     (+36.548)  context 51
+token  28/32  id 236764   (+53.945)  context 52
+token  29/32  id 532      (+38.336)  context 53
+token  30/32  id 27414    (+38.656)  context 54
+token  31/32  id 236764   (+49.267)  context 55
+token  32/32  id 7289     (+39.261)  context 56
+engine: vindex3-production-larql-compute-q8k
+prompt tokens: 24
+generated ids: 1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,85739,21735,10063,6540,236764,2621,236764,532,27414,236764,7289
+sequence ids: 2,105,2364,107,6974,496,9813,4083,529,506,10995,23436,699,1061,37813,531,1061,3798,236761,106,107,105,4368,107,1408,669,53474,532,16175,529,506,10995,23436,236787,562,48756,10358,108,818,10995,23436,236764,496,39084,600,85739,21735,10063,6540,236764,2621,236764,532,27414,236764,7289
+weights loaded: 2.2 s
+prompt: 24 tokens in 0.8 s (31 ms/token) — first new token ready
+decode tokens: 31
+decode elapsed: 1.0 s
+mean: 33 ms/token (30.545 tok/s)
+steady (last half): 33 ms/token (30.234 tok/s)
+projections (one steady step): 2.52 GB over 239 calls in 34 ms — 75 GB/s
+  FusedQ8          0.71 GB over    1 calls,     6 worker slabs,    10.6 ms,   67.1 GB/s   Q8[64] x F32 -> F32 -> F32
+  FusedKQuantQ8k     1.80 GB over  238 calls,   238 worker slabs,    16.1 ms,  112.4 GB/s   KQUANT x Q8[256] -> I32 -> F32
+predicted from bytes: 8.7 ms synthetic, 9.1 ms real (x1.047, measured CPU-PERF-3B)
+  FusedQ8          0.71 GB at  81.69 GB/s =     8.7 ms
+  +   17 ms non-projection floor ->   26.1 ms/token, 38.25 tok/s
+  +   24 ms non-projection floor ->   33.1 ms/token, 30.17 tok/s
+
+  where the token went (one steady step):
+  class                calls   total ms    us/call  % token
+  Projection             239     26.69     111.68    79.6%
+  AttentionCore           34      2.63      77.28     7.8%
+  FfnActivation           34      2.58      75.86     7.7%
+  Norm                   205      0.72       3.50     2.1%
+  RoPE                    34      0.68      19.97     2.0%
+  Residual                68      0.02       0.26     0.1%
+  Embed                    1      0.00       0.92     0.0%
+  Logits                   1      0.00       0.04     0.0%
+  ----------------------------------------------------------
+  timed leaves                              33.31 ms
+  unattributed                               0.21 ms     0.6%
+  steady token wall                         33.52 ms
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedKQuantQ8k 238 calls 1.80 GB
+DONE
