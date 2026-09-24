@@ -101,6 +101,10 @@ pub enum ActivationRep {
     F32,
     /// Symmetric int8 at a stated scale geometry.
     Q8 { span: ScaleSpan },
+    /// Whatever an external kernel over codec-owned bytes does with the
+    /// activation. This crate does not know it, so it does not state it:
+    /// saying `F32` here would describe a kernel it never saw.
+    CodecOwned,
 }
 
 /// Where the products land before they are scaled back to f32.
@@ -111,6 +115,9 @@ pub enum AccumulatorRep {
     /// **Exact** integer accumulation within a block; the only rounding
     /// is the one multiply-add per block that scales it back.
     I32,
+    /// An external kernel's own accumulator — unknown here, as
+    /// [`ActivationRep::CodecOwned`].
+    CodecOwned,
 }
 
 /// The complete arithmetic of one projection.
@@ -151,6 +158,7 @@ impl fmt::Display for ActivationRep {
             Self::Q8 {
                 span: ScaleSpan::Block(n),
             } => write!(f, "Q8[{n}]"),
+            Self::CodecOwned => write!(f, "CODEC_OWNED"),
         }
     }
 }
@@ -160,6 +168,7 @@ impl fmt::Display for AccumulatorRep {
         match self {
             Self::F32 => write!(f, "F32"),
             Self::I32 => write!(f, "I32"),
+            Self::CodecOwned => write!(f, "CODEC_OWNED"),
         }
     }
 }

@@ -418,6 +418,19 @@ impl EncoderRecipe {
         }
     }
 
+    /// A registered codec's own encoder
+    /// (`RepresentationEncoder::encode_packed`). The codec chooses the
+    /// values, so its family and revision are the upstream identity: a
+    /// pack is reproducible only by that codec, never by this build's
+    /// recipes.
+    pub fn codec(codec: &CodecIdentity) -> Self {
+        Self {
+            algorithm: "codec-encoder".into(),
+            revision: 1,
+            source: Some(format!("{}/r{}", codec.family, codec.revision)),
+        }
+    }
+
     /// `nvfp4-nearest-v1`, for reports and CLI output.
     pub fn name(&self) -> String {
         format!("{}-v{}", self.algorithm, self.revision)

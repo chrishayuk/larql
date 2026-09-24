@@ -28,6 +28,13 @@
 //! truncated to a cap, and a prompt shorter than [`MIN_SAMPLE_TOKENS`]
 //! dropped. So the two paths see identical streams when `run_bank.py`
 //! becomes a client of the procedure.
+//!
+//! [`import_ids`] is the other way in: ids some other harness already
+//! tokenised (an evaluation corpus's fixed windows), sealed verbatim so a
+//! measurement scores exactly that harness's streams. Decoding them to text
+//! and re-tokenising could move a window edge; importing cannot. The
+//! tokenizer they belong to is still named, and every id is checked against
+//! its vocabulary.
 
 use std::path::{Path, PathBuf};
 
@@ -61,6 +68,9 @@ const TOKEN_BYTES: usize = 4;
 pub enum TemplatePolicy {
     /// The prompt text as written, with the tokenizer's own special tokens.
     Raw,
+    /// Ids tokenised elsewhere, imported verbatim: no text, no special
+    /// tokens added, no truncation.
+    Ids,
 }
 
 /// Where the prompts came from.
@@ -131,6 +141,13 @@ pub enum TokenBankError {
     CorpusNotForThisModel { bank: String, model: String },
     /// An export would write over an existing directory.
     OutputExists { path: PathBuf },
+    /// An imported id is outside the tokenizer's vocabulary.
+    IdOutOfVocabulary {
+        sample: String,
+        position: usize,
+        id: u32,
+        vocab: usize,
+    },
 }
 
 impl std::fmt::Display for TokenBankError {
@@ -315,7 +332,7 @@ pub fn export(
         });
         payloads.push((id, bytes));
     }
-    let mut manifest = TokenBankManifest {
+    let manifest = TokenBankManifest {
         schema: TOKEN_BANK_SCHEMA.to_string(),
         bank_id: String::new(),
         prompts: PromptSource {
@@ -329,10 +346,106 @@ pub fn export(
         payload_authority: TOKEN_BANK_PAYLOAD_AUTHORITY.to_string(),
         samples,
     };
+    write_bank(manifest, &payloads, out)
+}
+
+/// Seal ids tokenised elsewhere into a new bank at `out`, which must not
+/// exist. `ids_file` is an [`IdFile`]; every sample is kept whole, and one
+/// shorter than [`MIN_SAMPLE_TOKENS`] or holding an id outside
+/// `tokenizer`'s vocabulary is refused rather than dropped, because the
+/// point of importing is that the bank is exactly those streams.
+pub fn import_ids(
+    ids_file: &Path,
+    tokenizer: &Path,
+    out: &Path,
+) -> Result<TokenBankManifest, TokenBankError> {
+    if out.exists() {
+        return Err(TokenBankError::OutputExists {
+            path: out.to_path_buf(),
+        });
+    }
+    let file_bytes = read_file(ids_file)?;
+    let file: IdFile =
+        serde_json::from_slice(&file_bytes).map_err(|e| TokenBankError::Malformed {
+            detail: format!("{}: {e}", ids_file.display()),
+        })?;
+    if file.samples.is_empty() {
+        return Err(TokenBankError::Malformed {
+            detail: format!("{}: no samples", ids_file.display()),
+        });
+    }
+    let tk = crate::tokenizers::Tokenizer::from_file(tokenizer).map_err(|e| {
+        TokenBankError::Malformed {
+            detail: format!("{}: {e}", tokenizer.display()),
+        }
+    })?;
+    let vocab = tk.get_vocab_size(true);
+    let tokenizer_sha256 = sha256_hex(&read_file(tokenizer)?);
+
+    let mut samples = Vec::new();
+    let mut payloads = Vec::new();
+    for entry in &file.samples {
+        if entry.ids.len() < MIN_SAMPLE_TOKENS {
+            return Err(TokenBankError::Malformed {
+                detail: format!(
+                    "sample {}: {} ids, fewer than {MIN_SAMPLE_TOKENS}",
+                    entry.id,
+                    entry.ids.len()
+                ),
+            });
+        }
+        if let Some((position, &id)) = entry
+            .ids
+            .iter()
+            .enumerate()
+            .find(|(_, &id)| id as usize >= vocab)
+        {
+            return Err(TokenBankError::IdOutOfVocabulary {
+                sample: entry.id.clone(),
+                position,
+                id,
+                vocab,
+            });
+        }
+        let bytes: Vec<u8> = entry.ids.iter().flat_map(|id| id.to_le_bytes()).collect();
+        let id = sample_id(samples.len());
+        samples.push(TokenBankSample {
+            id: id.clone(),
+            prompt_id: entry.id.clone(),
+            category: entry.category.clone(),
+            tokens: entry.ids.len(),
+            sha256: sha256_hex(&bytes),
+        });
+        payloads.push((id, bytes));
+    }
+    let manifest = TokenBankManifest {
+        schema: TOKEN_BANK_SCHEMA.to_string(),
+        bank_id: String::new(),
+        prompts: PromptSource {
+            bank: file.bank,
+            sha256: sha256_hex(&file_bytes),
+        },
+        tokenizer_sha256,
+        template: TemplatePolicy::Ids,
+        add_special_tokens: false,
+        // Nothing was truncated: the cap recorded is the longest sample.
+        max_tokens: file.samples.iter().map(|s| s.ids.len()).max().unwrap_or(0),
+        payload_authority: TOKEN_BANK_PAYLOAD_AUTHORITY.to_string(),
+        samples,
+    };
+    write_bank(manifest, &payloads, out)
+}
+
+/// Name `manifest` by its contents and write it and its payloads to `out`.
+fn write_bank(
+    mut manifest: TokenBankManifest,
+    payloads: &[(String, Vec<u8>)],
+    out: &Path,
+) -> Result<TokenBankManifest, TokenBankError> {
     manifest.bank_id = bank_id(&manifest)?;
 
     std::fs::create_dir_all(out).map_err(|e| io_error(out, e))?;
-    for (id, bytes) in &payloads {
+    for (id, bytes) in payloads {
         let path = out.join(payload_file(id));
         std::fs::write(&path, bytes).map_err(|e| io_error(&path, e))?;
     }
@@ -362,6 +475,28 @@ struct PromptEntry {
     id: String,
     category: String,
     text: String,
+}
+
+/// The file [`import_ids`] reads: a named set of samples, each a list of
+/// ids already tokenised by the tokenizer the bank is sealed against.
+///
+/// ```json
+/// {"bank": "wikitext2-test-512", "samples": [
+///   {"id": "w000", "category": "wikitext", "ids": [1, 2, 3]}
+/// ]}
+/// ```
+#[derive(Deserialize)]
+pub struct IdFile {
+    pub bank: String,
+    pub samples: Vec<IdSample>,
+}
+
+/// One imported sample.
+#[derive(Deserialize)]
+pub struct IdSample {
+    pub id: String,
+    pub category: String,
+    pub ids: Vec<u32>,
 }
 
 /// `seq-NNN` for sample `index`.

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 use larql_vindex::format::vindex3::represent::token_bank::{
-    container_tokenizer_sha256, export, TokenBank, TOKENIZER_FILE,
+    container_tokenizer_sha256, export, import_ids, TokenBank, TOKENIZER_FILE,
 };
 
 /// `run_bank.py`'s default truncation cap, so an export with no `--max-tokens`
@@ -29,6 +29,8 @@ pub struct TokenBankArgs {
 pub enum TokenBankCommand {
     /// Tokenise a prompt file with a container's tokenizer into a new bank.
     Export(ExportArgs),
+    /// Seal ids another harness already tokenised into a new bank, verbatim.
+    Import(ImportArgs),
     /// Read every sample of a bank against its seals, and check that it
     /// belongs to a container's tokenizer.
     Check(CheckArgs),
@@ -50,6 +52,18 @@ pub struct ExportArgs {
 }
 
 #[derive(Args)]
+pub struct ImportArgs {
+    /// Container whose tokenizer the ids belong to.
+    pub container: PathBuf,
+    /// Id file: `{"bank": NAME, "samples": [{"id", "category", "ids": [..]}]}`.
+    #[arg(long)]
+    pub ids: PathBuf,
+    /// New bank directory. Refused if it exists.
+    #[arg(long)]
+    pub output: PathBuf,
+}
+
+#[derive(Args)]
 pub struct CheckArgs {
     /// Bank directory.
     pub bank: PathBuf,
@@ -63,6 +77,7 @@ pub fn run(args: TokenBankArgs) -> Result<(), Box<dyn std::error::Error>> {
         TokenBankCommand::Export(a) => {
             run_export(&a.container, &a.prompts, a.max_tokens, &a.output)
         }
+        TokenBankCommand::Import(a) => run_import(&a.container, &a.ids, &a.output),
         TokenBankCommand::Check(a) => run_check(&a.bank, &a.container),
     }
 }
@@ -77,6 +92,24 @@ pub(super) fn run_export(
     let positions: usize = manifest.samples.iter().map(|s| s.tokens).sum();
     println!(
         "bank {} ({}): {} samples, {positions} ids, cap {max_tokens}",
+        manifest.bank_id,
+        manifest.prompts.bank,
+        manifest.samples.len()
+    );
+    println!("tokenizer {}", manifest.tokenizer_sha256);
+    println!("-> {}", output.display());
+    Ok(())
+}
+
+pub(super) fn run_import(
+    container: &Path,
+    ids: &Path,
+    output: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = import_ids(ids, &container.join(TOKENIZER_FILE), output)?;
+    let positions: usize = manifest.samples.iter().map(|s| s.tokens).sum();
+    println!(
+        "bank {} ({}): {} samples, {positions} ids, imported verbatim",
         manifest.bank_id,
         manifest.prompts.bank,
         manifest.samples.len()

@@ -41,6 +41,13 @@ continuation state. `LogitsSession` lets generation and serving consume logits
 without reconstructing a V2 `ModelWeights` object. Backend support and
 representation compatibility are checked at their respective boundaries.
 
+`exec` runs the representation its `--backend` asks for on that backend's
+provider. Two overrides separate those choices: `--representation <ENCODING>`
+asks for a stored representation the backend does not name, and
+`--lowering <family/vN>` executes on another registered provider. `--plugin
+<PATH>` loads codecs and providers this build does not ship; see
+[Plugins](plugins.md). Lowered Metal backends refuse both overrides.
+
 `larql bench model.vindex3 --backends cpu,metal` times the serving path's
 prefill and decode with the same statistic as a VINDEX2 bench row; see the
 [CLI reference](../cli.md#larql-bench). Its numbers describe the machine and

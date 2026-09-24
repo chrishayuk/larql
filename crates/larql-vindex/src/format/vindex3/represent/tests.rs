@@ -1640,3 +1640,125 @@ fn the_q8_arm_refuses_to_quantise_at_load() {
         "{err}"
     );
 }
+
+/// Compile the dense fixture into a registered encoder's pack. The double
+/// stores raw little-endian f32, so the fixture's F32 tensors must come
+/// back as exactly their source bytes.
+fn encoder_pair(
+    tmp: &tempfile::TempDir,
+) -> (std::path::PathBuf, std::path::PathBuf, RepresentReport) {
+    use codec::encoder::tests::RawF32Codec;
+    use codec::RepresentationCodec;
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("encoder.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(RawF32Codec))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: RawF32Codec.encoding_label().to_string(),
+        ..RepresentSpec::nvfp4()
+    };
+    let report = compile_representation_with(&src, &out, &spec, &encoders)
+        .expect("a registered encoder is a compiler");
+    (src, out, report)
+}
+
+#[test]
+fn a_registered_encoder_compiles_a_pack_of_its_own_bytes() {
+    use codec::encoder::tests::RawF32Codec;
+    use codec::RepresentationCodec;
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, report) = encoder_pair(&tmp);
+    assert!(!report.compiled_objects.is_empty());
+
+    let label = RawF32Codec.encoding_label();
+    let src_index = index_of(&src);
+    let out_index = index_of(&out);
+    let mut checked = 0usize;
+    for entry in out_index.representations.values() {
+        if entry.encoding != label {
+            continue;
+        }
+        assert_eq!(entry.codec.as_ref(), Some(&RawF32Codec.identity()));
+        assert_eq!(
+            entry.encoder.as_ref(),
+            Some(&EncoderRecipe::codec(&RawF32Codec.identity()))
+        );
+        let source_entry = &src_index.representations[entry.compiled_from.as_ref().unwrap()];
+        let read = |dir: &std::path::Path, segment: &str| {
+            let (header, start) = read_segment_header(&dir.join(segment)).unwrap();
+            let bytes = std::fs::read(dir.join(segment)).unwrap();
+            header
+                .tensors
+                .into_iter()
+                .map(|t| {
+                    let at = (start + t.offset) as usize;
+                    (t.name, (t.dtype, bytes[at..at + t.len as usize].to_vec()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let packed = read(&out, &entry.segment);
+        let source = read(&src, &source_entry.segment);
+        for (name, (dtype, bytes)) in &packed {
+            if dtype == label {
+                assert_eq!(source[name].0, "F32", "{name}");
+                assert_eq!(
+                    bytes, &source[name].1,
+                    "{name}: raw f32 is the source bytes"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(
+        checked > 0,
+        "no tensor was compiled into the encoder's pack"
+    );
+}
+
+#[test]
+fn a_registered_encoders_pack_is_marked_approximate_in_the_graph() {
+    use codec::encoder::tests::RawF32Codec;
+    use codec::RepresentationCodec;
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, out, report) = encoder_pair(&tmp);
+    let graph: super::super::graph::SystemGraph =
+        serde_json::from_str(&std::fs::read_to_string(out.join(SYSTEM_GRAPH_JSON)).unwrap())
+            .unwrap();
+    for compiled in &report.compiled_objects {
+        let object = graph
+            .objects
+            .iter()
+            .find(|o| o.id == compiled.object)
+            .unwrap();
+        assert!(object.representations.iter().any(|r| {
+            r.encoding == RawF32Codec.encoding_label() && r.fidelity == Fidelity::Approximate
+        }));
+    }
+}
+
+#[test]
+fn an_unknown_encoding_names_the_registered_encoders() {
+    use codec::encoder::tests::RawF32Codec;
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("out.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(RawF32Codec))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: "NOT_AN_ENCODING".into(),
+        ..RepresentSpec::nvfp4()
+    };
+    let err = compile_representation_with(&src, &out, &spec, &encoders)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("registered encoders: TEST_RAW_F32"), "{err}");
+    assert!(!out.exists());
+}

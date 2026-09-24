@@ -71,8 +71,21 @@ links the evidence and frozen protocols.
 VINDEX3 separates logical model identity from physical encodings. REPRESENT
 compiles alternate representations and provides accounting, candidate identity,
 evidence ingestion and measurement/search contracts. Smaller bytes, executable
-support and acceptable behavior are separately established claims. Start with
-[representation](docs/vindex3/representation.md) and its contract indexes.
+support and acceptable behavior are separately established claims.
+
+```bash
+# Compile a 4-bit deployment image, then measure it against the source.
+larql vindex3 represent model.vindex3 --output deploy.vindex3 --encoding NVFP4 --deployment
+larql vindex3 token-bank export model.vindex3 \
+  --prompts bench/prompts/quality-bank-1/prompts.json --output bank/
+larql vindex3 measure --reference model.vindex3 --reference-backend production \
+  --candidate deploy.vindex3 --candidate-backend production-nvfp4 \
+  --bank bank/ --sequences 69 --label nvfp4 --output out/nvfp4
+```
+
+Start with [representation](docs/vindex3/representation.md) and its contract
+indexes. Encodings and execution providers this build does not ship load from
+shared libraries with `--plugin`; see [plugins](docs/vindex3/plugins.md).
 
 ## Existing vindexes and LQL
 

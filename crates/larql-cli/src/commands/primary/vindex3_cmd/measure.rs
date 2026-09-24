@@ -26,8 +26,8 @@ use larql_vindex::format::vindex3::represent::measure::plan::{
     run as run_procedure, PlanMeasureRequest, PlanReceipt, PlanRefusal,
 };
 
-use super::plugins::Plugins;
-use super::prepare::{lowerings_for, parse_representation_source, prepare, DEFAULT_COMPONENT};
+use super::plugins::{PluginArgs, Plugins};
+use super::prepare::{lowerings_with, parse_representation_source, prepare, DEFAULT_COMPONENT};
 use super::ExecBackend;
 
 type BoxErr = Box<dyn std::error::Error>;
@@ -78,6 +78,27 @@ pub struct MeasureArgs {
     /// Repeat for several. `larql_version` is always recorded.
     #[arg(long = "provenance", value_parser = parse_provenance)]
     pub provenance: Vec<(String, String)>,
+    /// Load a larql plugin for both arms, as `vindex3 exec --plugin` does.
+    /// Repeatable.
+    #[arg(long = "plugin", value_name = "PATH")]
+    pub plugins: Vec<PathBuf>,
+    /// Execute the reference on the lowering provider with this identity
+    /// (`family/vN`) instead of the one `--reference-backend` names.
+    #[arg(long, value_name = "FAMILY/vN")]
+    pub reference_lowering: Option<String>,
+    /// Execute the candidate on the lowering provider with this identity
+    /// (`family/vN`) instead of the one `--candidate-backend` names.
+    #[arg(long, value_name = "FAMILY/vN")]
+    pub candidate_lowering: Option<String>,
+    /// Bind the reference to the stored representation with this encoding
+    /// instead of the one `--reference-backend` names.
+    #[arg(long, value_name = "ENCODING")]
+    pub reference_representation: Option<String>,
+    /// Bind the candidate to the stored representation with this encoding
+    /// (e.g. a pack a `--plugin`'s encoder compiled) instead of the one
+    /// `--candidate-backend` names.
+    #[arg(long, value_name = "ENCODING")]
+    pub candidate_representation: Option<String>,
 }
 
 /// The report key for this binary's version.
@@ -96,35 +117,47 @@ struct ArmSpec<'a> {
     container: &'a PathBuf,
     backend: ExecBackend,
     source: RepresentationSource,
+    plugins: Plugins,
 }
 
 pub fn run(args: MeasureArgs) -> Result<(), BoxErr> {
+    // Every `--plugin` is loaded once; each arm asks it for its own provider.
+    let loaded = Plugins::load(&PluginArgs {
+        plugins: args.plugins.clone(),
+        lowering: None,
+        representation: None,
+    })?;
     let reference = ArmSpec {
         container: &args.reference,
         backend: args.reference_backend,
         source: parse_representation_source(&args.reference_source)?,
+        plugins: loaded.selecting(
+            args.reference_lowering.as_deref(),
+            args.reference_representation.as_deref(),
+        )?,
     };
     let candidate = ArmSpec {
         container: &args.candidate,
         backend: args.candidate_backend,
         source: parse_representation_source(&args.candidate_source)?,
+        plugins: loaded.selecting(
+            args.candidate_lowering.as_deref(),
+            args.candidate_representation.as_deref(),
+        )?,
     };
-    // No `--plugin` here yet, as `larql bench` and `vindex3 observe`: both
-    // arms open through the shipped registries only.
-    let plugins = Plugins::none();
     let reference_opened = prepare(
         reference.container,
         &args.component,
         reference.backend,
         reference.source,
-        &plugins,
+        &reference.plugins,
     )?;
     let candidate_opened = prepare(
         candidate.container,
         &args.component,
         candidate.backend,
         candidate.source,
-        &plugins,
+        &candidate.plugins,
     )?;
     let request = PlanMeasureRequest {
         bank: args.bank.clone(),
@@ -191,10 +224,10 @@ fn with_arms(
 fn interpreter_arm(
     (spec, opened): (&ArmSpec<'_>, &OpenedComponent),
 ) -> Result<Box<dyn TeacherForcedArm>, BoxErr> {
-    let (lowerings, identity) = lowerings_for(spec.backend)?;
+    let (lowerings, identity) = lowerings_with(spec.backend, &spec.plugins)?;
     let provider = lowerings.provider_shared(&identity)?;
     Ok(Box::new(InterpreterArm::prepare(
-        &backend_name(spec.backend),
+        &arm_name(spec),
         spec.container.clone(),
         opened.want.clone(),
         spec.source == RepresentationSource::Stored,
@@ -215,6 +248,14 @@ fn build_arm<'a>(
     let Some(formats) = super::prepare::lowered_formats(spec.backend).map(|(f, _)| f) else {
         return interpreter_arm(arm);
     };
+    if spec.plugins.select.is_some() || spec.plugins.want.is_some() {
+        return Err(format!(
+            "lowering and representation overrides do not apply to `{:?}`: a lowered arm \
+             executes its own formats, not through a lowering provider",
+            spec.backend
+        )
+        .into());
+    }
     let gpu = gpu.ok_or("a lowered arm needs a Metal device")?;
     let session = super::lowered::LoweredSession::new(
         gpu,
@@ -227,7 +268,7 @@ fn build_arm<'a>(
     Ok(Box::new(super::lowered::measure_arm::LoweredArm::new(
         session,
         &opened.store,
-        &backend_name(spec.backend),
+        &arm_name(spec),
         spec.container.clone(),
         opened.want.clone(),
         spec.source == RepresentationSource::Stored,
@@ -250,13 +291,19 @@ mod lowered {
     }
 }
 
-/// The backend's CLI spelling, the arm name the procedure records.
-fn backend_name(backend: ExecBackend) -> String {
+/// The arm name the procedure records: the backend's CLI spelling, and the
+/// provider identity when a lowering override replaced the backend's own.
+fn arm_name(spec: &ArmSpec<'_>) -> String {
     use clap::ValueEnum;
-    backend
+    let backend = spec
+        .backend
         .to_possible_value()
         .map(|v| v.get_name().to_string())
-        .unwrap_or_else(|| format!("{backend:?}"))
+        .unwrap_or_else(|| format!("{:?}", spec.backend));
+    match &spec.plugins.select {
+        Some(identity) => format!("{backend}@{identity}"),
+        None => backend,
+    }
 }
 
 /// Print what the procedure returned: the summary if admissible, the typed

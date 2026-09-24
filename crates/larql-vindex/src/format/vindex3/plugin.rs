@@ -1,6 +1,6 @@
 //! **Dynamically loaded plugins** — the contract between a host (the
 //! `larql` binary) and a shared library that registers representation
-//! codecs and lowering providers this build does not ship.
+//! codecs, encoders and lowering providers this build does not ship.
 //!
 //! The codec plane (`docs/represent-codec-contract.md`) and the lowering
 //! plane (LOWERING-PLUGIN-1) already take providers from outside the
@@ -31,6 +31,7 @@
 //! ```ignore
 //! fn register(r: &mut larql_vindex::format::vindex3::plugin::PluginRegistrar) {
 //!     r.codec(Box::new(MyCodec));
+//!     r.encoder(Box::new(MyCodec)); // only if packs can be compiled in it
 //!     r.lowering(|| Box::new(MyProvider::new()));
 //! }
 //! larql_vindex::larql_plugin!(register);
@@ -40,7 +41,7 @@
 //! [`LoweringRegistry`]: super::opplan::exec::lowering::LoweringRegistry
 
 use super::opplan::exec::backend::PlanBackend;
-use super::represent::codec::RepresentationCodec;
+use super::represent::codec::{RepresentationCodec, RepresentationEncoder};
 
 /// The host/plugin compatibility stamp: contract revision, crate version,
 /// compiler, and source commit. NUL-terminated so the C-ABI export can
@@ -88,7 +89,16 @@ pub type LoweringFactory = fn() -> Box<dyn PlanBackend + Send>;
 #[derive(Default)]
 pub struct PluginRegistrar {
     codecs: Vec<Box<dyn RepresentationCodec>>,
+    encoders: Vec<Box<dyn RepresentationEncoder>>,
     lowerings: Vec<LoweringFactory>,
+}
+
+/// Everything one plugin registered, in the order it registered it.
+#[derive(Default)]
+pub struct PluginRegistrations {
+    pub codecs: Vec<Box<dyn RepresentationCodec>>,
+    pub encoders: Vec<Box<dyn RepresentationEncoder>>,
+    pub lowerings: Vec<LoweringFactory>,
 }
 
 impl PluginRegistrar {
@@ -103,14 +113,26 @@ impl PluginRegistrar {
         self.codecs.push(codec);
     }
 
+    /// Register an encoder: a codec that can also write its own bytes, so
+    /// `vindex3 represent --encoding <its label>` can compile a pack in
+    /// it. Registering an encoder does not register its codec — a plugin
+    /// whose packs must also be read registers both.
+    pub fn encoder(&mut self, encoder: Box<dyn RepresentationEncoder>) {
+        self.encoders.push(encoder);
+    }
+
     /// Register a lowering provider, as the factory that builds it.
     pub fn lowering(&mut self, factory: LoweringFactory) {
         self.lowerings.push(factory);
     }
 
     /// The registrations, in the order the plugin made them.
-    pub fn into_parts(self) -> (Vec<Box<dyn RepresentationCodec>>, Vec<LoweringFactory>) {
-        (self.codecs, self.lowerings)
+    pub fn into_parts(self) -> PluginRegistrations {
+        PluginRegistrations {
+            codecs: self.codecs,
+            encoders: self.encoders,
+            lowerings: self.lowerings,
+        }
     }
 }
 
