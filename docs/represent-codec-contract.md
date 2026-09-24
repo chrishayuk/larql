@@ -109,7 +109,7 @@ Four proofs, each with a minimal witness, then adversarial confirmations:
 | Representation is not a dtype | progressive / residual codec (`R = R₀ + Δ₁ + … + Δₙ`) | extents with meaning; prefix identity; residency choosing depth; "enough representation" as a planner request |
 | Representation is not self-contained bytes | VQ / codebook | `AuxiliaryOperands` in anger: an encoded operand depending on another represented object |
 | Storage is not execution residency | entropy-coded bf16 (zstd / ANS) | sequential access refused by name for row plans; storage / decoded / executable / workspace residency told apart |
-| Canonical semantics are source-independent | HF round-trip, then `.fs3`/`.fsc` lowering | meaning → foreign vocabulary without special-case reconstruction |
+| Canonical semantics are source-independent | HF round-trip, then lowering into a foreign out-of-tree stream/container | meaning → foreign vocabulary without special-case reconstruction |
 
 Adversarial confirmations: ternary / base-243 (element and byte boundaries
 diverge), per-row mixed rate (shape does not determine offset), permutation
