@@ -179,6 +179,30 @@
         "doc gates": "clean",
         "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
       }
+    },
+    "C5": {
+      "name": "hostile external provider",
+      "status": "design frozen; not built",
+      "branch": "continuation-plugin-1/c5",
+      "base": "C4 (continuation-plugin-1/c4)",
+      "date": "2026-09-25",
+      "rule": "Frozen before implementation, as LOWERING-PLUGIN-1 L5 was: what the provider may borrow from the crates is decided HERE, so a proof that needed an internal cannot be quietly re-described as one that did not.",
+      "design_frozen_before_implementation": {
+        "where": "`crates/larql-kv/tests/external_continuation_provider/` (`main.rs` the journey and controls, `provider.rs` the provider and factory, `genericity.rs` the source scan). An integration test is a separate crate in cargo's model: it sees only what `larql-kv` and `larql-vindex` export. larql-kv because `canonical/v1`, the parity reference, lives there. No new workspace crate.",
+        "identity": "`hostile-test-provider/v77`, spelled in the test target and in test modules only.",
+        "shape": "Deliberately boring: row semantics, KV only (`regions() == [Kv]`), its own storage type and its own position counter, and `validate_config` accepting one option (`bits`) it records but does not act on — enough for configuration to be a second authority. `recurrent_state` / `latent_state` refuse by naming the provider (the trait makes both REQUIRED).",
+        "may_borrow": "Exported API only: the `ContinuationProvider` trait and its geometry/error types, `ContinuationFactory`/`ContinuationRegistry`/`SelectedContinuation`/`ContinuationHandoff`, `shipped_continuations()`, the fixtures and the reference backend. Anything else it turns out to need is a finding, recorded either way.",
+        "expected_departure_from_the_forecast": "The forecast says 'one contiguous buffer per layer'. The read contract is `keys(layer) -> &[Vec<f32>]`, which a single contiguous `Vec<f32>` cannot answer without also holding per-row `Vec`s. F3 forbids opening the read contract in C1–C5, so the provider stores rows as the trait returns them. If implementation confirms this, it is recorded as a finding for the stage-2 read-contract freeze (VIEW-1), not worked around."
+      },
+      "controls_frozen": [
+        "the journey: register (beside canonical/v1 and row/v1) → capability match against a sliding-window plan → factory construction → prepare → prefill → decode → sealed handoff held apart from any session → resume under an authority selected from a SECOND registry → decode on; K/V rows, logits and ids bit-identical to canonical/v1 driven through the same shape",
+        "the caller named it: in a registry holding canonical/v1, row/v1 and the external provider, only the external factory builds (per-factory build counts), so 'the registry resolved what was named' is told apart from 'it was the only implementation that could run'",
+        "the numbers are its own: a sibling provider identical except that it corrupts one stored value makes the record differ, so no shipped path is answering underneath",
+        "F5: against the recurrent+latent hybrid, selection refuses naming the first layer and region, with ZERO builds; and the late path is shown to exist — the same provider driven directly (bypassing selection) is refused mid-prefill by ContinuationError — so the early refusal is selection's doing",
+        "C4 inherited: a second registry holding the provider at v78 refuses the v77 handoff as RevisionChanged; config bits=3 against a bits=4 handoff refuses as ConfigurationChanged",
+        "F4 genericity: no non-test `.rs` under any crate's `src/` contains the external family, its type names or its constants; positive control — the same scanner, over the same files, finds the family `canonical` that this build DOES ship"
+      ],
+      "out_of_scope": "dynamic loading (C6); cross-process persistence (separate freeze); opening the read contract (F3, stage 2)"
     }
   }
 }
