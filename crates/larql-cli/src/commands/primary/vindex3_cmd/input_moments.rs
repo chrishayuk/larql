@@ -2,21 +2,28 @@
 //! `sensitivity --calibration` capture — the one mapping `consequence`
 //! scores with and `represent --moments` encodes with.
 //!
+//! Which tensor feeds from which site is read from the container's own
+//! operation plan — the operands each layer's attention and FFN ops bind —
+//! never from tensor names:
+//!
 //! ```text
-//! q_proj, k_proj, v_proj    attention input site      captured directly
-//! gate_proj, up_proj        FFN input site            captured directly
-//! down_proj                 act(gate(x)) * up(x)      RECONSTRUCTED, gated
-//! o_proj                    no site exists            ABSENT
+//! attention q, k, v    attention input site      captured directly
+//! FFN gate, up         FFN input site            captured directly
+//! FFN down             act(gate(x)) * up(x)      RECONSTRUCTED, gated
+//! attention o          no site exists            ABSENT
 //! ```
 //!
-//! `o_proj` is absent rather than zero, null or estimated: the capture has
-//! no attention-output site, so there is no honest number for it.
+//! `o` is absent rather than zero, null or estimated: the capture has no
+//! attention-output site, so there is no honest number for it. So is every
+//! operand of an operator this mapping has no sites for (non-softmax
+//! attention, routed experts): absent, and counted as such.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use larql_vindex::format::vindex3::inspect::SystemInspection;
+use larql_vindex::format::vindex3::opplan::{ComponentOpPlan, OperandRef};
 use larql_vindex::format::vindex3::represent::InputWeights;
 
 type BoxErr = Box<dyn std::error::Error>;
@@ -121,24 +128,84 @@ pub(super) fn check_provenance(
     Ok(())
 }
 
-/// Ordered so `gate_proj`/`up_proj`/`down_proj` cannot be shadowed by a
-/// shorter attention name appearing as a substring.
-const PROJECTIONS: [&str; 7] = [
-    "q_proj",
-    "k_proj",
-    "v_proj",
-    "o_proj",
-    "gate_proj",
-    "up_proj",
-    "down_proj",
-];
-
-pub(super) fn projection_of(tensor: &str) -> Option<&'static str> {
-    PROJECTIONS.into_iter().find(|p| tensor.contains(p))
+/// The part an operand plays in its layer, as the plan binds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Part {
+    Q,
+    K,
+    V,
+    O,
+    Gate,
+    Up,
+    Down,
 }
 
-pub(super) fn layer_of(tensor: &str) -> Option<usize> {
-    tensor.split('.').next()?.parse().ok()
+impl Part {
+    /// The label reports carry for this part.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Q => "q_proj",
+            Self::K => "k_proj",
+            Self::V => "v_proj",
+            Self::O => "o_proj",
+            Self::Gate => "gate_proj",
+            Self::Up => "up_proj",
+            Self::Down => "down_proj",
+        }
+    }
+}
+
+/// Every operand a moment site can describe, as the plan binds it:
+/// softmax attention's q/k/v/o and a dense FFN's gate/up/down, by layer.
+pub(super) struct PlanOperands {
+    by_part: BTreeMap<(usize, Part), OperandRef>,
+    by_tensor: BTreeMap<(String, String), (usize, Part)>,
+}
+
+impl PlanOperands {
+    pub(super) fn from_plan(plan: &ComponentOpPlan) -> Self {
+        use larql_vindex::format::vindex3::opplan::{LayerAttention, LayerFfn};
+        let mut by_part = BTreeMap::new();
+        for layer in &plan.layers {
+            if let LayerAttention::Softmax(a) = &layer.attention {
+                for (part, op) in [
+                    (Part::Q, &a.q),
+                    (Part::K, &a.k),
+                    (Part::V, &a.v),
+                    (Part::O, &a.o),
+                ] {
+                    by_part.insert((layer.layer, part), op.clone());
+                }
+            }
+            if let Some(LayerFfn::Dense(f)) = &layer.ffn {
+                if let Some(gate) = &f.gate {
+                    by_part.insert((layer.layer, Part::Gate), gate.clone());
+                }
+                by_part.insert((layer.layer, Part::Up), f.up.clone());
+                by_part.insert((layer.layer, Part::Down), f.down.clone());
+            }
+        }
+        let by_tensor = by_part
+            .iter()
+            .map(|(&key, op)| ((op.object.clone(), op.tensor.clone()), key))
+            .collect();
+        Self { by_part, by_tensor }
+    }
+
+    pub(super) fn get(&self, layer: usize, part: Part) -> Option<&OperandRef> {
+        self.by_part.get(&(layer, part))
+    }
+
+    /// The layer and part the plan binds `(object, tensor)` to.
+    pub(super) fn part_of(&self, object: &str, tensor: &str) -> Option<(usize, Part)> {
+        self.by_tensor
+            .get(&(object.to_string(), tensor.to_string()))
+            .copied()
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = (usize, Part, &OperandRef)> {
+        self.by_part.iter().map(|(&(l, p), op)| (l, p, op))
+    }
 }
 
 /// A row-major `[rows, k]` operand, borrowed from a caller that already
@@ -178,16 +245,16 @@ fn down_input(
         .collect()
 }
 
-/// The operands the reconstruction reads: `(layer, projection)` →
-/// matrix, or `None` if the layer has no such operand.
-pub(super) type Loader<'a, 'b> = dyn FnMut(usize, &str) -> Result<Option<Matrix<'a>>, BoxErr> + 'b;
+/// The operands the reconstruction reads: `(layer, part)` → matrix, or
+/// `None` if the layer has no such operand.
+pub(super) type Loader<'a, 'b> = dyn FnMut(usize, Part) -> Result<Option<Matrix<'a>>, BoxErr> + 'b;
 
 fn load_required<'a>(
     load: &mut Loader<'a, '_>,
     layer: usize,
-    proj: &str,
+    part: Part,
 ) -> Result<Matrix<'a>, BoxErr> {
-    load(layer, proj)?.ok_or_else(|| format!("layer {layer} has no {proj} operand").into())
+    load(layer, part)?.ok_or_else(|| format!("layer {layer} binds no {part:?} operand").into())
 }
 
 /// Recompute the executor's own FFN output from its own input and compare,
@@ -205,9 +272,9 @@ pub(super) fn check_reconstruction(
         .control
         .as_ref()
         .ok_or("REFUSED: capture carries no reconstruction control pair")?;
-    let gate = load_required(load, control.layer, "gate_proj")?;
-    let up = load_required(load, control.layer, "up_proj")?;
-    let down = load_required(load, control.layer, "down_proj")?;
+    let gate = load_required(load, control.layer, Part::Gate)?;
+    let up = load_required(load, control.layer, Part::Up)?;
+    let down = load_required(load, control.layer, Part::Down)?;
     let recomputed = matvec(
         &down,
         &down_input(&gate, &up, &control.ffn_input, activation),
@@ -250,8 +317,8 @@ pub(super) fn reconstruct_down_moments(
         if s.rows.is_empty() {
             continue;
         }
-        let gate = load_required(load, s.layer, "gate_proj")?;
-        let up = load_required(load, s.layer, "up_proj")?;
+        let gate = load_required(load, s.layer, Part::Gate)?;
+        let up = load_required(load, s.layer, Part::Up)?;
         let mut acc: Option<Vec<f64>> = None;
         for x in &s.rows {
             let z = down_input(&gate, &up, x, activation);
@@ -295,16 +362,16 @@ impl TensorMoments {
         Self { captured, down }
     }
 
-    /// The moments for `projection` at `layer`, and their provenance.
-    pub(super) fn get(&self, layer: usize, projection: &str) -> Option<(&[f64], &'static str)> {
-        let (d, source) = match projection {
-            "q_proj" | "k_proj" | "v_proj" => (
+    /// The moments for `part` at `layer`, and their provenance.
+    pub(super) fn get(&self, layer: usize, part: Part) -> Option<(&[f64], &'static str)> {
+        let (d, source) = match part {
+            Part::Q | Part::K | Part::V => (
                 self.captured.get(&(layer, ATTENTION_SITE)),
                 "captured:attention",
             ),
-            "gate_proj" | "up_proj" => (self.captured.get(&(layer, FFN_SITE)), "captured:ffn"),
-            "down_proj" => (self.down.get(&layer), "reconstructed:silu(gate(x))*up(x)"),
-            _ => return None,
+            Part::Gate | Part::Up => (self.captured.get(&(layer, FFN_SITE)), "captured:ffn"),
+            Part::Down => (self.down.get(&layer), "reconstructed:silu(gate(x))*up(x)"),
+            Part::O => return None,
         };
         d.map(|d| (d.as_slice(), source))
     }
@@ -349,9 +416,7 @@ pub(super) fn input_weights(
     moments_path: &Path,
 ) -> Result<(InputWeights, BTreeMap<&'static str, usize>), BoxErr> {
     use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
-    use larql_vindex::format::vindex3::encode::segment::read_segment_header;
     use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
-    use larql_vindex::format::vindex3::opplan::OperandRef;
 
     let (moments, digest) = read(moments_path)?;
     let OpenedComponent {
@@ -370,39 +435,15 @@ pub(super) fn input_weights(
     check_provenance(&moments, &inspection)?;
     let activation = ffn_activation(&plan)?;
 
-    // Every 2-D projection the container stores, by (layer, projection).
-    let mut operands: BTreeMap<(usize, &'static str), OperandRef> = BTreeMap::new();
-    for entry in inspection.index.representations.values() {
-        let (header, _) = read_segment_header(&container.join(&entry.segment))?;
-        for t in &header.tensors {
-            let (Some(proj), Some(layer)) = (projection_of(&t.name), layer_of(&t.name)) else {
-                continue;
-            };
-            if t.shape.len() != 2 {
-                continue;
-            }
-            operands.insert(
-                (layer, proj),
-                OperandRef {
-                    object: entry.object.clone(),
-                    tensor: t.name.clone(),
-                    dtype: t.dtype.clone(),
-                    shape: t.shape.clone(),
-                },
-            );
-        }
-    }
-    let mut load = |layer: usize, proj: &str| -> Result<Option<Matrix<'static>>, BoxErr> {
-        let Some(op) = operands
-            .iter()
-            .find(|((l, p), _)| *l == layer && *p == proj)
-        else {
+    let operands = PlanOperands::from_plan(&plan);
+    let mut load = |layer: usize, part: Part| -> Result<Option<Matrix<'static>>, BoxErr> {
+        let Some(op) = operands.get(layer, part) else {
             return Ok(None);
         };
-        let op = op.1;
+        let (rows, k) = matrix_shape(op)?;
         Ok(Some(Matrix {
-            rows: op.shape[0],
-            k: op.shape[1],
+            rows,
+            k,
             values: Cow::Owned(store.load(op)?),
         }))
     };
@@ -420,16 +461,16 @@ pub(super) fn input_weights(
 
     let mut by_tensor = BTreeMap::new();
     let mut sources: BTreeMap<&'static str, usize> = BTreeMap::new();
-    for (&(layer, proj), op) in &operands {
-        let Some((d, source)) = tensor_moments.get(layer, proj) else {
+    for (layer, part, op) in operands.iter() {
+        let Some((d, source)) = tensor_moments.get(layer, part) else {
             *sources.entry("absent (no activation site)").or_insert(0) += 1;
             continue;
         };
-        if d.len() != op.shape[1] {
+        let (_, k) = matrix_shape(op)?;
+        if d.len() != k {
             return Err(format!(
-                "REFUSED: {} expects {} input features, moments carry {}",
+                "REFUSED: {} expects {k} input features, moments carry {}",
                 op.tensor,
-                op.shape[1],
                 d.len()
             )
             .into());
@@ -438,4 +479,12 @@ pub(super) fn input_weights(
         *sources.entry(source).or_insert(0) += 1;
     }
     Ok((InputWeights { by_tensor, digest }, sources))
+}
+
+/// `(rows, k)` of a 2-D operand.
+fn matrix_shape(op: &OperandRef) -> Result<(usize, usize), BoxErr> {
+    match op.shape.as_slice() {
+        [rows, k] => Ok((*rows, *k)),
+        other => Err(format!("{}: expected a 2-D operand, shape {other:?}", op.tensor).into()),
+    }
 }
