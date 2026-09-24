@@ -395,13 +395,13 @@ impl PhysicalProjectionPlan {
                 activation: int8_act,
                 accumulator: AccumulatorRep::I32,
             },
-            // Never pinned by this crate's own `select` — an external
-            // backend that pins it states its own arithmetic, which this
-            // enum has no field to carry.
+            // Never pinned by this crate's own `select`. The external
+            // kernel's activation and accumulator are its own; stating
+            // `F32` for them would describe a kernel this crate never saw.
             Self::CodecOwned => Arithmetic {
                 weight: WeightRep::CodecOwned,
-                activation: ActivationRep::F32,
-                accumulator: AccumulatorRep::F32,
+                activation: ActivationRep::CodecOwned,
+                accumulator: AccumulatorRep::CodecOwned,
             },
         }
     }
