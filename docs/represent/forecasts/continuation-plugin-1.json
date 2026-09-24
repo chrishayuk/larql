@@ -1,0 +1,163 @@
+{
+  "programme": "CONTINUATION-PLUGIN-1",
+  "wave": "C1–C6, the first transition of the continuation plane: authority movement, not state representation",
+  "lane": "continuation",
+  "frozen": "2026-09-23",
+  "status": "FORECAST — frozen before implementation; the execution record goes in continuation-plugin-1-notes.json and this file is not edited",
+  "why": "The codec plane says 'here is a representation you have never heard of' through registration alone; LOWERING-PLUGIN-1 opened the same door for realization. Continuation state has the seam (ContinuationProvider, plan-declared LayerContinuationGeometry, typed ContinuationError) and none of the rest: no identity, no registry, selection by string match, and a durable server handoff whose authority is its concrete Rust type. This programme opens the plane the way the lowering plane was opened — identity first, a registry carried as a value, the existing exact providers moved behind it without a bit changing, identity carried into every durable handoff, one hostile external provider — and deliberately leaves the read contract (every row, from position 0) closed until provider openness is proven.",
+  "baseline": {
+    "main": "43b2e9d9 (merge of PR #531)",
+    "inventory": "docs/continuation-plane-inventory.md, measured 2026-09-23",
+    "pattern": "lowering-plugin-1.json (L1–L5); PR #526 (PluginRegistrar, dylib loading) OPEN",
+    "facts": {
+      "continuation_provider_trait_methods": 9,
+      "production_provider_impls": [
+        "RowKvState",
+        "CanonicalKvState"
+      ],
+      "non_test_construction_sites": 16,
+      "non_test_construction_files": 15,
+      "selection_by_string_match": [
+        "larql-cli run_cmd_vindex3/mod.rs:182",
+        "larql-cli run_cmd_vindex3/inputs.rs:56"
+      ],
+      "handoff_typed_to_concrete_provider": "larql-server vindex3.rs:349 V3KvHandoff { kv: CanonicalKvState }",
+      "provider_identity": "none — the Rust type",
+      "plugin_registrar_planes": [
+        "codec",
+        "lowering"
+      ]
+    }
+  },
+  "predecessors": [
+    "lowering-plugin-1.json",
+    "../../continuation-plane-inventory.md",
+    "../../../crates/larql-kv/docs/state-policy.md (canonical / reconstructible / derivative vocabulary — reused when first exercised, not before)"
+  ],
+  "claim": "A continuation provider that this build does not ship can be registered through exported API, declare which continuation regions it can hold, be selected against the plan's declared geometry before any prefill, carry a whole conversation through prefill, resume and decode bit-identically to canonical, and be named by identity and configuration digest in every durable handoff so that resuming under a missing, re-revisioned or re-configured provider refuses — without a provider-specific branch in core.",
+  "boundaries": {
+    "meaning": "exec/mod.rs remains the single interpreter; providers hold state, never compute it.",
+    "codec_and_lowering": "Continuation identity is a third independent authority; it names neither a codec nor a lowering, and neither names it.",
+    "read_contract": "The ContinuationProvider method set is NOT changed in this transition. Retained-row bases, views instead of Vec<Vec<f32>>, device residency: a separate freeze.",
+    "capability_vocabulary": "Declared capabilities are the continuation REGIONS a provider can hold (Kv, LatentKv, Recurrent, KvAndRecurrent, Stateless) — the plan's existing vocabulary. Retention, residency and exactness declarations are added by the freeze whose provider first exercises them; no enum value is added without a provider that declares it.",
+    "no_cache": "A replay mode that drives a provider, not a provider. Not registered.",
+    "v2_engines": "KvEngine and EngineKind are untouched.",
+    "performance": "No throughput or memory improvement is required."
+  },
+  "waves": [
+    {
+      "id": "C1",
+      "name": "continuation identity",
+      "prediction": "Every production ContinuationProvider has a versioned ContinuationIdentity { family, revision }, displayed family/vN, validated by the SAME rule LoweringIdentity uses (one shared validator, not a copy). Built-ins: row/v1, canonical/v1.",
+      "must_not_change": "any provider's behaviour",
+      "trait_methods_after": 9
+    },
+    {
+      "id": "C2",
+      "name": "continuation registry",
+      "prediction": "A ContinuationRegistry is a value a caller carries — never a default consulted on its own — holding factories (a provider is per-conversation, so the registry builds, it does not hand out an instance). A factory states its identity and the regions it can hold, validates a ContinuationConfig (ordered key=value; an unknown key refuses), and builds a provider. Selection matches the plan's geometry against the declared regions and refuses BEFORE prefill, naming the first unsupported layer and region.",
+      "config_digest": "sha256 over identity and the config's canonical form; stable across runs and key order",
+      "must_not_change": "graph semantics",
+      "trait_methods_after": 9
+    },
+    {
+      "id": "C3",
+      "name": "built-ins behind the registry",
+      "prediction": "All 16 non-test construction sites obtain their provider from a registry; --engine standard|row become aliases that resolve to canonical/v1 and row/v1 and the resolved identity is what a run records. The VI3-KV-1 gates extend to: direct CanonicalKvState == registry canonical/v1 == registry row/v1, bit-identical through prefill, resume and decode, on a fixture crossing a sliding-window boundary and on a hybrid (recurrent + latent) fixture.",
+      "primary_control": "the existing KV-1 bit-identity gate, unchanged, still passes against the direct types",
+      "grep_gate": "Executable closure policy, not a migration of the 16 known sites: a source-scan test fails if the type names RowKvState or CanonicalKvState appear in non-test production source outside an explicit allowlist (the providers' own modules and the built-in factory module). Banning the NAME rather than listed constructor spellings also catches struct literals and inferred Default::default(), so a seventeenth site cannot appear unnoticed. Every allowlist entry carries its reason in the test.",
+      "trait_methods_after": 9,
+      "closure_control": "the scanner is run against a seeded violation (a fixture file constructing CanonicalKvState::new()) and must go RED, so the gate is shown able to fail"
+    },
+    {
+      "id": "C4",
+      "name": "authority in durable handoffs",
+      "prediction": "V3KvHandoff holds a boxed provider plus ContinuationAuthority { identity, config_digest }, no longer the concrete CanonicalKvState. ResponseKvCache and session resumption compare the stored authority with the one the resuming request resolves and refuse distinctly — provider absent / revision changed / configuration changed — each naming both sides.",
+      "must_not_happen": "resuming under a different provider, or falling back to canonical/v1 when the recorded provider is absent",
+      "trait_methods_after": 9,
+      "authorities": "Provider identity and configuration digest are TWO authorities compared separately, never one folded name: same implementation with a different configuration (bits=4 vs bits=3, host vs device residency) is a different interpretation of the state.",
+      "anti_cheat": "State produced by hostile-test-provider/v77 under config A; the resuming registry holds hostile-test-provider/v77 under config B, canonical/v1 and row/v1. Required: refusal naming the configuration mismatch. Forbidden: selecting another working provider, reconstructing the state under canonical/v1, or silently restarting from a fresh prefill."
+    },
+    {
+      "id": "C5",
+      "name": "hostile external provider",
+      "prediction": "An integration-test crate registers hostile-test-provider/v77 — deliberately boring: row semantics, one contiguous buffer per layer, an identity no production source contains — and drives register → capability match → factory construction → prepare → prefill → decode → saved handoff → resume, bit-identical in rows and logits to canonical/v1, without core naming it.",
+      "genericity_control": "scan production source for the external identity's family; canonical is found by the same scanner as a positive control",
+      "hostile_properties": "declares only Kv — so a hybrid plan must refuse at selection, not mid-prefill; its revision is bumped in a second registry to witness C4's revision refusal",
+      "trait_methods_after": 9,
+      "target": "the falsifier is not whether another type can satisfy the trait (the compiler answers that) but whether any production path still treats row or canonical as special; C5 is built to expose such a path"
+    },
+    {
+      "id": "C6",
+      "name": "dynamic loading",
+      "prediction": "PluginRegistrar gains continuation(factory); the C5 provider, built as a dylib, is loaded with --plugin and selected with --continuation family/vN [--continuation-option k=v], passing the same end-to-end gate as C5 through the CLI.",
+      "precondition": "PR #526 merged; C1–C5 held"
+    }
+  ],
+  "falsifiers": [
+    {
+      "id": "F1",
+      "name": "the seam is not an object",
+      "statement": "If ContinuationProvider cannot be held as Box<dyn ContinuationProvider + Send> by the server handoff without a trait change, C4 cannot be built on today's contract.",
+      "consequence": "Record the minimal change (e.g. a Send bound) in the notes as a contract change; it does not count against F3 only if it adds no method."
+    },
+    {
+      "id": "F2",
+      "name": "hidden default survives",
+      "statement": "If a provider selected through the registry reaches prefill but any later path — resume, serving handoff, LQL, bench, replay — constructs a built-in directly, the wave fails.",
+      "analogue": "codec rung-3 F8; lowering F4",
+      "candidates": "the 16 non-test construction sites at baseline"
+    },
+    {
+      "id": "F3",
+      "name": "read contract accidentally opened",
+      "statement": "If C1–C5 need a new ContinuationProvider method or a change to AttentionStepCall, provider authority has been mixed with state representation.",
+      "expected": "9 trait methods and an unchanged AttentionStepCall through C5, reported at each wave's merge",
+      "reading": "Adding a retained-row base while introducing the registry is the temptation. The external provider must hold every row, exactly as the built-ins do."
+    },
+    {
+      "id": "F4",
+      "name": "selection by name",
+      "statement": "If core selection, refusal or handoff comparison branches on a family string rather than on declared regions and identity equality, the plane is not open.",
+      "witness": "grep gate: no production match on \"canonical\" or \"row\" outside the factories and the alias table"
+    },
+    {
+      "id": "F5",
+      "name": "late refusal",
+      "statement": "If a provider lacking a region the plan needs is refused only when execution first asks for that region (the current ContinuationError path), rather than at selection, capability matching has not replaced discovery.",
+      "witness": "the C5 provider against a hybrid fixture: refused before any append, with no partial state"
+    }
+  ],
+  "invariants": [
+    "One interpreter defines model meaning for every continuation provider.",
+    "Geometry comes from the plan; providers never consult ModelArchitecture.",
+    "Selection happens before prefill, from declared regions; no silent fallback.",
+    "Continuation, codec and lowering identities are independent authorities.",
+    "A durable handoff names the authority that produced it; a different authority refuses, never reinterprets.",
+    "Registration is a value carried through the session, not process-global.",
+    "RowKvState and CanonicalKvState behaviour is bit-identical through C1–C5.",
+    "The transition requires no memory or speed win."
+  ],
+  "success": {
+    "architectural": "An external continuation provider reaches prefill, resume, decode and a serving handoff through registration alone.",
+    "closure": "No production path holding conversation state bypasses identity, registry or recorded authority.",
+    "non_regression": "Existing providers and the KV-1 gates are unchanged.",
+    "not_required": [
+      "window-resident retention",
+      "a new read contract",
+      "device-resident or remote state",
+      "any V2 engine ported",
+      "distributed continuation"
+    ]
+  },
+  "sequence_after": "C1–C5 as written, one small PR per wave → C6 when #526 lands (one ABI stamp governs codec, lowering and continuation) → successors, each its own freeze: CONTINUATION-MEM-1 (measure resident bytes by state form and context length: matrix bytes, row-view bytes, capacity overhead, recurrent and latent state — prove or refute the duplicate residency read from code) → CONTINUATION-VIEW-1 (stop requiring duplicated Vec<Vec<f32>> views) → CONTINUATION-WINDOW-1 (exact bounded residency; window-resident/v1 is its first provider) → residual-derived, codec-backed and remote providers.",
+  "gates_before_each_push": [
+    "cargo fmt --all --check last",
+    "cargo clippy -p larql-vindex -p larql-kv -p larql-inference -p larql-server -p larql-cli -p larql-lql --all-targets -- -D warnings",
+    "cargo test -p larql-vindex -p larql-kv (count the lib lines) and the touched crates' suites",
+    "cargo check --workspace --all-targets (a provider type change reaches the server and CLI)",
+    "the trait method count and construction-site count, reported in the wave's notes",
+    "scripts/check_contract_index.py, scripts/check_doc_links.py, scripts/check_doc_references.py"
+  ],
+  "immutability": "Frozen at its commit. Per-wave falsifications go in continuation-plugin-1-notes.json; if the design above must change during a wave, the change is written there with the reason and this file is not edited."
+}

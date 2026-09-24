@@ -12,8 +12,8 @@ corrections, and the ordered queue.
 
 ## 1. What is built
 
-Nothing below is committed — five commits are prepped (message text in
-the session scratchpad, `phase-a-commit.md`). Tests: 1 120 in `larql-kv`,
+Committed 2026-08-06 in `c1f24291`, bundled into a compute commit
+rather than the five prepared ones. Test counts as of writing: 1 120 in `larql-kv`,
 1 433 in `larql-inference`, clippy clean, workspace green.
 
 ### `crates/larql-kv/src/engines/semantic_promotion/`

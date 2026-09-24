@@ -4,8 +4,9 @@
 
 `engines/semantic_promotion/` (policy wrapper over an exact decode engine)
 and `model_walk/` (its peer planner) are built and gated: 1 120 tests in
-this crate, clippy clean, workspace green, **uncommitted** — five commits
-prepped. Full pickup notes, evidence ledger and ordered queue:
+this crate, clippy clean, workspace green. Committed 2026-08-06 in
+`c1f24291` (bundled into a compute commit rather than the five prepared
+ones). Full pickup notes, evidence ledger and ordered queue:
 **`docs/semantic-promotion-pickup.md`**. Contract:
 `docs/specs/semantic-promotion-engine.md`.
 
@@ -185,7 +186,8 @@ signal to start now.
 
 ## Current state (2026-08-04)
 
-Nine engines behind one `EngineKind` selector, all reachable from
+Nine engines behind one `EngineKind` selector at the time of writing (ten
+since semantic promotion; `EngineKind::supported_names()` is the roster), all reachable from
 `larql bench --engine` and pinned by `tests/gpu_engine_parity`,
 `tests/dispatch_parity` and `tests/engine_ple_parity`.
 

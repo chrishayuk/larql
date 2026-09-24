@@ -273,7 +273,7 @@ should go.
 
 ## 7. Gaps in the instrument
 
-- `EngineProfiler` covers four of nine engines (markov-rs, markov-rs-codec,
+- `EngineProfiler` covers four of the nine engines of the time (ten now) (markov-rs, markov-rs-codec,
   turbo-quant, windowed-checkpoint). `standard`, `no-cache`, `boundary-kv`,
   `boundary-per-layer` and `apollo` have no per-stage split, so their costs
   are inferred from slope rather than attributed. `bench --profile` says
