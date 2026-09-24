@@ -76,3 +76,43 @@ and it does not say anything about MLX's or llama.cpp's 4-bit heads, which have 
 - Speed. It was measured in V3-METAL-ECO-1 and is not re-measured here.
 - External runtimes' fidelity. That needs an external arm, which is a separate freeze.
 - Other models' heads.
+
+## Adjudication
+
+Run on 2026-09-25, 00:23–00:30 BST. The binary is main `a7f69949` (sha256 `d614b346…72b5`), and the checkout is this
+freeze `7791ae22`. Evidence is in `bench/head-fid-2/`.
+
+All three runs are **admissible with complete facts**. Each changed only what it declared:
+
+- R → C: `decoder_stack@NVFP4`.
+- R → H: `decoder_stack@NVFP4` and `output_head@NVFP4`.
+- C → H: `output_head@NVFP4` alone.
+
+R → C is bit-identical, position for position, to W9.
+
+| check | value | bound | |
+|---|---:|---:|---|
+| guard: top-1 agreement(R, C) | 92.67% | ≥ 90% | passes |
+| 1. mean KL(R ‖ H) | 3.560e-2 | ≤ 3.642e-2 (1.25 × 2.914e-2) | **holds**, ratio 1.222 |
+| 2. p99 KL(R ‖ H) | 2.372e-1 | ≤ 3.326e-1 (1.5 × 2.217e-1) | **holds**, ratio 1.070 |
+| 3. top-1 agreement(R, H), margin ≥ 0.5 | 100.00% (626/626) | ≥ 99.5% | **holds** |
+
+**VERDICT: H is ACCEPTABLE.** The compiled NVFP4 head adds error that is small relative to the pack it joins.
+
+Descriptive, not rule inputs:
+
+- **Rule 1 held with little room.** The ratio of 1.222 sits 2% under its bound. HEAD-FID-1's one-prompt ratio,
+  1.093, understated the head's share.
+- **Overall top-1 agreement falls 1.74 points,** from 92.67% (R → C) to 90.93% (R → H). All of the loss is at the
+  low-confidence end:
+  - reference margin < 0.1: 76.36% → 71.58%;
+  - margin 0.1–0.5: 97.75% → 96.53%;
+  - confident positions (margin ≥ 0.5): unchanged, at 100%.
+- **Mean ΔNLL** is 0.0358 for R → C and 0.0465 for R → H.
+- **The head in isolation (C → H):**
+  - mean KL is 7.14e-3, p99 2.60e-2 and max 3.67e-2;
+  - top-1 agreement is 95.49% overall and 100% at margin ≥ 0.5;
+  - longform carries the most error (mean KL 9.5e-3, top-1 93.46%).
+
+What this licenses: V3-METAL-ECO-1's H row (116.1 tok/s) is an accepted LARQL configuration relative to its own
+f16 reference. It licenses nothing about MLX's or llama.cpp's rows, whose fidelity has no arm here.

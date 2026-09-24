@@ -1,0 +1,9 @@
+binary: built from a7f69949 sha256 d614b3467637762ffa3bb155d34c292a4490032338a912162649837c0ee272b5
+checkout: 7791ae2205d1b26f6be03a63b8916b9dd2789525
+LARQL_* env: 0 vars
+Fri 25 Sep 2026 00:23:43 BST
+ 0:23  up 18 days,  8:16, 1 user, load averages: 5.31 6.48 5.20
+Fri 25 Sep 2026 00:25:57 BST
+ 0:25  up 18 days,  8:18, 1 user, load averages: 2.50 5.28 4.94
+Fri 25 Sep 2026 00:28:06 BST
+ 0:28  up 18 days,  8:20, 1 user, load averages: 4.19 5.51 5.11

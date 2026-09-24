@@ -1,0 +1,335 @@
+{
+  "bank": {
+    "dir": "~/chris-models/qbanks/gpt-oss-20b.quality-bank-1.tokens",
+    "id": "78139521f956cb0e84764f5723cbbf784db63e3947ed7cb590f0e3432740e6df",
+    "of": 69,
+    "prompts": {
+      "bank": "quality-bank-1",
+      "sha256": "c69552e9d2a9cdef0d058f7fea5c448371d2e9994b12904e231d8fb6656fa303"
+    },
+    "sequences": 69,
+    "tokenizer_sha256": "0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3"
+  },
+  "candidate": {
+    "arm": {
+      "arm": "metal-lowered",
+      "container": "~/chris-models/gpt-oss-20b.nvfp4-head.vindex3",
+      "objects": {
+        "target.decoder_stack": {
+          "encoding": "NVFP4",
+          "stored": true
+        },
+        "target.embedding": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.expert_bank": {
+          "encoding": "BF16+MXFP4",
+          "stored": false
+        },
+        "target.final_norm": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.output_head": {
+          "encoding": "NVFP4",
+          "stored": true
+        }
+      },
+      "requested_pack": "NVFP4",
+      "runtime_quantised": 0,
+      "stored_only": true
+    },
+    "precision_map": {
+      "encoding": "NVFP4",
+      "name": "r0-uniform",
+      "roles": [
+        "decoder-linear",
+        "recurrence-projection",
+        "recurrence-control",
+        "expert-weight",
+        "output-head"
+      ]
+    },
+    "representations": {
+      "target.decoder_stack@NVFP4": {
+        "payload_bytes": 363407232,
+        "payload_sha256": "ac28010b97fba77252b52bbc5a5bb96dc4e2555efb1cc8a9c53027b98249ec62"
+      },
+      "target.embedding@BF16": {
+        "payload_bytes": 1158266880,
+        "payload_sha256": "e23d7f4e1faa2d535523df0a86512dfc31404edf0fa3092d52666f2dc71242af"
+      },
+      "target.expert_bank@BF16+MXFP4": {
+        "payload_bytes": 10165616640,
+        "payload_sha256": "6233d166c8d4a5637918a8458d48f9783ca714472c963b929b463614446105a0"
+      },
+      "target.final_norm@BF16": {
+        "payload_bytes": 5760,
+        "payload_sha256": "423d96dbe9035711e7fb262a0b5510847e2a6f5ad8391dd66d7d057125abaac4"
+      },
+      "target.output_head@NVFP4": {
+        "payload_bytes": 325762564,
+        "payload_sha256": "a327f987e2bb8ecf743fc0b5025e1505414b8add34685283160aebbf6bc6ef45"
+      }
+    }
+  },
+  "facts": {
+    "arm_changed": true,
+    "attributed_arms": 2,
+    "bank_samples_read": 69,
+    "changed_representations": [
+      "target.decoder_stack@NVFP4",
+      "target.output_head@NVFP4"
+    ],
+    "null_arm_samples": 4,
+    "positions": 1664,
+    "protected_representations": 3,
+    "sealed_representations": 7,
+    "tokenizer_checked_arms": 2
+  },
+  "label": "r-to-h",
+  "procedure": "teacher-forced-two-arm/plan-v1",
+  "provenance": {
+    "git_sha": "7791ae2205d1b26f6be03a63b8916b9dd2789525",
+    "larql_version": "0.2.0"
+  },
+  "reference": {
+    "arm": {
+      "arm": "metal-lowered-f16",
+      "container": "~/chris-models/gpt-oss-20b.vindex3",
+      "objects": {
+        "target.decoder_stack": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.embedding": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.expert_bank": {
+          "encoding": "BF16+MXFP4",
+          "stored": false
+        },
+        "target.final_norm": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.output_head": {
+          "encoding": "BF16",
+          "stored": false
+        }
+      },
+      "requested_pack": null,
+      "runtime_quantised": 0,
+      "stored_only": false
+    },
+    "precision_map": null,
+    "representations": {
+      "target.decoder_stack@BF16": {
+        "payload_bytes": 1279108608,
+        "payload_sha256": "8d3e72960a69aaed19e4cc90690ff503858bd6d7e598f44c32ffa40128ecbc0c"
+      },
+      "target.embedding@BF16": {
+        "payload_bytes": 1158266880,
+        "payload_sha256": "e23d7f4e1faa2d535523df0a86512dfc31404edf0fa3092d52666f2dc71242af"
+      },
+      "target.expert_bank@BF16+MXFP4": {
+        "payload_bytes": 10165616640,
+        "payload_sha256": "6233d166c8d4a5637918a8458d48f9783ca714472c963b929b463614446105a0"
+      },
+      "target.final_norm@BF16": {
+        "payload_bytes": 5760,
+        "payload_sha256": "423d96dbe9035711e7fb262a0b5510847e2a6f5ad8391dd66d7d057125abaac4"
+      },
+      "target.output_head@BF16": {
+        "payload_bytes": 1158266880,
+        "payload_sha256": "b71791ff44723099c06ed3c379b2134fd98cbd22cbbf7bb658c36fdf79b799b5"
+      }
+    }
+  },
+  "sample_size": {
+    "adequate_for_p99": true,
+    "p99_biased_low_below": 32,
+    "p99_quarter_precision_from": 64,
+    "sequences": 69
+  },
+  "summary": {
+    "all": {
+      "delta_nll_mean": 0.04645196574564488,
+      "kl_max": 0.9320135993994094,
+      "kl_mean": 0.035599174317972285,
+      "kl_p50": 0.02191375891602456,
+      "kl_p99": 0.23719036345303268,
+      "max_abs_delta_mean": 1.6927502196989594,
+      "max_abs_delta_p99": 3.4782540798187256,
+      "positions": 1664,
+      "top1_agreement": 0.9092548076923077,
+      "top5_overlap_mean": 4.419471153846154
+    },
+    "by_category": [
+      [
+        "factual",
+        {
+          "delta_nll_mean": 0.050857707861624635,
+          "kl_max": 0.5117581931664892,
+          "kl_mean": 0.02537399343827991,
+          "kl_p50": 0.018958492456143703,
+          "kl_p99": 0.10682225605636489,
+          "max_abs_delta_mean": 1.6518790220944726,
+          "max_abs_delta_p99": 3.567294806241989,
+          "positions": 199,
+          "top1_agreement": 0.9195979899497487,
+          "top5_overlap_mean": 4.442211055276382
+        }
+      ],
+      [
+        "prose",
+        {
+          "delta_nll_mean": 0.07264368513596904,
+          "kl_max": 0.3508330032345816,
+          "kl_mean": 0.03368326712162341,
+          "kl_p50": 0.026098842905621738,
+          "kl_p99": 0.1518902441222118,
+          "max_abs_delta_mean": 1.4636188138958435,
+          "max_abs_delta_p99": 3.0581250190734863,
+          "positions": 142,
+          "top1_agreement": 0.9154929577464789,
+          "top5_overlap_mean": 4.373239436619718
+        }
+      ],
+      [
+        "code",
+        {
+          "delta_nll_mean": 0.010458136000282925,
+          "kl_max": 0.13399408898907786,
+          "kl_mean": 0.009808376230213335,
+          "kl_p50": 0.0023587715987659955,
+          "kl_p99": 0.09574817426635421,
+          "max_abs_delta_mean": 1.5208972846140791,
+          "max_abs_delta_p99": 3.1770458221435547,
+          "positions": 273,
+          "top1_agreement": 0.9523809523809523,
+          "top5_overlap_mean": 4.571428571428571
+        }
+      ],
+      [
+        "arithmetic",
+        {
+          "delta_nll_mean": 0.007795138072497778,
+          "kl_max": 0.9320135993994094,
+          "kl_mean": 0.03288996158347753,
+          "kl_p50": 0.018347606947236746,
+          "kl_p99": 0.35979910270581744,
+          "max_abs_delta_mean": 1.59072043884332,
+          "max_abs_delta_p99": 4.292168736457825,
+          "positions": 157,
+          "top1_agreement": 0.9363057324840764,
+          "top5_overlap_mean": 4.414012738853503
+        }
+      ],
+      [
+        "structured",
+        {
+          "delta_nll_mean": 0.025298381526210462,
+          "kl_max": 0.19650704304153155,
+          "kl_mean": 0.015434408809293075,
+          "kl_p50": 0.005803142680712472,
+          "kl_p99": 0.09879346792055806,
+          "max_abs_delta_mean": 1.680437160161685,
+          "max_abs_delta_p99": 4.553868293762207,
+          "positions": 196,
+          "top1_agreement": 0.9540816326530612,
+          "top5_overlap_mean": 4.51530612244898
+        }
+      ],
+      [
+        "uncertain",
+        {
+          "delta_nll_mean": 0.06356060215946416,
+          "kl_max": 0.15453311012130808,
+          "kl_mean": 0.028529564186353266,
+          "kl_p50": 0.019397332286159804,
+          "kl_p99": 0.15453311012130808,
+          "max_abs_delta_mean": 1.470409177681979,
+          "max_abs_delta_p99": 3.6362485885620117,
+          "positions": 85,
+          "top1_agreement": 0.9176470588235294,
+          "top5_overlap_mean": 4.4
+        }
+      ],
+      [
+        "longform",
+        {
+          "delta_nll_mean": 0.06885245004323082,
+          "kl_max": 0.6094640943670036,
+          "kl_mean": 0.059008185747878986,
+          "kl_p50": 0.043572710928444384,
+          "kl_p99": 0.28404211407292146,
+          "max_abs_delta_mean": 1.8968628063992736,
+          "max_abs_delta_p99": 3.0616073608398438,
+          "positions": 612,
+          "top1_agreement": 0.8627450980392157,
+          "top5_overlap_mean": 4.328431372549019
+        }
+      ]
+    ],
+    "by_margin_band": [
+      [
+        [
+          0.0,
+          0.1
+        ],
+        {
+          "delta_nll_mean": 0.06919375205323315,
+          "kl_max": 0.9320135993994094,
+          "kl_mean": 0.05364357605943902,
+          "kl_p50": 0.04096409689291245,
+          "kl_p99": 0.23719036345303268,
+          "max_abs_delta_mean": 1.6506163711596984,
+          "max_abs_delta_p99": 3.0616073608398438,
+          "positions": 461,
+          "top1_agreement": 0.7158351409978309,
+          "top5_overlap_mean": 4.297180043383948
+        }
+      ],
+      [
+        [
+          0.1,
+          0.5
+        ],
+        {
+          "delta_nll_mean": 0.07384494403237411,
+          "kl_max": 0.6094640943670036,
+          "kl_mean": 0.04743836407089698,
+          "kl_p50": 0.03131813214108497,
+          "kl_p99": 0.28893351526925715,
+          "max_abs_delta_mean": 1.7059066204202444,
+          "max_abs_delta_p99": 3.0080108642578125,
+          "positions": 577,
+          "top1_agreement": 0.9653379549393414,
+          "top5_overlap_mean": 4.457538994800693
+        }
+      ],
+      [
+        [
+          0.5,
+          1.0
+        ],
+        {
+          "delta_nll_mean": 0.005708573622270089,
+          "kl_max": 0.35979910270581744,
+          "kl_mean": 0.011398404844723488,
+          "kl_p50": 0.0038582872255362648,
+          "kl_p99": 0.08592053561624471,
+          "max_abs_delta_mean": 1.7116519145239084,
+          "max_abs_delta_p99": 3.717590808868408,
+          "positions": 626,
+          "top1_agreement": 1.0,
+          "top5_overlap_mean": 4.47444089456869
+        }
+      ]
+    ]
+  },
+  "units": "nats, full vocabulary"
+}
