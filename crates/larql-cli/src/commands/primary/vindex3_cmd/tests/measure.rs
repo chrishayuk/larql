@@ -93,6 +93,9 @@ fn args(f: &Fixture, candidate: &Path, backend: ExecBackend, output: &str) -> Me
         output: f.root.join(output),
         component: "target".into(),
         provenance: vec![("source_commit".into(), "fixture".into())],
+        plugins: Vec::new(),
+        reference_lowering: None,
+        candidate_lowering: None,
     }
 }
 
@@ -131,4 +134,41 @@ fn a_refused_measurement_is_an_error_exit_with_a_receipt() {
     assert!(err.contains("CandidateCompilesNothing"), "{err}");
     let receipt = std::fs::read_to_string(f.root.join("same").join(RECEIPT_FILE)).unwrap();
     assert!(receipt.contains("CandidateCompilesNothing"), "{receipt}");
+}
+
+#[test]
+fn a_lowering_no_plugin_registered_refuses_by_identity() {
+    let f = fixture();
+    let err = run(MeasureArgs {
+        candidate_lowering: Some("absent-lowering/v1".into()),
+        ..args(&f, &f.pack, ExecBackend::ProductionNvfp4, "absent")
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("absent-lowering"), "{err}");
+}
+
+#[test]
+fn a_malformed_lowering_refuses_before_any_arm_opens() {
+    let f = fixture();
+    let err = run(MeasureArgs {
+        reference_lowering: Some("no-revision".into()),
+        ..args(&f, &f.pack, ExecBackend::ProductionNvfp4, "malformed")
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("no-revision"), "{err}");
+    assert!(!f.root.join("malformed").exists());
+}
+
+#[test]
+fn a_library_that_is_not_a_plugin_refuses_by_name() {
+    let f = fixture();
+    let err = run(MeasureArgs {
+        plugins: vec![f.root.join("libnot-a-plugin.dylib")],
+        ..args(&f, &f.pack, ExecBackend::ProductionNvfp4, "not-a-plugin")
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("libnot-a-plugin"), "{err}");
 }

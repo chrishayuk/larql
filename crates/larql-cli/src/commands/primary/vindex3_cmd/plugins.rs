@@ -106,6 +106,17 @@ impl Plugins {
             select,
         })
     }
+
+    /// These loaded plugins, asked for the provider `lowering` names
+    /// (`family/vN`), or for the one `--backend` names when `None`. One
+    /// load serves several arms that each select their own provider.
+    pub(crate) fn selecting(&self, lowering: Option<&str>) -> Result<Self, BoxErr> {
+        Ok(Self {
+            codecs: self.codecs,
+            lowerings: self.lowerings.clone(),
+            select: lowering.map(parse_lowering_identity).transpose()?,
+        })
+    }
 }
 
 /// Open one library, check its stamp, and collect its registration.
