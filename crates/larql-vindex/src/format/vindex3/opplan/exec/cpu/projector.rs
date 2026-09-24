@@ -162,6 +162,7 @@ pub enum WeightRows<'a> {
         packed: &'a [u8],
         scales: &'a [u8],
         tensor_scale: f32,
+        activation: super::super::backend::Nvfp4Activation,
     },
     /// A stored ggml K-quant block stream — Q8_0, Q6_K or Q4_K — with
     /// the codec that names its layout. Scales are inside the blocks.
@@ -310,6 +311,7 @@ impl WeightRows<'_> {
                 packed,
                 scales,
                 tensor_scale,
+                activation,
             } => {
                 // Groups run along the input axis, so a row slab is a
                 // contiguous run of both streams. The tensor scale is
@@ -320,6 +322,7 @@ impl WeightRows<'_> {
                     packed: &packed[start * per_row..(start + count) * per_row],
                     scales: &scales[start * groups..(start + count) * groups],
                     tensor_scale: *tensor_scale,
+                    activation: *activation,
                 }
             }
             Self::KQuant {

@@ -112,6 +112,7 @@ impl Operands {
                 packed: &self.nvfp4.packed,
                 scales: &self.nvfp4.scales,
                 tensor_scale: self.nvfp4.tensor_scale,
+                activation: Default::default(),
             },
         ]
     }

@@ -6,7 +6,7 @@ use larql_compute_metal::lowering::DeviceBuffer;
 use larql_compute_metal::MetalBackend;
 use larql_models::config::{PositionPolicy, RotaryFrequencyBasis};
 use larql_vindex::error::VindexError;
-use larql_vindex::format::vindex3::opplan::exec::backend::WeightFormat;
+use larql_vindex::format::vindex3::opplan::exec::backend::{Nvfp4Activation, WeightFormat};
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::weights::{
     load_weight, AlignedBytes, LoadedWeight,
@@ -85,6 +85,7 @@ pub(super) fn resident_matrix(
             packed,
             scales,
             tensor_scale,
+            ..
         } => DeviceMatrix {
             packed: gpu.lowering_weight(packed.as_slice()),
             scales: gpu.lowering_weight(scales.as_slice()),
@@ -235,6 +236,7 @@ pub(super) fn resident_attn(
                 packed,
                 scales,
                 tensor_scale,
+                ..
             } => Some((packed, scales, *tensor_scale)),
             _ => None,
         })
@@ -288,6 +290,7 @@ pub(super) fn resident_attn(
         packed: packed_all,
         scales: scales_all,
         tensor_scale: 1.0,
+        activation: Nvfp4Activation::F32,
     });
     <[DeviceMatrix; ATTN_PACK_OPERANDS]>::try_from(out)
         .map_err(|_| VindexError::Parse("attention pack produced a wrong-arity set".into()))

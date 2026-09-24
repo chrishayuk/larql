@@ -610,6 +610,7 @@ pub fn compile_representation(
                         packed,
                         scales,
                         tensor_scale,
+                        ..
                     } = &quantised
                     else {
                         return Err(VindexError::Parse(format!(

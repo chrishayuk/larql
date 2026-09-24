@@ -210,3 +210,18 @@ fn a_non_positive_token_time_predicts_zero_not_infinity() {
         "a negative floor is nonsense input and must not produce a rate"
     );
 }
+
+/// The observation-only plans carry NO rate until a harness prices them:
+/// a forecast quoted as a rate would let a roofline claim a throughput
+/// nothing measured. NVFP4-Q8-1's arm stays unpriced until adjudicated.
+#[test]
+fn an_unmeasured_plan_carries_no_rate() {
+    for p in [
+        PhysicalProjectionPlan::FusedNvfp4,
+        PhysicalProjectionPlan::FusedNvfp4Q8,
+        PhysicalProjectionPlan::FusedKQuant,
+        PhysicalProjectionPlan::FusedKQuantQ8k,
+    ] {
+        assert_eq!(measured_rate_gbps(p), None, "{p:?} is priced");
+    }
+}

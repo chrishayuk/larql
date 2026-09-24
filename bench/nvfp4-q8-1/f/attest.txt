@@ -1,0 +1,25 @@
+binary a258c33d7a2947e99bad460d2ff03af28e44094f; LARQL_* env: 0 vars
+## production-nvfp4 on gemma3-4b-it.nvfp4.vindex3
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  NVFP4      → cpu:direct/FusedNvfp4             238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedNvfp4 238 calls 1.80 GB
+## production-nvfp4-q8 on gemma3-4b-it.nvfp4.vindex3
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  NVFP4      → cpu:direct/FusedNvfp4Q8           238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedNvfp4Q8 238 calls 1.80 GB
+## production-q4k on gemma3-4b-it.q4k.vindex3
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  Q4_K       → cpu:direct/FusedKQuant            238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedKQuant 238 calls 1.80 GB
+## production-q4k-q8k on gemma3-4b-it.q4k.vindex3
+  BF16       → cpu:decode-f32+gather               1 operand(s)    671252480 weights  (table decoded whole, gathered per token)
+  Q4_K       → cpu:direct/FusedKQuantQ8k         238 operand(s)   3208642560 weights  (direct realization declared by the codec)
+  BF16       → cpu:requantise/FusedQ8              1 operand(s)    671252480 weights  (size policy over a float source)
+runtime compile: 0 tensor(s)  — served entirely from stored bytes
+projection plans: FusedQ8 1 calls 0.71 GB, FusedKQuantQ8k 238 calls 1.80 GB

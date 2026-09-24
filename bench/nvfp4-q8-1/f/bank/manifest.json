@@ -1,0 +1,498 @@
+{
+  "schema": "teacher-forced-token-bank/v1",
+  "bank_id": "74eded7e25c9b4ac7ae59bff4e6094765c739acfedaf35f1d9051d79cd10f375",
+  "prompts": {
+    "bank": "quality-bank-1",
+    "sha256": "c69552e9d2a9cdef0d058f7fea5c448371d2e9994b12904e231d8fb6656fa303"
+  },
+  "tokenizer_sha256": "4667f2089529e8e7657cfb6d1c19910ae71ff5f28aa7ab2ff2763330affad795",
+  "template": "raw",
+  "add_special_tokens": true,
+  "max_tokens": 128,
+  "payload_authority": "teacher-forced-token-bank-payload/v1",
+  "samples": [
+    {
+      "id": "seq-000",
+      "prompt_id": "factual-000",
+      "category": "factual",
+      "tokens": 16,
+      "sha256": "d730404fd9437c3beabff3c9979f7e7ee696fea04c1384d9a4b5ce8f1203bc22"
+    },
+    {
+      "id": "seq-001",
+      "prompt_id": "factual-001",
+      "category": "factual",
+      "tokens": 16,
+      "sha256": "38f34336a0514659ffffb2abafeccf88a6137bd0ce7043ee2e331d04100990ef"
+    },
+    {
+      "id": "seq-002",
+      "prompt_id": "factual-002",
+      "category": "factual",
+      "tokens": 15,
+      "sha256": "5a2375c70f8fef7e1984b35a380e3705bd19f6a44023adad6a9fd21852f7cd10"
+    },
+    {
+      "id": "seq-003",
+      "prompt_id": "factual-003",
+      "category": "factual",
+      "tokens": 19,
+      "sha256": "3f83a2ba0283efe064a56d4582e38089fb4234c9f383db68947b2d2eff30f4b9"
+    },
+    {
+      "id": "seq-004",
+      "prompt_id": "factual-004",
+      "category": "factual",
+      "tokens": 12,
+      "sha256": "d8b1b4794e6381409bdd72c9ef39b5aac939554d8359d66a2d0a10a7913131d6"
+    },
+    {
+      "id": "seq-005",
+      "prompt_id": "factual-005",
+      "category": "factual",
+      "tokens": 22,
+      "sha256": "bbba7bb9948e9b92de4ef58203987b2aaca8869f951a02911e136b9eb42f97d1"
+    },
+    {
+      "id": "seq-006",
+      "prompt_id": "factual-006",
+      "category": "factual",
+      "tokens": 12,
+      "sha256": "e62dc4c9b3dc34f238a608f6bc141304b9a4c2dbfc8f3fb4bc4dd98871fd8111"
+    },
+    {
+      "id": "seq-007",
+      "prompt_id": "factual-007",
+      "category": "factual",
+      "tokens": 11,
+      "sha256": "b71cd134ea60e5a62996a305826b5c0ab6eeb62a8a163213fcd195e58152e186"
+    },
+    {
+      "id": "seq-008",
+      "prompt_id": "factual-008",
+      "category": "factual",
+      "tokens": 20,
+      "sha256": "d87e0c7a8c42aa5e8d5560137594032cb423dcd61109a4a7d41a6bc1928ec8b3"
+    },
+    {
+      "id": "seq-009",
+      "prompt_id": "factual-009",
+      "category": "factual",
+      "tokens": 15,
+      "sha256": "2e0e5588d73787df127ee9ea9653da02a6e7eb5e19ae3d45b5fda0a3336a7244"
+    },
+    {
+      "id": "seq-010",
+      "prompt_id": "factual-010",
+      "category": "factual",
+      "tokens": 8,
+      "sha256": "fcb1c02aa520488a93bd308583063d60c3fcfbcf3fc661f04647618143f12602"
+    },
+    {
+      "id": "seq-011",
+      "prompt_id": "factual-011",
+      "category": "factual",
+      "tokens": 16,
+      "sha256": "32280e850790f6c4e721b04373549438ca7574072807052dce3610f288a6003e"
+    },
+    {
+      "id": "seq-012",
+      "prompt_id": "factual-012",
+      "category": "factual",
+      "tokens": 11,
+      "sha256": "77e015f744c834798a7615b9798a435ef237c96514f4e43aeb2b5792fb7dfd8a"
+    },
+    {
+      "id": "seq-013",
+      "prompt_id": "factual-013",
+      "category": "factual",
+      "tokens": 15,
+      "sha256": "d8e5252f050f36c762f5d3261ef461617926d29b4aa55d54101f46e059598126"
+    },
+    {
+      "id": "seq-014",
+      "prompt_id": "factual-014",
+      "category": "factual",
+      "tokens": 12,
+      "sha256": "1e902a529e9d481f5f82845d0a4607cc01b4de951eaa8d9579fa84e4dff8cbd0"
+    },
+    {
+      "id": "seq-015",
+      "prompt_id": "prose-000",
+      "category": "prose",
+      "tokens": 16,
+      "sha256": "10aa9f1e30f2ab33be43f21f3bc275bf466fb920079d6e84151d1ce4e09e300e"
+    },
+    {
+      "id": "seq-016",
+      "prompt_id": "prose-001",
+      "category": "prose",
+      "tokens": 17,
+      "sha256": "5179dd7bda668043621153537c2010bbf227c9c56d79e5d6da92b389134a85d5"
+    },
+    {
+      "id": "seq-017",
+      "prompt_id": "prose-002",
+      "category": "prose",
+      "tokens": 15,
+      "sha256": "95b390890983aa65a171ae3e380dfdc9accaf1d85941b036b598342cffec8ce3"
+    },
+    {
+      "id": "seq-018",
+      "prompt_id": "prose-003",
+      "category": "prose",
+      "tokens": 16,
+      "sha256": "5a60c557d3b10d924565b7fe108bd87def685d8211b2994746150fb786447f82"
+    },
+    {
+      "id": "seq-019",
+      "prompt_id": "prose-004",
+      "category": "prose",
+      "tokens": 13,
+      "sha256": "e039290ec5497f1da4f6a27b81df07d4ef5affecf3e239f1d23b448dc0ecfc4a"
+    },
+    {
+      "id": "seq-020",
+      "prompt_id": "prose-005",
+      "category": "prose",
+      "tokens": 17,
+      "sha256": "689470c378bfc468f357ad8147fab597a5417df0e754daf7b771e1be98968852"
+    },
+    {
+      "id": "seq-021",
+      "prompt_id": "prose-006",
+      "category": "prose",
+      "tokens": 15,
+      "sha256": "d0d19b926956d4b0a209390573c377bbe88c278b1171bc7d63109c39ec24cbbe"
+    },
+    {
+      "id": "seq-022",
+      "prompt_id": "prose-007",
+      "category": "prose",
+      "tokens": 14,
+      "sha256": "a6b5e39609753a8c9366b9813b59ea63ba9c03b37c1ca93c0cdbfd99859d8b0e"
+    },
+    {
+      "id": "seq-023",
+      "prompt_id": "prose-008",
+      "category": "prose",
+      "tokens": 15,
+      "sha256": "3dced1096d7f9de4fd6d244feea9f476659c07753e96e23565179bbed9734c61"
+    },
+    {
+      "id": "seq-024",
+      "prompt_id": "prose-009",
+      "category": "prose",
+      "tokens": 14,
+      "sha256": "d5e22f8b23dbddc04e5ecf46a2ab239cfbb929184f7e40f8ec6da0b5d7cd5567"
+    },
+    {
+      "id": "seq-025",
+      "prompt_id": "code-000",
+      "category": "code",
+      "tokens": 45,
+      "sha256": "6306678665df85bb93f620947b5e345abd62b5c723981ead568fd89d7780e75c"
+    },
+    {
+      "id": "seq-026",
+      "prompt_id": "code-001",
+      "category": "code",
+      "tokens": 28,
+      "sha256": "2ad9225d58c73ddf820e5aadb6143e3a75facf351836324daa639a3079e55ef4"
+    },
+    {
+      "id": "seq-027",
+      "prompt_id": "code-002",
+      "category": "code",
+      "tokens": 36,
+      "sha256": "6394079c6aa68538bfcfad41625eb72eb14639322a487c5b466820c8ef42360a"
+    },
+    {
+      "id": "seq-028",
+      "prompt_id": "code-003",
+      "category": "code",
+      "tokens": 36,
+      "sha256": "e415bb84762bc40cb032d2b6c498765ee0ea3421eb71f7f40bda0851fe73dab9"
+    },
+    {
+      "id": "seq-029",
+      "prompt_id": "code-004",
+      "category": "code",
+      "tokens": 40,
+      "sha256": "349b521c18ec7fe7b02da8bd7a89bd9252531a95a568cc538868d348fee6d724"
+    },
+    {
+      "id": "seq-030",
+      "prompt_id": "code-005",
+      "category": "code",
+      "tokens": 31,
+      "sha256": "09a9d9b8694ff0f5488cbdfe32aa945f335c21dd7464b204df245354c42cc308"
+    },
+    {
+      "id": "seq-031",
+      "prompt_id": "code-006",
+      "category": "code",
+      "tokens": 31,
+      "sha256": "cc2cfa86368e5fee898e2c00ace7b65ad52b8691ba89465c7cd57959ceb0d3d1"
+    },
+    {
+      "id": "seq-032",
+      "prompt_id": "code-007",
+      "category": "code",
+      "tokens": 28,
+      "sha256": "e1852a64cf2bc26fc2142f10df7225251c392082e95278e3422492dbc0a9a802"
+    },
+    {
+      "id": "seq-033",
+      "prompt_id": "code-008",
+      "category": "code",
+      "tokens": 30,
+      "sha256": "5c7719e014cb0e181f5d680dd2689c6f0bcd337701a40e92acf5b90bcf87b279"
+    },
+    {
+      "id": "seq-034",
+      "prompt_id": "code-009",
+      "category": "code",
+      "tokens": 29,
+      "sha256": "a6a6af7ce0443387adaa5ae2d7e0af108528ec4951be95b91d01cd6743afb6b4"
+    },
+    {
+      "id": "seq-035",
+      "prompt_id": "arithmetic-000",
+      "category": "arithmetic",
+      "tokens": 19,
+      "sha256": "224c2cb8508e45be129be03406fdfb8b0f675a51853c5efe2995355d18a8ab2a"
+    },
+    {
+      "id": "seq-036",
+      "prompt_id": "arithmetic-001",
+      "category": "arithmetic",
+      "tokens": 13,
+      "sha256": "f97c3efe1b61f10f09b82692c7adb25af4fe9961eedb6793e8a789fa53a0383b"
+    },
+    {
+      "id": "seq-037",
+      "prompt_id": "arithmetic-002",
+      "category": "arithmetic",
+      "tokens": 14,
+      "sha256": "ddc2e8947d882eb2cfadaeeee7b42c24541447177b23b52a419042ad9381f5c1"
+    },
+    {
+      "id": "seq-038",
+      "prompt_id": "arithmetic-003",
+      "category": "arithmetic",
+      "tokens": 25,
+      "sha256": "40656daa55fac7357c78a0177999e7e059bba8b33fa74a764cf861eb0e8ddc7b"
+    },
+    {
+      "id": "seq-039",
+      "prompt_id": "arithmetic-004",
+      "category": "arithmetic",
+      "tokens": 22,
+      "sha256": "bae0a3130e6e390d4ab253a7d8f0ec21a8d22fef4a1bcb508f9791abbafb66f0"
+    },
+    {
+      "id": "seq-040",
+      "prompt_id": "arithmetic-005",
+      "category": "arithmetic",
+      "tokens": 16,
+      "sha256": "84c127f7a4c3acd021784fa2294c67e941e77c277ba9b393b417f80a882d8da2"
+    },
+    {
+      "id": "seq-041",
+      "prompt_id": "arithmetic-006",
+      "category": "arithmetic",
+      "tokens": 14,
+      "sha256": "a7c00fccc976781511fae7a6609f4654abb0bf4226932146fbaaec04349c3715"
+    },
+    {
+      "id": "seq-042",
+      "prompt_id": "arithmetic-007",
+      "category": "arithmetic",
+      "tokens": 22,
+      "sha256": "b4f8682e54ec456dc5dae05fb3055c2d5ed5d8b5de87bec4333eb5b98d342f7d"
+    },
+    {
+      "id": "seq-043",
+      "prompt_id": "arithmetic-008",
+      "category": "arithmetic",
+      "tokens": 26,
+      "sha256": "0c209833f114e5d657b0d245f386e99f15fefd5baf9f22a0f415c082008f888d"
+    },
+    {
+      "id": "seq-044",
+      "prompt_id": "arithmetic-009",
+      "category": "arithmetic",
+      "tokens": 11,
+      "sha256": "85393db2a5365d57ac3b96ceed3808ea4f191a067679f0e63f336d38195e48e2"
+    },
+    {
+      "id": "seq-045",
+      "prompt_id": "structured-000",
+      "category": "structured",
+      "tokens": 30,
+      "sha256": "0d4da643f18e09d65c7a03f0425892145e7f5e7747b874c956d681462c6bc4af"
+    },
+    {
+      "id": "seq-046",
+      "prompt_id": "structured-001",
+      "category": "structured",
+      "tokens": 27,
+      "sha256": "b906d40ed299a138684279599f8efce3ae1606c5d736c95991d781da10cbb3b3"
+    },
+    {
+      "id": "seq-047",
+      "prompt_id": "structured-002",
+      "category": "structured",
+      "tokens": 31,
+      "sha256": "961926067133ec2df1f687b10c808d890f2735e3ff3480ba6609c3e701db5c77"
+    },
+    {
+      "id": "seq-048",
+      "prompt_id": "structured-003",
+      "category": "structured",
+      "tokens": 27,
+      "sha256": "72a8c0e1bb4784466a89b6ab72ccc04c5e2756e8d3768364d6c38e18a465e3f6"
+    },
+    {
+      "id": "seq-049",
+      "prompt_id": "structured-004",
+      "category": "structured",
+      "tokens": 32,
+      "sha256": "de7ec87a06cff85e1560f81d2531eebff2ca5da36d88ae2a83f73c14a7468be1"
+    },
+    {
+      "id": "seq-050",
+      "prompt_id": "structured-005",
+      "category": "structured",
+      "tokens": 33,
+      "sha256": "3ca5c95bf8ae558fe808d99fa7b3cc0ed6bde317f464d5f08eeaa88891c7467c"
+    },
+    {
+      "id": "seq-051",
+      "prompt_id": "structured-006",
+      "category": "structured",
+      "tokens": 22,
+      "sha256": "3b60bce8837197dc734e124b27347d9a2581752301ee4aa8bccd57eb05206b05"
+    },
+    {
+      "id": "seq-052",
+      "prompt_id": "structured-007",
+      "category": "structured",
+      "tokens": 20,
+      "sha256": "e9476e8abca61e6a0f4ded272a1951a475a2b7bb8856faeaa0ae672789de6a26"
+    },
+    {
+      "id": "seq-053",
+      "prompt_id": "uncertain-000",
+      "category": "uncertain",
+      "tokens": 9,
+      "sha256": "de9bf89fea992023ae6ed2eecfb6089912a9f7cf96733fe19205167c65b630f0"
+    },
+    {
+      "id": "seq-054",
+      "prompt_id": "uncertain-001",
+      "category": "uncertain",
+      "tokens": 11,
+      "sha256": "7236080b927814a288882e757f5ab4e9ef52d657912e18469a993bff3411aa69"
+    },
+    {
+      "id": "seq-055",
+      "prompt_id": "uncertain-002",
+      "category": "uncertain",
+      "tokens": 5,
+      "sha256": "b9eeedbbce05b106ea5adb714e032aa738abf3eacfcc47baa586e8aa9d82333f"
+    },
+    {
+      "id": "seq-056",
+      "prompt_id": "uncertain-003",
+      "category": "uncertain",
+      "tokens": 9,
+      "sha256": "53e80c54f7be4b9937faf1fcedfdfe5b7d89a6ae251938d31e4e7991c3342aa1"
+    },
+    {
+      "id": "seq-057",
+      "prompt_id": "uncertain-004",
+      "category": "uncertain",
+      "tokens": 13,
+      "sha256": "06d87740c36c615884a7e20e3d8e56b3777f6b3c032c457bf981d9de2c28e45b"
+    },
+    {
+      "id": "seq-058",
+      "prompt_id": "uncertain-005",
+      "category": "uncertain",
+      "tokens": 10,
+      "sha256": "26223d9127ea265ed24f7775f22f645eab9602a47c84b45378a26b26db8859db"
+    },
+    {
+      "id": "seq-059",
+      "prompt_id": "uncertain-006",
+      "category": "uncertain",
+      "tokens": 6,
+      "sha256": "0f9e8a83816df94b164c2acbf950e40da7a4a9e05c4c0f0b396f3b752a34fb82"
+    },
+    {
+      "id": "seq-060",
+      "prompt_id": "uncertain-007",
+      "category": "uncertain",
+      "tokens": 9,
+      "sha256": "490609ecd5a9abb27fdb5b955ccf6891c21fb5e1d51aff14f0a9dcf8850efc48"
+    },
+    {
+      "id": "seq-061",
+      "prompt_id": "uncertain-008",
+      "category": "uncertain",
+      "tokens": 12,
+      "sha256": "cea4fa0ceb935c12be87e5ce139e152a9d6d37c7f9b247bd5f02f2c6f19ba346"
+    },
+    {
+      "id": "seq-062",
+      "prompt_id": "uncertain-009",
+      "category": "uncertain",
+      "tokens": 11,
+      "sha256": "c97be1bf041309f0176a5663172dc2c4e30fe7dfe04edabdb3c837f622495840"
+    },
+    {
+      "id": "seq-063",
+      "prompt_id": "longform-000",
+      "category": "longform",
+      "tokens": 115,
+      "sha256": "ab0ee3965e420be324c1e0d592915108ad8d4c912eeb9df8ceeb44db3aa434a1"
+    },
+    {
+      "id": "seq-064",
+      "prompt_id": "longform-001",
+      "category": "longform",
+      "tokens": 100,
+      "sha256": "807fede303692251bc97e98a49c6f800d3a1e861a486a89695d10eb5d719d102"
+    },
+    {
+      "id": "seq-065",
+      "prompt_id": "longform-002",
+      "category": "longform",
+      "tokens": 106,
+      "sha256": "b126b257e2e45d2ddc0587ffb76cc745a92853490c9d5c552706f16c4a4e38c9"
+    },
+    {
+      "id": "seq-066",
+      "prompt_id": "longform-003",
+      "category": "longform",
+      "tokens": 101,
+      "sha256": "816a80da012facd1dfcf1ba7bef2fb78e5d6491254fb2bda1e05e5897aaa2a9d"
+    },
+    {
+      "id": "seq-067",
+      "prompt_id": "longform-004",
+      "category": "longform",
+      "tokens": 94,
+      "sha256": "a5b61d6b585eef5503d10523540b9b08e8b8743e3845e890b7a2211b72e49f0d"
+    },
+    {
+      "id": "seq-068",
+      "prompt_id": "longform-005",
+      "category": "longform",
+      "tokens": 89,
+      "sha256": "d9b22d3c537baee13eb751d95aadefad478ca8b7d255f4afb33c5d6d7111d793"
+    }
+  ]
+}

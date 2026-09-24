@@ -142,3 +142,84 @@ yardstick itself is inadmissible, F is reported as **uninformative**, not as a p
 - SCOPED-ACCOUNTING-1. This rung's M reading is single-execution and single-threaded, which the 2026-09-06
   ruling allows.
 - CPU lowering. By the reconnaissance, it is second-order until projections fall.
+
+---
+
+## Adjudication (2026-09-24)
+
+Judged against the frozen text above. Nothing in it was edited. Binary: source `a258c33d`, release build, with no
+`LARQL_*` environment.
+
+### F: PASS
+
+Evidence: `bench/nvfp4-q8-1/f/`. Both procedures are **admissible**, with complete facts. Each covers Q-BANK-1's 69
+samples, 1810 positions, in bank `74eded7e`, and reports "changed: the arm only".
+
+| comparison | mean KL (nats) | top-1, margin ≥ 0.5 |
+|---|---:|---:|
+| candidate: `production-nvfp4-q8` vs `production-nvfp4` (same stored pack) | **6.305e-4** | **100.00%** (n=1012) |
+| yardstick: `production-q4k-q8k` vs `production-q4k` | 6.550e-3 | 100.00% (n=1040) |
+
+- **Criterion 1 holds:** 6.305e-4 ≤ 1.5 × 6.550e-3 = 9.825e-3. The candidate is about 10× below the accepted Q8_K change.
+- **Criterion 2 holds:** 100.00% ≥ 99.5%.
+- **Where the flips are:** they sit where the reference itself is undecided. At margin 0–0.1, top-1 agreement is
+  93.8% (n=227); across all positions it is 99.17%.
+- **Execution attested:** `attest.txt` records the realization each arm ran:
+  - `FusedNvfp4` in `production-nvfp4`, `FusedNvfp4Q8` in `production-nvfp4-q8`;
+  - `FusedKQuant` in `production-q4k`, `FusedKQuantQ8k` in `production-q4k-q8k`;
+  - 238 operands each, 0 runtime compiles.
+
+### P: PARTIAL
+
+Evidence: `bench/nvfp4-q8-1/pm/`. Three interleaved repeats, 60 s cooldowns, on AC power. The 1-min load at each run
+start was 1.7–2.2, with the 5- and 15-min averages still falling after a peer's compile.
+
+| arm | steady ms/token (runs) | median | tok/s |
+|---|---|---:|---:|
+| `production-nvfp4` | 104.98, 105.70, 105.15 | 105.15 | 9.51 |
+| `production-nvfp4-q8` | 47.93, 47.33, 47.34 | **47.34** | 21.12 |
+| `production-q4k-q8k` | 33.01, 32.85, 32.86 | 32.86 | 30.43 |
+
+- **The run counts:** the control arm reproduces the reconnaissance (105.15 is inside 95–116 ms).
+- **Verdict:** 47.34 ms/token falls in 40 < x ≤ 70, so the verdict is **PARTIAL**. That is a 2.22× end-to-end
+  speedup over `production-nvfp4`. It is not the HIT (≤ 40) and not the STRETCH (≤ 35).
+
+### M: does not hold (integrity satisfied)
+
+| plan | calls | GB | projection ms (median) | GB/s (runs) |
+|---|---:|---:|---:|---|
+| `FusedNvfp4` (control arm) | 238 | 1.80 | 90.2 | 20.2, 20.0, 19.8 |
+| `FusedNvfp4Q8` (candidate arm) | 238 | 1.80 | 32.8 | 55.5, 54.6, 55.1 |
+| `FusedKQuantQ8k` (yardstick) | 238 | 1.80 | 16.1 | 112.1, 112.2, 112.6 |
+
+- **Integrity holds, so M can be read:** the same 1.80 GB and 238 calls as the control, 0 `FusedNvfp4` calls in the
+  candidate arm, 0 runtime compiles.
+- **Reading:** 55.1 GB/s < 80 GB/s, so M does not hold.
+- **The projection itself:** its time falls 2.75× (90.2 → 32.8 ms).
+
+### Hypothesis
+
+**Supported in direction, and not to the frozen level.** On the same stored NVFP4 bytes, the activation form accounts
+for most of the gap:
+- **Projection time:** 90 → 33 ms.
+- **Decode latency:** 105 → 47 ms/token.
+- **Fidelity:** about 10× inside the accepted Q8_K yardstick.
+
+The arm does not reach the Q4_K × Q8_K regime. `FusedNvfp4Q8` streams at half `FusedKQuantQ8k`'s rate on the same
+bytes.
+
+**Why M misses** was recorded before any P/M run, in `bench/nvfp4-q8-1/diagnostic-split-threshold.md`, which is not
+an adjudication input. Gemma 3 4B's NVFP4 attention projections (1.5–2.9 MB) fall under the executor's 4 MB split
+threshold and run single-threaded, about 0.30 GB/token:
+- the worker slabs in the reports show it: 748 slabs over 238 calls for both NVFP4 arms, against 238 for the
+  library-threaded Q4_K kernel;
+- this rung froze scheduling out of scope, so the threshold is not changed here.
+
+### Disposition
+
+- **Kept as a named arm, not a default:** `production-nvfp4-q8` stays opt-in under its own provider identity, as
+  `production-q4k-q8k` does. `production-nvfp4` keeps its f32-activation meaning. A PARTIAL with M not holding is not
+  adopted.
+- **The next question is its own freeze:** the executor's split policy is written in representation-independent
+  resident bytes, and compressing the weights moved whole matrix classes under it. The intervention is the policy,
+  not this kernel.

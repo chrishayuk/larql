@@ -144,6 +144,7 @@ fn the_parallel_nvfp4_loader_matches_the_reference_exactly() {
         packed,
         scales,
         tensor_scale,
+        ..
     } = quantize_nvfp4(&values, rows, k, "w").unwrap()
     else {
         panic!("loader must produce the nvfp4 variant");
@@ -218,6 +219,7 @@ fn every_loaded_variant_accounts_for_itself() {
                 packed: AlignedBytes::from_bytes(&[0u8; 8]),
                 scales: AlignedBytes::from_bytes(&[0u8; 1]),
                 tensor_scale: 1.0,
+                activation: Default::default(),
             },
             page * 2,
             false,
@@ -302,6 +304,7 @@ fn resident_bytes_counts_every_buffer_a_variant_holds() {
         packed: AlignedBytes::zeroed(10),
         scales: AlignedBytes::zeroed(10),
         tensor_scale: 1.0,
+        activation: Default::default(),
     };
     assert_eq!(nv.resident_bytes(), 2 * DEVICE_PAGE_ALIGN);
 }
@@ -368,6 +371,7 @@ fn allocations_enumerate_each_backing_buffer_separately() {
             packed: AlignedBytes::zeroed(10),
             scales: AlignedBytes::zeroed(10),
             tensor_scale: 1.0,
+            activation: Default::default(),
         }
         .allocations()
         .len(),

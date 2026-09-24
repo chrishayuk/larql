@@ -38,8 +38,8 @@ use larql_models::config::GateUpLayout;
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
-    FfnManyCall, GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall,
-    RoutedFfnCall, WeightFormat, WeightSlice,
+    FfnManyCall, GateCall, NormCall, Nvfp4Activation, PlanBackend, ProjectCall, ProjectedQkv,
+    QkNormCall, RoutedFfnCall, WeightFormat, WeightSlice,
 };
 use super::cpu::physical::{
     kquant_execution, project_matrix, project_matrix_many, ExecutorProjections, KQuantExecution,
@@ -88,6 +88,14 @@ const Q8K_NAME: &str = "production-larql-compute-q8k";
 pub const Q8K_IDENTITY_FAMILY: &str = "cpu-production-q8k";
 pub const Q8K_IDENTITY_REVISION: u32 = 1;
 
+/// The NVFP4 x Q8 provider's name and family (NVFP4-Q8-1), distinct for
+/// Q8K-ACT-1's reason: the same NVFP4 pin computes different numbers
+/// against a Q8 activation, so an image prepared under one provider must
+/// never execute under the other.
+const NVFP4_Q8_NAME: &str = "production-larql-compute-nvfp4-q8";
+pub const NVFP4_Q8_IDENTITY_FAMILY: &str = "cpu-production-nvfp4-q8";
+pub const NVFP4_Q8_IDENTITY_REVISION: u32 = 1;
+
 /// `larql-compute` realisation of every plan operation.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ProductionBackend {
@@ -95,11 +103,17 @@ pub struct ProductionBackend {
     /// process arm ([`kquant_execution`], `direct` unless widened). `Some`
     /// is a provider constructed for one arm, under its own identity.
     kquant: Option<KQuantExecution>,
+    /// Which activation a stored NVFP4 pack runs against. `F32` is the
+    /// shipped provider; `Q8` is NVFP4-Q8-1's, under its own identity.
+    nvfp4: Nvfp4Activation,
 }
 
 impl ProductionBackend {
     pub fn new() -> Self {
-        Self { kquant: None }
+        Self {
+            kquant: None,
+            nvfp4: Nvfp4Activation::F32,
+        }
     }
 
     /// The Q8_K-activation provider (Q8K-ACT-1): stored Q4_K / Q6_K
@@ -108,11 +122,26 @@ impl ProductionBackend {
     pub fn q8k_activation() -> Self {
         Self {
             kquant: Some(KQuantExecution::DirectQ8k),
+            nvfp4: Nvfp4Activation::F32,
+        }
+    }
+
+    /// The NVFP4 x Q8 provider (NVFP4-Q8-1): stored NVFP4 packs run
+    /// against an activation quantised to Q8, one scale per group.
+    /// Everything else is this backend's ordinary arithmetic.
+    pub fn nvfp4_q8_activation() -> Self {
+        Self {
+            kquant: None,
+            nvfp4: Nvfp4Activation::Q8,
         }
     }
 
     fn is_q8k(&self) -> bool {
         self.kquant == Some(KQuantExecution::DirectQ8k)
+    }
+
+    fn is_nvfp4_q8(&self) -> bool {
+        self.nvfp4 == Nvfp4Activation::Q8
     }
 }
 
@@ -1014,10 +1043,24 @@ const REQUANTISE: [PhysicalProjectionPlan; 4] = [
 /// runs in place or widens by the arm; a float source goes to the size
 /// policy, which keeps a large bf16 image compact and widens a small one;
 /// a codec with no direct realization decodes, and says so.
+// Test-only since NVFP4-Q8-1: the provider selects through
+// `select_cpu_with`, and the K-quant tests name only their own arm.
+#[cfg(test)]
 pub(crate) fn select_cpu(
     operand: &PlannedOperand,
     facts: &RepresentationFacts,
     kquant: KQuantExecution,
+) -> Result<Selection, Box<SelectionRefusal>> {
+    select_cpu_with(operand, facts, kquant, Nvfp4Activation::F32)
+}
+
+/// [`select_cpu`] with the NVFP4 activation arm named too — the
+/// provider's, never the environment's.
+pub(crate) fn select_cpu_with(
+    operand: &PlannedOperand,
+    facts: &RepresentationFacts,
+    kquant: KQuantExecution,
+    nvfp4: Nvfp4Activation,
 ) -> Result<Selection, Box<SelectionRefusal>> {
     use RealizationForm::{Decode, Direct, Requantise};
     if let Some(common) = common_selection(operand, facts, WeightFormat::F32) {
@@ -1051,8 +1094,14 @@ pub(crate) fn select_cpu(
         })
     };
     if has(Direct(PhysicalProjectionPlan::FusedNvfp4)) {
+        let plan = match nvfp4 {
+            Nvfp4Activation::Q8 if has(Direct(PhysicalProjectionPlan::FusedNvfp4Q8)) => {
+                PhysicalProjectionPlan::FusedNvfp4Q8
+            }
+            Nvfp4Activation::F32 | Nvfp4Activation::Q8 => PhysicalProjectionPlan::FusedNvfp4,
+        };
         return pick(
-            RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedNvfp4)),
+            RealizationId::cpu(Direct(plan)),
             SelectionReason::DirectDeclared,
         );
     }
@@ -1138,12 +1187,19 @@ impl PlanBackend for ProductionBackend {
         operand: &PlannedOperand,
         facts: &RepresentationFacts,
     ) -> Result<Selection, Box<SelectionRefusal>> {
-        select_cpu(operand, facts, self.kquant.unwrap_or_else(kquant_execution))
+        select_cpu_with(
+            operand,
+            facts,
+            self.kquant.unwrap_or_else(kquant_execution),
+            self.nvfp4,
+        )
     }
 
     fn name(&self) -> &str {
         if self.is_q8k() {
             Q8K_NAME
+        } else if self.is_nvfp4_q8() {
+            NVFP4_Q8_NAME
         } else {
             NAME
         }
@@ -1152,6 +1208,8 @@ impl PlanBackend for ProductionBackend {
     fn identity(&self) -> LoweringIdentity {
         if self.is_q8k() {
             LoweringIdentity::new(Q8K_IDENTITY_FAMILY, Q8K_IDENTITY_REVISION)
+        } else if self.is_nvfp4_q8() {
+            LoweringIdentity::new(NVFP4_Q8_IDENTITY_FAMILY, NVFP4_Q8_IDENTITY_REVISION)
         } else {
             LoweringIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
         }

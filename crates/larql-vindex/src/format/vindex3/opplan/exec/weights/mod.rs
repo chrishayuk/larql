@@ -16,7 +16,7 @@
 //! tail is a bounded realisation choice, and the parity gates against
 //! the f32 backends and the upstream trace are its judge.
 
-use super::backend::{KQuantActivation, WeightFormat, WeightSlice};
+use super::backend::{KQuantActivation, Nvfp4Activation, WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
 use super::operands::{OperandSource, OperandStore, RawOperand};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
@@ -204,6 +204,8 @@ pub enum LoadedWeight {
         packed: AlignedBytes,
         scales: AlignedBytes,
         tensor_scale: f32,
+        /// The activation this pack is bound to run against, fixed at load.
+        activation: Nvfp4Activation,
     },
     /// Fine-grained FP8 as the CHECKPOINT stores it: E4M3 codes and the
     /// f32 scale grid, both byte-for-byte, neither widened.
@@ -405,7 +407,10 @@ impl LoadedWeight {
             LoadedWeight::Q8 { .. } => WeightFormat::Q8,
             LoadedWeight::Q4 { .. } => WeightFormat::Q4,
             LoadedWeight::Mxfp4 { .. } => WeightFormat::Mxfp4,
-            LoadedWeight::Nvfp4 { .. } => WeightFormat::Nvfp4,
+            LoadedWeight::Nvfp4 { activation, .. } => match activation {
+                Nvfp4Activation::F32 => WeightFormat::Nvfp4,
+                Nvfp4Activation::Q8 => WeightFormat::Nvfp4Q8,
+            },
             LoadedWeight::KQuant { activation, .. } => match activation {
                 KQuantActivation::F32 => WeightFormat::KQuant,
                 KQuantActivation::Q8k => WeightFormat::KQuantQ8k,
@@ -483,10 +488,12 @@ impl LoadedWeight {
                 packed,
                 scales,
                 tensor_scale,
+                activation,
             } => WeightSlice::Nvfp4 {
                 packed: packed.as_slice(),
                 scales: scales.as_slice(),
                 tensor_scale: *tensor_scale,
+                activation: *activation,
             },
             LoadedWeight::KQuant {
                 blocks,
@@ -721,6 +728,46 @@ pub fn load_weight(
             let values = widen_raw(&raw, &operand.tensor)?;
             quantize_nvfp4(&values, rows, k, &operand.tensor)
         }
+        WeightFormat::Nvfp4Q8 => {
+            // The Q8-activation arm runs a PERSISTED pack under integer
+            // arithmetic, and changes nothing else: a tensor the pack holds
+            // at source precision binds there, exactly as under
+            // `WeightFormat::Nvfp4`. What it never does is quantise at
+            // load — that would measure a different weight under this
+            // arm's name.
+            let rows = operand.shape.first().copied().unwrap_or(0);
+            let k = operand.shape.get(1).copied().unwrap_or(0);
+            let raw = store.load_raw(operand)?;
+            check_pack_conforms(store, operand, &raw.dtype)?;
+            if raw.dtype == DTYPE_NVFP4 {
+                return match nvfp4_from_stored(&raw.bytes, rows, k, &operand.tensor)? {
+                    LoadedWeight::Nvfp4 {
+                        packed,
+                        scales,
+                        tensor_scale,
+                        ..
+                    } => Ok(LoadedWeight::Nvfp4 {
+                        packed,
+                        scales,
+                        tensor_scale,
+                        activation: Nvfp4Activation::Q8,
+                    }),
+                    other => Ok(other),
+                };
+            }
+            if store
+                .store()
+                .nvfp4_request_binds_at_source(operand, &raw.dtype)
+            {
+                store.store().note_stored_precision();
+                return narrow_to_f16(&raw, &operand.tensor);
+            }
+            Err(VindexError::Parse(format!(
+                "{}: NVFP4 x Q8 executes a stored NVFP4 pack; the operand is stored as {} \
+                 and would have to be quantised at load",
+                operand.tensor, raw.dtype
+            )))
+        }
         WeightFormat::KQuant => kquant_from_stored(store, operand, KQuantActivation::F32),
         WeightFormat::KQuantQ8k => kquant_from_stored(store, operand, KQuantActivation::Q8k),
         // Generic pass-through: whatever the container recorded as this
@@ -881,6 +928,7 @@ fn nvfp4_from_stored(
         packed,
         scales,
         tensor_scale,
+        activation: Nvfp4Activation::F32,
     })
 }
 
@@ -1028,6 +1076,7 @@ pub fn quantize_nvfp4(
         packed,
         scales,
         tensor_scale,
+        activation: Nvfp4Activation::F32,
     })
 }
 

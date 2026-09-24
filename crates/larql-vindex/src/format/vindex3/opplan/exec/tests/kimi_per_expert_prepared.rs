@@ -617,6 +617,7 @@ fn the_reference_widens_bf16_experts_exactly_and_names_every_other_form() {
                     packed: &packed,
                     scales: &scales_u8,
                     tensor_scale: 1.0,
+                    activation: Default::default(),
                 };
                 experts
             ],
