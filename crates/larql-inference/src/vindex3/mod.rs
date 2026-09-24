@@ -112,3 +112,5 @@ pub use larql_vindex::format::vindex3::opplan::exec::{FinalOutput, LayerTrace, P
 pub use larql_vindex::format::vindex3::opplan::exec::operands::{
     OperandEdit, OperandOverrides, OperandSource,
 };
+
+pub mod dense_ffn;

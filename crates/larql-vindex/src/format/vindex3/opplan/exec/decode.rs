@@ -265,6 +265,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 "endpoints-only operands require a distributed coordinator".into(),
             ));
         }
+        ops.get().ensure_stack_ready()?;
         ops.get().ensure_providers_in(ops.get().registry())?;
         ops.get().ensure_lowered_by(backend)?;
         // The FULL continuation geometry, KV and recurrent alike.

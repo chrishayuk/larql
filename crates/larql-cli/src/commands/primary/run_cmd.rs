@@ -313,8 +313,17 @@ pub struct RunArgs {
     #[arg(long, value_delimiter = ',', value_name = "URL,...")]
     pub v3_shards: Vec<String>,
 
-    /// Environment variable holding the bearer token for V3 layer workers.
-    #[arg(long, requires = "v3_shards", value_name = "ENV")]
+    /// VINDEX3 CPU dense FFN workers; attention and KV remain local.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "URL,...",
+        conflicts_with = "v3_shards"
+    )]
+    pub v3_ffn_shards: Vec<String>,
+
+    /// Environment variable holding the bearer token for V3 layer or dense FFN workers.
+    #[arg(long, value_name = "ENV")]
     pub v3_shard_token_env: Option<String>,
 
     /// Speak the prompt: run the model as a speech generator
@@ -399,8 +408,8 @@ pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
         return super::run_cmd_vindex3::run(&vindex_path, &args);
     }
-    if !args.v3_shards.is_empty() {
-        return Err("--v3-shards requires a VINDEX3 container".into());
+    if !args.v3_shards.is_empty() || !args.v3_ffn_shards.is_empty() {
+        return Err("--v3-shards and --v3-ffn-shards require a VINDEX3 container".into());
     }
 
     if args.experts {

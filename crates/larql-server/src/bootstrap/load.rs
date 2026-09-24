@@ -105,9 +105,6 @@ fn unsupported_v3_options(opts: &LoadVindexOptions) -> Vec<&'static str> {
     if opts.no_infer {
         named.push("--no-infer");
     }
-    if opts.ffn_only {
-        named.push("--ffn-only");
-    }
     if opts.embed_only {
         named.push("--embed-only");
     }
@@ -155,7 +152,12 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
             }
             info!("Loading VINDEX3 container: {}", path.display());
             Ok(LoadedArtifact::V3(Box::new(
-                crate::vindex3::load_v3_model_slice(&path, opts.v3_backend, opts.layer_range)?,
+                crate::vindex3::load_v3_model_placement(
+                    &path,
+                    opts.v3_backend,
+                    opts.layer_range,
+                    opts.ffn_only,
+                )?,
             )))
         }
         larql_vindex::format::generation::ContainerGeneration::V2 => {
@@ -553,13 +555,7 @@ mod v3_option_tests {
             ..LoadVindexOptions::default()
         };
         let named = unsupported_v3_options(&opts);
-        for flag in [
-            "--no-infer",
-            "--ffn-only",
-            "--embed-only",
-            "--experts",
-            "--units",
-        ] {
+        for flag in ["--no-infer", "--embed-only", "--experts", "--units"] {
             assert!(named.contains(&flag), "{flag} must be named in the refusal");
         }
     }

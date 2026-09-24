@@ -117,6 +117,7 @@ pub struct V3Model {
     pub backend: V3Backend,
     /// Present only on a stateless layer-prefix worker.
     pub shard: Option<larql_router_protocol::vindex3::Binding>,
+    pub ffn_shard: Option<larql_router_protocol::vindex3_ffn::Binding>,
     /// Model ID (derived from the container directory name).
     pub id: String,
     /// Container directory on disk.
@@ -237,21 +238,30 @@ pub fn load_v3_model_with_backend(
     load_v3_model_slice(path, backend, None)
 }
 
-/// Inclusive startup layer range, prepared without embeddings or output head.
+/// Half-open startup layer range, as returned by `parse_layer_range`.
+/// Prepared without embeddings or output head.
 pub fn load_v3_model_slice(
     path: &Path,
     backend: V3Backend,
     range: Option<(usize, usize)>,
 ) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_placement(path, backend, range, false)
+}
+
+pub fn load_v3_model_placement(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+    ffn_only: bool,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
     use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
-    if range.is_some() && backend != V3Backend::Cpu {
+    if (range.is_some() || ffn_only) && backend != V3Backend::Cpu {
         return Err("V3 layer sharding currently requires --v3-backend cpu".into());
     }
     let slice = match range {
-        Some((start, end)) => ExecutionSlice::LayerRange {
-            start,
-            end: end.checked_add(1).ok_or("layer range overflow")?,
-        },
+        Some((start, end)) if ffn_only => ExecutionSlice::DenseFfns { start, end },
+        None if ffn_only => return Err("V3 --ffn-only requires an explicit --layers range".into()),
+        Some((start, end)) => ExecutionSlice::LayerRange { start, end },
         None => ExecutionSlice::Full,
     };
     let (registry, identity) = backend.lowerings()?;
@@ -280,8 +290,17 @@ pub fn load_v3_model_slice(
         named => named.to_string(),
     };
     let family = runtime.family().to_string();
-    let shard = if range.is_some() {
+    let shard = if range.is_some() && !ffn_only {
         Some(larql_inference::vindex3::distributed::binding(
+            path,
+            runtime.plan(),
+            runtime.operands(),
+        )?)
+    } else {
+        None
+    };
+    let ffn_shard = if ffn_only {
+        Some(larql_inference::vindex3::dense_ffn::binding(
             path,
             runtime.plan(),
             runtime.operands(),
@@ -291,6 +310,7 @@ pub fn load_v3_model_slice(
     };
     let model = V3Model {
         shard,
+        ffn_shard,
         backend,
         id: model_id_from_name(&name),
         path: path.to_path_buf(),
@@ -463,6 +483,11 @@ pub fn generate_v3_request(
     // `V3GenerationGuard`'s doc comment for why entering here (rather
     // than in each route handler) is load-bearing for streaming
     // callers.
+    if model.ffn_shard.is_some() {
+        return Err(ServerError::Unsupported(
+            "this VINDEX3 binding is a dense FFN worker; use /v1/vindex3/ffn".into(),
+        ));
+    }
     if model.shard.is_some() {
         return Err(ServerError::InferenceUnavailable(
             "this VINDEX3 binding is a layer shard; use /v1/vindex3/layers through a coordinator"

@@ -129,6 +129,7 @@ fn parse_layer_range_rejects_bad_shapes() {
     assert!(parse_layer_range("x-2").is_err());
     assert!(parse_layer_range("2-x").is_err());
     assert!(parse_layer_range("3-2").is_err());
+    assert!(parse_layer_range(&format!("0-{}", usize::MAX)).is_err());
 }
 
 #[test]

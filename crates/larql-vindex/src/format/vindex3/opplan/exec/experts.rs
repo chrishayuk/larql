@@ -117,6 +117,10 @@ pub(super) fn exit_latent<B: super::backend::PlanBackend + ?Sized>(
 
 /// A layer's FFN operands, loaded once in the backend's declared format.
 pub(super) enum FfnOperands {
+    External {
+        layer: usize,
+        provider: Option<std::sync::Arc<dyn super::dense_ffn::DenseFfnProvider>>,
+    },
     /// Every variant boxed: the routed operands carry a bank and a shared
     /// branch, the hybrid both programs, and the dense one is then the odd
     /// one out — one pointer each keeps the enum the size of a word.
@@ -296,6 +300,7 @@ impl FfnOperands {
                 .map(|b| (Operation::Project(MatrixClass::FfnProjection), b))
         };
         match (self, ffn) {
+            (Self::External { .. }, LayerFfn::Dense(_)) => Ok(Vec::new()),
             (Self::Dense(d), LayerFfn::Dense(op)) => Ok(dense(d.bound(op)).collect()),
             (Self::Routed(r), LayerFfn::Routed(op)) => Ok(r.bound(op)),
             (Self::Hybrid(h), LayerFfn::Hybrid(op)) => {
@@ -314,6 +319,7 @@ impl FfnOperands {
     /// realization and are not projections of the plan's operands.
     pub(super) fn dense_matrices(&self) -> Vec<&LoadedWeight> {
         match self {
+            Self::External { .. } => Vec::new(),
             Self::Dense(d) => d.loaded_matrices(),
             Self::Routed(_) => Vec::new(),
             Self::Hybrid(h) => h.dense.loaded_matrices(),
@@ -323,6 +329,7 @@ impl FfnOperands {
     /// Every matrix operand, for residency accounting.
     pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
         match self {
+            Self::External { .. } => Vec::new(),
             Self::Dense(dense) => dense.loaded_matrices(),
             Self::Routed(routed) => routed.loaded_matrices(),
             Self::Hybrid(hybrid) => {
@@ -336,6 +343,7 @@ impl FfnOperands {
     /// Every matrix operand, for residency preparation.
     pub(super) fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
         match self {
+            Self::External { .. } => Vec::new(),
             Self::Dense(dense) => dense.weight_slices(),
             Self::Routed(routed) => routed.weight_slices(),
             Self::Hybrid(hybrid) => {
@@ -356,6 +364,15 @@ impl FfnOperands {
         hidden: usize,
     ) -> Result<Vec<f32>, VindexError> {
         match (self, ffn) {
+            (Self::External { layer, provider }, LayerFfn::Dense(_)) => {
+                super::dense_ffn::validate_row(x, hidden)?;
+                let out = provider
+                    .as_ref()
+                    .ok_or_else(|| VindexError::Parse("dense FFN provider is not bound".into()))?
+                    .apply(*layer, x)?;
+                super::dense_ffn::validate_row(&out, hidden)?;
+                Ok(out)
+            }
             (Self::Dense(dense), LayerFfn::Dense(op)) => dense.apply(op, backend, x, hidden),
             (Self::Routed(routed), LayerFfn::Routed(op)) => routed.apply(op, backend, x, x, hidden),
             _ => Err(VindexError::Parse(

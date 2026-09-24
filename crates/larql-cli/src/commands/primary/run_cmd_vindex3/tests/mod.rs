@@ -410,3 +410,41 @@ fn multimodal_plan_preserves_position_order_and_precomputed_scaling() {
     assert!(matches!(inputs[3], InputPosition::Token(2)));
     assert!(matches!(inputs[4], InputPosition::Token(3)));
 }
+
+#[test]
+fn dense_ffn_placement_refuses_conflicting_execution_flags_before_connecting() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for extra in [
+        vec!["--metal"],
+        vec!["--engine", "row"],
+        vec!["--kv-cache", "none"],
+    ] {
+        let mut flags = vec![PROMPT, "--v3-ffn-shards", "http://127.0.0.1:1"];
+        flags.extend(extra);
+        let error = run_capturing(&container, &flags, "").unwrap_err();
+        assert!(error.contains("--v3-ffn-shards uses CPU"), "{error}");
+    }
+    let parsed = Shell::try_parse_from([
+        "larql",
+        container.to_str().unwrap(),
+        PROMPT,
+        "--v3-ffn-shards",
+        "http://a,http://b",
+        "--v3-shard-token-env",
+        "FFN_TOKEN",
+    ])
+    .unwrap()
+    .run;
+    assert_eq!(parsed.v3_ffn_shards, ["http://a", "http://b"]);
+    assert!(Shell::try_parse_from([
+        "larql",
+        container.to_str().unwrap(),
+        PROMPT,
+        "--v3-ffn-shards",
+        "http://a",
+        "--v3-shards",
+        "http://b"
+    ])
+    .is_err());
+}

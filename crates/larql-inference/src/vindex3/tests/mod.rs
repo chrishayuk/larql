@@ -1037,3 +1037,5 @@ mod via_tests {
         }
     }
 }
+
+mod dense_ffn;

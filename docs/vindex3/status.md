@@ -11,6 +11,7 @@ owns the versioned format contract; its byte-level ABI remains candidate.
 | Plan / encode / inspect | Local and HF source admission, graph/container construction and inspection; support is determined by admission and closure |
 | Execute / serve | Canonical component program, CPU and scoped Metal realizations, sessions and HTTP serving; backend support is operator-specific |
 | Input / state | CPU Gemma 3 image-prefix adapter; row/canonical continuation and exact full-history replay; multimodal HF parity remains unestablished |
+| Dense FFN workers | CPU dense FFN operations with local attention and row KV; artifact/realization binding and fatal failure semantics; [scope](../ffn/distributed.md#dense-ffn-operation-provider) |
 | Layer workers | Stateless CPU softmax-prefix RPC and endpoint-only coordinator; no remote KV cache or grid integration; [scope](runtime-followups.md) |
 | Represent | Compilation (`represent`: NVFP4, K-quants, plugin encoders; role policy, protections, deployment images), codecs, selection/accounting, teacher-forced measurement over sealed token banks (`token-bank`, `measure`) and evidence/search machinery; quality and promotion require their own evidence |
 | Plugins | Codecs, encoders and lowering providers loaded from Unix shared libraries named with `--plugin` on `represent`, `exec` and `measure`, behind a compiler-and-commit ABI stamp; no discovery; lowered Metal arms cannot use plugin providers; [scope](plugins.md) |
@@ -30,7 +31,7 @@ execution contract and parity gates.
 
 | Planned | Current behaviour |
 |---|---|
-| **Partial execution / sharding** | `larql serve` refuses `--layers`, `--experts`, `--units`, `--moe-remote`, `--ffn-only`, `--embed-only` and `--no-infer` on a VINDEX3 container, and a V3 server joining a grid announces no shards. Preparation has an internal layer-range slice that consumes hidden states and refuses token ids; it is research substrate, not a supported sharding contract. |
+| **Partial execution / sharding** | CPU layer workers and dense FFN workers are supported; see the current capabilities above. Routed-expert ownership, remote Metal/KDA/MLA workers and grid placement remain open. V3 still refuses `--experts`, `--units`, `--moe-remote`, `--embed-only` and `--no-infer`. |
 | **Multimodal embedding handoff** | `larql run` refuses `--image` and `--mm-weights` on a VINDEX3 container. Perception towers can be admitted as components, but no V3 execution path accepts externally produced embeddings. Text generation is scoped so that it does not depend on the tower. |
 
 Partial execution comes first: the multimodal handoff should reuse its

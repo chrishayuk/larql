@@ -96,7 +96,17 @@ pub fn required_objects(
         collect(&plan.output, &mut objects)?;
     }
     let range = slice.layers(plan);
-    collect(&plan.layers[range], &mut objects)?;
+    for layer in &plan.layers[range] {
+        match slice {
+            ExecutionSlice::DenseFfns { .. } => collect(&layer.ffn, &mut objects)?,
+            ExecutionSlice::DenseFfnCoordinator => {
+                let mut local = layer.clone();
+                local.ffn = None;
+                collect(&local, &mut objects)?;
+            }
+            _ => collect(layer, &mut objects)?,
+        }
+    }
     Ok(objects)
 }
 

@@ -163,6 +163,20 @@ pub(super) fn run_to(
 /// its own continuation state. Only explicitly integrated providers and
 /// input/distribution protocols are accepted; other engine flags refuse.
 fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
+    if args.v3_shard_token_env.is_some()
+        && args.v3_shards.is_empty()
+        && args.v3_ffn_shards.is_empty()
+    {
+        return Err("--v3-shard-token-env requires --v3-shards or --v3-ffn-shards".into());
+    }
+    if !args.v3_ffn_shards.is_empty()
+        && (args.metal
+            || args.engine.is_some()
+            || args.kv_cache != KvCacheKind::Standard
+            || !args.v3_shards.is_empty())
+    {
+        return Err("--v3-ffn-shards uses CPU with local row KV; do not combine with --metal, --engine, --kv-cache or --v3-shards".into());
+    }
     if !args.v3_shards.is_empty()
         && (args.metal || args.engine.is_some() || args.kv_cache != KvCacheKind::Standard)
     {
@@ -248,16 +262,36 @@ impl BackendVisitor for Runner<'_> {
     fn visit<B: PlanBackend>(self, backend: &B) -> Result<(), BoxErr> {
         let loading = Instant::now();
         // The expensive, immutable half — once, for every prompt.
-        let ops = PreparedOperands::load(
-            &self.prepared.plan,
-            &self.prepared.store,
-            backend,
-            if self.args.v3_shards.is_empty() {
-                ExecutionSlice::Full
-            } else {
-                ExecutionSlice::Endpoints
-            },
-        )?;
+        let ops = if !self.args.v3_ffn_shards.is_empty() {
+            let token = self
+                .args
+                .v3_shard_token_env
+                .as_deref()
+                .map(std::env::var)
+                .transpose()?;
+            let transport = larql_router::vindex3_ffn::HttpFfnShards::connect(
+                &self.args.v3_ffn_shards,
+                token.as_deref(),
+            )?;
+            larql_inference::vindex3::dense_ffn::prepare_coordinator(
+                self.container,
+                &self.prepared.plan,
+                (&self.prepared.store).into(),
+                backend,
+                transport,
+            )?
+        } else {
+            PreparedOperands::load(
+                &self.prepared.plan,
+                &self.prepared.store,
+                backend,
+                if self.args.v3_shards.is_empty() {
+                    ExecutionSlice::Full
+                } else {
+                    ExecutionSlice::Endpoints
+                },
+            )?
+        };
         let engine = format!("{ENGINE_PREFIX}-{}", backend.name());
         let identity = resolved_display_name(&self.prepared.model_name, self.container);
         if self.args.verbose {
@@ -308,7 +342,8 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         out: &mut dyn Write,
         status: &mut dyn Write,
     ) -> Result<(), BoxErr> {
-        if !self.args.v3_shards.is_empty()
+        if !self.args.v3_ffn_shards.is_empty()
+            || !self.args.v3_shards.is_empty()
             || self.args.engine.is_some()
             || self.args.kv_cache == KvCacheKind::None
             || !self.args.image.is_empty()

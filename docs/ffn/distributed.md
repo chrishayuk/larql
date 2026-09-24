@@ -1,12 +1,20 @@
-# Distributed FFN — Layer Sharding and Router
+# Distributed FFN — Layer Sharding, Expert Sharding and VINDEX3
 
-**Status:** Implemented (layer sharding + static router + self-assembling grid)  
-**ADR:** docs/adr/0003-ffn-router.md, docs/adr/0004-ffn-grid.md  
-**Full spec:** docs/specs/larql-router-spec.md
+**Status:** V2 dense remote FFN, remote MoE, layer/expert sharding and grid management are implemented. VINDEX3 CPU layer workers landed in [PR #507](https://github.com/chrishayuk/larql/pull/507) on 2026-09-23; V3 CPU dense FFN workers now keep attention and KV local; routed-expert placement remains consolidation work.
+
+**ADRs:** [FFN router](../adr/0003-ffn-router.md), [FFN grid](../adr/0004-ffn-grid.md), [HTTP/3 shard transport](../adr/0019-http3-shard-transport.md)
+
+**Operator references:** [router](../../crates/larql-router/README.md), [server](../../crates/larql-server/README.md)
 
 ---
 
 ## Overview
+
+The deployment examples below describe the V2 FFN service. Its clients retain
+attention and continuation state locally while servers compute FFN or selected
+expert contributions. V3's current layer workers instead execute whole layer
+ranges, including attention; see [VINDEX3 consolidation](#vindex3-consolidation)
+for that distinction and the dense operation boundary.
 
 A single `larql-server` holding a full vindex works for development. In production,
 the vindex may exceed the RAM of any single machine. Layer sharding splits the
@@ -122,7 +130,8 @@ Request: layers=[5, 20]
   Merged: {"results": [{"layer":5,...}, {"layer":20,...}], "latency_ms": ...}
 ```
 
-Wall-clock latency for a batched fan-out equals `max(shard_latencies)`, not the sum.
+Shard execution overlaps, so fan-out latency is approximately
+`max(shard_latencies)` plus dispatch and merge overhead.
 
 **Unknown layer**: request is rejected at the router with HTTP 400 before any shard
 is contacted.
@@ -196,7 +205,7 @@ larql-router \
 
 ## Router Options
 
-See full option reference in `docs/specs/larql-router-spec.md §3`.
+See the [router option reference](../../crates/larql-router/README.md).
 
 Key flags:
 
@@ -225,12 +234,17 @@ serialization overhead on both the client and server.
 
 ~33% smaller requests, ~0.5 ms/hop faster.
 
-### Batched forward pass
+### Batched FFN requests
 
 `RemoteWalkBackend.forward_all_layers(layers, x)` sends all layers in a
-single HTTP round trip (binary batch request). The router fans the batch
-out to the owning shards in parallel. Wall-clock time = `max(shard
-latencies)`.
+single HTTP round trip (binary batch request). All layers in a binary request
+must belong to one shard when sent through the router. JSON batches can fan
+out across shards in parallel; their shard execution time is approximately
+the slowest shard's time, plus dispatch and merge overhead.
+
+This API evaluates the supplied residual at each requested layer. It does not
+collapse an autoregressive layer stack into one network round trip: each next
+layer needs the preceding layer's updated residual and local attention result.
 
 ```rust
 let backend = RemoteWalkBackend::connect(RemoteFfnConfig::new("http://router:9090"))?;
@@ -249,10 +263,157 @@ let layer_outputs: HashMap<usize, Array2<f32>> =
 
 ---
 
-## What Is Not Yet Implemented
+## Remote MoE and expert ownership
 
-- **Mode B (available)** — server starts empty, router assigns a shard (ADR-0004 Phase 2)
-- **Admin CLI** — `larql-router status / drain / assign / gaps` (ADR-0004 Phase 5)
-- **gRPC transport to backends** — currently HTTP/JSON; a future version uses raw f32 bytes over gRPC (ADR-0003 Phase 2)
-- **MoE expert dispatch** — routing by expert ID (ADR-0003 Phase 3)
-- **Router L2 cache** — router is the natural cache position but currently passes every request through (ADR-0003 Phase 4)
+[RemoteMoeBackend](../../crates/larql-inference/src/ffn/moe_remote/mod.rs)
+implements remote expert execution. For the hybrid Gemma path, the client owns
+attention, KV state, the dense/shared computation and router weights. It selects
+top-K experts locally, groups them by destination, dispatches shards in parallel,
+and assembles the expert contribution before continuing the layer.
+
+The current layer-batch path sends one residual plus selected `(expert_id,
+weight)` pairs per shard. Each server returns a weighted partial sum; the client
+sums those partials and applies the post-expert normalization. The legacy
+per-expert batch path also remains available. This placement of weighting and
+normalization is part of the numerical contract.
+
+Servers accept inclusive `--experts START-END` ranges alongside `--layers`.
+Direct clients use `--moe-shards`; the grid separately tracks `(layer, expert)`
+ownership and dispatches expert-aware requests. Grid MoE routing requires
+`--grid-port`; a static layer-only `--shards` map does not supply expert ownership.
+See the [server's remote MoE topology and commands](../../crates/larql-server/README.md#remote-moe-shard-topology).
+
+Transport support is path-specific:
+
+| Path | Implemented capabilities |
+|---|---|
+| Direct remote MoE client | HTTP, Unix domain sockets, gRPC unary/streaming, batched expert requests and live `reshard()` |
+| Expert wire formats | Binary layer batches, optional f16, and Q8_K multi-layer request helpers |
+| Grid router to expert shards | HTTP fan-out; optional HTTP/3 with the `http3` feature and `--http3-shards` |
+| Dense router batches | Binary pass-through to one shard; JSON fan-out across shards |
+
+HTTP/3 support does not imply every client endpoint uses QUIC, and direct gRPC
+expert dispatch does not imply the dense router proxies requests over gRPC.
+
+## Grid management already implemented
+
+- **Mode B (available workers):** a server advertises capacity, receives an
+  assignment, downloads the assigned shard and announces readiness. See
+  [the announce implementation](../../crates/larql-server/src/announce.rs).
+- **Admin CLI:** `larql-router status`, `gaps`, `drain` and `assign` are implemented
+  in the [router CLI](../../crates/larql-router/src/main.rs).
+- **Expert-aware routing:** the grid resolves layer/expert ownership and the
+  [HTTP dispatcher](../../crates/larql-router/src/http.rs) groups requests by shard.
+
+An FFN result L2 cache at the **router** remains separate work; the
+[server FFN cache](../../crates/larql-server/src/ffn_l2_cache.rs) is a different
+placement. Dense multi-shard binary fan-out remains unsupported.
+
+## Measured evidence and latency limits
+
+The [DEC funnel](../dec-funnel.md) records the Gemma 4 26B remote-FFN
+single-stream loopback anchor at 27.8–28.6 tok/s after the July improvements.
+It also records approximately 1,050 tok/s aggregate at B64 for the
+dense/shared-expert batch tier. That is a tier measurement, not end-to-end
+single-user generation throughput or a routed-expert result. The same programme
+records historical field points of approximately 25 tok/s on LAN and 2–3 tok/s
+on Fly.io London. None of these are V3 worker measurements.
+
+For one dependent remote FFN crossing per layer, an illustrative network-only
+cost is `layers × RTT`: 30 layers at 0.2, 5 or 20 ms RTT cost approximately
+6, 150 or 600 ms per token before compute. Within-layer expert fan-out can run
+in parallel, but successive layers still depend on each other. Bandwidth,
+serialization, queueing and the slowest selected shard also contribute; the
+RTT calculation alone does not establish a performance ceiling for every
+deployment.
+
+## VINDEX3 consolidation
+
+The [merged CPU worker guide](https://github.com/chrishayuk/larql/blob/d05d9b787a51be7bf0d3a8b3d9c68f4bddeb2084/docs/vindex3/runtime-followups.md#cpu-layer-workers)
+documents #507's executable path. For a two-layer container:
+
+```bash
+larql-server model.vindex3 --layers 0-0 --port 9181
+larql-server model.vindex3 --layers 1-1 --port 9182
+larql run model.vindex3 "Hello" \
+  --v3-shards http://localhost:9181,http://localhost:9182
+```
+
+The coordinator prepares embedding/final norm/head operands; workers prepare
+their declared layer ranges. The versioned binding identifies the declared
+artifact and plan, CPU numerical provider revision, range, total layers and
+hidden width. The coordinator rejects gaps, overlaps, ordering errors, identity
+mismatches and malformed responses. Declared payload hashes identify the
+artifact; container verification is still needed to check payload bytes.
+
+Workers receive the complete prefix from position zero and recompute it on
+every step, retaining no remote KV state. This path supports CPU single-stream
+softmax stacks. Remote Metal, KDA/MLA stacks, grid discovery and remote
+continuation caches are outside that implementation. All nodes still open the
+same container; the worker path does not distribute shard files.
+
+### Dense FFN operation provider
+
+V3 now supports CPU dense FFN workers. For a two-layer dense container:
+
+```bash
+larql-server model.vindex3 --ffn-only --layers 0-0 --port 9181
+larql-server model.vindex3 --ffn-only --layers 1-1 --port 9182
+larql run model.vindex3 "Hello" \
+  --v3-ffn-shards http://localhost:9181,http://localhost:9182
+```
+
+The coordinator owns embedding, attention, row KV, pre/post-FFN norms,
+residual updates and the head. Workers prepare only dense FFN matrices and
+return the contribution for one already-normalized row. The existing batch
+and decode interpreters call the same operation provider; prefill dispatches
+rows individually. The worker has no KV and receives no prefix history.
+
+`GET /v1/vindex3/ffn` advertises a binding; `POST` checks that binding plus the
+layer and finite input width. Bindings include declared artifact/plan identity,
+CPU lowering revision, layer range, dimensions and effective operand
+representations/realizations. The coordinator checks complete non-overlapping
+ownership and compares preparation decisions before loading its local operands.
+Use the same build on all nodes: realization descriptors are build-specific.
+Artifact identity names declared payload hashes, not verification of bytes.
+
+The private single-model server profile exposes the route under existing
+authentication. `--v3-shard-token-env ENV` supplies a bearer token to the CLI.
+`/v1/runtime` reports `dense_ffn_shard`; whole-model generation from a worker
+refuses. A missing or malformed contribution aborts generation. A failed
+`DenseFfnSession` is invalidated, retaining its last committed position; recover
+by creating a fresh session and replaying committed input. Its partially advanced
+KV is privately owned and cannot be reused through that API.
+
+Scope: single-stream softmax stacks with a dense FFN on every layer, CPU
+production lowering, base artifact operands and local row KV. `--ffn-only`
+requires an explicit inclusive `--layers` range. Metal, other KV selectors,
+layer-worker composition, overlays, MoE, KDA/MLA and discovery are refused or
+outside this interface. All nodes still open the container; this does not package
+or distribute shard files. No speed or memory-RSS claim is made.
+
+[MoeExpertBackend](../../crates/larql-inference/src/ffn/moe_backend.rs) already
+unifies in-process, remote and bound expert routes. However, its caller still
+supplies `ModelWeights`; [BoundMoeBackend](../../crates/larql-inference/src/ffn/moe_bound.rs)
+binds mapped operands through that bridge. This is useful migration evidence,
+but a V3 provider must execute the container's operation plan without rebuilding
+the V2 model interface.
+
+Validation covers local and loopback-HTTP parity, including layer outputs,
+logits, tokenwise prefill and decode beyond a sliding window; independently
+observed operand reads against predicted residency; worker repeatability;
+coverage, identity, representation and shape refusals; and mid-step failure
+followed by fresh-session recovery. These are synthetic fixture checks, not a
+model-backed K3 or heterogeneous-hardware result.
+
+Routed experts then extend the same contract with bank/expert coordinates,
+selected IDs and weights, parallel dispatch and an explicit reduction order.
+Shared experts and post-reduction normalization must each execute exactly once.
+Heterogeneous numerical providers need their own parity gates; an advertised
+representation or backend name alone is not evidence of equivalence.
+
+This would let KDA/MLA continuation remain local while remote machines hold
+expert populations. K3 support, mixed CPU/Metal/CUDA placement, capability
+discovery and fleet scheduling are subsequent gates, not capabilities conferred
+by #507. The dense operation boundary is implemented here; full K3 placement remains
+a separate integration.

@@ -515,9 +515,9 @@ fn a_v3_container_refuses_options_it_cannot_honour() {
             },
         ),
         (
-            "--ffn-only",
+            "--embed-only",
             LoadVindexOptions {
-                ffn_only: true,
+                embed_only: true,
                 ..LoadVindexOptions::default()
             },
         ),
@@ -1032,7 +1032,10 @@ async fn v3_layer_workers_over_http_match_local_execution_and_refuse_bad_request
         let LoadedArtifact::V3(model) = load_artifact(
             container.path().to_str().unwrap(),
             LoadVindexOptions {
-                layer_range: Some((layer, layer)),
+                layer_range: Some(
+                    larql_server::bootstrap::parse_layer_range(&format!("{layer}-{layer}"))
+                        .unwrap(),
+                ),
                 ..Default::default()
             },
         )
@@ -1113,6 +1116,149 @@ async fn v3_layer_workers_over_http_match_local_execution_and_refuse_bad_request
                 .map(|(x, y)| (x - y).abs())
                 .fold(0.0f32, f32::max);
             assert!(delta < 1e-5, "HTTP logit delta {delta}");
+        }
+    })
+    .await
+    .unwrap();
+    for server in servers {
+        server.abort();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
+    use larql_inference::vindex3::{
+        dense_ffn::{prepare_coordinator, DenseFfnSession},
+        LogitsSession,
+    };
+    use larql_router::vindex3_ffn::HttpFfnShards;
+    use larql_router_protocol::vindex3_ffn::{Binding, PATH};
+    use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    let container = v3_container();
+    let mut urls = Vec::new();
+    let mut servers = Vec::new();
+    assert!(load_artifact(
+        container.path().to_str().unwrap(),
+        LoadVindexOptions {
+            ffn_only: true,
+            ..Default::default()
+        }
+    )
+    .is_err());
+    for layer in 0..2 {
+        let LoadedArtifact::V3(model) = load_artifact(
+            container.path().to_str().unwrap(),
+            LoadVindexOptions {
+                ffn_only: true,
+                layer_range: Some(
+                    larql_server::bootstrap::parse_layer_range(&format!("{layer}-{layer}"))
+                        .unwrap(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("V3")
+        };
+        let ops = model.runtime.operands();
+        assert_eq!(
+            ops.slice(),
+            &ExecutionSlice::DenseFfns {
+                start: layer,
+                end: layer + 1
+            }
+        );
+        assert!(!ops.has_output());
+        let census = ops.residency_census();
+        assert_eq!(census.attention.total(), 0);
+        assert_eq!(census.embedding.total(), 0);
+        assert_eq!(census.glue.total(), 0);
+        assert!(census.ffn.total() > 0);
+        let state = v3_state(container.path());
+        state.model_set.write().unwrap().v3_models = vec![Arc::new(*model)];
+        let app = larql_server::routes::single_model_router(state);
+        let denied = common::post_json(
+            app.clone(),
+            "/v1/completions",
+            serde_json::json!({"prompt":PROMPT,"max_tokens":1}),
+        )
+        .await;
+        assert!(!denied.status().is_success());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        urls.push(format!("http://{}", listener.local_addr().unwrap()));
+        servers.push(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap()
+        }));
+    }
+    let client = reqwest::Client::new();
+    let binding: Binding = client
+        .get(format!("{}{PATH}", urls[0]))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let good =
+        serde_json::json!({"binding":binding,"layer":0,"row":vec![0.3;binding.program.hidden]});
+    let a: serde_json::Value = client
+        .post(format!("{}{PATH}", urls[0]))
+        .json(&good)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let b: serde_json::Value = client
+        .post(format!("{}{PATH}", urls[0]))
+        .json(&good)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(a, b);
+    let mut wrong = binding.clone();
+    wrong.program.artifact = "0".repeat(64);
+    for body in [
+        serde_json::json!({"binding":binding,"layer":1,"row":vec![0.3;binding.program.hidden]}),
+        serde_json::json!({"binding":binding,"layer":0,"row":[0.3]}),
+        serde_json::json!({"binding":wrong,"layer":0,"row":vec![0.3;binding.program.hidden]}),
+    ] {
+        assert_eq!(
+            client
+                .post(format!("{}{PATH}", urls[0]))
+                .json(&body)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let path = container.path().to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+        let transport = HttpFfnShards::connect(&urls, None).unwrap();
+        let ops = prepare_coordinator(
+            &path,
+            runtime.plan(),
+            runtime.operands(),
+            runtime.backend(),
+            transport,
+        )
+        .unwrap();
+        let mut remote = DenseFfnSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
+        let mut local = runtime.session().unwrap();
+        for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
+            let expected = local.step(id).unwrap();
+            let actual = remote.step(id).unwrap();
+            assert_eq!(
+                expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                actual.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+            );
         }
     })
     .await

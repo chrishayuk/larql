@@ -301,3 +301,7 @@ declared carrier or in-kernel head manipulations. Their contracts and
 backend/operator limitations are described in the
 [CURRENT observation guide](vindex3/observation-and-intervention.md); Standard
 carrier capture does not imply that every backend exposes head internals.
+
+CPU dense FFN operation workers keep attention and row KV local. See the
+[distributed FFN guide](ffn/distributed.md#dense-ffn-operation-provider) for
+`--v3-ffn-shards`, binding checks, failure semantics and the supported scope.

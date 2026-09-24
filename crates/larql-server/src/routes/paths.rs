@@ -107,3 +107,5 @@ pub(crate) const RESIDENCY: &str = "/v1/residency";
 pub(crate) const CAPABILITIES: &str = "/v1/capabilities";
 
 pub const VINDEX3_LAYERS: &str = larql_router_protocol::vindex3::PATH;
+
+pub const VINDEX3_FFN: &str = larql_router_protocol::vindex3_ffn::PATH;

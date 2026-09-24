@@ -141,6 +141,10 @@ pub struct OperandStore {
     /// Recorded in [`Self::load_raw`] because that is the one resolution
     /// path — a second place to record would be a second answer.
     touched: std::sync::Mutex<std::collections::BTreeSet<String>>,
+    /// Test witness at tensor granularity: one object may carry both local
+    /// attention and remotely placed FFN operands.
+    #[cfg(test)]
+    touched_operands: std::sync::Mutex<std::collections::BTreeSet<(String, String)>>,
 }
 
 /// How much of each dependency to read, by the name its OWNER declared.
@@ -428,6 +432,8 @@ impl OperandStore {
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
+            #[cfg(test)]
+            touched_operands: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         })
     }
 
@@ -964,6 +970,12 @@ impl OperandStore {
         &self.absent
     }
 
+    /// Test-only observation of tensors actually read or mapped.
+    #[cfg(test)]
+    pub(crate) fn touched_operand_addresses(&self) -> std::collections::BTreeSet<(String, String)> {
+        self.touched_operands.lock().unwrap().clone()
+    }
+
     /// The objects this store has resolved an operand out of.
     ///
     /// Measured, not predicted. A hydration set computed by folding over
@@ -1022,6 +1034,11 @@ impl OperandStore {
         self.loads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.touched.lock().unwrap().insert(operand.object.clone());
+        #[cfg(test)]
+        self.touched_operands
+            .lock()
+            .unwrap()
+            .insert((operand.object.clone(), operand.tensor.clone()));
         let segment = self.segments.get(&operand.object).ok_or_else(|| {
             if self.absent.contains(&operand.object) {
                 return VindexError::Parse(format!(
@@ -1070,6 +1087,11 @@ impl OperandStore {
             VindexError::Parse(format!("no segment for object `{}`", operand.object))
         })?;
         self.touched.lock().unwrap().insert(operand.object.clone());
+        #[cfg(test)]
+        self.touched_operands
+            .lock()
+            .unwrap()
+            .insert((operand.object.clone(), operand.tensor.clone()));
         let store = {
             let mut mapped = self.mapped.lock().unwrap();
             match mapped.get(&operand.object) {
