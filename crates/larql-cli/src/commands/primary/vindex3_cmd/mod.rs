@@ -72,8 +72,9 @@ pub enum Vindex3Command {
     Consequence(consequence::ConsequenceArgs),
 
     /// MEASURE-PLAN-1's sealed corpus: `export` tokenises a prompt file with
-    /// a container's tokenizer into a bank; `check` reads every sample
-    /// against its seal and the container's tokenizer.
+    /// a container's tokenizer into a bank; `import` seals ids another
+    /// harness already tokenised; `check` reads every sample against its
+    /// seal and the container's tokenizer.
     TokenBank(token_bank::TokenBankArgs),
 
     /// MEASURE-PLAN-1: teacher-force a candidate realization against a

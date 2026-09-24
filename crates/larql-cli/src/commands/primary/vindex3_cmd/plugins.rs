@@ -39,8 +39,8 @@ pub struct PluginArgs {
 
     /// Execute on the lowering provider with this identity
     /// (`family/vN`, e.g. one a `--plugin` registered) instead of the one
-    /// `--backend` names. `--backend` still decides which stored
-    /// representation is asked for.
+    /// `--backend` names. Which stored representation is asked for is
+    /// still `--backend`'s, unless `--representation` names one.
     #[arg(long, value_name = "FAMILY/vN")]
     pub lowering: Option<String>,
 

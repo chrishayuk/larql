@@ -229,6 +229,11 @@ Two wording boundaries stay explicit:
   integration tests compile as separate crates against exported API. It does
   not claim runtime discovery or distributed package loading; a plugin here
   is an external crate linked at compile time.
+  *Successor (2026-09-24):* shared-library loading now exists — a plugin
+  registers codecs, encoders and lowering providers through
+  `format::vindex3::plugin`, loaded only when named with `--plugin`, behind
+  an ABI stamp that pins compiler and commit. It is still not discovery:
+  see [plugins](vindex3/plugins.md). This rung's claim is unchanged.
 - "Stored label wins" makes the **stored representation authoritative**. The
   expert-format declaration is a legacy default consulted only for a carrier
   dialect whose label names no codec. They are one rule with a fallback, not

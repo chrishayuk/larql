@@ -12,7 +12,8 @@ owns the versioned format contract; its byte-level ABI remains candidate.
 | Execute / serve | Canonical component program, CPU and scoped Metal realizations, sessions and HTTP serving; backend support is operator-specific |
 | Input / state | CPU Gemma 3 image-prefix adapter; row/canonical continuation and exact full-history replay; multimodal HF parity remains unestablished |
 | Layer workers | Stateless CPU softmax-prefix RPC and endpoint-only coordinator; no remote KV cache or grid integration; [scope](runtime-followups.md) |
-| Represent | Compilation, codecs, selection/accounting and evidence/search machinery; quality and promotion require their own evidence |
+| Represent | Compilation (`represent`: NVFP4, K-quants, plugin encoders; role policy, protections, deployment images), codecs, selection/accounting, teacher-forced measurement over sealed token banks (`token-bank`, `measure`) and evidence/search machinery; quality and promotion require their own evidence |
+| Plugins | Codecs, encoders and lowering providers loaded from Unix shared libraries named with `--plugin` on `represent`, `exec` and `measure`, behind a compiler-and-commit ABI stamp; no discovery; lowered Metal arms cannot use plugin providers; [scope](plugins.md) |
 | Observe | Canonical decode carrier records, provenance/receipts and optional logit lens through `larql vindex3 observe` |
 | Observatory | Recorded-data import, validation, lenses and replay; importing a recording does not execute the model |
 | Heads / attribution | `observe --heads`, per-head coverage and reconstruction, measured evidence and descriptive-support contracts; softmax capture has narrower support than Standard observation |

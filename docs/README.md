@@ -16,7 +16,8 @@ indexing a proposal does not make it an implemented capability.
 | [What is VINDEX3?](vindex3/what-is-vindex3.md) | Model artifact, executable semantics and evidence |
 | [Architecture](vindex3/architecture.md) | Ownership, plans, representations and backends |
 | [Execution](vindex3/execution.md) | Build, encode, execute, record and serve |
-| [Representation](vindex3/representation.md) | Compilation, candidate authority and evidence/search contracts |
+| [Representation](vindex3/representation.md) | Compile packs (`represent`), measure them (`token-bank`, `measure`), candidate authority and evidence/search contracts |
+| [Plugins](vindex3/plugins.md) | Codecs, encoders and lowering providers loaded from shared libraries (`--plugin`) |
 | [Observation and intervention](vindex3/observation-and-intervention.md) | Carrier/head evidence, lenses and counterfactual boundaries |
 | [Status](vindex3/status.md) | Capability boundaries and current research |
 | [Generated facts](generated/current-facts.md) | Versions, schemas, extraction default and CLI inventories |
