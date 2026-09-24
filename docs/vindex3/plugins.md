@@ -89,6 +89,14 @@ whose bytes, handed back to `decode_packed`, must decode to what this codec's
 own `decode_rows` produces. A lossy encoder need not invert its input; it must
 be stable under its own round trip.
 
+An encoder may also implement `encode_packed_weighted(…, input_weights: &[f64])`,
+minimising `Σ_rows Σ_i input_weights[i]·(w − ŵ)²` with one weight per input
+feature; `represent --moments` calls it. The default refuses
+(`WeightingUnsupported`), so an encoder that cannot honour weights never
+ignores them silently. Weighting is an encoder choice: the bytes decode like
+any other pack of that codec, and the recipe (`codec-encoder-weighted`)
+records the weights' digest.
+
 When `represent` compiles with an encoder:
 
 - **Eligibility** is the encoder's `stored_bytes(shape, …)`. An error means

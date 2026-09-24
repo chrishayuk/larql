@@ -431,6 +431,21 @@ impl EncoderRecipe {
         }
     }
 
+    /// A registered codec's encoder run under input-feature weights
+    /// (`RepresentationEncoder::encode_packed_weighted`). The weights
+    /// change the chosen values, so the digest of the artifact they came
+    /// from is part of the identity.
+    pub fn codec_weighted(codec: &CodecIdentity, weights_digest: &str) -> Self {
+        Self {
+            algorithm: "codec-encoder-weighted".into(),
+            revision: 1,
+            source: Some(format!(
+                "{}/r{} weights:{weights_digest}",
+                codec.family, codec.revision
+            )),
+        }
+    }
+
     /// `nvfp4-nearest-v1`, for reports and CLI output.
     pub fn name(&self) -> String {
         format!("{}-v{}", self.algorithm, self.revision)
