@@ -17,6 +17,19 @@ const SHIPPED_FAMILY_LITERAL: &str = "\"canonical\"";
 /// A scan that reads fewer files than this read too little to mean
 /// anything (the workspace has several hundred).
 const MIN_FILES_SCANNED: usize = 100;
+/// Crates that are declared test fixtures of this provider, each with its
+/// reason. Nothing that ships depends on them. The control below requires
+/// every entry to still name the provider, so a stale permission fails.
+const FIXTURE_CRATES: [(&str, &str); 1] = [(
+    "larql-continuation-fixture",
+    "C6: this provider built as a plugin; test-only, loaded by larql-cli's plugin gate",
+)];
+
+fn is_fixture(path: &Path) -> bool {
+    FIXTURE_CRATES
+        .iter()
+        .any(|(name, _)| path.components().any(|c| c.as_os_str() == *name))
+}
 
 fn workspace_crates() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -78,7 +91,10 @@ fn no_production_source_names_the_external_provider() {
         sources.len()
     );
     for name in EXTERNAL_NAMES {
-        let hits = containing(&sources, name);
+        let hits: Vec<_> = containing(&sources, name)
+            .into_iter()
+            .filter(|path| !is_fixture(path))
+            .collect();
         assert!(
             hits.is_empty(),
             "production source names `{name}`: {hits:?}"
@@ -95,4 +111,19 @@ fn control_the_same_scan_finds_the_family_this_build_ships() {
         "the scanner found no {SHIPPED_FAMILY_LITERAL} in {} files: it read nothing",
         sources.len()
     );
+}
+
+#[test]
+fn control_every_fixture_exemption_still_names_the_provider() {
+    let sources = production_sources(&workspace_crates());
+    for (name, reason) in FIXTURE_CRATES {
+        let named = containing(&sources, HOSTILE_FAMILY)
+            .into_iter()
+            .chain(containing(&sources, "HostileFactory"))
+            .any(|path| path.components().any(|c| c.as_os_str() == name));
+        assert!(
+            named,
+            "`{name}` ({reason}) no longer names the provider: drop the exemption"
+        );
+    }
 }
