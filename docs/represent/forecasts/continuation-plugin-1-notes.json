@@ -135,6 +135,22 @@
         "doc gates": "clean",
         "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
       }
+    },
+    "C4": {
+      "name": "authority in durable handoffs",
+      "status": "in progress",
+      "branch": "continuation-plugin-1/c4",
+      "base": "24a3a255 (C3, rebased onto main 39eaca20)",
+      "date": "2026-09-24",
+      "boundary_clarification": {
+        "recorded_before_code": true,
+        "question": "The server's ResponseKvCache documents continuation reuse as 'purely an optimisation': any mismatch falls back to a full prefill and can never change produced tokens. C4's anti-cheat forbids 'silently restarting from a fresh prefill'. Both cannot hold on the server path unless the layer each applies to is named.",
+        "decision": "C4's no-fallback / no-rebuild / no-fresh-prefill invariant applies to the continuation RESUME operation itself. Resume compares the recorded authority with the resolving one and either returns the recorded state or a typed refusal — provider absent, revision changed, configuration changed, each naming both sides; it never builds, selects or prefills anything. A higher layer (the server) MAY recover by a full fresh prefill, but only as an explicit recovery action: the refusal and its reason are recorded on the response and in the cache's counters, and the record says a fresh prefill occurred. A refused handoff is never reinterpreted as a cache miss.",
+        "unchanged": "A prompt that does not extend the handoff's absorbed ids remains an ordinary cache miss (the N1 optimisation contract): that is a prompt mismatch, not a continuation refusal, and the authority comparison runs before it so an incompatible state is reported as such regardless of the prompt.",
+        "anti_cheat_layer": "The config-A/config-B witness runs at the resume-contract layer, so it proves no fallback, rebuild or prefill INSIDE resume; the server's explicit recovery is witnessed separately.",
+        "analogue": "F1's possible Send bound: a clarification of the boundary, recorded before implementation, not a retrofit of the result."
+      },
+      "out_of_scope": "Cross-process continuation (writing provider state to storage and resuming it in another process) is NOT C4 or C5: it needs a serialization/storage contract the nine-method provider trait deliberately lacks (F3). It belongs to the post-plugin sequence beside CONTINUATION-MEM-1, under its own freeze. C5's frozen path stays in-process: register → prefill → decode → handoff → resume."
     }
   }
 }
