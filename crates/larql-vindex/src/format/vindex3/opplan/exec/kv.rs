@@ -31,6 +31,7 @@
 
 use super::super::ComponentOpPlan;
 use super::continuation::{LatentKvRows, LayerContinuationGeometry, RecurrentState};
+use super::continuation_identity::ContinuationIdentity;
 
 /// One layer's continuation-state geometry, read from the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,6 +269,13 @@ impl From<ContinuationError> for crate::error::VindexError {
 /// authoritative seam and KV becomes its projection.
 pub use ContinuationProvider as KvState;
 
+/// [`RowKvState`]'s family ([`RowKvState::identity`]):
+/// plain per-layer row vectors. Revision 1 is the store as it serves rows
+/// today; it moves when the same appended history would be served back
+/// differently, never for a faster store serving the same bits.
+pub const ROW_IDENTITY_FAMILY: &str = "row";
+pub const ROW_IDENTITY_REVISION: u32 = 1;
+
 /// The default provider: plain per-layer row vectors — exactly the
 /// state [`DecodeSession`](super::decode::DecodeSession) used to own
 /// privately, now behind the seam. The decode-vs-batch parity gates
@@ -294,6 +302,15 @@ pub struct RowKvState {
 struct LayerRows {
     keys: Vec<Vec<f32>>,
     values: Vec<Vec<f32>>,
+}
+
+impl RowKvState {
+    /// This provider's continuation identity (C1 of
+    /// CONTINUATION-PLUGIN-1) — `row/v1`, read from this module's
+    /// constants.
+    pub fn identity() -> ContinuationIdentity {
+        ContinuationIdentity::new(ROW_IDENTITY_FAMILY, ROW_IDENTITY_REVISION)
+    }
 }
 
 impl KvState for RowKvState {

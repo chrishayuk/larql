@@ -502,3 +502,14 @@ fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
     assert_eq!(state.keys(0), &[vec![4.0, 5.0]]);
     assert_eq!(state.position(), 1);
 }
+
+/// C1 of CONTINUATION-PLUGIN-1: the canonical provider names itself, and
+/// the two built-ins are distinct authorities — the handoff that will carry
+/// an identity (C4) must be able to tell them apart.
+#[test]
+fn canonical_states_a_valid_identity_distinct_from_row() {
+    let canonical = CanonicalKvState::identity();
+    canonical.validate().unwrap();
+    assert_eq!(canonical.to_string(), "canonical/v1");
+    assert_ne!(canonical, RowKvState::identity());
+}
