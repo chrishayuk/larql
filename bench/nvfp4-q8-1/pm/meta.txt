@@ -1,0 +1,4 @@
+binary: source a258c33d7a2947e99bad460d2ff03af28e44094f (HEAD 5cc6906ffac075b0f5400d6ae557af639c2e5322) built Sep 24 00:46:03 2026
+LARQL_* env vars: 0
+start Thu 24 Sep 2026 01:10:44 BST load { 2.19 10.69 15.45 }
+end Thu 24 Sep 2026 01:20:35 BST load { 1.79 3.07 8.67 }
