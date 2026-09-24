@@ -1,0 +1,16 @@
+wired 97 weight streams in 0.1 s
+wired 49 weight streams in 0.1 s
+w9-gptoss-f16-vs-conservative: admissible — 1664 positions over 69 samples, bank 78139521f956cb0e84764f5723cbbf784db63e3947ed7cb590f0e3432740e6df
+reference metal-lowered-f16  candidate metal-lowered  changed: target.decoder_stack@NVFP4
+  all                n=1664   KL mean 2.914e-2  p50 1.432e-2  p99 2.217e-1  max 9.253e-1  top-1 92.67%
+  factual            n=199    KL mean 2.065e-2  p50 1.226e-2  p99 1.583e-1  max 4.799e-1  top-1 94.97%
+  prose              n=142    KL mean 2.382e-2  p50 1.843e-2  p99 1.415e-1  max 2.435e-1  top-1 92.96%
+  code               n=273    KL mean 6.886e-3  p50 1.677e-3  p99 9.148e-2  max 1.314e-1  top-1 95.97%
+  arithmetic         n=157    KL mean 2.449e-2  p50 1.104e-2  p99 2.918e-1  max 9.253e-1  top-1 95.54%
+  structured         n=196    KL mean 1.221e-2  p50 4.112e-3  p99 9.338e-2  max 2.026e-1  top-1 94.90%
+  uncertain          n=85     KL mean 2.160e-2  p50 1.293e-2  p99 1.463e-1  max 1.463e-1  top-1 94.12%
+  longform           n=612    KL mean 5.071e-2  p50 3.452e-2  p99 2.597e-1  max 5.702e-1  top-1 88.73%
+  margin 0.0-0.1     n=461    KL mean 4.358e-2  p50 3.063e-2  p99 2.351e-1  max 9.253e-1  top-1 76.36%
+  margin 0.1-0.5     n=577    KL mean 3.957e-2  p50 2.355e-2  p99 2.597e-1  max 5.702e-1  top-1 97.75%
+  margin 0.5-1.0     n=626    KL mean 8.884e-3  p50 2.817e-3  p99 7.815e-2  max 2.918e-1  top-1 100.00%
+-> ~/chris-source/larql/.claude/worktrees/head-fid-2/bench/measure-plan-1/w9/out
