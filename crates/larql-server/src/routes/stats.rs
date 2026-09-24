@@ -220,6 +220,9 @@ async fn server_block(state: &AppState) -> serde_json::Value {
             "hits": state.v3_kv.hits(),
             "misses": state.v3_kv.misses(),
             "resumptions": state.v3_kv.resumptions(),
+            // A hit whose state's recorded continuation authority refused
+            // to resume under the model's (C4); served by a fresh prefill.
+            "refusals": state.v3_kv.refusals(),
             "reused_tokens_total": state.v3_kv.reused_tokens_total(),
         },
     })

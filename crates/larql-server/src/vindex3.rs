@@ -36,8 +36,11 @@ use larql_inference::vindex3::{
 use larql_inference::{EosConfig, SamplingConfig};
 use larql_kv::{shipped_continuations, CanonicalFactory};
 use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_handoff::{
+    ContinuationHandoff, ResumeRefusal,
+};
 use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
-    BoxedContinuation, ContinuationFactory, SelectedContinuation,
+    ContinuationFactory, SelectedContinuation,
 };
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
@@ -348,6 +351,11 @@ pub struct V3Generation {
     /// How many of the run's prompt tokens were served from a resumed
     /// KV state instead of being re-prefilled (0 on a fresh run).
     pub reused_prompt_tokens: usize,
+    /// Set when a handoff was offered but its recorded authority refused
+    /// to resume under this model's continuation (C4). The generation
+    /// then ran from a fresh prefill — an explicit recovery the routes
+    /// must report, never a cache miss.
+    pub continuation_refused: Option<ResumeRefusal>,
     /// Wall-clock time of the `prefill_into` call below, in ms. The V3
     /// driver ([`larql_inference::vindex3::generate`]) carries no
     /// timing of its own, so this is measured here, around the two
@@ -361,13 +369,13 @@ pub struct V3Generation {
 }
 
 /// A generation's continuation state, detached from any session so it
-/// can outlive the request (N1): the KV plus exactly the token ids the
-/// KV has absorbed. `absorbed_ids` can be one short of prompt+emitted —
-/// the driver never steps the final emitted token on a budget stop —
-/// which is why the ids travel with the state instead of being
-/// re-derived by callers.
+/// can outlive the request (N1): the state, sealed with the authority
+/// that built it (C4), plus exactly the token ids it has absorbed.
+/// `absorbed_ids` can be one short of prompt+emitted — the driver never
+/// steps the final emitted token on a budget stop — which is why the ids
+/// travel with the state instead of being re-derived by callers.
 pub struct V3KvHandoff {
-    pub kv: BoxedContinuation,
+    pub continuation: ContinuationHandoff,
     pub absorbed_ids: Vec<u32>,
 }
 
@@ -417,10 +425,18 @@ pub fn generate_v3_constrained(
 /// [`generate_v3`] with KV continuation (N1). When `resume` carries a
 /// prior turn's [`V3KvHandoff`] whose `absorbed_ids` are a strict
 /// prefix of `prompt_ids`, only the unseen suffix is prefilled — the
-/// resumed positions cost nothing. Any mismatch (different rendering,
-/// tokenizer seam effects, an exhausted prompt) falls back to a full
-/// fresh prefill, so reuse is purely an optimisation: the produced
-/// tokens are identical either way, which the V3 serve tests pin.
+/// resumed positions cost nothing. A prompt mismatch (different
+/// rendering, tokenizer seam effects, an exhausted prompt) falls back to
+/// a full fresh prefill, so reuse is purely an optimisation: the
+/// produced tokens are identical either way, which the V3 serve tests
+/// pin.
+///
+/// Before the prompt is compared, the handoff's recorded authority must
+/// resume under this model's continuation (C4). If it refuses — provider
+/// absent, revision changed, configuration changed — the refused state
+/// is dropped and the generation recovers by a fresh prefill, reporting
+/// the refusal in [`V3Generation::continuation_refused`]. Recovery is
+/// this layer's decision; resume itself never makes it.
 ///
 /// The returned handoff holds the state through this generation for
 /// the next chain link.
@@ -491,6 +507,29 @@ pub fn generate_v3_request(
     }
     let _gen_guard = V3GenerationGuard::enter(Arc::clone(&model.requests_in_flight));
 
+    // The recorded authority answers first: state this model's
+    // continuation did not write is refused whatever the prompt, and the
+    // refusal is kept for the record rather than folded into a miss.
+    let (resume, continuation_refused) = match resume {
+        None => (None, None),
+        Some(h) => match h.continuation.resume(model.continuation.authority()) {
+            Ok(continuation) => (
+                Some(V3KvHandoff {
+                    continuation,
+                    absorbed_ids: h.absorbed_ids,
+                }),
+                None,
+            ),
+            Err(refusal) => {
+                tracing::warn!(
+                    model = %model.id,
+                    refusal = refusal.kind(),
+                    "{refusal}; recovering by a fresh prefill"
+                );
+                (None, Some(refusal))
+            }
+        },
+    };
     // A handoff is resumable only when the new prompt extends exactly
     // what the KV already absorbed.
     let resumed = resume.filter(|h| {
@@ -498,20 +537,23 @@ pub fn generate_v3_request(
             && h.absorbed_ids.len() < prompt_ids.len()
             && prompt_ids.starts_with(&h.absorbed_ids)
     });
-    let (mut kv, reused_prompt_tokens) = match resumed {
-        Some(h) => (h.kv, h.absorbed_ids.len()),
-        None => (model.continuation.build(), 0),
+    let (mut continuation, reused_prompt_tokens) = match resumed {
+        Some(h) => (h.continuation, h.absorbed_ids.len()),
+        None => (model.continuation.begin(), 0),
     };
 
     let prefill_start = std::time::Instant::now();
     let prefill_logits = model
         .runtime
-        .prefill_into(&prompt_ids[reused_prompt_tokens..], &mut *kv)
+        .prefill_into(
+            &prompt_ids[reused_prompt_tokens..],
+            continuation.state_mut(),
+        )
         .map_err(|e| ServerError::Internal(format!("v3 prefill: {e}")))?;
     let prefill_ms = crate::state::elapsed_ms(prefill_start);
     let mut session = model
         .runtime
-        .session_with_kv(&mut *kv)
+        .session_with_kv(continuation.state_mut())
         .map_err(|e| ServerError::Internal(format!("v3 session: {e}")))?;
 
     let mut detok = Detokenizer::new(&model.tokenizer);
@@ -549,7 +591,7 @@ pub fn generate_v3_request(
     // The KV's logical position says exactly how many of
     // prompt + emitted it absorbed (the driver never steps the final
     // emitted token on a budget stop).
-    let absorbed_len = kv.position();
+    let absorbed_len = continuation.position();
     let mut absorbed_ids = Vec::with_capacity(absorbed_len);
     absorbed_ids.extend_from_slice(prompt_ids);
     absorbed_ids.extend_from_slice(&result.tokens);
@@ -563,9 +605,13 @@ pub fn generate_v3_request(
             prompt_tokens: prompt_ids.len(),
             stopped_early,
             reused_prompt_tokens,
+            continuation_refused,
             prefill_ms,
             decode_ms_total,
         },
-        V3KvHandoff { kv, absorbed_ids },
+        V3KvHandoff {
+            continuation,
+            absorbed_ids,
+        },
     ))
 }

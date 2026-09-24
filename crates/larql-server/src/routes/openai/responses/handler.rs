@@ -176,6 +176,9 @@ pub(super) fn retain_kv_handoff(
     plan: &RequestPlan,
     outcome: &mut GenerationOutcome,
 ) {
+    if outcome.continuation_refused.is_some() {
+        state.v3_kv.record_refusal();
+    }
     if outcome.reused_prompt_tokens > 0 {
         state.v3_kv.record_resumption(outcome.reused_prompt_tokens);
         if let Some(session) = &plan.session {
@@ -390,6 +393,13 @@ pub(super) fn usage_of(outcome: &GenerationOutcome) -> ResponseUsage {
         input_tokens: outcome.prompt_tokens,
         input_tokens_details: super::types::InputTokensDetails {
             cached_tokens: outcome.reused_prompt_tokens,
+            continuation_refused: outcome.continuation_refused.as_ref().map(|refusal| {
+                super::types::ContinuationRefusal {
+                    kind: refusal.kind(),
+                    reason: refusal.to_string(),
+                    recovery: super::types::FRESH_PREFILL_RECOVERY,
+                }
+            }),
         },
         output_tokens: outcome.completion_tokens,
         total_tokens: outcome.prompt_tokens + outcome.completion_tokens,

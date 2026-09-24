@@ -148,7 +148,10 @@ fn envelope_serialises_openai_field_names() {
     });
     resp.previous_response_id = Some("resp_0".into());
     resp.usage = Some(ResponseUsage {
-        input_tokens_details: super::super::types::InputTokensDetails { cached_tokens: 0 },
+        input_tokens_details: super::super::types::InputTokensDetails {
+            cached_tokens: 0,
+            continuation_refused: None,
+        },
         input_tokens: 3,
         output_tokens: 5,
         total_tokens: 8,

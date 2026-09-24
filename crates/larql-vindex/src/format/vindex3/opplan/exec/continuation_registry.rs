@@ -28,6 +28,7 @@ use std::sync::Arc;
 
 use super::continuation::{region_name, LayerContinuationGeometry};
 use super::continuation_authority::{ContinuationAuthority, ContinuationConfig};
+use super::continuation_handoff::ContinuationHandoff;
 use super::continuation_identity::ContinuationIdentity;
 use super::kv::ContinuationProvider;
 use crate::error::VindexError;
@@ -301,5 +302,12 @@ impl SelectedContinuation {
     /// A fresh provider for one conversation.
     pub fn build(&self) -> BoxedContinuation {
         self.factory.build(&self.config)
+    }
+
+    /// A fresh provider for one conversation, sealed with this selection's
+    /// authority so the state can outlive the call and be resumed only
+    /// under the same authority (C4).
+    pub fn begin(&self) -> ContinuationHandoff {
+        ContinuationHandoff::seal(self.authority.clone(), self.build())
     }
 }
