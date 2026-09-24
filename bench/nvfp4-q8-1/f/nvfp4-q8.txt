@@ -1,0 +1,15 @@
+nvfp4-q8: admissible — 1810 positions over 69 samples, bank 74eded7e25c9b4ac7ae59bff4e6094765c739acfedaf35f1d9051d79cd10f375
+reference production-nvfp4  candidate production-nvfp4-q8  changed: the arm only
+  all                n=1810   KL mean 6.305e-4  p50 1.417e-4  p99 7.107e-3  max 7.061e-2  top-1 99.17%
+  factual            n=220    KL mean 3.562e-4  p50 1.230e-4  p99 2.827e-3  max 4.187e-3  top-1 99.55%
+  prose              n=152    KL mean 4.201e-4  p50 2.565e-4  p99 2.009e-3  max 2.467e-3  top-1 98.68%
+  code               n=334    KL mean 3.757e-4  p50 1.836e-6  p99 6.222e-3  max 1.227e-2  top-1 99.10%
+  arithmetic         n=182    KL mean 6.370e-4  p50 1.037e-4  p99 9.474e-3  max 3.345e-2  top-1 98.90%
+  structured         n=222    KL mean 1.706e-3  p50 7.937e-6  p99 4.208e-2  max 7.061e-2  top-1 99.55%
+  uncertain          n=95     KL mean 4.187e-4  p50 2.048e-4  p99 2.955e-3  max 2.955e-3  top-1 100.00%
+  longform           n=605    KL mean 5.604e-4  p50 3.233e-4  p99 4.035e-3  max 3.054e-2  top-1 99.01%
+  margin 0.0-0.1     n=227    KL mean 1.640e-3  p50 6.131e-4  p99 2.844e-2  max 7.061e-2  top-1 93.83%
+  margin 0.1-0.5     n=571    KL mean 8.946e-4  p50 4.064e-4  p99 9.474e-3  max 4.933e-2  top-1 99.82%
+  margin 0.5-1.0     n=1012   KL mean 2.551e-4  p50 1.686e-5  p99 3.739e-3  max 3.385e-2  top-1 100.00%
+-> bench/nvfp4-q8-1/f/nvfp4-q8
+exit 0

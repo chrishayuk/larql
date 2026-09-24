@@ -1,0 +1,254 @@
+{
+  "admissible": true,
+  "receipt": {
+    "bank_id": "74eded7e25c9b4ac7ae59bff4e6094765c739acfedaf35f1d9051d79cd10f375",
+    "candidate": {
+      "arm": "production-nvfp4-q8",
+      "container": "/Users/christopherhay/chris-models/gemma3-4b-it.nvfp4.vindex3",
+      "objects": {
+        "target.decoder_stack": {
+          "encoding": "NVFP4",
+          "stored": true
+        },
+        "target.embedding": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.final_norm": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "vision.perception_adapter": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "vision.perception_tower": {
+          "encoding": "BF16",
+          "stored": false
+        }
+      },
+      "requested_pack": "NVFP4",
+      "runtime_quantised": 0,
+      "stored_only": true
+    },
+    "facts": {
+      "arm_changed": true,
+      "attributed_arms": 2,
+      "bank_samples_read": 69,
+      "changed_representations": [],
+      "null_arm_samples": 4,
+      "positions": 1810,
+      "protected_representations": 5,
+      "sealed_representations": 5,
+      "tokenizer_checked_arms": 2
+    },
+    "label": "nvfp4-q8",
+    "procedure": "teacher-forced-two-arm/plan-v1",
+    "reference": {
+      "arm": "production-nvfp4",
+      "container": "/Users/christopherhay/chris-models/gemma3-4b-it.nvfp4.vindex3",
+      "objects": {
+        "target.decoder_stack": {
+          "encoding": "NVFP4",
+          "stored": true
+        },
+        "target.embedding": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "target.final_norm": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "vision.perception_adapter": {
+          "encoding": "BF16",
+          "stored": false
+        },
+        "vision.perception_tower": {
+          "encoding": "BF16",
+          "stored": false
+        }
+      },
+      "requested_pack": "NVFP4",
+      "runtime_quantised": 0,
+      "stored_only": true
+    },
+    "summary": {
+      "all": {
+        "delta_nll_mean": -0.003067230290324896,
+        "kl_max": 0.07060612536474753,
+        "kl_mean": 0.000630465534862846,
+        "kl_p50": 0.00014169836969937986,
+        "kl_p99": 0.007107148590356801,
+        "max_abs_delta_mean": 0.3243961486039241,
+        "max_abs_delta_p99": 1.522390365600586,
+        "positions": 1810,
+        "top1_agreement": 0.9917127071823204,
+        "top5_overlap_mean": 4.93646408839779
+      },
+      "by_category": [
+        [
+          "factual",
+          {
+            "delta_nll_mean": 0.0005646915592651373,
+            "kl_max": 0.004187190662426141,
+            "kl_mean": 0.000356208727048483,
+            "kl_p50": 0.00012295972626503136,
+            "kl_p99": 0.002826525455049131,
+            "max_abs_delta_mean": 0.26571263433857395,
+            "max_abs_delta_p99": 0.6897618770599365,
+            "positions": 220,
+            "top1_agreement": 0.9954545454545455,
+            "top5_overlap_mean": 4.963636363636364
+          }
+        ],
+        [
+          "prose",
+          {
+            "delta_nll_mean": -0.0033957631192074833,
+            "kl_max": 0.002466720164984127,
+            "kl_mean": 0.00042005795125856605,
+            "kl_p50": 0.00025651031034312646,
+            "kl_p99": 0.0020091579751673953,
+            "max_abs_delta_mean": 0.21207311156352884,
+            "max_abs_delta_p99": 0.5247193574905396,
+            "positions": 152,
+            "top1_agreement": 0.9868421052631579,
+            "top5_overlap_mean": 4.947368421052632
+          }
+        ],
+        [
+          "code",
+          {
+            "delta_nll_mean": -0.007062955470613789,
+            "kl_max": 0.01226627145142691,
+            "kl_mean": 0.00037566739629900353,
+            "kl_p50": 1.8361826151471532e-6,
+            "kl_p99": 0.006221691014607723,
+            "max_abs_delta_mean": 0.5088738065079123,
+            "max_abs_delta_p99": 1.5671100616455078,
+            "positions": 334,
+            "top1_agreement": 0.9910179640718563,
+            "top5_overlap_mean": 4.946107784431137
+          }
+        ],
+        [
+          "arithmetic",
+          {
+            "delta_nll_mean": -0.004544042810997579,
+            "kl_max": 0.03345150741297213,
+            "kl_mean": 0.0006369572411826606,
+            "kl_p50": 0.00010366555370389394,
+            "kl_p99": 0.009473515261402323,
+            "max_abs_delta_mean": 0.25308318256021856,
+            "max_abs_delta_p99": 0.6570091247558594,
+            "positions": 182,
+            "top1_agreement": 0.989010989010989,
+            "top5_overlap_mean": 4.917582417582418
+          }
+        ],
+        [
+          "structured",
+          {
+            "delta_nll_mean": -0.00865531859155575,
+            "kl_max": 0.07060612536474753,
+            "kl_mean": 0.0017058383361078719,
+            "kl_p50": 7.937435433201837e-6,
+            "kl_p99": 0.04208249106442979,
+            "max_abs_delta_mean": 0.6108269862629272,
+            "max_abs_delta_p99": 2.147206425666809,
+            "positions": 222,
+            "top1_agreement": 0.9954954954954955,
+            "top5_overlap_mean": 4.887387387387387
+          }
+        ],
+        [
+          "uncertain",
+          {
+            "delta_nll_mean": -0.007646155623760448,
+            "kl_max": 0.0029546680247367904,
+            "kl_mean": 0.00041873214941240037,
+            "kl_p50": 0.00020483971756120586,
+            "kl_p99": 0.0029546680247367904,
+            "max_abs_delta_mean": 0.20911679589434673,
+            "max_abs_delta_p99": 0.6230792999267578,
+            "positions": 95,
+            "top1_agreement": 1.0,
+            "top5_overlap_mean": 4.947368421052632
+          }
+        ],
+        [
+          "longform",
+          {
+            "delta_nll_mean": 0.0009992036734649175,
+            "kl_max": 0.030540366804553187,
+            "kl_mean": 0.0005604183413066893,
+            "kl_p50": 0.00032329907602072203,
+            "kl_p99": 0.004034609229098588,
+            "max_abs_delta_mean": 0.20656274264632177,
+            "max_abs_delta_p99": 0.4960441589355469,
+            "positions": 605,
+            "top1_agreement": 0.9900826446280991,
+            "top5_overlap_mean": 4.940495867768595
+          }
+        ]
+      ],
+      "by_margin_band": [
+        [
+          [
+            0.0,
+            0.1
+          ],
+          {
+            "delta_nll_mean": -0.009533803162061863,
+            "kl_max": 0.07060612536474753,
+            "kl_mean": 0.0016395887951017516,
+            "kl_p50": 0.0006131083492728904,
+            "kl_p99": 0.02843909077999971,
+            "max_abs_delta_mean": 0.2730794082260342,
+            "max_abs_delta_p99": 1.2512351870536804,
+            "positions": 227,
+            "top1_agreement": 0.9383259911894273,
+            "top5_overlap_mean": 4.942731277533039
+          }
+        ],
+        [
+          [
+            0.1,
+            0.5
+          ],
+          {
+            "delta_nll_mean": -0.003171326395545345,
+            "kl_max": 0.04932857082689796,
+            "kl_mean": 0.0008946275156213617,
+            "kl_p50": 0.00040639323145834756,
+            "kl_p99": 0.009473515261402323,
+            "max_abs_delta_mean": 0.2324342371703447,
+            "max_abs_delta_p99": 0.8627481460571289,
+            "positions": 571,
+            "top1_agreement": 0.9982486865148862,
+            "top5_overlap_mean": 4.950963222416813
+          }
+        ],
+        [
+          [
+            0.5,
+            1.0
+          ],
+          {
+            "delta_nll_mean": -0.0016002455938922528,
+            "kl_max": 0.03385075128687843,
+            "kl_mean": 0.0002550628954484757,
+            "kl_p50": 0.00001686363978486776,
+            "kl_p99": 0.003738908581331999,
+            "max_abs_delta_mean": 0.38779451964577666,
+            "max_abs_delta_p99": 1.5857658386230469,
+            "positions": 1012,
+            "top1_agreement": 1.0,
+            "top5_overlap_mean": 4.926877470355731
+          }
+        ]
+      ]
+    }
+  }
+}
