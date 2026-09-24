@@ -48,7 +48,8 @@ pub(super) fn run_generate<B: PlanBackend>(
     }
 
     let loading = Instant::now();
-    let mut session = DecodeSession::new(plan, store, backend)?;
+    let continuation = crate::commands::primary::continuation::select_for(plan, None)?;
+    let mut session = DecodeSession::new(plan, store, backend, continuation.build())?;
     let load_seconds = loading.elapsed().as_secs_f64();
     eprintln!("weights resident in {load_seconds:.1} s");
     report_residency(&session.residency_census());
@@ -501,7 +502,6 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     use larql_vindex::format::vindex3::opplan::exec::accounting::{
         expectations, BlockGeometry, ResourceLedger,
     };
-    use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
     use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
     use larql_vindex::format::vindex3::opplan::exec::routing_trace;
     use larql_vindex::format::vindex3::opplan::exec::timing::OpClass;
@@ -614,8 +614,8 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     let mut first_logits: Option<Vec<f32>> = None;
     let mut first_generated: Option<Vec<u32>> = None;
     for pass in 1..=repeat.max(1) {
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+        let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
+        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
         let label = if pass < counted_from {
             "warmup"
         } else if pass == 1 {

@@ -97,7 +97,9 @@ fn payload_prefix_has_no_vocabulary_exit_and_preserves_lower_carriers() {
     let (_dir, plan, store) = fixture();
     let backend = ReferenceBackend;
     let full = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full).unwrap();
-    let prefix = PayloadPrefix::prepare(&plan, &store, &backend, 1).unwrap();
+    let prefix =
+        PayloadPrefix::prepare(&plan, &store, &backend, 1, &super::row_continuation(&plan))
+            .unwrap();
     let carriers = prefix.carriers(&G_TOKENS, &backend).unwrap();
     let mut kv = RowKvState::default();
     let mut session = DecodeSession::over_prepared(&plan, &full, &backend, &mut kv).unwrap();

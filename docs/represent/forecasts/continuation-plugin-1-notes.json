@@ -84,6 +84,57 @@
         "cargo check --workspace --all-targets": "clean",
         "doc gates": "clean"
       }
+    },
+    "C3": {
+      "name": "built-ins behind the registry",
+      "status": "built and held",
+      "branch": "v3-state-2",
+      "base": "3c121e84 (C2)",
+      "date": "2026-09-24",
+      "scope_decision": "STRICT, chosen by the user before implementation: every one of the 16 baseline sites — call-scoped scratch included — reaches its provider through a SelectedContinuation. The alternative (a single allowlisted executor scratch function) was declined because it would reinterpret the frozen 'all 16'.",
+      "what_landed": [
+        "Executor (larql-vindex): `DecodeSession::new` takes the provider it owns (`BoxedContinuation`) — the hidden `row/v1` default is gone. The one-shot forward no longer manufactures a `RowKvState` for a stack with state beyond softmax attention: without state it REFUSES, naming the layer; `execute_slice_in` / `execute_plan_streaming_in` / `execute_prepared_streaming_in` take caller-selected state (must be fresh, position 0). `requires_continuation(plan)` exposes the executor's one rule so callers ask rather than re-derive.",
+        "`PayloadPrefix::prepare` and `InterpreterArm::prepare` take a `SelectedContinuation` and build a fresh provider per probe / scored sample.",
+        "Inference: `Vindex3Runtime::select_continuation` / `PreparedVindex3::select_continuation` select against the runtime's own plan; `session`/`session_overlaid` take the selection; `execute_streaming`/`_overlaid` take it and build state only when `requires_continuation` says so (a softmax plan still materialises no rows); `ReplaySession` (no-cache) is a replay MODE over the selection's provider. The `RowKvState` re-export is replaced by the registry surface.",
+        "CLI: `commands/primary/continuation.rs` — the ONE alias table (`row`→row/v1, `standard`→canonical/v1), the declared default (`row`), the replay mode name, `select_for(plan, engine)` from a fresh shipped registry, and `one_shot_state(plan)`. Every CLI site (run, generate, bench, bank, observe, sensitivity, teacher-force, measure, exec) selects there; the engine string switch is gone. Every run path reports the identity it resolved (`continuation=row/v1`, `continuation=no-cache over row/v1`).",
+        "LQL: `v3_continuation(runtime)` selects `CanonicalFactory`'s identity (no family string) for INFER, TRACE, capture and the compose balance probe.",
+        "Server: `V3Model.continuation` is selected ONCE at binding against the plan (refused at load, before any request); fresh request state is `model.continuation.build()`; `V3KvHandoff.kv` is a `BoxedContinuation` (F1 held — no trait change). The authority beside it is C4.",
+        "Tests migrated (~70 sites) to name `row/v1` explicitly; `exec/tests/mod.rs::row_continuation(plan)` and an inference `row(plan)` helper."
+      ],
+      "witnesses": {
+        "crates/larql-vindex/tests/continuation_closure.rs": "the NAME ban as executable policy: no production file outside a 4-entry allowlist (each with its reason) names RowKvState or CanonicalKvState in code; control 1 — every allowlisted file still names one (no stale permission); control 2 — a seeded violation in each of four spellings (constructor, struct literal, inferred Default, use) written into a temp crate tree turns the full scan RED; prose and names that merely contain a built-in's name pass",
+        "crates/larql-kv/src/vindex3/tests/registry_parity.rs": "direct CanonicalKvState == registry canonical/v1 == registry row/v1 == direct RowKvState, one Record each (prefill logits, K/V rows, recurrent buffers, latent rows, position, every step's logits, generated ids) — on miniature_glimmer crossing its sliding window, and on hybrid_kda_mla_f32_model (KDA recurrence + MLA latent; asserts both regions exist and the recurrence moved)",
+        "negative control": "a provider moving ONE value by one ULP is caught on both fixtures",
+        "crates/larql-cli .../continuation_tests.rs + run_cmd_vindex3 tests": "alias resolution, unknown-engine refusal naming the known set, selection names its authority, one_shot_state follows the executor rule on a dense and a hybrid plan; end to end, `--verbose` reports the resolved identity on the default, both aliases and replay",
+        "existing gates": "the original KV-1 gate is unchanged and passes against the direct types"
+      },
+      "findings": [
+        "The first version of the negative control nudged the recurrent state's ZERO start by one ULP; the subnormal (≈1e-45) was absorbed exactly by the first KDA update and the hybrid gate read 'equal'. A ULP of zero is not a perturbation. The control now nudges the largest cell once the sequence is live, and is caught. Recorded because the same mistake would make any 'bit-identical' gate on a recurrent stack vacuous.",
+        "Five larql-vindex tests ran one-shot forwards over hybrid fixtures (draft_slice ×2, k3_rep_gate_closure ×3 via execute_text) and had silently used the executor's manufactured RowKvState. They now name their state (`execute_slice_in(…, &mut RowKvState::default())`) — the hidden default had test callers as well as production ones."
+      ],
+      "departures_from_the_forecast": [
+        "The forecast's C3 text lists `CanonicalKvState::new / from_cache and RowKvState::default` as the spellings; per the user's review before freezing, the gate bans the type NAMES (stronger). The allowlist has four entries rather than 'providers' modules and the factory module' alone: `larql-kv/src/lib.rs` re-exports the provider crate's own type (the from_cache/into_cache bridge), with that reason in the test.",
+        "Line comments are exempt from the name ban: documentation may still explain history. Stale architecture comments that named a built-in as THE provider (server module headers) were rewritten anyway."
+      ],
+      "falsifiers": {
+        "F1": "held — the server handoff holds `Box<dyn ContinuationProvider + Send>` with no trait change",
+        "F2": "held — 0 production sites name a built-in outside the allowlist (closure scan), including the executor's former one-shot default and DecodeSession::new's default",
+        "F3": "held — 9 trait methods; AttentionStepCall unchanged. The new executor `_in` entry points are traversal API, not provider contract.",
+        "F4": "held — family literals appear only in the CLI alias table and the providers' own identity constants (grep); LQL and server name `CanonicalFactory.identity()`",
+        "F5": "held at every production entry — selection happens at CLI select_for, runtime select_continuation, and server binding, all before prefill; end-to-end with a foreign provider is C5"
+      },
+      "measured_at_merge": {
+        "trait_methods": 9,
+        "non_test_sites_naming_a_built_in": "0 outside the 4-entry allowlist (baseline: 16 construction sites across 15 files)"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy (six crates) --all-targets -D warnings": "clean (two #[allow(clippy::too_many_arguments)] in the file idiom: InterpreterArm::prepare, the cfg(test) mutation hook)",
+        "cargo test -p larql-vindex -p larql-kv -p larql-inference -p larql-lql -p larql-server -p larql-cli": "exit 0, --no-fail-fast; larql-vindex lib 5004 passed, larql-kv lib 1258, larql-inference lib 1564",
+        "cargo check --workspace --all-targets": "clean (examples included)",
+        "doc gates": "clean",
+        "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
+      }
     }
   }
 }

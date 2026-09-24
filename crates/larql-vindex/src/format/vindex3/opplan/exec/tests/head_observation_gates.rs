@@ -76,7 +76,13 @@ fn head_intervention_forwards_through_a_shared_backend() {
     let heads = HeadInterventionPlan::none()
         .with(HeadIntervention::zero(HeadAddress::new(0, 0, [3]).unwrap()))
         .unwrap();
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut fired = 0usize;
     for &token in G_TOKENS.iter() {
         let out = session
@@ -166,7 +172,13 @@ fn a_backend_without_heads_takes_the_trait_defaults() {
         !backend.serves_attention_heads(),
         "the trait default declares no per-head observation"
     );
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let err = match session.step(G_TOKENS[0]) {
         Ok(_) => panic!("the default per-head path must refuse on the executor's call"),
         Err(e) => e.to_string(),
@@ -252,7 +264,13 @@ fn a_backend_without_head_intervention_takes_the_trait_default() {
         !backend.serves_head_intervention(),
         "the trait default declares no head intervention"
     );
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let err = match session.step(G_TOKENS[0]) {
         Ok(_) => panic!("the default head-intervention path must refuse on the executor's call"),
         Err(e) => e.to_string(),

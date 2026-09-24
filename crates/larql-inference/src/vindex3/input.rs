@@ -3,7 +3,8 @@ use super::LogitsSession;
 use crate::error::InferenceError;
 use larql_vindex::format::vindex3::opplan::{
     exec::{
-        backend::PlanBackend, decode::DecodeSession, kv::RowKvState, prepared::PreparedOperands,
+        backend::PlanBackend, continuation_registry::SelectedContinuation, decode::DecodeSession,
+        prepared::PreparedOperands,
     },
     ComponentOpPlan,
 };
@@ -62,26 +63,36 @@ pub fn step_input<B: PlanBackend>(
 /// No retained KV/recurrent state: replay the complete input history through
 /// the canonical tokenwise executor on each step. Exact, deliberately slower.
 /// The owned history includes external embeddings, so image prefixes replay too.
+///
+/// A replay MODE, not a provider: each step's transient state is a fresh
+/// provider built from the caller's selection (CONTINUATION-PLUGIN-1, C3).
 pub struct ReplaySession<'a, B: PlanBackend> {
     plan: &'a ComponentOpPlan,
     ops: &'a PreparedOperands,
     backend: &'a B,
+    continuation: SelectedContinuation,
     history: Vec<InputPosition>,
 }
 impl<'a, B: PlanBackend> ReplaySession<'a, B> {
-    pub fn new(plan: &'a ComponentOpPlan, ops: &'a PreparedOperands, backend: &'a B) -> Self {
+    pub fn new(
+        plan: &'a ComponentOpPlan,
+        ops: &'a PreparedOperands,
+        backend: &'a B,
+        continuation: SelectedContinuation,
+    ) -> Self {
         Self {
             plan,
             ops,
             backend,
+            continuation,
             history: Vec::new(),
         }
     }
     pub fn extend_inputs(&mut self, inputs: &[InputPosition]) -> Result<Vec<f32>, InferenceError> {
         validate_inputs(self.plan, self.ops, self.backend, inputs)?;
-        let mut state = RowKvState::default();
+        let mut state = self.continuation.build();
         let mut session =
-            DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut state)?;
+            DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *state)?;
         let mut logits = None;
         for input in self.history.iter().chain(inputs) {
             logits = Some(step_input(&mut session, input)?);

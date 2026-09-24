@@ -379,6 +379,7 @@ fn collect(
             Ok(())
         },
         mutation,
+        None,
     )?;
     Ok(out)
 }
@@ -964,6 +965,7 @@ fn every_position_enters_as_its_own_prefix_with_an_empty_history() {
             Ok(())
         },
         Mutation::None,
+        None,
     )
     .expect("the batch traversal runs");
 

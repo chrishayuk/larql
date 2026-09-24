@@ -226,7 +226,13 @@ fn decode_logits<B: PlanBackend>(
     store: &OperandStore,
     backend: &B,
 ) -> Vec<f32> {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut last = None;
     for &token in DENSE_TOKENS.iter() {
         last = session.step(token).unwrap().logits;

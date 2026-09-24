@@ -272,7 +272,13 @@ fn logits_of(estate: Estate) -> (Vec<f32>, Vec<usize>) {
         .collect();
     let store = OperandStore::open(container.path(), &inspection).unwrap();
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let out = session.step(TOKEN).unwrap();
     (out.logits.expect("the fixture carries a head"), widths)
 }

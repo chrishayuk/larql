@@ -91,6 +91,7 @@ fn collect(
             Ok(())
         },
         mutation,
+        None,
     )
     .expect("the batch traversal runs");
     BatchRun {

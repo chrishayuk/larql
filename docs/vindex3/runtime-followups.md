@@ -12,8 +12,12 @@ larql run model.vindex3 "Hello" --engine standard
 larql run model.vindex3 "Hello" --engine no-cache
 ```
 
-The default remains `RowKvState`; `standard` selects `CanonicalKvState`.
-Both implement the canonical interpreter's continuation contract. An explicit
+`--engine` values are aliases for continuation identities: `row` (the
+default) names `row/v1` and `standard` names `canonical/v1`. The CLI selects
+the identity from a fresh registry against the plan before anything runs,
+and a run reports the identity it resolved. Both implement the canonical
+interpreter's continuation contract (CONTINUATION-PLUGIN-1; see
+[the continuation plane](../continuation-plane-inventory.md)). An explicit
 `--engine` wins over `LARQL_KV_ENGINE`; unsupported values refuse. Attention
 windows come from the V3 plan, so a separate `--context-window` override refuses. `no-cache`
 (also `--kv-cache none`) retains the input history and replays it through fresh

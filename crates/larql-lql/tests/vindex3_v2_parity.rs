@@ -872,8 +872,15 @@ fn v2_and_v3_compose_installs_agree() {
         )
         .unwrap();
         let mut v3_res: Vec<(usize, Vec<f32>)> = Vec::new();
+        let continuation = runtime
+            .select_continuation(
+                &larql_kv::shipped_continuations(),
+                &larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::identity(),
+                &larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig::empty(),
+            )
+            .unwrap();
         runtime
-            .execute_streaming(&ids, &mut |ev| {
+            .execute_streaming(&ids, &continuation, &mut |ev| {
                 if let larql_inference::vindex3::PlaneEvent::Layer { index, trace } = ev {
                     v3_res.push((index, trace.ffn_input.last().unwrap().clone()));
                 }

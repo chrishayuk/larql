@@ -120,8 +120,14 @@ fn assert_values_match_the_kernel<B: PlanBackend>(fixture: &Fixture, backend: &B
     let full = PreparedOperands::load(&fixture.plan, &fixture.store, backend, ExecutionSlice::Full)
         .unwrap();
     let kernel = kernel_source_values(&fixture.plan, &full, backend);
-    let prefix =
-        PayloadPrefix::prepare(&fixture.plan, &fixture.store, backend, SOURCE_LAYER).unwrap();
+    let prefix = PayloadPrefix::prepare(
+        &fixture.plan,
+        &fixture.store,
+        backend,
+        SOURCE_LAYER,
+        &super::row_continuation(&fixture.plan),
+    )
+    .unwrap();
     let positions: Vec<usize> = (0..TOKENS.len()).collect();
     for head in 0..DENSE_Q_HEADS {
         let constructed = prefix
@@ -160,8 +166,14 @@ fn heads_in_different_groups_read_different_rows() {
         ExecutionSlice::Full,
     )
     .unwrap();
-    let prefix =
-        PayloadPrefix::prepare(&fixture.plan, &fixture.store, &backend, SOURCE_LAYER).unwrap();
+    let prefix = PayloadPrefix::prepare(
+        &fixture.plan,
+        &fixture.store,
+        &backend,
+        SOURCE_LAYER,
+        &super::row_continuation(&fixture.plan),
+    )
+    .unwrap();
     let group = DENSE_Q_HEADS / DENSE_KV_HEADS;
     let v = |head| {
         prefix
@@ -183,8 +195,14 @@ fn the_adapter_refuses_what_it_cannot_measure_before_reading_weights() {
         ExecutionSlice::Full,
     )
     .unwrap();
-    let prefix =
-        PayloadPrefix::prepare(&fixture.plan, &fixture.store, &backend, SOURCE_LAYER).unwrap();
+    let prefix = PayloadPrefix::prepare(
+        &fixture.plan,
+        &fixture.store,
+        &backend,
+        SOURCE_LAYER,
+        &super::row_continuation(&fixture.plan),
+    )
+    .unwrap();
     let values = |positions: &[usize], head| {
         prefix.values(&TOKENS, positions, head, &fixture.plan, &full, &backend)
     };
@@ -200,13 +218,26 @@ fn the_adapter_refuses_what_it_cannot_measure_before_reading_weights() {
     assert!(prefix.carriers(&[], &backend).is_err(), "an empty prompt");
 
     // A prefix of every layer has no source layer above it.
-    let whole =
-        PayloadPrefix::prepare(&fixture.plan, &fixture.store, &backend, DENSE_LAYERS).unwrap();
+    let whole = PayloadPrefix::prepare(
+        &fixture.plan,
+        &fixture.store,
+        &backend,
+        DENSE_LAYERS,
+        &super::row_continuation(&fixture.plan),
+    )
+    .unwrap();
     assert!(whole
         .values(&TOKENS, &[0], 0, &fixture.plan, &full, &backend)
         .is_err());
     assert!(
-        PayloadPrefix::prepare(&fixture.plan, &fixture.store, &backend, DENSE_LAYERS + 1).is_err(),
+        PayloadPrefix::prepare(
+            &fixture.plan,
+            &fixture.store,
+            &backend,
+            DENSE_LAYERS + 1,
+            &super::row_continuation(&fixture.plan)
+        )
+        .is_err(),
         "a depth past the plan"
     );
 
@@ -226,9 +257,22 @@ fn the_adapter_refuses_what_it_cannot_measure_before_reading_weights() {
 fn a_deeper_prefix_holds_more_resident_bytes() {
     let fixture = dense();
     let backend = ReferenceBackend::new();
-    let shallow = PayloadPrefix::prepare(&fixture.plan, &fixture.store, &backend, 0).unwrap();
-    let deep =
-        PayloadPrefix::prepare(&fixture.plan, &fixture.store, &backend, SOURCE_LAYER).unwrap();
+    let shallow = PayloadPrefix::prepare(
+        &fixture.plan,
+        &fixture.store,
+        &backend,
+        0,
+        &super::row_continuation(&fixture.plan),
+    )
+    .unwrap();
+    let deep = PayloadPrefix::prepare(
+        &fixture.plan,
+        &fixture.store,
+        &backend,
+        SOURCE_LAYER,
+        &super::row_continuation(&fixture.plan),
+    )
+    .unwrap();
     assert!(deep.resident_bytes() > shallow.resident_bytes());
 }
 

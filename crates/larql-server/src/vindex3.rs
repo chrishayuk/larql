@@ -3,7 +3,7 @@
 //! One vertical slice, deliberately boring:
 //!
 //! ```text
-//! VINDEX3 container → Vindex3Runtime → CanonicalKvState
+//! VINDEX3 container → Vindex3Runtime → selected continuation provider
 //!     → prefill_into() → session_with_kv() → continue_session()
 //!     → existing SSE/JSON shaping
 //! ```
@@ -34,7 +34,11 @@ use larql_inference::vindex3::{
     continue_session, continue_session_masked, LogitsMask, PreparedVindex3, Vindex3Runtime,
 };
 use larql_inference::{EosConfig, SamplingConfig};
-use larql_kv::CanonicalKvState;
+use larql_kv::{shipped_continuations, CanonicalFactory};
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
+    BoxedContinuation, ContinuationFactory, SelectedContinuation,
+};
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
 };
@@ -125,6 +129,11 @@ pub struct V3Model {
     /// backend's execution form — model lifetime, shared by every
     /// request. Requests contribute only continuation state.
     pub runtime: PreparedVindex3<SharedProvider>,
+    /// Who holds every request's continuation state: selected once, at
+    /// binding, against this model's plan (CONTINUATION-PLUGIN-1, C3). A
+    /// fresh provider per request is built from it; nothing here names a
+    /// provider type.
+    pub continuation: SelectedContinuation,
     /// Tokenizer for the text-facing API (`tokenizer.json` in the
     /// container directory).
     pub tokenizer: tokenizers::Tokenizer,
@@ -280,6 +289,16 @@ pub fn load_v3_model_slice(
         named => named.to_string(),
     };
     let family = runtime.family().to_string();
+    // The server's declared continuation is the canonical cache, named by
+    // its factory's identity and refused here — at binding, before any
+    // request — if it cannot hold a layer the plan keeps state on.
+    let continuation = runtime
+        .select_continuation(
+            &shipped_continuations(),
+            &CanonicalFactory.identity(),
+            &ContinuationConfig::empty(),
+        )
+        .map_err(|e| format!("select VINDEX3 continuation: {e}"))?;
     let shard = if range.is_some() {
         Some(larql_inference::vindex3::distributed::binding(
             path,
@@ -295,6 +314,7 @@ pub fn load_v3_model_slice(
         id: model_id_from_name(&name),
         path: path.to_path_buf(),
         runtime,
+        continuation,
         tokenizer,
         family,
         eos: EosConfig::from_vindex_dir(path),
@@ -347,7 +367,7 @@ pub struct V3Generation {
 /// which is why the ids travel with the state instead of being
 /// re-derived by callers.
 pub struct V3KvHandoff {
-    pub kv: CanonicalKvState,
+    pub kv: BoxedContinuation,
     pub absorbed_ids: Vec<u32>,
 }
 
@@ -480,18 +500,18 @@ pub fn generate_v3_request(
     });
     let (mut kv, reused_prompt_tokens) = match resumed {
         Some(h) => (h.kv, h.absorbed_ids.len()),
-        None => (CanonicalKvState::new(), 0),
+        None => (model.continuation.build(), 0),
     };
 
     let prefill_start = std::time::Instant::now();
     let prefill_logits = model
         .runtime
-        .prefill_into(&prompt_ids[reused_prompt_tokens..], &mut kv)
+        .prefill_into(&prompt_ids[reused_prompt_tokens..], &mut *kv)
         .map_err(|e| ServerError::Internal(format!("v3 prefill: {e}")))?;
     let prefill_ms = crate::state::elapsed_ms(prefill_start);
     let mut session = model
         .runtime
-        .session_with_kv(&mut kv)
+        .session_with_kv(&mut *kv)
         .map_err(|e| ServerError::Internal(format!("v3 session: {e}")))?;
 
     let mut detok = Detokenizer::new(&model.tokenizer);
@@ -529,7 +549,7 @@ pub fn generate_v3_request(
     // The KV's logical position says exactly how many of
     // prompt + emitted it absorbed (the driver never steps the final
     // emitted token on a budget stop).
-    let absorbed_len = larql_vindex::format::vindex3::opplan::exec::kv::KvState::position(&kv);
+    let absorbed_len = kv.position();
     let mut absorbed_ids = Vec::with_capacity(absorbed_len);
     absorbed_ids.extend_from_slice(prompt_ids);
     absorbed_ids.extend_from_slice(&result.tokens);

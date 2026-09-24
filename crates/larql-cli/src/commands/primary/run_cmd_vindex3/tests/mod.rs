@@ -410,3 +410,31 @@ fn multimodal_plan_preserves_position_order_and_precomputed_scaling() {
     assert!(matches!(inputs[3], InputPosition::Token(2)));
     assert!(matches!(inputs[4], InputPosition::Token(3)));
 }
+
+/// CONTINUATION-PLUGIN-1 C3: `--engine` is an alias, and every path
+/// reports the identity it resolved — the default, each alias, and the
+/// replay mode over the default provider. An unknown engine refuses.
+#[test]
+fn every_run_path_reports_the_continuation_identity_it_resolved() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for (flags, expected) in [
+        (vec![], "continuation=row/v1"),
+        (vec!["--engine", "row"], "continuation=row/v1"),
+        (vec!["--engine", "standard"], "continuation=canonical/v1"),
+        (
+            vec!["--engine", "no-cache"],
+            "continuation=no-cache over row/v1",
+        ),
+    ] {
+        let argv = [
+            vec![PROMPT, "--max-tokens", "2", "--verbose"],
+            flags.clone(),
+        ]
+        .concat();
+        let (_, status) = run_capturing_with_status(&container, &argv, "").unwrap();
+        assert!(status.contains(expected), "{flags:?}: {status}");
+    }
+    let err = run_capturing(&container, &[PROMPT, "--engine", "turbo-quant"], "").unwrap_err();
+    assert!(err.contains("--engine"), "{err}");
+}

@@ -161,7 +161,13 @@ fn one_row_per_write_lands_on_a_real_plan_and_events_are_counted_not_kept() {
     let backend = ReferenceBackend::new();
     let basis = FixedBasis::seeded(G_HIDDEN, DIMS, SEED).unwrap();
     let mut observer = StatsObserver::new(basis, None);
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     for &token in G_TOKENS.iter() {
         session.step_observed(token, &mut observer).unwrap();
     }

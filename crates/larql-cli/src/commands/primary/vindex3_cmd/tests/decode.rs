@@ -46,7 +46,13 @@ fn the_sink_sees_every_id_the_loop_returns() {
     let root = tempfile::tempdir().unwrap();
     let prepared = prepared_dense(root.path());
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&prepared.plan, &prepared.store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &prepared.plan,
+        &prepared.store,
+        &backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut seen = Vec::new();
     let decoded = greedy_decode(&mut session, &PROMPT, NEW_TOKENS, &mut |id, _| {
         seen.push(id);
@@ -66,7 +72,13 @@ fn a_halting_sink_ends_the_decode_before_the_next_step() {
     let root = tempfile::tempdir().unwrap();
     let prepared = prepared_dense(root.path());
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&prepared.plan, &prepared.store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &prepared.plan,
+        &prepared.store,
+        &backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut seen = 0usize;
     let decoded = greedy_decode(&mut session, &PROMPT, NEW_TOKENS, &mut |_, _| {
         seen += 1;
@@ -89,7 +101,13 @@ fn zero_new_tokens_ingests_the_prompt_and_generates_nothing() {
     let root = tempfile::tempdir().unwrap();
     let prepared = prepared_dense(root.path());
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&prepared.plan, &prepared.store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &prepared.plan,
+        &prepared.store,
+        &backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let decoded = greedy_decode(&mut session, &PROMPT, 0, &mut |_, _| {
         panic!("nothing should reach the sink")
     })
@@ -105,7 +123,13 @@ fn an_empty_prompt_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let prepared = prepared_dense(root.path());
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&prepared.plan, &prepared.store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &prepared.plan,
+        &prepared.store,
+        &backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let err = greedy_decode(&mut session, &[], NEW_TOKENS, &mut |_, _| {
         Ok(Flow::Continue)
     })
@@ -120,7 +144,13 @@ fn a_sink_error_aborts_the_decode() {
     let root = tempfile::tempdir().unwrap();
     let prepared = prepared_dense(root.path());
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&prepared.plan, &prepared.store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &prepared.plan,
+        &prepared.store,
+        &backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let err = greedy_decode(&mut session, &PROMPT, NEW_TOKENS, &mut |_, _| {
         Err("the stream closed".into())
     })
@@ -135,7 +165,13 @@ fn the_loop_is_deterministic_across_fresh_sessions() {
     let prepared = prepared_dense(root.path());
     let backend = ReferenceBackend::new();
     let run = || {
-        let mut session = DecodeSession::new(&prepared.plan, &prepared.store, &backend).unwrap();
+        let mut session = DecodeSession::new(
+            &prepared.plan,
+            &prepared.store,
+            &backend,
+            Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+        )
+        .unwrap();
         greedy_decode(&mut session, &PROMPT, NEW_TOKENS, &mut |_, _| {
             Ok(Flow::Continue)
         })

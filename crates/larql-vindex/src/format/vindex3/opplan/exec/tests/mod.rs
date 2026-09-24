@@ -169,3 +169,20 @@ mod step_many;
 mod hybrid_traversal_fixture {
     pub(super) use super::hybrid_traversal::hybrid;
 }
+
+/// `row/v1` selected for `plan` — the explicit continuation a test names
+/// now that the executor has no default (CONTINUATION-PLUGIN-1, C3).
+pub(crate) fn row_continuation(
+    plan: &super::super::ComponentOpPlan,
+) -> super::continuation_registry::SelectedContinuation {
+    let mut registry = super::continuation_registry::ContinuationRegistry::new();
+    registry.register(Box::new(super::kv::RowFactory)).unwrap();
+    let geometry = super::continuation::plan_continuation_geometry(plan).unwrap();
+    registry
+        .select(
+            &super::kv::RowKvState::identity(),
+            &super::continuation_authority::ContinuationConfig::empty(),
+            &geometry,
+        )
+        .unwrap()
+}

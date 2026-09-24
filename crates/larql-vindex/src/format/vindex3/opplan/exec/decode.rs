@@ -27,10 +27,11 @@ use std::borrow::Cow;
 
 use super::attention_residual::{self, BoundaryPhase};
 use super::backend::{AttentionStepCall, PlanBackend};
+use super::continuation_registry::BoxedContinuation;
 use super::hyper_connection::{self, Bundle, Mutation, SiteReduction};
 use super::intervene::{Firing, Intervention, InterventionPlan, InterventionStepOutput};
 use super::intervene_heads::{HeadFiring, HeadInterventionPlan};
-use super::kv::{KvState, RowKvState};
+use super::kv::KvState;
 use super::observe::{
     AttnResBoundaryRecord, AttnResSiteRecord, CarrierForm, CarrierWriteRecord, HcSite,
     HcSiteRecord, InputSite, NoopObserver, StepEvent, StepObserver,
@@ -69,25 +70,28 @@ impl OperandsSlot<'_> {
     }
 }
 
-/// Who holds the session's continuation state (VI3-INF-2): the default
-/// [`RowKvState`] owned in place, or a caller's provider borrowed for
-/// the session's lifetime so the state outlives the session.
+/// Who holds the session's continuation state (VI3-INF-2): a provider the
+/// caller built and handed over (the session owns it and it ends with the
+/// session), or a caller's provider borrowed for the session's lifetime so
+/// the state outlives the session. There is no default: which provider
+/// holds a conversation is the caller's selection (CONTINUATION-PLUGIN-1
+/// C3), never the executor's.
 enum KvSlot<'a> {
-    Owned(RowKvState),
+    Owned(BoxedContinuation),
     Borrowed(&'a mut dyn KvState),
 }
 
 impl KvSlot<'_> {
     fn state(&self) -> &dyn KvState {
         match self {
-            KvSlot::Owned(state) => state,
+            KvSlot::Owned(state) => &**state,
             KvSlot::Borrowed(state) => &**state,
         }
     }
 
     fn state_mut(&mut self) -> &mut dyn KvState {
         match self {
-            KvSlot::Owned(state) => state,
+            KvSlot::Owned(state) => &mut **state,
             KvSlot::Borrowed(state) => &mut **state,
         }
     }
@@ -194,19 +198,16 @@ pub struct DecodeSession<'a, B: PlanBackend> {
 impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// Load every operand the plan consumes, once, in the backend's
     /// declared weight format. The embedding table stays f32 — it is a
-    /// row lookup, not matrix traffic. Continuation state is the
-    /// default in-place [`RowKvState`].
+    /// row lookup, not matrix traffic. The session owns `state` — a fresh
+    /// provider the caller built, normally from a
+    /// [`SelectedContinuation`](super::continuation_registry::SelectedContinuation).
     pub fn new<'s>(
         plan: &'a ComponentOpPlan,
         store: impl Into<OperandSource<'s>>,
         backend: &'a B,
+        state: BoxedContinuation,
     ) -> Result<Self, VindexError> {
-        Self::build(
-            plan,
-            store.into(),
-            backend,
-            KvSlot::Owned(RowKvState::default()),
-        )
+        Self::build(plan, store.into(), backend, KvSlot::Owned(state))
     }
 
     /// Like [`new`](Self::new), but the caller provides — and keeps

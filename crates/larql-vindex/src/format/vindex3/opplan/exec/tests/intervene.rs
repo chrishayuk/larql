@@ -95,7 +95,13 @@ fn plain<B: PlanBackend>(
     backend: &B,
     tokens: &[u32],
 ) -> (Vec<Vec<f32>>, Writes) {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut writes = Writes::default();
     let logits = tokens
         .iter()
@@ -117,7 +123,13 @@ fn intervened<B: PlanBackend>(
     tokens: &[u32],
     interventions: &InterventionPlan,
 ) -> (Vec<Vec<f32>>, Writes, Vec<Firing>) {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut writes = Writes::default();
     let mut firings = Vec::new();
     let logits = tokens
@@ -409,7 +421,13 @@ fn ip4_a_captured_carrier_replaces_bit_for_bit_and_names_its_run() {
         let donor: Vec<u32> = G_TOKENS.iter().rev().copied().collect();
         let mut capture = CarrierCapture::at([at]);
         {
-            let mut session = DecodeSession::new(&plan, &store, backend).unwrap();
+            let mut session = DecodeSession::new(
+                &plan,
+                &store,
+                backend,
+                Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+            )
+            .unwrap();
             for &t in &donor {
                 session.step_observed(t, &mut capture).unwrap();
             }
@@ -568,7 +586,13 @@ fn ip5_admission_refuses_before_the_first_token() {
         },
     ];
     for (declared, needle) in cases {
-        let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+        let mut session = DecodeSession::new(
+            &plan,
+            &store,
+            &backend,
+            Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+        )
+        .unwrap();
         let mut sink = Writes::default();
         refused(
             session.step_intervened(
@@ -592,7 +616,13 @@ fn ip5_admission_refuses_before_the_first_token() {
 fn ip5_an_ffn_site_on_a_layer_without_an_ffn_program_is_refused() {
     let (_c, plan, store) = fixture();
     let backend = ProductionBackend::new();
-    let session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     drop(session);
     let mut mixer_only = plan.clone();
     mixer_only.layers[0].ffn = None;

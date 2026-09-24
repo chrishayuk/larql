@@ -100,7 +100,14 @@ fn direct_arm(container: &Path) -> Vec<u32> {
 fn inference_arm(container: &Path) -> Vec<u32> {
     let runtime = Vindex3Runtime::open(container, COMPONENT, ProductionBackend::new()).unwrap();
     let ids = prompt_ids(container);
-    let mut session = runtime.session().unwrap();
+    let continuation = runtime
+        .select_continuation(
+            &larql_kv::shipped_continuations(),
+            &larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::identity(),
+            &larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig::empty(),
+        )
+        .unwrap();
+    let mut session = runtime.session(&continuation).unwrap();
     generate_session(
         &mut session,
         &ids,
