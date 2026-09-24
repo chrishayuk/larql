@@ -1762,3 +1762,165 @@ fn an_unknown_encoding_names_the_registered_encoders() {
     assert!(err.contains("registered encoders: TEST_RAW_F32"), "{err}");
     assert!(!out.exists());
 }
+
+use codec::RepresentationCodec as _;
+
+/// How a [`QuirkyEncoder`] departs from the honest raw-f32 double.
+#[derive(Clone, Copy)]
+enum Quirk {
+    /// Answers `InstanceSized`: its length is learned by encoding.
+    InstanceSized,
+    /// Refuses every shape, so every tensor is carried.
+    RefusesEveryShape,
+    /// States the honest length, then writes one byte more.
+    MisstatesItsLength,
+}
+
+/// The raw-f32 double with one quirk in how it reports or writes lengths.
+struct QuirkyEncoder(Quirk);
+
+impl codec::RepresentationCodec for QuirkyEncoder {
+    fn encoding_label(&self) -> &'static str {
+        codec::encoder::tests::RawF32Codec.encoding_label()
+    }
+    fn identity(&self) -> CodecIdentity {
+        codec::encoder::tests::RawF32Codec.identity()
+    }
+    fn streams(&self) -> &'static [codec::StreamSpec] {
+        codec::encoder::tests::RawF32Codec.streams()
+    }
+    fn capabilities(&self) -> codec::CodecCapabilities {
+        codec::encoder::tests::RawF32Codec.capabilities()
+    }
+    fn extents(&self) -> Vec<codec::ExtentCertificate> {
+        codec::encoder::tests::RawF32Codec.extents()
+    }
+    fn stored_bytes(
+        &self,
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+    ) -> Result<u64, CodecError> {
+        match self.0 {
+            Quirk::InstanceSized => Err(CodecError::InstanceSized {
+                tensor: tensor.into(),
+                label: self.encoding_label().into(),
+            }),
+            Quirk::RefusesEveryShape => Err(CodecError::Destination {
+                tensor: tensor.into(),
+                need: 0,
+                have: 1,
+            }),
+            Quirk::MisstatesItsLength => {
+                codec::encoder::tests::RawF32Codec.stored_bytes(shape, extent, tensor)
+            }
+        }
+    }
+    fn validate(
+        &self,
+        operands: &codec::CodecOperands<'_>,
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+    ) -> Result<(), CodecError> {
+        codec::encoder::tests::RawF32Codec.validate(operands, shape, extent, tensor)
+    }
+    fn decode_rows(
+        &self,
+        operands: &codec::CodecOperands<'_>,
+        shape: &[usize],
+        rows: std::ops::Range<usize>,
+        extent: codec::RepresentationExtent,
+        dst: &mut [f32],
+        tensor: &str,
+    ) -> Result<(), CodecError> {
+        codec::encoder::tests::RawF32Codec.decode_rows(operands, shape, rows, extent, dst, tensor)
+    }
+    fn decode_residency(&self) -> codec::ResidencyProfile {
+        codec::encoder::tests::RawF32Codec.decode_residency()
+    }
+}
+
+impl RepresentationEncoder for QuirkyEncoder {
+    fn encode_packed(
+        &self,
+        values: &[f32],
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+    ) -> Result<Vec<u8>, CodecError> {
+        let mut bytes =
+            codec::encoder::tests::RawF32Codec.encode_packed(values, shape, extent, tensor)?;
+        if matches!(self.0, Quirk::MisstatesItsLength) {
+            bytes.push(0);
+        }
+        Ok(bytes)
+    }
+}
+
+/// Compile the dense fixture with a [`QuirkyEncoder`].
+fn compile_quirky(
+    tmp: &tempfile::TempDir,
+    quirk: Quirk,
+) -> (std::path::PathBuf, Result<RepresentReport, VindexError>) {
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("quirky.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(QuirkyEncoder(quirk)))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: QuirkyEncoder(quirk).encoding_label().to_string(),
+        ..RepresentSpec::nvfp4()
+    };
+    let result = compile_representation_with(&src, &out, &spec, &encoders);
+    (out, result)
+}
+
+#[test]
+fn an_instance_sized_encoder_is_encoded_while_planning() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result) = compile_quirky(&tmp, Quirk::InstanceSized);
+    let report = result.expect("an instance-sized encoder still compiles");
+    let compiled: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.compiled_tensors)
+        .sum();
+    assert!(compiled > 0);
+    // The segment table was planned from the encoded lengths, so every
+    // compiled tensor's recorded length is what the encoder wrote.
+    let index = index_of(&out);
+    let label = QuirkyEncoder(Quirk::InstanceSized).encoding_label();
+    for entry in index
+        .representations
+        .values()
+        .filter(|e| e.encoding == label)
+    {
+        let (header, _) = read_segment_header(&out.join(&entry.segment)).unwrap();
+        for t in header.tensors.iter().filter(|t| t.dtype == label) {
+            let elements: usize = t.shape.iter().product();
+            assert_eq!(t.len as usize, elements * 4, "{}", t.name);
+        }
+    }
+}
+
+#[test]
+fn an_encoder_that_refuses_every_shape_compiles_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result) = compile_quirky(&tmp, Quirk::RefusesEveryShape);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("eligible"), "{err}");
+    assert!(!out.join(INDEX_JSON).exists());
+}
+
+#[test]
+fn an_encoder_whose_bytes_contradict_its_stated_length_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result) = compile_quirky(&tmp, Quirk::MisstatesItsLength);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("its codec states"), "{err}");
+    assert!(!out.join(INDEX_JSON).exists());
+}
