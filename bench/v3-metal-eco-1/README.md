@@ -7,6 +7,16 @@ They say nothing about which representation is acceptable. LARQL's own head-fide
 was UNINFORMATIVE by its frozen rule. MEASURE-PLAN-1 (`docs/measure-plan-1.md`) is the procedure that will
 decide it, and it cannot score the external runtimes without an external arm, which is outside its frozen scope.
 
+> **Follow-up, 2026-09-25: the H row's head was judged ACCEPTABLE by HEAD-FID-2** (`docs/head-fid-2.md`).
+>
+> - **The claim:** through `larql vindex3 measure` over Q-BANK-1's 69 sequences, H stays within 1.25× of the
+>   conservative pack's mean KL against LARQL's own f16 reference, and confident positions (margin ≥ 0.5) are
+>   unchanged. It measured 1.222×, so there is little headroom.
+> - **Which binaries:** the speeds below come from this page's 2026-09-23 binary. The verdict comes from main
+>   `a7f69949`. The link between them is W9: the same R → C measurement was bit-identical on both
+>   (`bench/measure-plan-1/w9/`).
+> - **Still unscored:** every other row. The MLX, llama.cpp and Ollama rows have no fidelity arm.
+
 ## Result: single-stream decode, 256 tokens
 
 | runtime / arm | tok/s (3 repeats) | mean | ms/token |
