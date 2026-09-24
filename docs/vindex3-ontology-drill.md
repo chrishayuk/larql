@@ -180,7 +180,7 @@ rules.*
   PrimaryText)` — first-match semantics that go quietly wrong, not
   loudly, the day two text-shaped components exist (`plan/mod.rs:425`,
   `capability.rs:285`, `encode/mod.rs:330`, `represent/mod.rs:226`,
-  `sensitivity.rs:106`, `consequence.rs:378`).
+  `sensitivity.rs:106`, `consequence.rs:254`).
 - **There is exactly one species of edge.** `HiddenStateEdge`
   (`edge.rs:13-27`) has five fields and no kind discriminator;
   `wire_edge` (`build.rs:1032-1052`) requires the producer to be

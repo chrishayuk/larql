@@ -1774,6 +1774,9 @@ enum Quirk {
     RefusesEveryShape,
     /// States the honest length, then writes one byte more.
     MisstatesItsLength,
+    /// Honest, and accepts input-feature weights (it writes raw f32, so
+    /// the weights cannot change its bytes; it checks their length).
+    AcceptsWeights,
 }
 
 /// The raw-f32 double with one quirk in how it reports or writes lengths.
@@ -1811,7 +1814,7 @@ impl codec::RepresentationCodec for QuirkyEncoder {
                 need: 0,
                 have: 1,
             }),
-            Quirk::MisstatesItsLength => {
+            Quirk::MisstatesItsLength | Quirk::AcceptsWeights => {
                 codec::encoder::tests::RawF32Codec.stored_bytes(shape, extent, tensor)
             }
         }
@@ -1855,6 +1858,30 @@ impl RepresentationEncoder for QuirkyEncoder {
             bytes.push(0);
         }
         Ok(bytes)
+    }
+    fn encode_packed_weighted(
+        &self,
+        values: &[f32],
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+        input_weights: &[f64],
+    ) -> Result<Vec<u8>, CodecError> {
+        if !matches!(self.0, Quirk::AcceptsWeights) {
+            return Err(CodecError::WeightingUnsupported {
+                tensor: tensor.into(),
+                label: self.encoding_label().into(),
+            });
+        }
+        let row: usize = shape[1..].iter().product();
+        if input_weights.len() != row {
+            return Err(CodecError::WeightingShape {
+                tensor: tensor.into(),
+                need: row,
+                have: input_weights.len(),
+            });
+        }
+        self.encode_packed(values, shape, extent, tensor)
     }
 }
 
@@ -1923,4 +1950,116 @@ fn an_encoder_whose_bytes_contradict_its_stated_length_is_refused() {
     let err = result.unwrap_err().to_string();
     assert!(err.contains("its codec states"), "{err}");
     assert!(!out.join(INDEX_JSON).exists());
+}
+
+/// Weights for every 2-D tensor of the dense fixture's first compilable
+/// object except one, so both the weighted and the unweighted path run.
+fn fixture_weights(src: &std::path::Path) -> (InputWeights, usize) {
+    let index = index_of(src);
+    let mut by_tensor = BTreeMap::new();
+    let mut skipped = 0;
+    for entry in index.representations.values() {
+        let (header, _) = read_segment_header(&src.join(&entry.segment)).unwrap();
+        for t in header.tensors.iter().filter(|t| t.shape.len() == 2) {
+            if skipped == 0 {
+                skipped += 1;
+                continue;
+            }
+            by_tensor.insert(
+                (entry.object.clone(), t.name.clone()),
+                vec![1.0; t.shape[1]],
+            );
+        }
+    }
+    (
+        InputWeights {
+            by_tensor,
+            digest: "fixture-weights".into(),
+        },
+        skipped,
+    )
+}
+
+fn compile_weighted(
+    tmp: &tempfile::TempDir,
+    quirk: Quirk,
+    encoding: Option<&str>,
+) -> (
+    std::path::PathBuf,
+    Result<RepresentReport, VindexError>,
+    usize,
+) {
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("weighted.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(QuirkyEncoder(quirk)))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: encoding
+            .unwrap_or(QuirkyEncoder(quirk).encoding_label())
+            .to_string(),
+        ..RepresentSpec::nvfp4()
+    };
+    let (weights, skipped) = fixture_weights(&src);
+    let result = compile_representation_weighted(&src, &out, &spec, &encoders, &weights);
+    (out, result, skipped)
+}
+
+#[test]
+fn weights_reach_the_encoder_and_the_recipe_names_their_digest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result, skipped) = compile_weighted(&tmp, Quirk::AcceptsWeights, None);
+    let report = result.expect("a weighted compile");
+    let compiled: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.compiled_tensors)
+        .sum();
+    let weighted: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.weighted_tensors)
+        .sum();
+    assert!(weighted > 0);
+    assert!(
+        weighted <= compiled - skipped.min(compiled),
+        "a tensor with no weights is encoded unweighted and not counted"
+    );
+    let identity = QuirkyEncoder(Quirk::AcceptsWeights).identity();
+    let packs: Vec<_> = index_of(&out)
+        .representations
+        .into_values()
+        .filter(|e| e.compiled_from.is_some())
+        .collect();
+    assert!(!packs.is_empty());
+    for e in packs {
+        assert_eq!(
+            e.encoder,
+            Some(EncoderRecipe::codec_weighted(&identity, "fixture-weights"))
+        );
+    }
+}
+
+#[test]
+fn an_encoder_without_weighting_refuses_rather_than_ignores_weights() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result, _) = compile_weighted(&tmp, Quirk::InstanceSized, None);
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("does not accept input-feature weights"),
+        "{err}"
+    );
+    assert!(!out.join(INDEX_JSON).exists());
+}
+
+#[test]
+fn a_shipped_compiler_refuses_weights() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result, _) = compile_weighted(&tmp, Quirk::AcceptsWeights, Some(DTYPE_NVFP4));
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("shipped compiler"), "{err}");
+    assert!(!out.exists());
 }

@@ -52,6 +52,17 @@ larql vindex3 represent model.vindex3 --output model-r1.vindex3 --encoding Q4_K 
   every compiled object, is marked `Derived`, and names the digests it came
   from. The command prints each object's source and compiled bytes and what
   the policy preserved.
+- **Input-feature weights.** `--moments <capture>` encodes under per-input-feature
+  weights `E[x²]` from `larql vindex3 sensitivity --calibration … --moments`, captured
+  from the same container on a calibration set disjoint from any bank you will
+  measure on. The encoder then minimises `Σ E[x_i²]·(w_i − ŵ_i)²`, spending its
+  error where the activation is small. q/k/v and gate/up use the captured
+  attention and FFN input sites; `down_proj` uses a reconstruction of
+  `act(gate(x))·up(x)` that is checked against the executor before use;
+  `o_proj` has no captured site and is encoded unweighted. The command prints
+  how many tensors each source covered. Only an encoder that implements
+  weighting takes them (a plugin encoder may; NVFP4 and the K-quants refuse),
+  and the pack's recipe records the capture's digest.
 - **Provenance.** Each pack records its codec identity and encoder recipe.
   A pack LARQL compiled can be re-derived byte for byte by the same recipe; a
   plugin encoder's pack cannot, and says so.
