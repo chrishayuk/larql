@@ -45,6 +45,9 @@ use ndarray::Array2;
 
 use crate::cache::KvCache;
 
+mod registry;
+pub use registry::{shipped_continuations, CanonicalFactory};
+
 #[cfg(test)]
 mod tests;
 

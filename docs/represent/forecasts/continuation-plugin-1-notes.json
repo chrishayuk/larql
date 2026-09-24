@@ -43,6 +43,47 @@
         "trait method count / construction sites": "9 / 16",
         "doc gates": "check_doc_links, check_doc_references, check_contract_index — clean"
       }
+    },
+    "C2": {
+      "name": "continuation registry",
+      "status": "built and held",
+      "branch": "v3-state-2",
+      "base": "9f01d52d (C1)",
+      "date": "2026-09-24",
+      "what_landed": [
+        "`exec/continuation_registry.rs`: `ContinuationFactory` (identity, declared `regions()`, `validate_config` defaulting to 'takes no options', `build` → `BoxedContinuation = Box<dyn ContinuationProvider + Send>`); `ContinuationRegistry` — a value, `Clone`, no static and no default; `register` refuses invalid and duplicate identities; `select(identity, config, geometry)` refuses unregistered (naming what is), refused configuration, and the first layer whose region is not declared, all BEFORE anything is built; `SelectedContinuation` carries the authority and builds a fresh provider per call.",
+        "`exec/continuation_authority.rs`: `ContinuationConfig` (key=value, key order, shape refusals), `ConfigDigest` = `sha256:` over a domain tag, the identity and the canonical form, and `ContinuationAuthority { identity, config_digest }` — serde, the pair C4 carries.",
+        "`ContinuationRegion { Kv, LatentKv, Recurrent, KvAndRecurrent }` with `required_by(&LayerContinuationGeometry)`; refusal texts reuse `continuation::region_name`, the plan's one vocabulary.",
+        "Built-in factories beside their providers: `RowFactory` (exec/kv.rs), `CanonicalFactory` and `shipped_continuations()` — a fresh registry value per call (larql-kv/src/vindex3/registry.rs). Both declare all four regions and take no options.",
+        "No call site migrated: C2 must not change graph semantics, and it changes none. Migration is C3."
+      ],
+      "witnesses": {
+        "exec/tests/continuation_registry.rs (12)": "configuration shape and key order; digest pinned to values computed OUTSIDE the crate (Python hashlib over the documented canonical form); digest moves with value, key set, family and revision but not key order; authority's two fields independent; registration refusals; unregistered names the registry; configuration refused by the provider that reads it; hybrid plan refused at selection naming layer 2 / recurrent (F5); KV + Recurrent separately do not hold a conv-QKV layer; stateless layers ask nothing; every build is a fresh provider driven through the full hybrid contract as a trait object",
+        "larql-kv shipped_continuations_is_a_fresh_value_holding_both_built_ins": "two identities in order, registering into one leaves the next at two, both select and build against the miniature fixture plan's real geometry",
+        "mutation control": "disabling the region check in `select` (`if false && …`) turned exactly the two F5 witnesses red (10 passed, 2 failed); restored and re-verified"
+      },
+      "departures_from_the_forecast": [
+        "The frozen boundary lists `Stateless` among the capability vocabulary. It is NOT a capability here: a stateless layer asks nothing of a provider, so declaring it would be a capability that can never be absent — an enum value no provider could meaningfully decline, which the same boundary forbids. Selection skips stateless layers; `a_stateless_layer_asks_nothing_of_a_provider` pins that a provider declaring nothing accepts an all-stateless plan.",
+        "The config digest covers the identity as well as the configuration (as frozen). Consequence for C4: the two authority fields are compared separately, identity first, so a changed identity reports as a provider/revision refusal and never as a configuration mismatch."
+      ],
+      "falsifiers": {
+        "F1": "held so far — `Box<dyn ContinuationProvider + Send>` holds RowKvState and CanonicalKvState with no trait change; the server handoff itself is C4",
+        "F3": "held — 9 trait methods; AttentionStepCall unchanged",
+        "F4": "held in the registry — selection is identity equality plus declared regions; no family literal in continuation_registry.rs or continuation_authority.rs (grep exit 1). The CLI string switch remains until C3.",
+        "F5": "witnessed at the registry with a mutation control; end-to-end before prefill is C5's",
+        "F2": "not yet exercised (C3)"
+      },
+      "measured_at_merge": {
+        "trait_methods": 9,
+        "non_test_construction_sites": "16 call sites unchanged, plus the 2 factory `build`s that C3's allowlist will name"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy (six crates) --all-targets -D warnings": "clean",
+        "cargo test -p larql-vindex -p larql-kv": "exit 0; larql-vindex lib 4955 passed (C1 4943 + 12), larql-kv lib 1255 passed",
+        "cargo check --workspace --all-targets": "clean",
+        "doc gates": "clean"
+      }
     }
   }
 }

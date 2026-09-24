@@ -31,7 +31,9 @@
 
 use super::super::ComponentOpPlan;
 use super::continuation::{LatentKvRows, LayerContinuationGeometry, RecurrentState};
+use super::continuation_authority::ContinuationConfig;
 use super::continuation_identity::ContinuationIdentity;
+use super::continuation_registry::{BoxedContinuation, ContinuationFactory, ContinuationRegion};
 
 /// One layer's continuation-state geometry, read from the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +312,26 @@ impl RowKvState {
     /// constants.
     pub fn identity() -> ContinuationIdentity {
         ContinuationIdentity::new(ROW_IDENTITY_FAMILY, ROW_IDENTITY_REVISION)
+    }
+}
+
+/// Builds [`RowKvState`] for the continuation registry (C2 of
+/// CONTINUATION-PLUGIN-1): every region the plan vocabulary describes, no
+/// options.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RowFactory;
+
+impl ContinuationFactory for RowFactory {
+    fn identity(&self) -> ContinuationIdentity {
+        RowKvState::identity()
+    }
+
+    fn regions(&self) -> &[ContinuationRegion] {
+        &ContinuationRegion::ALL
+    }
+
+    fn build(&self, _config: &ContinuationConfig) -> BoxedContinuation {
+        Box::new(RowKvState::default())
     }
 }
 
