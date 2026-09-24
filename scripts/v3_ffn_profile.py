@@ -27,7 +27,7 @@ def main():
         parser.error("unknown trace schema")
     elif not metadata.get("complete"):
         parser.error("run failed; inspect incomplete trace directly")
-    writer = csv.writer(sys.stdout, delimiter="\t")
+    writer = csv.writer(sys.stdout, delimiter="\t", lineterminator="\n")
     writer.writerow(["position", "token", "attention_ms", "ffn_provider_ms", "reentry_ms", "other_ms", "total_ms",
                      "request_bytes", "encode_us", "roundtrip_ms", "remote_ffn_ms", "response_bytes", "decode_us",
                      "worker_encode_us", "transport_remainder_ms"])
