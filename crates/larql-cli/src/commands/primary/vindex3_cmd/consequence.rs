@@ -39,10 +39,9 @@ use clap::Args;
 use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
 use larql_vindex::format::vindex3::opplan::OperandRef;
-use larql_vindex::format::vindex3::represent::policy::{classify_in, Role};
 
 use super::input_moments::{
-    self, ffn_activation, layer_of, projection_of, Matrix, TensorMoments, RECONSTRUCTION_TOLERANCE,
+    self, ffn_activation, Matrix, Part, PlanOperands, TensorMoments, RECONSTRUCTION_TOLERANCE,
 };
 
 /// Codec and encoder identity, recorded per tensor so a later rung can tell
@@ -133,12 +132,13 @@ pub fn run(args: ConsequenceArgs) -> Result<(), Box<dyn std::error::Error>> {
     let activation = ffn_activation(&plan)?;
     println!("ffn activation {activation:?}  (from the plan the executor runs)");
 
-    let weights = collect_weights(&inspection, &args.container, &store)?;
+    let operands = PlanOperands::from_plan(&plan);
+    let weights = collect_weights(&inspection, &args.container, &store, &operands)?;
 
     // ---- the down_proj reconstruction, gated ---------------------------
     let mut borrow =
-        |layer: usize, proj: &str| -> Result<Option<Matrix<'_>>, Box<dyn std::error::Error>> {
-            Ok(find(&weights, layer, proj).map(|w| Matrix {
+        |layer: usize, part: Part| -> Result<Option<Matrix<'_>>, Box<dyn std::error::Error>> {
+            Ok(find(&weights, &operands, layer, part).map(|w| Matrix {
                 rows: w.rows,
                 k: w.k,
                 values: std::borrow::Cow::Borrowed(&w.values),
@@ -169,14 +169,11 @@ pub fn run(args: ConsequenceArgs) -> Result<(), Box<dyn std::error::Error>> {
     let mut out = Vec::new();
     let mut skipped_no_site = 0usize;
     for w in &weights {
-        let Some(proj) = projection_of(&w.tensor) else {
+        let Some((layer, part)) = operands.part_of(&w.object, &w.tensor) else {
             continue;
         };
-        let Some(layer) = layer_of(&w.tensor) else {
-            continue;
-        };
-        // o_proj has no activation site: absent, not zero.
-        let Some((d, source)) = tensor_moments.get(layer, proj) else {
+        // o has no activation site: absent, not zero.
+        let Some((d, source)) = tensor_moments.get(layer, part) else {
             skipped_no_site += 1;
             continue;
         };
@@ -193,7 +190,7 @@ pub fn run(args: ConsequenceArgs) -> Result<(), Box<dyn std::error::Error>> {
             tensor: w.tensor.clone(),
             component: w.object.clone(),
             layer,
-            projection: proj.to_string(),
+            projection: part.label().to_string(),
             num: weighted_column_energy(&w.delta, w.rows, w.k, d),
             moment_source: source.to_string(),
             compiled_bytes: w.compiled_bytes,
@@ -244,26 +241,10 @@ fn collect_weights(
     inspection: &larql_vindex::format::vindex3::inspect::SystemInspection,
     container: &std::path::Path,
     store: &OperandStore,
+    operands: &PlanOperands,
 ) -> Result<Vec<Weight>, Box<dyn std::error::Error>> {
     use larql_models::quant::nvfp4::round_trip;
     use larql_vindex::format::vindex3::represent::nvfp4_pack::PackLayout;
-
-    let text: std::collections::BTreeSet<&str> = inspection
-        .graph
-        .components
-        .iter()
-        .filter(|c| {
-            c.role == larql_vindex::format::vindex3::graph::component::ComponentRole::PrimaryText
-        })
-        .map(|c| c.id.as_str())
-        .collect();
-    let primary: std::collections::BTreeSet<String> = inspection
-        .graph
-        .objects
-        .iter()
-        .filter(|o| text.contains(o.component.as_str()))
-        .map(|o| o.id.clone())
-        .collect();
 
     let mut out = Vec::new();
     for entry in inspection.index.representations.values() {
@@ -271,13 +252,8 @@ fn collect_weights(
             &container.join(&entry.segment),
         )?;
         for t in &header.tensors {
-            let role = classify_in(
-                primary.contains(&entry.object),
-                &entry.object,
-                &t.name,
-                &t.shape,
-            );
-            if !matches!(role, Role::DecoderLinear | Role::ExpertWeight) {
+            // The plan's own bindings decide what is scored, not a name.
+            if operands.part_of(&entry.object, &t.name).is_none() {
                 continue;
             }
             let Ok(layout) = PackLayout::derive(&t.shape, &t.name) else {
@@ -308,8 +284,14 @@ fn collect_weights(
     Ok(out)
 }
 
-fn find<'a>(weights: &'a [Weight], layer: usize, proj: &str) -> Option<&'a Weight> {
+fn find<'a>(
+    weights: &'a [Weight],
+    operands: &PlanOperands,
+    layer: usize,
+    part: Part,
+) -> Option<&'a Weight> {
+    let op = operands.get(layer, part)?;
     weights
         .iter()
-        .find(|w| layer_of(&w.tensor) == Some(layer) && w.tensor.contains(proj))
+        .find(|w| w.object == op.object && w.tensor == op.tensor)
 }
