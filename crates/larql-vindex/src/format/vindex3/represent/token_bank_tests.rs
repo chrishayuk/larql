@@ -317,3 +317,69 @@ fn a_container_without_a_tokenizer_has_no_digest() {
     // The error names itself when printed.
     assert!(err.to_string().contains("Io"), "{err}");
 }
+
+fn write_ids(path: &Path, samples: serde_json::Value) {
+    let file = serde_json::json!({"bank": "fixture-ids", "samples": samples});
+    std::fs::write(path, serde_json::to_vec_pretty(&file).unwrap()).unwrap();
+}
+
+#[test]
+fn imported_ids_reopen_verbatim_and_uncapped() {
+    let f = fixture();
+    let ids_file = f.bank.parent().unwrap().join("ids.json");
+    let long: Vec<u32> = (0..3 * CAP as u32).map(|i| 1 + i % 10).collect();
+    write_ids(
+        &ids_file,
+        serde_json::json!([
+            {"id": "w000", "category": "wikitext", "ids": long},
+            {"id": "w001", "category": "wikitext", "ids": [3, 2, 1]}
+        ]),
+    );
+    let out = f.bank.parent().unwrap().join("imported");
+    let manifest = import_ids(&ids_file, &f.tokenizer, &out).expect("import");
+    assert_eq!(manifest.template, TemplatePolicy::Ids);
+    assert!(!manifest.add_special_tokens);
+    assert_eq!(manifest.max_tokens, long.len());
+    let bank = TokenBank::open(&out).expect("open");
+    bank.check_tokenizer(&container_tokenizer_sha256(f.bank.parent().unwrap()).unwrap())
+        .expect("sealed against the tokenizer it was checked with");
+    assert_eq!(bank.read(0).unwrap(), long);
+    assert_eq!(bank.read(1).unwrap(), [3, 2, 1]);
+    assert_eq!(bank.manifest().samples[0].prompt_id, "w000");
+}
+
+#[test]
+fn an_id_outside_the_vocabulary_is_refused_by_position() {
+    let f = fixture();
+    let ids_file = f.bank.parent().unwrap().join("ids.json");
+    write_ids(
+        &ids_file,
+        serde_json::json!([{"id": "w000", "category": "c", "ids": [1, 2, 11]}]),
+    );
+    let out = f.bank.parent().unwrap().join("imported");
+    let err = import_ids(&ids_file, &f.tokenizer, &out).unwrap_err();
+    assert_eq!(
+        err,
+        TokenBankError::IdOutOfVocabulary {
+            sample: "w000".into(),
+            position: 2,
+            id: 11,
+            vocab: 11,
+        }
+    );
+    assert!(!out.exists());
+}
+
+#[test]
+fn a_short_imported_sample_is_refused_not_dropped() {
+    let f = fixture();
+    let ids_file = f.bank.parent().unwrap().join("ids.json");
+    write_ids(
+        &ids_file,
+        serde_json::json!([{"id": "w000", "category": "c", "ids": [1, 2]}]),
+    );
+    let err = import_ids(&ids_file, &f.tokenizer, &f.bank.parent().unwrap().join("x"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("w000"), "{err}");
+}
