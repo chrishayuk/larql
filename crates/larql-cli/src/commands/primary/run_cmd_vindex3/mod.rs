@@ -120,6 +120,42 @@ pub(super) fn run_to(
     status: &mut dyn Write,
 ) -> Result<(), BoxErr> {
     refuse_inapplicable_flags(args)?;
+    let Some(path) = &args.v3_profile else {
+        return run_inner(container, args, input, out, status);
+    };
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let capture = larql_inference::vindex3::dense_ffn::profile::Capture::start()?;
+    let result = run_inner(container, args, input, out, status);
+    let rows = capture.finish();
+    serde_json::to_writer(
+        &mut file,
+        &serde_json::json!({
+            "schema": "larql.v3.position-profile.v1",
+            "artifact": container,
+            "placement": if args.v3_ffn_shards.is_empty() { "local" } else { "remote-dense-ffn" },
+            "complete": result.is_ok(),
+            "positions": rows.len(),
+            "units": "nanoseconds; JSON body bytes exclude HTTP/TLS headers",
+        }),
+    )?;
+    writeln!(file)?;
+    for row in rows {
+        serde_json::to_writer(&mut file, &row)?;
+        writeln!(file)?;
+    }
+    result
+}
+
+fn run_inner(
+    container: &Path,
+    args: &RunArgs,
+    input: &mut dyn BufRead,
+    out: &mut dyn Write,
+    status: &mut dyn Write,
+) -> Result<(), BoxErr> {
     let backend = select_backend(args.metal)?;
     let tokenizer_path = container.join(TOKENIZER_JSON);
     if !tokenizer_path.is_file() {
@@ -163,6 +199,19 @@ pub(super) fn run_to(
 /// its own continuation state. Only explicitly integrated providers and
 /// input/distribution protocols are accepted; other engine flags refuse.
 fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
+    if args.v3_profile.is_some()
+        && (args.prompt.is_none()
+            || args.metal
+            || !args.v3_shards.is_empty()
+            || args.kv_cache != KvCacheKind::Standard
+            || args
+                .engine
+                .as_deref()
+                .is_some_and(|e| !matches!(e, "row" | "standard")))
+    {
+        return Err("--v3-profile requires a prompt and CPU row/standard KV; layer replay and Metal are not covered".into());
+    }
+
     if args.v3_shard_token_env.is_some()
         && args.v3_shards.is_empty()
         && args.v3_ffn_shards.is_empty()

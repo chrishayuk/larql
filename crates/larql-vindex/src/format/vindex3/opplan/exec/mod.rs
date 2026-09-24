@@ -61,6 +61,7 @@ pub mod payload_prefix;
 pub mod prefetch;
 pub mod prepared;
 pub mod production;
+pub mod profile;
 pub mod provenance;
 pub mod quantise;
 pub mod realization;

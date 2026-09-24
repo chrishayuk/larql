@@ -448,3 +448,38 @@ fn dense_ffn_placement_refuses_conflicting_execution_flags_before_connecting() {
     ])
     .is_err());
 }
+
+#[test]
+fn cpu_profile_preserves_ids_and_refuses_to_overwrite() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    let profile = root.path().join("profile.jsonl");
+    let plain =
+        run_capturing_with_status(&container, &[PROMPT, "--max-tokens", "3", "--emit-ids"], "")
+            .unwrap();
+    let flags = [
+        PROMPT,
+        "--max-tokens",
+        "3",
+        "--emit-ids",
+        "--v3-profile",
+        profile.to_str().unwrap(),
+    ];
+    let measured = run_capturing_with_status(&container, &flags, "").unwrap();
+    assert_eq!(plain, measured);
+    let text = std::fs::read_to_string(&profile).unwrap();
+    let rows: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows[0]["complete"], true);
+    assert_eq!(rows[0]["placement"], "local");
+    assert!(rows.len() >= 4);
+    for (position, row) in rows[1..].iter().enumerate() {
+        assert_eq!(row["position"], position);
+        assert_eq!(row["complete"], true);
+        assert_eq!(row["provider_calls"], serde_json::json!([]));
+    }
+    assert!(run_capturing(&container, &flags, "").is_err());
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), text);
+}

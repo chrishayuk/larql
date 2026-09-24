@@ -6,6 +6,7 @@ use larql_router_protocol::{
     vindex3,
     vindex3_ffn::{Binding, OperandIdentity, Response},
 };
+pub use larql_vindex::format::vindex3::opplan::exec::profile;
 use larql_vindex::{
     error::VindexError,
     format::vindex3::opplan::{
@@ -100,6 +101,20 @@ pub fn forward<B: PlanBackend + ?Sized>(
     layer: usize,
     row: &[f32],
 ) -> Result<Response, InferenceError> {
+    forward_timed(plan, ops, backend, binding, layer, row, None)
+}
+
+/// Same execution authority with an optional timer around the worker transform.
+/// Binding validation is outside `ffn_ns`; operand application checks are inside.
+pub fn forward_timed<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    ops: &PreparedOperands,
+    backend: &B,
+    binding: &Binding,
+    layer: usize,
+    row: &[f32],
+    ffn_ns: Option<&mut u64>,
+) -> Result<Response, InferenceError> {
     ensure_cpu(backend)?;
     ops.ensure_providers_in(ops.registry())?;
     ops.ensure_lowered_by(backend)?;
@@ -120,10 +135,14 @@ pub fn forward<B: PlanBackend + ?Sized>(
             "dense FFN binding disagrees with prepared operands".into(),
         ));
     }
+    let started = ffn_ns.as_ref().map(|_| std::time::Instant::now());
     let row = ops
         .dense_ffns()
         .ok_or_else(|| InferenceError::Parse("missing worker image".into()))?
         .apply(plan, backend, layer, row)?;
+    if let (Some(ns), Some(started)) = (ffn_ns, started) {
+        *ns = started.elapsed().as_nanos() as u64;
+    }
     Ok(Response {
         binding: binding.clone(),
         layer,

@@ -249,7 +249,12 @@ fn dense_ffn_failure_invalidates_session_and_fresh_replay_recovers() {
         let mut session = DenseFfnSession::new(runtime.plan(), &remote, runtime.backend()).unwrap();
         let initial = session.step(G_TOKENS[0]).unwrap();
         fault.store(mode, Ordering::SeqCst);
+        let capture = dense_ffn::profile::Capture::start().unwrap();
         assert!(session.step(G_TOKENS[1]).is_err());
+        let rows = capture.finish();
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].complete);
+        assert_eq!(rows[0].position, 1);
         assert_eq!(session.position(), 1);
         fault.store(0, Ordering::SeqCst);
         assert!(session

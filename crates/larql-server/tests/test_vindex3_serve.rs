@@ -1252,13 +1252,44 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
         .unwrap();
         let mut remote = DenseFfnSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
         let mut local = runtime.session().unwrap();
-        for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
+        let mut smoke = Vec::new();
+        for (position, id) in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11].into_iter().enumerate() {
+            use larql_inference::vindex3::dense_ffn::profile::Capture;
+            let capture = Capture::start().unwrap();
             let expected = local.step(id).unwrap();
+            let local_rows = capture.finish();
+            assert_eq!(local_rows.len(), 1);
+            assert!(local_rows[0].provider_calls.is_empty());
+            let capture = Capture::start().unwrap();
             let actual = remote.step(id).unwrap();
+            let rows = capture.finish();
+            assert_eq!(rows.len(), 1);
+            let row = &rows[0];
+            assert!(row.complete);
+            assert_eq!(row.position, position);
+            assert_eq!(row.total_ns, row.attention_ns + row.ffn_ns + row.reentry_ns + row.other_ns);
+            assert_eq!(row.provider_calls.len(), 2);
+            for (layer, call) in row.provider_calls.iter().enumerate() {
+                assert_eq!(call["layer"], layer);
+                assert_eq!(call["complete"], true);
+                assert!(call["request_bytes"].as_u64().unwrap() > 0);
+                assert!(call["response_bytes"].as_u64().unwrap() > 0);
+                let worker = &call["worker"];
+                assert!(worker["ffn_ns"].as_u64().unwrap() <= worker["execute_ns"].as_u64().unwrap());
+                assert!(worker["execute_ns"].as_u64().unwrap() <= worker["handler_ns"].as_u64().unwrap());
+            }
+            smoke.push(serde_json::json!({"token_id": id, "local": local_rows[0], "remote": rows[0]}));
             assert_eq!(
                 expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
                 actual.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
             );
+        }
+        // Optional diagnostic artifact, explicitly a tiny debug fixture, not a benchmark.
+        if let Some(path) = std::env::var_os("LARQL_V3_FFN_SMOKE_PROFILE") {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(path).unwrap();
+            writeln!(file, "{}", serde_json::json!({"schema": "larql.v3.ffn-smoke.v1", "benchmark": false, "layers": 2, "hidden": ops.hidden(), "profile": "debug synthetic HTTP loopback; no exclusivity or warmup claim"})).unwrap();
+            for row in smoke { writeln!(file, "{row}").unwrap(); }
         }
     })
     .await

@@ -63,3 +63,15 @@ pub struct Response {
     pub layer: usize,
     pub row: Vec<f32>,
 }
+
+/// Opt-in diagnostics header; excluded from the numerical binding and JSON body.
+pub const PROFILE_HEADER: &str = "x-larql-ffn-profile";
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WorkerTiming {
+    pub decode_ns: u64,
+    pub queue_ns: u64,
+    pub execute_ns: u64,
+    pub ffn_ns: u64,
+    pub encode_ns: u64,
+    pub handler_ns: u64,
+}

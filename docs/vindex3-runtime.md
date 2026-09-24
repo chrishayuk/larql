@@ -305,3 +305,6 @@ carrier capture does not imply that every backend exposes head internals.
 CPU dense FFN operation workers keep attention and row KV local. See the
 [distributed FFN guide](ffn/distributed.md#dense-ffn-operation-provider) for
 `--v3-ffn-shards`, binding checks, failure semantics and the supported scope.
+
+For per-position wall time and exact HTTP body byte counts, use
+[`--v3-profile`](ffn/v3-dense-profile.md) on the local and remote dense arms.

@@ -322,6 +322,10 @@ pub struct RunArgs {
     )]
     pub v3_ffn_shards: Vec<String>,
 
+    /// Write per-position CPU V3 timings and exact FFN HTTP body bytes to a new JSONL file.
+    #[arg(long, value_name = "PATH")]
+    pub v3_profile: Option<PathBuf>,
+
     /// Environment variable holding the bearer token for V3 layer or dense FFN workers.
     #[arg(long, value_name = "ENV")]
     pub v3_shard_token_env: Option<String>,
@@ -408,8 +412,10 @@ pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
         return super::run_cmd_vindex3::run(&vindex_path, &args);
     }
-    if !args.v3_shards.is_empty() || !args.v3_ffn_shards.is_empty() {
-        return Err("--v3-shards and --v3-ffn-shards require a VINDEX3 container".into());
+    if !args.v3_shards.is_empty() || !args.v3_ffn_shards.is_empty() || args.v3_profile.is_some() {
+        return Err(
+            "--v3-shards, --v3-ffn-shards and --v3-profile require a VINDEX3 container".into(),
+        );
     }
 
     if args.experts {
