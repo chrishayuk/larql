@@ -47,7 +47,7 @@ use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
 /// The same LLLF hybrid fixture QW-3.6b/3.7 traverse: three recurrent
 /// layers then a softmax one, so the draft slice meets durable
 /// continuation state rather than a pure residual stack.
-fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
+pub(super) fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
     let src = tempfile::tempdir().unwrap();
     hybrid_lllf_f32_model(src.path());
     let inventory = larql_models::inventory::build_inventory(src.path()).unwrap();

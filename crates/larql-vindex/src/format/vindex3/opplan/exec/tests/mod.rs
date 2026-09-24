@@ -159,6 +159,7 @@ pub(super) use crate::format::vindex3::fixtures::{
 };
 mod latent_moe_execution;
 mod latent_moe_parity;
+mod one_shot_continuation;
 mod prefetch;
 mod sigmoid_router;
 mod stages_and_routing;
