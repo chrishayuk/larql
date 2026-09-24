@@ -233,6 +233,33 @@
         "cargo test -p larql-kv": "0 failed; 1307 passed across 15 binaries (9 new)",
         "production files changed": "none"
       }
+    },
+    "C6": {
+      "name": "dynamic loading",
+      "status": "design frozen; not built",
+      "branch": "continuation-plugin-1/c6",
+      "base": "C5 (continuation-plugin-1/c5)",
+      "date": "2026-09-25",
+      "decision": "AUTOMATED, chosen by the user over a manual demonstration like #526's: C6's claim is the deployment-relevant one, so it gets a CI gate that can go red, not a recorded run.",
+      "scope": "Add `PluginRegistrar::continuation(Box<dyn ContinuationFactory>)`, carry it through `into_parts()`, register loaded factories over `shipped_continuations()`, add `--continuation family/vN` and `--continuation-option k=v` beside `--engine`, and prove the path. NOT in scope: plugin manifests, discovery, dependency negotiation, hot reload, portability beyond the existing unix `dlopen` loader, or any other redesign of the plugin ABI.",
+      "design_frozen_before_implementation": {
+        "fixture": "A new test-only workspace member `crates/larql-continuation-fixture/` (`publish = false`, `crate-type = [\"cdylib\"]`). It is a FIXTURE, not a third shipped provider or an SDK example. It contains the C5 provider itself, included by `#[path]` from `crates/larql-kv/tests/external_continuation_provider/provider.rs`, so the dylib and the C5 proof are one source, never two copies. It exports `larql_plugin!(register)`, and `register` calls `PluginRegistrar::continuation(...)` with `hostile-test-provider/v77`. It depends on `larql-vindex` with the CLI's default feature set, so the host and the plugin see the same types.",
+        "abi": "Adding a field to `PluginRegistrar` changes its layout. The stamp's contract revision goes `larql-plugin/1` → `larql-plugin/2`, so a revision-1 plugin is refused by name before it runs. This is the only ABI change; it is required for safety, not a redesign.",
+        "host": "`Plugins::load` collects the loaded continuation factories. The CLI's ONE continuation selection (`commands/primary/continuation.rs`) composes `shipped_continuations()` plus the loaded factories and resolves through the same `select_for` every run path uses, with no plugin-specific selection path. `--continuation` takes `family/vN` and is refused together with `--engine`; `--continuation-option` is parsed by `ContinuationConfig::parse`.",
+        "where_the_gate_lives": "larql-cli is binary-only, so the journey is a unit-test module inside larql-cli (`vindex3_cmd/tests/continuation_plugin.rs`) that calls the real loader (`Plugins::load` → `dlopen` → ABI stamp → exported register symbol). A subprocess test runs the built `larql` binary for the argument path.",
+        "building_the_fixture": "The test builds the fixture itself with `$CARGO build -p larql-continuation-fixture --locked` into a SEPARATE target directory under the test's target dir. Cargo holds its build lock on a target directory for the whole `cargo test` run, so a nested build into the same one would deadlock. The cost of that build is measured and recorded. A build failure fails the test; it is never a skip.",
+        "windows": "The loader stays `cfg(unix)`. A `cfg(not(unix))` regression test pins the existing refusal (`loading plugins is implemented for unix dlopen only`), naming the path."
+      },
+      "controls_frozen": [
+        "the journey through the real loader: dylib → ABI check → `larql_plugin_register` → `PluginRegistrar::continuation` → factories added over `shipped_continuations()` → the CLI's `select_for` resolves `hostile-test-provider/v77` → begin → prefill → decode → sealed handoff held outside any session → resume under an authority re-selected through the same path → decode. Logits, ids, position and every K/V row are bit-identical to `canonical/v1`, the C5 gate unchanged.",
+        "overlay, not replacement: the same composed registry still selects `canonical/v1` and `row/v1`, and its identities are exactly shipped + loaded, in that order.",
+        "anti-cheat, no static linking: the fixture crate is not a dependency of larql-cli in any table, and the test source names no fixture type (checked by `cargo metadata` plus a source scan of larql-cli). The loaded factory's identity comes back from the dylib; its builds happen in code the test binary does not contain.",
+        "the CLI argument path: `larql run <fixture container> --plugin <dylib> --continuation hostile-test-provider/v77 --verbose` reports `continuation=hostile-test-provider/v77` and generates the same token ids as `--engine standard`. `--continuation` together with `--engine` is refused. An unknown `--continuation` family is refused naming the registered set, loaded ones included.",
+        "ABI: a stamp with the wrong contract revision is refused before registration (unit test on `abi_compatible`).",
+        "windows: the unsupported-loader refusal is pinned by a `cfg(not(unix))` test."
+      ],
+      "honest_limit": "The CLI binary has no verb that saves a handoff and resumes it (the server's Responses chain is the only durable handoff). So the handoff/resume half of the journey runs in-process through the CLI's own loader and selection code, and the binary subprocess covers the argument path and generation equality. Both use the real dylib.",
+      "out_of_scope": "Windows dylib loading; plugin manifests, discovery or versions beyond the stamp; serving `--plugin` from `larql serve` (the server selects `canonical/v1` at binding — a separate question)"
     }
   }
 }
