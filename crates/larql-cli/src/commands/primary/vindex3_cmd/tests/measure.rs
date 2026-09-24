@@ -96,6 +96,8 @@ fn args(f: &Fixture, candidate: &Path, backend: ExecBackend, output: &str) -> Me
         plugins: Vec::new(),
         reference_lowering: None,
         candidate_lowering: None,
+        reference_representation: None,
+        candidate_representation: None,
     }
 }
 
@@ -171,4 +173,34 @@ fn a_library_that_is_not_a_plugin_refuses_by_name() {
     .unwrap_err()
     .to_string();
     assert!(err.contains("libnot-a-plugin"), "{err}");
+}
+
+#[test]
+fn a_representation_override_binds_the_pack_it_names() {
+    let f = fixture();
+    run(MeasureArgs {
+        candidate_representation: Some(DTYPE_NVFP4.into()),
+        ..args(&f, &f.pack, ExecBackend::Production, "override")
+    })
+    .expect("admissible");
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(f.root.join("override").join(RECEIPT_FILE)).unwrap())
+            .unwrap();
+    assert_eq!(receipt["receipt"]["candidate"]["arm"], "production");
+    assert_eq!(
+        receipt["receipt"]["candidate"]["requested_pack"],
+        DTYPE_NVFP4
+    );
+}
+
+#[test]
+fn a_representation_the_container_lacks_is_refused() {
+    let f = fixture();
+    let err = run(MeasureArgs {
+        candidate_representation: Some("ABSENT_ENCODING".into()),
+        ..args(&f, &f.pack, ExecBackend::Production, "absent-rep")
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("ABSENT_ENCODING"), "{err}");
 }

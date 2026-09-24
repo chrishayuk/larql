@@ -104,6 +104,7 @@ use super::opplan::exec::weights::{quantize_nvfp4, LoadedWeight};
 use super::opplan::OperandRef;
 use crate::error::VindexError;
 use crate::format::filenames::INDEX_JSON;
+use codec::{CodecError, EncoderRegistry, RepresentationEncoder};
 use map::PrecisionMap;
 use nvfp4_pack::{CodecIdentity, EncoderRecipe, PackLayout, DTYPE_NVFP4};
 use policy::{classify_in, Protections, Role, RolePolicy};
@@ -165,9 +166,10 @@ impl CompiledObject {
 /// Which objects to compile, and into what.
 #[derive(Debug, Clone)]
 pub struct RepresentSpec {
-    /// Target encoding: [`DTYPE_NVFP4`], or any name [`kquant::lookup`]
-    /// recognises. The `Target` dispatch below is the single place a
-    /// further encoding is added.
+    /// Target encoding: [`DTYPE_NVFP4`], any name [`kquant::lookup`]
+    /// recognises, or the label of an encoder handed to
+    /// [`compile_representation_with`]. The `Target` dispatch below is the
+    /// single place a further encoding is added.
     pub encoding: String,
     /// Objects to compile. Empty means every object carrying a tensor the
     /// policy admits.
@@ -262,10 +264,16 @@ impl RepresentSpec {
 /// contiguous ggml blocks running along the row. The two share this
 /// function's plan-then-write skeleton and nothing else, which is why
 /// this is a target rather than a flag on one path.
+///
+/// A registered encoder is the third kind: a codec that writes its own
+/// bytes ([`RepresentationEncoder`]), supplied by the caller rather than
+/// compiled in. Its layout is its own business; what this function owns
+/// is the plan-then-write skeleton, the policy, and the provenance.
 #[derive(Debug, Clone, Copy)]
-enum Target {
+enum Target<'e> {
     Nvfp4,
     KQuant(kquant::KQuant),
+    Encoder(&'e dyn RepresentationEncoder),
 }
 
 /// One tensor's decided encoding. `None` at the call sites means the
@@ -276,6 +284,9 @@ enum TensorEncoding {
     Nvfp4(PackLayout),
     /// The encoding and the byte length its shape implies.
     KQuant(kquant::KQuant, usize),
+    /// A registered encoder's bytes, already produced while planning, and
+    /// their length.
+    Encoder(usize),
 }
 
 impl TensorEncoding {
@@ -284,7 +295,7 @@ impl TensorEncoding {
     fn len(self) -> usize {
         match self {
             Self::Nvfp4(layout) => layout.total_len,
-            Self::KQuant(_, len) => len,
+            Self::KQuant(_, len) | Self::Encoder(len) => len,
         }
     }
 }
@@ -329,20 +340,80 @@ fn kquant_encoder_recipe() -> EncoderRecipe {
     EncoderRecipe::kquant_native_v1()
 }
 
+/// Encode one tensor with a registered encoder, at its terminal extent.
+///
+/// `Ok(None)` means the shape cannot hold the encoding — the encoder's own
+/// `stored_bytes` refused it — and the tensor is carried, as a K-quant row
+/// that does not divide is. A codec whose length depends on the values
+/// (`InstanceSized`) is encoded to find out. When the codec can state the
+/// length from the shape, the bytes must match it, or the segment table
+/// would not describe its payload.
+fn encode_with(
+    encoder: &dyn RepresentationEncoder,
+    source: &OperandSource<'_>,
+    object: &str,
+    tensor: &super::encode::segment::SegmentTensor,
+) -> Result<Option<Vec<u8>>, VindexError> {
+    let extent = encoder.terminal_extent();
+    let expected = match encoder.stored_bytes(&tensor.shape, extent, &tensor.name) {
+        Ok(len) => Some(len as usize),
+        Err(CodecError::InstanceSized { .. }) => None,
+        Err(_) => return Ok(None),
+    };
+    let values = source.load(&OperandRef {
+        object: object.to_string(),
+        tensor: tensor.name.clone(),
+        dtype: tensor.dtype.clone(),
+        shape: tensor.shape.clone(),
+    })?;
+    let bytes = encoder
+        .encode_packed(&values, &tensor.shape, extent, &tensor.name)
+        .map_err(|e| VindexError::Parse(format!("tensor `{}`: {e}", tensor.name)))?;
+    if let Some(expected) = expected.filter(|&n| n != bytes.len()) {
+        return Err(VindexError::Parse(format!(
+            "tensor `{}`: `{}` encoded {} bytes, its codec states {expected} for this shape",
+            tensor.name,
+            encoder.encoding_label(),
+            bytes.len()
+        )));
+    }
+    Ok(Some(bytes))
+}
+
 pub fn compile_representation(
     src: &Path,
     out: &Path,
     spec: &RepresentSpec,
 ) -> Result<RepresentReport, VindexError> {
+    compile_representation_with(src, out, spec, &EncoderRegistry::new())
+}
+
+/// [`compile_representation`], with `encoders` available as targets
+/// beside the compilers this build ships. A shipped compiler's name is
+/// never answered by a registered encoder.
+pub fn compile_representation_with(
+    src: &Path,
+    out: &Path,
+    spec: &RepresentSpec,
+    encoders: &EncoderRegistry,
+) -> Result<RepresentReport, VindexError> {
     let target = if spec.encoding == DTYPE_NVFP4 {
         Target::Nvfp4
     } else if let Some(k) = kquant::lookup(&spec.encoding) {
         Target::KQuant(k)
+    } else if let Some(encoder) = encoders.by_label(&spec.encoding) {
+        Target::Encoder(encoder)
     } else {
+        let registered = encoders.labels();
         return Err(VindexError::Parse(format!(
-            "encoding `{}` has no representation compiler; known: {DTYPE_NVFP4}, {}",
+            "encoding `{}` has no representation compiler; known: {DTYPE_NVFP4}, {}{}",
             spec.encoding,
-            kquant::compilable_names()
+            kquant::compilable_names(),
+            if registered.is_empty() {
+                String::new()
+            } else {
+                format!("; registered encoders: {}", registered.join(", "))
+            }
         )));
     };
 
@@ -429,6 +500,10 @@ pub fn compile_representation(
         let mut carried_tensors = 0usize;
         let mut source_bytes = 0u64;
         let mut preserved_roles: BTreeMap<Role, usize> = BTreeMap::new();
+        // A registered encoder's bytes, produced while planning: its
+        // length may depend on the values, and the table needs every
+        // length before the payload. Held for one object at a time.
+        let mut encoded_bytes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
         for t in &header.tensors {
             // Role first, shape second. A tensor the policy preserves is
@@ -463,17 +538,23 @@ pub fn compile_representation(
             // owns it — NVFP4 needs a 2-D matrix, a K-quant needs a row
             // length that is a whole number of blocks, and neither rule
             // belongs to the other.
-            let encoded = eligible
-                .then(|| match target {
-                    Target::Nvfp4 => PackLayout::derive(&t.shape, &t.name)
-                        .ok()
-                        .map(TensorEncoding::Nvfp4),
-                    Target::KQuant(k) => k
-                        .plan(&t.shape, &t.name)
-                        .ok()
-                        .map(|len| TensorEncoding::KQuant(k, len)),
-                })
-                .flatten();
+            let encoded = match (eligible, target) {
+                (false, _) => None,
+                (true, Target::Nvfp4) => PackLayout::derive(&t.shape, &t.name)
+                    .ok()
+                    .map(TensorEncoding::Nvfp4),
+                (true, Target::KQuant(k)) => k
+                    .plan(&t.shape, &t.name)
+                    .ok()
+                    .map(|len| TensorEncoding::KQuant(k, len)),
+                (true, Target::Encoder(encoder)) => {
+                    encode_with(encoder, &source, &entry.object, t)?.map(|bytes| {
+                        let len = bytes.len();
+                        encoded_bytes.insert(t.name.clone(), bytes);
+                        TensorEncoding::Encoder(len)
+                    })
+                }
+            };
             candidate.decided(
                 &entry.object,
                 &t.name,
@@ -560,6 +641,12 @@ pub fn compile_representation(
                 .and_then(|(_, l)| *l);
 
             match layout {
+                Some(TensorEncoding::Encoder(_)) => {
+                    let bytes = encoded_bytes.remove(name).expect("encoded while planning");
+                    w.write_all(&bytes)?;
+                    tap(&bytes);
+                    Ok(bytes.len() as u64)
+                }
                 Some(TensorEncoding::KQuant(k, planned_len)) => {
                     // Same shape as the NVFP4 arm below and for the same
                     // reason: load through `OperandSource::load`, then run
@@ -688,6 +775,7 @@ pub fn compile_representation(
                 codec: Some(match target {
                     Target::Nvfp4 => CodecIdentity::nvfp4_v1(),
                     Target::KQuant(k) => k.codec_identity(),
+                    Target::Encoder(encoder) => encoder.identity(),
                 }),
                 // Ties the pack to the exact source bytes even after it is
                 // copied out of the container that holds them — which is
@@ -696,6 +784,7 @@ pub fn compile_representation(
                 encoder: Some(match target {
                     Target::Nvfp4 => EncoderRecipe::current(),
                     Target::KQuant(_) => kquant_encoder_recipe(),
+                    Target::Encoder(encoder) => EncoderRecipe::codec(&encoder.identity()),
                 }),
             },
         ));

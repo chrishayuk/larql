@@ -22,24 +22,32 @@ fn reference_lowering() -> Box<dyn PlanBackend + Send> {
 fn a_registrar_returns_its_registrations_in_order() {
     use crate::format::vindex3::represent::codec::codecs::mxfp4::Mxfp4Codec;
     use crate::format::vindex3::represent::codec::codecs::nvfp4::Nvfp4Codec;
+    use crate::format::vindex3::represent::codec::encoder::tests::RawF32Codec;
     let mut registrar = PluginRegistrar::new();
     registrar.codec(Box::new(Nvfp4Codec));
     registrar.codec(Box::new(Mxfp4Codec));
+    registrar.encoder(Box::new(RawF32Codec));
     registrar.lowering(reference_lowering);
-    let (codecs, lowerings) = registrar.into_parts();
+    let PluginRegistrations {
+        codecs,
+        encoders,
+        lowerings,
+    } = registrar.into_parts();
     let labels: Vec<&str> = codecs.iter().map(|c| c.encoding_label()).collect();
     assert_eq!(
         labels,
         [Nvfp4Codec.encoding_label(), Mxfp4Codec.encoding_label()]
     );
+    let encoder_labels: Vec<&str> = encoders.iter().map(|e| e.encoding_label()).collect();
+    assert_eq!(encoder_labels, [RawF32Codec.encoding_label()]);
     assert_eq!(lowerings.len(), 1);
     assert_eq!(
         lowerings[0]().identity(),
         reference_lowering().identity(),
         "the factory builds the provider it was registered as"
     );
-    let (none, empty) = PluginRegistrar::default().into_parts();
-    assert!(none.is_empty() && empty.is_empty());
+    let none = PluginRegistrar::default().into_parts();
+    assert!(none.codecs.is_empty() && none.encoders.is_empty() && none.lowerings.is_empty());
 }
 
 #[test]

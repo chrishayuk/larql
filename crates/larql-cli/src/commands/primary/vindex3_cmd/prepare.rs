@@ -50,7 +50,10 @@ pub(crate) fn prepare(
     plugins: &Plugins,
 ) -> Result<OpenedComponent, BoxErr> {
     let policy = OpenPolicy {
-        want: wanted_representation(backend).map(str::to_string),
+        want: plugins
+            .want
+            .clone()
+            .or_else(|| wanted_representation(backend).map(str::to_string)),
         source,
     };
     Ok(open_component_in(

@@ -90,6 +90,15 @@ pub struct MeasureArgs {
     /// (`family/vN`) instead of the one `--candidate-backend` names.
     #[arg(long, value_name = "FAMILY/vN")]
     pub candidate_lowering: Option<String>,
+    /// Bind the reference to the stored representation with this encoding
+    /// instead of the one `--reference-backend` names.
+    #[arg(long, value_name = "ENCODING")]
+    pub reference_representation: Option<String>,
+    /// Bind the candidate to the stored representation with this encoding
+    /// (e.g. a pack a `--plugin`'s encoder compiled) instead of the one
+    /// `--candidate-backend` names.
+    #[arg(long, value_name = "ENCODING")]
+    pub candidate_representation: Option<String>,
 }
 
 /// The report key for this binary's version.
@@ -116,18 +125,25 @@ pub fn run(args: MeasureArgs) -> Result<(), BoxErr> {
     let loaded = Plugins::load(&PluginArgs {
         plugins: args.plugins.clone(),
         lowering: None,
+        representation: None,
     })?;
     let reference = ArmSpec {
         container: &args.reference,
         backend: args.reference_backend,
         source: parse_representation_source(&args.reference_source)?,
-        plugins: loaded.selecting(args.reference_lowering.as_deref())?,
+        plugins: loaded.selecting(
+            args.reference_lowering.as_deref(),
+            args.reference_representation.as_deref(),
+        )?,
     };
     let candidate = ArmSpec {
         container: &args.candidate,
         backend: args.candidate_backend,
         source: parse_representation_source(&args.candidate_source)?,
-        plugins: loaded.selecting(args.candidate_lowering.as_deref())?,
+        plugins: loaded.selecting(
+            args.candidate_lowering.as_deref(),
+            args.candidate_representation.as_deref(),
+        )?,
     };
     let reference_opened = prepare(
         reference.container,
@@ -232,10 +248,10 @@ fn build_arm<'a>(
     let Some(formats) = super::prepare::lowered_formats(spec.backend).map(|(f, _)| f) else {
         return interpreter_arm(arm);
     };
-    if spec.plugins.select.is_some() {
+    if spec.plugins.select.is_some() || spec.plugins.want.is_some() {
         return Err(format!(
-            "a lowering override does not apply to `{:?}`: a lowered arm does not execute \
-             through a lowering provider",
+            "lowering and representation overrides do not apply to `{:?}`: a lowered arm \
+             executes its own formats, not through a lowering provider",
             spec.backend
         )
         .into());

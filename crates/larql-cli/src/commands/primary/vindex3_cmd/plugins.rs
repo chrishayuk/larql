@@ -23,7 +23,7 @@ use larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity;
 #[cfg(unix)]
 use larql_vindex::format::vindex3::plugin::{self, AbiFn, RegisterFn};
 use larql_vindex::format::vindex3::plugin::{LoweringFactory, PluginRegistrar};
-use larql_vindex::format::vindex3::represent::codec::CodecRegistry;
+use larql_vindex::format::vindex3::represent::codec::{CodecRegistry, EncoderRegistry};
 
 type BoxErr = Box<dyn std::error::Error>;
 
@@ -43,24 +43,38 @@ pub struct PluginArgs {
     /// representation is asked for.
     #[arg(long, value_name = "FAMILY/vN")]
     pub lowering: Option<String>,
+
+    /// Ask for the stored representation with this encoding (e.g. a pack
+    /// compiled by a `--plugin`'s encoder) instead of the one `--backend`
+    /// names. The container must hold it; nothing is manufactured under
+    /// this name.
+    #[arg(long, value_name = "ENCODING")]
+    pub representation: Option<String>,
 }
 
 /// What the command line loaded: the codec registry every open decodes
-/// through, the lowering providers to add to whatever `--backend`
-/// composes, and the provider `--lowering` asked for.
+/// through, the encoders `represent` may compile into, the lowering
+/// providers to add to whatever `--backend` composes, the provider
+/// `--lowering` asked for, and the representation `--representation`
+/// asked for.
 pub(crate) struct Plugins {
     pub(crate) codecs: &'static CodecRegistry,
+    pub(crate) encoders: &'static EncoderRegistry,
     pub(crate) lowerings: Vec<LoweringFactory>,
     pub(crate) select: Option<LoweringIdentity>,
+    pub(crate) want: Option<String>,
 }
 
 impl Plugins {
     /// No plugins: the shipped codecs, the shipped providers.
     pub(crate) fn none() -> Self {
+        static NO_ENCODERS: std::sync::OnceLock<EncoderRegistry> = std::sync::OnceLock::new();
         Self {
             codecs: CodecRegistry::builtin(),
+            encoders: NO_ENCODERS.get_or_init(EncoderRegistry::new),
             lowerings: Vec::new(),
             select: None,
+            want: None,
         }
     }
 
@@ -71,50 +85,77 @@ impl Plugins {
             .as_deref()
             .map(parse_lowering_identity)
             .transpose()?;
+        let want = args.representation.clone();
         if args.plugins.is_empty() {
             return Ok(Self {
                 select,
+                want,
                 ..Self::none()
             });
         }
         let mut codecs = CodecRegistry::shipped();
+        let mut encoders = EncoderRegistry::new();
         let mut lowerings = Vec::new();
         for path in &args.plugins {
-            let registrar = load_one(path)?;
-            let (plugin_codecs, plugin_lowerings) = registrar.into_parts();
-            let labels: Vec<&str> = plugin_codecs.iter().map(|c| c.encoding_label()).collect();
-            let identities: Vec<String> = plugin_lowerings
+            let registered = load_one(path)?.into_parts();
+            let labels: Vec<&str> = registered
+                .codecs
+                .iter()
+                .map(|c| c.encoding_label())
+                .collect();
+            let encoder_labels: Vec<&str> = registered
+                .encoders
+                .iter()
+                .map(|e| e.encoding_label())
+                .collect();
+            let identities: Vec<String> = registered
+                .lowerings
                 .iter()
                 .map(|f| f().identity().to_string())
                 .collect();
             eprintln!(
-                "plugin: {} — codecs [{}], lowerings [{}]",
+                "plugin: {} — codecs [{}], encoders [{}], lowerings [{}]",
                 path.display(),
                 labels.join(", "),
+                encoder_labels.join(", "),
                 identities.join(", ")
             );
-            for codec in plugin_codecs {
+            for codec in registered.codecs {
                 codecs = codecs
                     .register(codec)
                     .map_err(|e| format!("{}: {e}", path.display()))?;
             }
-            lowerings.extend(plugin_lowerings);
+            for encoder in registered.encoders {
+                encoders = encoders
+                    .register(encoder)
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+            }
+            lowerings.extend(registered.lowerings);
         }
         Ok(Self {
             codecs: Box::leak(Box::new(codecs)),
+            encoders: Box::leak(Box::new(encoders)),
             lowerings,
             select,
+            want,
         })
     }
 
     /// These loaded plugins, asked for the provider `lowering` names
-    /// (`family/vN`), or for the one `--backend` names when `None`. One
-    /// load serves several arms that each select their own provider.
-    pub(crate) fn selecting(&self, lowering: Option<&str>) -> Result<Self, BoxErr> {
+    /// (`family/vN`) and the stored `representation`, each falling back
+    /// to what `--backend` names when `None`. One load serves several arms
+    /// that each select their own.
+    pub(crate) fn selecting(
+        &self,
+        lowering: Option<&str>,
+        representation: Option<&str>,
+    ) -> Result<Self, BoxErr> {
         Ok(Self {
             codecs: self.codecs,
+            encoders: self.encoders,
             lowerings: self.lowerings.clone(),
             select: lowering.map(parse_lowering_identity).transpose()?,
+            want: representation.map(str::to_string),
         })
     }
 }
@@ -241,6 +282,7 @@ mod tests {
         let err = Plugins::load(&PluginArgs {
             plugins: vec![PathBuf::from("/nonexistent/libnot-a-plugin.dylib")],
             lowering: None,
+            representation: None,
         })
         .err()
         .unwrap()

@@ -445,9 +445,15 @@ pub struct RepresentArgs {
     #[arg(long)]
     pub output: PathBuf,
 
-    /// Target encoding. `NVFP4` is the only compiler today.
+    /// Target encoding: `NVFP4`, a K-quant, or the label of an encoder a
+    /// `--plugin` registered.
     #[arg(long, default_value = "NVFP4")]
     pub encoding: String,
+
+    /// Load a larql plugin whose encoders `--encoding` may name, as
+    /// `vindex3 exec --plugin` loads codecs. Repeatable.
+    #[arg(long = "plugin", value_name = "PATH")]
+    pub plugins: Vec<PathBuf>,
 
     /// Objects to compile. Repeat the flag to name several; omit to
     /// compile every object carrying an eligible tensor.
@@ -768,7 +774,7 @@ fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
 /// of the operation is a number: the pack is only worth persisting if it is
 /// materially smaller than the bytes it was compiled from.
 fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> {
-    use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
+    use larql_vindex::format::vindex3::represent::{compile_representation_with, RepresentSpec};
 
     let mut roles = larql_vindex::format::vindex3::represent::policy::RolePolicy::default();
     for name in &args.include_roles {
@@ -840,7 +846,13 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     let started = std::time::Instant::now();
-    let report = compile_representation(&args.container, &args.output, &spec)?;
+    let plugins = plugins::Plugins::load(&plugins::PluginArgs {
+        plugins: args.plugins.clone(),
+        lowering: None,
+        representation: None,
+    })?;
+    let report =
+        compile_representation_with(&args.container, &args.output, &spec, plugins.encoders)?;
 
     println!("\n── compiled ──");
     println!(

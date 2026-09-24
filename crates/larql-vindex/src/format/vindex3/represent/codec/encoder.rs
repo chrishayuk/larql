@@ -152,7 +152,7 @@ impl EncoderRegistry {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! Two falsifiers this trait's existence must not fail:
     //!
     //! 1. A codec implementing only `RepresentationCodec` — every
@@ -226,7 +226,7 @@ mod tests {
     const LABEL: &str = "TEST_RAW_F32";
     const WIDTH: usize = std::mem::size_of::<f32>();
 
-    struct RawF32Codec;
+    pub(crate) struct RawF32Codec;
 
     impl RepresentationCodec for RawF32Codec {
         fn encoding_label(&self) -> &'static str {

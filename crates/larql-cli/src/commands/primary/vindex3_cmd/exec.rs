@@ -99,10 +99,10 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(all(feature = "gpu", target_os = "macos"))]
     {
         if let Some((formats, label)) = super::prepare::lowered_formats(args.backend) {
-            if plugins.select.is_some() {
+            if plugins.select.is_some() || plugins.want.is_some() {
                 return Err(format!(
-                    "--lowering does not apply to `{:?}`: a lowered arm does not execute \
-                     through a lowering provider",
+                    "--lowering and --representation do not apply to `{:?}`: a lowered arm \
+                     executes its own formats, not through a lowering provider",
                     args.backend
                 )
                 .into());
