@@ -1,0 +1,159 @@
+{
+  "programme": "CONTINUATION-MEM-1",
+  "wave": "measure the continuation state contract before VIEW-1 changes it",
+  "lane": "continuation",
+  "frozen": "2026-09-25, against main 0aae2cea (the CONTINUATION-PLUGIN-1 merge train complete: C6 #545 merged)",
+  "status": "FORECAST — frozen before implementation; the execution record goes in continuation-mem-1-notes.json and this file is not edited",
+  "question": "What continuation bytes exist, which of them are read, when are they read, and what does the current API force into existence that nothing needs?",
+  "why": "CONTINUATION-PLUGIN-1 proved the continuation plane is open: named, selected, authority-carrying, external, dynamically loaded. C5 then met the read contract (`keys(layer) -> &[Vec<f32>]`, every row from position 0) as a concrete limit: a contiguous-buffer provider is inexpressible without opening it. VIEW-1 would open it. This programme measures the state first, so VIEW-1 changes what is PROVEN costly rather than what looks inelegant. The inventory (`docs/continuation-mem-1-inventory.md`) states the suspects from the code; MEM-1 prices them in bytes.",
+  "baseline": {
+    "code": "main 0aae2cea — CONTINUATION-PLUGIN-1 C6 (#545) merged; the last wave of the merge train",
+    "inventory": "docs/continuation-mem-1-inventory.md",
+    "facts": {
+      "read_contract": "keys/values return &[Vec<f32>]: every appended row, from position 0, one heap allocation per row",
+      "row_dtype": "f32 everywhere; row length = kv_dim = num_kv_heads * head_dim",
+      "providers": {
+        "row/v1": "Vec<Vec<f32>> per layer, rows moved in",
+        "canonical/v1": "Array2 matrix per layer AND a Vec<Vec<f32>> view per layer"
+      },
+      "server_provider": "canonical/v1 (larql-server vindex3.rs:295-304)",
+      "cli_default_provider": "row/v1 (larql-cli continuation.rs:29-35)",
+      "instruments_seeing_continuation_bytes": "none"
+    }
+  },
+  "rule": "MEASUREMENT ONLY. No production code changes in this programme. Every suspect in the inventory is priced, none is fixed here: a fix is either VIEW-1 (the read contract) or its own frozen perf rung, chosen from MEM-1's ranking.",
+  "subjects": {
+    "mechanism": "the in-tree fixtures that isolate one operator each: dense softmax, the sliding-window fixture (miniature_glimmer, crosses its window), and the KDA+MLA hybrid. No in-tree conv-QKV model fixture exists (only geometry-level tests), so conv-QKV mechanism AND magnitude are both measured on oute-mamba2attn-250m, the smallest real subject. Mechanism counts are exact on fixtures; magnitudes are NOT claimed from them (synthetic substrates misprice magnitude).",
+    "magnitude": {
+      "dense softmax": "qwen3-0.6b.vindex3",
+      "sliding window": "gemma3-4b-it.vindex3 (sequence longer than its window, so dead rows exist)",
+      "conv-QKV + Mamba2 recurrence": "oute-mamba2attn-250m.vindex3",
+      "KDA + MLA": "Kimi-Linear-48B-A3B-Instruct.s7.vindex3 (the accepted re-encode; .s6 is the declared latent-norm refusal fixture and is excluded). Short sequences only: its cost profile is the point, not throughput"
+    },
+    "geometry_is_read_not_assumed": "every run records the plan's per-layer LayerContinuationGeometry (kind, kv_dim, window, latent width, recurrent buffer bytes); forecasts are evaluated against that record, never against remembered model cards"
+  },
+  "phases": [
+    "batched prefill (fresh state)",
+    "resumed prefill (state already at position p; the server's chained turn)",
+    "decode step",
+    "handoff: ContinuationHandoff seal → ResponseKvCache insert → take → resume"
+  ],
+  "instruments": {
+    "I1_measuring_provider": "`Measured<P: ContinuationProvider>` in a test/bench target (no trait change). Delegates every method and records per call: method, layer, phase, rows offered (slice length), and the capacity and pointer of each moved-in row.",
+    "I1_scoped_allocator": "A counting #[global_allocator] in the measuring binary. While a scope is active on the owner thread it counts allocations, frees, sizes, and reallocations with their old/new addresses. Scope protocol, allocation-free inside: enter → snapshot atomic counters → delegated operation → snapshot → leave → only then record/format. The recorder never allocates while a scope is open.",
+    "I1_thread_integrity": "a GLOBAL 'scope active' flag beside the thread-local attribution: any allocation on a thread other than the scope's owner while any scope is active marks the run INVALID. Together with every provider call recording one thread id, this proves thread-local accounting saw everything rather than assuming it.",
+    "I4_interval_scope_convqkv": "ConvQkv's history copy happens in the executor between the provider's `values(layer)` returning and its next call (`recurrent_state(layer)`), both of which the wrapper sees. The wrapper opens an interval scope when `values` returns on a conv-QKV layer and closes it at the next provider entry. Allocations in that interval are classified by signature: row-sized (kv_dim × 4) allocations are copied history rows; the outer Vec is the list. Reconciled against h (the rows the provider held when the interval opened).",
+    "I5_counting_projections_mla": "`mla_forward_with` (public) takes `projections: &dyn DenseProjections`. On the mechanism subject (the KDA+MLA hybrid) the harness drives the operator with a counting DenseProjections that records each call's (in_dim, out_dim); kv_b_proj calls are the ones shaped (kv_lora_rank → heads·(nope+v_head_dim)). The production projection ledger has no MLA site (sites: Recurrent, Ffn, Attention, Unclassified), so on the real Kimi subject decompressions are NOT independently observable without a production change: there the run records latent rows offered per call and the count is taken from the mechanism measurement plus the plan's geometry, stated as such.",
+    "I2_output_dependency_witness": "renamed from 'read witness': perturbation establishes OUTPUT DEPENDENCE, not physical memory access. Perturb one held row outside the kernel's selected range → bit-identical logits required; perturb one inside it → a change required, with the perturbation sized to the row's own scale (a ULP of a large cell, never of zero).",
+    "I3_phase_harness": "drives each subject through the four phases under row/v1 and canonical/v1 from the same registry, with bit-identical outputs asserted (the C3 parity gate), so byte differences are attributable to storage alone",
+    "I6_storage_identity": "for handoff: the addresses and capacities of every backing allocation (K/V rows, matrix storage, latent rows, recurrent buffers) captured before seal and after resume"
+  },
+  "metrics": {
+    "rows_offered_per_step": "MEASURED at the provider boundary: slice length lent by keys/values",
+    "kernel_selected_range": "STRUCTURAL FACT recorded per call from the execution's position and the layer's window (start..=position); not a measurement of memory reads",
+    "causal_boundary": "I2's verdict that rows outside the selected range do not affect output and rows inside do",
+    "payload/allocated bytes by phase": "split K/V rows, matrix, views, recurrent, latent; headers on their own line",
+    "store_and_duplicate_traffic_per_append": "per appended row, per provider",
+    "realloc_move_traffic": "reallocations that moved, with bytes",
+    "operator_copy_traffic_per_call": "ConvQkv history copy (I4), conv-history copies",
+    "kv_b_proj_calls_per_mla_call": "I5, mechanism subject",
+    "handoff_traffic_and_identity": "allocations and moves across seal → insert → take → resume (I1), and backing-storage identity (I6)",
+    "contract_duplicate_fraction": "duplicate K/V bytes over total allocated K/V representation bytes (matrix capacity + views), headers excluded; recurrent and latent state excluded from both"
+  },
+  "forecasts": [
+    {
+      "id": "M1",
+      "quantity": "allocated_bytes of K/V row storage (row allocations + matrix capacity), headers excluded",
+      "claim": "canonical/v1 allocates 2× to 3× what row/v1 does for the same conversation",
+      "forecast": "ratio ∈ [2.0, 3.0] on every subject at every phase (payload bytes identical by construction)",
+      "falsified_if": "< 1.9 or > 3.1",
+      "applies_when": "only where the denominator holds non-zero ordinary K/V row storage; a phase or layer with no K/V rows (recurrent-only, latent-only, or before any append) is recorded N/A, never a failed or undefined ratio"
+    },
+    {
+      "id": "M2",
+      "quantity": "store and duplicate traffic per appended row",
+      "claim": "row/v1 adopts the backend's row; canonical/v1 stores it into its matrix and duplicates it into a view",
+      "forecast": "row/v1: 0 row-sized allocations inside append and the stored row's address equals the moved-in row's (adoption, no store copy); canonical/v1: STORE traffic kv_dim × 4 per K and per V (matrix row count grows by one, via its public cache()) and DUPLICATE traffic exactly one row-sized allocation per K and per V (the view), i.e. 8·kv_dim bytes duplicated per position per layer, plus realloc-move traffic ≤ 2× the final matrix bytes over the sequence",
+      "falsified_if": "row/v1 allocates a row or stores at a different address; canonical/v1 duplicates other than exactly one row per K and V per append"
+    },
+    {
+      "id": "M3",
+      "quantity": "rows offered vs kernel selected range, with causal validation",
+      "claim": "sliding layers are lent and hold rows outside their selected range, and those rows do not affect output",
+      "forecast": "rows_offered = n; kernel_selected_range length = min(h+1, w) for sliding layers and h+1 for global layers; held-outside-range fraction at sequence end = max(0, 1 − w/n); I2 holds in both directions on every windowed subject",
+      "falsified_if": "an out-of-range perturbation changes logits, or an in-range one does not",
+      "not_claimed": "that the kernel physically reads exactly the selected range; physical access is not instrumented under the measurement-only rule"
+    },
+    {
+      "id": "M4",
+      "quantity": "operator copy traffic (I4)",
+      "claim": "ConvQkv copies every held K/V row on every call",
+      "forecast": "per conv-QKV layer per call: exactly 2·h row-sized allocations and 2·h·kv_dim·4 bytes of copy traffic (plus two outer Vecs), so a decode of T steps from h₀ totals 8·kv_dim·Σ_{t<T}(h₀+t): quadratic",
+      "falsified_if": "row-sized allocations in the interval ≠ 2·h"
+    },
+    {
+      "id": "M5",
+      "quantity": "kv_b_proj calls (I5, mechanism)",
+      "claim": "MLA re-derives every latent row on every call",
+      "forecast": "per MLA call: kv_b_proj calls = h + 1 (the held rows plus the one appended this call); batched prefill of n positions: n(n+1)/2",
+      "falsified_if": "kv_b_proj calls per MLA call ≠ h + 1 on the mechanism subject",
+      "scope": "counts on the mechanism subject; real-Kimi magnitude = count × plan geometry, recorded as derived",
+      "reported_not_adjudicated": "the latent-row clone on append (mla.rs:310) is reported from the allocation record as a derived quantity; no instrument isolates it, so it is not part of M5's verdict"
+    },
+    {
+      "id": "M6",
+      "quantity": "handoff traffic + storage identity",
+      "claim": "handoff and resume move state and copy nothing",
+      "forecast": "0 continuation-sized allocations across seal → insert → take → resume (absorbed_ids excluded), AND every backing allocation's address and capacity identical before seal and after resume (I6)",
+      "falsified_if": "any continuation-sized allocation, or any backing address or capacity changes"
+    },
+    {
+      "id": "M7",
+      "quantity": "contract_duplicate_fraction = duplicate K/V bytes / total allocated K/V representation bytes (matrix capacity + views), headers excluded; recurrent and latent state are outside both numerator and denominator",
+      "claim": "canonical/v1's views are a duplicate that exists only to adapt its matrix authority to &[Vec<f32>]; row/v1's authoritative representation already matches the contract",
+      "forecast": "canonical/v1 ∈ [1/3, 1/2] (views over views + matrix capacity); row/v1 = 0 exactly",
+      "falsified_if": "canonical outside [0.30, 0.52], or row/v1 ≠ 0",
+      "applies_when": "only where the provider holds K/V rows; N/A otherwise (as M1)"
+    },
+    {
+      "id": "M8",
+      "quantity": "recurrent payload and allocated bytes",
+      "claim": "recurrent state is constant-size and updated in place",
+      "forecast": "recurrent PAYLOAD bytes = the plan's RecurrentGeometry::bytes() (a payload quantity); recurrent ALLOCATED bytes ≥ payload and independent of n; per-call copy traffic = the conv-history buffer only",
+      "falsified_if": "recurrent payload ≠ declared geometry, OR allocated recurrent bytes grow with n, OR observed per-call recurrent operator copy traffic differs from the declared conv-history payload (channels × history length × 4)"
+    }
+  ],
+  "controls": [
+    "positive: the scoped allocator sees canonical/v1's view allocations (non-zero where M2 says non-zero); otherwise row/v1's zero means nothing",
+    "negative: with no scope ever opened, attributed allocations are exactly 0",
+    "recorder silence: an empty scope (enter → leave with nothing delegated) attributes exactly 0 allocations, proving the instrument does not measure itself",
+    "thread integrity: the global scope-active flag records zero foreign-thread allocations on every valid run; a planted allocation on a spawned thread inside a scope marks a test run INVALID",
+    "realloc classification: a planted Vec growth that forces a move is counted as move traffic; an in-place one is not",
+    "parity: row/v1 and canonical/v1 produce bit-identical logits on every subject (the C3 gate)",
+    "I2 has both directions on every windowed subject, sized to the row's scale",
+    "I4 reconciliation: row-sized allocations in the ConvQkv interval equal 2·h exactly, or the interval is reported as contaminated",
+    "I5: the counting DenseProjections sees every MLA projection (q, kv_a, kv_b, o) with the expected shapes, not only kv_b"
+  ],
+  "outputs": {
+    "per_subject": "a JSON record per subject × provider × phase: geometry, every metric, the controls' verdicts, git SHA, container identity",
+    "adjudication": "each forecast HELD / FALSIFIED against the records, stating which byte quantity it used; then a RANKING of avoidable allocated bytes and copy traffic by magnitude on the real containers, each item classified as (a) a duplicate forced by the read contract (VIEW-1's business), (b) an operator implementation choice (a perf rung), or (c) a provider storage choice. VIEW-1 is scoped from (a) only."
+  },
+  "out_of_scope": [
+    "fixing anything the measurement finds",
+    "changing the read contract (VIEW-1)",
+    "windowed or compressed providers (WINDOW-1)",
+    "cross-process or remote continuation",
+    "throughput benchmarking — time is recorded only where a copy's cost needs a unit"
+  ],
+  "next": "VIEW-1, scoped from the (a) items of MEM-1's ranking; WINDOW-1 after it",
+  "byte_quantities": {
+    "payload_bytes": "mathematically live continuation values: elements × dtype size (f32 = 4). Identical across providers for the same conversation; computed from the plan's geometry and the row counts.",
+    "allocated_bytes": "live heap capacity attributable to continuation storage: allocations made inside a measured scope and still live, plus the capacity of allocations moved in across the provider boundary (the appended Vec's capacity × 4). Outer-Vec headers and per-row allocation granularity are reported as a separate line, never folded in.",
+    "copy_traffic": "bytes written into newly materialised continuation or operator storage: fresh allocations filled from existing continuation values (a row to_vec, a view), plus reallocations the allocator had to MOVE (realloc returning a new address counts the old size; an in-place realloc counts 0). Writing a moved-in value into the provider's authoritative store is reported as STORE traffic, separately from duplicate traffic."
+  },
+  "operational_definitions": {
+    "h": "the number of historical rows the provider holds for the layer when the operator call begins (not the token position). Every per-call formula below is written in h.",
+    "n": "rows held at the end of the sequence",
+    "w": "the layer's attention window (None = global)"
+  }
+}
