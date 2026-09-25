@@ -179,6 +179,60 @@
         "doc gates": "clean",
         "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
       }
+    },
+    "C5": {
+      "name": "hostile external provider",
+      "status": "built and held",
+      "branch": "continuation-plugin-1/c5",
+      "base": "C4 (continuation-plugin-1/c4)",
+      "date": "2026-09-25",
+      "rule": "Frozen before implementation, as LOWERING-PLUGIN-1 L5 was: what the provider may borrow from the crates is decided HERE, so a proof that needed an internal cannot be quietly re-described as one that did not.",
+      "design_frozen_before_implementation": {
+        "where": "`crates/larql-kv/tests/external_continuation_provider/` (`main.rs` the journey and controls, `provider.rs` the provider and factory, `genericity.rs` the source scan). An integration test is a separate crate in cargo's model: it sees only what `larql-kv` and `larql-vindex` export. larql-kv because `canonical/v1`, the parity reference, lives there. No new workspace crate.",
+        "identity": "`hostile-test-provider/v77`, spelled in the test target and in test modules only.",
+        "shape": "Deliberately boring: row semantics, KV only (`regions() == [Kv]`), its own storage type and its own position counter, and `validate_config` accepting one option (`bits`) it records but does not act on — enough for configuration to be a second authority. `recurrent_state` / `latent_state` refuse by naming the provider (the trait makes both REQUIRED).",
+        "may_borrow": "Exported API only: the `ContinuationProvider` trait and its geometry/error types, `ContinuationFactory`/`ContinuationRegistry`/`SelectedContinuation`/`ContinuationHandoff`, `shipped_continuations()`, the fixtures and the reference backend. Anything else it turns out to need is a finding, recorded either way.",
+        "expected_departure_from_the_forecast": "The forecast says 'one contiguous buffer per layer'. The read contract is `keys(layer) -> &[Vec<f32>]`, which a single contiguous `Vec<f32>` cannot answer without also holding per-row `Vec`s. F3 forbids opening the read contract in C1–C5, so the provider stores rows as the trait returns them. If implementation confirms this, it is recorded as a finding for the stage-2 read-contract freeze (VIEW-1), not worked around."
+      },
+      "controls_frozen": [
+        "the journey: register (beside canonical/v1 and row/v1) → capability match against a sliding-window plan → factory construction → prepare → prefill → decode → sealed handoff held apart from any session → resume under an authority selected from a SECOND registry → decode on; K/V rows, logits and ids bit-identical to canonical/v1 driven through the same shape",
+        "the caller named it: in a registry holding canonical/v1, row/v1 and the external provider, only the external factory builds (per-factory build counts), so 'the registry resolved what was named' is told apart from 'it was the only implementation that could run'",
+        "the numbers are its own: a sibling provider identical except that it corrupts one stored value makes the record differ, so no shipped path is answering underneath",
+        "F5: against the recurrent+latent hybrid, selection refuses naming the first layer and region, with ZERO builds; and the late path is shown to exist — the same provider driven directly (bypassing selection) is refused mid-prefill by ContinuationError — so the early refusal is selection's doing",
+        "C4 inherited: a second registry holding the provider at v78 refuses the v77 handoff as RevisionChanged; config bits=3 against a bits=4 handoff refuses as ConfigurationChanged",
+        "F4 genericity: no non-test `.rs` under any crate's `src/` contains the external family, its type names or its constants; positive control — the same scanner, over the same files, finds the family `canonical` that this build DOES ship"
+      ],
+      "out_of_scope": "dynamic loading (C6); cross-process persistence (separate freeze); opening the read contract (F3, stage 2)",
+      "what_landed": [
+        "`crates/larql-kv/tests/external_continuation_provider/`: `provider.rs` (`HostileRows` + `HostileFactory`, and the corrupting sibling), `main.rs` (the journey and its controls), `genericity.rs` (the source scan and its positive control). Nine tests.",
+        "**No production file changed.** `git diff --stat HEAD -- crates` over the implementation is empty apart from the new test directory: every step of the journey was reachable through exported API."
+      ],
+      "witnesses": {
+        "the_journey": "`an_external_provider_carries_a_conversation_bit_identical_to_canonical`: registered beside canonical/v1 and row/v1 (every build counted) → selected against the sliding-window plan → begin → prefill → 3 decode steps → handoff held apart from every session → resumed under an authority selected from a SECOND registry → 3 more steps. Prefill logits, every step's logits, ids, position and every layer's K/V rows equal canonical/v1 driven through the same shape; builds (external, canonical, row) = (1,0,0) for the writer and (0,0,0) for the reader; the conversation crosses the sliding window.",
+        "the_numbers_are_its_own": "`the_numbers_are_the_external_providers_own`: the honest provider equals canonical/v1; the sibling that moves one stored key by one ULP does not",
+        "F5": "`a_hybrid_plan_is_refused_at_selection_with_nothing_built`: against the KDA+MLA hybrid, selection refuses `Unsupported` naming the provider, the first recurrent/latent layer and its declared `[Kv]`, with zero builds anywhere. Control `control_the_late_refusal_path_exists_so_the_early_one_is_selections`: the same provider built directly is refused mid-prefill, so the early refusal is selection's doing",
+        "C4_inherited": "revision v78 refuses the v77 handoff as RevisionChanged; `bits=3` against a `bits=4` handoff refuses as configuration_changed; an unknown option is refused by the provider that reads it, naming the one it takes",
+        "F4_genericity": "`no_production_source_names_the_external_provider`: the family, `HostileRows` and `HostileFactory` appear in no non-test `.rs` under any crate's `src/` (≥100 files); positive control: the same scanner finds the shipped family literal `\"canonical\"`",
+        "mutation_controls": "a planted `// hostile-test-provider` line in `larql-kv/src/vindex3/registry.rs` turned the genericity scan red, naming the file; declaring `ContinuationRegion::ALL` turned the F5 test red; both reverted and re-verified"
+      },
+      "findings": [
+        "**The contiguous-buffer departure is confirmed by the type, not by taste.** `keys(layer) -> &[Vec<f32>]` can only be answered from storage that already holds one `Vec` per row, so 'one contiguous buffer per layer' is not expressible without opening the read contract. F3 forbids that in C1–C5; the provider stores rows. This is input to the stage-2 read-contract freeze (VIEW-1), where a slice-of-rows view is the question.",
+        "**The late refusal does not name the provider.** A KV-only provider that takes the trait's DEFAULT `prepare_continuation` is refused mid-prefill as \"`a KV-only provider` holds no recurrent state, which layer 0 requires\" — the default cannot know who it is running for. Selection refuses first and names the identity, so production callers never see this text; a provider can override `prepare_continuation` to name itself (no new method, F3 unaffected). Recorded, not changed here: C5 changes no production file.",
+        "**What the provider had to borrow, and nothing more:** the trait, `LayerKvGeometry`, `ContinuationError`, `RecurrentState`/`LatentKvRows` (only as the types of its two refusals), the registry surface and `ContinuationHandoff`. No `pub(super)` item was needed."
+      ],
+      "falsifiers": {
+        "F1": "held — the external provider travels as `Box<dyn ContinuationProvider + Send>` inside `ContinuationHandoff`",
+        "F2": "held — the registry that holds the built-ins built none of them in the external journey (counted)",
+        "F3": "held — 9 trait methods, `AttentionStepCall` unchanged; the provider implemented the six it must plus its two required refusals and took the default `prepare_continuation`",
+        "F4": "held — genericity scan with a positive control and a planted-violation red control",
+        "F5": "held — a hybrid plan is refused at selection with nothing built; the late path exists and is pre-empted"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "cargo clippy -p larql-kv --all-targets -D warnings": "clean",
+        "cargo test -p larql-kv": "0 failed; 1307 passed across 15 binaries (9 new)",
+        "production files changed": "none"
+      }
     }
   }
 }
