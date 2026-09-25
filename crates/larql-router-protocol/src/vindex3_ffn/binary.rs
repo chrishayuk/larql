@@ -1,6 +1,30 @@
 //! Exact f32 wire v1. All integers and IEEE-754 bits are little-endian.
 //! Header: magic[4], worker handle[16], sequence u64, layer u32, width u32.
 use super::Binding;
+pub const STREAM_PATH: &str = "/v1/vindex3/ffn/stream";
+pub const STREAM_PROTOCOL: &str = "larql.v3-ffn.f32.v1";
+pub const CONTROL_LIMIT: usize = 1024;
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamOptions {
+    pub profile: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamTiming {
+    pub sequence: u64,
+    pub timing: super::WorkerTiming,
+}
+/// WebSocket framing bytes for one unfragmented message (excludes TCP/TLS).
+pub fn websocket_overhead(len: usize, masked: bool) -> usize {
+    2 + if len < 126 {
+        0
+    } else if len <= 65535 {
+        2
+    } else {
+        8
+    } + if masked { 4 } else { 0 }
+}
 pub const OPEN_PATH: &str = "/v1/vindex3/ffn/open";
 pub const PATH: &str = "/v1/vindex3/ffn/binary";
 pub const CONTENT_TYPE: &str = "application/vnd.larql.v3-ffn.f32";

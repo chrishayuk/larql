@@ -16,6 +16,7 @@ pub struct HttpFfnShards {
     bindings: Vec<Binding>,
     handles: Option<Vec<binary::Handle>>,
     sequences: Vec<AtomicU64>,
+    streams: Option<Vec<std::sync::Mutex<stream::Connection>>>,
 }
 impl HttpFfnShards {
     pub fn connect(urls: &[String], token: Option<&str>) -> Result<Self, String> {
@@ -88,6 +89,7 @@ impl HttpFfnShards {
             bindings,
             handles,
             sequences,
+            streams: None,
         })
     }
 }
@@ -215,6 +217,9 @@ impl HttpFfnShards {
         if normalized.len() != hidden {
             return Err("binary FFN input width mismatch".into());
         }
+        if self.streams.is_some() {
+            return self.forward_stream(shard, layer, normalized);
+        }
         let sequence = self.sequences[shard]
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| "FFN sequence exhausted; reconnect")?;
@@ -291,3 +296,5 @@ impl HttpFfnShards {
 
 #[cfg(test)]
 mod tests;
+
+mod stream;

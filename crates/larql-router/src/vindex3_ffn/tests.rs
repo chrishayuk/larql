@@ -32,6 +32,93 @@ fn binding() -> Binding {
         }],
     }
 }
+
+async fn stream_upgrade(
+    State(mode): State<Arc<AtomicUsize>>,
+    ws: axum::extract::ws::WebSocketUpgrade,
+) -> axum::response::Response {
+    ws.protocols([binary::STREAM_PROTOCOL])
+        .on_upgrade(move |mut socket| async move {
+            use axum::extract::ws::Message;
+            let Some(Ok(Message::Text(_))) = socket.recv().await else {
+                return;
+            };
+            while let Some(Ok(Message::Binary(bytes))) = socket.recv().await {
+                let frame = binary::decode(&bytes, Direction::Request, 4).unwrap();
+                let mut response = binary::encode(
+                    Direction::Response,
+                    frame.handle,
+                    frame.sequence,
+                    frame.layer as usize,
+                    &frame.row,
+                )
+                .unwrap();
+                match mode.load(Ordering::SeqCst) {
+                    1 => response[4] ^= 1,
+                    2 => response[20] ^= 1,
+                    3 => response[28] ^= 1,
+                    4 => {
+                        response.pop();
+                    }
+                    5 => response[36..40].copy_from_slice(&f32::NAN.to_bits().to_le_bytes()),
+                    6 => {
+                        let _ = socket.send(Message::Text("wrong type".into())).await;
+                        continue;
+                    }
+                    7 => return,
+                    8 => response[0] = 0,
+                    9 => response.resize(2048, 0),
+                    _ => {}
+                }
+                if socket.send(Message::Binary(response.into())).await.is_err() {
+                    return;
+                }
+            }
+        })
+}
+
+#[tokio::test]
+async fn stream_preserves_bits_and_permanently_refuses_reuse_after_fault() {
+    let mode = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(PATH, get(|| async { Json(binding()) }))
+        .route(binary::OPEN_PATH, post(open))
+        .route(binary::STREAM_PATH, get(stream_upgrade))
+        .with_state(mode.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    tokio::task::spawn_blocking(move || {
+        let urls = vec![url];
+        let row = [0.0, -0.0, f32::from_bits(1), 1.25];
+        for fault in 1..=9 {
+            mode.store(0, Ordering::SeqCst);
+            let client = HttpFfnShards::connect_stream(&urls, None).unwrap();
+            for _ in 0..3 {
+                let actual = client.forward_bound(0, 0, &row, &binding()).unwrap();
+                assert_eq!(
+                    actual.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                    row.map(f32::to_bits)
+                );
+            }
+            mode.store(fault, Ordering::SeqCst);
+            assert!(
+                client.forward_bound(0, 0, &row, &binding()).is_err(),
+                "fault {fault}"
+            );
+            mode.store(0, Ordering::SeqCst);
+            assert!(client
+                .forward_bound(0, 0, &row, &binding())
+                .unwrap_err()
+                .contains("fresh coordinator"));
+        }
+    })
+    .await
+    .unwrap();
+    server.abort();
+}
 async fn open(
     State(mode): State<Arc<AtomicUsize>>,
     Json(request): Json<Binding>,

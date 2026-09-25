@@ -73,6 +73,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 
 [dev-dependencies]
+tungstenite = "0.29"
 tempfile = "3"
 # Integration test wires a real GridServiceImpl alongside the server. Dev-only.
 larql-router = { path = "../larql-router" }

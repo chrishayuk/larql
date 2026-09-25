@@ -1334,7 +1334,39 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
     }
     let path = container.path().to_path_buf();
     tokio::task::spawn_blocking(move || {
+        use tungstenite::{client::IntoClientRequest, Message};
+        let opened: binary::Opened = reqwest::blocking::Client::new().post(format!("{}{}", urls[0], binary::OPEN_PATH)).json(&binding).send().unwrap().json().unwrap();
+        for fault in 0..7 {
+            let address = urls[0].strip_prefix("http://").unwrap();
+            let tcp = std::net::TcpStream::connect(address).unwrap();
+            tcp.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            let mut request = format!("ws://{address}{}", binary::STREAM_PATH).into_client_request().unwrap();
+            request.headers_mut().insert("Sec-WebSocket-Protocol", binary::STREAM_PROTOCOL.parse().unwrap());
+            let (mut socket, _) = tungstenite::client(request, tcp).unwrap();
+            socket.send(Message::Text(r#"{"profile":false}"#.into())).unwrap();
+            let mut frame = binary::encode(binary::Direction::Request, opened.handle, 1, 0, &vec![0.3;binding.program.hidden]).unwrap();
+            // A valid operation first proves the stream is admitted. Duplicate
+            // sequence, unlike stateless HTTP replay, is then a protocol error.
+            socket.send(Message::Binary(frame.clone().into())).unwrap();
+            assert!(matches!(socket.read().unwrap(), Message::Binary(_)));
+            frame[20..28].copy_from_slice(&2u64.to_le_bytes());
+            match fault {
+                0 => frame[4] ^= 1,
+                1 => frame[28..32].copy_from_slice(&1u32.to_le_bytes()),
+                2 => frame[20..28].copy_from_slice(&1u64.to_le_bytes()),
+                3 => frame[36..40].copy_from_slice(&f32::NAN.to_bits().to_le_bytes()),
+                4 => { frame.pop(); },
+                5 => frame.push(0),
+                6 => frame[32..36].copy_from_slice(&0u32.to_le_bytes()),
+                _ => unreachable!(),
+            }
+            socket.send(Message::Binary(frame.into())).unwrap();
+            assert!(!matches!(socket.read(), Ok(Message::Binary(_))), "stream accepted fault {fault}");
+        }
         let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+        let stream_transport = HttpFfnShards::connect_stream(&urls, None).unwrap();
+        let stream_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), stream_transport).unwrap();
+        let mut stream_session = DenseFfnSession::new(runtime.plan(), &stream_ops, runtime.backend()).unwrap();
         let binary_transport = HttpFfnShards::connect_binary(&urls, None).unwrap();
         let binary_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), binary_transport).unwrap();
         let mut binary_session = DenseFfnSession::new(runtime.plan(), &binary_ops, runtime.backend()).unwrap();
@@ -1382,6 +1414,17 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
             for call in &binary_rows[0].provider_calls {
                 assert_eq!(call["request_bytes"], binary::HEADER_BYTES + 4 * ops.hidden());
                 assert_eq!(call["response_bytes"], call["request_bytes"]);
+            }
+            let capture = Capture::start().unwrap();
+            let stream_logits = stream_session.step(id).unwrap();
+            let stream_rows = capture.finish();
+            assert_eq!(stream_logits.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+            for call in &stream_rows[0].provider_calls {
+                assert_eq!(call["request_bytes"], binary::HEADER_BYTES + 4 * ops.hidden());
+                assert_eq!(call["response_bytes"], call["request_bytes"]);
+                assert!(call["telemetry_bytes"].as_u64().unwrap() > 0);
+                assert!(call["websocket_overhead_bytes"].as_u64().unwrap() > 0);
+                assert!(call["worker"]["ffn_ns"].as_u64().unwrap() <= call["worker"]["handler_ns"].as_u64().unwrap());
             }
             smoke.push(serde_json::json!({"token_id": id, "local": local_rows[0], "remote": rows[0]}));
             assert_eq!(

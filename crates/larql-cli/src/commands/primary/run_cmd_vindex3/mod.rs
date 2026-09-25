@@ -321,6 +321,8 @@ impl BackendVisitor for Runner<'_> {
                 .transpose()?;
             let connect = if self.args.v3_ffn_wire.as_deref() == Some("json") {
                 larql_router::vindex3_ffn::HttpFfnShards::connect
+            } else if self.args.v3_ffn_wire.as_deref() == Some("stream") {
+                larql_router::vindex3_ffn::HttpFfnShards::connect_stream
             } else {
                 larql_router::vindex3_ffn::HttpFfnShards::connect_binary
             };

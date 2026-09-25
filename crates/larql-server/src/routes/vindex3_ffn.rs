@@ -220,3 +220,6 @@ pub async fn forward(
     )
         .into_response())
 }
+
+mod stream;
+pub use stream::upgrade as stream_upgrade;

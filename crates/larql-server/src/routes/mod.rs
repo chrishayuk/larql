@@ -163,6 +163,7 @@ pub fn public_explorer_router(
 /// Build the router for single-model serving.
 pub fn single_model_router(state: Arc<AppState>) -> Router {
     Mount::new()
+        .at(VINDEX3_FFN_STREAM, get(vindex3_ffn::stream_upgrade))
         .at(
             VINDEX3_FFN_OPEN,
             post(vindex3_ffn::open).layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),

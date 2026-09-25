@@ -28,7 +28,7 @@ def summarize(rows):
     result["tokens_per_second"] = 1e9 / result["total_ns"]
     result["median_total_ns"] = statistics.median(row["total_ns"] for row in rows)
     calls = [row["provider_calls"] for row in rows]
-    for key in ("request_bytes", "response_bytes", "encode_ns", "decode_ns", "roundtrip_ns", "transport_remainder_ns"):
+    for key in ("request_bytes", "response_bytes", "encode_ns", "decode_ns", "roundtrip_ns", "transport_remainder_ns", "telemetry_bytes", "websocket_overhead_bytes", "stream_setup_bytes"):
         values = [sum(c[key] for c in cs) for cs in calls if all(c.get(key) is not None for c in cs)]
         result[key] = statistics.mean(values) if len(values) == len(rows) else None
     for key in ("decode_ns", "queue_ns", "execute_ns", "ffn_ns", "encode_ns", "handler_ns"):
@@ -45,9 +45,12 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=48)
     parser.add_argument("--skip-decode", type=int, default=8)
     parser.add_argument("--blocks", type=int, default=2)
-    parser.add_argument("--wire", choices=("json", "binary"), default="json")
+    parser.add_argument("--wire", choices=("json", "binary", "stream"), default="json")
     parser.add_argument("--wire-comparison", action="store_true", help="Nest JSON / binary / JSON within local controls")
+    parser.add_argument("--stream-comparison", action="store_true", help="Nest binary HTTP / stream / binary HTTP within local controls")
     args = parser.parse_args()
+    if args.stream_comparison and args.wire_comparison:
+        parser.error("choose only one comparison")
     root = Path(__file__).resolve().parents[2]
     model = args.model.resolve()
     out = args.out.resolve()
@@ -68,7 +71,7 @@ def main():
         "metadata_sha256": {name: hashlib.sha256((model / name).read_bytes()).hexdigest() for name in ("index.json", "system_graph.json")},
         "binary_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (cli, server)},
         "settings": settings, "prompt": prompt, "max_tokens": args.max_tokens,
-        "skip_decode": args.skip_decode, "wire": args.wire, "wire_comparison": args.wire_comparison,
+        "skip_decode": args.skip_decode, "wire": args.wire, "wire_comparison": args.wire_comparison, "stream_comparison": args.stream_comparison,
         "clock": "per-position profile; load/tokenization/output excluded",
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -133,6 +136,32 @@ def main():
             write_json(out / "trials.json", trials)
             print(f"{label}: {result['summary']['total_ns'] / 1e6:.3f} ms/position; {len(measured)} measured positions; IDs match", flush=True)
             return result["summary"]
+
+        if args.stream_comparison:
+            for warm in range(2):
+                run(f"warm-{warm}-local", False)
+                run(f"warm-{warm}-binary", True, "binary")
+                run(f"warm-{warm}-stream", True, "stream")
+            brackets = []
+            for block in range(args.blocks):
+                local_before = run(f"block-{block}-local-before", False)
+                before = run(f"block-{block}-binary-before", True, "binary")
+                candidate = run(f"block-{block}-stream", True, "stream")
+                after = run(f"block-{block}-binary-after", True, "binary")
+                local_after = run(f"block-{block}-local-after", False)
+                midpoint = (before["total_ns"] + after["total_ns"]) / 2
+                drift = abs(before["total_ns"] - after["total_ns"]) / midpoint
+                local_mid = (local_before["total_ns"] + local_after["total_ns"]) / 2
+                local_drift = abs(local_before["total_ns"] - local_after["total_ns"]) / local_mid
+                brackets.append({"block": block, "diagnostic_only": True,
+                    "binary_before": before, "stream": candidate, "binary_after": after,
+                    "local_before": local_before, "local_after": local_after,
+                    "control_drift": drift, "local_control_drift": local_drift,
+                    "stream_over_binary": candidate["total_ns"] / midpoint if drift <= .01 else None,
+                    "stream_over_local": candidate["total_ns"] / local_mid if local_drift <= .01 else None})
+                write_json(out / "brackets.json", brackets)
+                print(f"block {block}: binary drift {drift:.2%}, local drift {local_drift:.2%}; diagnostic only", flush=True)
+            return
 
         for warm in range(2):
             run(f"warm-{warm}-local", False)

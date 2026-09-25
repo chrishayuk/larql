@@ -33,7 +33,8 @@ Range, shape, finite values and numerical provider identity remain checked at
 the operation boundary.
 
 The handle is not an authentication credential; all routes use the existing
-server authentication and body limits. An unknown handle, failed open, missing
+server authentication. HTTP bodies retain the existing body limits; stream
+messages have explicit size limits described below. An unknown handle, failed open, missing
 binary endpoint or malformed reply refuses execution. There is no JSON
 fallback, implicit reopen, or application retry. A failed FFN still invalidates
 the coordinator continuation and requires a fresh session with replay.
@@ -90,3 +91,61 @@ open bindings, sequence/layer/handle mismatch, stale incarnations, sequence
 exhaustion, deterministic duplicate requests and local/JSON/binary bitwise
 fixture logits through the sliding-window boundary. These correctness gates
 are separate from real-model timing diagnostics.
+
+## Experimental persistent stream
+
+`--v3-ffn-wire stream` selects WIRE-2. Binary HTTP remains the default.
+After the same GET/open binding exchange, the client upgrades
+`/v1/vindex3/ffn/stream` with WebSocket subprotocol `larql.v3-ffn.f32.v1`.
+HTTP roots select WS and HTTPS roots select WSS with certificate verification;
+the upgrade sends the same bearer credential and passes the existing route auth.
+This is a new WebSocket transport on the HTTP listener, not the legacy MoE gRPC
+service: the latter's routing/reduction messages have different semantics.
+
+There is one connection per worker, serialized by a client mutex, and at most
+one outstanding operation per connection. The first text message is
+`{"profile":false}` (or `true`); this mode is fixed for that connection.
+Each subsequent request is exactly one binary VFF1 message, and each numerical
+reply is exactly one binary VFR1 message. The 36-byte ABI and f32 arithmetic are
+unchanged. Server compute still uses the same per-operation blocking dispatch.
+No batching, prediction, Q8 carrier, remote KV or automatic reconnection is added.
+
+The connection pins the prepared worker incarnation present at upgrade. Reload
+cannot substitute a different model beneath it; new connections must reopen the
+new incarnation. Stream sequences must strictly increase from a nonzero value.
+A duplicate is a protocol error on this connection (HTTP stateless replay remains
+legal). Any unexpected message type, stale handle, bad sequence, invalid frame,
+failed transform, disconnect or I/O timeout ends the stream. A client only
+restores its socket after a fully checked reply, so a late response cannot be
+accepted by a subsequent call after failure. Create a fresh coordinator and
+replay the continuation after a stream failure.
+
+Both endpoints bound incoming WebSocket frames/messages to
+`max(36 + 4 * hidden, 1024)` bytes. Control messages additionally have a 1024-byte
+limit. The server has a 60-second receive/send timeout (including idle streams);
+the client has 60-second socket I/O timeouts. DNS lookup and waiting for the
+per-worker mutex are outside socket timeouts. Only this sequential protocol is
+supported; unsolicited text, ping/pong and close messages end operation service.
+TLS support uses the system native-TLS backend; current automated and model-backed
+transport checks exercise loopback WS, not a deployed WSS endpoint.
+
+When profiling, a correlated text message `{sequence, timing}` precedes each
+binary reply. `request_bytes` and `response_bytes` count numerical payloads,
+just as HTTP body counts do. `telemetry_bytes` records the text payload;
+`websocket_overhead_bytes` records WS headers/masking for numerical and timing
+messages. `stream_setup_bytes` records the initial options message and its WS
+framing on the first operation. Cold HTTP binding/upgrade, TCP and TLS overhead
+are excluded. Without profiling, neither timing message nor timing work occurs.
+
+Stream worker `decode_ns` starts after a complete WS message arrives; HTTP worker
+`decode_ns` includes body receipt. Consequently the transport remainder also
+includes inbound WS message assembly and must not be called pure network RTT.
+Both remainders include response sending and scheduling outside the measured
+handler. The diagnostic text encode/send is also outside stream handler time.
+
+Validation includes repeated bitwise finite-carrier round trips, permanently
+refused reuse after corrupted/miscorrelated/oversized replies or peer close,
+worker rejection of stale handles, repeated sequences, wrong layers and invalid
+carriers, and local/JSON/HTTP/stream bitwise continuation across the fixture's
+sliding window. Real-model measurements use `run_loopback.py --stream-comparison`
+and keep drift-rejected brackets separate.

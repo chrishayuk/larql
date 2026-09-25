@@ -486,7 +486,7 @@ fn cpu_profile_preserves_ids_and_refuses_to_overwrite() {
 
 #[test]
 fn binary_ffn_wire_flag_is_explicit_and_scoped() {
-    for wire in ["binary", "json"] {
+    for wire in ["binary", "json", "stream"] {
         let run = Shell::try_parse_from([
             "larql",
             "model",
