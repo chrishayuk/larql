@@ -1,7 +1,7 @@
 {
   "programme": "CONTINUATION-MEM-1",
   "forecast": "docs/represent/forecasts/continuation-mem-1.json (frozen at main ffbc1238; not edited)",
-  "status": "EXECUTING — instrument deviations recorded before any measurement; no record yet",
+  "status": "EXECUTED 2026-09-26 — seven of eight forecasts HELD; M8 FALSIFIED on one clause (KDA copies nothing). Ranking below scopes VIEW-1.",
   "execution_base": "main ffbc1238 (the freeze merge, #546)",
   "deviations_recorded_before_measurement": [
     {
@@ -43,5 +43,166 @@
       "operationalisation": "M8's per-call copy clause is adjudicated only from windows with zero foreign allocations. Those come from the serial ReferenceBackend (CpuParallelism::Serial semantics — 'the reference oracle'), on oute-mamba2attn-250m (Mamba2 + conv-QKV) and on the in-tree fixtures: the KDA+MLA hybrid (KDA) and hybrid_lllf_f32_model (Gated DeltaNet), which is pub and was not listed in the freeze's subjects. M8's payload and n-independence clauses are storage facts from provider scopes (integrity-clean on every run) and are adjudicated on the ProductionBackend runs as frozen.",
       "why_not_a_forecast_edit": "backend choice is not fixed by the freeze; the rule that a window with foreign allocations is INVALID is kept, not relaxed"
     }
-  ]
+  ],
+  "records": {
+    "file": "docs/represent/forecasts/continuation-mem-1-records.json (compact extract; full per-call records regenerate from the harness)",
+    "harness": "crates/larql-kv/tests/continuation_mem_1 (controls + mechanism + #[ignore] real subjects named by LARQL_MEM1_*), crates/larql-server/tests/continuation_mem_1_handoff (M6)",
+    "shas": "qwen3-0.6b and oute (production) at a097c9c5; every other record at 0924df88. The only harness change between them adds the D6 tests (gated-delta fixture, oute on the reference backend); no instrument code changed. The fixture and D6 records ran with those two tests in the working tree, committed with this record.",
+    "subjects_run": [
+      "mem1-dense",
+      "mem1-sliding",
+      "mem1-kda-mla",
+      "mem1-gated-delta (D6)",
+      "qwen3-0.6b.vindex3",
+      "gemma3-4b-it.vindex3 (1,124 positions, window 1,024)",
+      "oute-mamba2attn-250m.vindex3 (production and reference)",
+      "Kimi-Linear-48B-A3B-Instruct.s7.vindex3 (24 positions; peak RSS 28 GiB, weights mapped)"
+    ],
+    "controls": "all pass: negative (no scope → 0 attributed), recorder silence (empty scope → 0), positive (a 33-float Vec is seen with its size and table entry), thread integrity (a planted worker-thread allocation is foreign), realloc classification (moved ⇔ pointer changed; moved bytes = old sizes), parity (row/v1 ≡ canonical/v1 bit-for-bit on all 9 subjects). All 18 subject×provider runs instrument-valid: 0 foreign allocations in provider scopes, 0 unresolved capacities, 0 unclassified append events, no dropped events, live table never overflowed.",
+    "instrument_artifacts": [
+      "The ~16 MB 'seal' scope in the M6 record is Measured's own preallocated call-record buffer (1<<16 records), built by the test factory inside begin(); it is the instrument, not the provider.",
+      "Operator-spanning recurrent windows on ProductionBackend and on the reference backend's batched prefill contain worker-thread allocations; per D6 they are INVALID and their owner-thread counts are recorded but not adjudicated.",
+      "Realloc moved-vs-in-place is heap-layout dependent and varies run to run: a re-run of the fixtures after a behaviour-neutral refactor (Window variant rename, clippy) reproduced every record field except canonical's matrix_realloc_moved / _in_place counts in one prefill phase (sliding 10→7 moves, 352→176 B; gated-delta 4→5, 512→768 B). M2's bound (moved ≤ 2× final matrix) holds in both runs; realloc-move magnitudes are therefore stated as observed values, not constants."
+    ]
+  },
+  "adjudication": {
+    "M1": {
+      "verdict": "HELD",
+      "quantity": "kv_allocated_bytes_headers_excluded (row allocations + matrix capacity), canonical/row",
+      "observed": "2.000–2.862 on every subject and phase with K/V rows (fixtures 2.0–2.78; qwen 2.0–2.6; oute 2.0–2.6; gemma 2.822–2.862). N/A on kda-mla and Kimi (no ordinary K/V rows), per applies_when.",
+      "note": "2.0 exactly occurs where the matrix's capacity equals its rows (a growth step landed on the count); the forecast's lower bound is reached, not crossed."
+    },
+    "M2": {
+      "verdict": "HELD",
+      "observed": "row/v1: 0 row-sized allocations and the stored row IS the moved-in row on all 43,690 appends across subjects. canonical/v1: exactly 2 duplicate (view) allocations per append, matrix rows +1 per append, and realloc-move traffic ≤ 2× final matrix bytes everywhere (gemma 284.4 MB moved vs 570.4 MB final matrix; qwen 44.8 vs 58.7 MB).",
+      "instrument_note": "raw row-sized counts also include each matrix's first one-row allocation; pointer identity (D4) separates them — e.g. dense 36 row-sized = 32 views + 4 matrix first allocations."
+    },
+    "M3": {
+      "verdict": "HELD",
+      "observed": "keys lends every held row (h) and the step covers h+1 positions; selected range = min(h+1, w). gemma: 29 sliding layers, at end n=1,124, w=1,024, held-outside fraction 0.089 = 1 − 1024/1124. I2 holds in both directions on all 29 gemma sliding layers (row 0 perturbed → logits bit-identical; row 1,115 → changed) and on the fixture (window 3).",
+      "not_claimed": "physical memory access."
+    },
+    "M4": {
+      "verdict": "HELD (on the D1 union)",
+      "observed": "every conv-QKV call, production and reference: row-sized allocations = 2·h exactly (76/76 production calls + all reference calls), plus exactly 2 other allocations (the two outer Vecs). The frozen window alone saw exactly h on every call — as D1 predicted; followed literally the freeze would have read FALSIFIED by instrument placement."
+    },
+    "M5": {
+      "verdict": "HELD (mechanism)",
+      "observed": "hybrid fixture: batched prefill of 6 → 21 kv_b calls = n(n+1)/2; decode steps at h = 6, 7, 8 → 7, 8, 9 = h+1. Shape control: q 32→48 ×9, kv_a 32→20 ×9, kv_b 16→64 ×45 (21+7+8+9); o_proj 32→32 shares its shape with KDA projections and is counted with them.",
+      "real_kimi_derived": "geometry kv_lora_rank 512, 32 heads × (128 nope + 128 v): each re-derivation is a 512→8,192 projection (4.19 M MAC) producing a fresh 32 KiB Vec, beside a 2 KiB normalised latent and a 256 B rope-K copy (34.25 KiB per re-derived row). 7 MLA layers ⇒ per token at held latent rows h: (h+1)·29.4 M MAC and (h+1)·240 KiB of allocation. At h = 4,096: ≈120 GMAC and ≈1.0 GB allocated per token. DERIVED (count × geometry), not observed on Kimi.",
+      "reported_not_adjudicated": "the append clone (mla.rs:310): 576 floats = 2,304 B per MLA layer per token."
+    },
+    "M6": {
+      "verdict": "HELD",
+      "observed": "insert → take → resume is the same 6 allocations / 872 B (sizes 64, 10, 9, 684, 9, 96) on every subject × provider, independent of state size (1.3 KB to 8.4 KB here) and kind (rows, matrices, latent, recurrent); 0 realloc moves; I6: every backing pointer and capacity identical before insert and after resume on all 6 runs.",
+      "collision_disclosed": "the operationalisation 'continuation-sized = size equal to a backing's capacity' fired on the dense fixture (row = 64 B) against the 64 B allocation present on every subject; the invariant profile identifies it as cache bookkeeping, not a copy."
+    },
+    "M7": {
+      "verdict": "HELD",
+      "observed": "canonical 0.349–0.500 ⊂ [0.30, 0.52] (gemma 0.349–0.354, qwen/oute 0.385–0.5); row/v1 = 0 exactly. N/A where no K/V rows."
+    },
+    "M8": {
+      "verdict": "FALSIFIED (one clause, in the benign direction)",
+      "clauses": {
+        "payload = RecurrentGeometry::bytes()": "HELD on all 5 recurrent subjects (Kimi 44,892,160 B; oute 30,785,536 B; fixtures 6,528 / 6,144 B)",
+        "allocated ≥ payload and independent of n": "HELD: allocated = payload, constant across batched → resumed → decode on every subject",
+        "per-call copy = the conv-history buffer": "HELD for Mamba2 (36,864 B) and conv-QKV (98,304 B): exactly 1 conv-history-sized allocation in all 128 integrity-clean oute decode windows on the reference backend (D6). FALSIFIED for KDA: 0 copies in every integrity-clean window, fixture (9/9) and real Kimi (80/80) — KDA updates its three conv buffers in place. Gated DeltaNet NOT ADJUDICABLE: the fixture's conv history, delta matrix and 256-float activations are all 1,024 B, so signature classification cannot attribute (4 same-sized allocations per clean window)."
+      },
+      "lesson": "the forecast generalised the Mamba2/GatedDelta/conv-QKV transcription (conv history .to_vec() per call) to every recurrent operator; KDA was written differently. The copy is an operator implementation fact, per operator."
+    }
+  },
+  "ranking": {
+    "basis": "real containers at the measured lengths; resident bytes and per-token traffic ranked separately. Classes: (a) forced by the read contract → VIEW-1; (b) operator implementation → its own perf rung; (c) provider storage choice → provider work.",
+    "resident_bytes": [
+      {
+        "rank": 1,
+        "class": "(a)",
+        "item": "canonical/v1's Vec<Vec<f32>> views — a full second copy of every K/V row, existing only to lend its matrix authority as &[Vec<f32>]",
+        "magnitude": "= K/V payload: gemma 313.1 MB at 1,124 positions; qwen 40.4 MB at 176",
+        "note": "canonical/v1 is the SERVER's provider (vindex3.rs:295-304); row/v1 (the CLI default) already matches the contract with zero duplicates"
+      },
+      {
+        "rank": 2,
+        "class": "(c)",
+        "item": "canonical/v1 matrix growth slack (capacity − rows)",
+        "magnitude": "gemma 257.4 MB (570.4 MB capacity for 313.1 MB of rows); qwen 18.4 MB; 0–100% of payload depending on where the growth step lands"
+      },
+      {
+        "rank": 3,
+        "class": "(a)",
+        "item": "rows held outside every sliding window — the contract indexes rows absolutely from position 0, so no provider may drop them",
+        "magnitude": "gemma 23.8 MB at 1,124 positions (29 layers × 100 rows × 8 KiB), linear in n − w: ≈1.70 GB at 8,192 positions; held by both providers",
+        "note": "WINDOW-1 cannot exist until VIEW-1 removes absolute from-0 indexing"
+      },
+      {
+        "rank": 4,
+        "class": "(a)",
+        "item": "one heap allocation per row per K and V (the Vec in &[Vec<f32>]) and its outer-Vec header",
+        "magnitude": "gemma 76,432 row allocations + 3.3 MB headers; small in bytes, large in count"
+      },
+      {
+        "rank": "—",
+        "class": "essential",
+        "item": "recurrent state",
+        "magnitude": "Kimi 44.9 MB, oute 30.8 MB, constant; not avoidable"
+      }
+    ],
+    "per_token_traffic": [
+      {
+        "rank": 1,
+        "class": "(b)",
+        "item": "MLA re-derives every held latent row through kv_b_proj on every call",
+        "magnitude": "Kimi (derived): (h+1)·29.4 M MAC and (h+1)·240 KiB allocated per token; ≈120 GMAC / ≈1.0 GB at h = 4,096",
+        "note": "the latent-row contract is not the cause; the operator caches nothing it decompresses"
+      },
+      {
+        "rank": 2,
+        "class": "(b), with an (a) dependency",
+        "item": "conv-QKV copies every held K and V row per call (mod.rs:1441-1442, decode.rs:821-822)",
+        "magnitude": "oute: 4 layers × 2·h × 8 KiB = 64 KiB·h per token (6.1 MB at h = 95; ≈268 MB at h = 4,096); quadratic over a sequence",
+        "note": "the executor clones to release the &self borrow of keys/values before taking &mut recurrent_state. Either an executor restructure or a VIEW-1 split borrow removes it; decide at the VIEW-1 freeze, do not assume it is VIEW-1's."
+      },
+      {
+        "rank": 3,
+        "class": "(a)",
+        "item": "canonical/v1's per-append view duplication",
+        "magnitude": "8·kv_dim B per layer per position: gemma 34 × 8 KiB = 272 KiB per token"
+      },
+      {
+        "rank": 4,
+        "class": "(c)",
+        "item": "canonical/v1 matrix realloc moves",
+        "magnitude": "gemma 284.4 MB moved over a 1,100-token prefill; amortised, ≤ 2× final matrix"
+      },
+      {
+        "rank": 5,
+        "class": "(b)",
+        "item": "conv-history .to_vec() per recurrent call (Mamba2, conv-QKV; Gated DeltaNet by code reading; not KDA)",
+        "magnitude": "oute 1.43 MB per token, constant (28 × 36,864 + 4 × 98,304)"
+      },
+      {
+        "rank": 6,
+        "class": "(b)",
+        "item": "MLA latent clone on append",
+        "magnitude": "Kimi 16 KB per token (derived)"
+      },
+      {
+        "rank": "—",
+        "class": "none",
+        "item": "handoff / resume",
+        "magnitude": "zero-copy (M6)"
+      }
+    ],
+    "VIEW_1_scope_from_class_a": [
+      "remove the forced duplicate: let a provider lend rows from its own representation (matrix, contiguous, paged) without materialising Vec<Vec<f32>>",
+      "remove absolute from-0 indexing: a view carries its base position, so a provider may hold only the live window (the prerequisite for WINDOW-1)",
+      "remove per-row heap granularity as a contract requirement",
+      "open question for the freeze, not a commitment: whether VIEW-1 also offers a split borrow (KV view + &mut recurrent) that retires the conv-QKV copy, or whether that is an executor rung"
+    ],
+    "not_VIEW_1": [
+      "MLA re-derivation → an operator perf rung (cache decompressed k_nope/v, or absorb kv_b into q/o)",
+      "conv-history to_vec → operator perf rung",
+      "canonical matrix growth slack and realloc moves → provider work (or a server default decision: row/v1 already avoids the duplicate and the slack)"
+    ]
+  }
 }

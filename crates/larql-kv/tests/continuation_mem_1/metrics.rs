@@ -182,21 +182,17 @@ pub fn conv_qkv_windows(intervals: &[IntervalRecord], phase: &str) -> Value {
     let mut calls = Vec::new();
     let windows: Vec<&IntervalRecord> = intervals
         .iter()
-        .filter(|i| i.phase == phase && matches!(i.window, Window::AfterKeys | Window::AfterValues))
+        .filter(|i| i.phase == phase && matches!(i.window, Window::Keys | Window::Values))
         .collect();
     for pair in windows.chunks(2) {
         let [k, v] = pair else {
             calls.push(json!({"unpaired_window": format!("{:?}", pair[0].window)}));
             continue;
         };
-        assert_eq!(
-            k.window,
-            Window::AfterKeys,
-            "windows alternate keys then values"
-        );
+        assert_eq!(k.window, Window::Keys, "windows alternate keys then values");
         assert_eq!(
             v.window,
-            Window::AfterValues,
+            Window::Values,
             "windows alternate keys then values"
         );
         calls.push(json!({
@@ -217,7 +213,7 @@ pub fn recurrent_windows(intervals: &[IntervalRecord], phase: &str) -> Value {
     Value::Array(
         intervals
             .iter()
-            .filter(|i| i.phase == phase && i.window == Window::AfterRecurrent)
+            .filter(|i| i.phase == phase && i.window == Window::Recurrent)
             .map(|i| {
                 json!({
                     "layer": i.layer,

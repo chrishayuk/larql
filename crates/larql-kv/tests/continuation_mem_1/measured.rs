@@ -96,13 +96,15 @@ pub struct CallRecord {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Named for the provider call whose return opens the window; every
+/// window closes at the next provider entry.
 pub enum Window {
-    /// D1: `keys` returned on a conv-QKV layer.
-    AfterKeys,
-    /// The frozen window: `values` returned on a conv-QKV layer.
-    AfterValues,
-    /// M8: `recurrent_state` returned (operator runs in the window).
-    AfterRecurrent,
+    /// D1: after `keys` returned on a conv-QKV layer.
+    Keys,
+    /// The frozen window: after `values` returned on a conv-QKV layer.
+    Values,
+    /// M8: after `recurrent_state` returned (the operator runs in it).
+    Recurrent,
 }
 
 #[derive(Clone, Debug)]
@@ -138,12 +140,22 @@ struct Overlay {
     values: Vec<Vec<f32>>,
 }
 
+/// A window in progress: its scope, what opened it, and h and the target
+/// sizes it will classify against when it closes.
+struct OpenWindow {
+    scope: Scope,
+    window: Window,
+    layer: usize,
+    rows_held: usize,
+    target_bytes: Vec<usize>,
+}
+
 pub struct Measured<P> {
     pub inner: P,
     phase: Cell<&'static str>,
     calls: RefCell<Vec<CallRecord>>,
     intervals: RefCell<Vec<IntervalRecord>>,
-    open: RefCell<Option<(Scope, Window, usize, usize, Vec<usize>)>>,
+    open: RefCell<Option<OpenWindow>>,
     geometry: Vec<LayerContinuationGeometry>,
     conv_qkv: Vec<bool>,
     recurrent_target: Vec<Option<Vec<usize>>>,
@@ -344,7 +356,13 @@ pub fn inventory_of<P: Inspect + ?Sized>(
 
 impl<P> Measured<P> {
     fn close_window(&self) {
-        let Some((scope, window, layer, rows_held, target_bytes)) = self.open.borrow_mut().take()
+        let Some(OpenWindow {
+            scope,
+            window,
+            layer,
+            rows_held,
+            target_bytes,
+        }) = self.open.borrow_mut().take()
         else {
             return;
         };
@@ -370,7 +388,13 @@ impl<P> Measured<P> {
         target_bytes: Vec<usize>,
     ) {
         let scope = alloc::enter();
-        *self.open.borrow_mut() = Some((scope, window, layer, rows_held, target_bytes));
+        *self.open.borrow_mut() = Some(OpenWindow {
+            scope,
+            window,
+            layer,
+            rows_held,
+            target_bytes,
+        });
     }
 }
 
@@ -490,12 +514,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         let delta = scope.leave();
         self.record(Method::Keys, Some(layer), Some(rows.len()), delta);
         if self.conv_qkv.get(layer).copied().unwrap_or(false) {
-            self.open_window(
-                Window::AfterKeys,
-                layer,
-                rows.len(),
-                vec![self.row_bytes(layer)],
-            );
+            self.open_window(Window::Keys, layer, rows.len(), vec![self.row_bytes(layer)]);
         }
         match &self.overlay {
             Some(o) if o.layer == layer => &o.keys,
@@ -511,7 +530,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         self.record(Method::Values, Some(layer), Some(rows.len()), delta);
         if self.conv_qkv.get(layer).copied().unwrap_or(false) {
             self.open_window(
-                Window::AfterValues,
+                Window::Values,
                 layer,
                 rows.len(),
                 vec![self.row_bytes(layer)],
@@ -558,7 +577,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         if ok && self.watch_recurrent {
             if let Some(Some(target)) = self.recurrent_target.get(layer) {
                 let held = self.inner.keys_len_or_zero(layer);
-                self.open_window(Window::AfterRecurrent, layer, held, target.clone());
+                self.open_window(Window::Recurrent, layer, held, target.clone());
             }
         }
         self.inner.recurrent_state(layer)

@@ -25,7 +25,7 @@ use serde_json::{json, Value};
 
 use larql_kv::CanonicalKvState;
 use larql_vindex::format::vindex3::fixtures::{
-    dense_f32_model, miniature_glimmer, G_TOKENS, G_WINDOW,
+    dense_f32_model, hybrid_lllf_f32_model, miniature_glimmer, G_TOKENS, G_WINDOW,
 };
 use larql_vindex::format::vindex3::fixtures_kimi::hybrid_kda_mla_f32_model;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
@@ -486,6 +486,26 @@ fn mechanism_kda_mla_hybrid() {
     );
 }
 
+/// Gated DeltaNet (D6): the fourth recurrent operator, for M8's
+/// per-call copy clause on the serial reference backend.
+#[test]
+fn mechanism_gated_delta_hybrid() {
+    let _serial = serial();
+    let subject = subjects::fixture(hybrid_lllf_f32_model, "mem1-gated-delta");
+    let journey = Journey {
+        prefill: vec![1, 2, 3, 4, 5, 6],
+        resume: vec![7, 8, 9],
+        decode: vec![10, 11, 12],
+    };
+    measure_subject(
+        &subject,
+        &ReferenceBackend::new(),
+        &journey,
+        true,
+        Value::Null,
+    );
+}
+
 /// I5 / M5: kv_b_proj calls per MLA call, counted at the projector.
 fn mla_projection_counts(subject: &Subject, journey: &Journey) -> Value {
     use larql_vindex::format::vindex3::opplan::LayerAttention;
@@ -635,4 +655,21 @@ fn real_kda_mla_kimi_s7() {
         true,
         false,
     );
+}
+
+/// D6: oute's recurrent-operator windows on the serial reference backend,
+/// the integrity-clean source for M8's per-call copy clause.
+#[test]
+#[ignore = "real container: LARQL_MEM1_OUTE (serial reference backend)"]
+fn real_recurrent_windows_oute_reference() {
+    let _serial = serial();
+    let dir = std::env::var_os("LARQL_MEM1_OUTE").expect("set LARQL_MEM1_OUTE");
+    let subject = subjects::open(std::path::Path::new(&dir), "oute-mamba2attn-250m.reference");
+    let journey = Journey {
+        prefill: tokens(1000, 16),
+        resume: tokens(3000, 4),
+        decode: tokens(4000, 4),
+    };
+    let extra = json!({ "container": dir.to_string_lossy(), "purpose": "D6: integrity-clean recurrent windows" });
+    measure_subject(&subject, &ReferenceBackend::new(), &journey, true, extra);
 }
