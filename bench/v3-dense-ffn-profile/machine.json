@@ -1,0 +1,8 @@
+{
+  "chip": "Apple M3 Max",
+  "hw_model": "Mac15,8",
+  "memory_bytes": 137438953472,
+  "compiler": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "build_command": "cargo build --release -p larql-cli -p larql-server --no-default-features",
+  "peer_exclusivity": "unconfirmed"
+}

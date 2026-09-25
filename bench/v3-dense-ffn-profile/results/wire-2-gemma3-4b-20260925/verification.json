@@ -1,0 +1,10 @@
+{
+  "trials": 16,
+  "all_token_ids_match": true,
+  "profile_positions": 1056,
+  "remote_calls": 22440,
+  "exact_bytes_per_direction_per_position": 349384,
+  "stream_websocket_framing_bytes_per_profiled_position": 544,
+  "all_phase_partitions_exact": true,
+  "all_traces_archived_and_hash_verified": true
+}

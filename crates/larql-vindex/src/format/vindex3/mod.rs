@@ -48,6 +48,7 @@ pub mod encode;
 /// the frozen fixture geometry the executor's parity gates certify.
 pub mod fixtures;
 pub mod fixtures_kimi;
+pub mod fixtures_routed;
 pub mod gguf;
 pub mod graph;
 pub mod import;

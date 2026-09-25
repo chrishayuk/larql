@@ -2433,6 +2433,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "tungstenite",
 ]
 
 [[package]]
@@ -2478,6 +2479,7 @@ dependencies = [
  "clap",
  "criterion",
  "futures",
+ "getrandom 0.3.4",
  "half",
  "larql-compute",
  "larql-compute-metal",
@@ -2513,6 +2515,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "tungstenite",
  "utoipa",
  "utoipa-swagger-ui",
 ]
@@ -4993,6 +4996,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.9.4",
  "sha1",
  "thiserror 2.0.18",

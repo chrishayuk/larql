@@ -1,0 +1,21 @@
+{
+  "purpose": "uninstrumented numerical control only",
+  "binary_source_revision": "85e8510000e0aa5b641914617ae5b84da178faa1",
+  "binary_sha256": "3eeb188151c407e422e932be7037da2d259b7df0d926fdd74ceeef5d41803274",
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "command": [
+    "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-dense-ffn-provider/target/release/larql",
+    "run",
+    "/Users/christopherhay/chris-models/gpt-oss-20b.vindex3",
+    "A lighthouse keeper kept a logbook for forty years. Every night he wrote down the weather, the ships that passed, the state of the lamp and anything unusual he noticed on the rocks below. Most entries were short: wind from the west, two trawlers, lamp trimmed at dusk. But in the winter of the great storm the entries grew longer, and the handwriting changed, as if he were writing in a hurry or by poor light. On the first night of the storm he wrote that the sea had risen higher than he had ever seen it, that spray reached the gallery, and that a small boat without lights had been seen drifting north of the reef. On the second night he wrote only three words, and on the third night he wrote",
+    "--max-tokens",
+    "64",
+    "--emit-ids"
+  ]
+}

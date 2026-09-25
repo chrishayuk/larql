@@ -979,6 +979,20 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         (**self).routed_ffn(call)
     }
+    fn expert_transform(
+        &self,
+        call: super::routed_experts::ExpertTransformCall<'_>,
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).expert_transform(call)
+    }
+    fn routed_ffn_placed(
+        &self,
+        call: RoutedFfnCall<'_>,
+        layer: usize,
+        provider: &dyn super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).routed_ffn_placed(call, layer, provider)
+    }
 
     fn output_head(
         &self,
@@ -1197,6 +1211,30 @@ pub trait PlanBackend: Sync {
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// One unweighted expert, with its own biases. No routing or reduction.
+    fn expert_transform(
+        &self,
+        _call: super::routed_experts::ExpertTransformCall<'_>,
+    ) -> Result<Vec<f32>, VindexError> {
+        Err(VindexError::Parse(format!(
+            "{} does not support selected expert transforms",
+            self.name()
+        )))
+    }
+
+    /// Route and reduce locally while a bound provider executes selected IDs.
+    fn routed_ffn_placed(
+        &self,
+        _call: RoutedFfnCall<'_>,
+        _layer: usize,
+        _provider: &dyn super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<f32>, VindexError> {
+        Err(VindexError::Parse(format!(
+            "{} does not support routed expert placement",
+            self.name()
+        )))
+    }
 
     /// Vocabulary projection plus the head's optional multiplier and
     /// softcap, in that order.

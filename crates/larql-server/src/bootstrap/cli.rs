@@ -60,7 +60,11 @@ pub fn parse_layer_range(s: &str) -> Result<(usize, usize), BoxError> {
     if end < start {
         return Err(format!("--layers: end ({end}) must be >= start ({start})").into());
     }
-    Ok((start, end + 1))
+    Ok((
+        start,
+        end.checked_add(1)
+            .ok_or("--layers: end overflows the exclusive bound")?,
+    ))
 }
 
 pub fn normalize_serve_alias(args: Vec<String>) -> Vec<String> {

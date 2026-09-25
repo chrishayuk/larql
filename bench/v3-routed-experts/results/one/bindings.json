@@ -1,0 +1,451 @@
+[
+  {
+    "program": {
+      "schema": 1,
+      "artifact": "163e5d70feddc7127fd3ac76a5b817a3341b3e19940e4f0343804a4eb9324891",
+      "backend": "cpu",
+      "lowering": "cpu-production/v1",
+      "start": 0,
+      "end": 24,
+      "layers": 24,
+      "hidden": 2880
+    },
+    "expert_start": 0,
+    "expert_end": 32,
+    "operands": [
+      {
+        "layer": 0,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 0,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 1,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 1,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 2,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 2,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 3,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 3,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 4,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 4,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 5,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 5,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 6,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 6,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 7,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 7,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 8,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 8,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 9,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 9,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 10,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 10,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 11,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 11,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 12,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 12,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 13,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 13,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 14,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 14,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 15,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 15,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 16,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 16,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 17,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 17,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 18,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 18,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 19,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 19,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 20,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 20,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 21,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 21,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 22,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 22,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 23,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 23,
+        "operand": "{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]}",
+        "representation": "MXFP4",
+        "codec": "Some(CodecIdentity { family: \"mxfp4\", revision: 1, group_elems: 32, element: \"e2m1\", group_scale: \"e8m0\", tensor_scale: \"none\", layout: \"codes;group_scales\" })",
+        "realization": "RealizationId { backend: Cpu, form: SliceStored { convert: F32 } }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 4.25, radius: None }, stored_bytes: None }] }",
+        "dependencies": "[]"
+      }
+    ],
+    "regions": "[{\"layer\":0,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":0,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":0,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":0,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":0,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":0,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"0.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":1,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":1,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":1,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":1,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":1,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":1,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"1.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":2,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":2,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":2,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":2,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":2,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":2,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"2.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":3,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":3,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":3,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":3,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":3,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":3,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"3.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":4,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":4,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":4,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":4,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":4,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":4,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"4.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":5,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":5,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":5,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":5,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":5,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":5,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"5.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":6,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":6,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":6,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":6,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":6,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":6,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"6.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":7,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":7,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":7,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":7,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":7,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":7,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"7.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":8,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":8,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":8,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":8,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":8,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":8,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"8.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":9,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":9,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":9,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":9,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":9,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":9,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"9.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":10,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":10,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":10,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":10,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":10,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":10,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"10.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":11,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":11,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":11,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":11,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":11,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":11,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"11.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":12,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":12,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":12,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":12,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":12,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":12,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"12.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":13,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":13,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":13,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":13,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":13,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":13,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"13.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":14,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":14,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":14,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":14,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":14,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":14,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"14.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":15,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":15,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":15,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":15,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":15,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":15,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"15.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":16,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":16,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":16,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":16,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":16,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":16,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"16.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":17,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":17,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":17,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":17,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":17,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":17,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"17.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":18,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":18,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":18,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":18,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":18,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":18,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"18.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":19,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":19,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":19,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":19,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":19,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":19,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"19.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":20,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":20,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":20,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":20,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":20,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":20,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"20.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":21,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":21,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":21,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":21,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":21,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":21,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"21.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":22,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":22,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":22,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":22,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":22,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":22,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"22.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320},{\"layer\":23,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.gate_up_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,5760,90,16]},\"total_bytes\":265420800,\"offset\":0,\"bytes\":265420800},{\"layer\":23,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.gate_up_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,5760,90]},\"total_bytes\":16588800,\"offset\":0,\"bytes\":16588800},{\"layer\":23,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.gate_up_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,5760]},\"total_bytes\":368640,\"offset\":0,\"bytes\":368640},{\"layer\":23,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.down_proj_blocks\",\"dtype\":\"U8\",\"shape\":[32,2880,90,16]},\"total_bytes\":132710400,\"offset\":0,\"bytes\":132710400},{\"layer\":23,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.down_proj_scales\",\"dtype\":\"U8\",\"shape\":[32,2880,90]},\"total_bytes\":8294400,\"offset\":0,\"bytes\":8294400},{\"layer\":23,\"operand\":{\"object\":\"target.expert_bank\",\"tensor\":\"23.mlp.experts.down_proj_bias\",\"dtype\":\"BF16\",\"shape\":[32,2880]},\"total_bytes\":184320,\"offset\":0,\"bytes\":184320}]"
+  }
+]

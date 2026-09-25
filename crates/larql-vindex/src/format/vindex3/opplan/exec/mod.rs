@@ -31,6 +31,7 @@ pub mod controls;
 pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
+pub mod dense_ffn;
 pub mod device;
 pub mod device_refusal;
 mod experts;
@@ -64,12 +65,14 @@ pub mod payload_prefix;
 pub mod prefetch;
 pub mod prepared;
 pub mod production;
+pub mod profile;
 pub mod provenance;
 mod provider_identity;
 pub mod quantise;
 pub mod realization;
 pub mod reference;
 pub mod requirements;
+pub mod routed_experts;
 pub mod routing_trace;
 pub mod stack;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -642,6 +645,7 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     // A pin whose provider has gone or changed invalidates the image;
     // nothing here falls back to another realization. The registry is
     // the image's own — the store's — never a built-in default.
+    ops.ensure_stack_ready()?;
     ops.ensure_providers_in(ops.registry())?;
     // And the pin's OTHER authority: the provider executing these pins
     // is the provider that decided them (LOWERING-PLUGIN-1, L4).
@@ -758,6 +762,7 @@ pub fn prefill_prepared<B: PlanBackend + ?Sized>(
     backend: &B,
     kv: &mut dyn KvState,
 ) -> Result<FinalOutput, VindexError> {
+    ops.ensure_stack_ready()?;
     if matches!(ops.slice(), prepared::ExecutionSlice::Endpoints) {
         return Err(VindexError::Parse(
             "endpoints-only operands require a distributed coordinator".into(),

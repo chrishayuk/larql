@@ -324,8 +324,25 @@ pub struct RunArgs {
     #[arg(long, value_delimiter = ',', value_name = "URL,...")]
     pub v3_shards: Vec<String>,
 
-    /// Environment variable holding the bearer token for V3 layer workers.
-    #[arg(long, requires = "v3_shards", value_name = "ENV")]
+    /// VINDEX3 CPU dense FFN or routed-expert workers; attention, routing and KV remain local.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "URL,...",
+        conflicts_with = "v3_shards"
+    )]
+    pub v3_ffn_shards: Vec<String>,
+
+    /// FFN wire: binary f32 (default), JSON control, or experimental stream. Routed experts require binary.
+    #[arg(long, value_parser = ["binary", "json", "stream"], requires = "v3_ffn_shards")]
+    pub v3_ffn_wire: Option<String>,
+
+    /// Write per-position CPU V3 timings and exact FFN HTTP body bytes to a new JSONL file.
+    #[arg(long, value_name = "PATH")]
+    pub v3_profile: Option<PathBuf>,
+
+    /// Environment variable holding the bearer token for V3 layer, FFN or expert workers.
+    #[arg(long, value_name = "ENV")]
     pub v3_shard_token_env: Option<String>,
 
     /// Speak the prompt: run the model as a speech generator
@@ -410,8 +427,10 @@ pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
         return super::run_cmd_vindex3::run(&vindex_path, &args);
     }
-    if !args.v3_shards.is_empty() {
-        return Err("--v3-shards requires a VINDEX3 container".into());
+    if !args.v3_shards.is_empty() || !args.v3_ffn_shards.is_empty() || args.v3_profile.is_some() {
+        return Err(
+            "--v3-shards, --v3-ffn-shards and --v3-profile require a VINDEX3 container".into(),
+        );
     }
 
     if args.experts {

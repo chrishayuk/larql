@@ -143,3 +143,71 @@ fn a_layer_range_requires_less_than_the_whole_model() {
          layer range does not: whole {whole:?} vs range {range:?}"
     );
 }
+
+#[test]
+fn dense_ffn_placement_reads_only_its_declared_operands() {
+    let coordinator = subject(miniature_glimmer);
+    let worker = subject(miniature_glimmer);
+    let local_slice = ExecutionSlice::DenseFfnCoordinator;
+    let remote_slice = ExecutionSlice::DenseFfns {
+        start: 0,
+        end: worker.plan.layers.len(),
+    };
+    let local = required_objects(&coordinator.plan, &local_slice).unwrap();
+    let remote = required_objects(&worker.plan, &remote_slice).unwrap();
+    assert!(!local.is_empty() && !remote.is_empty());
+    assert_eq!(local, measure(&coordinator, local_slice));
+    assert_eq!(remote, measure(&worker, remote_slice));
+    let whole = required_objects(&coordinator.plan, &ExecutionSlice::Full).unwrap();
+    assert_eq!(whole, local.union(&remote).cloned().collect());
+}
+
+#[test]
+fn dense_ffn_placement_never_reads_or_maps_the_other_sides_tensors() {
+    use crate::format::vindex3::opplan::LayerFfn;
+    let control = subject(miniature_glimmer);
+    measure(&control, ExecutionSlice::Full);
+    let all = control.store.touched_operand_addresses();
+    let expected_ffn: BTreeSet<_> = control
+        .plan
+        .layers
+        .iter()
+        .flat_map(|l| {
+            let Some(LayerFfn::Dense(op)) = &l.ffn else {
+                panic!("dense fixture")
+            };
+            op.gate
+                .iter()
+                .chain([&op.up, &op.down])
+                .map(|r| (r.object.clone(), r.tensor.clone()))
+        })
+        .collect();
+    let coordinator = subject(miniature_glimmer);
+    measure(&coordinator, ExecutionSlice::DenseFfnCoordinator);
+    assert_eq!(
+        coordinator.store.touched_operand_addresses(),
+        all.difference(&expected_ffn).cloned().collect()
+    );
+    let worker = subject(miniature_glimmer);
+    measure(
+        &worker,
+        ExecutionSlice::DenseFfns {
+            start: 0,
+            end: worker.plan.layers.len(),
+        },
+    );
+    assert_eq!(worker.store.touched_operand_addresses(), expected_ffn);
+    // A one-layer worker must not materialize another layer's FFN tensors.
+    let shard = subject(miniature_glimmer);
+    let Some(LayerFfn::Dense(op)) = &shard.plan.layers[1].ffn else {
+        panic!("dense fixture")
+    };
+    let owned = op
+        .gate
+        .iter()
+        .chain([&op.up, &op.down])
+        .map(|r| (r.object.clone(), r.tensor.clone()))
+        .collect();
+    measure(&shard, ExecutionSlice::DenseFfns { start: 1, end: 2 });
+    assert_eq!(shard.store.touched_operand_addresses(), owned);
+}
