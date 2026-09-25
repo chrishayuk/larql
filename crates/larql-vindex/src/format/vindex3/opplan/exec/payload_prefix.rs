@@ -1,8 +1,8 @@
 //! Measurement adapter for a canonical prefix and one source V projection.
 //! Uses the decode interpreter and prepared production operands. No new kernels.
 use super::backend::{PlanBackend, ProjectCall, WeightSlice};
+use super::continuation_registry::SelectedContinuation;
 use super::decode::DecodeSession;
-use super::kv::RowKvState;
 use super::observe::{CarrierWriteRecord, StepEvent, StepObserver};
 use super::operands::OperandStore;
 use super::prepared::{ExecutionSlice, PreparedAttention, PreparedOperands};
@@ -16,6 +16,8 @@ pub struct PayloadPrefix {
     plan: ComponentOpPlan,
     operands: PreparedOperands,
     depth: usize,
+    /// Who holds each probe's scratch state — the caller's selection.
+    continuation: SelectedContinuation,
 }
 
 #[derive(Default)]
@@ -37,11 +39,13 @@ impl StepObserver for LastCarrier {
 
 impl PayloadPrefix {
     /// Prepare exactly layers 0..depth, embedding included; source layer excluded.
+    /// Each probe runs over a fresh provider built from `continuation`.
     pub fn prepare<B: PlanBackend + ?Sized>(
         plan: &ComponentOpPlan,
         store: &OperandStore,
         backend: &B,
         depth: usize,
+        continuation: &SelectedContinuation,
     ) -> Result<Self, VindexError> {
         if depth > plan.layers.len() || !plan.residual_topology.is_single_stream() {
             return Err(VindexError::Parse(
@@ -57,6 +61,7 @@ impl PayloadPrefix {
             plan: prefix,
             operands,
             depth,
+            continuation: continuation.clone(),
         })
     }
 
@@ -69,9 +74,9 @@ impl PayloadPrefix {
         if tokens.is_empty() {
             return Err(VindexError::Parse("empty payload prefix".into()));
         }
-        let mut kv = RowKvState::default();
+        let mut kv = self.continuation.build();
         let mut session =
-            DecodeSession::over_prepared(&self.plan, &self.operands, backend, &mut kv)?;
+            DecodeSession::over_prepared(&self.plan, &self.operands, backend, &mut *kv)?;
         let mut result = Vec::with_capacity(tokens.len());
         for &token in tokens {
             let mut observer = LastCarrier::default();

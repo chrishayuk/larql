@@ -16,7 +16,7 @@ const TEST_MODEL: &str = "m-test";
 
 fn handoff(ids: &[u32]) -> V3KvHandoff {
     V3KvHandoff {
-        kv: CanonicalKvState::new(),
+        kv: Box::new(CanonicalKvState::new()),
         absorbed_ids: ids.to_vec(),
     }
 }

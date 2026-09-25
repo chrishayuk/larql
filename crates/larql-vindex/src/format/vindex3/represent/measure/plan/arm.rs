@@ -13,8 +13,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::format::vindex3::opplan::exec::backend::PlanBackend;
+use crate::format::vindex3::opplan::exec::continuation_registry::SelectedContinuation;
 use crate::format::vindex3::opplan::exec::decode::DecodeSession;
-use crate::format::vindex3::opplan::exec::kv::RowKvState;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::ComponentOpPlan;
@@ -62,10 +62,14 @@ pub struct InterpreterArm<B: PlanBackend> {
     ops: PreparedOperands,
     backend: B,
     description: ArmDescription,
+    /// Who holds each scored sample's state — the caller's selection.
+    continuation: SelectedContinuation,
 }
 
 impl<B: PlanBackend> InterpreterArm<B> {
     /// Prepare `plan` from `store` on `backend`, and describe what bound.
+    /// Each scored sample runs over a fresh provider from `continuation`.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         arm: &str,
         container: PathBuf,
@@ -74,6 +78,7 @@ impl<B: PlanBackend> InterpreterArm<B> {
         plan: ComponentOpPlan,
         store: &OperandStore,
         backend: B,
+        continuation: SelectedContinuation,
     ) -> Result<Self, String> {
         let ops = PreparedOperands::load(&plan, store, &backend, ExecutionSlice::Full)
             .map_err(|e| format!("{arm}: preparation refused: {e}"))?;
@@ -103,6 +108,7 @@ impl<B: PlanBackend> InterpreterArm<B> {
             ops,
             backend,
             description,
+            continuation,
         })
     }
 }
@@ -113,9 +119,9 @@ impl<B: PlanBackend> TeacherForcedArm for InterpreterArm<B> {
     }
 
     fn score(&mut self, ids: &[u32]) -> Result<Vec<Vec<f32>>, String> {
-        let mut kv = RowKvState::default();
+        let mut kv = self.continuation.build();
         let mut session =
-            DecodeSession::over_prepared(&self.plan, &self.ops, &self.backend, &mut kv)
+            DecodeSession::over_prepared(&self.plan, &self.ops, &self.backend, &mut *kv)
                 .map_err(|e| e.to_string())?;
         ids.iter()
             .enumerate()

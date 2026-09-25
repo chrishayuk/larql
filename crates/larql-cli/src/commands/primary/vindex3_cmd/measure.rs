@@ -234,6 +234,7 @@ fn interpreter_arm(
         opened.plan.clone(),
         &opened.store,
         provider,
+        crate::commands::primary::continuation::select_for(&opened.plan, None)?,
     )?))
 }
 

@@ -34,7 +34,13 @@ fn plain<B: PlanBackend>(
     backend: &B,
     tokens: &[u32],
 ) -> Vec<Vec<f32>> {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     tokens
         .iter()
         .map(|&t| session.step(t).unwrap().logits.unwrap())
@@ -48,7 +54,13 @@ fn intervened<B: PlanBackend>(
     tokens: &[u32],
     heads: &HeadInterventionPlan,
 ) -> (Vec<Vec<f32>>, Vec<HeadFiring>) {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut firings = Vec::new();
     let logits = tokens
         .iter()
@@ -445,7 +457,13 @@ fn j7_a_captured_head_replaces_bit_for_bit_and_names_its_run() {
         captured: HeadCapture::at([(L, 0, P)]),
     };
     {
-        let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+        let mut session = DecodeSession::new(
+            &plan,
+            &store,
+            &backend,
+            Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+        )
+        .unwrap();
         for &t in &donor {
             session.step_observed(t, &mut tap).unwrap();
         }

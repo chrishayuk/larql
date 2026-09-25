@@ -219,7 +219,13 @@ pub(super) fn observed<B: PlanBackend>(
     tokens: &[u32],
     witness: &mut dyn StepObserver,
 ) -> Vec<Vec<f32>> {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     tokens
         .iter()
         .map(|&t| {

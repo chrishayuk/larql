@@ -4,6 +4,8 @@ use larql_compute::forward::{EmbeddingChunk, PositionScheme};
 use larql_inference::vindex3::input::{CachedInputSession, InputPosition, ReplaySession};
 use larql_inference::vindex3::LogitsSession;
 
+use crate::commands::primary::continuation::{select_for, REPLAY_ENGINE};
+
 pub(super) fn generate<B: PlanBackend>(
     model: &ResidentModel<'_, B>,
     prompt: &str,
@@ -46,18 +48,16 @@ pub(super) fn generate<B: PlanBackend>(
             "distributed-prefix",
         )
     } else if model.args.kv_cache == KvCacheKind::None
-        || model.args.engine.as_deref() == Some("no-cache")
+        || model.args.engine.as_deref() == Some(REPLAY_ENGINE)
     {
-        let mut session = ReplaySession::new(model.plan, model.ops, model.backend);
+        let continuation = select_for(model.plan, model.args.engine.as_deref())?;
+        let mode = format!("{REPLAY_ENGINE} over {}", continuation.authority().identity);
+        let mut session = ReplaySession::new(model.plan, model.ops, model.backend, continuation);
         let logits = session.extend_inputs(&inputs)?;
-        emit(model, &mut session, logits, ids, out, status, "no-cache")
+        emit(model, &mut session, logits, ids, out, status, &mode)
     } else {
-        let mut state: Box<dyn larql_vindex::format::vindex3::opplan::exec::kv::KvState> =
-            if model.args.engine.as_deref() == Some("standard") {
-                Box::new(larql_kv::CanonicalKvState::new())
-            } else {
-                Box::new(RowKvState::default())
-            };
+        let continuation = select_for(model.plan, model.args.engine.as_deref())?;
+        let mut state = continuation.build();
         let mut session =
             CachedInputSession::new(model.plan, model.ops, model.backend, &mut *state)?;
         let logits = session.extend_inputs(&inputs)?;
@@ -68,7 +68,7 @@ pub(super) fn generate<B: PlanBackend>(
             ids,
             out,
             status,
-            model.args.engine.as_deref().unwrap_or("row"),
+            &continuation.authority().identity.to_string(),
         )
     }
 }

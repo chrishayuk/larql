@@ -25,7 +25,6 @@ use std::time::Instant;
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
@@ -52,8 +51,8 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     // own layers — measured at 4 + ~13.4 reads per layer on the 27B
     // container — which is what makes a shallow draft affordable at all.
     let ops = PreparedOperands::load(plan, store, backend, slice.clone())?;
-    let mut kv = RowKvState::default();
-    let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+    let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
+    let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
     let prepare_s = loading.elapsed().as_secs_f64();
     let executed = ops.executed_layers();
     eprintln!(

@@ -21,9 +21,16 @@ use super::*;
 use crate::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::backend::PlanBackend;
+use crate::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+use crate::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use crate::format::vindex3::opplan::exec::continuation_registry::{
+    ContinuationRegistry, SelectedContinuation,
+};
+use crate::format::vindex3::opplan::exec::kv::{RowFactory, RowKvState};
 use crate::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::plan_component_ops;
+use crate::format::vindex3::opplan::ComponentOpPlan;
 use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
 use crate::format::vindex3::represent::token_bank::{export, TOKENIZER_FILE};
 use crate::format::vindex3::represent::{compile_representation, policy, RepresentSpec};
@@ -133,6 +140,7 @@ fn arm_on<B: PlanBackend>(
         RepresentationSource::Auto
     };
     let store = OperandStore::open_for(container, &inspection, pack, source).unwrap();
+    let continuation = row_continuation(&plan);
     InterpreterArm::prepare(
         name,
         container.to_path_buf(),
@@ -141,8 +149,23 @@ fn arm_on<B: PlanBackend>(
         plan,
         &store,
         backend,
+        continuation,
     )
     .unwrap()
+}
+
+/// `row/v1` selected for `plan`: the arm's explicit continuation.
+fn row_continuation(plan: &ComponentOpPlan) -> SelectedContinuation {
+    let mut registry = ContinuationRegistry::new();
+    registry.register(Box::new(RowFactory)).unwrap();
+    let geometry = plan_continuation_geometry(plan).unwrap();
+    registry
+        .select(
+            &RowKvState::identity(),
+            &ContinuationConfig::empty(),
+            &geometry,
+        )
+        .unwrap()
 }
 
 fn request(f: &Fixture) -> PlanMeasureRequest {

@@ -22,7 +22,7 @@ fn external_rows_and_replay_match_tokens_beyond_the_sliding_window() {
     let mut mixed_kv = RowKvState::default();
     let mut tokens = CachedInputSession::new(plan, ops, backend, &mut token_kv).unwrap();
     let mut mixed = CachedInputSession::new(plan, ops, backend, &mut mixed_kv).unwrap();
-    let mut replay = ReplaySession::new(plan, ops, backend);
+    let mut replay = ReplaySession::new(plan, ops, backend, row(plan));
     for (position, id) in G_TOKENS.iter().cycle().take(14).enumerate() {
         let input = if position % 2 == 0 {
             InputPosition::Embedding(ops.embed_token(plan, backend, *id).unwrap())
@@ -59,7 +59,7 @@ fn invalid_prompt_is_rejected_before_either_provider_advances() {
     let (plan, ops, backend) = (runtime.plan(), runtime.operands(), runtime.backend());
     let mut kv = RowKvState::default();
     let mut cached = CachedInputSession::new(plan, ops, backend, &mut kv).unwrap();
-    let mut replay = ReplaySession::new(plan, ops, backend);
+    let mut replay = ReplaySession::new(plan, ops, backend, row(plan));
     for bad in [
         InputPosition::Token(u32::MAX),
         InputPosition::Embedding(vec![0.0; ops.hidden() + 1]),

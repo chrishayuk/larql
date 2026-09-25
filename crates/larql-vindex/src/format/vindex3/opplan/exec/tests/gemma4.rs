@@ -482,7 +482,13 @@ fn the_decode_session_reproduces_the_batch_traversal() {
     let plan = closure(container.path()).plan.unwrap();
     let store = OperandStore::open(container.path(), &inspection).unwrap();
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     for (position, &token) in TOKENS.iter().enumerate() {
         let step = session.step(token).unwrap();
         let logits = step.logits.expect("logits per step");

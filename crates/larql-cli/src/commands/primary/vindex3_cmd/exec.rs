@@ -31,11 +31,15 @@ use std::time::Instant;
 
 use larql_vindex::error::VindexError;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
 use larql_vindex::format::vindex3::opplan::exec::{
-    execute_plan_streaming, execute_slice, ExecutionTrace, Plane, PlaneEvent, ResumePoint,
+    execute_plan_streaming, execute_plan_streaming_in, execute_slice, execute_slice_in,
+    ExecutionTrace, FinalOutput, Plane, PlaneEvent, ResumePoint,
 };
+
+use crate::commands::primary::continuation::one_shot_state;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use ndarray::Array2;
 
@@ -260,7 +264,12 @@ fn run_on<B: PlanBackend>(
                 .map(|_generated| ())
         }
         (None, None) => {
-            let trace = execute_slice(plan, store, tokens, backend, slice)?;
+            let trace = match one_shot_state(plan)? {
+                Some(mut state) => {
+                    execute_slice_in(plan, store, tokens, backend, slice, &mut *state)?
+                }
+                None => execute_slice(plan, store, tokens, backend, slice)?,
+            };
             summarise(&engine, &trace);
             Ok(())
         }
@@ -309,7 +318,9 @@ fn run_dump<B: PlanBackend>(
 
     let started = Instant::now();
     let mut layer_started = Instant::now();
-    let out = execute_plan_streaming(plan, store, tokens, backend, resume, &mut |event| {
+    let mut state = one_shot_state(plan)?;
+    let state = state.as_mut().map(|s| &mut **s as &mut dyn KvState);
+    let out = stream_plan(plan, store, tokens, backend, resume, state, &mut |event| {
         match event {
             PlaneEvent::Embedded(plane) => {
                 write_rows(&dir.join(plane_name(0)), plane.try_rows()?)?;
@@ -535,5 +546,22 @@ fn summarise(engine: &str, trace: &ExecutionTrace) {
             None => println!("logits: empty"),
         },
         None => println!("logits: none (plan carries no output head)"),
+    }
+}
+
+/// [`execute_plan_streaming`], or its `_in` form when the plan needs
+/// continuation state ([`one_shot_state`]).
+fn stream_plan<B: PlanBackend>(
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    tokens: &[u32],
+    backend: &B,
+    resume: Option<ResumePoint>,
+    state: Option<&mut dyn KvState>,
+    sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
+) -> Result<FinalOutput, VindexError> {
+    match state {
+        Some(state) => execute_plan_streaming_in(plan, store, tokens, backend, resume, sink, state),
+        None => execute_plan_streaming(plan, store, tokens, backend, resume, sink),
     }
 }

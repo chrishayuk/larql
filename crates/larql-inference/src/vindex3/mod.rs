@@ -72,9 +72,16 @@ pub use explain::{
 
 // The continuation-state seam, re-exported so engine authors reach it
 // from the runtime module without deep `larql_vindex` paths.
+pub use larql_vindex::format::vindex3::opplan::exec::continuation_authority::{
+    ContinuationAuthority, ContinuationConfig,
+};
 pub use larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity;
+pub use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
+    BoxedContinuation, ContinuationFactory, ContinuationRegion, ContinuationRegistry,
+    SelectedContinuation,
+};
 pub use larql_vindex::format::vindex3::opplan::exec::kv::{
-    plan_kv_geometry, KvState, LayerKvGeometry, RowKvState,
+    plan_kv_geometry, KvState, LayerKvGeometry,
 };
 // The observation seam (LQL-2 TRACE): subscribers to the canonical
 // executor's step boundaries — one execution path, many consumers.

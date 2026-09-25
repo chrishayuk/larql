@@ -46,7 +46,13 @@ fn f32_container() -> (
 fn the_census_accounts_for_every_site_including_the_recurrence() {
     let (_c, plan, store) = f32_container();
     let backend = ProductionBackend::new();
-    let session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let census = session.residency_census();
 
     for site in ["embedding", "attention", "delta", "ffn", "head", "glue"] {
@@ -73,7 +79,13 @@ fn the_census_accounts_for_every_site_including_the_recurrence() {
 fn an_f32_checkpoint_reports_nothing_compact() {
     let (_c, plan, store) = f32_container();
     let backend = ProductionBackend::new();
-    let session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let census = session.residency_census();
     assert_eq!(
         census.compact(),
@@ -94,12 +106,22 @@ fn an_f32_checkpoint_reports_nothing_compact() {
 #[test]
 fn the_two_backends_agree_over_a_checkpoint_with_nothing_to_keep() {
     let (_c, plan, store) = f32_container();
-    let production = DecodeSession::new(&plan, &store, &ProductionBackend::new())
-        .unwrap()
-        .residency_census();
-    let reference = DecodeSession::new(&plan, &store, &ReferenceBackend::new())
-        .unwrap()
-        .residency_census();
+    let production = DecodeSession::new(
+        &plan,
+        &store,
+        &ProductionBackend::new(),
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap()
+    .residency_census();
+    let reference = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend::new(),
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap()
+    .residency_census();
     assert_eq!(production.total(), reference.total());
     assert_eq!(production.compact(), 0);
     assert_eq!(reference.compact(), 0);

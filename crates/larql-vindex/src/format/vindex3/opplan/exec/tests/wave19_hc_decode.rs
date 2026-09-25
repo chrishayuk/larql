@@ -711,7 +711,13 @@ fn the_single_stream_sibling_decodes_exactly_as_it_batches() {
     let backend = ReferenceBackend::new();
     let tokens = [4u32, 1, 6, 2];
     let batch = execute_text(&sub.plan, &store, &tokens).unwrap();
-    let mut session = DecodeSession::new(&sub.plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &sub.plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut witness = Witness::default();
     let mut last = None;
     for &token in &tokens {
@@ -856,7 +862,13 @@ fn a_bundle_cannot_enter_a_single_stream_session() {
     let sub = substrate::single_stream_sibling();
     let store = store(&sub);
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&sub.plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &sub.plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let err = session
         .step_from_bundle(Oracle::load().input(0), &mut NoopObserver, Mutation::None)
         .err()

@@ -254,7 +254,13 @@ fn a_decoded_ffn_write_is_reconstructed_from_the_prepared_image() {
     let backend = ProductionBackend::new();
     let prepared =
         PreparedOperands::load(&f.plan, &f.store, &backend, ExecutionSlice::Full).unwrap();
-    let mut session = DecodeSession::new(&f.plan, &f.store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &f.plan,
+        &f.store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut write = FfnWrite::default();
     session.step_observed(3, &mut write).unwrap();
 

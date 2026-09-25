@@ -27,7 +27,6 @@ use larql_vindex::format::vindex3::opplan::exec::intervene::{CarrierCapture, Int
 use larql_vindex::format::vindex3::opplan::exec::intervene_heads::{
     HeadCapture, HeadInterventionPlan,
 };
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::observe_stats::{FixedBasis, StatsObserver};
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 
@@ -292,8 +291,8 @@ impl BackendVisitor for Observe<'_> {
             (!head_addresses.is_empty()).then(|| HeadCapture::at(head_addresses.iter().copied()));
 
         let clock = Instant::now();
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+        let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
+        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
         let mut applied = 0usize;
         let mut head_applied = 0usize;
         let mut last = None;

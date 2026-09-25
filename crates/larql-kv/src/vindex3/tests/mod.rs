@@ -19,6 +19,8 @@
 //! executable plan alone — `larql-kv` consults no `ModelArchitecture`
 //! anywhere on this path.
 
+mod registry_parity;
+
 use larql_vindex::format::vindex3::fixtures::{
     encode_fixture_container, miniature_glimmer, G_HEAD_DIM, G_KV_HEADS, G_LAYERS, G_TOKENS,
     G_WINDOW,

@@ -39,7 +39,6 @@ use larql_vindex::format::filenames::TOKENIZER_JSON;
 use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
@@ -171,7 +170,11 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
     if args.mm_weights.is_some() && args.image.is_empty() {
         return Err("--mm-weights requires --image".into());
     }
-    if args.kv_cache == KvCacheKind::None && args.engine.as_deref().is_some_and(|e| e != "no-cache")
+    if args.kv_cache == KvCacheKind::None
+        && args
+            .engine
+            .as_deref()
+            .is_some_and(|e| e != crate::commands::primary::continuation::REPLAY_ENGINE)
     {
         return Err("--kv-cache none conflicts with the selected --engine".into());
     }
@@ -183,7 +186,7 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
             "--engine",
             args.engine
                 .as_deref()
-                .is_some_and(|s| !matches!(s, "standard" | "row" | "no-cache")),
+                .is_some_and(|s| !crate::commands::primary::continuation::is_known_engine(s)),
         ),
         ("--ffn", args.ffn.is_some()),
         ("--routed-from", args.routed_from.is_some()),
@@ -322,8 +325,10 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         let ids = encoded.get_ids();
         // A brand-new continuation state per prompt. Not a reset — a
         // replacement, so there is nothing that *could* carry over.
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut kv)?;
+        let continuation = crate::commands::primary::continuation::select_for(self.plan, None)?;
+        let mut kv = continuation.build();
+        let mut session =
+            DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *kv)?;
         let mut detok = Detokenizer::new(self.tokenizer);
         detok.seed(ids);
         let decoded = greedy_decode(&mut session, ids, self.args.max_tokens, &mut |id, _| {
@@ -351,6 +356,12 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
             )?;
         }
         if self.args.verbose {
+            writeln!(
+                status,
+                "[{}] continuation={}",
+                self.engine,
+                continuation.authority().identity
+            )?;
             writeln!(
                 status,
                 "[{}] {} prompt tokens in {:.2} s, {} generated",
