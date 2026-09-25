@@ -24,6 +24,7 @@ pub mod attested_fidelity;
 pub mod backend;
 pub mod continuation;
 pub mod continuation_authority;
+pub mod continuation_handoff;
 pub mod continuation_identity;
 pub mod continuation_registry;
 pub mod controls;

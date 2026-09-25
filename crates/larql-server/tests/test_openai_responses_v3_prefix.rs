@@ -18,6 +18,9 @@
 //!   observable `hits - resumptions` gap)
 //! - cross-model chain → never resumes, and does NOT consume the entry
 //! - tools present on V3 → refused before the cache is touched
+//! - state another continuation authority wrote → refused by the resume
+//!   contract (C4 of CONTINUATION-PLUGIN-1), recovered by an EXPLICIT
+//!   fresh prefill that the response and `/v1/stats` both record
 //! - template census: which chat templates preserve a *string* prefix
 //!   under conversation growth (token-level stability additionally
 //!   needs each family's real tokenizer — out of fixture scope)
@@ -31,11 +34,18 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use larql_kv::{shipped_continuations, CanonicalFactory};
 use larql_server::bootstrap::{load_artifact, LoadVindexOptions, LoadedArtifact};
 use larql_server::state::AppState;
+use larql_server::vindex3::V3KvHandoff;
 use larql_vindex::format::vindex3::fixtures::{
     encode_fixture_container, miniature_glimmer, G_VOCAB,
 };
+use larql_vindex::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_handoff::ResumeRefusal;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationFactory;
+use larql_vindex::format::vindex3::opplan::exec::kv::RowFactory;
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
@@ -423,6 +433,168 @@ async fn rejected_tools_chain_does_not_consume_the_entry() {
     .await;
     assert_eq!(status, StatusCode::OK, "{second}");
     assert!(cached_tokens(&second) > 0, "{second}");
+}
+
+// ── continuation authority (C4) ──────────────────────────────────────────────
+
+/// A handoff holding `ids` prefilled by `row/v1` — a provider that can
+/// hold this plan, but not the one the server's binding selected
+/// (`canonical/v1`). Real state, so a refusal is about state that exists.
+fn foreign_handoff(model: &larql_server::vindex3::V3Model, ids: &[u32]) -> V3KvHandoff {
+    let geometry = plan_continuation_geometry(model.runtime.plan()).unwrap();
+    let mut continuation = shipped_continuations()
+        .select(
+            &RowFactory.identity(),
+            &ContinuationConfig::empty(),
+            &geometry,
+        )
+        .unwrap()
+        .begin();
+    model
+        .runtime
+        .prefill_into(ids, continuation.state_mut())
+        .unwrap();
+    V3KvHandoff {
+        continuation,
+        absorbed_ids: ids.to_vec(),
+    }
+}
+
+fn bind(container: &Path) -> larql_server::vindex3::V3Model {
+    match load_artifact(&container.to_string_lossy(), LoadVindexOptions::default()).unwrap() {
+        LoadedArtifact::V3(m) => *m,
+        LoadedArtifact::V2(_) => panic!("must bind as V3"),
+    }
+}
+
+/// The resume contract refuses state another authority wrote even when
+/// its ids are a perfect prefix — the prefix check never runs on it —
+/// and the generation recovers by a fresh prefill that says so.
+#[test]
+fn foreign_state_with_a_perfect_prefix_is_refused_and_recovered_explicitly() {
+    let root = tempfile::tempdir().unwrap();
+    let model = bind(&v3_container_named(root.path(), "authority-ids"));
+    let sampling = larql_inference::SamplingConfig::default();
+    let eos = larql_inference::EosConfig::default();
+    let generate = |prompt: &[u32], resume| {
+        larql_server::vindex3::generate_v3_resumable(
+            &model,
+            prompt,
+            resume,
+            NEW_TOKENS,
+            sampling,
+            &eos,
+            |_, _| {},
+        )
+        .unwrap()
+    };
+
+    let (_, own) = generate(&[1, 2, 3], None);
+    let mut extended = own.absorbed_ids.clone();
+    extended.extend_from_slice(&[6, 7]);
+    let foreign = foreign_handoff(&model, &own.absorbed_ids);
+
+    // Control: the binding's own state with the same prefix resumes.
+    let (resumed, _) = generate(&extended, Some(own));
+    assert!(resumed.reused_prompt_tokens > 0, "own state must resume");
+    assert_eq!(resumed.continuation_refused, None);
+
+    let (refused, handoff) = generate(&extended, Some(foreign));
+    assert_eq!(
+        refused.continuation_refused,
+        Some(ResumeRefusal::ProviderAbsent {
+            recorded: RowFactory.identity(),
+            resolved: CanonicalFactory.identity(),
+        })
+    );
+    assert_eq!(
+        refused.reused_prompt_tokens, 0,
+        "nothing reused from refused state"
+    );
+    let (fresh, _) = generate(&extended, None);
+    assert_eq!(refused.ids, fresh.ids, "recovery equals a fresh run");
+    assert_eq!(resumed.ids, fresh.ids);
+    assert_eq!(
+        handoff.continuation.authority(),
+        model.continuation.authority(),
+        "the recovered turn's state belongs to the binding's own authority"
+    );
+}
+
+/// Over HTTP: a chained turn whose resident state another authority
+/// wrote is served from a fresh prefill, and the response records the
+/// refusal (kind, reason, recovery) instead of passing it off as a miss.
+#[tokio::test]
+async fn a_refused_continuation_is_recorded_on_the_response_and_in_stats() {
+    let root = tempfile::tempdir().unwrap();
+    let container = v3_container_named(root.path(), "authority-http");
+    let state = v3_state(&[&container], 4);
+    let app = larql_server::routes::single_model_router(Arc::clone(&state));
+
+    let (status, first) = drain(
+        post_responses(
+            &app,
+            serde_json::json!({"input": TURN_1, "max_output_tokens": NEW_TOKENS}),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert!(
+        first["usage"]["input_tokens_details"]
+            .get("continuation_refused")
+            .is_none(),
+        "absent unless it happened: {first}"
+    );
+
+    // Replace the resident state with the same ids held by row/v1.
+    let first_id = first["id"].as_str().unwrap();
+    let model = Arc::clone(&state.model_set.read().unwrap().v3_models[0]);
+    let own = state
+        .v3_kv
+        .take(first_id, &model.id)
+        .expect("turn 1 retained");
+    state.v3_kv.insert(
+        first_id,
+        &model.id,
+        None,
+        foreign_handoff(&model, &own.absorbed_ids),
+    );
+
+    let (status, second) = drain(
+        post_responses(
+            &app,
+            serde_json::json!({
+                "input": TURN_2,
+                "previous_response_id": first_id,
+                "max_output_tokens": NEW_TOKENS,
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    let refused = &second["usage"]["input_tokens_details"]["continuation_refused"];
+    assert_eq!(refused["kind"], "provider_absent", "{second}");
+    assert_eq!(refused["recovery"], "fresh_prefill", "{second}");
+    let reason = refused["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("row/v1") && reason.contains("canonical/v1"),
+        "{reason}"
+    );
+    assert_eq!(cached_tokens(&second), 0);
+
+    // Both counters: the state was FOUND (a hit, not a miss) and refused.
+    assert_eq!(state.v3_kv.hits(), 2, "the swap's take and turn 2's");
+    assert_eq!(state.v3_kv.misses(), 0);
+    assert_eq!(state.v3_kv.refusals(), 1);
+    assert_eq!(state.v3_kv.resumptions(), 0);
+
+    // The recovered output is the cold run of the same chain.
+    let cold_state = v3_state(&[&container], 0);
+    let cold = larql_server::routes::single_model_router(Arc::clone(&cold_state));
+    let (_, cold_second) = chain(&cold, None, serde_json::json!({})).await;
+    assert_eq!(output_text(&second), output_text(&cold_second));
 }
 
 // ── template census ──────────────────────────────────────────────────────────

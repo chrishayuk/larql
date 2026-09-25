@@ -135,6 +135,50 @@
         "doc gates": "clean",
         "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
       }
+    },
+    "C4": {
+      "name": "authority in durable handoffs",
+      "status": "built and held",
+      "branch": "continuation-plugin-1/c4",
+      "base": "24a3a255 (C3, rebased onto main 39eaca20)",
+      "date": "2026-09-24",
+      "boundary_clarification": {
+        "recorded_before_code": true,
+        "question": "The server's ResponseKvCache documents continuation reuse as 'purely an optimisation': any mismatch falls back to a full prefill and can never change produced tokens. C4's anti-cheat forbids 'silently restarting from a fresh prefill'. Both cannot hold on the server path unless the layer each applies to is named.",
+        "decision": "C4's no-fallback / no-rebuild / no-fresh-prefill invariant applies to the continuation RESUME operation itself. Resume compares the recorded authority with the resolving one and either returns the recorded state or a typed refusal — provider absent, revision changed, configuration changed, each naming both sides; it never builds, selects or prefills anything. A higher layer (the server) MAY recover by a full fresh prefill, but only as an explicit recovery action: the refusal and its reason are recorded on the response and in the cache's counters, and the record says a fresh prefill occurred. A refused handoff is never reinterpreted as a cache miss.",
+        "unchanged": "A prompt that does not extend the handoff's absorbed ids remains an ordinary cache miss (the N1 optimisation contract): that is a prompt mismatch, not a continuation refusal, and the authority comparison runs before it so an incompatible state is reported as such regardless of the prompt.",
+        "anti_cheat_layer": "The config-A/config-B witness runs at the resume-contract layer, so it proves no fallback, rebuild or prefill INSIDE resume; the server's explicit recovery is witnessed separately.",
+        "analogue": "F1's possible Send bound: a clarification of the boundary, recorded before implementation, not a retrofit of the result."
+      },
+      "out_of_scope": "Cross-process continuation (writing provider state to storage and resuming it in another process) is NOT C4 or C5: it needs a serialization/storage contract the nine-method provider trait deliberately lacks (F3). It belongs to the post-plugin sequence beside CONTINUATION-MEM-1, under its own freeze. C5's frozen path stays in-process: register → prefill → decode → handoff → resume.",
+      "what_landed": [
+        "`exec/continuation_handoff.rs`: `ContinuationHandoff { authority, state }`, fields private, created only by `SelectedContinuation::begin()`, so state is sealed with the authority that built it and cannot be re-paired. `resume(&ContinuationAuthority)` returns the handoff or a `ResumeRefusal` (`ProviderAbsent` / `RevisionChanged` / `ConfigurationChanged`, each naming both sides, with a stable `kind()` token). It builds, selects and prefills nothing; on refusal the state is dropped. Identity is compared before the digest.",
+        "Server: `V3KvHandoff { continuation: ContinuationHandoff, absorbed_ids }`. `generate_v3_request` runs the authority check BEFORE the prefix check; on refusal it warns and recovers by `model.continuation.begin()` + full prefill, reporting `V3Generation::continuation_refused`.",
+        "Responses route: `usage.input_tokens_details.continuation_refused { kind, reason, recovery: \"fresh_prefill\" }`, omitted when nothing was refused; `ResponseKvCache::record_refusal` / `refusals()` and `/v1/stats.server.v3_kv.refusals`, counted apart from `misses` (state found and rejected, not absent). `ResponseUsage` loses `Copy` (it now carries a String).",
+        "`ContinuationHandoff` and `ResumeRefusal` re-exported from `larql_inference::vindex3`; server spec N1 section documents the check."
+      ],
+      "witnesses": {
+        "exec/tests/continuation_handoff.rs (10)": "sealing; same authority resumes the recorded rows untouched with zero builds; an equal authority from another selection resumes (authority is by value); each refusal kind names both sides; identity compared before digest; exactly one accepting case (control); a refusal builds nothing on either side; authority serde round-trip",
+        "larql-kv vindex3/tests/resume_anti_cheat.rs (4)": "the frozen anti-cheat on a REAL recurrent+latent hybrid prefill: v77 config A state vs a resuming registry of v77 config B + canonical/v1 + row/v1 → ConfigurationChanged naming both digests, (hostile, canonical, row) builds (0,0,0); control: the same handoff under config A from a second registry resumes and decodes bit-identically to an uninterrupted canonical/v1 run; revision bump → RevisionChanged; built-ins-only registry resolving canonical/v1 → ProviderAbsent, never a fallback",
+        "larql-server tests/test_openai_responses_v3_prefix.rs (+2)": "row/v1 state with a PERFECT id prefix is refused (ProviderAbsent), reused=0, tokens equal a fresh run, the returned handoff carries the binding's authority; control: the binding's own state with the same prefix resumes. Over HTTP: the response records kind/reason/recovery, cached_tokens 0, hits count the found state, refusals=1, misses=0, output equals the cold chain",
+        "mutation controls": "permissive resume (`between(..).filter(|_| false)`) turned 7 refusal tests red, the resume control stayed green; bypassing the server's authority check turned both server C4 rows red; both mutations reverted and re-verified"
+      },
+      "falsifiers": {
+        "F1": "held — the handoff holds `Box<dyn ContinuationProvider + Send>` inside `ContinuationHandoff`; no trait change",
+        "F2": "held — no built-in constructed on the resume path; recovery goes through the binding's own selection",
+        "F3": "held — 9 trait methods; AttentionStepCall unchanged. `ContinuationHandoff`/`ResumeRefusal` are authority plumbing beside the provider, not provider contract",
+        "F4": "held — the comparison is identity/digest equality; no family literal in continuation_handoff.rs or the server resume path",
+        "F5": "unchanged (C5)"
+      },
+      "scope_note": "The server's Responses N1 cache is the only durable handoff in the tree: CLI, LQL and inference sessions hold provider state within one call. `larql vindex3 exec` resume restores interpreter trace planes, not a continuation provider, and is out of scope.",
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy (six crates) --all-targets -D warnings": "clean",
+        "cargo test -p larql-vindex -p larql-kv -p larql-inference -p larql-lql -p larql-server -p larql-cli": "0 failed; vindex 5339, kv 1298, inference 1824, cli 996, lql 1105, server 1288",
+        "cargo check --workspace --all-targets --locked": "clean",
+        "doc gates": "clean",
+        "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
+      }
     }
   }
 }

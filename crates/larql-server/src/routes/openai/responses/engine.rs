@@ -17,6 +17,7 @@ use std::sync::Arc;
 use crate::error::ServerError;
 use crate::state::LoadedModel;
 use crate::vindex3::{generate_v3_request, V3KvHandoff, V3Model};
+use larql_vindex::format::vindex3::opplan::exec::continuation_handoff::ResumeRefusal;
 
 use super::super::chat::ChatMessage;
 use super::super::prompt::{pick_template, render};
@@ -62,6 +63,9 @@ pub(super) struct GenerationOutcome {
     pub kv_handoff: Option<V3KvHandoff>,
     /// Prompt tokens served from a resumed KV instead of re-prefill.
     pub reused_prompt_tokens: usize,
+    /// V3 only (C4): the offered handoff's authority refused to resume
+    /// and this generation recovered by a fresh prefill.
+    pub continuation_refused: Option<ResumeRefusal>,
     /// This generation's measured performance, for the caller to feed
     /// into `RuntimeRecorder::record` — see [`crate::runtime_stats`].
     pub tally: crate::runtime_stats::GenerationTally,
@@ -193,6 +197,7 @@ fn generate_v2(
         completion_tokens,
         kv_handoff: None,
         reused_prompt_tokens: 0,
+        continuation_refused: None,
         tally,
     })
 }
@@ -257,6 +262,7 @@ fn generate_on_v3(
         completion_tokens: generation.texts.len(),
         kv_handoff: Some(handoff),
         reused_prompt_tokens: generation.reused_prompt_tokens,
+        continuation_refused: generation.continuation_refused,
         tally,
     })
 }

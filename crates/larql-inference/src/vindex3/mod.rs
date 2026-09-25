@@ -75,6 +75,9 @@ pub use explain::{
 pub use larql_vindex::format::vindex3::opplan::exec::continuation_authority::{
     ContinuationAuthority, ContinuationConfig,
 };
+pub use larql_vindex::format::vindex3::opplan::exec::continuation_handoff::{
+    ContinuationHandoff, ResumeRefusal,
+};
 pub use larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity;
 pub use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
     BoxedContinuation, ContinuationFactory, ContinuationRegion, ContinuationRegistry,

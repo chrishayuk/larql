@@ -41,12 +41,20 @@ const STEPS: usize = 6;
 
 /// One provider's complete observable state.
 #[derive(Debug, PartialEq)]
-struct Snapshot {
+pub(super) struct Snapshot {
     position: usize,
     keys: Vec<Vec<Vec<f32>>>,
     values: Vec<Vec<Vec<f32>>>,
     recurrent: Vec<Vec<Vec<f32>>>,
     latent: Vec<Vec<Vec<f32>>>,
+}
+
+impl Snapshot {
+    /// Whether any recurrent cell left its zero start — without it, an
+    /// equality over recurrent state is vacuous.
+    pub(super) fn recurrent_moved(&self) -> bool {
+        self.recurrent.iter().flatten().flatten().any(|v| *v != 0.0)
+    }
 }
 
 /// Everything one arm produced.
@@ -59,7 +67,7 @@ struct Record {
     last: Snapshot,
 }
 
-fn open(
+pub(super) fn open(
     model: fn(&std::path::Path),
     name: &str,
 ) -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
@@ -74,7 +82,10 @@ fn open(
     (container, plan, store)
 }
 
-fn snapshot(state: &mut dyn KvState, geometry: &[LayerContinuationGeometry]) -> Snapshot {
+pub(super) fn snapshot(
+    state: &mut dyn KvState,
+    geometry: &[LayerContinuationGeometry],
+) -> Snapshot {
     let mut snap = Snapshot {
         position: state.position(),
         keys: Vec::new(),
@@ -103,7 +114,7 @@ fn snapshot(state: &mut dyn KvState, geometry: &[LayerContinuationGeometry]) -> 
     snap
 }
 
-fn argmax(logits: &[f32]) -> u32 {
+pub(super) fn argmax(logits: &[f32]) -> u32 {
     logits
         .iter()
         .enumerate()
