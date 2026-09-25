@@ -1327,6 +1327,14 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        self.ffn_observed(call, &mut |_| {})
+    }
+
+    fn ffn_observed(
+        &self,
+        call: FfnCall<'_>,
+        tap: &mut dyn FnMut(&[f32]),
+    ) -> Result<Vec<f32>, VindexError> {
         require_executable_gate("production", call.gate_policy)?;
         let up = project_matrix(&call.up, call.x, call.intermediate, call.hidden)?;
         let gate = match call.gate {
@@ -1334,6 +1342,7 @@ impl PlanBackend for ProductionBackend {
             None => None,
         };
         let inner = ffn_activation(gate.as_deref(), &up, call.activation, call.gate_policy)?;
+        tap(&inner);
         project_matrix(&call.down, &inner, call.hidden, call.intermediate)
     }
 

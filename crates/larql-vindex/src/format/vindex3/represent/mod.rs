@@ -51,6 +51,7 @@ pub mod arena;
 pub mod assessment;
 pub mod bank;
 pub mod byte_ledger;
+pub mod calibration;
 pub mod candidate_authority;
 pub mod codec;
 pub mod compile;

@@ -39,6 +39,8 @@ struct SegmentMap {
 
 /// Operand store over one container.
 pub struct OperandStore {
+    /// Container authority for associated artifacts such as the tokenizer.
+    root: PathBuf,
     /// The codecs this store decodes through — the built-in registry
     /// unless a caller binds another, which is how a representation this
     /// build does not ship becomes executable through registration alone.
@@ -406,6 +408,7 @@ impl OperandStore {
             None => crate::format::vindex3::representation_attestations::AttestationTable::empty(),
         };
         Ok(Self {
+            root: root.to_path_buf(),
             registry,
             references,
             attestations,
@@ -465,6 +468,13 @@ impl OperandStore {
     /// The codecs this store decodes through.
     pub fn registry(&self) -> &'static CodecRegistry {
         self.registry
+    }
+
+    /// Resolve token-bank identity against this store's own container, not a
+    /// caller-supplied tokenizer label. Ordinary weight loading needs no tokenizer.
+    pub fn tokenizer_sha256(&self) -> Result<String, VindexError> {
+        crate::format::vindex3::represent::token_bank::container_tokenizer_sha256(&self.root)
+            .map_err(|error| VindexError::Parse(format!("tokenizer authority refused: {error}")))
     }
 
     /// How many objects' segments this store has mapped — the physical

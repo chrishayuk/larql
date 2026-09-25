@@ -1026,8 +1026,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     _ => Cow::Borrowed(&ffn_site.branch_input),
                 };
                 let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
-                let ffn_out =
-                    ffn.apply_from_residual(ffn_op, self.backend, &residual, &normed, hidden)?;
+                let ffn_out = if observer.wants_ffn_down_input(index) {
+                    ffn.apply_observed(ffn_op, self.backend, &normed, hidden, &mut |values| {
+                        observer.ffn_down_input(index, values)
+                    })?
+                } else {
+                    ffn.apply_from_residual(ffn_op, self.backend, &residual, &normed, hidden)?
+                };
                 drop(residual);
                 observer.operand_input(index, InputSite::FfnOutput, ffn_out.as_slice());
                 let mut ffn_out = match &state.post_ffn {

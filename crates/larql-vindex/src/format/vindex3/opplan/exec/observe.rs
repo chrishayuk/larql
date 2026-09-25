@@ -137,11 +137,10 @@ pub struct CarrierWriteRecord<'a> {
 
 /// Where in a layer an activation was taken.
 ///
-/// Two sites, because two suffice: everything else is derivable from them
-/// offline. `q/k/v` read the attention input; `gate/up` read the FFN
-/// input; and `down`'s input is `act(gate(x)) * up(x)`, which a screen can
-/// reconstruct from the FFN input and those two operands rather than
-/// needing its own tap.
+/// `q/k/v` read the attention input; `gate/up` read the FFN input. Legacy
+/// screens reconstruct down's input offline and verify it against FfnOutput.
+/// Calibration instead opts into [`StepObserver::ffn_down_input`], which borrows
+/// the actual intermediate consumed by the executing backend.
 ///
 /// `o_proj` is the exception and is *not* covered: its input is the
 /// attention core's output, which never surfaces at this boundary. A
@@ -279,6 +278,14 @@ pub struct HcSiteRecord<'a> {
 /// A subscriber to the canonical step's observation points.
 pub trait StepObserver {
     fn event(&mut self, event: StepEvent);
+
+    /// Request the actual dense FFN intermediate consumed by down projection.
+    /// Unsupported backends/FFN kinds refuse; no reconstruction is substituted.
+    fn wants_ffn_down_input(&self, _layer: usize) -> bool {
+        false
+    }
+
+    fn ffn_down_input(&mut self, _layer: usize, _values: &[f32]) {}
 
     /// Observe an operand input's values. Separate from [`event`] so the
     /// values are borrowed rather than cloned into an event: capturing

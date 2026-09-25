@@ -143,3 +143,8 @@ The [codec contract](../represent-codec-contract.md) separates representation
 decoding, compilation and execution support. The
 [optimizer MCP design](../represent-optimizer-mcp.md) is a design document,
 not an inventory of shipped commands.
+
+[REPRESENT-CAL-1](../represent-cal-1.md) is the calibrated-recipe implementation
+contract. CAL-1.1 supplies content-bound calibration artifacts and exact dense
+projection input capture through the library API; GPTQ dispatch and its admission
+run remain later stages.

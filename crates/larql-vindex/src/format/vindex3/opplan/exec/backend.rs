@@ -960,6 +960,14 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
         (**self).ffn(call)
     }
 
+    fn ffn_observed(
+        &self,
+        call: FfnCall<'_>,
+        tap: &mut dyn FnMut(&[f32]),
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).ffn_observed(call, tap)
+    }
+
     fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
         (**self).ffn_many(call)
     }
@@ -1137,6 +1145,18 @@ pub trait PlanBackend: Sync {
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// Borrow the actual intermediate immediately before down projection.
+    /// The default refuses rather than reconstructing another backend's input.
+    fn ffn_observed(
+        &self,
+        _call: FfnCall<'_>,
+        _tap: &mut dyn FnMut(&[f32]),
+    ) -> Result<Vec<f32>, VindexError> {
+        Err(VindexError::Parse(
+            "FFN down-input capture unavailable on this backend".into(),
+        ))
+    }
 
     /// The dense FFN over several positions at once.
     ///

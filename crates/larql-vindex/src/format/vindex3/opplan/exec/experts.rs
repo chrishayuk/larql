@@ -365,6 +365,23 @@ impl FfnOperands {
         }
     }
 
+    /// Capture the dense down input on the same backend call that consumes it.
+    pub(super) fn apply_observed<B: super::backend::PlanBackend + ?Sized>(
+        &self,
+        ffn: &LayerFfn,
+        backend: &B,
+        x: &[f32],
+        hidden: usize,
+        tap: &mut dyn FnMut(&[f32]),
+    ) -> Result<Vec<f32>, VindexError> {
+        let (Self::Dense(dense), LayerFfn::Dense(op)) = (self, ffn) else {
+            return Err(VindexError::Parse(
+                "FFN down-input capture requires a dense FFN".into(),
+            ));
+        };
+        backend.ffn_observed(dense.call(op, x, hidden), tap)
+    }
+
     /// The whole FFN block from the post-attention residual up to — not
     /// including — the layer's post-FFN norm and residual add. Both
     /// drivers (batch and decode) call this, so the hybrid program lives
@@ -492,7 +509,11 @@ impl DenseOperands {
         x: &[f32],
         hidden: usize,
     ) -> Result<Vec<f32>, VindexError> {
-        backend.ffn(FfnCall {
+        backend.ffn(self.call(op, x, hidden))
+    }
+
+    fn call<'a>(&'a self, op: &FfnOp, x: &'a [f32], hidden: usize) -> FfnCall<'a> {
+        FfnCall {
             x,
             hidden,
             intermediate: op.intermediate_size,
@@ -501,7 +522,7 @@ impl DenseOperands {
             down: self.down.slice(),
             activation: op.activation,
             gate_policy: op.gate_policy,
-        })
+        }
     }
 
     fn apply_many<B: super::backend::PlanBackend + ?Sized>(
