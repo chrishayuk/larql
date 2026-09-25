@@ -106,3 +106,5 @@ peer handshake and a fuller plateau/replication protocol are needed for a
 performance claim. See [field definitions](../../docs/ffn/v3-dense-profile.md).
 
 The same-build bind-once binary follow-up is recorded in [WIRE-1](WIRE-1.md).
+
+Persistent exact-stream follow-up: [WIRE-2 results and limits](WIRE-2.md).
