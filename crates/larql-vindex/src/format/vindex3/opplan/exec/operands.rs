@@ -87,8 +87,8 @@ pub struct OperandStore {
     /// The observed half of preparation accounting. `loads` counts CALLS,
     /// which cannot be compared against a byte ledger — two reads of a
     /// small operand and one read of a large one are the same number.
-    /// Incremented only in [`Self::load_raw`], which is the one path that
-    /// copies payload; `map_region` binds without reading and correctly
+    /// Incremented in [`Self::load_raw`] and [`Self::load_raw_range`], the paths
+    /// that copy payload; `map_region` binds without reading and correctly
     /// moves neither counter.
     read_bytes: std::sync::atomic::AtomicU64,
     /// Tensors quantised at load in this session — see
@@ -141,6 +141,10 @@ pub struct OperandStore {
     /// Recorded in [`Self::load_raw`] because that is the one resolution
     /// path — a second place to record would be a second answer.
     touched: std::sync::Mutex<std::collections::BTreeSet<String>>,
+    /// Test witness at tensor granularity: one object may carry both local
+    /// attention and remotely placed FFN operands.
+    #[cfg(test)]
+    touched_operands: std::sync::Mutex<std::collections::BTreeSet<(String, String)>>,
 }
 
 /// How much of each dependency to read, by the name its OWNER declared.
@@ -248,6 +252,62 @@ pub struct SelectedRepresentation {
 }
 
 impl OperandStore {
+    /// Read an explicitly declared byte window of one tensor. The full stored
+    /// length is checked before the seek; expert workers never copy an entire
+    /// packed bank merely to discard unowned experts afterwards.
+    pub fn load_raw_range(
+        &self,
+        operand: &OperandRef,
+        expected_total: u64,
+        offset: u64,
+        len: u64,
+    ) -> Result<RawOperand, VindexError> {
+        let segment = self
+            .segments
+            .get(&operand.object)
+            .ok_or_else(|| VindexError::Parse(format!("missing object {}", operand.object)))?;
+        let tensor = segment
+            .tensors
+            .get(&operand.tensor)
+            .ok_or_else(|| VindexError::Parse(format!("missing tensor {}", operand.tensor)))?;
+        if tensor.len != expected_total
+            || offset.checked_add(len).is_none_or(|end| end > tensor.len)
+        {
+            return Err(VindexError::Parse(format!(
+                "{}: expert byte range or stored length disagrees with declaration",
+                operand.tensor
+            )));
+        }
+        let absolute = segment
+            .payload_start
+            .checked_add(tensor.offset)
+            .and_then(|n| n.checked_add(offset))
+            .ok_or_else(|| VindexError::Parse("expert file offset overflow".into()))?;
+        let mut file = std::fs::File::open(&segment.path)?;
+        file.seek(SeekFrom::Start(absolute))?;
+        let mut bytes = vec![
+            0;
+            usize::try_from(len).map_err(|_| VindexError::Parse(
+                "expert byte length exceeds address space".into()
+            ))?
+        ];
+        file.read_exact(&mut bytes)?;
+        self.loads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.read_bytes
+            .fetch_add(len, std::sync::atomic::Ordering::Relaxed);
+        self.touched.lock().unwrap().insert(operand.object.clone());
+        #[cfg(test)]
+        self.touched_operands
+            .lock()
+            .unwrap()
+            .insert((operand.object.clone(), operand.tensor.clone()));
+        Ok(RawOperand {
+            dtype: tensor.dtype.clone(),
+            bytes,
+        })
+    }
+
     /// Open every canonical segment of every object in the inspection.
     pub fn open(root: &Path, inspection: &SystemInspection) -> Result<Self, VindexError> {
         Self::open_for(root, inspection, None, RepresentationSource::Auto)
@@ -428,6 +488,8 @@ impl OperandStore {
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
+            #[cfg(test)]
+            touched_operands: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         })
     }
 
@@ -964,6 +1026,12 @@ impl OperandStore {
         &self.absent
     }
 
+    /// Test-only observation of tensors actually read or mapped.
+    #[cfg(test)]
+    pub(crate) fn touched_operand_addresses(&self) -> std::collections::BTreeSet<(String, String)> {
+        self.touched_operands.lock().unwrap().clone()
+    }
+
     /// The objects this store has resolved an operand out of.
     ///
     /// Measured, not predicted. A hydration set computed by folding over
@@ -1022,6 +1090,11 @@ impl OperandStore {
         self.loads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.touched.lock().unwrap().insert(operand.object.clone());
+        #[cfg(test)]
+        self.touched_operands
+            .lock()
+            .unwrap()
+            .insert((operand.object.clone(), operand.tensor.clone()));
         let segment = self.segments.get(&operand.object).ok_or_else(|| {
             if self.absent.contains(&operand.object) {
                 return VindexError::Parse(format!(
@@ -1070,6 +1143,11 @@ impl OperandStore {
             VindexError::Parse(format!("no segment for object `{}`", operand.object))
         })?;
         self.touched.lock().unwrap().insert(operand.object.clone());
+        #[cfg(test)]
+        self.touched_operands
+            .lock()
+            .unwrap()
+            .insert((operand.object.clone(), operand.tensor.clone()));
         let store = {
             let mut mapped = self.mapped.lock().unwrap();
             match mapped.get(&operand.object) {

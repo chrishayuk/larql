@@ -352,6 +352,7 @@ fn explicit_kv_providers_preserve_text_ids_and_stop_strings() {
     for flags in [
         vec!["--engine", "standard"],
         vec!["--engine", "row"],
+        vec!["--continuation", "row/v1"],
         vec!["--engine", "no-cache"],
         vec!["--kv-cache", "none"],
     ] {
@@ -409,6 +410,111 @@ fn multimodal_plan_preserves_position_order_and_precomputed_scaling() {
     assert!(matches!(&inputs[2],InputPosition::Embedding(row) if row==&[0.75,1.0]));
     assert!(matches!(inputs[3], InputPosition::Token(2)));
     assert!(matches!(inputs[4], InputPosition::Token(3)));
+}
+
+#[test]
+fn dense_ffn_placement_refuses_conflicting_execution_flags_before_connecting() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for extra in [
+        vec!["--metal"],
+        vec!["--engine", "row"],
+        vec!["--kv-cache", "none"],
+    ] {
+        let mut flags = vec![PROMPT, "--v3-ffn-shards", "http://127.0.0.1:1"];
+        flags.extend(extra);
+        let error = run_capturing(&container, &flags, "").unwrap_err();
+        assert!(error.contains("--v3-ffn-shards uses CPU"), "{error}");
+    }
+    let parsed = Shell::try_parse_from([
+        "larql",
+        container.to_str().unwrap(),
+        PROMPT,
+        "--v3-ffn-shards",
+        "http://a,http://b",
+        "--v3-shard-token-env",
+        "FFN_TOKEN",
+    ])
+    .unwrap()
+    .run;
+    assert_eq!(parsed.v3_ffn_shards, ["http://a", "http://b"]);
+    assert!(Shell::try_parse_from([
+        "larql",
+        container.to_str().unwrap(),
+        PROMPT,
+        "--v3-ffn-shards",
+        "http://a",
+        "--v3-shards",
+        "http://b"
+    ])
+    .is_err());
+}
+
+#[test]
+fn cpu_profile_preserves_ids_and_refuses_to_overwrite() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    let profile = root.path().join("profile.jsonl");
+    let plain =
+        run_capturing_with_status(&container, &[PROMPT, "--max-tokens", "3", "--emit-ids"], "")
+            .unwrap();
+    let flags = [
+        PROMPT,
+        "--max-tokens",
+        "3",
+        "--emit-ids",
+        "--v3-profile",
+        profile.to_str().unwrap(),
+    ];
+    let measured = run_capturing_with_status(&container, &flags, "").unwrap();
+    assert_eq!(plain, measured);
+    let explicit_continuation = [&flags[..], &["--continuation", "row/v1"]].concat();
+    let error = run_capturing(&container, &explicit_continuation, "").unwrap_err();
+    assert!(error.contains("explicit --continuation"), "{error}");
+    let text = std::fs::read_to_string(&profile).unwrap();
+    let rows: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows[0]["complete"], true);
+    assert_eq!(rows[0]["placement"], "local");
+    assert!(rows.len() >= 4);
+    for (position, row) in rows[1..].iter().enumerate() {
+        assert_eq!(row["position"], position);
+        assert_eq!(row["complete"], true);
+        assert_eq!(row["provider_calls"], serde_json::json!([]));
+    }
+    assert!(run_capturing(&container, &flags, "").is_err());
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), text);
+}
+
+#[test]
+fn binary_ffn_wire_flag_is_explicit_and_scoped() {
+    for wire in ["binary", "json", "stream"] {
+        let run = Shell::try_parse_from([
+            "larql",
+            "model",
+            "hello",
+            "--v3-ffn-shards",
+            "http://a",
+            "--v3-ffn-wire",
+            wire,
+        ])
+        .unwrap()
+        .run;
+        assert_eq!(run.v3_ffn_wire.as_deref(), Some(wire));
+    }
+    assert!(Shell::try_parse_from(["larql", "model", "hello", "--v3-ffn-wire", "binary"]).is_err());
+    assert!(Shell::try_parse_from([
+        "larql",
+        "model",
+        "hello",
+        "--v3-ffn-shards",
+        "http://a",
+        "--v3-ffn-wire",
+        "q8"
+    ])
+    .is_err());
 }
 
 /// CONTINUATION-PLUGIN-1 C3: `--engine` is an alias, and every path

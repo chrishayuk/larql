@@ -266,6 +266,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 "endpoints-only operands require a distributed coordinator".into(),
             ));
         }
+        ops.get().ensure_stack_ready()?;
         ops.get().ensure_providers_in(ops.get().registry())?;
         ops.get().ensure_lowered_by(backend)?;
         // The FULL continuation geometry, KV and recurrent alike.
@@ -589,6 +590,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         interventions: &InterventionPlan,
         head_interventions: &HeadInterventionPlan,
     ) -> Result<StepRun, VindexError> {
+        let mut profile = super::profile::Token::start(
+            self.kv.state().position(),
+            match &entry {
+                Entry::Token(token) => Some(*token),
+                _ => None,
+            },
+        );
         let ops = self.ops.get();
         let mut firings: Vec<Firing> = Vec::new();
         let mut head_firings: Vec<HeadFiring> = Vec::new();
@@ -656,7 +664,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let first = ops.first_layer();
         for (offset, state) in ops.layers().iter().enumerate() {
             let index = first + offset;
+            profile.layer(index);
             let layer = &self.plan.layers[index];
+            profile.phase(super::profile::Phase::Attention);
             // ── Attention site ──
             //
             // On a bundle the site reduces first: the ordinary operator
@@ -938,6 +948,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 observer.event(StepEvent::HeadsUncovered { layer: index });
             }
             drop(_attention_stage);
+            profile.phase(super::profile::Phase::Reentry);
             observer.attention_output(index, position, &raw_attn);
             let mut attn_out = match &state.post_attention {
                 Some(norm) => norm.apply(self.backend, &raw_attn),
@@ -1026,8 +1037,10 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     _ => Cow::Borrowed(&ffn_site.branch_input),
                 };
                 let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
+                profile.phase(super::profile::Phase::Ffn);
                 let ffn_out =
                     ffn.apply_from_residual(ffn_op, self.backend, &residual, &normed, hidden)?;
+                profile.phase(super::profile::Phase::Reentry);
                 drop(residual);
                 observer.operand_input(index, InputSite::FfnOutput, ffn_out.as_slice());
                 let mut ffn_out = match &state.post_ffn {
@@ -1078,6 +1091,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             observer.event(StepEvent::FfnDone { layer: index });
         }
 
+        profile.phase(super::profile::Phase::Other);
         // ── The exit ──
         //
         // A bundle leaves the stack through the head's OWN reduction
@@ -1178,6 +1192,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             });
         }
         self.kv.state_mut().set_position(position + 1);
+        profile.complete();
         Ok(StepRun {
             logits,
             firings,

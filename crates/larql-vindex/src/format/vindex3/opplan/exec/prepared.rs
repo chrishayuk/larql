@@ -89,6 +89,19 @@ use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopo
 pub enum ExecutionSlice {
     /// Embedding, every layer, final norm and head — a whole model.
     Full,
+    /// Local stack with dense FFN matrices placed at an external provider.
+    DenseFfnCoordinator,
+    /// Local attention, router and endpoints, with expert transforms placed remotely.
+    RoutedExpertCoordinator,
+    /// Only expert rows in half-open layer and expert ranges.
+    RoutedExperts {
+        start: usize,
+        end: usize,
+        expert_start: usize,
+        expert_end: usize,
+    },
+    /// Dense FFN matrices only, prepared by `PreparedDenseFfns`.
+    DenseFfns { start: usize, end: usize },
     /// Only token embedding and final norm/head, for a distributed coordinator.
     /// No transformer layer operands are loaded.
     Endpoints,
@@ -123,9 +136,13 @@ impl ExecutionSlice {
     /// The layer indices this slice covers, as a half-open range.
     pub fn layers(&self, plan: &ComponentOpPlan) -> std::ops::Range<usize> {
         match self {
-            Self::Full => 0..plan.layers.len(),
+            Self::Full | Self::DenseFfnCoordinator | Self::RoutedExpertCoordinator => {
+                0..plan.layers.len()
+            }
             Self::Endpoints => 0..0,
-            Self::LayerRange { start, end } => *start..*end,
+            Self::LayerRange { start, end }
+            | Self::DenseFfns { start, end }
+            | Self::RoutedExperts { start, end, .. } => *start..*end,
             Self::Draft { end } => 0..*end,
         }
     }
@@ -133,7 +150,33 @@ impl ExecutionSlice {
     /// Whether the slice carries the stack's ends — embedding on the
     /// way in, final norm and output head on the way out.
     pub fn is_whole_stack(&self) -> bool {
-        matches!(self, Self::Full | Self::Endpoints | Self::Draft { .. })
+        matches!(
+            self,
+            Self::Full
+                | Self::DenseFfnCoordinator
+                | Self::RoutedExpertCoordinator
+                | Self::Endpoints
+                | Self::Draft { .. }
+        )
+    }
+
+    pub(super) fn contains(&self, plan: &ComponentOpPlan, operand: &PlannedOperand) -> bool {
+        let in_layer = operand
+            .layer
+            .is_some_and(|l| self.layers(plan).contains(&l));
+        let ffn = operand.operation == Operation::Project(MatrixClass::FfnProjection);
+        match self {
+            Self::RoutedExperts { .. } => {
+                in_layer && operand.operation == Operation::ExpertBankSlice
+            }
+            Self::RoutedExpertCoordinator => !matches!(
+                operand.operation,
+                Operation::ExpertBankSlice | Operation::ExpertProject { .. }
+            ),
+            Self::DenseFfns { .. } => in_layer && ffn,
+            Self::DenseFfnCoordinator => !ffn,
+            _ => in_layer || (operand.layer.is_none() && self.is_whole_stack()),
+        }
     }
 
     /// Refuse a slice the plan cannot satisfy. A shard asked for layers
@@ -141,6 +184,37 @@ impl ExecutionSlice {
     /// "as much as exists" would serve a silently wrong submodel — the
     /// same failure the V3 load options used to have.
     pub(super) fn validate(&self, plan: &ComponentOpPlan) -> Result<(), VindexError> {
+        if matches!(self, Self::DenseFfnCoordinator | Self::DenseFfns { .. }) {
+            super::dense_ffn::validate_plan(plan)?;
+        }
+        if matches!(
+            self,
+            Self::RoutedExpertCoordinator | Self::RoutedExperts { .. }
+        ) {
+            super::routed_experts::validate_plan(plan)?;
+        }
+        if let Self::RoutedExperts {
+            start,
+            end,
+            expert_start,
+            expert_end,
+        } = self
+        {
+            if start >= end
+                || *end > plan.layers.len()
+                || expert_start >= expert_end
+                || plan.layers[*start..*end].iter().any(|l| {
+                    l.ffn
+                        .as_ref()
+                        .and_then(|f| f.routed())
+                        .is_none_or(|r| *expert_end > r.experts)
+                })
+            {
+                return Err(VindexError::Parse(
+                    "routed worker layer or expert range outside plan".into(),
+                ));
+            }
+        }
         if let Self::Draft { end } = self {
             if *end == 0 {
                 return Err(VindexError::Parse(
@@ -158,7 +232,7 @@ impl ExecutionSlice {
             }
             return Ok(());
         }
-        let Self::LayerRange { start, end } = self else {
+        let (Self::LayerRange { start, end } | Self::DenseFfns { start, end }) = self else {
             return Ok(());
         };
         if start >= end {
@@ -1650,15 +1724,10 @@ fn select_records<B: PlanBackend + ?Sized>(
     // provider that qualified it, whether the caller resolved that
     // provider through a registry or handed it in directly.
     let lowering_provider = backend.identity();
-    let whole = slice.is_whole_stack();
-    let range = slice.layers(plan);
     let mut records = Vec::new();
     let mut refusals = Vec::new();
-    for planned in plan.planned_operands() {
-        let in_scope = match planned.layer {
-            Some(layer) => range.contains(&layer),
-            None => whole,
-        };
+    for mut planned in plan.planned_operands() {
+        let in_scope = slice.contains(plan, &planned);
         if !in_scope {
             continue;
         }
@@ -1700,6 +1769,16 @@ fn select_records<B: PlanBackend + ?Sized>(
                 };
                 for dependency in &mut dependencies {
                     dependency.lifetime = lifetime;
+                }
+                if let ExecutionSlice::RoutedExperts {
+                    expert_start,
+                    expert_end,
+                    ..
+                } = slice
+                {
+                    let count = planned.operand.shape[0];
+                    planned.logical_elements =
+                        planned.logical_elements / count * (expert_end - expert_start);
                 }
                 records.push((
                     RealizationRecord {
@@ -1874,7 +1953,7 @@ fn extent_pin(registry: &CodecRegistry, label: &str, planned: &PlannedOperand) -
 /// unread — or one the plan's own view failed to list, which is a
 /// disagreement between `planned_operands()` and the loader and is
 /// refused as such rather than defaulted.
-fn pinned_format(
+pub(super) fn pinned_format(
     records: &[RealizationRecord],
     store: OperandSource<'_>,
     op: &OperandRef,
@@ -1971,6 +2050,8 @@ pub struct PreparedOperands {
     /// the plan's per-layer ops and the KV state's layer rows.
     first_layer: usize,
     layers: Vec<PreparedLayer>,
+    dense_ffns: Option<super::dense_ffn::PreparedDenseFfns>,
+    routed_experts: Option<super::routed_experts::PreparedRoutedExperts>,
     final_norm: Option<PreparedNorm>,
     output: Option<(OutputOp, LoadedWeight)>,
     /// One pinned realization per planned operand this image executes,
@@ -2201,6 +2282,76 @@ pub struct PreparedDenseFfnImage {
 }
 
 impl PreparedOperands {
+    /// Install an already artifact-bound provider before creating any sessions.
+    pub fn bind_dense_ffn_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn super::dense_ffn::DenseFfnProvider>,
+    ) -> Result<(), VindexError> {
+        if self.slice != ExecutionSlice::DenseFfnCoordinator {
+            return Err(VindexError::Parse(
+                "external FFN provider requires coordinator operands".into(),
+            ));
+        }
+        for layer in &mut self.layers {
+            if let Some(FfnOperands::External { provider: slot, .. }) = &mut layer.ffn {
+                *slot = Some(provider.clone());
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn ensure_stack_ready(&self) -> Result<(), VindexError> {
+        if matches!(
+            self.slice,
+            ExecutionSlice::DenseFfns { .. } | ExecutionSlice::RoutedExperts { .. }
+        ) {
+            return Err(VindexError::Parse(
+                "FFN/expert workers cannot execute a layer stack".into(),
+            ));
+        }
+        if self.layers.iter().any(|l| {
+            l.ffn
+                .as_ref()
+                .is_some_and(FfnOperands::routed_provider_missing)
+        }) {
+            return Err(VindexError::Parse(
+                "routed expert provider is not bound".into(),
+            ));
+        }
+        if self
+            .layers
+            .iter()
+            .any(|l| matches!(l.ffn, Some(FfnOperands::External { provider: None, .. })))
+        {
+            return Err(VindexError::Parse("dense FFN provider is not bound".into()));
+        }
+        Ok(())
+    }
+
+    pub fn routed_experts(&self) -> Option<&super::routed_experts::PreparedRoutedExperts> {
+        self.routed_experts.as_ref()
+    }
+    pub fn bind_routed_expert_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn super::routed_experts::RoutedExpertProvider>,
+    ) -> Result<(), VindexError> {
+        if self.slice != ExecutionSlice::RoutedExpertCoordinator {
+            return Err(VindexError::Parse(
+                "routed provider requires coordinator operands".into(),
+            ));
+        }
+        for layer in &mut self.layers {
+            if let Some(ffn) = &mut layer.ffn {
+                ffn.bind_routed_provider(provider.clone())?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn dense_ffns(&self) -> Option<&super::dense_ffn::PreparedDenseFfns> {
+        self.dense_ffns.as_ref()
+    }
+
     pub fn dense_ffn_image(
         &self,
         plan: &ComponentOpPlan,
@@ -2289,6 +2440,16 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
+        if matches!(
+            slice,
+            ExecutionSlice::DenseFfns { .. }
+                | ExecutionSlice::DenseFfnCoordinator
+                | ExecutionSlice::RoutedExperts { .. }
+                | ExecutionSlice::RoutedExpertCoordinator
+        ) && store.stamp() != OperandSource::from(store.store()).stamp()
+        {
+            return Err(VindexError::Parse("FFN placement requires base artifact operands; overlays are not bound by this protocol".into()));
+        }
         // **Every declared residual topology is traversable here.**
         // Single-stream always was; hyper-connections joined it in wave
         // 19 when the bundle was witnessed on both the decode step and
@@ -2331,6 +2492,66 @@ impl PreparedOperands {
             ))
         })?;
         let hidden = embedding.table.shape[1];
+        if matches!(slice, ExecutionSlice::DenseFfns { .. }) {
+            let dense_ffns = super::dense_ffn::PreparedDenseFfns::load(
+                plan,
+                store,
+                backend,
+                &slice,
+                &realizations,
+                hidden,
+            )?;
+            let prepared = Self {
+                stamp,
+                first_layer: slice.layers(plan).start,
+                slice,
+                hidden,
+                embed_table: None,
+                layers: Vec::new(),
+                final_norm: None,
+                output: None,
+                registry: store.registry(),
+                realizations,
+                topology: plan.residual_topology,
+                hyper_connection_head: None,
+                attention_residual_exit: None,
+                dense_ffns: Some(dense_ffns),
+                routed_experts: None,
+            };
+            prepared.verify_pins()?;
+            prepared.reconcile(plan, store)?;
+            return Ok(prepared);
+        }
+        if matches!(slice, ExecutionSlice::RoutedExperts { .. }) {
+            let worker = super::routed_experts::PreparedRoutedExperts::load(
+                plan,
+                store,
+                backend,
+                &slice,
+                &realizations,
+                hidden,
+            )?;
+            let prepared = Self {
+                stamp,
+                first_layer: slice.layers(plan).start,
+                slice,
+                hidden,
+                embed_table: None,
+                layers: Vec::new(),
+                final_norm: None,
+                output: None,
+                registry: store.registry(),
+                realizations,
+                topology: plan.residual_topology,
+                hyper_connection_head: None,
+                attention_residual_exit: None,
+                dense_ffns: None,
+                routed_experts: Some(worker),
+            };
+            prepared.verify_pins()?;
+            prepared.reconcile(plan, store)?;
+            return Ok(prepared);
+        }
         let embed_table = if whole {
             Some(store.load(&embedding.table)?)
         } else {
@@ -2370,8 +2591,10 @@ impl PreparedOperands {
             // with no bank never reads the value, and gets the widened
             // form so nothing compact is implied.
             let bank_format = match layer.ffn.as_ref().and_then(|f| f.routed()) {
-                Some(_) => bank_pin(&realizations, index)?,
-                None => BankPin {
+                Some(_) if slice != ExecutionSlice::RoutedExpertCoordinator => {
+                    bank_pin(&realizations, index)?
+                }
+                _ => BankPin {
                     format: WeightFormat::F32,
                     access: super::realization::MappedAccess::Demand,
                 },
@@ -2450,7 +2673,16 @@ impl PreparedOperands {
                     .ffn
                     .as_ref()
                     .map(|ffn| {
-                        FfnOperands::load(ffn, store, &ffn_format, bank_format, &shared_format)
+                        if slice == ExecutionSlice::DenseFfnCoordinator {
+                            Ok(FfnOperands::External {
+                                layer: index,
+                                provider: None,
+                            })
+                        } else if slice == ExecutionSlice::RoutedExpertCoordinator {
+                            FfnOperands::load_routed_coordinator(ffn, store, index)
+                        } else {
+                            FfnOperands::load(ffn, store, &ffn_format, bank_format, &shared_format)
+                        }
                     })
                     .transpose()?,
                 post_ffn: layer
@@ -2532,6 +2764,8 @@ impl PreparedOperands {
             topology,
             hyper_connection_head,
             attention_residual_exit,
+            dense_ffns: None,
+            routed_experts: None,
         };
         // **The executor runs what was pinned.** Every resident matrix
         // holds the representation its record named, checked here so a
@@ -2614,6 +2848,18 @@ impl PreparedOperands {
                  realizations {pinned:?} — the loader drifted from the selector"
             ))
         };
+        if let Some(ffns) = &self.dense_ffns {
+            let mut expected: Vec<_> = self
+                .realizations
+                .iter()
+                .map(|r| r.selection.realization.format())
+                .collect();
+            expected.sort_by_key(|f| format!("{f:?}"));
+            let resident = observed(ffns.matrices());
+            if expected != resident {
+                return Err(mismatch("dense FFN worker".into(), expected, resident));
+            }
+        }
         for (offset, layer) in self.layers.iter().enumerate() {
             let index = self.first_layer + offset;
             let attention = pinned(Some(index), &|o| {
@@ -2653,6 +2899,12 @@ impl PreparedOperands {
     /// for it — the OBSERVATION side of the accounting, read off the
     /// resident objects and never off a declaration.
     pub fn bound(&self, plan: &ComponentOpPlan) -> Result<Vec<Observed>, VindexError> {
+        if let Some(experts) = &self.routed_experts {
+            return experts.bound();
+        }
+        if let Some(ffns) = &self.dense_ffns {
+            return ffns.bound(plan);
+        }
         let mut out = Vec::new();
         if let (Some(embedding), Some(table)) = (&plan.embedding, &self.embed_table) {
             out.push(Observed {
@@ -2697,7 +2949,24 @@ impl PreparedOperands {
         store: OperandSource<'_>,
         geometry: BlockGeometry,
     ) -> Vec<Expectation> {
-        expectations(&self.realizations, |op| store.stored_len(op), geometry)
+        expectations(
+            &self.realizations,
+            |op| {
+                let full = store.stored_len(op)?;
+                if let ExecutionSlice::RoutedExperts {
+                    expert_start,
+                    expert_end,
+                    ..
+                } = self.slice
+                {
+                    let count = *op.shape.first()?;
+                    Some(full / count as u64 * (expert_end - expert_start) as u64)
+                } else {
+                    Some(full)
+                }
+            },
+            geometry,
+        )
     }
 
     /// Bind the declarations AGAINST the observations: every pin meets
@@ -2819,6 +3088,17 @@ impl PreparedOperands {
 
     pub fn residency_census(&self) -> ResidencyCensus {
         let mut census = ResidencyCensus::default();
+        if let Some(ffns) = &self.dense_ffns {
+            for weight in ffns.matrices() {
+                census.ffn.add(weight);
+            }
+        }
+        if let Some(experts) = &self.routed_experts {
+            for weight in experts.matrices() {
+                census.ffn.add(weight);
+            }
+            census.glue.widened_f32 += experts.bias_bytes();
+        }
         if let Some(table) = &self.embed_table {
             census.embedding.widened_f32 += std::mem::size_of_val(&table[..]);
         }
@@ -2902,6 +3182,12 @@ impl PreparedOperands {
                 out.regions += 1;
             }
         };
+        if let Some(ffns) = &self.dense_ffns {
+            ffns.matrices().iter().for_each(|w| add(w));
+        }
+        if let Some(experts) = &self.routed_experts {
+            experts.matrices().iter().for_each(|w| add(w));
+        }
         for layer in &self.layers {
             match &layer.attention {
                 PreparedAttention::Softmax(ops) => {
@@ -2934,6 +3220,12 @@ impl PreparedOperands {
                 census.add(address, bytes);
             }
         };
+        if let Some(ffns) = &self.dense_ffns {
+            ffns.matrices().iter().for_each(|w| add(w));
+        }
+        if let Some(experts) = &self.routed_experts {
+            experts.matrices().iter().for_each(|w| add(w));
+        }
         for layer in &self.layers {
             match &layer.attention {
                 PreparedAttention::Softmax(ops) => {

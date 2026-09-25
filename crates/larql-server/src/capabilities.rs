@@ -179,6 +179,41 @@ pub const fn plans_source(profile: ServerProfile, scheme: SourceScheme) -> bool 
 /// mounted-route ledger — see the module doc.
 pub const ROUTE_CAPABILITIES: &[RouteCapability] = &[
     RouteCapability {
+        key: "/runtime/routed_experts",
+        route: paths::VINDEX3_EXPERTS,
+        source: None,
+    },
+    RouteCapability {
+        key: "/runtime/routed_experts_open",
+        route: paths::VINDEX3_EXPERTS_OPEN,
+        source: None,
+    },
+    RouteCapability {
+        key: "/runtime/routed_experts_binary",
+        route: paths::VINDEX3_EXPERTS_BINARY,
+        source: None,
+    },
+    RouteCapability {
+        key: "/runtime/dense_ffn_stream",
+        route: paths::VINDEX3_FFN_STREAM,
+        source: None,
+    },
+    RouteCapability {
+        key: "/runtime/dense_ffn_open",
+        route: paths::VINDEX3_FFN_OPEN,
+        source: None,
+    },
+    RouteCapability {
+        key: "/runtime/dense_ffn_binary",
+        route: paths::VINDEX3_FFN_BINARY,
+        source: None,
+    },
+    RouteCapability {
+        key: "/runtime/dense_ffn",
+        route: paths::VINDEX3_FFN,
+        source: None,
+    },
+    RouteCapability {
         key: "/runtime/layer_prefix",
         route: paths::VINDEX3_LAYERS,
         source: None,

@@ -1377,99 +1377,80 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
-        let selected = {
-            let _stage = stage(Stage::Router);
-            let routed_input = router_input(&call)?;
-            // The router's `k` is the width of what it READS, which is
-            // not `call.hidden` once the experts run behind a bottleneck:
-            // `call.hidden` is then the latent width, while the router
-            // still projects from the block input. Taking it from the
-            // vector itself keeps the two impossible to desync.
-            let k = routed_input.len();
-            let mut logits = matmul_vec(&routed_input, call.router, call.experts, k);
-            select_experts(&call, &mut logits)?
-        };
-        routing_trace::record(&selected);
-        if let ExpertSlices::Separate {
-            gate,
-            up,
-            down,
-            access,
-        } = &call.weights
+        self.routed_ffn_impl(call, None)
+    }
+    fn routed_ffn_placed(
+        &self,
+        call: RoutedFfnCall<'_>,
+        layer: usize,
+        provider: &dyn super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<f32>, VindexError> {
+        self.routed_ffn_impl(call, Some((layer, provider)))
+    }
+    fn expert_transform(
+        &self,
+        call: super::routed_experts::ExpertTransformCall<'_>,
+    ) -> Result<Vec<f32>, VindexError> {
+        use super::routed_experts::ExpertWeights;
+        if call.hidden == 0
+            || call.intermediate == 0
+            || call.x.len() != call.hidden
+            || call.x.iter().any(|v| !v.is_finite())
         {
-            // The selected experts' pages, ahead of the loop that reads
-            // them — the access realization, timed apart from the loop
-            // so a fault moved is a fault moved, not a fault removed.
-            let _prefetch = stage(Stage::Prefetch);
-            let ranges: Vec<prefetch::Range> = selected
-                .iter()
-                .flat_map(|(e, _)| [&gate[*e], &up[*e], &down[*e]])
-                .filter_map(|w| match w {
-                    WeightSlice::Bf16(rows) => Some(prefetch::Range::of(rows)),
-                    WeightSlice::F32(rows) => Some(prefetch::Range::of(rows)),
-                    _ => None,
-                })
-                .collect();
-            let parallelism = super::cpu::shared().map(|e| e.workers()).unwrap_or(1);
-            prefetch::prefetch(*access, &ranges, parallelism);
+            return Err(VindexError::Parse(
+                "expert input dimensions or finiteness mismatch".into(),
+            ));
         }
-        let _stage = stage(Stage::RoutedExperts);
-        let mut out = vec![0.0f32; call.hidden];
         match call.weights {
-            ExpertSlices::Fused {
+            ExpertWeights::Fused {
                 gate_up,
                 down,
                 layout,
+                gate_up_bias,
+                down_bias,
             } => {
-                let two_inter = FUSED_BRANCHES * call.intermediate;
-                for (expert, weight) in selected {
-                    let mut fused =
-                        matmul_vec(call.x, gate_up[expert].as_f32()?, two_inter, call.hidden);
-                    add_expert_bias(&mut fused, call.gate_up_bias, expert);
-                    let inner = expert_inner(&call, layout, &fused);
-                    let mut expert_out = matmul_vec(
-                        &inner,
-                        down[expert].as_f32()?,
-                        call.hidden,
-                        call.intermediate,
-                    );
-                    add_expert_bias(&mut expert_out, call.down_bias, expert);
-                    for (acc, v) in out.iter_mut().zip(&expert_out) {
-                        *acc += weight * v;
-                    }
-                }
-            }
-            // A per-expert bank: each selected expert's three whole
-            // matrices run through the SAME production projection
-            // kernels a dense FFN uses — bf16 in place, f32 through BLAS
-            // — so the bank stays in its stored form. No bias layout is
-            // defined for separate experts, and none is planned; one
-            // arriving here is a plan the executor does not know.
-            ExpertSlices::Separate { gate, up, down, .. } => {
-                if call.gate_up_bias.is_some() || call.down_bias.is_some() {
+                let two_inter = call
+                    .intermediate
+                    .checked_mul(FUSED_BRANCHES)
+                    .ok_or_else(|| VindexError::Parse("expert width overflow".into()))?;
+                let g = gate_up.as_f32()?;
+                let d = down.as_f32()?;
+                if two_inter.checked_mul(call.hidden) != Some(g.len())
+                    || call.hidden.checked_mul(call.intermediate) != Some(d.len())
+                    || gate_up_bias.is_some_and(|b| b.len() != two_inter)
+                    || down_bias.is_some_and(|b| b.len() != call.hidden)
+                {
                     return Err(VindexError::Parse(
-                        "a per-expert bank carries no expert bias; the call declares one"
-                            .to_string(),
+                        "expert projection or bias dimensions mismatch".into(),
                     ));
                 }
+                let mut fused = matmul_vec(call.x, g, two_inter, call.hidden);
+                add_expert_bias(&mut fused, gate_up_bias, 0);
                 let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
-                for (expert, weight) in selected {
-                    let g = project_matrix(&gate[expert], call.x, call.intermediate, call.hidden)?;
-                    let u = project_matrix(&up[expert], call.x, call.intermediate, call.hidden)?;
-                    let inner: Vec<f32> = g
-                        .iter()
-                        .zip(&u)
-                        .map(|(g, u)| rule.combine(*g, *u))
-                        .collect();
-                    let expert_out =
-                        project_matrix(&down[expert], &inner, call.hidden, call.intermediate)?;
-                    for (acc, v) in out.iter_mut().zip(&expert_out) {
-                        *acc += weight * v;
-                    }
-                }
+                let inner: Vec<f32> = (0..call.intermediate)
+                    .map(|i| {
+                        rule.combine(
+                            fused[layout.row(GateUpBranch::Gate, i, call.intermediate)],
+                            fused[layout.row(GateUpBranch::Up, i, call.intermediate)],
+                        )
+                    })
+                    .collect();
+                let mut out = matmul_vec(&inner, d, call.hidden, call.intermediate);
+                add_expert_bias(&mut out, down_bias, 0);
+                Ok(out)
+            }
+            ExpertWeights::Separate { gate, up, down } => {
+                let g = project_matrix(&gate, call.x, call.intermediate, call.hidden)?;
+                let u = project_matrix(&up, call.x, call.intermediate, call.hidden)?;
+                let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
+                let inner: Vec<f32> = g
+                    .iter()
+                    .zip(&u)
+                    .map(|(g, u)| rule.combine(*g, *u))
+                    .collect();
+                project_matrix(&down, &inner, call.hidden, call.intermediate)
             }
         }
-        Ok(out)
     }
 
     fn output_head(
@@ -1502,5 +1483,92 @@ impl PlanBackend for ProductionBackend {
         for (a, b) in acc.iter_mut().zip(delta) {
             *a += b;
         }
+    }
+}
+
+impl ProductionBackend {
+    fn routed_ffn_impl(
+        &self,
+        call: RoutedFfnCall<'_>,
+        placed: Option<(usize, &dyn super::routed_experts::RoutedExpertProvider)>,
+    ) -> Result<Vec<f32>, VindexError> {
+        let started = super::profile::enabled().then(std::time::Instant::now);
+        let selected = {
+            let _stage = stage(Stage::Router);
+            let routed_input = router_input(&call)?;
+            // The router's `k` is the width of what it READS, which is
+            // not `call.hidden` once the experts run behind a bottleneck:
+            // `call.hidden` is then the latent width, while the router
+            // still projects from the block input. Taking it from the
+            // vector itself keeps the two impossible to desync.
+            let k = routed_input.len();
+            let mut logits = matmul_vec(&routed_input, call.router, call.experts, k);
+            select_experts(&call, &mut logits)?
+        };
+        let router_ns = started.map(|s| s.elapsed().as_nanos() as u64);
+        routing_trace::record(&selected);
+        if placed.is_none() {
+            if let ExpertSlices::Separate {
+                gate,
+                up,
+                down,
+                access,
+            } = &call.weights
+            {
+                // The selected experts' pages, ahead of the loop that reads
+                // them — the access realization, timed apart from the loop
+                // so a fault moved is a fault moved, not a fault removed.
+                let _prefetch = stage(Stage::Prefetch);
+                let ranges: Vec<prefetch::Range> = selected
+                    .iter()
+                    .flat_map(|(e, _)| [&gate[*e], &up[*e], &down[*e]])
+                    .filter_map(|w| match w {
+                        WeightSlice::Bf16(rows) => Some(prefetch::Range::of(rows)),
+                        WeightSlice::F32(rows) => Some(prefetch::Range::of(rows)),
+                        _ => None,
+                    })
+                    .collect();
+                let parallelism = super::cpu::shared().map(|e| e.workers()).unwrap_or(1);
+                prefetch::prefetch(*access, &ranges, parallelism);
+            }
+        }
+        let _stage = stage(Stage::RoutedExperts);
+        let dispatch = started.map(|_| std::time::Instant::now());
+        let mut local_expert_ns = 0u64;
+        let rows = match placed {
+            Some((layer, provider)) => {
+                let ids: Vec<usize> = selected.iter().map(|(id, _)| *id).collect();
+                provider.apply(layer, call.x, &ids)?
+            }
+            None => selected
+                .iter()
+                .map(|(expert, _)| {
+                    let transform = started.map(|_| std::time::Instant::now());
+                    let row = self.expert_transform(call.expert_transform(*expert)?)?;
+                    if let Some(transform) = transform {
+                        local_expert_ns += transform.elapsed().as_nanos() as u64;
+                    }
+                    Ok(super::routed_experts::ExpertOutput {
+                        expert: *expert,
+                        row,
+                    })
+                })
+                .collect::<Result<Vec<_>, VindexError>>()?,
+        };
+        let dispatch_ns = dispatch.map(|s| s.elapsed().as_nanos() as u64);
+        let reduction = started.map(|_| std::time::Instant::now());
+        let result = super::routed_experts::reduce_selected(&selected, rows, call.hidden);
+        if let (Some(started), Some(reduction)) = (started, reduction) {
+            let reduction_ns = reduction.elapsed().as_nanos() as u64;
+            super::profile::record_provider_call(serde_json::json!({
+                "kind": "routed_ffn", "layer": super::profile::current_layer(),
+                "remote": placed.is_some(), "selected_count": selected.len(),
+                "router_ns": router_ns, "dispatch_ns": dispatch_ns,
+                "local_expert_ns": placed.is_none().then_some(local_expert_ns),
+                "reduction_ns": reduction_ns, "total_ns": started.elapsed().as_nanos() as u64,
+                "complete": result.is_ok(),
+            }));
+        }
+        result
     }
 }

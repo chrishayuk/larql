@@ -116,14 +116,29 @@ impl V3Backend {
 /// Component id a container's text stack is served under.
 const SERVED_COMPONENT: &str = "target";
 
+/// Binary authority and incarnation handle for an immutable FFN worker.
+pub struct FfnWireWorker {
+    pub handle: larql_router_protocol::vindex3_ffn::binary::Handle,
+    pub execution: larql_inference::vindex3::dense_ffn::BoundFfnWorker<SharedProvider>,
+}
+
+/// Binary authority and incarnation handle for selected expert transforms.
+pub struct ExpertWireWorker {
+    pub handle: larql_router_protocol::vindex3_experts::Handle,
+    pub execution: larql_inference::vindex3::routed_experts::BoundExpertWorker<SharedProvider>,
+}
+
 /// One bound VINDEX3 container: the opened runtime plus the serving
 /// glue (tokenizer, id). Holds no `ModelWeights` and no `VectorIndex`
 /// — structurally, the old inference path is unreachable from here.
 pub struct V3Model {
+    pub expert_wire: Option<ExpertWireWorker>,
     /// The backend selected for this prepared model.
     pub backend: V3Backend,
     /// Present only on a stateless layer-prefix worker.
     pub shard: Option<larql_router_protocol::vindex3::Binding>,
+    pub ffn_shard: Option<larql_router_protocol::vindex3_ffn::Binding>,
+    pub ffn_wire: Option<FfnWireWorker>,
     /// Model ID (derived from the container directory name).
     pub id: String,
     /// Container directory on disk.
@@ -131,7 +146,7 @@ pub struct V3Model {
     /// The program with its operands already lowered into the
     /// backend's execution form — model lifetime, shared by every
     /// request. Requests contribute only continuation state.
-    pub runtime: PreparedVindex3<SharedProvider>,
+    pub runtime: Arc<PreparedVindex3<SharedProvider>>,
     /// Who holds every request's continuation state: selected once, at
     /// binding, against this model's plan (CONTINUATION-PLUGIN-1, C3). A
     /// fresh provider per request is built from it; nothing here names a
@@ -249,21 +264,52 @@ pub fn load_v3_model_with_backend(
     load_v3_model_slice(path, backend, None)
 }
 
-/// Inclusive startup layer range, prepared without embeddings or output head.
+/// Half-open startup layer range, as returned by `parse_layer_range`.
+/// Prepared without embeddings or output head.
 pub fn load_v3_model_slice(
     path: &Path,
     backend: V3Backend,
     range: Option<(usize, usize)>,
 ) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_placement(path, backend, range, false)
+}
+
+pub fn load_v3_model_placement(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+    ffn_only: bool,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_experts(path, backend, range, ffn_only, None)
+}
+
+pub fn load_v3_model_experts(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+    ffn_only: bool,
+    experts: Option<(usize, usize)>,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
     use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
-    if range.is_some() && backend != V3Backend::Cpu {
+    if experts.is_some() && (!ffn_only || range.is_none()) {
+        return Err("V3 --experts requires --ffn-only and --layers".into());
+    }
+    if (range.is_some() || ffn_only) && backend != V3Backend::Cpu {
         return Err("V3 layer sharding currently requires --v3-backend cpu".into());
     }
     let slice = match range {
-        Some((start, end)) => ExecutionSlice::LayerRange {
-            start,
-            end: end.checked_add(1).ok_or("layer range overflow")?,
-        },
+        Some((start, end)) if experts.is_some() => {
+            let (expert_start, expert_end) = experts.unwrap();
+            ExecutionSlice::RoutedExperts {
+                start,
+                end,
+                expert_start,
+                expert_end,
+            }
+        }
+        Some((start, end)) if ffn_only => ExecutionSlice::DenseFfns { start, end },
+        None if ffn_only => return Err("V3 --ffn-only requires an explicit --layers range".into()),
+        Some((start, end)) => ExecutionSlice::LayerRange { start, end },
         None => ExecutionSlice::Full,
     };
     let (registry, identity) = backend.lowerings()?;
@@ -278,6 +324,7 @@ pub fn load_v3_model_slice(
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
     .prepare_slice(slice)
     .map_err(|e| format!("prepare VINDEX3 operands: {e}"))?;
+    let runtime = Arc::new(runtime);
     let tokenizer = larql_vindex::load_vindex_tokenizer(path)
         .map_err(|e| format!("VINDEX3 container has no servable tokenizer.json: {e}"))?;
     // The container names itself (`index.model`); the directory name is
@@ -302,7 +349,7 @@ pub fn load_v3_model_slice(
             &ContinuationConfig::empty(),
         )
         .map_err(|e| format!("select VINDEX3 continuation: {e}"))?;
-    let shard = if range.is_some() {
+    let shard = if range.is_some() && !ffn_only {
         Some(larql_inference::vindex3::distributed::binding(
             path,
             runtime.plan(),
@@ -311,8 +358,32 @@ pub fn load_v3_model_slice(
     } else {
         None
     };
+    let ffn_wire = if ffn_only && experts.is_none() {
+        let execution =
+            larql_inference::vindex3::dense_ffn::BoundFfnWorker::new(path, Arc::clone(&runtime))?;
+        let mut handle = [0; 16];
+        getrandom::fill(&mut handle).map_err(|e| format!("create FFN worker handle: {e}"))?;
+        Some(FfnWireWorker { handle, execution })
+    } else {
+        None
+    };
+    let ffn_shard = ffn_wire.as_ref().map(|w| w.execution.binding().clone());
+    let expert_wire = if experts.is_some() {
+        let execution = larql_inference::vindex3::routed_experts::BoundExpertWorker::new(
+            path,
+            Arc::clone(&runtime),
+        )?;
+        let mut handle = [0; 16];
+        getrandom::fill(&mut handle).map_err(|e| format!("create expert worker handle: {e}"))?;
+        Some(ExpertWireWorker { handle, execution })
+    } else {
+        None
+    };
     let model = V3Model {
+        expert_wire,
         shard,
+        ffn_shard,
+        ffn_wire,
         backend,
         id: model_id_from_name(&name),
         path: path.to_path_buf(),
@@ -499,6 +570,11 @@ pub fn generate_v3_request(
     // `V3GenerationGuard`'s doc comment for why entering here (rather
     // than in each route handler) is load-bearing for streaming
     // callers.
+    if model.ffn_shard.is_some() || model.expert_wire.is_some() {
+        return Err(ServerError::Unsupported(
+            "this VINDEX3 binding is a dense FFN worker; use /v1/vindex3/ffn".into(),
+        ));
+    }
     if model.shard.is_some() {
         return Err(ServerError::InferenceUnavailable(
             "this VINDEX3 binding is a layer shard; use /v1/vindex3/layers through a coordinator"

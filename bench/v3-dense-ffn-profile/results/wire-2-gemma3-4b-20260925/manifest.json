@@ -1,0 +1,132 @@
+{
+  "schema": "larql.v3.dense-loopback-diagnostic.v1",
+  "benchmark_gate": false,
+  "peer_exclusivity": "unconfirmed; no promoted performance claim",
+  "revision": "dfba977f688a344489b32366120e1dfad49c9d8e",
+  "model": "/Users/christopherhay/chris-models/gemma3-4b-it.q4k.vindex3",
+  "index": {
+    "version": 4,
+    "model": "093f9f388b31de276ce2de164bdc2081324b9767",
+    "family": "gemma3_text",
+    "hidden_size": 2560,
+    "num_layers": 34,
+    "system_graph": "system_graph.json",
+    "representations": {
+      "target.decoder_stack@BF16": {
+        "object": "target.decoder_stack",
+        "encoding": "BF16",
+        "segment": "segments/target.decoder_stack.bin",
+        "tensor_count": 442,
+        "payload_bytes": 6418016256,
+        "payload_sha256": "2b98b6a959bcf55edbfe1526ca4f7a300ccba02ba41bc58ee59e59d4c2bb4f35",
+        "segment_sha256": "df8f881261006201dac6e537d32b8253a68543f083bad7249ae3b0039d7e1528"
+      },
+      "target.decoder_stack@Q4_K": {
+        "object": "target.decoder_stack",
+        "encoding": "Q4_K",
+        "segment": "segments/target.decoder_stack@Q4_K.bin",
+        "tensor_count": 442,
+        "payload_bytes": 1805592576,
+        "payload_sha256": "776e122f24f913ae3fe5fba20ee90acedc31ba89e7ba2ff2091f1e28bf8d1eb8",
+        "segment_sha256": "ba0bd8f8f04bdae122505712de2c442facf02288507a6f2e3316c55953ae89e7",
+        "compiled_from": "target.decoder_stack@BF16",
+        "codec": {
+          "family": "Q4_K",
+          "revision": 1,
+          "group_elems": 256,
+          "element": "ggml-q4_k",
+          "group_scale": "in-block",
+          "tensor_scale": "in-block",
+          "layout": "ggml-block-144"
+        },
+        "source_representation_digest": "2b98b6a959bcf55edbfe1526ca4f7a300ccba02ba41bc58ee59e59d4c2bb4f35",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 1
+        }
+      },
+      "target.embedding@BF16": {
+        "object": "target.embedding",
+        "encoding": "BF16",
+        "segment": "segments/target.embedding.bin",
+        "tensor_count": 1,
+        "payload_bytes": 1342504960,
+        "payload_sha256": "84a56ee03e66003602b56de104e739e89bac4cdb374237ba90ae88813badfe65",
+        "segment_sha256": "288a2b89524efb0050e0d340c8763864d0c95fc0f5e26b927d68b8302e24bd96"
+      },
+      "target.final_norm@BF16": {
+        "object": "target.final_norm",
+        "encoding": "BF16",
+        "segment": "segments/target.final_norm.bin",
+        "tensor_count": 1,
+        "payload_bytes": 5120,
+        "payload_sha256": "5c5c3da05bb119e00508ea5dde3d56509c9cdea991b48f323635cdf7ac2861f5",
+        "segment_sha256": "e406bfc1aaba5e92f1f4f31a0f5ce8a5bbd17513135068842ecf396414a254e3"
+      },
+      "vision.perception_adapter@BF16": {
+        "object": "vision.perception_adapter",
+        "encoding": "BF16",
+        "segment": "segments/vision.perception_adapter.bin",
+        "tensor_count": 3,
+        "payload_bytes": 5902848,
+        "payload_sha256": "fc75551afa71a6f43eecb23d681c798be7e1b97ba70cb89814ba08737c78b32e",
+        "segment_sha256": "2f13d29923df75b7683867ed7f457a2d02efd5d540bd5f3dd6811535bd73f891"
+      },
+      "vision.perception_tower@BF16": {
+        "object": "vision.perception_tower",
+        "encoding": "BF16",
+        "segment": "segments/vision.perception_tower.bin",
+        "tensor_count": 437,
+        "payload_bytes": 833732064,
+        "payload_sha256": "35cb2333e4dd4d875636e914f3b5597ad9a1bc02e7b62256809802e009c028ba",
+        "segment_sha256": "10e6082ea438224bb68d70ff3f7408ca5f597ae2ca4cb72f8ff29b1864be858d"
+      }
+    },
+    "profiles": [
+      {
+        "name": "exact"
+      }
+    ],
+    "segments": {
+      "segments/target.decoder_stack": 1,
+      "segments/target.decoder_stack@Q4_K": 1,
+      "segments/target.embedding": 1,
+      "segments/target.final_norm": 1,
+      "segments/vision.perception_adapter": 1,
+      "segments/vision.perception_tower": 1
+    },
+    "precision_map": {
+      "name": "r0-uniform",
+      "encoding": "Q4_K",
+      "roles": [
+        "decoder-linear",
+        "recurrence-projection",
+        "recurrence-control",
+        "expert-weight"
+      ]
+    }
+  },
+  "metadata_sha256": {
+    "index.json": "fa91746f8fa37c17bba4dc54675d4aa7c9ddd218ddac7ae5f7b27ac0a11a5a35",
+    "system_graph.json": "e42b6c240985e02db7570a6f5984b9def9c7f76ecf5c5d8da0edfb37e3aac32a"
+  },
+  "binary_sha256": {
+    "larql": "cc82fd4286a290d8050a3d6fc18ef0bf17bbc3b7bfab1004a9e67ba839749b90",
+    "larql-server": "f491431acd1985f0573cdcdf835a78727f3746497f732587753cde25ab7b7abb"
+  },
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "prompt": "Explain step by step why the sky is blue, including how sunlight interacts with the atmosphere.",
+  "max_tokens": 48,
+  "skip_decode": 8,
+  "wire": "json",
+  "wire_comparison": false,
+  "stream_comparison": true,
+  "clock": "per-position profile; load/tokenization/output excluded",
+  "started_utc": "2026-09-25T00:49:50Z"
+}
