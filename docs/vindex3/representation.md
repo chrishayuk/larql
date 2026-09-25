@@ -38,3 +38,9 @@ The [codec contract](../represent-codec-contract.md) separates representation
 decoding, compilation and execution support. The
 [optimizer MCP design](../represent-optimizer-mcp.md) is a design document,
 not an inventory of shipped commands.
+
+[REPRESENT-CAL-1](../represent-cal-1.md) is the accepted contract for calibrated
+recipe integration:
+capture and derivation provenance, completion of fixed-grid GPTQ, matched
+unweighted/weighted scale fitting, and separate admission evidence. Its gates
+remain open, not a claim that these recipe paths are shipped.
