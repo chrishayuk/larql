@@ -177,6 +177,10 @@ impl LoadedNormWeight {
 /// the shape their bank stores them, the shared branch when the plan
 /// carries one, plus Gemma 4's router conditioning when the op carries it.
 pub(super) struct RoutedOperands {
+    placement: Option<(
+        usize,
+        Option<std::sync::Arc<dyn super::routed_experts::RoutedExpertProvider>>,
+    )>,
     router: Vec<f32>,
     router_bias: Option<Vec<f32>>,
     router_scale: Option<Vec<f32>>,
@@ -246,6 +250,59 @@ impl ExpertMatrices {
 }
 
 impl FfnOperands {
+    pub(super) fn load_routed_coordinator(
+        ffn: &LayerFfn,
+        store: OperandSource<'_>,
+        layer: usize,
+    ) -> Result<Self, VindexError> {
+        let LayerFfn::Routed(op) = ffn else {
+            return Err(VindexError::Parse(
+                "routed coordinator requires routed layer".into(),
+            ));
+        };
+        Ok(Self::Routed(Box::new(RoutedOperands {
+            placement: Some((layer, None)),
+            router: store.load(&op.router)?,
+            router_bias: op.router_bias.as_ref().map(|r| store.load(r)).transpose()?,
+            router_scale: op
+                .router_scale
+                .as_ref()
+                .map(|r| store.load(r))
+                .transpose()?,
+            router_per_expert_scale: op
+                .router_per_expert_scale
+                .as_ref()
+                .map(|r| store.load(r))
+                .transpose()?,
+            router_norm_eps: op.router_norm_eps,
+            experts: ExpertMatrices::Fused {
+                gate_up: Vec::new(),
+                down: Vec::new(),
+            },
+            gate_up_bias: None,
+            down_bias: None,
+            shared: None,
+            latent: None,
+        })))
+    }
+    pub(super) fn routed_provider_missing(&self) -> bool {
+        matches!(self, Self::Routed(r) if matches!(r.placement, Some((_, None))))
+    }
+    pub(super) fn bind_routed_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn super::routed_experts::RoutedExpertProvider>,
+    ) -> Result<(), VindexError> {
+        let Self::Routed(r) = self else {
+            return Err(VindexError::Parse("not a routed coordinator layer".into()));
+        };
+        let Some((_, slot)) = &mut r.placement else {
+            return Err(VindexError::Parse(
+                "routed layer is resident, not placed".into(),
+            ));
+        };
+        *slot = Some(provider);
+        Ok(())
+    }
     pub(super) fn dense_slices<'a>(
         &'a self,
         ffn: &'a LayerFfn,
@@ -545,6 +602,9 @@ impl RoutedOperands {
     /// The two banks, each one operand over its per-expert objects. A
     /// per-expert bank is refused before it is loaded, so it binds nothing.
     pub(super) fn bound<'a>(&'a self, op: &'a RoutedFfnOp) -> Vec<(Operation, Bound<'a>)> {
+        if self.placement.is_some() {
+            return Vec::new();
+        }
         let mut out: Vec<(Operation, Bound<'a>)> = match (&op.bank, &self.experts) {
             (
                 ExpertBank::Packed { gate_up, down },
@@ -714,7 +774,7 @@ impl RoutedOperands {
                 ))
             }
         };
-        let mut routed = backend.routed_ffn(RoutedFfnCall {
+        let call = RoutedFfnCall {
             x: expert_x,
             hidden: expert_width,
             intermediate: op.expert_intermediate_size,
@@ -740,7 +800,18 @@ impl RoutedOperands {
             router_scale: self.router_scale.as_deref(),
             router_per_expert_scale: self.router_per_expert_scale.as_deref(),
             router_norm_eps: self.router_norm_eps,
-        })?;
+        };
+        let mut routed = match &self.placement {
+            Some((layer, Some(provider))) => {
+                backend.routed_ffn_placed(call, *layer, provider.as_ref())?
+            }
+            Some((_, None)) => {
+                return Err(VindexError::Parse(
+                    "routed expert provider is not bound".into(),
+                ))
+            }
+            None => backend.routed_ffn(call)?,
+        };
         // Leave the bottleneck. `routed` is the WEIGHTED AGGREGATE at the
         // latent width — the oracle's `routed_sum` — so the norm applies
         // to one vector per token here, after top-k weighting and
@@ -872,6 +943,7 @@ impl RoutedOperands {
             None => None,
         };
         Ok(Self {
+            placement: None,
             router: store.load(&op.router)?,
             router_bias: op.router_bias.as_ref().map(|b| store.load(b)).transpose()?,
             router_scale: op

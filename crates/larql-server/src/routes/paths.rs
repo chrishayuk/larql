@@ -113,3 +113,7 @@ pub const VINDEX3_FFN_BINARY: &str = larql_router_protocol::vindex3_ffn::binary:
 pub const VINDEX3_FFN: &str = larql_router_protocol::vindex3_ffn::PATH;
 
 pub const VINDEX3_FFN_STREAM: &str = larql_router_protocol::vindex3_ffn::binary::STREAM_PATH;
+
+pub const VINDEX3_EXPERTS: &str = larql_router_protocol::vindex3_experts::PATH;
+pub const VINDEX3_EXPERTS_OPEN: &str = larql_router_protocol::vindex3_experts::OPEN_PATH;
+pub const VINDEX3_EXPERTS_BINARY: &str = larql_router_protocol::vindex3_experts::BINARY_PATH;

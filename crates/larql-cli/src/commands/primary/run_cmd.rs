@@ -313,7 +313,7 @@ pub struct RunArgs {
     #[arg(long, value_delimiter = ',', value_name = "URL,...")]
     pub v3_shards: Vec<String>,
 
-    /// VINDEX3 CPU dense FFN workers; attention and KV remain local.
+    /// VINDEX3 CPU dense FFN or routed-expert workers; attention, routing and KV remain local.
     #[arg(
         long,
         value_delimiter = ',',
@@ -322,7 +322,7 @@ pub struct RunArgs {
     )]
     pub v3_ffn_shards: Vec<String>,
 
-    /// Dense FFN wire: exact binary f32 (default), JSON control, or experimental stream.
+    /// FFN wire: binary f32 (default), JSON control, or experimental stream. Routed experts require binary.
     #[arg(long, value_parser = ["binary", "json", "stream"], requires = "v3_ffn_shards")]
     pub v3_ffn_wire: Option<String>,
 
@@ -330,7 +330,7 @@ pub struct RunArgs {
     #[arg(long, value_name = "PATH")]
     pub v3_profile: Option<PathBuf>,
 
-    /// Environment variable holding the bearer token for V3 layer or dense FFN workers.
+    /// Environment variable holding the bearer token for V3 layer, FFN or expert workers.
     #[arg(long, value_name = "ENV")]
     pub v3_shard_token_env: Option<String>,
 

@@ -108,7 +108,7 @@ fn unsupported_v3_options(opts: &LoadVindexOptions) -> Vec<&'static str> {
     if opts.embed_only {
         named.push("--embed-only");
     }
-    if opts.expert_filter.is_some() {
+    if opts.expert_filter.is_some() && (!opts.ffn_only || opts.layer_range.is_none()) {
         named.push("--experts");
     }
     if opts.unit_filter.is_some() {
@@ -152,11 +152,12 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
             }
             info!("Loading VINDEX3 container: {}", path.display());
             Ok(LoadedArtifact::V3(Box::new(
-                crate::vindex3::load_v3_model_placement(
+                crate::vindex3::load_v3_model_experts(
                     &path,
                     opts.v3_backend,
                     opts.layer_range,
                     opts.ffn_only,
+                    opts.expert_filter,
                 )?,
             )))
         }
@@ -555,8 +556,29 @@ mod v3_option_tests {
             ..LoadVindexOptions::default()
         };
         let named = unsupported_v3_options(&opts);
-        for flag in ["--no-infer", "--embed-only", "--experts", "--units"] {
+        for flag in ["--no-infer", "--embed-only", "--units"] {
             assert!(named.contains(&flag), "{flag} must be named in the refusal");
+        }
+    }
+
+    #[test]
+    fn experts_require_ffn_only_and_a_layer_range() {
+        for (ffn_only, layer_range) in [
+            (false, None),
+            (true, None),
+            (false, Some((0, 1))),
+            (true, Some((0, 1))),
+        ] {
+            let opts = LoadVindexOptions {
+                ffn_only,
+                layer_range,
+                expert_filter: Some((0, 2)),
+                ..LoadVindexOptions::default()
+            };
+            assert_eq!(
+                unsupported_v3_options(&opts).contains(&"--experts"),
+                !(ffn_only && layer_range.is_some())
+            );
         }
     }
 

@@ -98,6 +98,28 @@ pub fn required_objects(
     let range = slice.layers(plan);
     for layer in &plan.layers[range] {
         match slice {
+            ExecutionSlice::RoutedExperts { .. } => {
+                let op = layer
+                    .ffn
+                    .as_ref()
+                    .and_then(|f| f.routed())
+                    .expect("validated routed slice");
+                collect(&op.bank, &mut objects)?;
+            }
+            ExecutionSlice::RoutedExpertCoordinator => {
+                let mut local = layer.clone();
+                local.ffn = None;
+                collect(&local, &mut objects)?;
+                let op = layer
+                    .ffn
+                    .as_ref()
+                    .and_then(|f| f.routed())
+                    .expect("validated routed slice");
+                collect(&op.router, &mut objects)?;
+                collect(&op.router_bias, &mut objects)?;
+                collect(&op.router_scale, &mut objects)?;
+                collect(&op.router_per_expert_scale, &mut objects)?;
+            }
             ExecutionSlice::DenseFfns { .. } => collect(&layer.ffn, &mut objects)?,
             ExecutionSlice::DenseFfnCoordinator => {
                 let mut local = layer.clone();

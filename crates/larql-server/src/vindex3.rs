@@ -115,10 +115,17 @@ pub struct FfnWireWorker {
     pub execution: larql_inference::vindex3::dense_ffn::BoundFfnWorker<SharedProvider>,
 }
 
+/// Binary authority and incarnation handle for selected expert transforms.
+pub struct ExpertWireWorker {
+    pub handle: larql_router_protocol::vindex3_experts::Handle,
+    pub execution: larql_inference::vindex3::routed_experts::BoundExpertWorker<SharedProvider>,
+}
+
 /// One bound VINDEX3 container: the opened runtime plus the serving
 /// glue (tokenizer, id). Holds no `ModelWeights` and no `VectorIndex`
 /// — structurally, the old inference path is unreachable from here.
 pub struct V3Model {
+    pub expert_wire: Option<ExpertWireWorker>,
     /// The backend selected for this prepared model.
     pub backend: V3Backend,
     /// Present only on a stateless layer-prefix worker.
@@ -261,11 +268,33 @@ pub fn load_v3_model_placement(
     range: Option<(usize, usize)>,
     ffn_only: bool,
 ) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_experts(path, backend, range, ffn_only, None)
+}
+
+pub fn load_v3_model_experts(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+    ffn_only: bool,
+    experts: Option<(usize, usize)>,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
     use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    if experts.is_some() && (!ffn_only || range.is_none()) {
+        return Err("V3 --experts requires --ffn-only and --layers".into());
+    }
     if (range.is_some() || ffn_only) && backend != V3Backend::Cpu {
         return Err("V3 layer sharding currently requires --v3-backend cpu".into());
     }
     let slice = match range {
+        Some((start, end)) if experts.is_some() => {
+            let (expert_start, expert_end) = experts.unwrap();
+            ExecutionSlice::RoutedExperts {
+                start,
+                end,
+                expert_start,
+                expert_end,
+            }
+        }
         Some((start, end)) if ffn_only => ExecutionSlice::DenseFfns { start, end },
         None if ffn_only => return Err("V3 --ffn-only requires an explicit --layers range".into()),
         Some((start, end)) => ExecutionSlice::LayerRange { start, end },
@@ -307,7 +336,7 @@ pub fn load_v3_model_placement(
     } else {
         None
     };
-    let ffn_wire = if ffn_only {
+    let ffn_wire = if ffn_only && experts.is_none() {
         let execution =
             larql_inference::vindex3::dense_ffn::BoundFfnWorker::new(path, Arc::clone(&runtime))?;
         let mut handle = [0; 16];
@@ -317,7 +346,19 @@ pub fn load_v3_model_placement(
         None
     };
     let ffn_shard = ffn_wire.as_ref().map(|w| w.execution.binding().clone());
+    let expert_wire = if experts.is_some() {
+        let execution = larql_inference::vindex3::routed_experts::BoundExpertWorker::new(
+            path,
+            Arc::clone(&runtime),
+        )?;
+        let mut handle = [0; 16];
+        getrandom::fill(&mut handle).map_err(|e| format!("create expert worker handle: {e}"))?;
+        Some(ExpertWireWorker { handle, execution })
+    } else {
+        None
+    };
     let model = V3Model {
+        expert_wire,
         shard,
         ffn_shard,
         ffn_wire,
@@ -493,7 +534,7 @@ pub fn generate_v3_request(
     // `V3GenerationGuard`'s doc comment for why entering here (rather
     // than in each route handler) is load-bearing for streaming
     // callers.
-    if model.ffn_shard.is_some() {
+    if model.ffn_shard.is_some() || model.expert_wire.is_some() {
         return Err(ServerError::Unsupported(
             "this VINDEX3 binding is a dense FFN worker; use /v1/vindex3/ffn".into(),
         ));

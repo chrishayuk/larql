@@ -37,3 +37,5 @@ pub use shard_proto::{ShardQuery, ShardResult};
 pub mod vindex3;
 
 pub mod vindex3_ffn;
+
+pub mod vindex3_experts;

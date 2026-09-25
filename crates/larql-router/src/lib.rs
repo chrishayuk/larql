@@ -13,3 +13,5 @@ pub mod tasks;
 pub mod vindex3;
 
 pub mod vindex3_ffn;
+
+pub mod vindex3_experts;

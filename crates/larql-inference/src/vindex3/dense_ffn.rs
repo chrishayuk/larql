@@ -24,7 +24,9 @@ use larql_vindex::{
 use std::path::Path;
 use std::sync::Arc;
 
-fn identities(records: &[RealizationRecord]) -> Result<Vec<OperandIdentity>, InferenceError> {
+pub(super) fn identities(
+    records: &[RealizationRecord],
+) -> Result<Vec<OperandIdentity>, InferenceError> {
     records
         .iter()
         .map(|r| {
@@ -337,7 +339,10 @@ impl<'a, B: PlanBackend> DenseFfnSession<'a, B> {
         ops: &'a PreparedOperands,
         backend: &'a B,
     ) -> Result<Self, InferenceError> {
-        if ops.slice() != &ExecutionSlice::DenseFfnCoordinator {
+        if !matches!(
+            ops.slice(),
+            ExecutionSlice::DenseFfnCoordinator | ExecutionSlice::RoutedExpertCoordinator
+        ) {
             return Err(InferenceError::Parse(
                 "dense FFN session requires coordinator operands".into(),
             ));

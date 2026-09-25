@@ -1,6 +1,6 @@
 # Distributed FFN — Layer Sharding, Expert Sharding and VINDEX3
 
-**Status:** V2 dense remote FFN, remote MoE, layer/expert sharding and grid management are implemented. VINDEX3 CPU layer workers landed in [PR #507](https://github.com/chrishayuk/larql/pull/507) on 2026-09-23; V3 CPU dense FFN workers now keep attention and KV local; routed-expert placement remains consolidation work.
+**Status:** V2 dense remote FFN, remote MoE, layer/expert sharding and grid management are implemented. VINDEX3 CPU layer workers landed in [PR #507](https://github.com/chrishayuk/larql/pull/507) on 2026-09-23; V3 CPU dense FFN workers now keep attention and KV local; V3 packed-MXFP4 routed expert workers also keep routing and ordered reduction local. See the [routed provider guide](v3-routed-experts.md) for its CPU-only scope.
 
 **ADRs:** [FFN router](../adr/0003-ffn-router.md), [FFN grid](../adr/0004-ffn-grid.md), [HTTP/3 shard transport](../adr/0019-http3-shard-transport.md)
 
@@ -408,9 +408,10 @@ coverage, identity, representation and shape refusals; and mid-step failure
 followed by fresh-session recovery. These are synthetic fixture checks, not a
 model-backed K3 or heterogeneous-hardware result.
 
-Routed experts then extend the same contract with bank/expert coordinates,
-selected IDs and weights, parallel dispatch and an explicit reduction order.
-Shared experts and post-reduction normalization must each execute exactly once.
+[Routed expert workers](v3-routed-experts.md) now extend the contract with
+expert ownership, selected IDs, parallel dispatch and production-order reduction.
+Routing weights remain local. The first scope is packed MXFP4 CPU workers;
+shared and latent expert branches are refused pending their own placement gates.
 Heterogeneous numerical providers need their own parity gates; an advertised
 representation or backend name alone is not evidence of equivalence.
 

@@ -24,6 +24,7 @@ pub mod shard;
 pub mod stats;
 pub mod stream;
 pub mod topology;
+pub mod vindex3_experts;
 pub mod vindex3_ffn;
 pub mod vindex3_layers;
 pub mod walk;
@@ -163,6 +164,15 @@ pub fn public_explorer_router(
 /// Build the router for single-model serving.
 pub fn single_model_router(state: Arc<AppState>) -> Router {
     Mount::new()
+        .at(VINDEX3_EXPERTS, get(vindex3_experts::metadata))
+        .at(
+            VINDEX3_EXPERTS_OPEN,
+            post(vindex3_experts::open).layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),
+        )
+        .at(
+            VINDEX3_EXPERTS_BINARY,
+            post(vindex3_experts::forward).layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),
+        )
         .at(VINDEX3_FFN_STREAM, get(vindex3_ffn::stream_upgrade))
         .at(
             VINDEX3_FFN_OPEN,

@@ -308,3 +308,7 @@ CPU dense FFN operation workers keep attention and row KV local. See the
 
 For per-position wall time and exact HTTP body byte counts, use
 [`--v3-profile`](ffn/v3-dense-profile.md) on the local and remote dense arms.
+
+CPU [routed expert operation workers](ffn/v3-routed-experts.md) additionally
+keep routing and ordered weighted reduction local. The first scope is packed
+MXFP4 single-stream softmax models, with exact binary HTTP expert batches.

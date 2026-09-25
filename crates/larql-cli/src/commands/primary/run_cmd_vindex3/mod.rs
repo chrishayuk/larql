@@ -312,7 +312,40 @@ impl BackendVisitor for Runner<'_> {
     fn visit<B: PlanBackend>(self, backend: &B) -> Result<(), BoxErr> {
         let loading = Instant::now();
         // The expensive, immutable half — once, for every prompt.
-        let ops = if !self.args.v3_ffn_shards.is_empty() {
+        let routed = self
+            .prepared
+            .plan
+            .layers
+            .iter()
+            .any(|l| l.ffn.as_ref().and_then(|f| f.routed()).is_some());
+        let ops = if !self.args.v3_ffn_shards.is_empty() && routed {
+            if self
+                .args
+                .v3_ffn_wire
+                .as_deref()
+                .is_some_and(|w| w != "binary")
+                || self.args.v3_profile.is_some()
+            {
+                return Err("routed expert placement currently requires binary HTTP and does not support --v3-profile".into());
+            }
+            let token = self
+                .args
+                .v3_shard_token_env
+                .as_deref()
+                .map(std::env::var)
+                .transpose()?;
+            let transport = larql_router::vindex3_experts::HttpExpertShards::connect(
+                &self.args.v3_ffn_shards,
+                token.as_deref(),
+            )?;
+            larql_inference::vindex3::routed_experts::prepare_coordinator(
+                self.container,
+                &self.prepared.plan,
+                (&self.prepared.store).into(),
+                backend,
+                transport,
+            )?
+        } else if !self.args.v3_ffn_shards.is_empty() {
             let token = self
                 .args
                 .v3_shard_token_env

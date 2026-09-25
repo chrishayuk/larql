@@ -114,3 +114,5 @@ pub use larql_vindex::format::vindex3::opplan::exec::operands::{
 };
 
 pub mod dense_ffn;
+
+pub mod routed_experts;
