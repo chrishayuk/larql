@@ -1,0 +1,38 @@
+{
+  "programme": "CONTINUATION-MEM-1",
+  "forecast": "docs/represent/forecasts/continuation-mem-1.json (frozen at main ffbc1238; not edited)",
+  "status": "EXECUTING — instrument deviations recorded before any measurement; no record yet",
+  "execution_base": "main ffbc1238 (the freeze merge, #546)",
+  "deviations_recorded_before_measurement": [
+    {
+      "id": "D1",
+      "instrument": "I4_interval_scope_convqkv",
+      "frozen_text": "The wrapper opens an interval scope when `values` returns on a conv-QKV layer and closes it at the next provider entry.",
+      "code_fact": "Both call sites copy KEYS before VALUES are requested: exec/mod.rs:1441-1442 (`provider.keys(l).to_vec()` then `provider.values(l).to_vec()`) and exec/decode.rs:821-822 (the same order through `self.kv.state()`). The key copy therefore happens between `keys` returning and `values` being entered — outside the frozen interval.",
+      "consequence_if_followed_literally": "the frozen interval sees only the value copy: h row-sized allocations, not the 2·h M4 forecasts. M4 would read FALSIFIED by the instrument's placement, not by the code.",
+      "deviation": "the interval is the UNION of two executor-only windows on a conv-QKV layer: `keys` return → next provider entry, and `values` return → next provider entry. Neither window contains provider code. Both the frozen window alone (values-return only) and the union are reported; M4 is adjudicated on the union, and the frozen-window count is recorded beside it so the deviation's effect is visible (expected: exactly h in the frozen window, 2·h in the union).",
+      "why_this_is_not_a_forecast_edit": "the quantity M4 forecasts (the executor's copy of every held K and V row) is unchanged; only the instrument's window is corrected to contain it."
+    },
+    {
+      "id": "D2",
+      "instrument": "I2_output_dependency_witness",
+      "frozen_text": "the perturbation sized to the row's own scale (a ULP of a large cell, never of zero)",
+      "operationalisation": "perturb the largest-magnitude cell c of the chosen K row AND of the chosen V row to c·(1 + 2⁻⁴). Scale-relative and never applied to a zero cell; large enough that an in-range dependence cannot round away. Recorded here because 'a ULP' could be read as one unit in the last place, which an in-range softmax can legitimately absorb without a bit change — that reading would manufacture a false 'no dependence' in the in-range direction."
+    },
+    {
+      "id": "D3",
+      "instrument": "allocated_bytes of the canonical matrix",
+      "operationalisation": "ndarray exposes no capacity for an owned Array2. The matrix's allocated bytes are read from the measuring allocator's live-allocation table, keyed by the matrix's data pointer (`KvCache.layers[l]` → `as_ptr()`); every allocation made inside a provider scope is entered in that table with its size, and removed on free wherever the free happens. A matrix pointer absent from the table is an instrument failure, never a zero."
+    },
+    {
+      "id": "D4",
+      "instrument": "traffic classification (M2, realloc moves)",
+      "operationalisation": "events inside an append scope are classified by POINTER IDENTITY against the provider's storage after the call (matrix data pointers, the last view row's pointer, the outer Vec pointers), not by size alone. On the fixtures a row is 16 bytes and the smallest outer-Vec header allocation is 96 bytes = 6 rows, so size classification would collide."
+    },
+    {
+      "id": "D5",
+      "instrument": "I6 storage identity through a type-erased handoff",
+      "operationalisation": "a ContinuationHandoff holds `Box<dyn ContinuationProvider + Send>`, so the canonical matrix is unreachable from the test through the trait. The handoff is built from a test factory whose provider is `Measured<P>`; the wrapper holds a shared inventory sink and writes its backing inventory (pointer and capacity of every row, matrix, latent row and recurrent buffer) into it when a flag is set, on its next `set_position(p)` call (the test re-sets the current position through `state_mut()`, a no-op for every provider; `&mut` is needed because recurrent buffers are reachable only through `recurrent_state(&mut self)`). The inventory is taken outside every measured scope."
+    }
+  ]
+}
