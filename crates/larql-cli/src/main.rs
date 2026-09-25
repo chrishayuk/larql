@@ -389,6 +389,7 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             mm_weights: None,
             v3_shards: Vec::new(),
             v3_ffn_shards: Vec::new(),
+            v3_ffn_wire: None,
             v3_profile: None,
             v3_shard_token_env: None,
             // Chat is text-only today; speech arrives via `run --speak`

@@ -369,8 +369,10 @@ return the contribution for one already-normalized row. The existing batch
 and decode interpreters call the same operation provider; prefill dispatches
 rows individually. The worker has no KV and receives no prefix history.
 
-`GET /v1/vindex3/ffn` advertises a binding; `POST` checks that binding plus the
-layer and finite input width. Bindings include declared artifact/plan identity,
+`GET /v1/vindex3/ffn` advertises a binding. The default binary wire checks the
+full binding at `POST /v1/vindex3/ffn/open`, then checks its handle, layer and
+finite input width per operation. JSON `POST /v1/vindex3/ffn` retains the
+full-binding control. Bindings include declared artifact/plan identity,
 CPU lowering revision, layer range, dimensions and effective operand
 representations/realizations. The coordinator checks complete non-overlapping
 ownership and compares preparation decisions before loading its local operands.
@@ -421,3 +423,6 @@ a separate integration.
 Per-position local/remote timing and HTTP body sizes are available through
 [`--v3-profile`](v3-dense-profile.md). This diagnostic preserves the exact carrier
 and reports nested worker/transport timings without changing execution authority.
+
+The default V3 dense worker transport now uses [bind-once binary f32](v3-ffn-wire.md).
+Use `--v3-ffn-wire json` for the original descriptor-per-operation control.

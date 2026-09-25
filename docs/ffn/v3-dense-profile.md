@@ -2,7 +2,9 @@
 
 `larql run --v3-profile PATH` writes a new JSONL file for a CPU continuation
 run, either fully local or using `--v3-ffn-shards`. It does not change the FFN
-carrier, routing, binding checks, or numerical provider. It refuses an existing
+carrier, routing, binding checks, or numerical provider. Binary f32 is the
+default remote wire; `--v3-ffn-wire json` selects the historical JSON control
+([wire contract](v3-ffn-wire.md)). It refuses an existing
 output file, chat mode, Metal, and full-prefix layer-worker replay.
 
 For a two-layer dense artifact, start the existing workers:
@@ -51,15 +53,15 @@ are **nested inside `ffn_ns`**, not additional top-level time:
 
 | Field | Meaning |
 |---|---|
-| `request_bytes`, `response_bytes` | Actual serialized JSON body lengths, including the full binding and carrier; excludes HTTP headers, TLS and TCP overhead |
-| `encode_ns` | Client request construction and JSON encoding |
+| `request_bytes`, `response_bytes` | Actual body lengths: binary header/carrier or JSON binding/carrier; excludes HTTP headers, TLS and TCP overhead |
+| `encode_ns` | Client request construction and wire encoding |
 | `roundtrip_ns` | Client HTTP send through complete response body receipt |
-| `decode_ns` | Client response JSON decoding |
-| `worker.decode_ns` | Worker request body receipt and JSON extraction |
+| `decode_ns` | Client response wire decoding |
+| `worker.decode_ns` | Worker request body receipt and wire decoding/admission |
 | `worker.queue_ns` | Wait for the blocking worker task |
-| `worker.execute_ns` | Execution authority validation plus FFN and response construction |
+| `worker.execute_ns` | JSON: authority validation plus FFN/response construction; binary: admitted transform |
 | `worker.ffn_ns` | Prepared worker transform, including its input/output and provider checks; nested within `execute_ns` |
-| `worker.encode_ns` | Worker JSON response body encoding |
+| `worker.encode_ns` | Worker response body encoding |
 | `worker.handler_ns` | Request extraction through response body encoding, including task wakeup/validation overhead |
 | `transport_remainder_ns` | Round trip minus worker handler time, when nonnegative |
 
@@ -68,7 +70,7 @@ and network transfer. It is **not a pure RTT or one-way latency measurement**.
 No synchronized clocks are assumed. Missing worker diagnostics are unknown,
 not zero; a negative subtraction is recorded as `null`. Timings travel only
 when requested via `x-larql-ffn-profile: 1`, in a response header of the same
-name. Numerical response bodies are unchanged. Worker diagnostics are not
+name. Profiling leaves numerical response bodies unchanged. Worker diagnostics are not
 execution authority or an attestation of remote performance.
 
 `complete: false` marks a failed traversal or transport call. The numerical

@@ -1238,9 +1238,106 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
             StatusCode::BAD_REQUEST
         );
     }
+    use larql_router_protocol::vindex3_ffn::binary::{self, Direction};
+    let opened: binary::Opened = client
+        .post(format!("{}{}", urls[0], binary::OPEN_PATH))
+        .json(&binding)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(opened.binding, binding);
+    let mut mismatched = binding.clone();
+    mismatched.program.artifact = "0".repeat(64);
+    assert_eq!(
+        client
+            .post(format!("{}{}", urls[0], binary::OPEN_PATH))
+            .json(&mismatched)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let packet = binary::encode(
+        Direction::Request,
+        opened.handle,
+        17,
+        0,
+        &vec![0.3; binding.program.hidden],
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let response = client
+            .post(format!("{}{}", urls[0], binary::PATH))
+            .header(reqwest::header::CONTENT_TYPE, binary::CONTENT_TYPE)
+            .body(packet.clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        let decoded =
+            binary::decode(&response, Direction::Response, binding.program.hidden).unwrap();
+        assert_eq!(decoded.sequence, 17);
+        let expected: larql_router_protocol::vindex3_ffn::Response =
+            serde_json::from_value(a.clone()).unwrap();
+        assert_eq!(
+            decoded.row.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            expected.row.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+        );
+    }
+    // A fresh preparation of the very same artifact invalidates old handles.
+    let LoadedArtifact::V3(reopened) = load_artifact(
+        container.path().to_str().unwrap(),
+        LoadVindexOptions {
+            ffn_only: true,
+            layer_range: Some((0, 1)),
+            ..Default::default()
+        },
+    )
+    .unwrap() else {
+        panic!("V3")
+    };
+    assert_ne!(reopened.ffn_wire.as_ref().unwrap().handle, opened.handle);
+    for mode in 0..6 {
+        let mut bad = packet.clone();
+        match mode {
+            0 => bad[4..20].copy_from_slice(&reopened.ffn_wire.as_ref().unwrap().handle),
+            1 => bad[28..32].copy_from_slice(&1u32.to_le_bytes()),
+            2 => {
+                bad.pop();
+            }
+            3 => bad.push(0),
+            4 => bad[32..36].copy_from_slice(&0u32.to_le_bytes()),
+            _ => bad[binary::HEADER_BYTES..binary::HEADER_BYTES + 4]
+                .copy_from_slice(&f32::NAN.to_bits().to_le_bytes()),
+        }
+        assert_eq!(
+            client
+                .post(format!("{}{}", urls[0], binary::PATH))
+                .header(reqwest::header::CONTENT_TYPE, binary::CONTENT_TYPE)
+                .body(bad)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
     let path = container.path().to_path_buf();
     tokio::task::spawn_blocking(move || {
         let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+        let binary_transport = HttpFfnShards::connect_binary(&urls, None).unwrap();
+        let binary_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), binary_transport).unwrap();
+        let mut binary_session = DenseFfnSession::new(runtime.plan(), &binary_ops, runtime.backend()).unwrap();
         let transport = HttpFfnShards::connect(&urls, None).unwrap();
         let ops = prepare_coordinator(
             &path,
@@ -1277,6 +1374,14 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
                 let worker = &call["worker"];
                 assert!(worker["ffn_ns"].as_u64().unwrap() <= worker["execute_ns"].as_u64().unwrap());
                 assert!(worker["execute_ns"].as_u64().unwrap() <= worker["handler_ns"].as_u64().unwrap());
+            }
+            let capture = Capture::start().unwrap();
+            let binary_logits = binary_session.step(id).unwrap();
+            let binary_rows = capture.finish();
+            assert_eq!(binary_logits.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+            for call in &binary_rows[0].provider_calls {
+                assert_eq!(call["request_bytes"], binary::HEADER_BYTES + 4 * ops.hidden());
+                assert_eq!(call["response_bytes"], call["request_bytes"]);
             }
             smoke.push(serde_json::json!({"token_id": id, "local": local_rows[0], "remote": rows[0]}));
             assert_eq!(

@@ -322,6 +322,10 @@ pub struct RunArgs {
     )]
     pub v3_ffn_shards: Vec<String>,
 
+    /// Dense FFN wire: exact binary f32 (default) or the JSON control.
+    #[arg(long, value_parser = ["binary", "json"], requires = "v3_ffn_shards")]
+    pub v3_ffn_wire: Option<String>,
+
     /// Write per-position CPU V3 timings and exact FFN HTTP body bytes to a new JSONL file.
     #[arg(long, value_name = "PATH")]
     pub v3_profile: Option<PathBuf>,

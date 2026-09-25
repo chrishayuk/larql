@@ -1,4 +1,5 @@
 //! Stateless dense FFN RPC: one normalized row in, one contribution out.
+pub mod binary;
 use crate::vindex3::Binding as LayerBinding;
 use serde::{Deserialize, Serialize};
 pub const PATH: &str = "/v1/vindex3/ffn";

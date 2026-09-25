@@ -2471,6 +2471,7 @@ dependencies = [
  "clap",
  "criterion",
  "futures",
+ "getrandom 0.3.4",
  "half",
  "larql-compute",
  "larql-compute-metal",

@@ -108,4 +108,6 @@ pub(crate) const CAPABILITIES: &str = "/v1/capabilities";
 
 pub const VINDEX3_LAYERS: &str = larql_router_protocol::vindex3::PATH;
 
+pub const VINDEX3_FFN_OPEN: &str = larql_router_protocol::vindex3_ffn::binary::OPEN_PATH;
+pub const VINDEX3_FFN_BINARY: &str = larql_router_protocol::vindex3_ffn::binary::PATH;
 pub const VINDEX3_FFN: &str = larql_router_protocol::vindex3_ffn::PATH;

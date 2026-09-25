@@ -42,4 +42,5 @@ cargo test -p larql-cli --bin larql
 `larql run` supports explicit V3 `row`, `standard` and `no-cache` modes,
 CPU Gemma 3 image prefixes, `--v3-shards` for ordered CPU layer workers, and
 `--v3-ffn-shards` for CPU dense FFN workers with local attention and row KV.
+This uses bind-once binary f32; `--v3-ffn-wire json` selects the JSON control.
 See [the scoped runtime guide](../../docs/vindex3/runtime-followups.md).

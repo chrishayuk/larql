@@ -164,6 +164,14 @@ pub fn public_explorer_router(
 pub fn single_model_router(state: Arc<AppState>) -> Router {
     Mount::new()
         .at(
+            VINDEX3_FFN_OPEN,
+            post(vindex3_ffn::open).layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),
+        )
+        .at(
+            VINDEX3_FFN_BINARY,
+            post(vindex3_ffn::binary_forward).layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),
+        )
+        .at(
             VINDEX3_FFN,
             get(vindex3_ffn::metadata)
                 .post(vindex3_ffn::forward)

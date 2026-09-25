@@ -115,26 +115,10 @@ pub fn forward_timed<B: PlanBackend + ?Sized>(
     row: &[f32],
     ffn_ns: Option<&mut u64>,
 ) -> Result<Response, InferenceError> {
-    ensure_cpu(backend)?;
-    ops.ensure_providers_in(ops.registry())?;
-    ops.ensure_lowered_by(backend)?;
+    validate_worker(plan, ops, backend, binding)?;
     binding
         .validate_row(layer, row)
         .map_err(InferenceError::Parse)?;
-    if ops.slice()
-        != &(ExecutionSlice::DenseFfns {
-            start: binding.program.start,
-            end: binding.program.end,
-        })
-        || binding.program.hidden != ops.hidden()
-        || binding.program.layers != plan.layers.len()
-        || binding.program.lowering != backend.identity().to_string()
-        || binding.operands != identities(ops.realizations())?
-    {
-        return Err(InferenceError::Parse(
-            "dense FFN binding disagrees with prepared operands".into(),
-        ));
-    }
     let started = ffn_ns.as_ref().map(|_| std::time::Instant::now());
     let row = ops
         .dense_ffns()
@@ -150,9 +134,86 @@ pub fn forward_timed<B: PlanBackend + ?Sized>(
     })
 }
 
+fn validate_worker<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    ops: &PreparedOperands,
+    backend: &B,
+    binding: &Binding,
+) -> Result<(), InferenceError> {
+    ensure_cpu(backend)?;
+    ops.ensure_providers_in(ops.registry())?;
+    ops.ensure_lowered_by(backend)?;
+    binding.validate().map_err(InferenceError::Parse)?;
+    if ops.slice()
+        != &(ExecutionSlice::DenseFfns {
+            start: binding.program.start,
+            end: binding.program.end,
+        })
+        || binding.program.hidden != ops.hidden()
+        || binding.program.layers != plan.layers.len()
+        || binding.program.lowering != backend.identity().to_string()
+        || binding.operands != identities(ops.realizations())?
+    {
+        return Err(InferenceError::Parse(
+            "dense FFN binding disagrees with prepared operands".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Owns the immutable image whose authority was checked once. A different
+/// artifact, plan, registry or backend requires constructing a new worker.
+pub struct BoundFfnWorker<B: PlanBackend> {
+    runtime: Arc<super::PreparedVindex3<B>>,
+    binding: Binding,
+}
+impl<B: PlanBackend> BoundFfnWorker<B> {
+    pub fn new(
+        path: &Path,
+        runtime: Arc<super::PreparedVindex3<B>>,
+    ) -> Result<Self, InferenceError> {
+        let binding = binding(path, runtime.plan(), runtime.operands())?;
+        validate_worker(
+            runtime.plan(),
+            runtime.operands(),
+            runtime.backend(),
+            &binding,
+        )?;
+        Ok(Self { runtime, binding })
+    }
+    pub fn binding(&self) -> &Binding {
+        &self.binding
+    }
+    pub fn apply(&self, layer: usize, row: &[f32]) -> Result<Vec<f32>, InferenceError> {
+        // Range, dimensions, finite input/output and numerical identity remain
+        // checked at the operation boundary. No descriptor re-serialization.
+        Ok(self
+            .runtime
+            .operands()
+            .dense_ffns()
+            .ok_or_else(|| InferenceError::Parse("missing bound FFN image".into()))?
+            .apply(self.runtime.plan(), self.runtime.backend(), layer, row)?)
+    }
+}
+
 pub trait FfnTransport: Send + Sync {
     fn bindings(&self) -> Vec<Binding>;
     fn forward(&self, shard: usize, layer: usize, normalized: &[f32]) -> Result<Response, String>;
+    /// Return a row authenticated against the binding admitted at preparation.
+    /// Compact transports verify their immutable handle and response correlation.
+    fn forward_bound(
+        &self,
+        shard: usize,
+        layer: usize,
+        normalized: &[f32],
+        expected: &Binding,
+    ) -> Result<Vec<f32>, String> {
+        let response = self.forward(shard, layer, normalized)?;
+        if response.binding != *expected || response.layer != layer {
+            return Err("dense FFN response changed binding or layer".into());
+        }
+        Ok(response.row)
+    }
 }
 struct BoundProvider<T> {
     transport: T,
@@ -166,22 +227,19 @@ impl<T: FfnTransport> DenseFfnProvider for BoundProvider<T> {
             .get(layer)
             .ok_or_else(|| VindexError::Parse("unknown FFN layer".into()))?;
         let expected = &self.bindings[shard];
-        expected
-            .validate_row(layer, row)
-            .map_err(VindexError::Parse)?;
+        larql_vindex::format::vindex3::opplan::exec::dense_ffn::validate_row(
+            row,
+            expected.program.hidden,
+        )?;
         let response = self
             .transport
-            .forward(shard, layer, row)
+            .forward_bound(shard, layer, row, expected)
             .map_err(VindexError::Parse)?;
-        if response.binding != *expected || response.layer != layer {
-            return Err(VindexError::Parse(
-                "dense FFN response changed binding or layer".into(),
-            ));
-        }
-        expected
-            .validate_row(layer, &response.row)
-            .map_err(VindexError::Parse)?;
-        Ok(response.row)
+        larql_vindex::format::vindex3::opplan::exec::dense_ffn::validate_row(
+            &response,
+            expected.program.hidden,
+        )?;
+        Ok(response)
     }
 }
 /// Check complete ownership and effective realizations before loading local

@@ -109,6 +109,12 @@ impl V3Backend {
 /// Component id a container's text stack is served under.
 const SERVED_COMPONENT: &str = "target";
 
+/// Binary authority and incarnation handle for an immutable FFN worker.
+pub struct FfnWireWorker {
+    pub handle: larql_router_protocol::vindex3_ffn::binary::Handle,
+    pub execution: larql_inference::vindex3::dense_ffn::BoundFfnWorker<SharedProvider>,
+}
+
 /// One bound VINDEX3 container: the opened runtime plus the serving
 /// glue (tokenizer, id). Holds no `ModelWeights` and no `VectorIndex`
 /// — structurally, the old inference path is unreachable from here.
@@ -118,6 +124,7 @@ pub struct V3Model {
     /// Present only on a stateless layer-prefix worker.
     pub shard: Option<larql_router_protocol::vindex3::Binding>,
     pub ffn_shard: Option<larql_router_protocol::vindex3_ffn::Binding>,
+    pub ffn_wire: Option<FfnWireWorker>,
     /// Model ID (derived from the container directory name).
     pub id: String,
     /// Container directory on disk.
@@ -125,7 +132,7 @@ pub struct V3Model {
     /// The program with its operands already lowered into the
     /// backend's execution form — model lifetime, shared by every
     /// request. Requests contribute only continuation state.
-    pub runtime: PreparedVindex3<SharedProvider>,
+    pub runtime: Arc<PreparedVindex3<SharedProvider>>,
     /// Tokenizer for the text-facing API (`tokenizer.json` in the
     /// container directory).
     pub tokenizer: tokenizers::Tokenizer,
@@ -276,6 +283,7 @@ pub fn load_v3_model_placement(
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
     .prepare_slice(slice)
     .map_err(|e| format!("prepare VINDEX3 operands: {e}"))?;
+    let runtime = Arc::new(runtime);
     let tokenizer = larql_vindex::load_vindex_tokenizer(path)
         .map_err(|e| format!("VINDEX3 container has no servable tokenizer.json: {e}"))?;
     // The container names itself (`index.model`); the directory name is
@@ -299,18 +307,20 @@ pub fn load_v3_model_placement(
     } else {
         None
     };
-    let ffn_shard = if ffn_only {
-        Some(larql_inference::vindex3::dense_ffn::binding(
-            path,
-            runtime.plan(),
-            runtime.operands(),
-        )?)
+    let ffn_wire = if ffn_only {
+        let execution =
+            larql_inference::vindex3::dense_ffn::BoundFfnWorker::new(path, Arc::clone(&runtime))?;
+        let mut handle = [0; 16];
+        getrandom::fill(&mut handle).map_err(|e| format!("create FFN worker handle: {e}"))?;
+        Some(FfnWireWorker { handle, execution })
     } else {
         None
     };
+    let ffn_shard = ffn_wire.as_ref().map(|w| w.execution.binding().clone());
     let model = V3Model {
         shard,
         ffn_shard,
+        ffn_wire,
         backend,
         id: model_id_from_name(&name),
         path: path.to_path_buf(),

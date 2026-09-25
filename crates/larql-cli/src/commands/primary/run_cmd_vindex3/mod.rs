@@ -137,8 +137,9 @@ pub(super) fn run_to(
             "artifact": container,
             "placement": if args.v3_ffn_shards.is_empty() { "local" } else { "remote-dense-ffn" },
             "complete": result.is_ok(),
+            "ffn_wire": (!args.v3_ffn_shards.is_empty()).then_some(args.v3_ffn_wire.as_deref().unwrap_or("binary")),
             "positions": rows.len(),
-            "units": "nanoseconds; JSON body bytes exclude HTTP/TLS headers",
+            "units": "nanoseconds; body bytes exclude HTTP/TLS headers",
         }),
     )?;
     writeln!(file)?;
@@ -318,10 +319,12 @@ impl BackendVisitor for Runner<'_> {
                 .as_deref()
                 .map(std::env::var)
                 .transpose()?;
-            let transport = larql_router::vindex3_ffn::HttpFfnShards::connect(
-                &self.args.v3_ffn_shards,
-                token.as_deref(),
-            )?;
+            let connect = if self.args.v3_ffn_wire.as_deref() == Some("json") {
+                larql_router::vindex3_ffn::HttpFfnShards::connect
+            } else {
+                larql_router::vindex3_ffn::HttpFfnShards::connect_binary
+            };
+            let transport = connect(&self.args.v3_ffn_shards, token.as_deref())?;
             larql_inference::vindex3::dense_ffn::prepare_coordinator(
                 self.container,
                 &self.prepared.plan,

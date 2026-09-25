@@ -483,3 +483,32 @@ fn cpu_profile_preserves_ids_and_refuses_to_overwrite() {
     assert!(run_capturing(&container, &flags, "").is_err());
     assert_eq!(std::fs::read_to_string(&profile).unwrap(), text);
 }
+
+#[test]
+fn binary_ffn_wire_flag_is_explicit_and_scoped() {
+    for wire in ["binary", "json"] {
+        let run = Shell::try_parse_from([
+            "larql",
+            "model",
+            "hello",
+            "--v3-ffn-shards",
+            "http://a",
+            "--v3-ffn-wire",
+            wire,
+        ])
+        .unwrap()
+        .run;
+        assert_eq!(run.v3_ffn_wire.as_deref(), Some(wire));
+    }
+    assert!(Shell::try_parse_from(["larql", "model", "hello", "--v3-ffn-wire", "binary"]).is_err());
+    assert!(Shell::try_parse_from([
+        "larql",
+        "model",
+        "hello",
+        "--v3-ffn-shards",
+        "http://a",
+        "--v3-ffn-wire",
+        "q8"
+    ])
+    .is_err());
+}

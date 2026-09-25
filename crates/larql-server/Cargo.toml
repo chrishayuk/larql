@@ -35,6 +35,7 @@ half = "2"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 reqwest = { version = "0.12", features = ["json"] }
 sha2 = "0.10"
+getrandom = "0.3"
 # Constant-time byte equality for API-key comparison (auth middleware).
 # Already in the lockfile via rustls; declared here as a direct dep so the
 # threat-model rationale is visible at the crate boundary.

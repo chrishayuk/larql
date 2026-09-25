@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=48)
     parser.add_argument("--skip-decode", type=int, default=8)
     parser.add_argument("--blocks", type=int, default=2)
+    parser.add_argument("--wire", choices=("json", "binary"), default="json")
+    parser.add_argument("--wire-comparison", action="store_true", help="Nest JSON / binary / JSON within local controls")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     model = args.model.resolve()
@@ -66,7 +68,7 @@ def main():
         "metadata_sha256": {name: hashlib.sha256((model / name).read_bytes()).hexdigest() for name in ("index.json", "system_graph.json")},
         "binary_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (cli, server)},
         "settings": settings, "prompt": prompt, "max_tokens": args.max_tokens,
-        "skip_decode": args.skip_decode,
+        "skip_decode": args.skip_decode, "wire": args.wire, "wire_comparison": args.wire_comparison,
         "clock": "per-position profile; load/tokenization/output excluded",
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -103,12 +105,12 @@ def main():
             print(f"ready: worker {worker}, layers {start}..{end - 1}", flush=True)
         write_json(out / "bindings.json", bindings)
 
-        def run(label, remote):
+        def run(label, remote, wire=None):
             nonlocal reference
             profile = out / (label + ".jsonl")
             command = [str(cli), "run", str(model), prompt, "--max-tokens", str(args.max_tokens), "--emit-ids", "--v3-profile", str(profile)]
             if remote:
-                command.extend(["--v3-ffn-shards", ",".join(urls)])
+                command.extend(["--v3-ffn-shards", ",".join(urls), "--v3-ffn-wire", wire or args.wire])
             print(f"running {label}", flush=True)
             with (out / (label + ".stdout")).open("w") as stdout, (out / (label + ".stderr")).open("w") as stderr:
                 subprocess.run(command, env=env, cwd=root, stdout=stdout, stderr=stderr, check=True, timeout=600)
@@ -134,17 +136,28 @@ def main():
 
         for warm in range(2):
             run(f"warm-{warm}-local", False)
-            run(f"warm-{warm}-remote", True)
+            run(f"warm-{warm}-remote", True, "json" if args.wire_comparison else args.wire)
+            if args.wire_comparison:
+                run(f"warm-{warm}-binary", True, "binary")
         brackets = []
         for block in range(args.blocks):
             before = run(f"block-{block}-local-before", False)
-            remote = run(f"block-{block}-remote", True)
+            remote = run(f"block-{block}-remote", True, "json" if args.wire_comparison else args.wire)
+            binary = run(f"block-{block}-binary", True, "binary") if args.wire_comparison else None
+            json_after = run(f"block-{block}-json-after", True, "json") if args.wire_comparison else None
             after = run(f"block-{block}-local-after", False)
             midpoint = (before["total_ns"] + after["total_ns"]) / 2
             drift = abs(before["total_ns"] - after["total_ns"]) / midpoint
             brackets.append({"block": block, "control_drift": drift, "controls_agree_within_one_percent": drift <= 0.01,
                              "diagnostic_only": True, "local_before": before, "remote": remote, "local_after": after,
                              "remote_over_local": remote["total_ns"] / midpoint if drift <= 0.01 else None})
+            if args.wire_comparison:
+                json_midpoint = (remote["total_ns"] + json_after["total_ns"]) / 2
+                json_drift = abs(remote["total_ns"] - json_after["total_ns"]) / json_midpoint
+                brackets[-1].update({"binary": binary, "json_after": json_after, "json_control_drift": json_drift,
+                    "binary_over_json": binary["total_ns"] / json_midpoint if json_drift <= .01 else None,
+                    "binary_over_local": binary["total_ns"] / midpoint if drift <= .01 else None})
+                print(f"block {block}: JSON control drift {json_drift:.2%}", flush=True)
             write_json(out / "brackets.json", brackets)
             print(f"block {block}: control drift {drift:.2%}; diagnostic only", flush=True)
     finally:
