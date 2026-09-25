@@ -418,10 +418,10 @@ representation or backend name alone is not evidence of equivalence.
 This would let KDA/MLA continuation remain local while remote machines hold
 expert populations. K3 support, mixed CPU/Metal/CUDA placement, capability
 discovery and fleet scheduling are subsequent gates, not capabilities conferred
-by #507. The dense operation boundary is implemented here; full K3 placement remains
-a separate integration.
+by #507. Dense and packed-MXFP4 routed operation boundaries are implemented here;
+full K3 placement remains a separate integration.
 
-Per-position local/remote timing and HTTP body sizes are available through
+Per-position local/remote dense-FFN timing and HTTP body sizes are available through
 [`--v3-profile`](v3-dense-profile.md). This diagnostic preserves the exact carrier
 and reports nested worker/transport timings without changing execution authority.
 

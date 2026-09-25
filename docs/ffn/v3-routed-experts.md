@@ -92,3 +92,8 @@ binary hashes, artifact metadata hashes, bindings and emitted token IDs. It
 runs prose, code and a 151-token prompt that crosses GPT-OSS's 128-token window.
 These checks establish only the recorded correctness scope; they are not a
 performance benchmark or a K3 validation.
+
+GPT-OSS 20B passes the [recorded real-model CLI checks](../../bench/v3-routed-experts/README.md):
+three prompts, including 151 input tokens, with 32 generated tokens each across
+local, one-worker, two-way expert and mixed layer/expert layouts. Every candidate
+matched the saved pre-refactor IDs. This is loopback CPU correctness evidence.
