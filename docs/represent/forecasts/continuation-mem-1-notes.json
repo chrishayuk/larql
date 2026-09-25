@@ -33,6 +33,15 @@
       "id": "D5",
       "instrument": "I6 storage identity through a type-erased handoff",
       "operationalisation": "a ContinuationHandoff holds `Box<dyn ContinuationProvider + Send>`, so the canonical matrix is unreachable from the test through the trait. The handoff is built from a test factory whose provider is `Measured<P>`; the wrapper holds a shared inventory sink and writes its backing inventory (pointer and capacity of every row, matrix, latent row and recurrent buffer) into it when a flag is set, on its next `set_position(p)` call (the test re-sets the current position through `state_mut()`, a no-op for every provider; `&mut` is needed because recurrent buffers are reachable only through `recurrent_state(&mut self)`). The inventory is taken outside every measured scope."
+    },
+    {
+      "id": "D6",
+      "instrument": "I1_thread_integrity applied to the M8 recurrent-operator window",
+      "recorded": "after the first oute-mamba2attn-250m run (ProductionBackend, harness a097c9c5), BEFORE any M8 copy measurement is adjudicated",
+      "fact": "ProductionBackend partitions projections across worker threads, so every recurrent window that spans an operator saw foreign-thread allocations (10,319 on row/v1). Under the frozen rule those windows are INVALID; the only integrity-clean windows on that run are empty ones (recurrent_state followed directly by another provider call).",
+      "what_the_invalid_windows_showed_on_the_owner_thread": "exactly one conv-history-sized allocation per Mamba2 (36,864 B) and per conv-QKV (98,304 B) call. Recorded, NOT adjudicated: owner-thread counts are what the integrity rule exists to distrust.",
+      "operationalisation": "M8's per-call copy clause is adjudicated only from windows with zero foreign allocations. Those come from the serial ReferenceBackend (CpuParallelism::Serial semantics — 'the reference oracle'), on oute-mamba2attn-250m (Mamba2 + conv-QKV) and on the in-tree fixtures: the KDA+MLA hybrid (KDA) and hybrid_lllf_f32_model (Gated DeltaNet), which is pub and was not listed in the freeze's subjects. M8's payload and n-independence clauses are storage facts from provider scopes (integrity-clean on every run) and are adjudicated on the ProductionBackend runs as frozen.",
+      "why_not_a_forecast_edit": "backend choice is not fixed by the freeze; the rule that a window with foreign allocations is INVALID is kept, not relaxed"
     }
   ]
 }
