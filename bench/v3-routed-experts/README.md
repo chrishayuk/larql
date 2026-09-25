@@ -4,6 +4,9 @@ Implementation: `85e85100`. This extends the V3 provider boundary to selected
 unweighted expert transforms. It is a CPU packed-MXFP4 correctness rung; there
 is no throughput or K3 claim. See the [operator contract](../../docs/ffn/v3-routed-experts.md).
 
+Subsequent exact-HTTP timing and byte decomposition is recorded separately in
+the [provisional profiling report](PROFILE-1-results.md).
+
 ## Real-model result
 
 **Pass:** all 12 candidate runs matched the three pre-refactor controls on

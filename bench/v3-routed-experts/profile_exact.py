@@ -256,6 +256,7 @@ def main():
             sample = trial(directory, "measured", urls)
             sample["plateau"] = plateau
             sample["warm_total_ns"] = warm
+            save(out / "trials.json", trials)
             return sample
 
     for block in range(args.blocks):

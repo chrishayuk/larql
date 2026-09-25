@@ -1,0 +1,2 @@
+# Raw profiles are preserved in the verified adjacent tar.gz archives.
+*.jsonl

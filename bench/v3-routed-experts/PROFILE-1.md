@@ -4,6 +4,8 @@ Execution was authorized after the draft hold. Validation and real-model
 measurements follow the protocol below. The earlier correctness receipts in
 this directory remain separate from the profiling results.
 
+Completed measurements: [GPT-OSS loopback results](PROFILE-1-results.md).
+
 ## Measurement contract
 
 Keep binary HTTP, bind-once authority, exact F32 frames and expert arithmetic.
