@@ -38,7 +38,7 @@ copies agree: `append` is the only writer, and it fills the view from the
 matrix.
 
 **The server runs `canonical/v1`** (`larql-server/src/vindex3.rs:295-304`).
-**The CLI's default is `row/v1`** (`larql-cli/.../continuation.rs:29-35`).
+**The CLI's default is `row/v1`** (`crates/larql-cli/src/commands/primary/continuation.rs:29-35`).
 The two paths hold different amounts of memory for the same conversation.
 
 Recurrent buffers (`RecurrentState`) are allocated once, by
