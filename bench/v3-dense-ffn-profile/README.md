@@ -104,3 +104,5 @@ Reproduce collection with [run_loopback.py](run_loopback.py), using a new output
 directory. This driver deliberately labels its output diagnostic; a confirmed
 peer handshake and a fuller plateau/replication protocol are needed for a
 performance claim. See [field definitions](../../docs/ffn/v3-dense-profile.md).
+
+The same-build bind-once binary follow-up is recorded in [WIRE-1](WIRE-1.md).
