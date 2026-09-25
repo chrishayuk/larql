@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Exact routed profiling. No execution without an explicit --execute flag.
 
-Controls are local / candidate / local, warmed separately. Workers are stopped
-before local controls to avoid holding two widened GPT-OSS banks concurrently.
+Controls are local / candidate / local, warmed separately. Managed loopback
+workers stop before local controls. External workers are never started/stopped.
 This module can be imported by analysis tests without starting any processes.
 """
 import argparse
@@ -15,7 +15,54 @@ import re
 import statistics
 import subprocess
 import time
+import urllib.parse
 import urllib.request
+
+
+LAYOUTS = {
+    "local": [], "one": [(0, 23, 0, 31)],
+    "experts": [(0, 23, 0, 15), (0, 23, 16, 31)],
+    "mixed": [(0, 11, 0, 31), (12, 23, 0, 7), (12, 23, 8, 31)],
+}
+
+
+def external_urls(values, topology):
+    """Validate receipt-safe endpoints without contacting them."""
+    if len(values) != len(LAYOUTS[topology]):
+        raise ValueError("worker URL count must match the selected topology")
+    urls = []
+    for value in values:
+        parsed = urllib.parse.urlsplit(value)
+        if (parsed.scheme not in ("http", "https") or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.query or parsed.fragment or "," in value
+                or any(c.isspace() for c in value)):
+            raise ValueError("worker URLs must be HTTP(S), without credentials, queries or fragments")
+        parsed.port  # Reject malformed/out-of-range ports before starting any process.
+        urls.append(value.rstrip("/"))
+    if len(set(urls)) != len(urls):
+        raise ValueError("worker URLs must be distinct")
+    return urls
+
+
+def read_external_bindings(urls, topology):
+    """Check experimental layout; the Rust client remains execution authority."""
+    bindings, identity = [], None
+    for url, (start, end, first, last) in zip(urls, LAYOUTS[topology]):
+        with urllib.request.urlopen(url + "/v1/vindex3/experts", timeout=10) as response:
+            binding = json.load(response)
+        program = binding["program"]
+        if (program["start"], program["end"], binding["expert_start"], binding["expert_end"]) != (
+                start, end + 1, first, last + 1):
+            raise ValueError(f"worker layout differs from requested topology: {url}")
+        if program["layers"] != 24 or program["hidden"] != 2880 or program["backend"] != "cpu":
+            raise ValueError(f"worker is not the GPT-OSS CPU profile shape: {url}")
+        current = {k: program[k] for k in ("schema", "artifact", "backend", "lowering", "layers", "hidden")}
+        if identity is not None and current != identity:
+            raise ValueError("external workers advertise different program identities")
+        identity = current
+        bindings.append(binding)
+    return bindings
 
 
 def agreement(a, b):
@@ -110,15 +157,18 @@ def sha(path):
 
 
 @contextmanager
-def workers(root, model, out, topology, port, env):
-    layouts = {
-        "local": [], "one": [(0, 23, 0, 31)],
-        "experts": [(0, 23, 0, 15), (0, 23, 16, 31)],
-        "mixed": [(0, 11, 0, 31), (12, 23, 0, 7), (12, 23, 8, 31)],
-    }
+def workers(root, model, out, topology, port, env, remote_urls=None, expected_bindings=None):
+    if remote_urls and topology != "local":
+        bindings = read_external_bindings(remote_urls, topology)
+        if expected_bindings is not None and bindings != expected_bindings:
+            raise ValueError("external worker bindings changed since preflight")
+        save(out / "workers.json", {"lifecycle": "external", "urls": remote_urls,
+                                   "commands": [], "bindings": bindings})
+        yield remote_urls
+        return
     processes, logs, urls, bindings, commands = [], [], [], [], []
     try:
-        for i, (start, end, first, last) in enumerate(layouts[topology]):
+        for i, (start, end, first, last) in enumerate(LAYOUTS[topology]):
             url = f"http://127.0.0.1:{port + i}"
             command = [str(root / "target/release/larql-server"), str(model),
                        "--host", "127.0.0.1", "--port", str(port + i), "--ffn-only",
@@ -168,6 +218,8 @@ def main():
     parser.add_argument("--skip-decode", type=int, default=8)
     parser.add_argument("--max-warmups", type=int, default=4)
     parser.add_argument("--port", type=int, default=19381)
+    parser.add_argument("--worker-url", action="append", default=[],
+                        help="Existing worker base URL, repeated in topology order; never started/stopped")
     parser.add_argument("--peer-handshake", type=Path, help="Saved peer-session exclusivity acknowledgements")
     parser.add_argument("--reference", type=Path, help="Uninstrumented prompt/generated ID control")
     args = parser.parse_args()
@@ -175,6 +227,10 @@ def main():
         parser.error("execution is held; pass --execute only after authorization")
     if args.max_warmups < 2 or args.blocks < 1 or not 0 <= args.skip_decode < args.max_tokens - 1:
         parser.error("need two warmups, a block and at least one measured decode position")
+    try:
+        remote_urls = external_urls(args.worker_url, args.topology) if args.worker_url else []
+    except ValueError as error:
+        parser.error(str(error))
     root = Path(__file__).resolve().parents[2]
     model, out = args.model.resolve(), args.out.resolve()
     index = json.loads((model / "index.json").read_text())
@@ -193,17 +249,25 @@ def main():
     save(out / "manifest.json", {
         "schema": "larql.v3.routed-profile.v1", "revision": revision,
         "tracked_source_dirty": source_dirty, "model": str(model), "topology": args.topology,
+        "worker_lifecycle": "external" if remote_urls else "managed-loopback",
+        "worker_urls": remote_urls,
+        "external_worker_environment": "not managed or verified by harness" if remote_urls else None,
         "settings": settings, "prompt": prompt, "max_tokens": args.max_tokens,
         "skip_decode": args.skip_decode, "gate": 0.01,
         "peer_handshake": handshake, "peer_handshake_requires_manual_verification": True,
         "reference": str(args.reference) if args.reference else None,
         "reference_sha256": sha(args.reference) if args.reference else None,
-        "binary_sha256": {name: sha(root / "target/release" / name) for name in ["larql", "larql-server"]},
+        "binary_sha256": {name: sha(root / "target/release" / name)
+                          for name in (["larql"] if remote_urls else ["larql", "larql-server"])},
+        "harness_sha256": sha(Path(__file__)),
         "metadata_sha256": {name: sha(model / name) for name in ["index.json", "system_graph.json"]},
         "clock": "per-position decode wall time; startup, tokenization, prefill and output excluded",
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
     reference = json.loads(args.reference.read_text()) if args.reference else None
+    expected_bindings = read_external_bindings(remote_urls, args.topology) if remote_urls else None
+    if remote_urls:
+        save(out / "preflight-workers.json", {"urls": remote_urls, "bindings": expected_bindings})
     trials, blocks = [], []
 
     def trial(directory, label, urls):
@@ -242,7 +306,8 @@ def main():
     def arm(block, name, topology):
         directory = out / f"block-{block}-{name}"
         directory.mkdir()
-        with workers(root, model, directory, topology, args.port, env) as urls:
+        with workers(root, model, directory, topology, args.port, env,
+                     remote_urls, expected_bindings) as urls:
             previous, plateau = None, False
             warm = []
             for i in range(args.max_warmups):

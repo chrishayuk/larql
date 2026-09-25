@@ -5,6 +5,7 @@ measurements follow the protocol below. The earlier correctness receipts in
 this directory remain separate from the profiling results.
 
 Completed measurements: [GPT-OSS loopback results](PROFILE-1-results.md).
+External-worker setup and the next measurement: [physical LAN protocol](LAN-1.md).
 
 ## Measurement contract
 
