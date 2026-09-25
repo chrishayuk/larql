@@ -1,0 +1,29 @@
+# A TEST FIXTURE, not a shipped provider or an SDK example
+# (CONTINUATION-PLUGIN-1 C6). The C5 external continuation provider,
+# compiled as a shared library so larql-cli's C6 gate can load it through
+# the real `--plugin` path. Nothing depends on this crate: the gate builds
+# it and `dlopen`s the result, so none of it is linked into the binary
+# under test.
+[package]
+name = "larql-continuation-fixture"
+description = "Test-only cdylib: the C5 continuation provider, loaded by larql-cli's C6 plugin gate"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Mirrors larql-cli's `gpu`. The gate builds the fixture with exactly the
+# features the CLI under test was built with, so host and plugin compile
+# the shared larql-vindex types identically (the ABI stamp names the
+# compiler and commit, not features).
+gpu = ["larql-vindex/gpu"]
+
+[dependencies]
+larql-vindex = { path = "../larql-vindex" }

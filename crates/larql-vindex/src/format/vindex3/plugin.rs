@@ -1,6 +1,7 @@
 //! **Dynamically loaded plugins** — the contract between a host (the
 //! `larql` binary) and a shared library that registers representation
-//! codecs, encoders and lowering providers this build does not ship.
+//! codecs, encoders, lowering providers and continuation providers this
+//! build does not ship.
 //!
 //! The codec plane (`docs/represent-codec-contract.md`) and the lowering
 //! plane (LOWERING-PLUGIN-1) already take providers from outside the
@@ -33,6 +34,7 @@
 //!     r.codec(Box::new(MyCodec));
 //!     r.encoder(Box::new(MyCodec)); // only if packs can be compiled in it
 //!     r.lowering(|| Box::new(MyProvider::new()));
+//!     r.continuation(Box::new(MyContinuationFactory));
 //! }
 //! larql_vindex::larql_plugin!(register);
 //! ```
@@ -41,13 +43,15 @@
 //! [`LoweringRegistry`]: super::opplan::exec::lowering::LoweringRegistry
 
 use super::opplan::exec::backend::PlanBackend;
+use super::opplan::exec::continuation_registry::ContinuationFactory;
 use super::represent::codec::{RepresentationCodec, RepresentationEncoder};
 
 /// The host/plugin compatibility stamp: contract revision, crate version,
 /// compiler, and source commit. NUL-terminated so the C-ABI export can
-/// hand it out as-is.
+/// hand it out as-is. The revision moves whenever [`PluginRegistrar`]'s
+/// layout does: 2 added continuation factories (CONTINUATION-PLUGIN-1 C6).
 pub const ABI: &str = concat!(
-    "larql-plugin/1 larql-vindex/",
+    "larql-plugin/2 larql-vindex/",
     env!("CARGO_PKG_VERSION"),
     " (",
     env!("LARQL_PLUGIN_RUSTC"),
@@ -91,6 +95,7 @@ pub struct PluginRegistrar {
     codecs: Vec<Box<dyn RepresentationCodec>>,
     encoders: Vec<Box<dyn RepresentationEncoder>>,
     lowerings: Vec<LoweringFactory>,
+    continuations: Vec<Box<dyn ContinuationFactory>>,
 }
 
 /// Everything one plugin registered, in the order it registered it.
@@ -99,6 +104,7 @@ pub struct PluginRegistrations {
     pub codecs: Vec<Box<dyn RepresentationCodec>>,
     pub encoders: Vec<Box<dyn RepresentationEncoder>>,
     pub lowerings: Vec<LoweringFactory>,
+    pub continuations: Vec<Box<dyn ContinuationFactory>>,
 }
 
 impl PluginRegistrar {
@@ -126,12 +132,21 @@ impl PluginRegistrar {
         self.lowerings.push(factory);
     }
 
+    /// Register a continuation provider, as the factory that builds one
+    /// conversation's state. The host adds it to the registry it selects
+    /// from, beside the shipped providers; a clashing identity is refused
+    /// there as a duplicate, never a replacement.
+    pub fn continuation(&mut self, factory: Box<dyn ContinuationFactory>) {
+        self.continuations.push(factory);
+    }
+
     /// The registrations, in the order the plugin made them.
     pub fn into_parts(self) -> PluginRegistrations {
         PluginRegistrations {
             codecs: self.codecs,
             encoders: self.encoders,
             lowerings: self.lowerings,
+            continuations: self.continuations,
         }
     }
 }

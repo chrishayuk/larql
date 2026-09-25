@@ -366,6 +366,8 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             kv_cache: run_cmd::KvCacheKind::Standard,
             context_window: 0,
             engine: None,
+            continuation: None,
+            continuation_options: Vec::new(),
             ffn: c.ffn,
             routed_from: c.routed_from,
             emit_ids: false,

@@ -9,14 +9,19 @@
 //! same way a linked provider is composed: codecs into a
 //! [`CodecRegistry`] on top of the shipped ones, lowering providers into
 //! the [`LoweringRegistry`](larql_vindex::format::vindex3::opplan::exec::lowering::LoweringRegistry)
-//! a `--backend` names, in [`super::prepare::lowerings_with`]. Nothing is
-//! discovered: a plugin not named on the command line is not loaded.
+//! a `--backend` names, in [`super::prepare::lowerings_with`], and
+//! continuation providers into a [`ContinuationRegistry`] on top of
+//! [`shipped_continuations`], which the CLI's one continuation selection
+//! resolves from. Nothing is discovered: a plugin not named on the
+//! command line is not loaded.
 
 #[cfg(unix)]
 use std::ffi::CStr;
 use std::path::PathBuf;
 
 use clap::Args;
+use larql_kv::shipped_continuations;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry;
 use larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity;
 // The ABI and registration symbols are only read by the unix loader;
 // `load_one` refuses by name everywhere else.
@@ -30,8 +35,8 @@ type BoxErr = Box<dyn std::error::Error>;
 #[derive(Args, Debug, Clone, Default)]
 pub struct PluginArgs {
     /// Load a larql plugin: a shared library (`.dylib`/`.so`) exporting
-    /// `larql_plugin_register`, which registers representation codecs and
-    /// lowering providers. Repeatable. The plugin must be built by the
+    /// `larql_plugin_register`, which registers representation codecs,
+    /// lowering providers and continuation providers. Repeatable. The plugin must be built by the
     /// same compiler from the same larql commit as this binary, or it is
     /// refused before it runs.
     #[arg(long = "plugin", value_name = "PATH")]
@@ -54,13 +59,15 @@ pub struct PluginArgs {
 
 /// What the command line loaded: the codec registry every open decodes
 /// through, the encoders `represent` may compile into, the lowering
-/// providers to add to whatever `--backend` composes, the provider
+/// providers to add to whatever `--backend` composes, the continuation
+/// providers — shipped plus loaded — a run selects from, the provider
 /// `--lowering` asked for, and the representation `--representation`
 /// asked for.
 pub(crate) struct Plugins {
     pub(crate) codecs: &'static CodecRegistry,
     pub(crate) encoders: &'static EncoderRegistry,
     pub(crate) lowerings: Vec<LoweringFactory>,
+    pub(crate) continuations: ContinuationRegistry,
     pub(crate) select: Option<LoweringIdentity>,
     pub(crate) want: Option<String>,
 }
@@ -73,6 +80,7 @@ impl Plugins {
             codecs: CodecRegistry::builtin(),
             encoders: NO_ENCODERS.get_or_init(EncoderRegistry::new),
             lowerings: Vec::new(),
+            continuations: shipped_continuations(),
             select: None,
             want: None,
         }
@@ -96,6 +104,7 @@ impl Plugins {
         let mut codecs = CodecRegistry::shipped();
         let mut encoders = EncoderRegistry::new();
         let mut lowerings = Vec::new();
+        let mut continuations = shipped_continuations();
         for path in &args.plugins {
             let registered = load_one(path)?.into_parts();
             let labels: Vec<&str> = registered
@@ -113,12 +122,18 @@ impl Plugins {
                 .iter()
                 .map(|f| f().identity().to_string())
                 .collect();
+            let continuation_identities: Vec<String> = registered
+                .continuations
+                .iter()
+                .map(|f| f.identity().to_string())
+                .collect();
             eprintln!(
-                "plugin: {} — codecs [{}], encoders [{}], lowerings [{}]",
+                "plugin: {} — codecs [{}], encoders [{}], lowerings [{}], continuations [{}]",
                 path.display(),
                 labels.join(", "),
                 encoder_labels.join(", "),
-                identities.join(", ")
+                identities.join(", "),
+                continuation_identities.join(", ")
             );
             for codec in registered.codecs {
                 codecs = codecs
@@ -131,11 +146,17 @@ impl Plugins {
                     .map_err(|e| format!("{}: {e}", path.display()))?;
             }
             lowerings.extend(registered.lowerings);
+            for factory in registered.continuations {
+                continuations
+                    .register(factory)
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+            }
         }
         Ok(Self {
             codecs: Box::leak(Box::new(codecs)),
             encoders: Box::leak(Box::new(encoders)),
             lowerings,
+            continuations,
             select,
             want,
         })
@@ -154,6 +175,7 @@ impl Plugins {
             codecs: self.codecs,
             encoders: self.encoders,
             lowerings: self.lowerings.clone(),
+            continuations: self.continuations.clone(),
             select: lowering.map(parse_lowering_identity).transpose()?,
             want: representation.map(str::to_string),
         })

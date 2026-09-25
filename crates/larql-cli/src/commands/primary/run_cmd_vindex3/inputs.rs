@@ -4,7 +4,7 @@ use larql_compute::forward::{EmbeddingChunk, PositionScheme};
 use larql_inference::vindex3::input::{CachedInputSession, InputPosition, ReplaySession};
 use larql_inference::vindex3::LogitsSession;
 
-use crate::commands::primary::continuation::{select_for, REPLAY_ENGINE};
+use crate::commands::primary::continuation::{select_in, REPLAY_ENGINE};
 
 pub(super) fn generate<B: PlanBackend>(
     model: &ResidentModel<'_, B>,
@@ -50,13 +50,21 @@ pub(super) fn generate<B: PlanBackend>(
     } else if model.args.kv_cache == KvCacheKind::None
         || model.args.engine.as_deref() == Some(REPLAY_ENGINE)
     {
-        let continuation = select_for(model.plan, model.args.engine.as_deref())?;
+        let continuation = select_in(
+            model.continuations,
+            model.plan,
+            &model.continuation_choice(),
+        )?;
         let mode = format!("{REPLAY_ENGINE} over {}", continuation.authority().identity);
         let mut session = ReplaySession::new(model.plan, model.ops, model.backend, continuation);
         let logits = session.extend_inputs(&inputs)?;
         emit(model, &mut session, logits, ids, out, status, &mode)
     } else {
-        let continuation = select_for(model.plan, model.args.engine.as_deref())?;
+        let continuation = select_in(
+            model.continuations,
+            model.plan,
+            &model.continuation_choice(),
+        )?;
         let mut state = continuation.build();
         let mut session =
             CachedInputSession::new(model.plan, model.ops, model.backend, &mut *state)?;
