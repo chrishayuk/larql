@@ -107,6 +107,23 @@ async fn http_rejects_changed_authority_and_corrupt_expert_replies() {
                 .collect::<Vec<_>>(),
             row.map(f32::to_bits)
         );
+        // Missing optional telemetry must not change numerical execution or
+        // become a fabricated zero worker time in the diagnostic.
+        let capture = profile::Capture::start().unwrap();
+        let profiled = client.forward(0, 0, &[3, 1], &row).unwrap();
+        let trace = capture.finish_provider_calls();
+        assert_eq!(
+            profiled[0]
+                .row
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            row.map(f32::to_bits)
+        );
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0]["complete"], true);
+        assert_eq!(trace[0]["worker_profile_complete"], false);
+        assert!(trace[0].get("worker").is_none());
         for fault in 1..=11 {
             mode.store(fault, Ordering::SeqCst);
             assert!(

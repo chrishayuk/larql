@@ -17,6 +17,7 @@ pub struct TokenProfile {
 struct State {
     tokens: Vec<TokenProfile>,
     calls: Vec<serde_json::Value>,
+    layer: Option<usize>,
 }
 thread_local! { static ACTIVE: RefCell<Option<State>> = const { RefCell::new(None) }; }
 
@@ -36,6 +37,11 @@ impl Capture {
     pub fn finish(self) -> Vec<TokenProfile> {
         ACTIVE.with(|s| s.borrow_mut().take().expect("active capture").tokens)
     }
+    /// Finish a transport-thread capture, which has calls but no decoder tokens.
+    /// The coordinator attaches these records to its own current position.
+    pub fn finish_provider_calls(self) -> Vec<serde_json::Value> {
+        ACTIVE.with(|s| s.borrow_mut().take().expect("active capture").calls)
+    }
 }
 impl Drop for Capture {
     fn drop(&mut self) {
@@ -46,6 +52,9 @@ impl Drop for Capture {
 }
 pub fn enabled() -> bool {
     ACTIVE.with(|s| s.borrow().is_some())
+}
+pub(super) fn current_layer() -> Option<usize> {
+    ACTIVE.with(|s| s.borrow().as_ref().and_then(|s| s.layer))
 }
 /// Transport-specific details are diagnostics, never execution authority.
 pub fn record_provider_call(call: serde_json::Value) {
@@ -68,6 +77,15 @@ pub(super) struct Token {
     profile: TokenProfile,
 }
 impl Token {
+    pub(super) fn layer(&mut self, layer: usize) {
+        if self.clock.is_some() {
+            ACTIVE.with(|s| {
+                if let Some(s) = s.borrow_mut().as_mut() {
+                    s.layer = Some(layer);
+                }
+            });
+        }
+    }
     pub(super) fn start(position: usize, token: Option<u32>) -> Self {
         Self {
             clock: enabled().then(Instant::now),
@@ -136,5 +154,31 @@ mod tests {
             rows[0].total_ns,
             rows[0].attention_ns + rows[0].ffn_ns + rows[0].reentry_ns + rows[0].other_ns
         );
+    }
+    #[test]
+    fn dispatch_records_return_to_the_parent_without_sharing_a_capture() {
+        let parent = Capture::start().unwrap();
+        let calls = std::thread::spawn(|| {
+            assert!(!enabled());
+            let child = Capture::start().unwrap();
+            record_provider_call(serde_json::json!({"kind": "child", "bytes": 123}));
+            child.finish_provider_calls()
+        })
+        .join()
+        .unwrap();
+        assert!(enabled());
+        {
+            let mut token = Token::start(0, Some(3));
+            token.layer(7);
+            assert_eq!(current_layer(), Some(7));
+            for call in calls {
+                record_provider_call(call);
+            }
+            token.complete();
+        }
+        let rows = parent.finish();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].provider_calls[0]["bytes"], 123);
+        assert!(!enabled());
     }
 }

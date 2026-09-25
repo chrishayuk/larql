@@ -255,6 +255,17 @@ impl PreparedRoutedExperts {
         experts: &[usize],
         x: &[f32],
     ) -> Result<Vec<ExpertOutput>, VindexError> {
+        self.apply_profiled(backend, layer, experts, x, None)
+    }
+    /// Time only selected transforms, excluding ownership/output validation.
+    pub fn apply_profiled<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        layer: usize,
+        experts: &[usize],
+        x: &[f32],
+        mut expert_ns: Option<&mut u64>,
+    ) -> Result<Vec<ExpertOutput>, VindexError> {
         if backend.identity() != self.lowering {
             return Err(err("expert numerical provider mismatch"));
         }
@@ -281,6 +292,7 @@ impl PreparedRoutedExperts {
             .map(|expert| {
                 let e = expert - self.first_expert;
                 let inter = layer.op.expert_intermediate_size;
+                let transform = expert_ns.as_ref().map(|_| std::time::Instant::now());
                 let row = backend.expert_transform(ExpertTransformCall {
                     x,
                     hidden: self.hidden,
@@ -301,6 +313,9 @@ impl PreparedRoutedExperts {
                             .map(|b| &b[e * self.hidden..(e + 1) * self.hidden]),
                     },
                 })?;
+                if let (Some(total), Some(transform)) = (expert_ns.as_deref_mut(), transform) {
+                    *total += transform.elapsed().as_nanos() as u64;
+                }
                 super::super::dense_ffn::validate_row(&row, self.hidden)?;
                 Ok(ExpertOutput {
                     expert: *expert,

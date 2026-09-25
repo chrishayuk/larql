@@ -130,12 +130,16 @@ pub(super) fn run_to(
     let capture = larql_inference::vindex3::dense_ffn::profile::Capture::start()?;
     let result = run_inner(container, args, input, out, status);
     let rows = capture.finish();
+    let routed = rows
+        .iter()
+        .flat_map(|r| &r.provider_calls)
+        .any(|c| c["kind"] == "routed_ffn");
     serde_json::to_writer(
         &mut file,
         &serde_json::json!({
             "schema": "larql.v3.position-profile.v1",
             "artifact": container,
-            "placement": if args.v3_ffn_shards.is_empty() { "local" } else { "remote-dense-ffn" },
+            "placement": if args.v3_ffn_shards.is_empty() { "local" } else if routed { "remote-routed-experts" } else { "remote-dense-ffn" },
             "complete": result.is_ok(),
             "ffn_wire": (!args.v3_ffn_shards.is_empty()).then_some(args.v3_ffn_wire.as_deref().unwrap_or("binary")),
             "positions": rows.len(),
@@ -324,9 +328,8 @@ impl BackendVisitor for Runner<'_> {
                 .v3_ffn_wire
                 .as_deref()
                 .is_some_and(|w| w != "binary")
-                || self.args.v3_profile.is_some()
             {
-                return Err("routed expert placement currently requires binary HTTP and does not support --v3-profile".into());
+                return Err("routed expert placement currently requires binary HTTP".into());
             }
             let token = self
                 .args

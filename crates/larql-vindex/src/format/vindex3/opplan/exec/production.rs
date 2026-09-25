@@ -1492,6 +1492,7 @@ impl ProductionBackend {
         call: RoutedFfnCall<'_>,
         placed: Option<(usize, &dyn super::routed_experts::RoutedExpertProvider)>,
     ) -> Result<Vec<f32>, VindexError> {
+        let started = super::profile::enabled().then(std::time::Instant::now);
         let selected = {
             let _stage = stage(Stage::Router);
             let routed_input = router_input(&call)?;
@@ -1504,6 +1505,7 @@ impl ProductionBackend {
             let mut logits = matmul_vec(&routed_input, call.router, call.experts, k);
             select_experts(&call, &mut logits)?
         };
+        let router_ns = started.map(|s| s.elapsed().as_nanos() as u64);
         routing_trace::record(&selected);
         if placed.is_none() {
             if let ExpertSlices::Separate {
@@ -1531,6 +1533,8 @@ impl ProductionBackend {
             }
         }
         let _stage = stage(Stage::RoutedExperts);
+        let dispatch = started.map(|_| std::time::Instant::now());
+        let mut local_expert_ns = 0u64;
         let rows = match placed {
             Some((layer, provider)) => {
                 let ids: Vec<usize> = selected.iter().map(|(id, _)| *id).collect();
@@ -1539,13 +1543,32 @@ impl ProductionBackend {
             None => selected
                 .iter()
                 .map(|(expert, _)| {
+                    let transform = started.map(|_| std::time::Instant::now());
+                    let row = self.expert_transform(call.expert_transform(*expert)?)?;
+                    if let Some(transform) = transform {
+                        local_expert_ns += transform.elapsed().as_nanos() as u64;
+                    }
                     Ok(super::routed_experts::ExpertOutput {
                         expert: *expert,
-                        row: self.expert_transform(call.expert_transform(*expert)?)?,
+                        row,
                     })
                 })
                 .collect::<Result<Vec<_>, VindexError>>()?,
         };
-        super::routed_experts::reduce_selected(&selected, rows, call.hidden)
+        let dispatch_ns = dispatch.map(|s| s.elapsed().as_nanos() as u64);
+        let reduction = started.map(|_| std::time::Instant::now());
+        let result = super::routed_experts::reduce_selected(&selected, rows, call.hidden);
+        if let (Some(started), Some(reduction)) = (started, reduction) {
+            let reduction_ns = reduction.elapsed().as_nanos() as u64;
+            super::profile::record_provider_call(serde_json::json!({
+                "kind": "routed_ffn", "layer": super::profile::current_layer(),
+                "remote": placed.is_some(), "selected_count": selected.len(),
+                "router_ns": router_ns, "dispatch_ns": dispatch_ns,
+                "local_expert_ns": placed.is_none().then_some(local_expert_ns),
+                "reduction_ns": reduction_ns, "total_ns": started.elapsed().as_nanos() as u64,
+                "complete": result.is_ok(),
+            }));
+        }
+        result
     }
 }

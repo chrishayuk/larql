@@ -663,6 +663,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let first = ops.first_layer();
         for (offset, state) in ops.layers().iter().enumerate() {
             let index = first + offset;
+            profile.layer(index);
             let layer = &self.plan.layers[index];
             profile.phase(super::profile::Phase::Attention);
             // ── Attention site ──

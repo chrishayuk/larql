@@ -54,6 +54,11 @@ pub async fn forward(
     State(state): State<Arc<AppState>>,
     request: axum::extract::Request,
 ) -> Result<Response, ServerError> {
+    let profiling = request
+        .headers()
+        .get(wire::PROFILE_HEADER)
+        .is_some_and(|h| h == "1");
+    let started = profiling.then(std::time::Instant::now);
     if request
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
@@ -89,16 +94,36 @@ pub async fn forward(
             "layer or expert outside worker ownership".into(),
         ));
     }
-    let output = tokio::task::spawn_blocking(move || {
-        model.expert_wire.as_ref().unwrap().execution.apply(
-            request.layer,
-            &request.experts,
-            &request.row,
-        )
+    let mut timing = wire::WorkerTiming::default();
+    if let Some(started) = started {
+        timing.decode_ns = started.elapsed().as_nanos() as u64;
+    }
+    let queued = profiling.then(std::time::Instant::now);
+    let (output, mut timing) = tokio::task::spawn_blocking(move || {
+        if let Some(queued) = queued {
+            timing.queue_ns = queued.elapsed().as_nanos() as u64;
+        }
+        let execute = profiling.then(std::time::Instant::now);
+        let output = model
+            .expert_wire
+            .as_ref()
+            .unwrap()
+            .execution
+            .apply_profiled(
+                request.layer,
+                &request.experts,
+                &request.row,
+                profiling.then_some(&mut timing.experts_ns),
+            )
+            .map_err(|e| ServerError::BadRequest(e.to_string()))?;
+        if let Some(execute) = execute {
+            timing.execute_ns = execute.elapsed().as_nanos() as u64;
+        }
+        Ok::<_, ServerError>((output, timing))
     })
     .await
-    .map_err(|e| ServerError::Internal(e.to_string()))?
-    .map_err(|e| ServerError::BadRequest(e.to_string()))?;
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let encode = profiling.then(std::time::Instant::now);
     let rows: Vec<_> = output.into_iter().map(|r| (r.expert, r.row)).collect();
     let bytes = wire::encode_response(
         request.handle,
@@ -108,9 +133,22 @@ pub async fn forward(
         &rows,
     )
     .map_err(ServerError::Internal)?;
-    Ok((
+    let mut response = (
         [(axum::http::header::CONTENT_TYPE, wire::CONTENT_TYPE)],
         bytes,
     )
-        .into_response())
+        .into_response();
+    if let (Some(started), Some(encode)) = (started, encode) {
+        timing.encode_ns = encode.elapsed().as_nanos() as u64;
+        timing.handler_ns = started.elapsed().as_nanos() as u64;
+        let value =
+            serde_json::to_string(&timing).map_err(|e| ServerError::Internal(e.to_string()))?;
+        response.headers_mut().insert(
+            wire::PROFILE_HEADER,
+            value
+                .parse()
+                .map_err(|e| ServerError::Internal(format!("expert timing header: {e}")))?,
+        );
+    }
+    Ok(response)
 }

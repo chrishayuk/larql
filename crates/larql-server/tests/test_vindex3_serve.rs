@@ -1621,10 +1621,42 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
             let mut local_b = runtime.session().unwrap();
             let bits = |row: Vec<f32>| row.into_iter().map(f32::to_bits).collect::<Vec<_>>();
             for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
+                let capture =
+                    larql_inference::vindex3::dense_ffn::profile::Capture::start().unwrap();
+                let profiled = remote_a.step(id).unwrap();
+                let trace = capture.finish();
+                assert_eq!(bits(profiled), bits(local_a.step(id).unwrap()));
+                assert_eq!(trace.len(), 1);
+                assert!(trace[0].complete);
+                let calls = &trace[0].provider_calls;
                 assert_eq!(
-                    bits(remote_a.step(id).unwrap()),
-                    bits(local_a.step(id).unwrap())
+                    calls.iter().filter(|c| c["kind"] == "routed_ffn").count(),
+                    2
                 );
+                assert_eq!(
+                    calls
+                        .iter()
+                        .filter(|c| c["kind"] == "expert_fanout")
+                        .count(),
+                    2
+                );
+                for shard in calls.iter().filter(|c| c["kind"] == "expert_shard") {
+                    assert_eq!(shard["complete"], true);
+                    let transport = &shard["transport"][0];
+                    assert_eq!(transport["worker_profile_complete"], true);
+                    assert_eq!(transport["complete"], true);
+                    let count = shard["selected_count"].as_u64().unwrap();
+                    assert_eq!(transport["request_bytes"], 40 + count * 4 + 32 * 4);
+                    assert_eq!(transport["response_bytes"], 40 + count * (4 + 32 * 4));
+                    assert!(
+                        transport["worker"]["experts_ns"].as_u64().unwrap()
+                            <= transport["worker"]["execute_ns"].as_u64().unwrap()
+                    );
+                    assert!(
+                        shard["dispatch_finish_ns"].as_u64().unwrap()
+                            >= shard["dispatch_start_ns"].as_u64().unwrap()
+                    );
+                }
                 assert_eq!(
                     bits(remote_b.step((id + 1) % VOCAB as u32).unwrap()),
                     bits(local_b.step((id + 1) % VOCAB as u32).unwrap())
@@ -1683,6 +1715,17 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
                 .unwrap()
                 .bytes()
                 .unwrap();
+            let profiled = client
+                .post(format!("{}{}", urls[0], wire::BINARY_PATH))
+                .header(reqwest::header::CONTENT_TYPE, wire::CONTENT_TYPE)
+                .header(wire::PROFILE_HEADER, "1")
+                .body(good.clone())
+                .send()
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+            assert!(profiled.headers().contains_key(wire::PROFILE_HEADER));
+            assert_eq!(first, profiled.bytes().unwrap());
             assert_eq!(
                 first,
                 post(good.clone())

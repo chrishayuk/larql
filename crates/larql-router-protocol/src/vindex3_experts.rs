@@ -5,6 +5,17 @@ pub const OPEN_PATH: &str = "/v1/vindex3/experts/open";
 pub const BINARY_PATH: &str = "/v1/vindex3/experts/binary";
 pub const CONTENT_TYPE: &str = "application/vnd.larql.v3-experts.f32";
 pub const HEADER_BYTES: usize = 40;
+/// Optional HTTP diagnostics only: never part of the exact numerical frame.
+pub const PROFILE_HEADER: &str = "x-larql-expert-profile";
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WorkerTiming {
+    pub decode_ns: u64,
+    pub queue_ns: u64,
+    pub execute_ns: u64,
+    pub experts_ns: u64,
+    pub encode_ns: u64,
+    pub handler_ns: u64,
+}
 pub type Handle = [u8; 16];
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

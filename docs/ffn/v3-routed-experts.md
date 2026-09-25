@@ -16,9 +16,10 @@ plans refuse before loading the worker payload. No legacy remote MoE backend
 is involved.
 
 `--v3-ffn-shards` selects the dense or routed provider from the bound plan.
-Routed placement currently accepts only `--v3-ffn-wire binary` (the default)
-and refuses `--v3-profile`; the dense timing schema does not describe grouped
-expert dispatch.
+Routed placement accepts only `--v3-ffn-wire binary` (the default).
+`--v3-profile PATH` records routed-operation and per-shard diagnostics beside
+the existing per-position timings. See the [exact routed profiling protocol](../../bench/v3-routed-experts/PROFILE-1.md)
+for byte accounting, parallel timing interpretation and measurement gates.
 
 ## GPT-OSS 20B example
 

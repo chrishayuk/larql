@@ -1,4 +1,5 @@
 //! Placement of selected expert transforms under V3 execution authority.
+use super::dense_ffn::profile;
 pub use super::dense_ffn::DenseFfnSession as RoutedExpertSession;
 use super::{dense_ffn::identities, distributed::artifact_identity, PreparedVindex3};
 use crate::error::InferenceError;
@@ -138,12 +139,21 @@ impl<B: PlanBackend> BoundExpertWorker<B> {
         experts: &[usize],
         row: &[f32],
     ) -> Result<Vec<ExpertOutput>, InferenceError> {
+        self.apply_profiled(layer, experts, row, None)
+    }
+    pub fn apply_profiled(
+        &self,
+        layer: usize,
+        experts: &[usize],
+        row: &[f32],
+        expert_ns: Option<&mut u64>,
+    ) -> Result<Vec<ExpertOutput>, InferenceError> {
         Ok(self
             .runtime
             .operands()
             .routed_experts()
             .expect("bound worker")
-            .apply(self.runtime.backend(), layer, experts, row)?)
+            .apply_profiled(self.runtime.backend(), layer, experts, row, expert_ns)?)
     }
 }
 struct Grid<T> {
@@ -158,6 +168,7 @@ impl<T: ExpertTransport> RoutedExpertProvider for Grid<T> {
         input: &[f32],
         experts: &[usize],
     ) -> Result<Vec<ExpertOutput>, VindexError> {
+        let started = profile::enabled().then(std::time::Instant::now);
         let owners = self
             .owners
             .get(layer)
@@ -174,28 +185,44 @@ impl<T: ExpertTransport> RoutedExpertProvider for Grid<T> {
                 .into_iter()
                 .map(|(shard, ids)| {
                     scope.spawn(move || {
-                        let rows = self
-                            .transport
-                            .forward(shard, layer, &ids, input)
-                            .map_err(VindexError::Parse)?;
-                        let binding = &self.bindings[shard];
-                        let mut seen = std::collections::BTreeSet::new();
-                        if rows.len() != ids.len()
-                            || rows.iter().any(|r| {
-                                !ids.contains(&r.expert)
-                                    || !(binding.expert_start..binding.expert_end)
-                                        .contains(&r.expert)
-                                    || !seen.insert(r.expert)
-                                    || r.row.len() != binding.program.hidden
-                                    || r.row.iter().any(|v| !v.is_finite())
-                            })
-                        {
-                            return Err(VindexError::Parse(
+                        let capture = started
+                            .map(|_| profile::Capture::start().expect("fresh dispatch thread"));
+                        let dispatch_start_ns = started.map(|s| s.elapsed().as_nanos() as u64);
+                        let result = (|| {
+                            let rows = self
+                                .transport
+                                .forward(shard, layer, &ids, input)
+                                .map_err(VindexError::Parse)?;
+                            let binding = &self.bindings[shard];
+                            let mut seen = std::collections::BTreeSet::new();
+                            if rows.len() != ids.len()
+                                || rows.iter().any(|r| {
+                                    !ids.contains(&r.expert)
+                                        || !(binding.expert_start..binding.expert_end)
+                                            .contains(&r.expert)
+                                        || !seen.insert(r.expert)
+                                        || r.row.len() != binding.program.hidden
+                                        || r.row.iter().any(|v| !v.is_finite())
+                                })
+                            {
+                                return Err(VindexError::Parse(
                                 "expert response ownership, count, width or finiteness mismatch"
                                     .into(),
                             ));
-                        }
-                        Ok(rows)
+                            }
+                            Ok(rows)
+                        })();
+                        let dispatch_finish_ns = started.map(|s| s.elapsed().as_nanos() as u64);
+                        let trace = capture.map(|c| {
+                            serde_json::json!({
+                                "kind": "expert_shard", "layer": layer, "shard": shard,
+                                "selected_count": ids.len(), "complete": result.is_ok(),
+                                "dispatch_start_ns": dispatch_start_ns,
+                                "dispatch_finish_ns": dispatch_finish_ns,
+                                "transport": c.finish_provider_calls(),
+                            })
+                        });
+                        (result, trace)
                     })
                 })
                 .collect();
@@ -206,14 +233,39 @@ impl<T: ExpertTransport> RoutedExpertProvider for Grid<T> {
                 .map(|p| {
                     p.join()
                         .map_err(|_| VindexError::Parse("expert dispatch panicked".into()))
-                        .and_then(|r| r)
                 })
                 .collect();
             let mut rows = Vec::new();
+            let mut error = None;
             for result in joined {
-                rows.extend(result?);
+                match result {
+                    Ok((result, trace)) => {
+                        if let Some(trace) = trace {
+                            profile::record_provider_call(trace);
+                        }
+                        match result {
+                            Ok(output) => rows.extend(output),
+                            Err(e) => {
+                                error.get_or_insert(e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error.get_or_insert(e);
+                    }
+                }
             }
-            Ok(rows)
+            if let Some(started) = started {
+                profile::record_provider_call(serde_json::json!({
+                    "kind": "expert_fanout", "layer": layer,
+                    "total_ns": started.elapsed().as_nanos() as u64,
+                    "complete": error.is_none(),
+                }));
+            }
+            match error {
+                Some(e) => Err(e),
+                None => Ok(rows),
+            }
         })
     }
 }
