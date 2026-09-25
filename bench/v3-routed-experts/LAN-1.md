@@ -12,8 +12,10 @@ Direct LAN-versus-loopback attribution would require contemporaneous controls.
 
 ## Worker setup
 
-Use the exact routed profiling runtime from `8e0c2bd8` on the coordinator and
-workers. Build for each host's target; different platforms will have different
+Start LAN-1 on a fresh branch from the merged distributed-FFN baseline on
+`main`, and use the same recorded source revision on coordinator and workers.
+`8e0c2bd8` identifies the historical loopback measurement runtime; its receipts
+remain unchanged. Build for each host's target; different platforms have different
 binary hashes. Preserve source revision, binary hash, CPU, memory, OS, thread
 settings, model metadata hashes and the NIC/link configuration for each host.
 Binding equality does not establish physical host identity, CPU ISA parity,
@@ -47,9 +49,9 @@ before loading the full local control to limit shared-host memory residency.
 
 ## Coordinator run
 
-Use the current harness with the existing runtime binary; changing this Python
-driver does not require rebuilding Rust. This preserves exact binary HTTP and
-F32 carriers, local routing, and production-order reduction.
+Use the harness and runtime from that recorded merged baseline. This preserves
+exact binary HTTP and F32 carriers, local routing, and production-order
+reduction. Token parity against the saved control remains a required gate.
 
 ```bash
 python3 bench/v3-routed-experts/profile_exact.py --execute \

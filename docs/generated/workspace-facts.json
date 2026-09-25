@@ -9,6 +9,7 @@
         "crates/larql-cli",
         "crates/larql-compute",
         "crates/larql-compute-metal",
+        "crates/larql-continuation-fixture",
         "crates/larql-core",
         "crates/larql-demos",
         "crates/larql-execution",
@@ -387,6 +388,31 @@
           "features": [
             "test-utils"
           ]
+        }
+      ],
+      "examples": []
+    },
+    {
+      "name": "larql-continuation-fixture",
+      "path": "crates/larql-continuation-fixture",
+      "workspace": "Cargo.toml",
+      "version": "0.2.0",
+      "description": "Test-only cdylib: the C5 continuation provider, loaded by larql-cli's C6 plugin gate",
+      "features": {
+        "gpu": [
+          "larql-vindex/gpu"
+        ]
+      },
+      "local_dependencies": [
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
         }
       ],
       "examples": []

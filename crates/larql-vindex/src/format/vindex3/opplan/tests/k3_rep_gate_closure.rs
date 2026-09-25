@@ -25,8 +25,11 @@ use crate::format::vindex3::fixtures_kimi::{
 };
 use crate::format::vindex3::graph::OperandRole;
 use crate::format::vindex3::inspect::inspect_container;
-use crate::format::vindex3::opplan::exec::execute_text;
+use crate::format::vindex3::opplan::exec::execute_slice_in;
+use crate::format::vindex3::opplan::exec::kv::RowKvState;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
+use crate::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::{
     plan_component_ops, ClosureDefect, KdaOutputGate, LayerAttention, OpPlanOutcome,
 };
@@ -92,7 +95,17 @@ fn missing(outcome: &OpPlanOutcome) -> Vec<(usize, OperandRole)> {
 fn executes(staged: &Staged) {
     let plan = staged.outcome.plan.as_ref().expect("closed");
     let store = OperandStore::open(staged.container.path(), &staged.inspection).unwrap();
-    execute_text(plan, &store, &[1, 2, 3]).expect("prepares and executes end to end");
+    // A Kimi-shape stack keeps KDA and MLA state; the one-shot forward
+    // runs over a continuation the test names (CONTINUATION-PLUGIN-1, C3).
+    execute_slice_in(
+        plan,
+        &store,
+        &[1, 2, 3],
+        &ReferenceBackend,
+        ExecutionSlice::Full,
+        &mut RowKvState::default(),
+    )
+    .expect("prepares and executes end to end");
 }
 
 /// The baseline: Kimi Linear's own forms, unchanged by this rung — the

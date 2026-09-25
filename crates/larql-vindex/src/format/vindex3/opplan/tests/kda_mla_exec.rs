@@ -419,7 +419,13 @@ fn the_kda_mla_stack_executes_and_every_state_species_survives_the_step() {
     // restarted at every step: a KDA layer whose conv window reset, or
     // an MLA layer that attended only to its own position, still
     // produces finite logits of the right length.
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut stepped = None;
     for token in prompt {
         stepped = session.step(token).unwrap().logits;

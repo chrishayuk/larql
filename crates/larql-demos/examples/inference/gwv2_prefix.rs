@@ -43,9 +43,10 @@ pub(super) fn check(
         usize_at(&e["subject_rows"])? * 8 * D,
     )?;
     let mut reports = Vec::new();
+    let continuation = row_continuation(plan)?;
     for (depth_index, depth) in DEPTHS[..7].iter().copied().enumerate() {
         frozen_source_geometry(plan, depth)?;
-        let prefix = PayloadPrefix::prepare(plan, store, backend, depth)?;
+        let prefix = PayloadPrefix::prepare(plan, store, backend, depth, &continuation)?;
         let mut positions_checked = 0;
         for item in e["rows"].as_array().unwrap() {
             let tokens: Vec<u32> = ids(&item["row"]["prompt"]["token_ids"])?
@@ -73,4 +74,23 @@ pub(super) fn check(
         &serde_json::to_vec_pretty(&report)?,
     )?;
     Ok(())
+}
+
+/// `row/v1` selected for `plan`: the probe's explicit continuation.
+fn row_continuation(
+    plan: &larql_vindex::format::vindex3::opplan::ComponentOpPlan,
+) -> Result<larql_vindex::format::vindex3::opplan::exec::continuation_registry::SelectedContinuation>
+{
+    use larql_vindex::format::vindex3::opplan::exec::{
+        continuation::plan_continuation_geometry, continuation_authority::ContinuationConfig,
+        continuation_registry::ContinuationRegistry, kv::RowFactory, kv::RowKvState,
+    };
+    let mut registry = ContinuationRegistry::new();
+    registry.register(Box::new(RowFactory))?;
+    let geometry = plan_continuation_geometry(plan)?;
+    Ok(registry.select(
+        &RowKvState::identity(),
+        &ContinuationConfig::empty(),
+        &geometry,
+    )?)
 }

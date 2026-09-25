@@ -17,7 +17,6 @@ use larql_inference::vindex3::OpenedComponent;
 use larql_vindex::format::filenames::TOKENIZER_JSON;
 use larql_vindex::format::vindex3::opplan::exec::backend::{DispatchStats, PlanBackend};
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::prefill_prepared;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
@@ -213,15 +212,15 @@ impl Timed<'_> {
         max_tokens: usize,
     ) -> Result<Generation, BoxErr> {
         let plan = &self.opened.plan;
-        let mut kv = RowKvState::default();
+        let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
 
         let prefill_started = Instant::now();
-        let out = prefill_prepared(plan, ops, self.prompt_ids, backend, &mut kv)?;
+        let out = prefill_prepared(plan, ops, self.prompt_ids, backend, &mut *kv)?;
         let logits = out.logits.ok_or(NO_HEAD)?;
         let (mut next, mut value) = argmax(&logits).ok_or(NO_LOGITS)?;
         let prefill_ms = prefill_started.elapsed().as_secs_f64() * 1e3;
 
-        let mut session = DecodeSession::over_prepared(plan, ops, backend, &mut kv)?;
+        let mut session = DecodeSession::over_prepared(plan, ops, backend, &mut *kv)?;
         let mut detok = Detokenizer::new(self.tokenizer);
         detok.seed(self.prompt_ids);
         let mut emitted = Vec::with_capacity(max_tokens);

@@ -221,7 +221,13 @@ fn a_prefilled_provider_resumes_decode_bit_for_bit() {
     let backend = ReferenceBackend::new();
 
     // Oracle: one session walks prompt + continuation entirely tokenwise.
-    let mut oracle = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut oracle = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut logits = None;
     for &token in G_TOKENS.iter() {
         logits = oracle.step(token).unwrap().logits;

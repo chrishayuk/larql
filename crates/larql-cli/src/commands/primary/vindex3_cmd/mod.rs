@@ -456,6 +456,15 @@ pub struct RepresentArgs {
     #[arg(long = "plugin", value_name = "PATH")]
     pub plugins: Vec<PathBuf>,
 
+    /// Encode under input-feature weights: `E[x^2]` per input feature from a
+    /// `sensitivity --calibration` capture of this container (the mapping
+    /// `consequence` uses; `down_proj` reconstructed and gated, `o_proj`
+    /// unweighted for want of a site). The encoder must accept weights
+    /// (plugin encoders may; shipped compilers refuse), and the pack's
+    /// recipe records the capture's digest.
+    #[arg(long, value_name = "JSON")]
+    pub moments: Option<PathBuf>,
+
     /// Objects to compile. Repeat the flag to name several; omit to
     /// compile every object carrying an eligible tensor.
     #[arg(long = "object")]
@@ -581,6 +590,7 @@ mod consequence;
 pub(crate) mod decode;
 mod exec;
 mod generate;
+mod input_moments;
 mod intervention;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub(crate) mod lowered;
@@ -775,7 +785,9 @@ fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
 /// of the operation is a number: the pack is only worth persisting if it is
 /// materially smaller than the bytes it was compiled from.
 fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> {
-    use larql_vindex::format::vindex3::represent::{compile_representation_with, RepresentSpec};
+    use larql_vindex::format::vindex3::represent::{
+        compile_representation_weighted, compile_representation_with, RepresentSpec,
+    };
 
     let mut roles = larql_vindex::format::vindex3::represent::policy::RolePolicy::default();
     for name in &args.include_roles {
@@ -852,8 +864,29 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
         lowering: None,
         representation: None,
     })?;
-    let report =
-        compile_representation_with(&args.container, &args.output, &spec, plugins.encoders)?;
+    let report = match &args.moments {
+        Some(path) => {
+            let (weights, sources) = input_moments::input_weights(&args.container, path)?;
+            println!(
+                "  moments: {} (sha256 {})",
+                path.display(),
+                &weights.digest[..16]
+            );
+            for (source, n) in &sources {
+                println!("    {source:<36} {n} tensor(s)");
+            }
+            compile_representation_weighted(
+                &args.container,
+                &args.output,
+                &spec,
+                plugins.encoders,
+                &weights,
+            )?
+        }
+        None => {
+            compile_representation_with(&args.container, &args.output, &spec, plugins.encoders)?
+        }
+    };
 
     println!("\n── compiled ──");
     println!(
@@ -889,6 +922,21 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
         human_bytes(out_total),
         ratio
     );
+    let weighted: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.weighted_tensors)
+        .sum();
+    if args.moments.is_some() {
+        let compiled: usize = report
+            .compiled_objects
+            .iter()
+            .map(|c| c.compiled_tensors)
+            .sum();
+        println!(
+            "  encoded under input-feature weights: {weighted} of {compiled} compiled tensor(s)"
+        );
+    }
     let mut protected: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for c in &report.compiled_objects {

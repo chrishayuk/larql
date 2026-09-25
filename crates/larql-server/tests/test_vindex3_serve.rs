@@ -44,6 +44,22 @@ const NEW_TOKENS: usize = 16;
 const PROMPT: &str = "[3]";
 const COMPONENT: &str = "target";
 
+fn row_continuation(
+    plan: &larql_vindex::format::vindex3::opplan::ComponentOpPlan,
+) -> larql_inference::vindex3::SelectedContinuation {
+    use larql_vindex::format::vindex3::opplan::exec::{
+        continuation::plan_continuation_geometry, continuation_authority::ContinuationConfig,
+        kv::RowKvState,
+    };
+    larql_kv::shipped_continuations()
+        .select(
+            &RowKvState::identity(),
+            &ContinuationConfig::empty(),
+            &plan_continuation_geometry(plan).unwrap(),
+        )
+        .unwrap()
+}
+
 /// Encode the miniature container and give it a servable tokenizer
 /// (`[N]` ↔ id N, no pre-tokenizer).
 fn v3_container() -> tempfile::TempDir {
@@ -1380,7 +1396,7 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
         )
         .unwrap();
         let mut remote = DenseFfnSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
-        let mut local = runtime.session().unwrap();
+        let mut local = runtime.session(&row_continuation(runtime.plan())).unwrap();
         let mut smoke = Vec::new();
         for (position, id) in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11].into_iter().enumerate() {
             use larql_inference::vindex3::dense_ffn::profile::Capture;
@@ -1617,8 +1633,8 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
                 RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
             let mut remote_b =
                 RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
-            let mut local_a = runtime.session().unwrap();
-            let mut local_b = runtime.session().unwrap();
+            let mut local_a = runtime.session(&row_continuation(runtime.plan())).unwrap();
+            let mut local_b = runtime.session(&row_continuation(runtime.plan())).unwrap();
             let bits = |row: Vec<f32>| row.into_iter().map(f32::to_bits).collect::<Vec<_>>();
             for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
                 let capture =
@@ -1667,7 +1683,13 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
                     RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
                 assert_eq!(
                     bits(failed.step(3).unwrap()),
-                    bits(runtime.session().unwrap().step(3).unwrap())
+                    bits(
+                        runtime
+                            .session(&row_continuation(runtime.plan()))
+                            .unwrap()
+                            .step(3)
+                            .unwrap()
+                    )
                 );
                 fault.store(mode, Ordering::SeqCst);
                 assert!(failed.step(17).is_err());
@@ -1676,7 +1698,7 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
                 assert!(failed.step(17).unwrap_err().to_string().contains("invalid"));
                 let mut recovered =
                     RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
-                let mut local = runtime.session().unwrap();
+                let mut local = runtime.session(&row_continuation(runtime.plan())).unwrap();
                 for id in [3, 17] {
                     assert_eq!(
                         bits(recovered.step(id).unwrap()),

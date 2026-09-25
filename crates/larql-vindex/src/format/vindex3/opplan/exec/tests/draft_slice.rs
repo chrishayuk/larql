@@ -37,7 +37,8 @@
 use crate::format::vindex3::encode::encode_system;
 use crate::format::vindex3::fixtures::hybrid_lllf_f32_model;
 use crate::format::vindex3::inspect::inspect_container;
-use crate::format::vindex3::opplan::exec::execute_slice;
+use crate::format::vindex3::opplan::exec::execute_slice_in;
+use crate::format::vindex3::opplan::exec::kv::RowKvState;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::prepared::ExecutionSlice;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -46,7 +47,7 @@ use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
 /// The same LLLF hybrid fixture QW-3.6b/3.7 traverse: three recurrent
 /// layers then a softmax one, so the draft slice meets durable
 /// continuation state rather than a pure residual stack.
-fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
+pub(super) fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
     let src = tempfile::tempdir().unwrap();
     hybrid_lllf_f32_model(src.path());
     let inventory = larql_models::inventory::build_inventory(src.path()).unwrap();
@@ -68,20 +69,22 @@ fn a_full_depth_draft_is_the_whole_stack_on_the_hybrid_fixture() {
     let depth = plan.layers.len();
     let tokens = &[1u32, 0, 2];
 
-    let full = execute_slice(
+    let full = execute_slice_in(
         &plan,
         &store,
         tokens,
         &ReferenceBackend,
         ExecutionSlice::Full,
+        &mut RowKvState::default(),
     )
     .expect("full traversal");
-    let draft = execute_slice(
+    let draft = execute_slice_in(
         &plan,
         &store,
         tokens,
         &ReferenceBackend,
         ExecutionSlice::Draft { end: depth },
+        &mut RowKvState::default(),
     )
     .expect("full-depth draft traversal");
 
@@ -103,20 +106,22 @@ fn a_shorter_draft_executes_its_prefix_and_changes_the_answer() {
     assert!(depth >= 2, "the fixture needs a layer to drop");
     let tokens = &[1u32, 0, 2];
 
-    let full = execute_slice(
+    let full = execute_slice_in(
         &plan,
         &store,
         tokens,
         &ReferenceBackend,
         ExecutionSlice::Full,
+        &mut RowKvState::default(),
     )
     .expect("full traversal");
-    let short = execute_slice(
+    let short = execute_slice_in(
         &plan,
         &store,
         tokens,
         &ReferenceBackend,
         ExecutionSlice::Draft { end: depth - 1 },
+        &mut RowKvState::default(),
     )
     .expect("shortened draft traversal");
 
@@ -138,12 +143,13 @@ fn a_draft_refuses_zero_depth_and_overdeep_requests() {
     let depth = plan.layers.len();
     let tokens = &[1u32];
     for (end, expect) in [(0usize, "at least one layer"), (depth + 1, "deeper than")] {
-        let err = execute_slice(
+        let err = execute_slice_in(
             &plan,
             &store,
             tokens,
             &ReferenceBackend,
             ExecutionSlice::Draft { end },
+            &mut RowKvState::default(),
         )
         .expect_err("a draft of depth {end} must be refused");
         assert!(
@@ -176,14 +182,22 @@ fn a_full_depth_draft_is_the_target_exactly() {
     let depth = plan.layers.len();
     eprintln!("draft_slice: {depth} layers, prompt {PROMPT_TOKENS:?}");
 
-    let full = execute_slice(&plan, &store, PROMPT_TOKENS, &backend, ExecutionSlice::Full)
-        .expect("full traversal");
-    let draft = execute_slice(
+    let full = execute_slice_in(
+        &plan,
+        &store,
+        PROMPT_TOKENS,
+        &backend,
+        ExecutionSlice::Full,
+        &mut RowKvState::default(),
+    )
+    .expect("full traversal");
+    let draft = execute_slice_in(
         &plan,
         &store,
         PROMPT_TOKENS,
         &backend,
         ExecutionSlice::Draft { end: depth },
+        &mut RowKvState::default(),
     )
     .expect("full-depth draft traversal");
 
@@ -231,14 +245,22 @@ fn one_layer_short_executes_the_prefix_and_changes_the_answer() {
     let backend = ReferenceBackend::new();
     let depth = plan.layers.len();
 
-    let full = execute_slice(&plan, &store, PROMPT_TOKENS, &backend, ExecutionSlice::Full)
-        .expect("full traversal");
-    let short = execute_slice(
+    let full = execute_slice_in(
+        &plan,
+        &store,
+        PROMPT_TOKENS,
+        &backend,
+        ExecutionSlice::Full,
+        &mut RowKvState::default(),
+    )
+    .expect("full traversal");
+    let short = execute_slice_in(
         &plan,
         &store,
         PROMPT_TOKENS,
         &backend,
         ExecutionSlice::Draft { end: depth - 1 },
+        &mut RowKvState::default(),
     )
     .expect("L-1 draft traversal");
 

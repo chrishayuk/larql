@@ -23,6 +23,10 @@ pub mod attention_residual;
 pub mod attested_fidelity;
 pub mod backend;
 pub mod continuation;
+pub mod continuation_authority;
+pub mod continuation_handoff;
+pub mod continuation_identity;
+pub mod continuation_registry;
 pub mod controls;
 pub mod conv_qkv;
 pub mod cpu;
@@ -63,6 +67,7 @@ pub mod prepared;
 pub mod production;
 pub mod profile;
 pub mod provenance;
+mod provider_identity;
 pub mod quantise;
 pub mod realization;
 pub mod reference;
@@ -464,12 +469,36 @@ pub fn execute_slice<'s, B: PlanBackend + ?Sized>(
     backend: &B,
     slice: ExecutionSlice,
 ) -> Result<ExecutionTrace, VindexError> {
-    let store = store.into();
+    execute_slice_over(plan, store.into(), tokens, backend, slice, None)
+}
+
+/// [`execute_slice`] over continuation state the caller selected — the
+/// form a stack with state beyond softmax attention requires. `state`
+/// must be fresh (position 0); it holds whatever the traversal appends.
+pub fn execute_slice_in<'s, B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: impl Into<OperandSource<'s>>,
+    tokens: &[u32],
+    backend: &B,
+    slice: ExecutionSlice,
+    state: &mut dyn KvState,
+) -> Result<ExecutionTrace, VindexError> {
+    execute_slice_over(plan, store.into(), tokens, backend, slice, Some(state))
+}
+
+fn execute_slice_over<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: OperandSource<'_>,
+    tokens: &[u32],
+    backend: &B,
+    slice: ExecutionSlice,
+    state: Option<&mut dyn KvState>,
+) -> Result<ExecutionTrace, VindexError> {
     let mut embedded = Plane::Rows(Vec::new());
     let mut layers = Vec::with_capacity(plan.layers.len());
     let mut executed_layers = Vec::with_capacity(plan.layers.len());
     let ops = PreparedOperands::load(plan, store, backend, slice)?;
-    let out = execute_prepared_streaming(plan, &ops, tokens, backend, None, &mut |event| {
+    let mut sink = |event: PlaneEvent| {
         match event {
             PlaneEvent::Embedded(plane) => embedded = plane.clone(),
             PlaneEvent::Layer { index, trace } => {
@@ -484,7 +513,17 @@ pub fn execute_slice<'s, B: PlanBackend + ?Sized>(
             | PlaneEvent::AttentionResidualBoundary(_) => {}
         }
         Ok(())
-    })?;
+    };
+    let out = execute_prepared_streaming_with(
+        plan,
+        &ops,
+        tokens,
+        backend,
+        None,
+        &mut sink,
+        state,
+        Mutation::None,
+    )?;
     Ok(ExecutionTrace {
         embedded,
         layers,
@@ -513,6 +552,21 @@ pub fn execute_plan_streaming<'s, B: PlanBackend + ?Sized>(
     execute_prepared_streaming(plan, &ops, tokens, backend, resume, sink)
 }
 
+/// [`execute_plan_streaming`] over continuation state the caller
+/// selected (see [`execute_slice_in`]).
+pub fn execute_plan_streaming_in<'s, B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: impl Into<OperandSource<'s>>,
+    tokens: &[u32],
+    backend: &B,
+    resume: Option<ResumePoint>,
+    sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
+    state: &mut dyn KvState,
+) -> Result<FinalOutput, VindexError> {
+    let ops = PreparedOperands::load(plan, store, backend, ExecutionSlice::Full)?;
+    execute_prepared_streaming_in(plan, &ops, tokens, backend, resume, sink, state)
+}
+
 /// [`execute_plan_streaming`] over operands the caller already
 /// prepared. One-shot callers keep the source-taking form above, which
 /// prepares and discards; a server prepares once and calls this.
@@ -524,13 +578,46 @@ pub fn execute_prepared_streaming<B: PlanBackend + ?Sized>(
     resume: Option<ResumePoint>,
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
 ) -> Result<FinalOutput, VindexError> {
-    execute_prepared_streaming_with(plan, ops, tokens, backend, resume, sink, Mutation::None)
+    execute_prepared_streaming_with(
+        plan,
+        ops,
+        tokens,
+        backend,
+        resume,
+        sink,
+        None,
+        Mutation::None,
+    )
+}
+
+/// [`execute_prepared_streaming`] over continuation state the caller
+/// selected (see [`execute_slice_in`]).
+pub fn execute_prepared_streaming_in<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    ops: &PreparedOperands,
+    tokens: &[u32],
+    backend: &B,
+    resume: Option<ResumePoint>,
+    sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
+    state: &mut dyn KvState,
+) -> Result<FinalOutput, VindexError> {
+    execute_prepared_streaming_with(
+        plan,
+        ops,
+        tokens,
+        backend,
+        resume,
+        sink,
+        Some(state),
+        Mutation::None,
+    )
 }
 
 /// [`execute_prepared_streaming`] under a deliberate defect — the
 /// wave-19b negative controls on the batch path. Test-only: production
 /// has exactly one way in, and it passes [`Mutation::None`].
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_prepared_streaming_mutated<B: PlanBackend + ?Sized>(
     plan: &ComponentOpPlan,
     ops: &PreparedOperands,
@@ -539,10 +626,12 @@ pub(super) fn execute_prepared_streaming_mutated<B: PlanBackend + ?Sized>(
     resume: Option<ResumePoint>,
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
     mutation: Mutation,
+    state: Option<&mut dyn KvState>,
 ) -> Result<FinalOutput, VindexError> {
-    execute_prepared_streaming_with(plan, ops, tokens, backend, resume, sink, mutation)
+    execute_prepared_streaming_with(plan, ops, tokens, backend, resume, sink, state, mutation)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     plan: &ComponentOpPlan,
     ops: &PreparedOperands,
@@ -550,6 +639,7 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     backend: &B,
     resume: Option<ResumePoint>,
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
+    state: Option<&mut dyn KvState>,
     mutation: Mutation,
 ) -> Result<FinalOutput, VindexError> {
     // A pin whose provider has gone or changed invalidates the image;
@@ -565,16 +655,19 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
         ));
     }
     ops.ensure_lowered_by(backend)?;
-    // A one-shot forward owns whatever continuation state the plan needs.
-    //
-    // For a wholly-softmax stack that is nothing: `None` keeps the
-    // existing behaviour exactly, including not materialising KV rows a
-    // caller never asked for. A stack with a recurrence has no such
-    // choice — its layers cannot run without durable buffers — so this
-    // allocates them for the duration of the call. The provider starts at
-    // position 0, which keeps every softmax layer on the batched
-    // attention path it already took.
-    if plan.layers.iter().all(|l| l.attention.softmax().is_some()) {
+    // A one-shot forward starts a sequence, so any state it is given must
+    // be fresh; it then runs over that state exactly as prefill would.
+    if let Some(state) = state {
+        if state.position() != 0 {
+            return Err(VindexError::Parse(format!(
+                "a one-shot forward starts a sequence, but its continuation state is already \
+                 at position {}; resuming is prefill's job",
+                state.position()
+            )));
+        }
+        state.prepare_continuation(
+            &continuation::plan_continuation_geometry(plan).map_err(VindexError::Parse)?,
+        )?;
         return traverse(
             plan,
             ops,
@@ -582,14 +675,23 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
             backend,
             resume,
             sink,
-            None::<&mut dyn KvState>,
+            Some(state),
             mutation,
         );
     }
-    let mut owned = kv::RowKvState::default();
-    owned.prepare_continuation(
-        &continuation::plan_continuation_geometry(plan).map_err(VindexError::Parse)?,
-    )?;
+    // Without state, only a wholly-softmax stack can run: `None` keeps its
+    // behaviour exactly, including not materialising KV rows a caller
+    // never asked for. A stack with a recurrence cannot run without
+    // durable buffers, and the executor does not choose who holds them —
+    // that is the caller's selection (CONTINUATION-PLUGIN-1, C3). It
+    // refuses rather than manufacturing a default provider.
+    if let Some(layer) = first_stateful_layer(plan) {
+        return Err(VindexError::Parse(format!(
+            "layer {layer} keeps continuation state beyond softmax attention; a one-shot \
+             forward over this stack needs a continuation provider the caller selected — use \
+             the `_in` form of this call"
+        )));
+    }
     traverse(
         plan,
         ops,
@@ -597,9 +699,24 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
         backend,
         resume,
         sink,
-        Some(&mut owned),
+        None::<&mut dyn KvState>,
         mutation,
     )
+}
+
+/// Whether a one-shot forward over `plan` needs continuation state the
+/// caller selected — the `_in` forms of the execute calls. True when any
+/// layer's attention is not softmax (a recurrence, a conv history, a
+/// latent cache): the one rule the executor applies, exposed so a caller
+/// asks it rather than re-deriving it.
+pub fn requires_continuation(plan: &ComponentOpPlan) -> bool {
+    first_stateful_layer(plan).is_some()
+}
+
+fn first_stateful_layer(plan: &ComponentOpPlan) -> Option<usize> {
+    plan.layers
+        .iter()
+        .position(|l| l.attention.softmax().is_none())
 }
 
 /// Batch prefill (VI3-INF-3): the batch traversal over `tokens`,

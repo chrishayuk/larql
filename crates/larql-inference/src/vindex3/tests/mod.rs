@@ -27,7 +27,11 @@ use larql_vindex::format::vindex3::fixtures::{
 };
 use larql_vindex::format::vindex3::inspect::inspect_container;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
+use larql_vindex::format::vindex3::opplan::exec::kv::{RowFactory, RowKvState};
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -35,9 +39,25 @@ use larql_vindex::format::vindex3::opplan::plan_component_ops;
 
 use super::{
     continue_session_masked, generate_session, plan_kv_geometry, KvState, LogitsSession,
-    RecordingObserver, RowKvState, StepEvent, Vindex3Runtime, Vindex3Session,
+    RecordingObserver, SelectedContinuation, StepEvent, Vindex3Runtime, Vindex3Session,
 };
 use crate::error::InferenceError;
+use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
+
+/// `row/v1` selected for `plan` — the explicit continuation these tests
+/// name now that sessions have no default (CONTINUATION-PLUGIN-1, C3).
+pub(super) fn row(plan: &ComponentOpPlan) -> SelectedContinuation {
+    let mut registry = ContinuationRegistry::new();
+    registry.register(Box::new(RowFactory)).unwrap();
+    let geometry = plan_continuation_geometry(plan).unwrap();
+    registry
+        .select(
+            &RowKvState::identity(),
+            &ContinuationConfig::empty(),
+            &geometry,
+        )
+        .unwrap()
+}
 use crate::layer_graph::generate::eos::EosConfig;
 use crate::layer_graph::generate::sampling::SamplingConfig;
 
@@ -304,7 +324,13 @@ fn harness_decode<B: PlanBackend>(
     assert!(outcome.closed(), "harness fixture must close");
     let plan = outcome.plan.unwrap();
     let store = OperandStore::open(container, &inspection).unwrap();
-    let mut session = DecodeSession::new(&plan, &store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
 
     let mut logits = None;
     for &token in prompt {
@@ -338,7 +364,7 @@ fn assert_seam_parity<B: PlanBackend>(backend_for_harness: &B, backend_for_runti
     // Logits stream, bit-for-bit: prefill equals the harness's
     // prompt-final row; each subsequent step equals the harness's row
     // for the same emitted id.
-    let mut session = runtime.session().unwrap();
+    let mut session = runtime.session(&row(runtime.plan())).unwrap();
     let prefill = session.prefill(&G_TOKENS).unwrap();
     assert_eq!(prefill, harness_rows[0], "prefill logits diverge");
     assert_eq!(session.position(), G_TOKENS.len());
@@ -350,7 +376,7 @@ fn assert_seam_parity<B: PlanBackend>(backend_for_harness: &B, backend_for_runti
     // Sixteen greedy tokens through the generation driver, on a fresh
     // session from the same runtime.
     let mut streamed = Vec::new();
-    let mut session = runtime.session().unwrap();
+    let mut session = runtime.session(&row(runtime.plan())).unwrap();
     let result = generate_session(
         &mut session,
         &G_TOKENS,
@@ -387,7 +413,7 @@ fn the_parity_instrument_detects_a_diverged_prompt() {
     let (_, harness_rows) = harness_decode(container.path(), &backend, &G_TOKENS, 1);
 
     let runtime = Vindex3Runtime::open(container.path(), COMPONENT, backend).unwrap();
-    let mut session = runtime.session().unwrap();
+    let mut session = runtime.session(&row(runtime.plan())).unwrap();
     let mut reversed = G_TOKENS.to_vec();
     reversed.reverse();
     assert_ne!(reversed, G_TOKENS.to_vec());
@@ -411,7 +437,7 @@ fn dense_runtime_matches_the_decode_harness_bit_for_bit() {
         Vindex3Runtime::open(container.path(), COMPONENT, ReferenceBackend::new()).unwrap();
     assert_eq!(runtime.plan().component, COMPONENT);
     assert!(!runtime.backend().name().is_empty());
-    let mut session = runtime.session().unwrap();
+    let mut session = runtime.session(&row(runtime.plan())).unwrap();
     let result = generate_session(
         &mut session,
         &prompt,
@@ -437,7 +463,7 @@ fn a_caller_owned_kv_state_generates_identically_and_outlives_the_session() {
     let runtime =
         Vindex3Runtime::open(container.path(), COMPONENT, ReferenceBackend::new()).unwrap();
 
-    let mut default_session = runtime.session().unwrap();
+    let mut default_session = runtime.session(&row(runtime.plan())).unwrap();
     let baseline = generate_session(
         &mut default_session,
         &G_TOKENS,
@@ -537,7 +563,7 @@ fn an_empty_prompt_is_refused() {
     let container = container_with(miniature_glimmer);
     let runtime =
         Vindex3Runtime::open(container.path(), COMPONENT, ReferenceBackend::new()).unwrap();
-    let mut session = runtime.session().unwrap();
+    let mut session = runtime.session(&row(runtime.plan())).unwrap();
     let err = session.prefill(&[]).unwrap_err();
     assert!(
         err.to_string().contains("at least one prompt token"),
@@ -610,7 +636,12 @@ fn a_plan_without_an_output_head_is_refused() {
     plan.output = None;
     let store = OperandStore::open(container.path(), &inspection).unwrap();
     let backend = ReferenceBackend::new();
-    let err = match Vindex3Session::new(&plan, &store, &backend) {
+    let err = match Vindex3Session::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    ) {
         Ok(_) => panic!("a headless plan must be refused"),
         Err(err) => err,
     };
@@ -737,8 +768,8 @@ fn an_observed_session_step_is_bit_identical_and_records_boundaries() {
     let runtime =
         Vindex3Runtime::open(container.path(), COMPONENT, ReferenceBackend::new()).unwrap();
 
-    let mut plain = runtime.session().unwrap();
-    let mut observed = runtime.session().unwrap();
+    let mut plain = runtime.session(&row(runtime.plan())).unwrap();
+    let mut observed = runtime.session(&row(runtime.plan())).unwrap();
     let mut recorder = RecordingObserver::default();
     for &token in G_TOKENS.iter() {
         let a = plain.step(token).unwrap();
@@ -770,7 +801,7 @@ fn execute_streaming_matches_prefill_and_taps_every_layer() {
 
     let mut tapped: Vec<(usize, usize)> = Vec::new();
     let output = runtime
-        .execute_streaming(&G_TOKENS, &mut |event| {
+        .execute_streaming(&G_TOKENS, &row(runtime.plan()), &mut |event| {
             if let super::PlaneEvent::Layer { index, trace } = event {
                 tapped.push((index, trace.post_layer.rows().len()));
             }
@@ -799,7 +830,7 @@ fn execute_streaming_surfaces_a_sink_error() {
     let runtime =
         Vindex3Runtime::open(container.path(), COMPONENT, ReferenceBackend::new()).unwrap();
     let err = runtime
-        .execute_streaming(&G_TOKENS, &mut |_| {
+        .execute_streaming(&G_TOKENS, &row(runtime.plan()), &mut |_| {
             Err(larql_vindex::VindexError::Parse("stop here".into()))
         })
         .expect_err("the sink's error must surface");
@@ -839,7 +870,7 @@ fn overlaid_entry_points_are_bit_identical_when_empty_and_observe_edits() {
     let mut kv = RowKvState::default();
     let prefill = runtime.prefill_into(&G_TOKENS, &mut kv).unwrap();
     let streamed = runtime
-        .execute_streaming(&G_TOKENS, &mut |_| Ok(()))
+        .execute_streaming(&G_TOKENS, &row(runtime.plan()), &mut |_| Ok(()))
         .unwrap();
 
     // Empty overlay: bit-identical on every entry point.
@@ -853,17 +884,19 @@ fn overlaid_entry_points_are_bit_identical_when_empty_and_observe_edits() {
     );
     assert_eq!(
         runtime
-            .execute_streaming_overlaid(&G_TOKENS, &empty, &mut |_| Ok(()))
+            .execute_streaming_overlaid(&G_TOKENS, &empty, &row(runtime.plan()), &mut |_| Ok(()))
             .unwrap()
             .logits,
         streamed.logits
     );
     let step_plain = {
-        let mut session = runtime.session().unwrap();
+        let mut session = runtime.session(&row(runtime.plan())).unwrap();
         session.step(G_TOKENS[0]).unwrap()
     };
     let step_overlaid = {
-        let mut session = runtime.session_overlaid(&empty).unwrap();
+        let mut session = runtime
+            .session_overlaid(&empty, &row(runtime.plan()))
+            .unwrap();
         session.step(G_TOKENS[0]).unwrap()
     };
     assert_eq!(step_plain, step_overlaid);
@@ -891,7 +924,7 @@ fn overlaid_entry_points_are_bit_identical_when_empty_and_observe_edits() {
         },
     );
     let out = runtime
-        .execute_streaming_overlaid(&G_TOKENS, &edited, &mut |_| Ok(()))
+        .execute_streaming_overlaid(&G_TOKENS, &edited, &row(runtime.plan()), &mut |_| Ok(()))
         .unwrap();
     assert_ne!(out.logits, streamed.logits, "the edit must be observed");
     // …and the resolver serves the effective row.
@@ -909,6 +942,7 @@ mod via_tests {
     use super::super::*;
     use larql_vindex::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
     use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+    use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
     use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
     use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
 

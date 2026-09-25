@@ -297,7 +297,13 @@ fn stepping_a_hybrid_stack_matches_the_batched_traversal() {
     let batch_logits = run(&plan, &store, &tokens, &mut batched).unwrap();
 
     // Stepped: one position at a time, state carried in place.
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut last = Vec::new();
     for &token in &tokens {
         last = session

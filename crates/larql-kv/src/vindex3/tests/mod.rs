@@ -19,6 +19,9 @@
 //! executable plan alone — `larql-kv` consults no `ModelArchitecture`
 //! anywhere on this path.
 
+mod registry_parity;
+mod resume_anti_cheat;
+
 use larql_vindex::format::vindex3::fixtures::{
     encode_fixture_container, miniature_glimmer, G_HEAD_DIM, G_KV_HEADS, G_LAYERS, G_TOKENS,
     G_WINDOW,
@@ -501,4 +504,47 @@ fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
     assert_eq!(rows[0][1].to_bits(), (-0.0f32).to_bits());
     assert_eq!(state.keys(0), &[vec![4.0, 5.0]]);
     assert_eq!(state.position(), 1);
+}
+
+/// C1 of CONTINUATION-PLUGIN-1: the canonical provider names itself, and
+/// the two built-ins are distinct authorities — the handoff that will carry
+/// an identity (C4) must be able to tell them apart.
+#[test]
+fn canonical_states_a_valid_identity_distinct_from_row() {
+    let canonical = CanonicalKvState::identity();
+    canonical.validate().unwrap();
+    assert_eq!(canonical.to_string(), "canonical/v1");
+    assert_ne!(canonical, RowKvState::identity());
+}
+
+/// C2: the shipped registry is a fresh VALUE on every call — registering
+/// into one leaves the next untouched — and it holds exactly the two
+/// built-ins, each selectable against a real plan's geometry.
+#[test]
+fn shipped_continuations_is_a_fresh_value_holding_both_built_ins() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+    use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+
+    let mut first = crate::shipped_continuations();
+    assert_eq!(
+        first.identities(),
+        [RowKvState::identity(), CanonicalKvState::identity()]
+    );
+    let dup = first
+        .register(Box::new(crate::CanonicalFactory))
+        .unwrap_err();
+    assert!(dup.to_string().contains("canonical/v1"), "{dup}");
+    assert_eq!(crate::shipped_continuations().len(), 2);
+
+    let (_dir, plan, _store) = fixture();
+    let geometry = plan_continuation_geometry(&plan).unwrap();
+    for identity in first.identities() {
+        let selected = first
+            .select(&identity, &ContinuationConfig::empty(), &geometry)
+            .unwrap();
+        assert_eq!(selected.authority().identity, identity);
+        let mut built = selected.build();
+        built.prepare_continuation(&geometry).unwrap();
+        assert_eq!(built.position(), 0);
+    }
 }

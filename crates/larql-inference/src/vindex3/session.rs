@@ -1,6 +1,7 @@
 //! The format-neutral session contract and its VINDEX3 realisation.
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::BoxedContinuation;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
 use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandSource;
@@ -61,18 +62,20 @@ pub struct Vindex3Session<'a, B: PlanBackend> {
 
 impl<'a, B: PlanBackend> Vindex3Session<'a, B> {
     /// Load the plan's operands and open an incremental session at
-    /// position zero. The plan must carry an output head — a session
-    /// that cannot produce logits cannot serve generation.
+    /// position zero over `state` — a fresh provider the caller built,
+    /// normally from a selection. The plan must carry an output head — a
+    /// session that cannot produce logits cannot serve generation.
     pub fn new<'s>(
         plan: &'a ComponentOpPlan,
         store: impl Into<OperandSource<'s>>,
         backend: &'a B,
+        state: BoxedContinuation,
     ) -> Result<Self, InferenceError> {
         if plan.output.is_none() {
             return Err(headless_plan_error(&plan.component));
         }
         Ok(Self {
-            inner: DecodeSession::new(plan, store, backend)?,
+            inner: DecodeSession::new(plan, store, backend, state)?,
         })
     }
 

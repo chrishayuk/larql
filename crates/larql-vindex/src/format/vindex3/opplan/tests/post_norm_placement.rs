@@ -195,7 +195,13 @@ fn site_input(
     site: InputSite,
 ) -> Vec<f32> {
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(plan, store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut capture = SiteCapture {
         layer,
         site: Some(site),
@@ -235,7 +241,13 @@ fn a_post_norm_layer_still_runs_its_ffn_over_the_raw_residual() {
 
 fn attention_input(plan: &ComponentOpPlan, store: &OperandStore, layer: usize) -> Vec<f32> {
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(plan, store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut capture = SiteCapture {
         layer,
         site: Some(InputSite::Attention),
@@ -325,16 +337,26 @@ fn placement_is_load_bearing_end_to_end() {
     let (_c2, pre, store2) = plan_of(Estate::PreNorm);
     let backend = ReferenceBackend::new();
 
-    let a = DecodeSession::new(&post, &store, &backend)
-        .unwrap()
-        .step(TOKEN)
-        .unwrap()
-        .logits;
-    let b = DecodeSession::new(&pre, &store2, &backend)
-        .unwrap()
-        .step(TOKEN)
-        .unwrap()
-        .logits;
+    let a = DecodeSession::new(
+        &post,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap()
+    .step(TOKEN)
+    .unwrap()
+    .logits;
+    let b = DecodeSession::new(
+        &pre,
+        &store2,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap()
+    .step(TOKEN)
+    .unwrap()
+    .logits;
     let a = a.expect("post-norm step returns logits");
     let b = b.expect("pre-norm step returns logits");
     assert_eq!(a.len(), b.len());

@@ -122,6 +122,7 @@ fn gemma3_vision_source_produces_distinct_finite_unscaled_prefixes() {
         eos: &eos,
         engine: "test",
         args: &args,
+        continuations: &larql_kv::shipped_continuations(),
     };
     let rows = inputs::image_inputs(&model, &[1, 2]).unwrap();
     assert_eq!(rows.len(), 2 * 258 + 2);

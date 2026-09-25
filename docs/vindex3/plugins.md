@@ -4,13 +4,14 @@
 [Execution](execution.md) · [Status](status.md).
 
 A plugin is a shared library (`.dylib` / `.so`) that adds what this build
-does not ship. It can register three kinds of thing:
+does not ship. It can register four kinds of thing:
 
 | Kind | Trait | What it adds |
 |---|---|---|
 | Codec | `RepresentationCodec` | Reads a stored encoding: a new `dtype` label a container may hold |
 | Encoder | `RepresentationEncoder` | Writes that encoding, so `represent --encoding <LABEL>` can compile a pack in it |
 | Lowering provider | `PlanBackend` | Executes a planned graph: select a realization per operand, run projections, possibly over the codec's own bytes |
+| Continuation provider | `ContinuationFactory` | Holds a conversation's state between steps: K/V rows, recurrent buffers, latent rows |
 
 A plugin is named on the command line and loaded for that command only.
 Nothing is discovered: a library not passed with `--plugin` is never opened.
@@ -22,7 +23,7 @@ trait objects only when both were compiled **by the same compiler from the
 same `larql-vindex` commit**. Every plugin exports a C-ABI stamp,
 
 ```text
-larql-plugin/1 larql-vindex/<version> (<rustc version>) commit <sha>
+larql-plugin/2 larql-vindex/<version> (<rustc version>) commit <sha>
 ```
 
 and the host compares it with its own before calling anything Rust-typed. A
@@ -64,6 +65,7 @@ fn register(r: &mut PluginRegistrar) {
     r.codec(Box::new(MyCodec));    // read MY_CODEC packs
     r.encoder(Box::new(MyCodec));  // compile MY_CODEC packs (optional)
     r.lowering(|| Box::new(MyProvider::new())); // execute them (optional)
+    r.continuation(Box::new(MyStateFactory));   // hold conversation state (optional)
 }
 
 larql_vindex::larql_plugin!(register);
@@ -88,6 +90,14 @@ fn encode_packed(&self, values: &[f32], shape: &[usize],
 whose bytes, handed back to `decode_packed`, must decode to what this codec's
 own `decode_rows` produces. A lossy encoder need not invert its input; it must
 be stable under its own round trip.
+
+An encoder may also implement `encode_packed_weighted(…, input_weights: &[f64])`,
+minimising `Σ_rows Σ_i input_weights[i]·(w − ŵ)²` with one weight per input
+feature; `represent --moments` calls it. The default refuses
+(`WeightingUnsupported`), so an encoder that cannot honour weights never
+ignores them silently. Weighting is an encoder choice: the bytes decode like
+any other pack of that codec, and the recipe (`codec-encoder-weighted`)
+records the weights' digest.
 
 When `represent` compiles with an encoder:
 
@@ -122,6 +132,24 @@ backend. The worked example is `crates/larql-vindex/tests/external_lowering_prov
 which registers a provider this build does not ship and executes it through
 registration alone.
 
+### Continuation providers
+
+A continuation provider is a `ContinuationFactory` registered under a
+`ContinuationIdentity` (`family/vN`). It declares the continuation regions it
+can hold (`Kv`, `LatentKv`, `Recurrent`, `KvAndRecurrent`), validates its
+`key=value` options, and builds one conversation's state. Selection matches the
+plan's geometry against the declared regions and refuses before prefill,
+naming the first layer the provider cannot hold. State is sealed with the
+provider's identity and a digest of its configuration, and resumes only under
+both (CONTINUATION-PLUGIN-1).
+
+Loaded continuation providers join the shipped ones (`row/v1`,
+`canonical/v1`) in the one registry the run selects from. A clashing identity
+is refused as a duplicate. The worked example is
+`crates/larql-kv/tests/external_continuation_provider/`; the same provider,
+built as a plugin, is `crates/larql-continuation-fixture/`, which exists only
+for the CLI's plugin gate.
+
 ## Use a plugin
 
 Three commands take `--plugin <PATH>` (repeatable):
@@ -131,11 +159,12 @@ Three commands take `--plugin <PATH>` (repeatable):
 | `larql vindex3 represent` | Encoders that `--encoding` may name, alongside `NVFP4` and the K-quants |
 | `larql vindex3 exec` | Codecs to decode the container, lowering providers `--lowering` may select |
 | `larql vindex3 measure` | The same, for both arms |
+| `larql run` (VINDEX3) | Codecs and lowering providers as for `exec`, and continuation providers `--continuation` may select |
 
 Each loaded library reports what it registered on stderr:
 
 ```text
-plugin: libmy_codec.dylib — codecs [MY_CODEC], encoders [MY_CODEC], lowerings [my-provider/v1]
+plugin: libmy_codec.dylib — codecs [MY_CODEC], encoders [MY_CODEC], lowerings [my-provider/v1], continuations []
 ```
 
 ### Compile a pack
@@ -171,6 +200,21 @@ larql vindex3 exec model-mycodec.vindex3 --backend production \
   codec and run on the backend's own kernels.
 - A lowered Metal backend (`metal-lowered*`) executes its own formats, not
   through a lowering provider, and refuses both flags.
+
+### Hold state with a plugin's continuation provider
+
+```bash
+larql run model.vindex3 "The capital of France is" \
+  --plugin ./libmy_state.dylib \
+  --continuation my-state/v1 --continuation-option bits=4 --verbose
+```
+
+- `--continuation <family/vN>` holds continuation state with that provider
+  instead of the one `--engine` names. Giving both is refused.
+- `--continuation-option key=value` (repeatable) configures it. The provider
+  accepts or refuses each option before anything runs. An option without
+  `--continuation` is refused.
+- `--verbose` reports the identity the run resolved (`continuation=my-state/v1`).
 
 ### Measure it
 

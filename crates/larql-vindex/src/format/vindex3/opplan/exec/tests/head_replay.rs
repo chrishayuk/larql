@@ -115,7 +115,13 @@ fn replay_reconstructs_the_observed_raw_norm_and_residual_path() {
     let (_dir, plan, store): (_, _, OperandStore) = fixture();
     let backend = ProductionBackend::new();
     let prepared = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full).unwrap();
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut capture = Capture::default();
     session.step_observed(3, &mut capture).unwrap();
 

@@ -133,6 +133,17 @@ pub struct RunArgs {
     #[arg(long, value_name = "SPEC")]
     pub engine: Option<String>,
 
+    /// VINDEX3 only: hold continuation state with the provider of this
+    /// identity (`family/vN`), e.g. one a `--plugin` registered, instead
+    /// of the one `--engine` names. Refused together with `--engine`.
+    #[arg(long, value_name = "FAMILY/vN")]
+    pub continuation: Option<String>,
+
+    /// A `key=value` option for the `--continuation` provider. Repeatable;
+    /// the provider accepts or refuses each before anything runs.
+    #[arg(long = "continuation-option", value_name = "KEY=VALUE")]
+    pub continuation_options: Vec<String>,
+
     /// Show the top-K prediction table for each step instead of just
     /// the argmax. Implied by `--verbose`.
     #[arg(long, default_value = "1")]

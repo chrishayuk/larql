@@ -76,7 +76,12 @@ fn decode<B: PlanBackend>(
     store: &OperandStore,
     backend: &B,
 ) -> Result<Vec<Vec<f32>>, crate::error::VindexError> {
-    let mut session = DecodeSession::new(plan, store, backend)?;
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )?;
     TOKENS
         .iter()
         .map(|&t| Ok(session.step(t)?.logits.unwrap()))

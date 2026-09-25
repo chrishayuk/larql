@@ -150,6 +150,10 @@ pub struct CompiledObject {
     /// Roles left at source precision, and how many tensors each covers —
     /// what a conservative policy actually protected.
     pub preserved: BTreeMap<Role, usize>,
+    /// Of `compiled_tensors`, how many a registered encoder encoded under
+    /// input-feature weights. The rest were encoded unweighted, because no
+    /// weights were given for them.
+    pub weighted_tensors: usize,
 }
 
 impl CompiledObject {
@@ -340,6 +344,18 @@ fn kquant_encoder_recipe() -> EncoderRecipe {
     EncoderRecipe::kquant_native_v1()
 }
 
+/// Input-feature weights for a weighted compile: per tensor, one weight per
+/// input feature (typically `E[x_i²]` over a calibration set), and the
+/// digest of the artifact they came from, which the pack's encoder recipe
+/// records.
+#[derive(Debug, Clone, Default)]
+pub struct InputWeights {
+    /// `(object, tensor)` → one weight per element of a row.
+    pub by_tensor: BTreeMap<(String, String), Vec<f64>>,
+    /// sha256 of the artifact the weights were derived from.
+    pub digest: String,
+}
+
 /// Encode one tensor with a registered encoder, at its terminal extent.
 ///
 /// `Ok(None)` means the shape cannot hold the encoding — the encoder's own
@@ -353,6 +369,7 @@ fn encode_with(
     source: &OperandSource<'_>,
     object: &str,
     tensor: &super::encode::segment::SegmentTensor,
+    input_weights: Option<&[f64]>,
 ) -> Result<Option<Vec<u8>>, VindexError> {
     let extent = encoder.terminal_extent();
     let expected = match encoder.stored_bytes(&tensor.shape, extent, &tensor.name) {
@@ -366,9 +383,11 @@ fn encode_with(
         dtype: tensor.dtype.clone(),
         shape: tensor.shape.clone(),
     })?;
-    let bytes = encoder
-        .encode_packed(&values, &tensor.shape, extent, &tensor.name)
-        .map_err(|e| VindexError::Parse(format!("tensor `{}`: {e}", tensor.name)))?;
+    let bytes = match input_weights {
+        Some(w) => encoder.encode_packed_weighted(&values, &tensor.shape, extent, &tensor.name, w),
+        None => encoder.encode_packed(&values, &tensor.shape, extent, &tensor.name),
+    }
+    .map_err(|e| VindexError::Parse(format!("tensor `{}`: {e}", tensor.name)))?;
     if let Some(expected) = expected.filter(|&n| n != bytes.len()) {
         return Err(VindexError::Parse(format!(
             "tensor `{}`: `{}` encoded {} bytes, its codec states {expected} for this shape",
@@ -397,6 +416,32 @@ pub fn compile_representation_with(
     spec: &RepresentSpec,
     encoders: &EncoderRegistry,
 ) -> Result<RepresentReport, VindexError> {
+    compile_inner(src, out, spec, encoders, None)
+}
+
+/// [`compile_representation_with`], with a registered encoder minimising
+/// the input-weighted error for every tensor `weights` covers
+/// ([`RepresentationEncoder::encode_packed_weighted`]); a tensor it does
+/// not cover is encoded unweighted and counted apart. Only a registered
+/// encoder takes weights: a shipped compiler refuses them rather than
+/// ignore them.
+pub fn compile_representation_weighted(
+    src: &Path,
+    out: &Path,
+    spec: &RepresentSpec,
+    encoders: &EncoderRegistry,
+    weights: &InputWeights,
+) -> Result<RepresentReport, VindexError> {
+    compile_inner(src, out, spec, encoders, Some(weights))
+}
+
+fn compile_inner(
+    src: &Path,
+    out: &Path,
+    spec: &RepresentSpec,
+    encoders: &EncoderRegistry,
+    weights: Option<&InputWeights>,
+) -> Result<RepresentReport, VindexError> {
     let target = if spec.encoding == DTYPE_NVFP4 {
         Target::Nvfp4
     } else if let Some(k) = kquant::lookup(&spec.encoding) {
@@ -416,6 +461,14 @@ pub fn compile_representation_with(
             }
         )));
     };
+
+    if weights.is_some() && !matches!(target, Target::Encoder(_)) {
+        return Err(VindexError::Parse(format!(
+            "input-feature weights were given, but `{}` is a shipped compiler, which \
+             takes none; only a registered encoder encodes under weights",
+            spec.encoding
+        )));
+    }
 
     let raw_index = std::fs::read_to_string(src.join(INDEX_JSON))?;
     let mut index: Vindex3Index = serde_json::from_str(&raw_index)
@@ -504,6 +557,7 @@ pub fn compile_representation_with(
         // length may depend on the values, and the table needs every
         // length before the payload. Held for one object at a time.
         let mut encoded_bytes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        let mut weighted_tensors = 0usize;
 
         for t in &header.tensors {
             // Role first, shape second. A tensor the policy preserves is
@@ -548,7 +602,13 @@ pub fn compile_representation_with(
                     .ok()
                     .map(|len| TensorEncoding::KQuant(k, len)),
                 (true, Target::Encoder(encoder)) => {
-                    encode_with(encoder, &source, &entry.object, t)?.map(|bytes| {
+                    let w = weights.and_then(|w| {
+                        w.by_tensor
+                            .get(&(entry.object.clone(), t.name.clone()))
+                            .map(Vec::as_slice)
+                    });
+                    encode_with(encoder, &source, &entry.object, t, w)?.map(|bytes| {
+                        weighted_tensors += usize::from(w.is_some());
                         let len = bytes.len();
                         encoded_bytes.insert(t.name.clone(), bytes);
                         TensorEncoding::Encoder(len)
@@ -755,6 +815,7 @@ pub fn compile_representation_with(
                 .into_iter()
                 .filter(|(_, n)| *n > 0)
                 .collect(),
+            weighted_tensors,
         });
         compiled_object_ids.insert(entry.object.clone());
 
@@ -784,7 +845,10 @@ pub fn compile_representation_with(
                 encoder: Some(match target {
                     Target::Nvfp4 => EncoderRecipe::current(),
                     Target::KQuant(_) => kquant_encoder_recipe(),
-                    Target::Encoder(encoder) => EncoderRecipe::codec(&encoder.identity()),
+                    Target::Encoder(encoder) => match weights.filter(|_| weighted_tensors > 0) {
+                        Some(w) => EncoderRecipe::codec_weighted(&encoder.identity(), &w.digest),
+                        None => EncoderRecipe::codec(&encoder.identity()),
+                    },
                 }),
             },
         ));

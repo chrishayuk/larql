@@ -2,13 +2,14 @@
 //! lowering-closure gate forbids constructing a provider in `plugin.rs`.
 
 use super::*;
+use crate::format::vindex3::opplan::exec::kv::RowFactory;
 
 #[test]
 fn abi_is_terminated_and_names_its_parts() {
     assert!(ABI.ends_with('\0'));
     assert_eq!(ABI.matches('\0').count(), 1);
     let abi = abi();
-    assert!(abi.starts_with("larql-plugin/1 larql-vindex/"), "{abi}");
+    assert!(abi.starts_with("larql-plugin/2 larql-vindex/"), "{abi}");
     assert!(abi.contains("rustc"), "{abi}");
     assert!(abi.contains(" commit "), "{abi}");
 }
@@ -28,10 +29,12 @@ fn a_registrar_returns_its_registrations_in_order() {
     registrar.codec(Box::new(Mxfp4Codec));
     registrar.encoder(Box::new(RawF32Codec));
     registrar.lowering(reference_lowering);
+    registrar.continuation(Box::new(RowFactory));
     let PluginRegistrations {
         codecs,
         encoders,
         lowerings,
+        continuations,
     } = registrar.into_parts();
     let labels: Vec<&str> = codecs.iter().map(|c| c.encoding_label()).collect();
     assert_eq!(
@@ -46,8 +49,15 @@ fn a_registrar_returns_its_registrations_in_order() {
         reference_lowering().identity(),
         "the factory builds the provider it was registered as"
     );
+    let identities: Vec<_> = continuations.iter().map(|f| f.identity()).collect();
+    assert_eq!(identities, [RowFactory.identity()]);
     let none = PluginRegistrar::default().into_parts();
-    assert!(none.codecs.is_empty() && none.encoders.is_empty() && none.lowerings.is_empty());
+    assert!(
+        none.codecs.is_empty()
+            && none.encoders.is_empty()
+            && none.lowerings.is_empty()
+            && none.continuations.is_empty()
+    );
 }
 
 #[test]
@@ -58,4 +68,14 @@ fn only_the_hosts_own_stamp_is_compatible() {
     assert!(!abi_compatible(
         "larql-plugin/1 larql-vindex/0.0.0 (rustc x) commit unknown"
     ));
+}
+
+/// A plugin built against an earlier registrar layout is refused, even
+/// from the same compiler and commit: only the contract revision differs.
+#[test]
+fn a_stamp_from_an_earlier_contract_revision_is_refused() {
+    let host = abi();
+    let earlier = host.replacen("larql-plugin/2 ", "larql-plugin/1 ", 1);
+    assert_ne!(earlier, host);
+    assert!(!abi_compatible(&earlier));
 }

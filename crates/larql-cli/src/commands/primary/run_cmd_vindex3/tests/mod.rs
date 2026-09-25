@@ -352,6 +352,7 @@ fn explicit_kv_providers_preserve_text_ids_and_stop_strings() {
     for flags in [
         vec!["--engine", "standard"],
         vec!["--engine", "row"],
+        vec!["--continuation", "row/v1"],
         vec!["--engine", "no-cache"],
         vec!["--kv-cache", "none"],
     ] {
@@ -467,6 +468,9 @@ fn cpu_profile_preserves_ids_and_refuses_to_overwrite() {
     ];
     let measured = run_capturing_with_status(&container, &flags, "").unwrap();
     assert_eq!(plain, measured);
+    let explicit_continuation = [&flags[..], &["--continuation", "row/v1"]].concat();
+    let error = run_capturing(&container, &explicit_continuation, "").unwrap_err();
+    assert!(error.contains("explicit --continuation"), "{error}");
     let text = std::fs::read_to_string(&profile).unwrap();
     let rows: Vec<serde_json::Value> = text
         .lines()
@@ -511,4 +515,32 @@ fn binary_ffn_wire_flag_is_explicit_and_scoped() {
         "q8"
     ])
     .is_err());
+}
+
+/// CONTINUATION-PLUGIN-1 C3: `--engine` is an alias, and every path
+/// reports the identity it resolved — the default, each alias, and the
+/// replay mode over the default provider. An unknown engine refuses.
+#[test]
+fn every_run_path_reports_the_continuation_identity_it_resolved() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for (flags, expected) in [
+        (vec![], "continuation=row/v1"),
+        (vec!["--engine", "row"], "continuation=row/v1"),
+        (vec!["--engine", "standard"], "continuation=canonical/v1"),
+        (
+            vec!["--engine", "no-cache"],
+            "continuation=no-cache over row/v1",
+        ),
+    ] {
+        let argv = [
+            vec![PROMPT, "--max-tokens", "2", "--verbose"],
+            flags.clone(),
+        ]
+        .concat();
+        let (_, status) = run_capturing_with_status(&container, &argv, "").unwrap();
+        assert!(status.contains(expected), "{flags:?}: {status}");
+    }
+    let err = run_capturing(&container, &[PROMPT, "--engine", "turbo-quant"], "").unwrap_err();
+    assert!(err.contains("--engine"), "{err}");
 }

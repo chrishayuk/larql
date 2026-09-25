@@ -61,6 +61,35 @@ pub trait RepresentationEncoder: RepresentationCodec {
         extent: RepresentationExtent,
         tensor: &str,
     ) -> Result<Vec<u8>, CodecError>;
+
+    /// [`encode_packed`](Self::encode_packed), choosing values that
+    /// minimise the **input-weighted** squared error
+    /// `Σ_rows Σ_i input_weights[i] · (w_ri − ŵ_ri)²` instead of the plain
+    /// one. `input_weights[i]` is one weight per input feature (per column
+    /// of the row-major matrix): typically `E[x_i²]` over a calibration
+    /// set, the diagonal of the layer's input Hessian, so the error the
+    /// encoder spends lands where the activation is small. `input_weights`
+    /// has one entry per element of a row (`shape[1..].product()`).
+    ///
+    /// The bytes are this codec's ordinary bytes: weighting is an encoder
+    /// choice, invisible to `decode_packed`.
+    ///
+    /// The default refuses: an encoder that cannot honour the weighting
+    /// must say so, never encode as if the weights were absent.
+    fn encode_packed_weighted(
+        &self,
+        values: &[f32],
+        shape: &[usize],
+        extent: RepresentationExtent,
+        tensor: &str,
+        input_weights: &[f64],
+    ) -> Result<Vec<u8>, CodecError> {
+        let _ = (values, shape, extent, input_weights);
+        Err(CodecError::WeightingUnsupported {
+            tensor: tensor.into(),
+            label: self.encoding_label().into(),
+        })
+    }
 }
 
 /// Named the same way `dyn RepresentationCodec`'s own `Debug` impl is

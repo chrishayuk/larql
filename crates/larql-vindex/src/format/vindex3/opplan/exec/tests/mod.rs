@@ -27,6 +27,9 @@ mod codec_owned_weight;
 mod compact_consumption;
 mod composed_floor;
 mod continuation;
+mod continuation_handoff;
+mod continuation_identity;
+mod continuation_registry;
 mod controls;
 mod coverage_backend_decode;
 mod coverage_device;
@@ -157,6 +160,7 @@ pub(super) use crate::format::vindex3::fixtures::{
 };
 mod latent_moe_execution;
 mod latent_moe_parity;
+mod one_shot_continuation;
 mod prefetch;
 mod sigmoid_router;
 mod stages_and_routing;
@@ -166,4 +170,21 @@ mod step_many;
 /// traversal gates use — one fixture, so the two cannot drift.
 mod hybrid_traversal_fixture {
     pub(super) use super::hybrid_traversal::hybrid;
+}
+
+/// `row/v1` selected for `plan` — the explicit continuation a test names
+/// now that the executor has no default (CONTINUATION-PLUGIN-1, C3).
+pub(crate) fn row_continuation(
+    plan: &super::super::ComponentOpPlan,
+) -> super::continuation_registry::SelectedContinuation {
+    let mut registry = super::continuation_registry::ContinuationRegistry::new();
+    registry.register(Box::new(super::kv::RowFactory)).unwrap();
+    let geometry = super::continuation::plan_continuation_geometry(plan).unwrap();
+    registry
+        .select(
+            &super::kv::RowKvState::identity(),
+            &super::continuation_authority::ContinuationConfig::empty(),
+            &geometry,
+        )
+        .unwrap()
 }

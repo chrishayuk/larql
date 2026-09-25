@@ -2214,6 +2214,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "larql-continuation-fixture"
+version = "0.2.0"
+dependencies = [
+ "larql-vindex",
+]
+
+[[package]]
 name = "larql-core"
 version = "0.2.0"
 dependencies = [

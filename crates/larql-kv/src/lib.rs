@@ -27,7 +27,7 @@ pub mod vindex3;
 pub mod vindex_compare;
 
 pub use cache::KvCache;
-pub use vindex3::CanonicalKvState;
+pub use vindex3::{shipped_continuations, CanonicalFactory, CanonicalKvState};
 
 pub use engines::apollo;
 pub use engines::boundary_kv;

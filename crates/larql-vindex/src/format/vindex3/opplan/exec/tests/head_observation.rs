@@ -119,7 +119,13 @@ fn run_narrowed<B: PlanBackend>(
     heads: bool,
     only: Option<(usize, usize)>,
 ) -> (Vec<Vec<f32>>, Witness) {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut witness = Witness {
         heads,
         only,
@@ -597,7 +603,13 @@ fn a8_a_backend_that_does_not_serve_heads_refuses_before_the_first_token() {
     let (_c, plan, store) = fixture();
     let device = DevicePlanBackend::new(LoopDevice, "loop-device-heads", WeightFormat::F32);
     assert!(!device.serves_attention_heads());
-    let mut session = DecodeSession::new(&plan, &store, &device).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &device,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut witness = Witness {
         heads: true,
         ..Witness::default()

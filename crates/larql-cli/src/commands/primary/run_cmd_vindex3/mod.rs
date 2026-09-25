@@ -38,13 +38,14 @@ use larql_inference::vindex3::OpenedComponent;
 use larql_vindex::format::filenames::TOKENIZER_JSON;
 use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use larql_vindex::tokenizers::Tokenizer;
 
+use super::continuation::{select_in, ContinuationChoice};
 use super::run_cmd::{KvCacheKind, RunArgs};
 use super::vindex3_cmd::decode::{greedy_decode, DecodeReport, Flow};
 use super::vindex3_cmd::plugins::Plugins;
@@ -188,6 +189,7 @@ fn run_inner(
         Runner {
             container,
             args,
+            continuations: &plugins.continuations,
             prepared: &prepared,
             tokenizer: &tokenizer,
             eos: &eos,
@@ -207,6 +209,7 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
     if args.v3_profile.is_some()
         && (args.prompt.is_none()
             || args.metal
+            || args.continuation.is_some()
             || !args.v3_shards.is_empty()
             || args.kv_cache != KvCacheKind::Standard
             || args
@@ -214,7 +217,7 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
                 .as_deref()
                 .is_some_and(|e| !matches!(e, "row" | "standard")))
     {
-        return Err("--v3-profile requires a prompt and CPU row/standard KV; layer replay and Metal are not covered".into());
+        return Err("--v3-profile requires a prompt and CPU row/standard KV; layer replay, Metal and explicit --continuation are not covered".into());
     }
 
     if args.v3_shard_token_env.is_some()
@@ -226,20 +229,33 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
     if !args.v3_ffn_shards.is_empty()
         && (args.metal
             || args.engine.is_some()
+            || args.continuation.is_some()
             || args.kv_cache != KvCacheKind::Standard
             || !args.v3_shards.is_empty())
     {
-        return Err("--v3-ffn-shards uses CPU with local row KV; do not combine with --metal, --engine, --kv-cache or --v3-shards".into());
+        return Err("--v3-ffn-shards uses CPU with local row KV; do not combine with --metal, --engine, --continuation, --kv-cache or --v3-shards".into());
     }
     if !args.v3_shards.is_empty()
-        && (args.metal || args.engine.is_some() || args.kv_cache != KvCacheKind::Standard)
+        && (args.metal
+            || args.engine.is_some()
+            || args.continuation.is_some()
+            || args.kv_cache != KvCacheKind::Standard)
     {
-        return Err("--v3-shards uses CPU stateless prefix replay; do not combine with --metal, --engine or --kv-cache".into());
+        return Err("--v3-shards uses CPU stateless prefix replay; do not combine with --metal, --engine, --continuation or --kv-cache".into());
+    }
+    if args.continuation.is_none() && !args.continuation_options.is_empty() {
+        return Err(
+            "--continuation-option needs --continuation to name the provider it configures".into(),
+        );
     }
     if args.mm_weights.is_some() && args.image.is_empty() {
         return Err("--mm-weights requires --image".into());
     }
-    if args.kv_cache == KvCacheKind::None && args.engine.as_deref().is_some_and(|e| e != "no-cache")
+    if args.kv_cache == KvCacheKind::None
+        && args
+            .engine
+            .as_deref()
+            .is_some_and(|e| e != crate::commands::primary::continuation::REPLAY_ENGINE)
     {
         return Err("--kv-cache none conflicts with the selected --engine".into());
     }
@@ -251,7 +267,7 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
             "--engine",
             args.engine
                 .as_deref()
-                .is_some_and(|s| !matches!(s, "standard" | "row" | "no-cache")),
+                .is_some_and(|s| !crate::commands::primary::continuation::is_known_engine(s)),
         ),
         ("--ffn", args.ffn.is_some()),
         ("--routed-from", args.routed_from.is_some()),
@@ -302,6 +318,8 @@ fn select_backend(metal: bool) -> Result<ExecBackend, BoxErr> {
 struct Runner<'a> {
     container: &'a Path,
     args: &'a RunArgs,
+    /// The shipped continuation providers plus any `--plugin` loaded.
+    continuations: &'a ContinuationRegistry,
     prepared: &'a OpenedComponent,
     tokenizer: &'a Tokenizer,
     eos: &'a EosConfig,
@@ -402,6 +420,7 @@ impl BackendVisitor for Runner<'_> {
             eos: self.eos,
             engine: &engine,
             args: self.args,
+            continuations: self.continuations,
         };
         if let Some(prompt) = self.args.prompt.as_deref() {
             return model.generate(prompt, self.out, self.status);
@@ -421,6 +440,18 @@ struct ResidentModel<'a, B: PlanBackend> {
     eos: &'a EosConfig,
     engine: &'a str,
     args: &'a RunArgs,
+    continuations: &'a ContinuationRegistry,
+}
+
+impl<B: PlanBackend> ResidentModel<'_, B> {
+    /// What this run's command line asked of continuation.
+    fn continuation_choice(&self) -> ContinuationChoice<'_> {
+        ContinuationChoice {
+            engine: self.args.engine.as_deref(),
+            identity: self.args.continuation.as_deref(),
+            options: &self.args.continuation_options,
+        }
+    }
 }
 
 impl<B: PlanBackend> ResidentModel<'_, B> {
@@ -435,6 +466,7 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         if !self.args.v3_ffn_shards.is_empty()
             || !self.args.v3_shards.is_empty()
             || self.args.engine.is_some()
+            || self.args.continuation.is_some()
             || self.args.kv_cache == KvCacheKind::None
             || !self.args.image.is_empty()
         {
@@ -447,8 +479,10 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         let ids = encoded.get_ids();
         // A brand-new continuation state per prompt. Not a reset — a
         // replacement, so there is nothing that *could* carry over.
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut kv)?;
+        let continuation = select_in(self.continuations, self.plan, &self.continuation_choice())?;
+        let mut kv = continuation.build();
+        let mut session =
+            DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *kv)?;
         let mut detok = Detokenizer::new(self.tokenizer);
         detok.seed(ids);
         let decoded = greedy_decode(&mut session, ids, self.args.max_tokens, &mut |id, _| {
@@ -476,6 +510,12 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
             )?;
         }
         if self.args.verbose {
+            writeln!(
+                status,
+                "[{}] continuation={}",
+                self.engine,
+                continuation.authority().identity
+            )?;
             writeln!(
                 status,
                 "[{}] {} prompt tokens in {:.2} s, {} generated",

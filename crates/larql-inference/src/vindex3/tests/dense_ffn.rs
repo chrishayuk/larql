@@ -264,7 +264,7 @@ fn dense_ffn_failure_invalidates_session_and_fresh_replay_recovers() {
             .contains("invalid"));
         let mut fresh = DenseFfnSession::new(runtime.plan(), &remote, runtime.backend()).unwrap();
         assert_eq!(bits(&initial), bits(&fresh.step(G_TOKENS[0]).unwrap()));
-        let mut reference = runtime.session().unwrap();
+        let mut reference = runtime.session(&row(runtime.plan())).unwrap();
         reference.step(G_TOKENS[0]).unwrap();
         assert_eq!(
             bits(&reference.step(G_TOKENS[1]).unwrap()),

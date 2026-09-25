@@ -17,8 +17,20 @@ fn an_observed_step_is_bit_identical_to_an_unobserved_one() {
     let (_c, plan, store) = super::decode::fixture();
     let backend = ReferenceBackend::new();
 
-    let mut plain = DecodeSession::new(&plan, &store, &backend).unwrap();
-    let mut observed = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut plain = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
+    let mut observed = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut recorder = RecordingObserver::default();
     for &token in G_TOKENS.iter() {
         let a = plain.step(token).unwrap().logits;
@@ -31,7 +43,13 @@ fn an_observed_step_is_bit_identical_to_an_unobserved_one() {
 fn the_event_stream_mirrors_the_plans_structure_in_execution_order() {
     let (_c, plan, store) = super::decode::fixture();
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut recorder = RecordingObserver::default();
     session.step_observed(G_TOKENS[0], &mut recorder).unwrap();
 

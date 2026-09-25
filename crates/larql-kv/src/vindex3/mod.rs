@@ -37,12 +37,16 @@
 use larql_vindex::format::vindex3::opplan::exec::continuation::{
     LatentKvRows, LayerContinuationGeometry, RecurrentState,
 };
+use larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity;
 use larql_vindex::format::vindex3::opplan::exec::kv::{
     ContinuationError, KvState, LayerKvGeometry,
 };
 use ndarray::Array2;
 
 use crate::cache::KvCache;
+
+mod registry;
+pub use registry::{shipped_continuations, CanonicalFactory};
 
 #[cfg(test)]
 mod tests;
@@ -66,6 +70,13 @@ impl LayerRows {
         }
     }
 }
+
+/// [`CanonicalKvState`]'s family ([`CanonicalKvState::identity`]): the
+/// canonical `larql-kv` cache. Revision 1 is the store as it serves rows
+/// today; it moves when the same appended history would be served back
+/// differently, never for a faster store serving the same bits.
+pub const IDENTITY_FAMILY: &str = "canonical";
+pub const IDENTITY_REVISION: u32 = 1;
 
 /// The canonical [`KvCache`] as a VINDEX3 continuation-state provider.
 ///
@@ -148,6 +159,13 @@ impl CanonicalKvState {
     /// Surrender the cache to the existing KV machinery.
     pub fn into_cache(self) -> KvCache {
         self.cache
+    }
+
+    /// This provider's continuation identity (C1 of
+    /// CONTINUATION-PLUGIN-1) — `canonical/v1`, read from this module's
+    /// constants.
+    pub fn identity() -> ContinuationIdentity {
+        ContinuationIdentity::new(IDENTITY_FAMILY, IDENTITY_REVISION)
     }
 
     /// The plan-declared geometry this provider was prepared with —
