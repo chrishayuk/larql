@@ -32,7 +32,7 @@ fn all_lists_every_stage_exactly_once() {
     );
     assert_eq!(
         Stage::ALL.len(),
-        13,
+        16,
         "a stage was added without updating ALL"
     );
 }

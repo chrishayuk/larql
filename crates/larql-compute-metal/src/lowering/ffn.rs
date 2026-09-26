@@ -115,7 +115,6 @@ impl MetalBackend {
         s: &FfnScratch<'_>,
         shape: &FfnShape,
     ) {
-        let enc = encs.stage(Stage::DenseFfn);
         // A-5b rung 2a: under two-norm placement the residual add folds
         // into the down-projection write (bit-identical), one dispatch
         // fewer per layer. Four-norm placement keeps the branch norm.
@@ -125,9 +124,31 @@ impl MetalBackend {
             }
             _ => None,
         };
+        // Each projection is its own stage so the profiler prices the
+        // GEMVs apart from the norms, the combine and the residual around
+        // them (`ffn.dense` keeps that glue); production's
+        // `SingleEncoder` ignores the marks.
+        let enc = encs.stage(Stage::DenseFfn);
+        // 1. pre-FFN norm.
+        crate::stages::input_norm::encode_f32(
+            enc,
+            &self.norms.rms_norm_pipeline,
+            h_in,
+            0,
+            w.norm_weight,
+            s.normed,
+            0,
+            shape.hidden,
+            shape.norm_eps,
+            shape.norm_weight_offset,
+        );
+        let enc = encs.stage(Stage::FfnGateUp);
+        self.encode_gate_up_from_normed(enc, w, s, shape);
+        let enc = encs.stage(Stage::DenseFfn);
+        self.encode_ffn_activation(enc, s, shape);
+        let enc = encs.stage(Stage::FfnDown);
         match fused_down {
             Some(seg) => {
-                self.encode_gated_ffn_gate_up_act(enc, h_in, w, s, shape);
                 // `_sliced` carries the segment's byte offsets. `down`
                 // is a whole-buffer resident today, so both forms agree
                 // — but the plain call silently DISCARDS the offsets
@@ -155,7 +176,19 @@ impl MetalBackend {
                 );
             }
             None => {
-                self.encode_gated_ffn_branch(enc, h_in, w, s, shape);
+                // 4. down projection.
+                self.encode_matvec(
+                    enc,
+                    &w.down,
+                    &MatvecTarget {
+                        x: s.act,
+                        out: s.down,
+                        out_offset: 0,
+                        n: shape.hidden,
+                        k: shape.intermediate,
+                    },
+                );
+                let enc = encs.stage(Stage::DenseFfn);
                 // 5. post-FFN norm (four-norm placement only), then the
                 //    residual, scaled by the plan's residual-scale op when
                 //    it carries one (Granite `residual_multiplier`).
@@ -257,6 +290,18 @@ impl MetalBackend {
         s: &FfnScratch<'_>,
         shape: &FfnShape,
     ) {
+        self.encode_gate_up_from_normed(enc, w, s, shape);
+        self.encode_ffn_activation(enc, s, shape);
+    }
+
+    /// Step 2: gate and up projections over `s.normed`.
+    fn encode_gate_up_from_normed(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        w: &FfnWeights<'_>,
+        s: &FfnScratch<'_>,
+        shape: &FfnShape,
+    ) {
         // 2. gate and up projections. Independent of each other, and the
         //    serial encoder still orders them after the norm that feeds
         //    them. A-5b: both NVFP4 → one dispatch.
@@ -292,7 +337,16 @@ impl MetalBackend {
                 );
             }
         }
-        // 3. the gated combine, by the plan's own rule.
+    }
+
+    /// Step 3: the gated combine of `s.gate` and `s.up` into `s.act`, by
+    /// the plan's own rule.
+    fn encode_ffn_activation(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        s: &FfnScratch<'_>,
+        shape: &FfnShape,
+    ) {
         match shape.activation {
             FfnActivation::SituGlu { beta, linear_beta } => {
                 crate::kernels::ffn::bind_situ_glu(

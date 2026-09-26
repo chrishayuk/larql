@@ -355,9 +355,9 @@ impl MetalBackend {
         let enc = encs.stage(Stage::AttnCore);
         self.encode_kv_attention(enc, s, shape, w.sinks, 0, 0);
         // 7. the judged gate, then the output projection.
-        let enc = encs.stage(Stage::AttnOut);
         let aggregated = match &w.gate {
             Some(_) => {
+                let enc = encs.stage(Stage::AttnOut);
                 self.encode_sigmoid_gate(enc, s.concat, s.gate, s.gated, q_rows);
                 s.gated
             }
@@ -373,6 +373,10 @@ impl MetalBackend {
             }
             _ => None,
         };
+        // The projection is its own stage so the profiler can price the
+        // GEMV apart from the gate, bias, branch norm and residual around
+        // it; production's `SingleEncoder` ignores the mark.
+        let enc = encs.stage(Stage::AttnOProj);
         match fused_out {
             // `_sliced` carries the segment's byte offsets: under the
             // packed attention layout `o` is a row slice of the shared
@@ -406,6 +410,7 @@ impl MetalBackend {
                         k: q_rows,
                     },
                 );
+                let enc = encs.stage(Stage::AttnOut);
                 if let Some(bias) = w.o_bias {
                     self.encode_bias_add(enc, s.attn_out, 0, bias, shape.hidden);
                 }
