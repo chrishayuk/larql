@@ -128,13 +128,25 @@ fn control_thread_integrity() {
         "the planted foreign allocation must be seen: {delta:?}"
     );
 
+    // The owner's own allocation is attributed to the owner — counted,
+    // sized and logged. (Whether some other live thread also allocates
+    // during the scope is not this control's claim: it is exactly what the
+    // foreign counter exists to report, and a process has other threads.)
     let clean = alloc::enter();
     let local = vec![1u8; 64];
     let delta = clean.leave();
+    let events = alloc::events(&delta);
     drop(local);
     assert_eq!(
-        delta.foreign, 0,
-        "an owner-thread allocation is not foreign"
+        delta.allocs, 1,
+        "the owner's allocation is counted once: {delta:?}"
+    );
+    assert_eq!(delta.alloc_bytes, 64);
+    assert!(
+        events
+            .iter()
+            .any(|e| e.kind == alloc::EventKind::Alloc && e.new_size == 64),
+        "the owner's allocation is in the owner's event log"
     );
 }
 
@@ -177,6 +189,9 @@ fn control_realloc_classification() {
 // ---- journeys -------------------------------------------------------------
 
 struct Run {
+    /// Invalid solely because another thread allocated inside a provider
+    /// scope: the run is discarded and repeated, never adjudicated.
+    foreign_only: bool,
     record: Value,
     logits: Vec<(&'static str, Vec<f32>)>,
     storage: Vec<(&'static str, metrics::Storage)>,
@@ -227,7 +242,13 @@ fn measure<P: Inspect, B: PlanBackend>(
         && unclassified == 0
         && !dropped
         && !alloc::table_overflowed();
+    let foreign_only = foreign_calls > 0
+        && unresolved == 0
+        && unclassified == 0
+        && !dropped
+        && !alloc::table_overflowed();
     Run {
+        foreign_only,
         record: json!({
             "provider": label,
             "instrument": {
@@ -247,6 +268,39 @@ fn measure<P: Inspect, B: PlanBackend>(
     }
 }
 
+/// Attempts before a run whose only defect is foreign allocations is
+/// reported as invalid rather than repeated.
+const MAX_ATTEMPTS: usize = 5;
+
+/// [`measure`], repeated while the run is invalid ONLY because another
+/// thread allocated inside a provider scope. The integrity rule is kept —
+/// such a run is discarded, never read — and the record says how many were.
+fn measure_valid<P: Inspect, B: PlanBackend>(
+    subject: &Subject,
+    backend: &B,
+    provider: fn() -> P,
+    label: &str,
+    journey: &Journey,
+    watch_recurrent: bool,
+) -> Run {
+    let mut discarded = 0;
+    loop {
+        let mut run = measure(
+            subject,
+            backend,
+            provider(),
+            label,
+            journey,
+            watch_recurrent,
+        );
+        if !run.foreign_only || discarded + 1 == MAX_ATTEMPTS {
+            run.record["instrument"]["discarded_foreign_runs"] = json!(discarded);
+            return run;
+        }
+        discarded += 1;
+    }
+}
+
 /// Both shipped providers over one journey; parity (the C3 gate) and the
 /// cross-provider forecasts (M1, M7) computed here.
 fn measure_subject<B: PlanBackend>(
@@ -256,18 +310,18 @@ fn measure_subject<B: PlanBackend>(
     watch_recurrent: bool,
     extra: Value,
 ) -> Value {
-    let row = measure(
+    let row = measure_valid(
         subject,
         backend,
-        RowKvState::default(),
+        RowKvState::default,
         "row/v1",
         journey,
         watch_recurrent,
     );
-    let canonical = measure(
+    let canonical = measure_valid(
         subject,
         backend,
-        CanonicalKvState::new(),
+        CanonicalKvState::new,
         "canonical/v1",
         journey,
         watch_recurrent,

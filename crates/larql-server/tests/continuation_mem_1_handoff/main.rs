@@ -259,6 +259,9 @@ fn registry() -> ContinuationRegistry {
     registry
 }
 
+/// Attempts before a transfer with foreign allocations is reported invalid.
+const MAX_ATTEMPTS: usize = 5;
+
 fn out_dir() -> PathBuf {
     let dir = std::env::var_os("LARQL_MEM1_OUT")
         .map(PathBuf::from)
@@ -291,7 +294,16 @@ fn m6_handoff_moves_state_and_copies_nothing() {
     let mut records = Vec::new();
     for (subject, tokens, decode) in &subjects {
         for identity in [RowKvState::identity(), CanonicalKvState::identity()] {
+            // Another live thread allocating inside the transfer scope makes
+            // the run INVALID, not a copy: discard and repeat, bounded, and
+            // record how many were discarded.
+            let mut discarded = 0;
             let mut record = journey(subject, &registry, &identity, tokens, decode);
+            while record["transfer_scope"]["foreign"] != 0 && discarded + 1 < MAX_ATTEMPTS {
+                discarded += 1;
+                record = journey(subject, &registry, &identity, tokens, decode);
+            }
+            record["discarded_foreign_runs"] = json!(discarded);
             record["subject"] = json!(subject.name);
             records.push(record);
         }
