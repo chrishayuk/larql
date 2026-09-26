@@ -167,6 +167,10 @@ impl<'a> KvView<'a> {
         self.values.row(self.base, position)
     }
 
+    /// Construction-time checked, read-time trusted: the range a step may
+    /// read is proved once, by `AttentionStepCall::new`. Do not promote this
+    /// to `assert!` — per read it cost ≈2.7% of decode and re-proves an
+    /// invariant already established (continuation-view-1-notes, V2).
     fn check(&self, position: usize) {
         debug_assert!(
             self.base <= position && position < self.end,
