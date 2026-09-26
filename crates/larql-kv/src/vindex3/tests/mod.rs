@@ -21,6 +21,7 @@
 
 mod registry_parity;
 mod resume_anti_cheat;
+mod window;
 
 use larql_vindex::format::vindex3::fixtures::{
     encode_fixture_container, miniature_glimmer, G_HEAD_DIM, G_KV_HEADS, G_LAYERS, G_TOKENS,
