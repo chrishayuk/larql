@@ -37,6 +37,7 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "hidden_activation",
     "hidden_act",
     "attention_bias",
+    "qkv_bias",
     "mlp_bias",
     "layer_norm_eps",
     "rms_norm_eps",

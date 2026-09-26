@@ -126,6 +126,7 @@ impl TestMoeArch {
                 output_multiplier: None,
                 post_norm_eps: None,
                 attention_bias: None,
+                qkv_bias: None,
                 mlp_bias: None,
                 hidden_act: None,
                 activation_situ_beta: None,

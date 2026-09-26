@@ -145,6 +145,10 @@ pub struct VindexModelConfig {
     /// Whether attention projections carry biases, when declared.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attention_bias: Option<bool>,
+    /// Whether Q/K/V (not the output) carry biases, when declared
+    /// (`qkv_bias`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qkv_bias: Option<bool>,
     /// FFN activation name, verbatim (`hidden_act`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden_act: Option<String>,
@@ -330,6 +334,7 @@ impl VindexModelConfig {
             output_multiplier: cfg.output_multiplier,
             post_norm_eps: cfg.post_norm_eps,
             attention_bias: cfg.attention_bias,
+            qkv_bias: cfg.qkv_bias,
             hidden_act: cfg.hidden_act.clone(),
             activation_situ_beta: cfg.activation_situ_beta,
             activation_situ_linear_beta: cfg.activation_situ_linear_beta,

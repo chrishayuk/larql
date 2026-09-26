@@ -206,11 +206,11 @@ fn a_plan_with_a_shared_expert_prepares_and_pins_its_projections() {
     ops.reconcile(&plan, (&carrier).into()).unwrap();
 }
 
-/// A shared branch with a scalar GATE (Qwen MoE's form) has no executor
-/// yet: the plan is refused at preparation, before any byte, naming the
-/// gate — never prepared with the branch summed unscaled.
+/// A shared branch with a scalar GATE (Qwen MoE's form) prepares: the
+/// gate is realized as one decoded f32 row, and preparation reconciles
+/// with the plan's own accounting like any other operand.
 #[test]
-fn a_shared_expert_branch_gate_is_refused_before_any_byte_is_read() {
+fn a_shared_expert_branch_gate_prepares_and_reconciles() {
     use crate::format::vindex3::opplan::SharedExpertBranchGateOp;
     use larql_models::config::{
         GateActivation, GateCombine, SharedExpertGateSource, SharedExpertGateSpec,
@@ -248,23 +248,14 @@ fn a_shared_expert_branch_gate_is_refused_before_any_byte_is_read() {
         }),
     });
     plan.layers[0].ffn = Some(LayerFfn::Routed(Box::new(op)));
-    let before = carrier.load_count();
-    let err = PreparedOperands::load(
+    let ops = PreparedOperands::load(
         &plan,
         &carrier,
         &ProductionBackend::new(),
         ExecutionSlice::Full,
     )
-    .err()
-    .map(|e| e.to_string())
-    .expect("a gated shared branch has no realization on the CPU path");
-    assert!(err.contains("missing realization"), "{err}");
-    assert!(err.contains("shared-expert-branch-gate"), "{err}");
-    assert_eq!(
-        carrier.load_count(),
-        before,
-        "refused before any byte was read"
-    );
+    .expect("a gated shared branch has a realization on the CPU path");
+    ops.reconcile(&plan, (&carrier).into()).unwrap();
 }
 
 /// Rung 3c over the routed miniature: two bank pins reconcile with the

@@ -643,14 +643,28 @@ fn the_common_selections_cover_the_table_the_bank_and_the_shared_expert() {
     assert_eq!(refused.considered.len(), 1);
 
     // A shared expert's projections are whole matrices: the backend
-    // chooses, as for any dense projection (V1). The scalar branch gate
-    // has no executor and is refused here, for every backend.
+    // chooses, as for any dense projection (V1). The scalar branch gate is
+    // one row read whole as f32 and applied by the same literal dot on
+    // every backend: one candidate, chosen here, and an unregistered
+    // representation still refuses.
     let gate = synthetic(Operation::SharedExpertBranchGate, SMALL);
-    let refused = common_selection(&gate, &registered, WeightFormat::F32)
+    let selected = common_selection(&gate, &registered, WeightFormat::F32)
         .unwrap()
-        .unwrap_err();
-    assert_eq!(refused.kind, RefusalKind::MissingRealization);
-    assert!(refused.considered.is_empty());
+        .unwrap();
+    assert_eq!(
+        selected.realization.form,
+        RealizationForm::Decode(PhysicalProjectionPlan::ScalarF32)
+    );
+    assert_eq!(selected.reason, SelectionReason::ScalarBranchGate);
+    assert_eq!(selected.candidates, vec![selected.realization]);
+    let refused = common_selection(
+        &gate,
+        &RepresentationFacts::resolve("U8"),
+        WeightFormat::F32,
+    )
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(refused.kind, RefusalKind::UnregisteredRepresentation);
 
     // A per-expert bank binds its stored bytes as a mapping, in the stored
     // form, when the CPU runs that form in place: bf16 and f32 do, an
@@ -741,7 +755,7 @@ fn the_common_selections_cover_the_table_the_bank_and_the_shared_expert() {
 }
 
 #[test]
-fn the_cpu_selector_refuses_an_unregistered_projection_and_a_branch_gate() {
+fn the_cpu_selector_refuses_an_unregistered_projection_and_realizes_a_branch_gate() {
     let unregistered = RepresentationFacts::resolve("U8");
     let refused = select_cpu(
         &synthetic(Operation::Project(MatrixClass::FfnProjection), SMALL),
@@ -763,13 +777,13 @@ fn the_cpu_selector_refuses_an_unregistered_projection_and_a_branch_gate() {
         RealizationForm::Decode(PhysicalProjectionPlan::BlasF32)
     );
     assert_eq!(shared.reason, SelectionReason::SizePolicy);
-    let refused = select_cpu(
+    let gate = select_cpu(
         &synthetic(Operation::SharedExpertBranchGate, SMALL),
         &RepresentationFacts::resolve("BF16"),
         KQuantExecution::Direct,
     )
-    .unwrap_err();
-    assert_eq!(refused.kind, RefusalKind::MissingRealization);
+    .unwrap();
+    assert_eq!(gate.reason, SelectionReason::ScalarBranchGate);
     // An overlay edit on a bf16 operand decodes, and the reason says so.
     let edited = RepresentationFacts::resolve("BF16").overlaid();
     let selected = select_cpu(

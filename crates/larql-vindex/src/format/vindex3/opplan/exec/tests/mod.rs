@@ -91,6 +91,7 @@ mod placement_seams;
 mod plan_fixtures;
 mod projection_bench;
 mod provenance;
+mod qwen2_moe;
 mod realization;
 mod vq8_shared_execution;
 // Each module carries its OWN cfg: inserting a bare `mod` line above a

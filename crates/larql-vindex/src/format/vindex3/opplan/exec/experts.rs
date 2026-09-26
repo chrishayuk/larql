@@ -194,6 +194,13 @@ pub(super) struct RoutedOperands {
     /// (`KimiSparseMoeBlock.forward`). The op the loader built for it is
     /// kept beside the operands so `apply` and `bound` read one program.
     shared: Option<(FfnOp, DenseOperands)>,
+    /// The shared branch's scalar output gate and its `[1, hidden]`
+    /// weight, when the family runs one (Qwen MoE:
+    /// `sigmoid(shared_expert_gate(x)) * shared(x)`). Loaded as the f32
+    /// row its realization pins and bound like any planned operand, so the
+    /// ledger that reconciles preparation names it. `None` sums the branch
+    /// unscaled (DeepSeek / Kimi).
+    shared_gate: Option<(larql_models::config::SharedExpertGateSpec, LoadedWeight)>,
     /// The latent bottleneck's two projections and its optional norm
     /// weight, when the plan carries the wrapper.
     latent: Option<LatentOperands>,
@@ -282,6 +289,7 @@ impl FfnOperands {
             gate_up_bias: None,
             down_bias: None,
             shared: None,
+            shared_gate: None,
             latent: None,
         })))
     }
@@ -690,6 +698,15 @@ impl RoutedOperands {
                     .map(|b| (Operation::SharedExpertProject, b)),
             );
         }
+        if let (Some((_, loaded)), Some(gate)) = (
+            &self.shared_gate,
+            op.shared.as_ref().and_then(|s| s.branch_gate.as_ref()),
+        ) {
+            out.push((
+                Operation::SharedExpertBranchGate,
+                Bound::one(&gate.weight, loaded),
+            ));
+        }
         // The latent wrapper's projections, under the same operation a
         // dense FFN projection binds: one whole matrix per token, read
         // sequentially. Reported here rather than left out because an
@@ -710,6 +727,9 @@ impl RoutedOperands {
         let mut out = self.experts.all();
         if let Some((_, dense)) = &self.shared {
             out.extend(dense.loaded_matrices());
+        }
+        if let Some((_, gate)) = &self.shared_gate {
+            out.push(gate);
         }
         // Two more real matrices per routed layer. `[3584, 7168]` and
         // `[7168, 3584]` at K3's widths is 51 MB of bf16 a layer — not
@@ -857,8 +877,9 @@ impl RoutedOperands {
             )?;
         }
         // `y = moe(x) + shared_experts(x)` — the always-active branch is a
-        // dense FFN over the same input, summed unscaled: composed here,
-        // once, for every backend. A gated branch is refused at selection.
+        // dense FFN over the same input, composed here, once, for every
+        // backend: summed unscaled (DeepSeek / Kimi) or under its declared
+        // scalar gate (Qwen MoE).
         //
         // `x`, not the latent: the shared experts read the un-projected
         // block input and are added AFTER the up-projection, so they never
@@ -866,8 +887,12 @@ impl RoutedOperands {
         if let Some((ffn, dense)) = &self.shared {
             let _stage = super::stages::stage(super::stages::Stage::SharedExpert);
             let shared = dense.apply(ffn, backend, x, hidden)?;
+            let scale = match &self.shared_gate {
+                Some((spec, weight)) => shared_branch_scale(spec, weight.slice().as_f32()?, x)?,
+                None => 1.0,
+            };
             for (acc, v) in routed.iter_mut().zip(&shared) {
-                *acc += v;
+                *acc += scale * v;
             }
         }
         Ok(routed)
@@ -954,6 +979,13 @@ impl RoutedOperands {
                 )
             }
         };
+        let shared_gate = match op.shared.as_ref().and_then(|s| s.branch_gate.as_ref()) {
+            Some(gate) => Some((
+                gate.spec,
+                load_weight(store, &gate.weight, WeightFormat::F32)?,
+            )),
+            None => None,
+        };
         let shared = match &op.shared {
             Some(shared) => {
                 let ffn = FfnOp {
@@ -988,6 +1020,7 @@ impl RoutedOperands {
             gate_up_bias,
             down_bias,
             shared,
+            shared_gate,
             // Built from `op.latent` and nothing else, so operands and
             // op cannot disagree about whether a bottleneck exists.
             latent: op
@@ -1193,5 +1226,33 @@ fn bank_facts(
             "`{}`: the bank is neither stored under a label nor declared by the plan",
             operand.tensor
         ))),
+    }
+}
+
+/// The scalar a gated shared branch is multiplied by, for one token:
+/// `activation(weight · x)` under the gate's judged semantics. Every
+/// variant is matched, so a gate semantic this build has not judged fails
+/// to compile here rather than running the branch at the wrong weight.
+pub(super) fn shared_branch_scale(
+    spec: &larql_models::config::SharedExpertGateSpec,
+    weight: &[f32],
+    x: &[f32],
+) -> Result<f32, VindexError> {
+    use larql_models::config::{GateActivation, GateCombine, SharedExpertGateSource};
+    if weight.len() != x.len() {
+        return Err(VindexError::Parse(format!(
+            "shared-expert branch gate has {} weights for a {}-wide input; the gate is \
+             one logit per token over the block input",
+            weight.len(),
+            x.len()
+        )));
+    }
+    let SharedExpertGateSource::HiddenStateToScalar = spec.source;
+    let logit: f32 = weight.iter().zip(x).map(|(w, v)| w * v).sum();
+    let gate = match spec.activation {
+        GateActivation::Sigmoid => 1.0 / (1.0 + (-logit).exp()),
+    };
+    match spec.combine {
+        GateCombine::ElementwiseMultiply => Ok(gate),
     }
 }
