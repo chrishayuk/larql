@@ -1,0 +1,55 @@
+{
+  "programme": "REPRESENT-TERMINAL-1",
+  "artifact_kind": "RESULT. The cheapest sufficient stopping rule depends on a constant nobody calibrated.",
+  "written": "2026-09-17",
+  "forecast": "docs/represent/forecasts/represent-terminal-1.json",
+
+  "THE_SWEEP": {
+    "legend": "viol = replicates where uniform and coverage reached different terminal preferences. hit/miss = terminal preference is / is not the planted dominator c15. priced = mean priced runs of 16. escapes = searches in which c15 left the observed frontier while still cheap.",
+    "rows": [
+      "WinnerOnly        0.01   viol 0  hit 600  unres  0  priced  1.00  escapes   0",
+      "WinnerOnly        0.10   viol 0  hit 600  unres  0  priced  1.00  escapes   0",
+      "WinnerOnly        0.30   viol 0  hit 600  unres  0  priced  1.01  escapes   0",
+      "WinnerOnly        1.00   viol 0  hit 600  unres  0  priced  3.57  escapes  66",
+      "WinnerOnly        2.00   viol 2  hit 554  unres 46  priced  8.09  escapes 244",
+      "ObservedFrontier  (identical to WinnerOnly at every level)",
+      "CompetitiveSet    0.01   viol 0  hit 600  unres  0  priced  1.00  escapes   0",
+      "CompetitiveSet    0.10   viol 0  hit 600  unres  0  priced  1.00  escapes   0",
+      "CompetitiveSet    0.30   viol 0  hit 600  unres  0  priced  2.21  escapes   0",
+      "CompetitiveSet    1.00   viol 0  hit 600  unres  0  priced 13.18  escapes  66",
+      "CompetitiveSet    2.00   viol 0  hit 600  unres  0  priced 15.49  escapes 244"
+    ]
+  },
+
+  "FINDING_1_R1_and_R2_are_the_same_rule": {
+    "what": "Winner-only and observed-frontier confirmation produced IDENTICAL violations and spend at every noise level, and this is now asserted rather than observed.",
+    "why": "When a unique winner exists, the observed frontier IS that winner — `decide_promotion` returns a single-member frontier — so 'price the winner' and 'price the frontier' name the same set. When no winner exists, R1 cannot stop either. The distinction the freeze drew does not exist operationally.",
+    "consequence": "The three-rule ladder is really a two-rule ladder: confirm the apparent answer, or bound the set that could overturn it."
+  },
+
+  "FINDING_2_the_ranking_is_not_stable_across_the_sweep": {
+    "at_or_below_the_invented_constant": "R1/R2 are policy-independent AND cheaper. At noise 1.00 they price 3.57 of 16 and reach the planted dominator in 600 of 600 searches; R3 prices 13.18 for the same answer.",
+    "above_it": "At noise 2.00 R1/R2 FAIL — 2 policy-independence violations and 46 searches ending with no unique preference — while R3 still returns the planted dominator in 600 of 600.",
+    "therefore": "The cheapest rule that yields policy-independent terminal preference is R1 at noise <= 1.0 and R3 at noise 2.0. The answer depends on the noise magnitude, and that magnitude is a constant invented for FRONTIER-SPEND-1 and calibrated to nothing. The freeze predicted exactly this: 'if not, that dependency is the result'."
+  },
+
+  "FINDING_3_what_safety_costs": {
+    "numbers": "R3 prices 13.18 of 16 candidates at the invented constant and 15.49 of 16 at twice it — 82% and 97% of the candidate set.",
+    "consequence_for_the_ladder": "Bought as insurance against the escaping-dominator mechanism, the competitive set very nearly erases the economy the ladder exists for. The earlier 4.3x saving survives only under a stopping rule that is sufficient at the noise level assumed, and the rule's sufficiency is exactly what is not established."
+  },
+
+  "FINDING_4_the_mechanism_is_noise_gated": {
+    "escapes": "0 at noise <= 0.30, 66 at 1.00, 244 at 2.00.",
+    "reading": "The c15 mechanism — the planted dominator leaving the observed frontier while cheaply measured — does not occur at low noise at all. It is not a property of heterogeneous depth as such; it is a property of heterogeneous depth ON A NOISE SCALE COMPARABLE TO THE SPREAD BEING MEASURED. At the invented constant the kl noise is ~1.4x the planted front's entire spread."
+  },
+
+  "THE_SYSTEM_LEVEL_CONCLUSION_as_preregistered": "Safe stopping is an UNCERTAINTY-CALIBRATION problem, not a policy problem. R3 is only implementable because the generator hands the harness its own noise bound. Production REPRESENT has no equivalent: `TailSupport` establishes whether a percentile has enough observations behind it, not an interval on how far a cheap reading may move. Until such an interval exists, a search cannot know which of these arms it is in — and the sweep shows the arms disagree about both the rule and the cost.",
+
+  "WHAT_WAS_NOT_CLAIMED": {
+    "no_economy_expectation": "The 4.3x was not preregistered and is not defended. At the invented constant the cheap rule costs 3.57 priced runs and the safe rule 13.18; which of those is the honest number depends on a calibration that does not exist.",
+    "0_of_534_unused": "The conditioned subsample from the DEPTH-2 rerun was not used as a prior for R1. R1 was tested from scratch as a stopping rule, and its failure at noise 2.00 is a direct measurement rather than an inference.",
+    "the_box_never_ranked": "`safely_excluded_by` returns a bool and is used only for set membership. It never orders the unresolved set, which would have made it a second comparator."
+  },
+
+  "NEXT": "REALIZATION-COST-1, now with a third item on its remit: beta's missing codec/realization index; whether uniform-non-scorable candidates may be compared on predicted gain; and whether REPRESENT can produce an uncertainty interval on a quality statistic at all, without which no stopping rule can be known to be sufficient."
+}

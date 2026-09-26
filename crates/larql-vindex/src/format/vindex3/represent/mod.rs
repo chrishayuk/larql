@@ -61,6 +61,7 @@ pub mod decision;
 pub mod diagnostic;
 pub mod execution_cost;
 pub mod experiment;
+pub mod experiment_identity;
 pub mod gptq;
 pub mod ingest;
 pub mod kda_candidate;
@@ -72,6 +73,7 @@ pub mod measure;
 mod measure_tests;
 pub mod measurement;
 pub mod nvfp4_pack;
+pub mod observation_stream;
 pub mod participation;
 pub mod physical;
 pub mod plan_roles;
@@ -82,12 +84,14 @@ pub mod promotion;
 pub mod quality;
 #[cfg(feature = "reference-encoder")]
 pub mod reference_encoder;
+pub mod resampling;
 pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
 pub mod source_identity;
 pub mod state;
 pub mod statistic;
+pub mod stream_replay;
 pub mod token_bank;
 pub mod view;
 
@@ -1016,6 +1020,30 @@ mod compile_real_tests;
 #[cfg(test)]
 #[path = "compat_tests.rs"]
 mod compat_tests;
+
+#[cfg(test)]
+#[path = "pareto_tests.rs"]
+mod pareto_tests;
+
+#[cfg(test)]
+#[path = "frontier_scale_tests.rs"]
+mod frontier_scale_tests;
+
+#[cfg(test)]
+#[path = "frontier_explore_tests.rs"]
+mod frontier_explore_tests;
+
+#[cfg(test)]
+#[path = "frontier_spend_tests.rs"]
+mod frontier_spend_tests;
+
+#[cfg(test)]
+#[path = "depth_invariance_tests.rs"]
+mod depth_invariance_tests;
+
+#[cfg(test)]
+#[path = "terminal_tests.rs"]
+mod terminal_tests;
 
 #[cfg(test)]
 #[path = "tests.rs"]

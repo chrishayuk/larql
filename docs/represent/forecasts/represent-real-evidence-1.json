@@ -1,0 +1,88 @@
+{
+  "programme": "REPRESENT-REAL-EVIDENCE-1",
+  "artifact_kind": "experimental freeze. The first rung to require real model execution. Written after Gate 0, before any recording code exists.",
+  "written": "2026-09-18",
+  "follows": "docs/represent/forecasts/represent-uncertainty-1-result.json",
+
+  "SCOPE": "Persist the real Kimi teacher-forced `PositionObservation` stream for the EXISTING selection and heldout 256x32 banks, reconstruct depth ladders over whole-sequence blocks, and measure cheap->deep sampling behaviour separately for `RouteFlipRate` and `KlP99`.",
+  "EXPLICITLY_NOT": [
+    "no new candidate search",
+    "no new model support",
+    "no uncertainty estimator — that is UNCERTAINTY-2",
+    "no beta or realization work — that is REALIZATION-COST-1",
+    "no K3 optimisation"
+  ],
+  "one_line": "Produce the empirical sampling substrate every later contract now depends on.",
+
+  "GATE_0_FINDINGS_that_shaped_this": {
+    "the_banks": "`~/chris-models/qbanks/kimi-quality-bank-256x32` and `kimi-quality-bank-heldout-256x32`. Each 256 sequences x 32 positions = 8,192 positions, teacher-forced, hidden 2304, 72 MB.",
+    "the_runs_already_exist": "`kimi_flagship-selection-8192_report.json` and `kimi_flagship-heldout-8192_report.json`, both with run `kda-q8-l20-21-22-24-25-x-kimi-map-l20-26q80`, identical scope, identical `expert_candidate`, identical `gate.id` — only `bank_manifest_sha256` differs. Same transition, different sequences: a clean two-dataset structure, and not something that was guaranteed.",
+    "cost": "selection 4780.9 s for 8192 positions (583.6 ms/position); heldout 2698.6 s (329.4 ms/position). 45-80 minutes per full arm. The 1.77x spread between two runs of the same shape is unexplained and is NOT relied on here; this rung needs the quality stream, not timing.",
+    "what_is_missing": "Only the raw stream. `kl_by_position` is aggregated to 32 slots of {mean, max}. The model plumbing works, the banks exist, the cost is known. This rung is a recording problem, not an execution problem.",
+    "env": "`SOURCE_ENV`=LARQL_KIMI_VINDEX3, `CANDIDATE_ENV`=LARQL_KIMI_Q6_CANDIDATE, `BANK_ENV`=LARQL_KIMI_QUALITY_BANK. All currently unset; source is `Kimi-Linear-48B-A3B-Instruct.s6.vindex3` (92 GB)."
+  },
+
+  "THE_SAMPLING_BLOCK_IS_THE_SEQUENCE": {
+    "what_is_MEASURED": "Positions are NOT identically distributed. From the selection report's `kl_by_position`: mean KL is U-shaped — 2.078e-4 at position 0, dropping ~5x to 3.934e-5 at position 1, climbing back to 2.492e-4 by position 31 — while the MAX grows monotonically ~23x, 6.835e-4 to 1.543e-2. Variance expands with position even where the mean dips, so the p99 is driven by late positions while position 0 dominates the early mean.",
+    "what_is_ASSUMED_pending_measurement": "Within-sequence INDEPENDENCE. The profile above is aggregated across all 256 sequences, so correlation is not visible in it. Block resampling is justified by the heteroscedasticity alone; the correlation claim is assumed and the raw stream is what would settle it. The freeze records the distinction so a later reader does not inherit a measured-sounding claim that was not measured.",
+    "consequence": "All resampling, splitting and estimation treats the SEQUENCE as the sampling block. Every ladder depth is a whole number of sequences, never a truncated one."
+  },
+
+  "THE_LADDER": {
+    "sequences_to_positions": "1->32, 2->64, 4->128, 8->256, 16->512, 32->1024, 64->2048, 128->4096, 256->8192",
+    "why_it_is_better_than_a_position_ladder": "Every depth is a whole observational unit. It also dissolves the nested/independent tension by construction: a progressive draw EXTENDS a sequence set, an independent draw uses DISJOINT sets, and both are expressible in the same units."
+  },
+
+  "THREE_ANALYSES": {
+    "A1_progressive_nested": "Take a draw of sequences and extend 1->2->4->...->256. This models what REPRESENT actually does when it spends more authority on an existing measurement. Estimates are nested and correlated BY DESIGN, and this arm may not be the only calibration dataset for that reason.",
+    "A2_independent_blocks": "Compare estimates from DISJOINT sequence subsets. This gives the variability of an n-sequence estimate without the artificial correlation of making the cheap sample a subset of the deep one.",
+    "A3_selection_to_heldout_transfer": "Develop and calibrate on selection; evaluate coverage on heldout. Never fit on selection and declare success there."
+  },
+
+  "THE_DEEP_ARM_IS_AN_ESTIMATE_AND_HERE_IS_ITS_FLOOR": {
+    "the_number": "The two full-bank `KlP99` values differ by 9.07% — selection 2.382e-3, heldout 2.598e-3.",
+    "what_it_bounds": "Cheap->deep differences below roughly 9% sit inside the reference's own between-bank spread. An uncertainty estimator claiming tighter intervals than that at FULL depth is claiming more than the reference supports.",
+    "why_it_is_recorded_now": "8,192 is a credible deep reference and is NOT ground truth. The disagreement between the two full banks is information about residual deep-arm variance, not noise to be explained away."
+  },
+
+  "BOTH_EXISTING_RUNS_FAILED_THEIR_GATE_AND_THAT_IS_FINE": {
+    "the_failures": "selection: kl_p99 2.382e-3 > 1.000e-3 and top1_mass_displaced 0.0942 > 0.0500. heldout: the same two plus min_covered_mass 0.5773 < 0.6000.",
+    "why_the_data_is_admissible": "`MeasurementReceipt::qualifies()` is explicit — 'NOT whether it passed. A refused candidate that was measured correctly is admissible evidence of a refusal; a passing candidate whose run skipped a validity check is not evidence of anything.' For SAMPLING BEHAVIOUR a refused candidate is as informative as an accepted one.",
+    "stated_because": "Without it, a later reader will reasonably wonder whether the substrate is a failed experiment. It is not."
+  },
+
+  "A_CONFOUND_IN_THE_HELDOUT_COVERAGE_TEST_preregistered": {
+    "what": "Heldout failed `min_covered_mass` at 0.5773; selection did not. KL is exact only on the mass the top-2048 truncation covers, so the heldout bank's WORST position has ~42% of the baseline's probability mass outside the window.",
+    "consequence": "Its `KlP99` is partly a truncation artifact, at exactly the positions a tail statistic is most sensitive to. The selection->heldout coverage test is therefore CONFOUNDED for `KlP99` in a way it is not for `RouteFlipRate`, which is a dense per-position rate and untouched by truncation.",
+    "obligation": "Report the two statistics' transfer results separately and never average them. If `KlP99` transfer looks worse, the truncation confound is a live alternative explanation and must be named before any conclusion about the estimator."
+  },
+
+  "THE_HARD_FALSIFIER": "Any estimator or analysis that treats the 8,192 positions as exchangeable independent samples is INVALID for the primary result. The position evidence already shows the assumption is false, and an iid-position bootstrap would destroy exactly the structure this rung exists to measure.",
+
+  "THE_ARTIFACT": {
+    "principle": "The raw observation stream is AUTHORITATIVE. Bank summaries at each depth are cheap deterministic projections and must be regenerable, so the estimator can change without rerunning the model.",
+    "do_not_persist_only_summaries": "A forest of 1/2/4/... bank summaries is a derived product. Persisting only those would freeze today's estimator into the evidence.",
+    "manifest_binds": [
+      "model / source identity",
+      "candidate / transition identity",
+      "measurement protocol identity",
+      "git / code identity",
+      "quality-bank / sequence-set identity",
+      "draw identity",
+      "sequence count",
+      "positions per sequence",
+      "observation count",
+      "observation-stream hash"
+    ],
+    "the_body": "`PositionObservation` unchanged — it already carries top-2048 ids with both arms' logits at THE SAME ids, each arm's full-vocabulary logsumexp so probabilities are exact rather than truncated, each arm's argmax over the full vocabulary, top-10s, and per-layer routes. Do not redesign it.",
+    "size": "~24 KB per position, so ~200 MB per run and ~400 MB for both banks. Compact binary is a convenience rather than a necessity; JSON would be roughly 4x."
+  },
+
+  "THE_PREREGISTERED_QUESTIONS": [
+    "For each of `RouteFlipRate` and `KlP99`: how does an estimate at N whole sequences differ from the 256-sequence estimate, across INDEPENDENT sequence draws?",
+    "Does the difference behave differently under the progressive (nested) ladder than under independent blocks, and by how much?",
+    "Does the within-sequence position structure appear as correlation in the raw stream, settling what Gate 0 could only assume?"
+  ],
+
+  "WHAT_THIS_RUNG_DOES_NOT_ANSWER": "Whether an uncertainty estimator can be built, whether it achieves nominal coverage, and whether any stopping rule is licensed. Those are UNCERTAINTY-2 and they need this substrate first."
+}

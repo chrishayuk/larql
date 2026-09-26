@@ -1,0 +1,49 @@
+{
+  "programme": "REPRESENT-DEPTH-2",
+  "artifact_kind": "repair freeze. Written BEFORE the implementation. The first rung in this programme to change `decide_promotion`.",
+  "written": "2026-09-17",
+  "base": "`5f9b8131` (branch `represent-pareto-1`)",
+  "repairs": "docs/represent/forecasts/represent-depth-1-result.json",
+
+  "THE_INVARIANT": "Evidence strength determines which conclusions are licensed; it is not evidence that a candidate is superior.",
+
+  "THE_CORE_CONTRACT": "Stage 1 stops using `Unscorable` as PRECEDENCE; stage 5 starts using it as a QUALIFICATION PRECONDITION. The same epistemic fact, moved from where it cannot legitimately decide to where it legitimately qualifies.",
+
+  "WHY_ONE_CHANGE_AND_NOT_TWO": "`Unscorable` is the only `MoveClass` variant that describes US rather than the candidate — 'buys time, but a cost could not be scored'. Stage 1 ranked on it, which let knowledge outrank merit. Stage 5 ignores it, which lets an unscored cost be silently treated as comparable. Both are the same misplacement of one fact, so the repair is one idea rather than a fix plus an addition.",
+
+  "SEMANTIC_CHANGES": {
+    "stage_1": {
+      "from": "pool = candidates where tier == best_tier",
+      "to": "pool = candidates where tier > 0",
+      "meaning": "Admissibility only. `Worthless` stays excluded and `None{EveryMoveWorthless}` keeps its meaning; `Unscorable`, `Priced` and `Unpriced` all survive into the evidence frontier."
+    },
+    "stage_5": {
+      "from": "compare `ranking_score.gpu_ms_saved` across the frontier unconditionally",
+      "to": "compare only when EVERY unresolved frontier member has a behavioural cost that was actually scored; otherwise return `Ambiguous{IncompletePricingAuthority}`",
+      "the_signal": "`MoveClass::cost_is_scorable()` — false for `Unscorable` alone. NOT `gpu_ms_saved`, and NOT `readiness`, which carries related but distinct information.",
+      "meaning": "Ordering evidence left multiple frontier members unresolved, and the comparison required to continue is not supported comparably across that frontier. Control returns to the measurement layer with a named reason to spend: measure the missing member, rather than pretend the one already measured is superior."
+    },
+    "new_variant": "`AmbiguityReason::IncompletePricingAuthority`. It must NOT reuse `IndistinguishableOnEveryProxy`, which means 'every comparable proxy is equal AND no physical difference separates them' — merging them would conflate 'they are the same' with 'we cannot yet tell'."
+  },
+
+  "WHAT_DEPTH_2_MUST_NOT_DO": {
+    "gpu_ms_saved_stays_what_it_is": "A PREDICTED physical gain from `execution_cost::predict`, available independently of measurement depth. Measured directly: it reads 2 at both the 8-position and 500-position rungs, while only `class` and `readiness` move.",
+    "the_misnomer_noted_deliberately": "'Pricing authority' at stage 5 is therefore partly a misnomer today — the quantity compared is a model prediction, and whether it can be trusted is a different question from whether a cost was scored. DEPTH-2 must not pretend to solve that. Beta and realization trust stay with REALIZATION-COST-1, and this note exists so nobody later reads stage 5's contract as claiming authority it never had.",
+    "no_broader_redesign": "No change to `comparable()`, `proxy_dominates`, the frontier computation, `display_order`, or `MoveClass`'s variants and tiers. The tier VALUES are untouched; only what stage 1 does with them changes."
+  },
+
+  "GATES": {
+    "note": "Every gate asserts the full `PromotionDecision` and the complete `PromotionEvidence`, never the candidate or reason alone. DEPTH-1's arms showed that a test checking only the winner passes green on a hollow justification.",
+    "G1_price_only_the_loser": "A dominates B on both proxies at cheap depth; price ONLY B. Required: `SelectForAuthority{A}` with `dominated: [\"B\"]`, `deciding: [KlP99, RouteFlipRate]`, `readiness: Uninformed`. B's deeper measurement is still represented — in `readiness` — but no longer overrules evidence.",
+    "G2_conflict_with_asymmetric_depth": "A and B in conflict; price either side alone. Required: `Ambiguous{ConflictingOrderingProxies}` in both. Depth cannot manufacture a resolution.",
+    "G3_equal_proxies_with_asymmetric_depth": "Proxies tie; one member's behavioural cost is unscored. Required: `Ambiguous{IncompletePricingAuthority}` — not a winner, and not `IndistinguishableOnEveryProxy`.",
+    "G4_uniform_depth_control": "cheap/cheap and priced/priced retain the existing decisions EXACTLY. PARETO-1, FRONTIER-SCALE-1 and FRONTIER-EXPLORE-1 must be unchanged, since all three hold every candidate at one depth.",
+    "G5_permutation": "Full-decision permutation invariance in every gate, as before."
+  },
+
+  "THE_TESTABILITY_PROPERTY_WORTH_NAMING": "The repair is checked against a result recorded BEFORE the implementation was chosen. DEPTH-1's arms are committed, asserting the defect, one of them with a deliberately inverted assertion. Those tests must now flip from asserting the defect to asserting the contract, and the flip is the evidence — not a newly invented green path.",
+
+  "REGRESSION_EXPECTATION": "Existing tests that depend on tier PRECEDENCE, if any exist outside this programme, will fail. That is the change working. Each such failure must be adjudicated individually — a test that encoded the defect is rewritten and recorded; a test that encoded something else is a genuine regression and stops the rung.",
+
+  "AFTER": "Rerun the FRONTIER-SPEND-1 driver UNCHANGED. It is already committed with `position_equivalents` retained and annotated, so the success case was frozen before the defect was found and does not need to be invented now."
+}

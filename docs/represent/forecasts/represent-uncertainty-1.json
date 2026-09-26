@@ -1,0 +1,85 @@
+{
+  "programme": "REPRESENT-UNCERTAINTY-1",
+  "artifact_kind": "experimental freeze. Written BEFORE any estimator exists. May legitimately close by concluding the synthetic phase is over.",
+  "written": "2026-09-17",
+  "base": "`b5858629`.. (branch `represent-pareto-1`, after TERMINAL-1)",
+  "follows": "docs/represent/forecasts/represent-terminal-1-result.json",
+  "WHY_ITS_OWN_RUNG": "TERMINAL-1 showed the cheapest valid stopping rule changes with the noise regime: at the invented baseline, winner-confirmation costs 3.57 priced runs against the competitive set's 13.18; at twice that noise the cheap rule fails while the bounded set still finds the planted dominator every time. The missing capability is therefore not another thing the cost model should know. It is a separate epistemic primitive, about QUALITY evidence rather than EXECUTION cost, and folding it into REALIZATION-COST-1 would make it impossible to tell whether later success came from fixing runtime identity or from introducing uncertainty semantics.",
+  "THE_QUESTION": "Given an accepted quality observation at depth d, how far could the corresponding sufficiently-measured value still move?",
+  "THE_FOUR_CONTRACTS_this_rung_separates": {
+    "support": "Did we measure enough to COMPUTE this statistic? \u2014 `TailSupport`, which exists.",
+    "uncertainty": "How wrong might this statistic still be? \u2014 MISSING. This rung.",
+    "decision": "What comparisons are licensed? \u2014 `decide_promotion`, which exists.",
+    "termination": "Is the answer stable enough to stop searching? \u2014 TERMINAL-1, which showed it cannot be answered without the second."
+  },
+  "HARD_VALIDITY_GATE_anti_circularity": {
+    "the_rule": "The process generating cheap->deep error MUST NOT be the noise model the estimator assumes.",
+    "why_it_is_a_gate_and_not_a_preference": "The current harness computes a cheap reading as `truth + uniform(+/- BASE_NOISE * scale)` and a deep reading as EXACTLY the truth. The empirical error distribution IS the constant invented for FRONTIER-SPEND-1. A bound learned from those pairs would recover that constant and report near-perfect coverage \u2014 reconstructing the oracle it was supposed to replace. That is not calibration.",
+    "requirement": "At least one deliberately MISSPECIFIED family is mandatory \u2014 heteroscedastic (error scaling with the statistic's magnitude), heavy-tailed, or position-correlated \u2014 and the estimator must be ignorant of which family generated a given run.",
+    "falsifier": "If every arm's generator matches the estimator's assumed model, the rung is void regardless of the coverage it reports."
+  },
+  "THE_CORPUS_BLOCKER_first_class": {
+    "the_fact": "`ingest::tests::Fixture` writes `vec![0u8; positions * 64 * 4]`. Every position is identical zeros, so sub-sampling a 500-position bank into 8-position sub-banks yields ZERO variance. The bootstrap route has nothing to bootstrap from.",
+    "the_consequence": "UNCERTAINTY-1 CANNOT claim model-relevant calibration from the current fixture corpus.",
+    "the_two_honest_exits": [
+      "the rung earns a heterogeneous corpus whose quality statistics genuinely vary by position",
+      "the rung explicitly closes the synthetic phase with 'production calibration requires real-model evidence'"
+    ],
+    "forbidden": "Manufacturing pseudo-variance to keep the ladder synthetic. A corpus perturbed just enough to produce numbers would make every coverage figure a property of the perturbation."
+  },
+  "MONOTONICITY_stated_so_it_cannot_fire_on_correct_behaviour": "Uncertainty should contract IN EXPECTATION as information increases, conditional on the sampled distribution remaining representative. Newly observed tail mass may legitimately WIDEN an interval \u2014 for a p99 especially, more positions can reveal a tail that eight never sampled. Per-instance monotonic narrowing would be a bad invariant and must not be asserted.",
+  "THE_VOCABULARY_UNIFICATION": {
+    "shape": "TailSupport -> QualityEstimate { value, uncertainty, support, provenance } -> comparison licence",
+    "the_key_move": "The existing `MoveClass::Unscorable` is a DEGENERATE uncertainty statement \u2014 'cost unknown' is an interval of unbounded radius. It must be represented as an uncertainty state that cannot license the relevant comparison, NOT as a separate epistemic category competing with one. Two overlapping vocabularies for one fact is exactly the `MoveClass` mistake DEPTH-2 unpicked, and rebuilding it beside the repair would be worse than not repairing it.",
+    "consequence_for_DEPTH_2": "Stage 5's `cost_is_scorable()` boolean becomes the limiting case of a licence question. The switch becomes a dial, and DEPTH-2's predicate is re-expressed rather than replaced."
+  },
+  "THE_LICENCE_IS_RELATIONAL_NOT_A_THRESHOLD": {
+    "the_rule": "'Finite enough' is not a global radius threshold. A radius of 0.01 is ample when candidates differ by 1.0 and useless when they differ by 0.001. The question is whether the uncertainty sets permit THIS comparison, not whether radius < X.",
+    "the_form": "`evidence.licenses(comparison)`, never `radius < X`.",
+    "and_finite_is_not_sufficient": "The unbounded case remains the limiting case, but a FINITE uncertainty need not license a decision either.",
+    "the_precedent_already_in_the_code": "This is not a new architectural idea. `SearchCandidate::comparable()` is already PAIR-DEPENDENT \u2014 R4-F10 made it so, because a dimension either side is structurally invariant on cannot rank that pair. A relational licence extends a notion the comparator already has rather than introducing one."
+  },
+  "MINIMUM_VIABLE_OUTPUT": "A `QualityEstimate` carrying value, uncertainty, support and provenance \u2014 NOT a stopping policy. Stopping policy is TERMINAL-1's, rerun afterwards against the learned bound instead of the generator's oracle constant. That rerun is the real test.",
+  "FOUR_OUTCOMES_ANY_OF_WHICH_CLOSES_THE_RUNG": [
+    "1. Calibrated uncertainty survives deliberate noise-model misspecification. The strongest result: a production-plausible epistemic primitive.",
+    "2. It works synthetically, but the current fixtures cannot test MODEL-RELEVANT calibration. The rung closes by naming what evidence would.",
+    "3. Real heterogeneous measurements are required. The synthetic REPRESENT programme has reached its legitimate boundary and must touch a real model \u2014 itself an important result.",
+    "4. Uncertainty estimates exist but are too WIDE to license useful pruning. Then TERMINAL-1's 82-97% pricing figures were telling the truth, and safe optimisation is intrinsically expensive at this measurement quality."
+  ],
+  "PREREGISTERED_FALSIFIERS": [
+    "COVERAGE: a nominal bound must achieve its declared empirical coverage on held-out instances.",
+    "NO HINDSIGHT: the bound may not use the deep value it is supposed to cover.",
+    "MONOTONICITY IN EXPECTATION: as stated above, with tail discovery named as the licensed exception.",
+    "PROXY-SPECIFIC: KlP99 and RouteFlipRate must not share a bound merely because both are quality statistics. They have different sampling behaviour \u2014 one is a tail, the other a dense rate, which is why ROUTE-CAL-1 already treats them differently.",
+    "NO RANKING LEAKAGE: uncertainty may say 'cannot license this comparison'. It must never become a scalar bonus or penalty that orders candidates. TERMINAL-1 kept `safely_excluded_by` to a bool for exactly this reason."
+  ],
+  "out_of_scope": "No stopping policy. No change to `decide_promotion` in this rung. No realization-aware cost \u2014 REALIZATION-COST-1 stays separate and later, and will ask what distribution and realization identity the PHYSICAL cost estimator has, which is the same question one layer over.",
+  "AMENDMENT_1_what_synthetic_evidence_can_and_cannot_settle": {
+    "recorded": "2026-09-17, before the rung ran",
+    "the_distinction": "Synthetic data can validate the MECHANICS of an uncertainty procedure. It cannot establish that the resulting uncertainty is CALIBRATED FOR MODEL BEHAVIOUR.",
+    "what_a_misspecified_synthetic_generator_CAN_still_falsify": [
+      "does the estimator undercover under heavy tails",
+      "does correlation break nominal coverage",
+      "does coverage improve in expectation as sample size grows",
+      "does the relational licensing rule refrain when intervals overlap"
+    ],
+    "what_it_cannot_say": "Whether the resulting interval means anything for K3, Gemma, Qwen or any actual model. The zero-valued corpus makes the boundary especially stark: there is no empirical position-level distribution to learn from.",
+    "why_this_is_amended_in": "Outcome 3 must not be reported as 'uncertainty cannot be tested synthetically'. The boundary is model-relevance, not mechanics, and overstating it would retire a set of real falsification tests that are still available."
+  },
+  "AMENDMENT_2_unscorable_keeps_its_provenance": {
+    "recorded": "2026-09-17, before the rung ran",
+    "the_correction": "`Unscorable` is subsumed by the richer representation, but the VOCABULARY is not deleted immediately. There are at least two conceptually different ways a thing can be unscorable, and they ask for different remedies.",
+    "two_reasons": {
+      "no_defensible_estimate_exists": "no finite or statistically defensible estimate is available at all",
+      "estimate_exists_but_does_not_license": "an estimate exists; its uncertainty does not permit THIS comparison"
+    },
+    "why_the_difference_is_actionable": "The first may require a different measurement PROCEDURE; the second may only require more samples. An exploration policy that cannot tell them apart will spend authority on a question more authority cannot answer.",
+    "the_unifying_axis": "REPRESENT now has three ways to decline, and the axis that matters is whether spending more authority changes the answer. `ConflictingOrderingProxies` \u2014 never, by FRONTIER-EXPLORE-1's result; incompatible costs are incommensurable, not uncertain. `IncompletePricingAuthority` \u2014 yes, more measurement can score the missing cost. Uncertainty-too-wide \u2014 sometimes, and only the provenance says which.",
+    "the_constraint_that_still_holds": "Neither reason may become a merit rank again. This is provenance on a refusal, not a score."
+  },
+  "NOTE_for_the_first_real_experiment": {
+    "the_design": "One real model, one fixed representation transition, independently sampled positions, estimates at 8 / 16 / 32 / ... / 500 positions across multiple independent draws, for a tail statistic and a dense rate.",
+    "why_those_two_statistics": "`RouteFlipRate` is explicitly a per-position rate and `KlP99` is a tail. They probe different sampling regimes, which is what the PROXY-SPECIFIC falsifier above demands \u2014 and the 500-position floor exists precisely because of the tail one.",
+    "an_implementation_consequence_worth_knowing_first": "`EvidenceBank::new` takes `positions_per_sample`, so its id \u2014 and therefore the `MeasurementKey` \u2014 differs by depth. The 8-position and 500-position measurements of the SAME state are different keys, not repeated observations of one. That is correct, and it means the cheap->deep PAIRING must be reconstructed outside the measurement registry rather than read out of it. Discovering that mid-build would be expensive."
+  }
+}

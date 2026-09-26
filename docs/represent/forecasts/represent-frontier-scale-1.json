@@ -1,0 +1,58 @@
+{
+  "programme": "REPRESENT-FRONTIER-SCALE-1",
+  "artifact_kind": "experimental freeze. Written BEFORE the harness exists. No implementation, no result.",
+  "written": "2026-09-16",
+  "base": "`ef01449a` (branch `represent-pareto-1`)",
+  "predecessor": "REPRESENT-PARETO-1 proved the decision semantics are value-sensitive at n=2, through both a direct comparator and sealed OPT-6 ingestion, at the p99 support floor.",
+
+  "the_question": "PARETO-1's refusal semantics are honest at n=2. `decide_promotion` selects ONLY when exactly one candidate is non-dominated; otherwise, if any comparable difference exists among the frontier, it returns `Ambiguous{ConflictingOrderingProxies}` rather than scalarise. At n=2 that refusal means 'we genuinely do not know'. At n=1000 it may mean 'the optimiser almost never acts'. This rung measures where the current semantics stop being operational.",
+
+  "explicitly_not_in_scope": "NO exploration policy is added before this runs. The point is to find the boundary, not to move it. If the predicted explosion occurs, choosing which frontier member to spend authority on becomes a separate contract, declared as EXPLORATION and never disguised as evidence-based preference. `decision.rs` already names that seam in prose.",
+
+  "THE_ANALYTIC_FORECAST": {
+    "why_it_is_forecastable": "For n candidates with two INDEPENDENT continuous proxies in general position, the non-dominated set is the set of 2-D maxima. Its expected size is the harmonic number H_n, with variance H_n - H_n^(2) where H_n^(2) = sum 1/k^2. Selection requires ONE candidate to be best on BOTH coordinates, which for independent coordinates has probability 1/n.",
+    "consequence": "The refusal rate under independent proxies is 1 - 1/n. This is not a defect to be discovered; it is a property of the comparator's definition, and the measurement's job is to confirm the harness reproduces it and then to characterise the regime where no closed form exists.",
+    "table": [
+      { "n": 2,   "expected_frontier_H_n": 1.5000, "variance": 0.2500, "mean_tolerance": 0.0219, "selection_rate_1_over_n": 0.500000, "rate_tolerance": 0.021913 },
+      { "n": 4,   "expected_frontier_H_n": 2.0833, "variance": 0.6597, "mean_tolerance": 0.0356, "selection_rate_1_over_n": 0.250000, "rate_tolerance": 0.018978 },
+      { "n": 8,   "expected_frontier_H_n": 2.7179, "variance": 1.1904, "mean_tolerance": 0.0478, "selection_rate_1_over_n": 0.125000, "rate_tolerance": 0.014494 },
+      { "n": 16,  "expected_frontier_H_n": 3.3807, "variance": 1.7964, "mean_tolerance": 0.0587, "selection_rate_1_over_n": 0.062500, "rate_tolerance": 0.010609 },
+      { "n": 32,  "expected_frontier_H_n": 4.0585, "variance": 2.4443, "mean_tolerance": 0.0685, "selection_rate_1_over_n": 0.031250, "rate_tolerance": 0.007626 },
+      { "n": 64,  "expected_frontier_H_n": 4.7439, "variance": 3.1145, "mean_tolerance": 0.0773, "selection_rate_1_over_n": 0.015625, "rate_tolerance": 0.005435 },
+      { "n": 128, "expected_frontier_H_n": 5.4331, "variance": 3.7960, "mean_tolerance": 0.0854, "selection_rate_1_over_n": 0.007812, "rate_tolerance": 0.003859 }
+    ],
+    "replicates": "R = 2000 independent candidate sets per (n, geometry). Tolerances above are 1.96 * sqrt(Var/R) for the frontier mean and 1.96 * sqrt(p(1-p)/R) for the selection rate — preregistered here, computed from R and the analytic values, NOT chosen after seeing the run.",
+    "pass_condition_independent_arm": "For every n, the observed frontier mean is within `mean_tolerance` of H_n AND the observed selection rate is within `rate_tolerance` of 1/n. A miss is a harness defect until proven otherwise, not a discovery about the comparator."
+  },
+
+  "GEOMETRIES": {
+    "independent": "Two proxies drawn independently. Analytic, as above. The reference arm.",
+    "strongly_correlated": "Rank correlation approaching 1. The frontier collapses toward a single member and the selection rate approaches 1. Predicted: frontier mean -> 1.0, selection -> 1.0 at every n.",
+    "perfectly_antagonistic": "Rank-reversed: the best candidate on proxy A is the worst on proxy B, monotonically. EVERY candidate is non-dominated, so the frontier is n and the selection rate is 0 for all n >= 2. Predicted exactly, with no tolerance — this arm is deterministic.",
+    "moderately_correlated": "The interior region. NO closed form. This is the only arm the experiment is genuinely measuring rather than confirming, and the only place a surprise would be informative."
+  },
+
+  "HARNESS_FALSIFIERS_hard_gates_not_commentary": {
+    "F1_class_and_tier_held_constant": "Every generated candidate must carry the SAME `MoveClass` and tier, asserted BEFORE `decide_promotion` is called. Stage 1 filters to the best tier before the frontier is computed, so a set with mixed classes measures stage 1's filtering and calls it frontier behaviour. Frontier size is reported relative to the stage-1 POOL, never to the original candidate count.",
+    "F2_no_ordering_evidence_must_never_fire": "In every two-proxy arm the expected `Ambiguous{NoOrderingEvidence}` rate is EXACTLY 0. It can fire only when nothing is comparable. Any occurrence invalidates that run as a fixture or calibration failure — it is the P2 defect reproduced — and is scored as a falsifier of the harness, never as a property of the search.",
+    "F3_physical_tie_break_needs_a_discrete_arm": "Stage 5 is reached only when EVERY comparable proxy compares `Equal`, which is exact float equality. Under continuous draws that rate is exactly 0 at every n, and reporting it as a behavioural result would be reporting that continuous draws do not tie. The tie-break rate is measured ONLY in a separate discrete-grid arm, whose grid coarseness is declared before the run.",
+    "F4_permutation_invariance_at_scale": "Every generated candidate set is also decided under a random permutation, and the FULL `PromotionDecision` — variant, candidate, and the complete `PromotionEvidence` including `dominated`, `deciding`, `readiness`, `unresolved` and `known_zero_spend` — must match. This re-arms R4-F1 under scale rather than only at the hand-built five-world layer."
+  },
+
+  "METRICS": [
+    "fraction of rounds returning `SelectForAuthority` (the selection rate)",
+    "mean and distribution of frontier size, relative to the stage-1 pool",
+    "`Ambiguous{ConflictingOrderingProxies}` rate",
+    "`Ambiguous{NoOrderingEvidence}` rate (expected 0; a falsifier)",
+    "`Ambiguous{IndistinguishableOnEveryProxy}` rate",
+    "`decided_by_physical_gain` rate (discrete-grid arm only)",
+    "sensitivity of each of the above to n",
+    "permutation-invariance violations (expected 0)"
+  ],
+
+  "WHAT_A_PASS_MEANS": "That the comparator behaves exactly as its definition implies, and that the refusal rate under independent proxies rises to 1 - 1/n. That is NOT a bug report. It is the quantified statement of where evidence-only selection stops being able to act, and it is the precondition for designing an exploration policy that is honest about being exploration.",
+
+  "WHAT_A_FAIL_MEANS": "If the independent arm misses H_n or 1/n outside tolerance, the harness is wrong — most likely F1 (mixed classes) or F2 (a half-configured registry). Both have already occurred once in this programme and both are now gates.",
+
+  "out_of_scope": "No exploration policy, no change to `decide_promotion`, no real model, no K3, no execution measurement."
+}

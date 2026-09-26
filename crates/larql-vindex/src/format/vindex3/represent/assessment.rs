@@ -281,6 +281,18 @@ impl MoveClass {
     /// Higher sorts first. Encoded as a method rather than left to the
     /// enum's declaration order so that reordering the variants cannot
     /// silently become search policy.
+    /// **Was the behavioural cost of this move actually scored?**
+    ///
+    /// `Unscorable` is the only variant that says it was not — the
+    /// other three are statements about the CANDIDATE, this one is a
+    /// statement about US. DEPTH-2 moves that fact out of stage 1's
+    /// ranking, where it let knowledge outrank merit, and into stage
+    /// 5's precondition, where an unscored cost disqualifies a physical
+    /// comparison instead of silently joining one.
+    pub(super) fn cost_is_scorable(self) -> bool {
+        !matches!(self, Self::Unscorable)
+    }
+
     pub(super) fn tier(self) -> u8 {
         match self {
             Self::Unpriced => 3,

@@ -370,6 +370,16 @@
     "record"
   ],
   [
+    "larql-vindex/src/format/vindex3/represent/measure/teacher_forced.rs",
+    "measure_teacher_forced",
+    "record"
+  ],
+  [
+    "larql-vindex/src/format/vindex3/represent/observation_stream/mod.rs",
+    "write_stream",
+    "record"
+  ],
+  [
     "larql-vindex/src/format/vindex3/represent/state/key.rs",
     "MeasurementRegistry::record",
     "record_validated"

@@ -1,0 +1,53 @@
+{
+  "programme": "REPRESENT-DEPTH-2",
+  "artifact_kind": "RESULT. The repair landed; every DEPTH-1 arm flipped; FRONTIER-SPEND-1 reran unchanged.",
+  "written": "2026-09-17",
+  "forecast": "docs/represent/forecasts/represent-depth-2.json",
+  "THE_REPAIR_HELD": {
+    "G1": "Pricing only the loser no longer makes it win. `SelectForAuthority{A, dominated: [\"B\"], deciding: [KlP99, RouteFlipRate], readiness: Uninformed}` \u2014 exactly the output preregistered before the implementation was chosen. The before/after decisions are now byte-identical, so the invariant holds.",
+    "G2": "A conflict survives asymmetric depth in both directions and at uniform depth, with an identical record.",
+    "G3": "Equal proxies with MIXED scorability return `IncompletePricingAuthority`; with every cost scored they return `IndistinguishableOnEveryProxy`. The two are kept distinct.",
+    "G4_G5": "Uniform depth unchanged; `Worthless` still excluded.",
+    "the_flip": "All four DEPTH-1 arms failed the moment the repair landed, including the one whose assertion was deliberately inverted \u2014 it failed with `left == right`. They were then rewritten to assert the contract. The repair was checked against a result recorded BEFORE the implementation existed."
+  },
+  "A_MISTAKE_IN_THE_FIRST_IMPLEMENTATION": {
+    "what": "The stage-5 precondition was first written as 'every frontier member's cost must be scorable'. That fired on UNIFORM non-scorability too, and broke two pre-existing `decision` tests \u2014 `physical_gain_may_separate_what_the_proxies_call_equal` and `indistinguishable_candidates_are_refused_not_ordered_by_identity`.",
+    "why_it_was_wrong": "Those tests encode legitimate behaviour at uniform depth, which G4 says must not change. The defect was about depth ASYMMETRY; a frontier where nobody's cost was scored is equally unsupported and comparing predicted gains there is pre-DEPTH-2 behaviour.",
+    "the_corrective": "The freeze's own word. It said the comparison must not be 'supported COMPARABLY across that frontier'. The predicate is therefore mixed scorability \u2014 `scorable != 0 && scorable != frontier.len()` \u2014 not universal support.",
+    "recorded_because": "The pre-existing tests caught scope creep in the repair. That is the regression expectation in the freeze doing its job."
+  },
+  "FRONTIER_SPEND_1_RERUN_unchanged_driver": {
+    "hazards": "0 \u2014 the tier-escalation hazard that fired 1488 of 1488 times before the repair does not fire once after it.",
+    "terminal_conditions": "{ unique-preference: 1488 } \u2014 every search now reaches an evidence-determined destination.",
+    "spend": {
+      "uniform": "3.492 priced runs, 1874.0 position-equivalents",
+      "coverage": "3.301 priced runs, 1778.5 position-equivalents",
+      "reading": "Coverage is cheaper by 0.19 priced runs, about 95 position-equivalents, roughly 5%."
+    },
+    "THE_LADDER_ECONOMY": "About 3.3 to 3.5 of 16 candidates needed pricing. Pricing everything would cost 16 x 500 = 8000 position-equivalents; the ladder used about 1800. A 4.3x to 4.5x saving, and the answer is the same one.",
+    "H2_the_primary_claim": "0 violations of PREFERENCE among the replicates where both searches priced their winner. Exploration changed where authority was spent and what it cost, and did not change the destination."
+  },
+  "A_GAP_IN_THE_FREEZE_FOUND_BY_RUNNING_IT": {
+    "observation": "210 replicates terminated on a winner whose own reading was a NOISY cheap one. In those, uniform and coverage genuinely selected different candidates \u2014 not because tier leaked, but because the two searches had collected DIFFERENT observed values and stopped before the difference mattered.",
+    "why_it_is_not_a_contract_defect": "The primary claim is conditional: exploration must not change the preference 'when the available evidence is SUFFICIENT to determine one'. A search that stops at a unique frontier member it has only measured cheaply has not met that precondition; it simply does not know yet.",
+    "what_the_freeze_missed": "Its terminal conditions did not distinguish 'a unique preference exists among observed values' from 'the evidence is sufficient to trust it'. The rerun therefore scores H2 only where both searches priced their winner, and reports the rest separately.",
+    "the_follow_on": "A terminal condition that requires the winner \u2014 or the whole unresolved frontier \u2014 to be priced before a search claims a preference. That is a search-driver contract, not a comparator one, and it belongs to its own rung."
+  },
+  "ALSO_CORRECTED": {
+    "the_hazard_detector": "The SPEND-1 detector originally asked whether the max-tier pool had excluded anyone, which encoded the PRE-repair stage 1. After DEPTH-2 it kept 'firing' on selections made legitimately on named proxies. It now tests the defect's real signature: a selection naming nothing \u2014 no dominated candidate, no deciding proxy, and not the physical tie-break either.",
+    "H2s_comparison": "The freeze asked for the full evidence record to match, `readiness` and `unresolved` included. After DEPTH-2 that is the wrong test, and DEPTH-2 is the reason: `readiness` is the honest home for the difference between 'we priced this one' and 'we did not'. Two policies that price different members MUST end with different `readiness`, and demanding otherwise would demand uniform depth \u2014 the very thing the ladder exists to avoid. Preference is compared; annotation is reported."
+  },
+  "STATUS": "clippy clean, fmt clean, 933 represent tests pass. `gpu_ms_saved` is untouched and still a prediction; beta and realization trust remain REALIZATION-COST-1's.",
+  "ADJUDICATED_the_stage_5_predicate": {
+    "ruling": "KEEP mixed scorability. DEPTH-2 is NOT tightened to universal scorability.",
+    "the_rule_in_three_cases": {
+      "mixed_scorability": "refuse with `IncompletePricingAuthority` \u2014 unequal epistemic depth must not decide",
+      "uniform_scorability": "the physical stage runs, as before",
+      "uniform_non_scorability": "existing behaviour preserved for DEPTH-2"
+    },
+    "why": "DEPTH-2 repairs measurement-depth ASYMMETRY changing preference. Uniform non-scorability is not that defect, and G4 requires equal-depth behaviour to be unchanged \u2014 which the universal reading violated on exactly those pre-existing controls.",
+    "what_tightening_would_have_imported": "A different scientific question: should `gpu_ms_saved` decide anything when nobody has trustworthy behavioural pricing? That is about what a beta-derived PREDICTION is worth, and it belongs to REALIZATION-COST-1, which is already chartered to revisit it.",
+    "consequence_for_the_regression_reading": "The two old tests were catching scope creep, not defending a decision now endorsed forever. The third case is left as it was, explicitly unendorsed."
+  },
+  "NEXT": "The search-driver sufficiency gap \u2014 the 210 replicates that terminated on a cheaply-measured winner. After that, REALIZATION-COST-1 can decide whether the uniform-non-scorable physical stage deserves to survive at all."
+}

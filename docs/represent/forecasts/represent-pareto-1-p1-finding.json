@@ -1,0 +1,47 @@
+{
+  "programme": "REPRESENT-PARETO-1",
+  "artifact_kind": "precondition result. P1 EXECUTED. Its substantive precondition HOLDS; its predicted CLASS is FALSIFIED. No witness written, nothing adjusted to make a prediction true.",
+  "written": "2026-09-16",
+  "base": "`eef89d97` (branch `represent-pareto-1`)",
+  "follows": "docs/represent/forecasts/represent-pareto-1-p2-finding.json",
+
+  "P2_REPAIR_CONFIRMED": {
+    "what_was_done": "`state::fixtures::pareto_p1_snapshot()` carries `SearchCalibrationRegistry::route_cal_1()` instead of `::default()`, identically for every world built from it. `ingest::tests::Fixture::observed_with(kl, route_flips)` was added, with `observed(kl)` kept as a wrapper passing 0.",
+    "evidence": "`p2_repair_the_carried_registry_can_order_something` PASSES. `comparable()` is private, so the repair is observed where it is visible: under the default registry every statistic is `Unusable` at diagnostic scale and every decision collapses to `Ambiguous{NoOrderingEvidence}`. The corrected fixture does not, so at least one statistic now orders.",
+    "status": "F1 and F2 of the P2 finding are CLOSED."
+  },
+
+  "P1_RESULT": {
+    "executed": "`p1_both_candidates_buy_time_and_share_one_promotion_tier`, against `fixtures::pareto_p1_snapshot()` at `EvidenceScale::Authority`.",
+    "observed_rows": [
+      "id=\"−M26 +K24\"  class=Priced  tier=2  gpu_ms_saved=2",
+      "id=\"−K25 +H\"    class=Priced  tier=2  gpu_ms_saved=2"
+    ],
+    "the_substantive_precondition_HOLDS": "Both candidates survive assessment (two edges, each end carrying a reading and a ledger), both buy time (`gpu_ms_saved` = 2 > 0), and both sit in the SAME tier. Stage 1 of `decide_promotion` therefore cannot separate them, and the non-dominated frontier IS reached. That was P1's question and the answer is yes.",
+    "the_predicted_CLASS_is_FALSIFIED": "The P2 finding predicted `MoveClass::Unscorable` at tier 1. The observed class is `MoveClass::Priced` at tier 2, on BOTH candidates.",
+    "assertion_left_RED": "The test asserts the frozen prediction and currently fails on it. It has not been relaxed. A prediction that is edited after seeing the result is not a prediction."
+  },
+
+  "WHY_THE_PREDICTION_WAS_WRONG": {
+    "cause": "Two fixture paths build the quality bank differently, and the prediction was derived from one while the fixture was built on the other.",
+    "path_A": "`ingest::tests::Fixture::observed()` sets `routing.route_weight_mass_moved`, `top10_mass_displaced` and `top1_mass_displaced` to `None`. Those criteria are then unpriceable, the marginal cannot be scored, and a positive-gain move classifies `Unscorable` (tier 1). This is the path the P2 finding reasoned from.",
+    "path_B": "`state::fixtures::authority_reading(kl, flips)` POPULATES all three — `route_weight_mass_moved: dist(0.113, 0.19)`, `top10_mass_displaced: dist(0.065, 0.065)`, `top1_mass_displaced: dist(0.03, 0.03)`. Every criterion is scorable, so the move classifies `Priced` (tier 2). This is the path `pareto_p1_snapshot()` was built on.",
+    "the_transferable_lesson": "`MoveClass` is a property of WHICH OBSERVATION HELPER built the bank, not of the move. Two helpers that both read as 'the fixture' produce different classes from the same graph, ledgers and cost model. A class prediction must name its bank builder or it is not a prediction about anything."
+  },
+
+  "WHAT_THIS_CHANGES_FOR_THE_WORLD_TABLE": {
+    "unaffected": "Stage 5's physical tie-break reads `ranking_score.gpu_ms_saved` directly, so C2 and C3 still turn on the quantity the freeze named. `gpu_ms_saved` is 2 on BOTH candidates here, which is already the inertness W1/W2/C1 require — both ledgers remove 8,192 bytes of a 32,768-byte baseline, so the physical facts are equal by construction rather than by stipulation.",
+    "affected": "`decision.rs`'s opening finding records that `RankingScore.within` 'falls back to `gpu_ms_saved` for any non-`Priced` class'. At `Priced` it does not fall back. That does not touch `decide_promotion`, which compares pairwise and never reads `within` — but it does change `display_order` and any narrative built on the ranking score. A result described in terms of `within` under a `Priced` fixture is describing a different quantity from one described under `Unscorable`.",
+    "not_a_defect": "Nothing in production is wrong. `Priced` is the honest classification of a move whose every criterion could be scored."
+  },
+
+  "THE_DECISION_OWED_BEFORE_THE_WITNESS": {
+    "statement": "The world table must be built on ONE bank builder, declared. The two options are different experiments and neither is wrong.",
+    "option_1_nulled": "Build the worlds on `Fixture::observed_with`-shaped banks (three distributions `None`). Candidates classify `Unscorable`, tier 1. This matches the LOOP-1 lineage and the P2 finding's reasoning, and keeps PARETO-1 on the same fixture family as its predecessor.",
+    "option_2_populated": "Build the worlds on `authority_reading`-shaped banks. Candidates classify `Priced`, tier 2. Richer, and closer to a real measured bank, but it is a different fixture family from LOOP-1's and the freeze's prose must be re-pinned to match.",
+    "what_must_NOT_happen": "Choosing whichever one makes the frozen assertion green. The freeze's `implementation_entry_gate` already forbids a heuristic selected because it makes the fixture pass, and the same applies to a fixture selected because it makes the freeze pass.",
+    "either_way": "The five-world table's expected decisions are unchanged in KIND — the frontier is reached under both options, because both give the two candidates the same tier as each other. Only the tier's NUMBER and the class NAME differ."
+  },
+
+  "state_of_the_tree": "The two plumbing changes and the P1 test are written and UNCOMMITTED. `p2_repair...` passes; `p1_...` is red against its frozen prediction. Nothing is pushed. No world, no witness, no change to `decide_promotion`."
+}

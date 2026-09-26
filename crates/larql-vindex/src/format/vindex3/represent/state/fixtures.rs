@@ -25,14 +25,18 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::super::byte_ledger::{ByteLedger, ScopeBytes};
 use super::super::compiler::{read_source_identity, SourceIdentity};
-use super::super::diagnostic::DiagnosticPolicy;
-use super::super::execution_cost::ExecutionCostModel;
+use super::super::decision::SearchCandidate;
+use super::super::diagnostic::{DiagnosticPolicy, DiagnosticVector};
+use super::super::execution_cost::{ExecutionCostModel, ExecutionCostObservation};
 use super::super::map::{Exception, PrecisionMap};
 use super::super::measure::TEACHER_FORCED_TWO_ARM;
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::nvfp4_pack::DTYPE_NVFP4;
+use super::super::participation::ParticipationDeclaration;
 use super::super::policy::Role;
+use super::super::promotion::PromotionCandidate;
 use super::super::quality::{
     kimi_logit_balanced_v1, Distribution, LogitEvidence, QualityBank, QualityGate, RoutingEvidence,
 };
@@ -554,5 +558,284 @@ impl PricedRecord {
                 accounting: Some(accounting),
             },
         )
+    }
+}
+
+// ------------------------------------------------- REPRESENT-PARETO-1
+
+/// One ledger for a PARETO-1 world: every scope the decoder reads per
+/// token, changed or not, so `fraction_removed` has a denominator.
+pub fn pareto_ledger(name: &str, q: u64, k: u64) -> ByteLedger {
+    let scope = |scope: &str, family: &str, baseline, candidate| ScopeBytes {
+        scope: scope.into(),
+        family: family.into(),
+        baseline_bytes: baseline,
+        candidate_bytes: candidate,
+    };
+    ByteLedger {
+        model: "kimi-linear-48b".into(),
+        baseline_representation: "BF16".into(),
+        candidate_representation: name.into(),
+        scopes: vec![
+            scope("q", "attention", 16_384, q),
+            scope("k", "attention", 16_384, k),
+        ],
+    }
+}
+
+/// One measured execution observation, shaped like a real one. A
+/// FIXTURE: no GPU timing exists for these maps.
+///
+/// Its beta is the only slope this model has for this checkpoint —
+/// `predict` keys on `model_identity` and then on nearest byte
+/// fraction, never on codec or realization. PARETO-1 holds physical
+/// facts constant across candidates in every world but C2 precisely so
+/// its claim does not rest on that slope being right.
+///
+/// ```text
+/// beta = ((10.0 - 8.0)/10.0) / ((32768 - 24576)/32768) = 0.2/0.25 = 0.8
+/// ```
+pub fn pareto_cost_model() -> ExecutionCostModel {
+    ExecutionCostModel::new(vec![ExecutionCostObservation {
+        id: "pareto-1-fixture-001".into(),
+        machine: "fixture".into(),
+        device: "fixture-gpu".into(),
+        backend: "metal".into(),
+        compiler_commit: "0000000".into(),
+        model_identity: "kimi-linear-48b".into(),
+        baseline_representation: "BF16".into(),
+        candidate_representation: "fixture".into(),
+        families_changed: vec!["attention".into()],
+        scopes_changed: 1,
+        baseline_bytes_per_token: 32_768,
+        candidate_bytes_per_token: 24_576,
+        baseline_gpu_ms_per_token: 10.0,
+        candidate_gpu_ms_per_token: 8.0,
+        fixed_overhead_ms: 1.0,
+        benchmark_protocol: "fixture".into(),
+        evidence: vec![],
+    }])
+}
+
+/// The frozen accepted quality vectors, as `(kl_p99, route_flips)`.
+/// Lower is better on both. Held in the same magnitude band as the P1
+/// instantiation so no world changes the classification regime.
+///
+/// ONE definition, used by both the direct worlds and the OPT-6
+/// integration, so the two layers can be asserted to run the SAME
+/// experiment rather than two experiments that resemble each other.
+pub const PARETO_BETTER: (f64, u64) = (3.4000e-3, 1200);
+/// See [`PARETO_BETTER`].
+pub const PARETO_WORSE: (f64, u64) = (3.9000e-3, 1600);
+/// See [`PARETO_BETTER`]. Used where the two candidates must be
+/// indistinguishable on quality.
+pub const PARETO_MIDDLE: (f64, u64) = (3.6500e-3, 1400);
+/// The PARENT baseline both layers measure against. It sits BELOW the
+/// candidates on kl, so every move consumes kl headroom and classifies
+/// `Priced` rather than `Unpriced`. A baseline worse than its children
+/// makes every move free, which is a different experiment.
+pub const PARETO_PARENT: (f64, u64) = (3.3532e-3, 1427);
+
+/// **One PARETO-1 world — everything a world varies, and nothing else.**
+///
+/// The two candidates, their identities, the graph and its actions, the
+/// parent reading, the cost model and ROUTE-CAL-1's registry are FIXED
+/// across every world. A world differs only in the accepted
+/// `(kl_p99, route_flips)` of each candidate and — in exactly one world
+/// — the candidate byte ledgers that price them.
+///
+/// **The registry is why this fixture exists.** `config()` carries
+/// `TailSupportPolicy::route_cal_1()` and
+/// `SearchCalibrationRegistry::default()` — ROUTE-CAL-1's policy
+/// without ROUTE-CAL-1's calibrations. `DiagnosticReading::evidence`
+/// asks at a hardcoded `EvidenceScale::Diagnostic`, where an
+/// unregistered statistic is `Unusable` with no `is_priceable`
+/// fallback, so under the default registry NOTHING orders and every
+/// comparison is vacuous. Carrying the real registry is what leaves
+/// `KlP99` and `RouteFlipRate` — and only those two — able to rank.
+pub struct ParetoWorld {
+    a_quality: (f64, u64),
+    b_quality: (f64, u64),
+    a_bytes: (u64, u64),
+    b_bytes: (u64, u64),
+    positions: u64,
+}
+
+impl ParetoWorld {
+    /// Candidate A's identity, exactly as `promotion_candidates` labels
+    /// it from `edge.action().label`.
+    pub const A: &'static str = "\u{2212}M26 +K24";
+    /// Candidate B's identity.
+    pub const B: &'static str = "\u{2212}K25 +H";
+
+    /// **Physical facts INERT across the pair.** Both ledgers remove
+    /// 8,192 of 32,768 bytes, so `fraction_removed` is 0.25 on each,
+    /// both predict `gpu_ms_saved = 2.0`, and stage 5 of
+    /// `decide_promotion` cannot separate the candidates. Only the
+    /// accepted quality values can.
+    pub fn inert(a_quality: (f64, u64), b_quality: (f64, u64)) -> Self {
+        Self {
+            a_quality,
+            b_quality,
+            a_bytes: (8_192, 16_384),
+            b_bytes: (16_384, 8_192),
+            positions: 8192,
+        }
+    }
+
+    /// **B removes half as much.** `fraction_removed` is 0.125 against
+    /// A's 0.25, so the predicted gains are 1.0 against 2.0.
+    ///
+    /// The ONLY world where stage 5 is allowed to decide, and the only
+    /// place this asymmetry may appear. Everywhere else a physical
+    /// difference would make a quality result unattributable.
+    pub fn physically_separated(a_quality: (f64, u64), b_quality: (f64, u64)) -> Self {
+        Self {
+            a_quality,
+            b_quality,
+            a_bytes: (8_192, 16_384),
+            b_bytes: (16_384, 12_288),
+            positions: 8192,
+        }
+    }
+
+    /// Measure every bank at this corpus depth. Below the p99 support
+    /// floor the candidates stay orderable but lose pricing, which is
+    /// the whole point of the measurement ladder.
+    pub fn at_depth(mut self, positions: u64) -> Self {
+        self.positions = positions;
+        self
+    }
+
+    pub fn snapshot(&self) -> SearchSnapshot {
+        let mut graph =
+            RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, p());
+        for (child, action, who) in [
+            (
+                t1(),
+                Action::new(Self::A).removing(["M26"]).adding(["K24"]),
+                "pareto-1/A",
+            ),
+            (
+                s2(),
+                Action::new(Self::B).removing(["K25"]).adding(["H"]),
+                "pareto-1/B",
+            ),
+        ] {
+            graph
+                .apply(p().physical_id(), action, child, Provenance::new(who))
+                .expect("both children are physically lighter than the parent");
+        }
+
+        let mut measurements = MeasurementRegistry::new();
+        for (s, (kl, flips)) in [
+            (p(), PARETO_PARENT),
+            (t1(), self.a_quality),
+            (s2(), self.b_quality),
+        ] {
+            let mut bank = authority_reading(kl, flips);
+            bank.positions = self.positions;
+            measurements
+                .record_fixture(key_for(&s, EvidenceScale::Authority), bank)
+                .expect("record");
+        }
+
+        let mut config = config();
+        config.calibrations = SearchCalibrationRegistry::route_cal_1();
+
+        let mut facts = facts(graph, measurements);
+        facts.byte_ledgers = BTreeMap::from([
+            (
+                p().physical_id().clone(),
+                pareto_ledger("P", 16_384, 16_384),
+            ),
+            (
+                t1().physical_id().clone(),
+                pareto_ledger("T1", self.a_bytes.0, self.a_bytes.1),
+            ),
+            (
+                s2().physical_id().clone(),
+                pareto_ledger("S2", self.b_bytes.0, self.b_bytes.1),
+            ),
+        ]);
+        facts.execution_cost = pareto_cost_model();
+
+        SearchSnapshot::new(space(), config, facts)
+    }
+}
+
+/// **The P1 instantiation, pinned.** Its numbers are the ones P1 scored
+/// and must keep producing: both candidates `Priced`, tier 2,
+/// `gpu_ms_saved` exactly 2.0, equal across the pair.
+pub fn pareto_p1_snapshot() -> SearchSnapshot {
+    ParetoWorld::inert((3.6480e-3, 1570), (4.0563e-3, 1309)).snapshot()
+}
+
+/// The shared assessment and the policies the comparator reads.
+///
+/// One assessment, cloned into every synthetic candidate. FRONTIER
+/// rungs require identical `MoveClass` and tier across a set — mixed
+/// classes make stage 1 the thing being measured — so sharing it makes
+/// that structural rather than asserted-and-hoped.
+/// The template at a chosen measurement depth. Below the p99 support
+/// floor the assessment classifies `Unscorable`; at or above it,
+/// `Priced`. That difference is what an escalation buys, and what the
+/// spend ladder is made of.
+pub fn pareto_candidate_template_at(
+    positions: u64,
+) -> (
+    PromotionCandidate,
+    SearchCalibrationRegistry,
+    TailSupportPolicy,
+    DiagnosticPolicy,
+) {
+    let snap = ParetoWorld::inert(PARETO_BETTER, PARETO_WORSE)
+        .at_depth(positions)
+        .snapshot();
+    let candidates = snap
+        .promotion_candidates(EvidenceScale::Authority)
+        .expect("the cost model covers this model");
+    let config = snap.config();
+    (
+        candidates[0].promotion.clone(),
+        config.calibrations.clone(),
+        config.tail_support.clone(),
+        config.diagnostic_policy.clone(),
+    )
+}
+
+pub fn pareto_candidate_template() -> (
+    PromotionCandidate,
+    SearchCalibrationRegistry,
+    TailSupportPolicy,
+    DiagnosticPolicy,
+) {
+    let snap = pareto_p1_snapshot();
+    let candidates = snap
+        .promotion_candidates(EvidenceScale::Authority)
+        .expect("the cost model covers this model");
+    let config = snap.config();
+    (
+        candidates[0].promotion.clone(),
+        config.calibrations.clone(),
+        config.tail_support.clone(),
+        config.diagnostic_policy.clone(),
+    )
+}
+
+/// One synthetic candidate carrying a chosen `(kl_p99, route_flips)`.
+/// Everything except the diagnostic vector comes from the template.
+pub fn pareto_candidate(
+    id: &str,
+    promotion: &PromotionCandidate,
+    policy: &DiagnosticPolicy,
+    kl: f64,
+    route_flips: u64,
+) -> SearchCandidate {
+    SearchCandidate {
+        id: id.to_string(),
+        promotion: promotion.clone(),
+        diagnostic: DiagnosticVector::of(policy, &authority_reading(kl, route_flips)),
+        participation: ParticipationDeclaration::all_affected(),
     }
 }

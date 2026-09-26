@@ -1,0 +1,79 @@
+{
+  "programme": "REPRESENT-FRONTIER-SPEND-1",
+  "artifact_kind": "experimental freeze. Written BEFORE the search driver exists. No implementation, no result.",
+  "written": "2026-09-16",
+  "base": "`6e8e05ea` (branch `represent-pareto-1`)",
+  "predecessor": "FRONTIER-EXPLORE-1's first wave demonstrated three policies that read no physical cost, and proved conflict is incommensurability rather than uncertainty.",
+  "one_line": "Same truth, different path, different authority cost.",
+
+  "PRIMARY_CLAIM": {
+    "statement": "Under the same frozen landscape, evidence model, measurement protocol and budget, the exploration policy may change WHERE authority is spent and HOW MUCH it costs, but it must not change the eventual preference when the available evidence is sufficient to determine one.",
+    "why_it_is_primary": "Spend is an efficiency question. Policy-independence of the DESTINATION is a correctness question: if uniform random and coverage reach different eventual preferences from one landscape, the exploration layer has leaked into the evidence layer, and that is the most serious finding this rung can produce. It would not mean one policy explored better."
+  },
+  "SECONDARY_OUTCOME": "Authority spend, reported in both raw run counts and position-equivalents.",
+
+  "THE_COST_LADDER_derived_not_invented": {
+    "cheap_ordering_run": "8 positions",
+    "priced_authority_run": "500 positions",
+    "nominal_ratio": "62.5x",
+    "why_8_is_enough_to_ORDER": "Ordering needs no tail support. `RouteFlipRate` is a dense rate over all positions, and `KlP99` at diagnostic scale hits a registered `OrderingProxy` verdict in `route_cal_1` before any tail fallback is consulted. Observed directly: the OPT-6 layer at 8 positions returned `deciding: [KlP99, RouteFlipRate]` and selected cleanly. Only PRICING was missing.",
+    "why_500_is_required_to_PRICE": "`TailSupportPolicy::route_cal_1().required_observations(0.99)` = 5.0/(1-0.99). PARETO-1 pinned both sides of that boundary at 499 and 500.",
+    "why_it_is_linear": "Teacher-forced measurement cost is essentially linear in positions, so the cost ratio IS the position ratio. Reporting position-equivalents rather than run counts alone is what makes two policies comparable when they escalate different numbers of times.",
+    "interpretable_scale": "Two saved priced runs are worth about 125 cheap runs. The result has a scale from the start rather than an arbitrary unit."
+  },
+
+  "THE_LADDER_AS_A_SEARCH": {
+    "phase_1": "Every candidate enters via a CHEAP run at 8 positions. It is then orderable but not priceable, so it classifies `Unscorable` at tier 1.",
+    "phase_2": "Exploration chooses which frontier member to ESCALATE to a priced run at 500 positions, after which it classifies `Priced` at tier 2 and stage 5 can break proxy ties.",
+    "note": "`promotion_candidates` skips an edge whose ends lack a reading, so an unmeasured candidate is ABSENT from the comparator rather than present-and-unranked. The frontier is always over measured candidates."
+  },
+
+  "NAMED_HAZARD_the_ladder_may_leak_into_preference": {
+    "mechanism": "Escalation changes `MoveClass` from `Unscorable` (tier 1) to `Priced` (tier 2). Stage 1 of `decide_promotion` filters to the MAXIMUM tier before the frontier is computed.",
+    "predicted_consequence": "The first candidate escalated becomes the sole member of the stage-1 pool, and is therefore selected on TIER ALONE, with no ordering evidence involved. Whichever candidate the exploration policy chose to price would determine the preference.",
+    "if_it_fires": "Policy-independence fails for a STRUCTURAL reason, and the finding is that the measurement ladder leaks into preference through stage 1. That is a contract defect, not a policy result, and it would require an explicit remedy — for example, comparing only within a tier once every frontier member is at the same measurement depth. No remedy is designed here; the freeze records the prediction so that the failure is recognised rather than rationalised.",
+    "if_it_does_not_fire": "State precisely why, from the code, rather than concluding the hazard was imaginary.",
+    "status": "PREREGISTERED PREDICTION. This is the most likely way this rung fails, and it was derived from the comparator's own staging rather than observed."
+  },
+
+  "TERMINAL_CONDITIONS": [
+    "the caller objective is satisfied",
+    "a newly discovered dominator yields a unique evidence preference",
+    "every member of the CURRENT frontier has been measured at least once at the priced depth",
+    "the preregistered authority budget is exhausted"
+  ],
+  "terminal_condition_note": "When the frontier CHANGES, the measured-set condition is re-evaluated against the NEW current frontier, never against historical members. The naive reading — 'the frontier empties' — never fires, because measuring a member does not remove it from the non-dominated set.",
+
+  "PREREGISTERED_NUMBERS": {
+    "landscape_size": 16,
+    "geometries": "moderate (ALPHA = 0.5) as the primary arm, independent as a second. Both defined exactly as FRONTIER-SCALE-1 defines them.",
+    "budget": "8000 position-equivalents per search. The initial cheap sweep costs 16 x 8 = 128, leaving room for about 15 priced runs.",
+    "replicates": "R = 1000 landscapes per (policy, geometry), deterministic seeds.",
+    "rule": "These are fixed here. The budget is not tuned after seeing spend curves, and a reduction in R forced by runtime is recorded as a deviation rather than applied silently."
+  },
+
+  "ARMS_and_what_may_be_RANKED": {
+    "P1_uniform_random": "ranked against P2 on priced-authority spend",
+    "P2_coverage": "ranked against P1 on priced-authority spend",
+    "P3_caller_objective": "REPORTED IN ITS OWN COLUMN, explicitly NOT ranked against P1 or P2.",
+    "why_P3_cannot_be_ranked_yet": "With objectives restricted to quality terms, P3 can terminate on ZERO priced runs — it selects from the frontier using evidence already in hand, because a quality-only objective never needs pricing. Ranked on total spend it would win by construction and the result would say nothing about the policy. The fair comparison needs objectives that genuinely require priced evidence, and latency objectives are the natural ones — so it waits for REALIZATION-COST-1."
+  },
+
+  "HARD_FALSIFIERS": {
+    "H1_no_global_dominator_at_initialisation": "The generated landscape must NOT contain a candidate that dominates all others as soon as the cheap sweep completes, unless that is a dedicated control arm. With one present every policy terminates immediately and identically, every arm looks equally good, and the experiment passes green while measuring nothing. This is the same degeneracy that made FRONTIER-SCALE-1's first `Moderate` generator useless, and it was invisible in a passing test.",
+    "H2_uniform_and_coverage_must_agree": "Whenever the frozen landscape contains enough evidence for a unique preference, P1 and P2 must terminate at the SAME `PromotionDecision` AND the same full `PromotionEvidence` — candidate, `dominated`, `deciding`, `readiness`, `unresolved`, `known_zero_spend`. A difference is exploration contaminating the scientific conclusion, not a policy preference.",
+    "H3_a_unique_preference_must_EXIST": "The landscape is constructed so that the true Pareto set, once every candidate is priced, has exactly one member. Otherwise H2 is vacuous: both policies would agree on 'no unique preference' and the primary claim would be untested.",
+    "inherited": "FRONTIER-SCALE-1's four gates and FRONTIER-EXPLORE-1's tie discipline continue to apply: class and tier asserted before deciding, `NoOrderingEvidence` expected zero in two-proxy arms, the physical tie-break confined to a declared grid, full decision equality under permutation, and no policy falling through to list order or identity."
+  },
+
+  "METRICS": [
+    "priced-authority runs to termination, per policy",
+    "total spend in position-equivalents, per policy",
+    "which terminal condition fired, and at what spend",
+    "frontier coverage at termination",
+    "H2 violations (expected 0) — the primary claim, scored",
+    "rate at which escalation alone changed the decision (the named hazard, scored)"
+  ],
+
+  "out_of_scope": "No change to `decide_promotion`. No remedy for the named hazard. No latency or gain-ranked policy. No promotion of `AuthorityChoice` into production vocabulary. No real model, no K3."
+}
