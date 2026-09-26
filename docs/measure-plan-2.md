@@ -184,3 +184,13 @@ These land in PR 1 (kinds and binding) and PR 2 (ingestion), with W8 and W9 comm
    `PlanRefusal` in execution, the interpreter executor and the arm builder. Witnesses W4–W6.
 3. **Producer and CLI:** the snapshot producer, the lowered executor registration, and a `vindex3` verb
    that runs AUTO-REP over a produced record. Witness W7.
+
+## Implementation record
+
+- **PR 1** (#579): the kinds, the binding and the optional gate. W1–W3, W9 and W8's adjudication half; eight mutations, each caught.
+- **PR 2**: `RunFacts`, `ExecutionRefusal::Plan`, `MeasurementProcedure::PlanV1`, `ingest/token_bank_evidence.rs`, per-procedure completeness and plan invariants, `PlanTeacherForcedExecutor`, and `measure::plan::arm::interpreter_arm_for`.
+  - **W4** is covered by unit tests of the token-bank verifier.
+  - **W5, W6 and W8's ingestion half** run on the dense fixture with a real token bank and real plan-v1 runs. W6's first proposal, uniform NVFP4, measured a full-vocabulary KL p99 of 0.0031 nats against the test gate's 0.001. It was refused and cut, and two further real proposals were compiled and measured before the budget of 3 ran out.
+  - **Mutations:** eight, each caught. Positions from a fixed length, seals unread, a declared per-sample length accepted, plan completeness skipped, facts and reading of different procedures accepted, the candidate arm reading the source, plan positions unchecked, and sample order unchecked.
+- **Finding 1, arm names.** The executor first named its arms by role (`reference`, `candidate`). plan-v1 records `arm_changed` from arm names, so two identical execution arms looked like a changed variable, and a candidate arm reading the SOURCE container passed as a measurement. Arms are now named by their lowering identity. The mutation that points the candidate arm at the source now fails three witnesses.
+- **Finding 2, `top5_overlap_mean`.** It is the mean COUNT of shared top-5 ids, in [0, 5], not a share. The first real run measured 4.30. The invariant bounds it by `TOP_K_OVERLAP`, and a witness refuses 5.5 and holds a real value above 1.

@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use super::super::super::compile::hash_bytes;
+use super::super::super::measure::outcome::VerifiedFacts;
 use super::super::super::measure::{
     TEACHER_FORCED_TWO_ARM, {DEFAULT_GATE, DEFAULT_LABEL, DEFAULT_SEQUENCES},
 };
@@ -113,7 +114,7 @@ impl ExperimentExecutor for Stub {
                 .clone()
                 .unwrap_or_else(|| request.key().clone()),
             observation: fixtures::authority_reading(0.0, 0).into(),
-            verified: Default::default(),
+            verified: VerifiedFacts::default().into(),
             execution_note: format!("stub answering to {}", self.procedure),
         })
     }

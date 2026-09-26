@@ -8,13 +8,17 @@ use super::super::{
     candidate_authority::CandidateAuthorityRefusal,
     compile::hash_bytes,
     compiler::read_source_identity,
+    measure::plan::{metrics::TOP_K_OVERLAP, PlanVerifiedFacts},
     measure::{outcome::VerifiedFacts, MeasurementProcedure},
     quality::QualityBank,
-    reading::{check_binding, gate_of_any_kind, Gate, Observation, ReadingKind},
+    reading::{
+        check_binding, gate_of_any_kind, Gate, Observation, PlanObservation, ReadingKind, RunFacts,
+    },
     state::{
         key::{MeasurementConflict, MeasurementKey},
         snapshot::SearchSnapshot,
     },
+    token_bank::TOKEN_BANK_SCHEMA,
 };
 use super::artifact::{ArtifactRefusal, MeasurementArtifact};
 use super::state_evidence::{ArtifactStateEvidence, EstablishedState};
@@ -43,7 +47,7 @@ pub enum IngestionRefusal {
     #[error("run validity requires a complete VerifiedFacts report; missing obligations: {missing:?}; observed {observed:?}")]
     IncompleteRun {
         missing: Vec<String>,
-        observed: Box<VerifiedFacts>,
+        observed: Box<RunFacts>,
     },
     #[error("{0}")]
     Conflict(Box<MeasurementConflict>),
@@ -116,11 +120,16 @@ pub fn validate(
     sources: &IngestionSources<'_>,
 ) -> Result<AcceptedMeasurement, IngestionRefusal> {
     artifact.verify_seal().map_err(IngestionRefusal::Artifact)?;
-    require_complete_run(artifact.verified())?;
+    if let RunFacts::Kimi(facts) = artifact.verified() {
+        require_complete_run(facts)?;
+    }
     snapshot.check_schema().map_err(invalid)?;
     let request = prepared
         .request()
         .ok_or_else(|| invalid("no authorised request"))?;
+    if let RunFacts::Plan(facts) = artifact.verified() {
+        require_complete_plan_run(facts, request.sequences())?;
+    }
     agrees("measurement key", request.key(), artifact.key())?;
     agrees(
         "request canonical key",
@@ -263,7 +272,11 @@ pub fn validate(
     )?;
 
     let bank = &protocol.bank;
-    if bank.schema.is_empty() || bank.samples.is_empty() || bank.positions_per_sample == 0 {
+    let token_bank = bank.schema == TOKEN_BANK_SCHEMA;
+    if bank.schema.is_empty()
+        || bank.samples.is_empty()
+        || (!token_bank && bank.positions_per_sample == 0)
+    {
         return Err(invalid("bank declaration is empty"));
     }
     let bytes = std::fs::read(
@@ -282,7 +295,15 @@ pub fn validate(
         &bank.manifest_sha256,
         &bank_manifest_sha256,
     )?;
-    super::bank_evidence::verify(bank, sources.corpus, &bytes)?;
+    // Positions come from the bank as re-read here: a fixed per-sample
+    // length for the Kimi rows, the manifest's token counts for a token
+    // bank.
+    let positions = if token_bank {
+        super::token_bank_evidence::verify(bank, sources.corpus)?
+    } else {
+        super::bank_evidence::verify(bank, sources.corpus, &bytes)?;
+        bank.positions()
+    };
     // Rebuild bank identity with the digest actually read, not the executor's claim.
     let mut established_bank = bank.clone();
     established_bank.manifest_sha256 = bank_manifest_sha256.clone();
@@ -292,26 +313,29 @@ pub fn validate(
         &established_bank.id(),
     )?;
 
-    let Observation::Kimi(reading) = artifact.observation() else {
-        return Err(invalid(
-            "plan-v1 readings enter the record through the plan procedure's own facts \
-             (MEASURE-PLAN-2 PR 2)",
-        ));
-    };
-    validate_observation(reading, bank.positions())?;
-    agrees(
-        "reported measured positions",
-        bank.positions(),
-        artifact.verified().positions,
-    )?;
-    // The Kimi procedure evaluates a gate as part of its run, so its
-    // facts name one; a record without a gate cannot have produced them.
-    let gate = gate.ok_or_else(|| invalid("Kimi facts name a gate and this record has none"))?;
-    agrees(
-        "reported gate",
-        gate.id(),
-        artifact.verified().gate_evaluated.as_str(),
-    )?;
+    match (artifact.observation(), artifact.verified()) {
+        (Observation::Kimi(reading), RunFacts::Kimi(facts)) => {
+            validate_observation(reading, positions)?;
+            agrees("reported measured positions", positions, facts.positions)?;
+            // The Kimi procedure evaluates a gate as part of its run, so
+            // its facts name one; a record without a gate cannot have
+            // produced them.
+            let gate =
+                gate.ok_or_else(|| invalid("Kimi facts name a gate and this record has none"))?;
+            agrees("reported gate", gate.id(), facts.gate_evaluated.as_str())?;
+        }
+        (Observation::Plan(reading), RunFacts::Plan(facts)) => {
+            validate_plan_observation(reading, positions, request.sequences())?;
+            agrees("reported measured positions", positions, facts.positions)?;
+        }
+        (reading, facts) => {
+            return Err(invalid(format!(
+                "the run's facts are {} and its reading is {} — one run cannot produce both",
+                facts.kind(),
+                reading.kind()
+            )))
+        }
+    }
     Ok(AcceptedMeasurement {
         key: request.key().clone(),
         observation: artifact.observation().clone(),
@@ -353,8 +377,82 @@ fn require_complete_run(observed: &VerifiedFacts) -> Result<(), IngestionRefusal
     .collect();
     Err(IngestionRefusal::IncompleteRun {
         missing,
-        observed: Box::new(observed.clone()),
+        observed: Box::new(observed.clone().into()),
     })
+}
+
+/// plan-v1's completeness predicate, with each unmet obligation named.
+fn require_complete_plan_run(
+    facts: &PlanVerifiedFacts,
+    sequences: usize,
+) -> Result<(), IngestionRefusal> {
+    if facts.complete(sequences) {
+        return Ok(());
+    }
+    let missing = [
+        (facts.null_arm_samples == 0, "null arm"),
+        (
+            facts.changed_representations.is_empty() && !facts.arm_changed,
+            "candidate scope",
+        ),
+        (facts.attributed_arms == 0, "physical attribution"),
+        (facts.sealed_representations == 0, "seal/read witness"),
+        (
+            facts.bank_samples_read != sequences,
+            "every declared sample read",
+        ),
+        (facts.tokenizer_checked_arms == 0, "tokenizer checks"),
+        (facts.positions == 0, "non-zero positions"),
+    ]
+    .into_iter()
+    .filter(|(absent, _)| *absent)
+    .map(|(_, obligation)| obligation.to_owned())
+    .collect::<Vec<_>>();
+    Err(IngestionRefusal::IncompleteRun {
+        missing: if missing.is_empty() {
+            vec!["plan-v1 completeness".to_owned()]
+        } else {
+            missing
+        },
+        observed: Box::new(facts.clone().into()),
+    })
+}
+
+/// A plan reading's own invariants over the positions the bank holds.
+fn validate_plan_observation(
+    reading: &PlanObservation,
+    positions: u64,
+    sequences: usize,
+) -> Result<(), IngestionRefusal> {
+    agrees("observation positions", positions, reading.positions)?;
+    agrees("observation sequences", sequences, reading.sequences)?;
+    let all = &reading.all;
+    agrees("aggregate positions", positions, all.positions as u64)?;
+    let finite = [
+        all.kl_mean,
+        all.kl_p50,
+        all.kl_p99,
+        all.kl_max,
+        all.top1_agreement,
+        all.top5_overlap_mean,
+        all.max_abs_delta_mean,
+        all.max_abs_delta_p99,
+    ]
+    .iter()
+    .all(|v| v.is_finite())
+        && all.delta_nll_mean.is_none_or(f64::is_finite);
+    if !finite
+        || all.kl_p50 > all.kl_p99
+        || all.kl_p99 > all.kl_max
+        || !(0.0..=1.0).contains(&all.top1_agreement)
+        // A mean COUNT of shared top-k ids, not a share.
+        || !(0.0..=TOP_K_OVERLAP as f64).contains(&all.top5_overlap_mean)
+    {
+        return Err(invalid(format!(
+            "invalid plan observation statistics: {all:?}"
+        )));
+    }
+    Ok(())
 }
 
 fn validate_observation(bank: &QualityBank, positions: u64) -> Result<(), IngestionRefusal> {

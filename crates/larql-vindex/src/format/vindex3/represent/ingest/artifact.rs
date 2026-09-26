@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use super::super::actuate::executor::Observed;
 use super::super::actuate::prepare::PreparedExperiment;
 use super::super::compile::hash_bytes;
-use super::super::measure::outcome::VerifiedFacts;
 use super::super::reading::Observation;
+use super::super::reading::RunFacts;
 use super::super::state::key::MeasurementKey;
 use super::state_evidence::EstablishedState;
 
@@ -64,7 +64,7 @@ pub struct MeasurementArtifact {
     /// Every validity condition the run checked. The executor's own
     /// account of itself: evidence to be re-derived against, never an
     /// authority to be trusted.
-    verified: VerifiedFacts,
+    verified: RunFacts,
     /// What the executor did, in its own vocabulary. A provenance line
     /// for a reader, never read as authority.
     execution_note: String,
@@ -81,7 +81,7 @@ struct Sealed<'a> {
     source_semantic_digest: &'a str,
     candidate_authority_digest: &'a str,
     observation: &'a Observation,
-    verified: &'a VerifiedFacts,
+    verified: &'a RunFacts,
     execution_note: &'a str,
 }
 
@@ -146,7 +146,7 @@ impl MeasurementArtifact {
         source_semantic_digest: impl Into<String>,
         candidate_authority_digest: &str,
         observation: Observation,
-        verified: VerifiedFacts,
+        verified: RunFacts,
         execution_note: impl Into<String>,
     ) -> Result<Self, ArtifactRefusal> {
         let procedure = procedure.into();
@@ -286,7 +286,7 @@ impl MeasurementArtifact {
         &self.observation
     }
 
-    pub fn verified(&self) -> &VerifiedFacts {
+    pub fn verified(&self) -> &RunFacts {
         &self.verified
     }
 

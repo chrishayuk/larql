@@ -217,7 +217,8 @@ impl Fixture {
                 invariant_neighbour_layer: Some(1),
                 positions: self.positions,
                 gate_evaluated: self.snapshot.gate().unwrap().id().to_string(),
-            },
+            }
+            .into(),
             execution_note: "tiny deterministic observation fixture".into(),
         }
     }
@@ -270,8 +271,9 @@ fn freshly_sealed_incomplete_run_with_correct_positions_and_gate_refuses() {
         positions: 8,
         gate_evaluated: f.snapshot.gate().unwrap().id().to_string(),
         ..Default::default()
-    };
-    assert!(!observed.verified.complete());
+    }
+    .into();
+    assert!(!observed.verified.as_kimi().unwrap().complete());
     let artifact =
         MeasurementArtifact::from_execution(&f.prepared, &observed, &f.evidence()).unwrap();
     artifact.verify_seal().unwrap();
@@ -303,8 +305,8 @@ fn each_missing_run_validity_obligation_refuses_transactionally() {
         "all",
     ] {
         let mut observed = f.observed(0.01);
-        assert!(observed.verified.complete());
-        let report = &mut observed.verified;
+        assert!(observed.verified.as_kimi().unwrap().complete());
+        let report = observed.verified.as_kimi_mut().unwrap();
         match obligation {
             "compiled layers" => report.compiled_layers.clear(),
             "compiled projections" => report.compiled_projections.clear(),
@@ -355,7 +357,7 @@ fn each_missing_run_validity_obligation_refuses_transactionally() {
 fn accepted_once_and_identical_duplicate_is_transactionally_idempotent() {
     let f = Fixture::new();
     let a = f.artifact(0.01);
-    assert!(a.verified().complete());
+    assert!(a.verified().as_kimi().unwrap().complete());
     let mut snapshot = f.snapshot.clone();
     let first = ingest(&mut snapshot, &f.prepared, &a, &f.sources()).unwrap();
     assert!(first.recorded);
@@ -452,7 +454,7 @@ fn tampered_artifact_and_malformed_observation_refuse_before_writes() {
                     .logits
                     .top1_flips = 9
             }
-            _ => observed.verified = VerifiedFacts::default(),
+            _ => observed.verified = VerifiedFacts::default().into(),
         }
         let a = MeasurementArtifact::from_execution(&f.prepared, &observed, &f.evidence()).unwrap();
         refused_without_change(&f, &mut snapshot, &a);
@@ -791,7 +793,7 @@ fn bank_relocation_preserves_authority_but_reordering_does_not() {
     let observed = |fixture: &Fixture| {
         let mut o = fixture.observed(0.01);
         o.observation.as_kimi_mut().unwrap().positions = 16;
-        o.verified.positions = 16;
+        o.verified.as_kimi_mut().unwrap().positions = 16;
         o
     };
     let artifact =
@@ -895,7 +897,7 @@ fn every_ingestion_refusal_preserves_its_actionable_authority() {
         IngestionRefusal::Malformed("missing input rows".into()),
         IngestionRefusal::IncompleteRun {
             missing: vec!["compiled layers".into(), "seal/read witness".into()],
-            observed: Box::default(),
+            observed: Box::new(VerifiedFacts::default().into()),
         },
         IngestionRefusal::Conflict(Box::new(state::key::MeasurementConflict {
             key: f.observed(0.01).key,

@@ -61,8 +61,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::super::compiler::read_source_identity;
-use super::super::measure::outcome::{MeasurementRefusal, VerifiedFacts};
-use super::super::reading::Observation;
+use super::super::measure::outcome::MeasurementRefusal;
+use super::super::measure::plan::PlanRefusal;
+use super::super::reading::{Observation, RunFacts};
 use super::super::state::identity::RepresentationStateId;
 use super::super::state::key::MeasurementKey;
 use super::request::MeasurementRequest;
@@ -172,8 +173,8 @@ pub struct Observed {
     /// restates it. Checked against what was requested.
     pub key: MeasurementKey,
     pub observation: Observation,
-    /// Every validity condition the run checked.
-    pub verified: VerifiedFacts,
+    /// Every validity condition the run checked, in its procedure's terms.
+    pub verified: RunFacts,
     /// What the executor actually did, in its own vocabulary — a
     /// provenance line for a reader, never read as authority.
     pub execution_note: String,
@@ -201,6 +202,9 @@ pub enum ExecutionRefusal {
     /// measured* from *the run proved nothing* — and it is forwarded
     /// whole rather than flattened.
     Measurement(MeasurementRefusal),
+    /// The plan-v1 run failed or proved nothing, forwarded whole: an
+    /// execution failure and an inadmissible reading stay distinct.
+    Plan(PlanRefusal),
     /// **The executor returned an observation of a different
     /// experiment.**
     ///
@@ -238,6 +242,7 @@ impl std::fmt::Display for ExecutionRefusal {
                 "this experiment cannot be turned into an instruction for `{procedure}`: {detail}"
             ),
             Self::Measurement(r) => write!(f, "{r}"),
+            Self::Plan(r) => write!(f, "{r:?}"),
             Self::ObservedAnotherExperiment(m) => write!(
                 f,
                 "the executor was asked for experiment {} and returned an observation of {} — \

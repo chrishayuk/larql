@@ -71,7 +71,11 @@ fn dispatch_artifact(
     let request = prepared.request().unwrap();
     let mut response = f.observed(0.01);
     if incomplete {
-        response.verified.invariant_neighbour_layer = None;
+        response
+            .verified
+            .as_kimi_mut()
+            .unwrap()
+            .invariant_neighbour_layer = None;
     }
     let executor = FixtureExecutor {
         procedure: request.procedure(),

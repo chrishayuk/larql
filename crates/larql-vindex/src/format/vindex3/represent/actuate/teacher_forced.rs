@@ -178,7 +178,7 @@ impl ExperimentExecutor for TeacherForcedExecutor {
             // than a formality.
             key: request.key().clone(),
             observation: receipt.bank.into(),
-            verified: receipt.verified,
+            verified: receipt.verified.into(),
             execution_note,
         })
     }

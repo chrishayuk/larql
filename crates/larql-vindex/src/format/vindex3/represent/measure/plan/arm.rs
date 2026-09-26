@@ -135,3 +135,61 @@ impl<B: PlanBackend> TeacherForcedArm for InterpreterArm<B> {
             .collect()
     }
 }
+
+/// **An interpreter arm over a container, built in this crate** — the
+/// executor's arm builder (MEASURE-PLAN-2).
+///
+/// The backend is requested by lowering identity from the shipped
+/// registry, never constructed here, and the continuation provider is
+/// selected by identity from the caller's registry for this arm's own
+/// plan geometry. With a `pack`, the arm reads that stored pack and
+/// nothing is quantised at load; without one it reads the canonical
+/// bytes.
+pub fn interpreter_arm_for(
+    arm: &str,
+    container: &std::path::Path,
+    pack: Option<&str>,
+    component: &str,
+    lowering: &crate::format::vindex3::opplan::exec::lowering::LoweringIdentity,
+    continuations: &crate::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry,
+    continuation: &crate::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity,
+) -> Result<InterpreterArm<crate::format::vindex3::opplan::exec::lowering::SharedProvider>, String>
+{
+    use crate::format::vindex3::inspect::inspect_container;
+    use crate::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+    use crate::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+    use crate::format::vindex3::opplan::exec::lowering::LoweringRegistry;
+    use crate::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
+    use crate::format::vindex3::opplan::plan_component_ops;
+
+    let inspection =
+        inspect_container(container, false).map_err(|e| format!("{arm}: inspect: {e}"))?;
+    let plan = plan_component_ops(&inspection, container, component)
+        .map_err(|e| format!("{arm}: plan: {e}"))?
+        .plan
+        .ok_or_else(|| format!("{arm}: component `{component}` has no executable plan"))?;
+    let source = match pack {
+        Some(_) => RepresentationSource::Stored,
+        None => RepresentationSource::Auto,
+    };
+    let store = OperandStore::open_for(container, &inspection, pack, source)
+        .map_err(|e| format!("{arm}: operands: {e}"))?;
+    let geometry =
+        plan_continuation_geometry(&plan).map_err(|e| format!("{arm}: continuation: {e}"))?;
+    let selected = continuations
+        .select(continuation, &ContinuationConfig::empty(), &geometry)
+        .map_err(|e| format!("{arm}: continuation: {e}"))?;
+    let backend = LoweringRegistry::shipped()
+        .provider_shared(lowering)
+        .map_err(|e| format!("{arm}: lowering: {e}"))?;
+    InterpreterArm::prepare(
+        arm,
+        container.to_path_buf(),
+        pack.map(str::to_string),
+        pack.is_some(),
+        plan,
+        &store,
+        backend,
+        selected,
+    )
+}

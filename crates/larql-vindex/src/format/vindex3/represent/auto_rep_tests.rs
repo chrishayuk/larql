@@ -177,7 +177,8 @@ impl ExperimentExecutor for Truth {
                 invariant_neighbour_layer: Some(1),
                 positions: POSITIONS,
                 gate_evaluated: request.gate().unwrap().to_string(),
-            },
+            }
+            .into(),
             execution_note: "scripted AUTO-REP-1b truth".into(),
         })
     }
