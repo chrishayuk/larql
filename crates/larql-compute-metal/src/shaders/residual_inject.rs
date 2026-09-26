@@ -85,7 +85,48 @@ kernel void rms_norm(
         out[i] = x[i] * (weight[i] + offset) * rms;
     }
 }
+
+// VERIFY-N: rms_norm over `[rows, len]`, one threadgroup per row — the
+// body above verbatim with x/out advanced by the row, so each row is
+// bit-identical to an `rms_norm` dispatch at that row's offset under the
+// same threadgroup width.
+kernel void rms_norm_rows(
+    device const float* x      [[buffer(0)]],
+    device const float* weight [[buffer(1)]],
+    device float*       out    [[buffer(2)]],
+    constant uint&      len    [[buffer(3)]],
+    constant float&     eps    [[buffer(4)]],
+    constant float&     offset [[buffer(5)]],
+    uint row    [[threadgroup_position_in_grid]],
+    uint tid    [[thread_index_in_threadgroup]],
+    uint tg_sz  [[threads_per_threadgroup]],
+    uint lane   [[thread_index_in_simdgroup]],
+    uint sg_id  [[simdgroup_index_in_threadgroup]])
+{
+    device const float* xr = x + (ulong)row * len;
+    device float* outr = out + (ulong)row * len;
+    float partial = 0.0f;
+    for (uint i = tid; i < len; i += tg_sz) {
+        partial += xr[i] * xr[i];
+    }
+    float sg_sum = simd_sum(partial);
+    threadgroup float tg_p[8];
+    if (lane == 0) tg_p[sg_id] = sg_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float sum_sq = tg_p[0];
+    uint n_sg = (tg_sz + 31) / 32;
+    for (uint i = 1; i < n_sg; i++) sum_sq += tg_p[i];
+    float rms = 1.0f / sqrt(sum_sq / float(len) + eps);
+    for (uint i = tid; i < len; i += tg_sz) {
+        outr[i] = xr[i] * (weight[i] + offset) * rms;
+    }
+}
 "#;
+
+pub struct RmsNormRowsKernel;
+impl crate::kernels::ShaderKernel for RmsNormRowsKernel {
+    const KERNEL_NAME: &'static str = "rms_norm_rows";
+}
 
 pub struct RmsNormKernel;
 impl crate::kernels::ShaderKernel for RmsNormKernel {

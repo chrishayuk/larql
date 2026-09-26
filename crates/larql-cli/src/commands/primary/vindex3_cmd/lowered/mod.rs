@@ -39,6 +39,7 @@ use larql_vindex::format::vindex3::opplan::{ComponentOpPlan, LayerPlan};
 mod dump;
 pub(crate) mod measure_arm;
 mod profile;
+mod prompt_lookup;
 mod resident;
 mod routed;
 mod run;
@@ -46,6 +47,7 @@ mod step;
 mod teacher_force;
 #[cfg(test)]
 mod tests;
+mod verify;
 
 pub(super) use run::run_lowered;
 
@@ -193,6 +195,17 @@ pub struct LoweredSession<'a> {
     /// is called, so a submission rate is observed, never inferred from
     /// the one-buffer-per-token design.
     submissions: u64,
+    /// The 18 stack scratch slot widths (floats per position), kept so a
+    /// verify block can allocate the same slots `rows` positions deep.
+    scratch_widths: Vec<usize>,
+    /// VERIFY-N scratch, allocated on first use at the widest block seen
+    /// (see `verify.rs`).
+    verify: Option<verify::VerifyScratch>,
+    /// SPLITK-1 attention partials `(o, m/l)` for one position, and the
+    /// widest op's `(num_q_heads, num_q_heads * head_dim)` they are sized
+    /// for (a verify block sizes its own from the same pair).
+    splitk: [DeviceBuffer; 2],
+    splitk_widths: (usize, usize),
 }
 
 /// Set to keep the argmax on the host (full-logits readback + scan) —
@@ -453,6 +466,20 @@ impl<'a> LoweredSession<'a> {
             .map(|op| op.num_q_heads * op.head_dim)
             .max()
             .unwrap_or(hidden);
+        let max_q_heads = plan
+            .layers
+            .iter()
+            .filter_map(|l| l.attention.softmax())
+            .map(|op| op.num_q_heads)
+            .max()
+            .unwrap_or(1);
+        let splitk_widths = (max_q_heads, max_q);
+        let (splitk_o, splitk_ml) =
+            larql_compute_metal::ops::kv_splitk::SplitKScratch::lens(1, max_q_heads, max_q);
+        let splitk = [
+            gpu.lowering_scratch(splitk_o),
+            gpu.lowering_scratch(splitk_ml),
+        ];
         let max_inter = plan
             .layers
             .iter()
@@ -492,6 +519,7 @@ impl<'a> LoweredSession<'a> {
         ];
         let mut scratch: Vec<DeviceBuffer> =
             sizes.iter().map(|n| gpu.lowering_scratch(*n)).collect();
+        let scratch_widths = sizes.to_vec();
         // A hybrid layer's own intermediates (slots 18..24), and a zero
         // buffer for the expert combine's residual input.
         let has_hybrid = plan
@@ -618,6 +646,10 @@ impl<'a> LoweredSession<'a> {
             last_device_id: None,
             decode_chain: false,
             submissions: 0,
+            scratch_widths,
+            verify: None,
+            splitk,
+            splitk_widths,
         })
     }
 

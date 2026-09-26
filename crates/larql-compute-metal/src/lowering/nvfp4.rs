@@ -378,6 +378,28 @@ impl MetalBackend {
         );
     }
 
+    /// VERIFY-N: `out[r] = W · x[r]` for the activation rows of
+    /// multi-RHS arm `arm` (an index into
+    /// [`MATMUL_ARMS`](crate::shaders::nvfp4_matvec::MATMUL_ARMS)) in one
+    /// weight pass. `op.x` holds `rows × op.k` floats row-major and
+    /// `op.out` receives `rows × op.n` floats row-major from `out_offset`,
+    /// `rows` being the arm's width. Each column matches the x2 GEMV on
+    /// that row to fp32 rounding.
+    pub fn encode_nvfp4_matmul(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        op: &MatvecOperands<'_>,
+        tensor_scale: f32,
+        arm: usize,
+    ) {
+        self.encode_nvfp4_with(
+            &self.quant.nvfp4_matmul_pipelines[arm],
+            enc,
+            op,
+            tensor_scale,
+        );
+    }
+
     /// One NVFP4 matrix against `rms_norm(op.x; norm)` with the norm
     /// computed inside the GEMV (A-5b rung 2d): no separate norm
     /// dispatch, no normed intermediate. Parity to fp32 rounding (the

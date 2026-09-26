@@ -62,6 +62,16 @@ pub struct QuantKernels {
     pub nvfp4_matvec_x2n_pipeline: KernelHandle,
     /// Rung 2d form B: pre-norm staged in threadgroup memory.
     pub nvfp4_matvec_x2m_pipeline: KernelHandle,
+    /// VERIFY-N: weight-stationary multi-RHS x2, one per width in
+    /// `shaders::nvfp4_matvec::MATMUL_ARMS`.
+    pub nvfp4_matmul_pipelines: [KernelHandle; 7],
+    /// VERIFY-N split-K simdgroup-matrix tiles (`nvfp4_matmul_sgk`).
+    pub nvfp4_matmul_sgk_pipeline: KernelHandle,
+    /// VERIFY-N split-K, fragment-direct dequant: the geometry sweep, in
+    /// `shaders::nvfp4_matvec::SGF_SWEEP` order.
+    pub nvfp4_matmul_sgf_pipelines: Vec<KernelHandle>,
+    /// The sweep arm named by `SGF_PRODUCTION_ARM`.
+    pub nvfp4_matmul_tiled_pipeline: KernelHandle,
 
     /// Q6_K grouped-expert matvec: every selected expert in one dispatch, so
     /// the grid carries 16x the threadgroups of a single expert matrix (K3a).
@@ -208,6 +218,29 @@ impl QuantKernels {
         let nvfp4_matvec_x2r_pipeline = h::<shaders::nvfp4_matvec::KernelX2R>(device, library);
         let nvfp4_matvec_x2n_pipeline = h::<shaders::nvfp4_matvec::KernelX2N>(device, library);
         let nvfp4_matvec_x2m_pipeline = h::<shaders::nvfp4_matvec::KernelX2M>(device, library);
+        let nvfp4_matmul_pipelines = [
+            h::<shaders::nvfp4_matvec::KernelMatmulR1>(device, library),
+            h::<shaders::nvfp4_matvec::KernelMatmulR2>(device, library),
+            h::<shaders::nvfp4_matvec::KernelMatmulR4>(device, library),
+            h::<shaders::nvfp4_matvec::KernelMatmulR8>(device, library),
+            h::<shaders::nvfp4_matvec::KernelMatmulX4R4>(device, library),
+            h::<shaders::nvfp4_matvec::KernelMatmulX4R8>(device, library),
+            h::<shaders::nvfp4_matvec::KernelMatmulX1R8>(device, library),
+        ];
+        let nvfp4_matmul_sgk_pipeline =
+            h::<shaders::nvfp4_matvec::KernelMatmulSgk>(device, library);
+        let nvfp4_matmul_sgf_pipelines = shaders::nvfp4_matvec::SGF_SWEEP
+            .iter()
+            .map(|e| {
+                KernelHandle::from_sweep_entry(device, library, *e)
+                    .unwrap_or_else(|| panic!("pipeline compile failed for kernel `{}`", e.0))
+            })
+            .collect::<Vec<KernelHandle>>();
+        let nvfp4_matmul_tiled_pipeline = shaders::nvfp4_matvec::SGF_SWEEP
+            .iter()
+            .position(|e| e.0 == shaders::nvfp4_matvec::SGF_PRODUCTION_ARM)
+            .map(|i| nvfp4_matmul_sgf_pipelines[i].clone())
+            .expect("the production sgf arm is in the sweep");
         let q6k_grouped_experts_pipeline =
             h::<shaders::q6k_grouped_experts::Kernel>(device, library);
         let q4k_grouped_experts_pipeline =
@@ -288,6 +321,10 @@ impl QuantKernels {
             nvfp4_matvec_x2r_pipeline,
             nvfp4_matvec_x2n_pipeline,
             nvfp4_matvec_x2m_pipeline,
+            nvfp4_matmul_pipelines,
+            nvfp4_matmul_sgk_pipeline,
+            nvfp4_matmul_sgf_pipelines,
+            nvfp4_matmul_tiled_pipeline,
             q6k_grouped_experts_pipeline,
             q4k_grouped_experts_pipeline,
             q8_0_grouped_experts_pipeline,

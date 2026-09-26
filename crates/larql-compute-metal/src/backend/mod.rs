@@ -151,6 +151,11 @@ pub struct MetalBackend {
     /// weight matrix. Halves bandwidth for tied-embedding models whose
     /// lm_head would otherwise live as a 5.6 GB f32 clone on 31B.
     pub f16_gemv_pipeline: KernelHandle,
+    /// VERIFY-N: f16 multi-RHS arms, in `shaders::f16_gemv::MATMUL_ARMS`
+    /// order.
+    pub f16_matmul_pipelines: [KernelHandle; 3],
+    /// VERIFY-N: tiled simdgroup-matrix f16 matmul (`f16_matmul_sg`).
+    pub f16_matmul_sg_pipeline: KernelHandle,
     /// Same layout as [`Self::f16_gemv_pipeline`], but the weight
     /// matrix holds **bf16** codes — the top 16 bits of each f32, which
     /// is what Kimi Linear's checkpoint stores for every tensor. A
@@ -366,6 +371,13 @@ impl MetalBackend {
             get_shader_pipeline::<shaders::f32_gemv::TopKKernel>(&device, &library)?;
         let f16_gemv_pipeline =
             KernelHandle::from_kernel::<shaders::f16_gemv::Kernel>(&device, &library)?;
+        let f16_matmul_pipelines = [
+            KernelHandle::from_kernel::<shaders::f16_gemv::KernelMatmulR2>(&device, &library)?,
+            KernelHandle::from_kernel::<shaders::f16_gemv::KernelMatmulR4>(&device, &library)?,
+            KernelHandle::from_kernel::<shaders::f16_gemv::KernelMatmulR8>(&device, &library)?,
+        ];
+        let f16_matmul_sg_pipeline =
+            KernelHandle::from_kernel::<shaders::f16_gemv::KernelMatmulSg>(&device, &library)?;
         let bf16_gemv_pipeline =
             KernelHandle::from_kernel::<shaders::bf16_gemv::Kernel>(&device, &library)?;
         let bf16_grouped_experts_pipeline =
@@ -443,6 +455,8 @@ impl MetalBackend {
             f32_argmax_partial_pipeline,
             f32_topk_partial_pipeline,
             f16_gemv_pipeline,
+            f16_matmul_pipelines,
+            f16_matmul_sg_pipeline,
             bf16_gemv_pipeline,
             bf16_grouped_experts_pipeline,
             bf16_grouped_variants,

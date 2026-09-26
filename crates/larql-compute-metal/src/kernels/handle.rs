@@ -54,6 +54,16 @@ impl KernelHandle {
         )
     }
 
+    /// A sweep arm named by a table rather than a marker type — for kernel
+    /// geometry sweeps whose arms share one shader macro.
+    pub(crate) fn from_sweep_entry(
+        device: &Device,
+        library: &Library,
+        (name, rows_per_tg, threads_per_tg): (&'static str, u64, u64),
+    ) -> Option<Self> {
+        Self::compile(device, library, name, rows_per_tg, threads_per_tg)
+    }
+
     /// Lower-level constructor used by [`from_kernel`](Self::from_kernel).
     /// Prefer that path — it forces the shader module to own its own
     /// name + geometry instead of hand-typing them at the call site.
