@@ -32,10 +32,19 @@ pub struct AttentionKernels {
     pub fused_attn_pipeline: ComputePipelineState,
 
     pub kv_attend_pipeline: ComputePipelineState,
+    /// VERIFY-N: `kv_attention` over a block's positions (`kv_attention_rows`).
+    pub kv_attend_rows_pipeline: ComputePipelineState,
+    /// VERIFY-N: `kv_attention_seqpar` over a block's positions.
+    pub kv_attend_seqpar_rows_pipeline: ComputePipelineState,
     pub kv_attend_long_pipeline: ComputePipelineState,
     /// KV-B1 sequence-parallel phase 3 (span <= 1024 / <= 4096).
     pub kv_attend_seqpar_pipeline: ComputePipelineState,
     pub kv_attend_seqpar_long_pipeline: ComputePipelineState,
+    /// SPLITK-1: span split across threadgroups — pass 1 (one position /
+    /// a verify block) and the fixed-order merge. See the shader.
+    pub kv_attend_splitk_pipeline: ComputePipelineState,
+    pub kv_attend_splitk_rows_pipeline: ComputePipelineState,
+    pub kv_attend_splitk_merge_pipeline: ComputePipelineState,
     /// Measurement-only phase-1-2 arm of `kv_attention`; see the shader.
     /// Retained under ADR-017 as a diagnostic, never dispatched by decode.
     pub kv_attend_phase12_only_pipeline: ComputePipelineState,
@@ -53,6 +62,8 @@ pub struct AttentionKernels {
 
     pub rope_at_pos_pipeline: ComputePipelineState,
     pub rope_at_pos_batched_pipeline: ComputePipelineState,
+    /// VERIFY-N: RoPE over `rows` consecutive positions in one dispatch.
+    pub rope_rows_pipeline: ComputePipelineState,
     pub rope_at_pos_batched_qk_pipeline: ComputePipelineState,
 
     pub q4k_qkv_proj_pipeline: KernelHandle,
@@ -80,11 +91,24 @@ impl AttentionKernels {
             fused_attn_pipeline: r::<shaders::fused_attention::Kernel>(device, library),
 
             kv_attend_pipeline: r::<shaders::kv_attention::AttendKernel>(device, library),
+            kv_attend_rows_pipeline: r::<shaders::kv_attention::AttendRowsKernel>(device, library),
+            kv_attend_seqpar_rows_pipeline: r::<shaders::kv_attention::AttendSeqParRowsKernel>(
+                device, library,
+            ),
             kv_attend_long_pipeline: r::<shaders::kv_attention::AttendLongKernel>(device, library),
             kv_attend_seqpar_pipeline: r::<shaders::kv_attention::AttendSeqParKernel>(
                 device, library,
             ),
             kv_attend_seqpar_long_pipeline: r::<shaders::kv_attention::AttendSeqParLongKernel>(
+                device, library,
+            ),
+            kv_attend_splitk_pipeline: r::<shaders::kv_attention_splitk::SplitKKernel>(
+                device, library,
+            ),
+            kv_attend_splitk_rows_pipeline: r::<shaders::kv_attention_splitk::SplitKRowsKernel>(
+                device, library,
+            ),
+            kv_attend_splitk_merge_pipeline: r::<shaders::kv_attention_splitk::SplitKMergeKernel>(
                 device, library,
             ),
             kv_attend_phase12_only_pipeline: r::<shaders::kv_attention::AttendPhase12OnlyKernel>(
@@ -101,6 +125,7 @@ impl AttentionKernels {
             bias_add_pipeline: r::<shaders::bias_add::BiasAddKernel>(device, library),
 
             rope_at_pos_pipeline: r::<shaders::rope::RopeAtPosKernel>(device, library),
+            rope_rows_pipeline: r::<shaders::rope::RopeRowsKernel>(device, library),
             rope_at_pos_batched_pipeline: r::<shaders::rope::RopeAtPosBatchedKernel>(
                 device, library,
             ),

@@ -447,6 +447,7 @@ fn run_lowered(
         gated: &gated,
         attn_out: &attn_out,
         inv_freq: &inv_freq,
+        splitk: None,
     };
     let ashape = AttnShape {
         hidden: HIDDEN,

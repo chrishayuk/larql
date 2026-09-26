@@ -677,6 +677,311 @@ kernel void nvfp4_matvec_x2_seg3t(
     }
 }
 
+// ── VERIFY-N: weight-stationary multi-RHS (RL rows/lane, NR activations) ─
+//
+// Speculative verification evaluates NR positions against the same
+// weights. Each lane decodes one group of each of its RL rows ONCE and
+// dots it against NR activation rows, so the weight stream is read once
+// for NR outputs instead of NR times. X is read as float4: past NR=2 the
+// scalar form is bound on X-load issue (16 loads per group per RHS), and
+// RL > 1 shares each X load across rows. Per row and per RHS the fold is
+// x2's `acc += step * part`; the within-group sum is float4-grouped, so
+// parity with x2 is to fp32 rounding.
+//
+// X is [NR, K] row-major; out is [NR, M] row-major (column n of the
+// product at out[n * M + row]). 4 simdgroups per threadgroup.
+#define NVFP4_MULTIRHS_KERNEL(NAME, RL, NR)                                       \
+kernel void NAME(                                                                 \
+    device const uchar*  Wp     [[buffer(0)]],                                    \
+    device const uchar*  Ws     [[buffer(1)]],                                    \
+    device const float*  X      [[buffer(2)]],                                    \
+    device float*        out    [[buffer(3)]],                                    \
+    constant uint&       M      [[buffer(4)]],                                    \
+    constant uint&       K      [[buffer(5)]],                                    \
+    constant float&      Tscale [[buffer(6)]],                                    \
+    uint tg_id     [[threadgroup_position_in_grid]],                              \
+    uint lane      [[thread_index_in_simdgroup]],                                 \
+    uint sg_id     [[simdgroup_index_in_threadgroup]])                            \
+{                                                                                 \
+    const uint row0 = (tg_id * 4u + sg_id) * (RL);                                \
+    if (row0 >= M) { return; }                                                    \
+    const uint groups = K / NVFP4_GROUP_ELEMS;                                    \
+    float acc[RL][NR];                                                            \
+    for (uint r = 0u; r < (RL); ++r)                                              \
+        for (uint n = 0u; n < (NR); ++n) { acc[r][n] = 0.0f; }                    \
+    for (uint g = lane; g < groups; g += 32u) {                                   \
+        const uint base = g * NVFP4_GROUP_ELEMS;                                  \
+        float4 w[RL][4];                                                          \
+        float step[RL];                                                           \
+        for (uint r = 0u; r < (RL); ++r) {                                        \
+            const uint row = row0 + r;                                            \
+            if (row < M) {                                                        \
+                const ulong rg = (ulong)row * (ulong)groups + (ulong)g;           \
+                step[r] = Tscale * nvfp4_e4m3(Ws[rg]);                            \
+                device const uchar* blk = Wp + rg * NVFP4_GROUP_BYTES;            \
+                for (uint q = 0u; q < 4u; ++q) {                                  \
+                    const uchar b0 = blk[2u * q];                                 \
+                    const uchar b1 = blk[2u * q + 1u];                            \
+                    w[r][q] = float4(NVFP4_LUT[b0 & 0x0Fu],                       \
+                                     NVFP4_LUT[(b0 >> 4u) & 0x0Fu],               \
+                                     NVFP4_LUT[b1 & 0x0Fu],                       \
+                                     NVFP4_LUT[(b1 >> 4u) & 0x0Fu]);              \
+                }                                                                 \
+            } else {                                                              \
+                step[r] = 0.0f;                                                   \
+                for (uint q = 0u; q < 4u; ++q) { w[r][q] = float4(0.0f); }        \
+            }                                                                     \
+        }                                                                         \
+        for (uint n = 0u; n < (NR); ++n) {                                        \
+            device const float4* xp =                                             \
+                (device const float4*)(X + (ulong)n * (ulong)K + base);           \
+            const float4 x0 = xp[0];                                              \
+            const float4 x1 = xp[1];                                              \
+            const float4 x2 = xp[2];                                              \
+            const float4 x3 = xp[3];                                              \
+            for (uint r = 0u; r < (RL); ++r) {                                    \
+                const float part = dot(w[r][0], x0) + dot(w[r][1], x1)            \
+                                 + dot(w[r][2], x2) + dot(w[r][3], x3);           \
+                acc[r][n] += step[r] * part;                                      \
+            }                                                                     \
+        }                                                                         \
+    }                                                                             \
+    for (uint n = 0u; n < (NR); ++n) {                                            \
+        for (uint r = 0u; r < (RL); ++r) {                                        \
+            const float t = simd_sum(acc[r][n]);                                  \
+            if (lane == 0u && row0 + r < M) {                                     \
+                out[(ulong)n * (ulong)M + row0 + r] = t;                          \
+            }                                                                     \
+        }                                                                         \
+    }                                                                             \
+}
+
+
+// ── VERIFY-N sgk: split-K simdgroup-matrix tiles ──────────────────────────
+//
+// The multi-RHS kernels above re-read all R activation rows per 2 weight
+// rows (X traffic ~2K bytes per output, 28x the NVFP4 weight bytes at
+// R=8). Here a threadgroup owns NV_SGK_ROWS weight rows and splits K
+// across NV_SGK_SG simdgroups (simdgroup s takes groups s, s+SG, ...), the
+// shape that keeps a short-M matrix's walk parallel. Per 16-wide group
+// step a simdgroup:
+//   - stages X[0..8, g*16..+16] (rows >= R zero) in its private tile,
+//   - dequantises its 32 rows' group g (lane = row) into a half tile,
+//   - runs 2 k-substeps x 4 row-blocks of 8x8 MACs:
+//        C[pos, row] += X[pos, k..k+8] . W[row, k..k+8]^T
+// then all simdgroups' partial C sum through threadgroup memory and only
+// the R valid position rows are written (out may be a KV-cache range).
+//
+// Contract: K % 16 == 0, 1 <= R <= 8. X [R, K], out [R, M], row-major.
+// Parity to x2 is to fp32 rounding (the MAC's reduction order).
+constant uint NV_SGK_SG = 8;
+constant uint NV_SGK_ROWS = 32;
+constant uint NV_SGK_BLOCKS = NV_SGK_ROWS / 8;
+
+kernel void nvfp4_matmul_sgk(
+    device const uchar*  Wp     [[buffer(0)]],
+    device const uchar*  Ws     [[buffer(1)]],
+    device const float*  X      [[buffer(2)]],
+    device float*        out    [[buffer(3)]],
+    constant uint&       M      [[buffer(4)]],
+    constant uint&       K      [[buffer(5)]],
+    constant float&      Tscale [[buffer(6)]],
+    constant uint&       R      [[buffer(7)]],
+    uint tg_id     [[threadgroup_position_in_grid]],
+    uint tid       [[thread_index_in_threadgroup]],
+    uint lane      [[thread_index_in_simdgroup]],
+    uint sg_id     [[simdgroup_index_in_threadgroup]])
+{
+    // Per simdgroup: a [32 rows, 16 k] weight tile and an [8, 16] X tile.
+    // The weight tile is float: a half tile would round each dequantised
+    // weight (step x E2M1) to 11 bits, a representation change the x2
+    // path does not make.
+    threadgroup float wt_all[NV_SGK_SG * NV_SGK_ROWS * NVFP4_GROUP_ELEMS];
+    threadgroup float xt_all[NV_SGK_SG * 8 * NVFP4_GROUP_ELEMS];
+    threadgroup float* wt = wt_all + sg_id * NV_SGK_ROWS * NVFP4_GROUP_ELEMS;
+    threadgroup float* xt = xt_all + sg_id * 8 * NVFP4_GROUP_ELEMS;
+
+    const uint row0 = tg_id * NV_SGK_ROWS;
+    const uint groups = K / NVFP4_GROUP_ELEMS;
+    const uint my_row = row0 + lane;
+    simdgroup_float8x8 acc[NV_SGK_BLOCKS];
+    for (uint b = 0u; b < NV_SGK_BLOCKS; ++b) {
+        acc[b] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    }
+    for (uint g = sg_id; g < groups; g += NV_SGK_SG) {
+        const uint base = g * NVFP4_GROUP_ELEMS;
+        // X tile: 128 floats, 4 per lane.
+        for (uint i = lane; i < 8u * NVFP4_GROUP_ELEMS; i += 32u) {
+            const uint pos = i / NVFP4_GROUP_ELEMS;
+            const uint kk = i % NVFP4_GROUP_ELEMS;
+            xt[i] = pos < R ? X[(ulong)pos * K + base + kk] : 0.0f;
+        }
+        // Weight tile: lane = row, one 16-element group each.
+        threadgroup float* dst = wt + lane * NVFP4_GROUP_ELEMS;
+        if (my_row < M) {
+            const ulong rg = (ulong)my_row * (ulong)groups + (ulong)g;
+            const float step = Tscale * nvfp4_e4m3(Ws[rg]);
+            device const uchar* blk = Wp + rg * NVFP4_GROUP_BYTES;
+            for (uint b = 0u; b < NVFP4_GROUP_BYTES; ++b) {
+                const uchar byte = blk[b];
+                dst[2u * b]      = NVFP4_LUT[byte & 0x0Fu] * step;
+                dst[2u * b + 1u] = NVFP4_LUT[(byte >> 4u) & 0x0Fu] * step;
+            }
+        } else {
+            for (uint i = 0u; i < NVFP4_GROUP_ELEMS; ++i) { dst[i] = 0.0f; }
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint kk = 0u; kk < NVFP4_GROUP_ELEMS; kk += 8u) {
+            simdgroup_float8x8 a;
+            simdgroup_load(a, xt + kk, NVFP4_GROUP_ELEMS);
+            for (uint b = 0u; b < NV_SGK_BLOCKS; ++b) {
+                simdgroup_float8x8 w;
+                simdgroup_load(w, wt + b * 8u * NVFP4_GROUP_ELEMS + kk,
+                               NVFP4_GROUP_ELEMS, ulong2(0, 0), true);
+                simdgroup_multiply_accumulate(acc[b], a, w, acc[b]);
+            }
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    // Reduce the SG partials: reuse the weight tiles as [SG][8 pos][32 rows].
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    threadgroup float* c = wt_all + sg_id * 8u * NV_SGK_ROWS;
+    for (uint b = 0u; b < NV_SGK_BLOCKS; ++b) {
+        simdgroup_store(acc[b], c + b * 8u, NV_SGK_ROWS);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i = tid; i < 8u * NV_SGK_ROWS; i += NV_SGK_SG * 32u) {
+        const uint pos = i / NV_SGK_ROWS;
+        const uint row = row0 + i % NV_SGK_ROWS;
+        if (pos < R && row < M) {
+            float t = 0.0f;
+            for (uint s = 0u; s < NV_SGK_SG; ++s) { t += wt_all[s * 8u * NV_SGK_ROWS + i]; }
+            out[(ulong)pos * M + row] = t;
+        }
+    }
+}
+
+
+// ── VERIFY-N sgf: split-K, weights dequantised straight into fragments ──
+//
+// sgk's fixed cost is its weight tile's round trip through threadgroup
+// memory (16 stores + reloads per lane per group), which made its time
+// flat in R at ~2x one GEMV. Here the weight tile is the LEFT operand,
+//   C[row, pos] += W[row, k..k+8] . X^T[k..k+8, pos]
+// and each lane writes its own fragment elements directly. In the 8x8
+// simdgroup-matrix layout a lane holds row fm, columns fn and fn+1 (fn
+// even) — i.e. the lo and hi nibble of ONE NVFP4 byte — so a tile costs
+// each lane one byte load and two LUT reads. The fragment is half: an
+// E2M1 code times an E4M3 scale is exact in half (<= 5 significant bits,
+// |v| <= 2688, >= 2^-10), and the f32 tensor scale is applied once at the
+// output, so no weight is rounded. X keeps the masked staged tile.
+//
+// Same contract as sgk: K % 16 == 0, 1 <= R <= 8, R at buffer 7.
+#define NVFP4_SGF_KERNEL(NAME, SGN, BLOCKS, CONTIG)                              \
+kernel void NAME(                                                                 \
+    device const uchar*  Wp     [[buffer(0)]],                                    \
+    device const uchar*  Ws     [[buffer(1)]],                                    \
+    device const float*  X      [[buffer(2)]],                                    \
+    device float*        out    [[buffer(3)]],                                    \
+    constant uint&       M      [[buffer(4)]],                                    \
+    constant uint&       K      [[buffer(5)]],                                    \
+    constant float&      Tscale [[buffer(6)]],                                    \
+    constant uint&       R      [[buffer(7)]],                                    \
+    uint tg_id     [[threadgroup_position_in_grid]],                              \
+    uint tid       [[thread_index_in_threadgroup]],                               \
+    uint lane      [[thread_index_in_simdgroup]],                                 \
+    uint sg_id     [[simdgroup_index_in_threadgroup]])                            \
+{                                                                                 \
+    threadgroup float xt_all[(SGN) * 8 * NVFP4_GROUP_ELEMS];                      \
+    threadgroup float cs[(SGN) * 8 * (BLOCKS) * 8];                               \
+    threadgroup float* xt = xt_all + sg_id * 8 * NVFP4_GROUP_ELEMS;               \
+    const uint ROWS = (BLOCKS) * 8u;                                              \
+    const uint qid = lane / 4u;                                                   \
+    const uint fm = (qid & 4u) + ((lane / 2u) % 4u);                              \
+    const uint fn = (qid & 2u) * 2u + (lane % 2u) * 2u;                           \
+    const uint row0 = tg_id * ROWS;                                               \
+    const uint groups = K / NVFP4_GROUP_ELEMS;                                    \
+    const uint per = (groups + (SGN) - 1u) / (SGN);                               \
+    const uint g_begin = (CONTIG) ? sg_id * per : sg_id;                          \
+    const uint g_end = (CONTIG) ? min(groups, g_begin + per) : groups;            \
+    const uint g_step = (CONTIG) ? 1u : (SGN);                                    \
+    simdgroup_float8x8 acc[BLOCKS];                                               \
+    for (uint b = 0u; b < (BLOCKS); ++b) {                                        \
+        acc[b] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);                 \
+    }                                                                             \
+    for (uint g = g_begin; g < g_end; g += g_step) {                              \
+        const uint base = g * NVFP4_GROUP_ELEMS;                                  \
+        for (uint i = lane; i < 8u * NVFP4_GROUP_ELEMS; i += 32u) {               \
+            const uint pos = i / NVFP4_GROUP_ELEMS;                               \
+            xt[i] = pos < R ? X[(ulong)pos * K + base + i % NVFP4_GROUP_ELEMS]    \
+                            : 0.0f;                                               \
+        }                                                                         \
+        float sc[BLOCKS];                                                         \
+        uchar lo_byte[BLOCKS];                                                    \
+        uchar hi_byte[BLOCKS];                                                    \
+        for (uint b = 0u; b < (BLOCKS); ++b) {                                    \
+            const uint row = row0 + b * 8u + fm;                                  \
+            if (row < M) {                                                        \
+                const ulong rg = (ulong)row * (ulong)groups + (ulong)g;           \
+                sc[b] = nvfp4_e4m3(Ws[rg]);                                       \
+                device const uchar* blk = Wp + rg * NVFP4_GROUP_BYTES;            \
+                lo_byte[b] = blk[fn / 2u];                                        \
+                hi_byte[b] = blk[4u + fn / 2u];                                   \
+            } else {                                                              \
+                sc[b] = 0.0f; lo_byte[b] = 0u; hi_byte[b] = 0u;                   \
+            }                                                                     \
+        }                                                                         \
+        simdgroup_barrier(mem_flags::mem_threadgroup);                            \
+        for (uint sub = 0u; sub < 2u; ++sub) {                                    \
+            simdgroup_float8x8 xb;                                                \
+            simdgroup_load(xb, xt + sub * 8u, NVFP4_GROUP_ELEMS, ulong2(0, 0), true); \
+            for (uint b = 0u; b < (BLOCKS); ++b) {                                \
+                const uchar byte = sub == 0u ? lo_byte[b] : hi_byte[b];           \
+                simdgroup_half8x8 w;                                              \
+                w.thread_elements()[0] = half(NVFP4_LUT[byte & 0x0Fu] * sc[b]);   \
+                w.thread_elements()[1] = half(NVFP4_LUT[(byte >> 4u) & 0x0Fu] * sc[b]); \
+                simdgroup_multiply_accumulate(acc[b], w, xb, acc[b]);             \
+            }                                                                     \
+        }                                                                         \
+        simdgroup_barrier(mem_flags::mem_threadgroup);                            \
+    }                                                                             \
+    threadgroup float* c = cs + sg_id * 8u * ROWS;                                \
+    for (uint b = 0u; b < (BLOCKS); ++b) {                                        \
+        simdgroup_store(acc[b], c + b * 8u, ROWS, ulong2(0, 0), true);            \
+    }                                                                             \
+    threadgroup_barrier(mem_flags::mem_threadgroup);                              \
+    for (uint i = tid; i < 8u * ROWS; i += (SGN) * 32u) {                         \
+        const uint pos = i / ROWS;                                                \
+        const uint row = row0 + i % ROWS;                                         \
+        if (pos < R && row < M) {                                                 \
+            float t = 0.0f;                                                       \
+            for (uint s = 0u; s < (SGN); ++s) { t += cs[s * 8u * ROWS + i]; }     \
+            out[(ulong)pos * M + row] = Tscale * t;                               \
+        }                                                                         \
+    }                                                                             \
+}
+
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf, 8u, 4u, 0)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s4b4, 4u, 4u, 0)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s8b8, 8u, 8u, 0)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s4b8, 4u, 8u, 0)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s8b4c, 8u, 4u, 1)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s2b8, 2u, 8u, 0)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s1b4, 1u, 4u, 0)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s8b2c, 8u, 2u, 1)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s8b1c, 8u, 1u, 1)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s16b4c, 16u, 4u, 1)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s16b2c, 16u, 2u, 1)
+NVFP4_SGF_KERNEL(nvfp4_matmul_sgf_s32b1c, 32u, 1u, 1)
+
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x2_r1, 2u, 1u)
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x2_r2, 2u, 2u)
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x2_r4, 2u, 4u)
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x2_r8, 2u, 8u)
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x4_r4, 4u, 4u)
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x4_r8, 4u, 8u)
+NVFP4_MULTIRHS_KERNEL(nvfp4_matmul_x1_r8, 1u, 8u)
+
 "#;
 
 macro_rules! sweep_kernel {
@@ -735,6 +1040,48 @@ impl crate::kernels::TiledKernel for KernelX2Seg3 {
     const ROWS_PER_TG: u64 = 8;
     const THREADS_PER_TG: u64 = 128;
 }
+/// VERIFY-N multi-RHS arms as (kernel name, activation rows), in
+/// [`QuantKernels::nvfp4_matmul_pipelines`](crate::kernels::quant) order.
+pub const MATMUL_ARMS: [(&str, usize); 7] = [
+    ("nvfp4_matmul_x2_r1", 1),
+    ("nvfp4_matmul_x2_r2", 2),
+    ("nvfp4_matmul_x2_r4", 4),
+    ("nvfp4_matmul_x2_r8", 8),
+    ("nvfp4_matmul_x4_r4", 4),
+    ("nvfp4_matmul_x4_r8", 8),
+    ("nvfp4_matmul_x1_r8", 8),
+];
+sweep_kernel!(KernelMatmulR1, "nvfp4_matmul_x2_r1", 8, 128);
+sweep_kernel!(KernelMatmulR2, "nvfp4_matmul_x2_r2", 8, 128);
+sweep_kernel!(KernelMatmulR4, "nvfp4_matmul_x2_r4", 8, 128);
+sweep_kernel!(KernelMatmulR8, "nvfp4_matmul_x2_r8", 8, 128);
+sweep_kernel!(KernelMatmulX4R4, "nvfp4_matmul_x4_r4", 16, 128);
+sweep_kernel!(KernelMatmulX4R8, "nvfp4_matmul_x4_r8", 16, 128);
+sweep_kernel!(KernelMatmulX1R8, "nvfp4_matmul_x1_r8", 4, 128);
+// VERIFY-N split-K tiles: 32 rows per threadgroup, 8 simdgroups over K,
+// position count `R` (1..=8) at buffer 7.
+sweep_kernel!(KernelMatmulSgk, "nvfp4_matmul_sgk", 32, 256);
+/// The sgf arm production uses for wide verify blocks: 8 simdgroups split
+/// K contiguously over 4 row-blocks — the sweep's best layer-weighted cost
+/// at R=8 (`examples/nvfp4_verify_widths.rs`).
+pub const SGF_PRODUCTION_ARM: &str = "nvfp4_matmul_sgf_s8b4c";
+/// sgf geometry sweep arms: (name, rows per TG, threads per TG).
+pub const SGF_SWEEP: [(&str, u64, u64); 12] = [
+    ("nvfp4_matmul_sgf", 32, 256),
+    ("nvfp4_matmul_sgf_s4b4", 32, 128),
+    ("nvfp4_matmul_sgf_s8b8", 64, 256),
+    ("nvfp4_matmul_sgf_s4b8", 64, 128),
+    ("nvfp4_matmul_sgf_s8b4c", 32, 256),
+    ("nvfp4_matmul_sgf_s2b8", 64, 64),
+    ("nvfp4_matmul_sgf_s1b4", 32, 32),
+    ("nvfp4_matmul_sgf_s8b2c", 16, 256),
+    ("nvfp4_matmul_sgf_s8b1c", 8, 256),
+    ("nvfp4_matmul_sgf_s16b4c", 32, 512),
+    ("nvfp4_matmul_sgf_s16b2c", 16, 512),
+    ("nvfp4_matmul_sgf_s32b1c", 8, 1024),
+];
+/// Positions one split-K dispatch covers at most.
+pub const MATMUL_SGK_MAX_ROWS: usize = 8;
 sweep_kernel!(KernelG2R4, "nvfp4_matvec_g2r4", 4);
 sweep_kernel!(KernelG4R4, "nvfp4_matvec_g4r4", 4);
 sweep_kernel!(KernelG1R2, "nvfp4_matvec_g1r2", 2);

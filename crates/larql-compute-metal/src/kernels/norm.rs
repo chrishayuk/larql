@@ -40,6 +40,8 @@ pub struct NormKernels {
     // Plain RMS-norm + the Q8-quantised twin used by the Q4_0 / Q8_0
     // attention path.
     pub rms_norm_pipeline: ComputePipelineState,
+    /// VERIFY-N: `rms_norm` over `[rows, len]`, one threadgroup per row.
+    pub rms_norm_rows_pipeline: ComputePipelineState,
     pub rms_norm_q8_pipeline: ComputePipelineState,
 
     // Cooperative residual + norm fusions. `residual_add` is the
@@ -113,6 +115,9 @@ impl NormKernels {
         use crate::kernels::compile_required as r;
         Self {
             rms_norm_pipeline: r::<shaders::residual_inject::RmsNormKernel>(device, library),
+            rms_norm_rows_pipeline: r::<shaders::residual_inject::RmsNormRowsKernel>(
+                device, library,
+            ),
             rms_norm_q8_pipeline: r::<shaders::fused_ops::RmsNormQ8Kernel>(device, library),
 
             residual_add_pipeline: r::<shaders::residual_inject::ResidualAddKernel>(

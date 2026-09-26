@@ -126,6 +126,40 @@ kernel void rope_at_pos_batched(
     x[base_idx + d + hdim] = re * sin_a + im * cos_a;
 }
 
+// VERIFY-N: rope_at_pos_batched over `rows` consecutive positions laid
+// out `[rows, num_heads, head_dim]`: head h rotates at position
+// pos0 + h / num_heads. Same per-pair arithmetic, so bit-identical to one
+// rope_at_pos_batched dispatch per position. Grid: (hdim, rows*num_heads).
+kernel void rope_rows(
+    device float*       x          [[buffer(0)]],
+    constant uint&      head_dim   [[buffer(1)]],
+    device const float* inv_freq   [[buffer(2)]],
+    constant uint&      pos0       [[buffer(3)]],
+    constant uint&      rotary_dim [[buffer(4)]],
+    constant uint&      num_heads  [[buffer(5)]],
+    constant float&     amplitude  [[buffer(6)]],
+    constant uint&      total_heads [[buffer(7)]],
+    uint2 tid [[thread_position_in_grid]])
+{
+    uint d  = tid.x;
+    uint h  = tid.y;
+    if (h >= total_heads) return;
+    uint rdim = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    uint hdim = rdim / 2;
+    if (d >= hdim) return;
+
+    uint pos = pos0 + h / num_heads;
+    float angle = float(pos) * inv_freq[d];
+    float cos_a = cos(angle) * amplitude;
+    float sin_a = sin(angle) * amplitude;
+
+    uint base_idx = h * head_dim;
+    float re = x[base_idx + d];
+    float im = x[base_idx + d + hdim];
+    x[base_idx + d]        = re * cos_a - im * sin_a;
+    x[base_idx + d + hdim] = re * sin_a + im * cos_a;
+}
+
 // Fused Q+K batched RoPE — applies RoPE to all Q heads then all K heads
 // in one dispatch instead of two. Grid: (rotary_dim/2, num_q+num_kv, 1).
 // Saves one `dispatch_threads` call per layer × 34 = 34 saved dispatches/token.
@@ -171,6 +205,11 @@ impl crate::kernels::ShaderKernel for RopeApplyKernel {
 pub struct RopeAtPosKernel;
 impl crate::kernels::ShaderKernel for RopeAtPosKernel {
     const KERNEL_NAME: &'static str = "rope_at_pos";
+}
+
+pub struct RopeRowsKernel;
+impl crate::kernels::ShaderKernel for RopeRowsKernel {
+    const KERNEL_NAME: &'static str = "rope_rows";
 }
 
 pub struct RopeAtPosBatchedKernel;

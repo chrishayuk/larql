@@ -169,6 +169,9 @@ pub struct StackScratch<'a> {
     /// them, and a hybrid layer in a stack without them is a caller bug
     /// the encoder refuses loudly.
     pub hybrid: Option<HybridScratch<'a>>,
+    /// SPLITK-1 attention partials, sized for this stack's widest op at
+    /// its row count. `None` = split-K never dispatched.
+    pub splitk: Option<crate::ops::kv_splitk::SplitKScratch<'a>>,
 }
 
 /// The hybrid layer's own intermediates.
@@ -240,6 +243,7 @@ impl MetalBackend {
                 gated: s.gated,
                 attn_out: s.attn_out,
                 inv_freq: layer.inv_freq,
+                splitk: s.splitk.as_ref(),
             };
             self.encode_attention(encs, src, mid, &layer.attn, &ascratch, &layer.attn_shape);
 
@@ -293,6 +297,77 @@ impl MetalBackend {
             src = dst;
         }
         src
+    }
+}
+
+impl MetalBackend {
+    /// VERIFY-N: [`Self::encode_stack`] over `rows` consecutive positions
+    /// starting at each layer's `attn_shape.position_index`. Every buffer
+    /// in `s` holds `rows` positions (`[rows, width]` row-major), as does
+    /// `h_in`. Dense FFN layers only: the routed and hybrid arms group
+    /// positions by expert, which is a separate lowering — refused by name.
+    pub fn encode_stack_rows<'a>(
+        &self,
+        encs: &mut dyn StageEncoders,
+        h_in: &'a Buffer,
+        layers: &[LayerLowering<'_>],
+        s: &StackScratch<'a>,
+        rows: usize,
+    ) -> Result<&'a Buffer, String> {
+        let mut src = h_in;
+        for layer in layers {
+            let mid = if std::ptr::eq(src, s.h_a) {
+                s.h_b
+            } else {
+                s.h_a
+            };
+            let dst = if std::ptr::eq(mid, s.h_a) {
+                s.h_b
+            } else {
+                s.h_a
+            };
+            let ascratch = AttnScratch {
+                normed: s.attn_normed,
+                q: s.q,
+                k_cache: layer.k_cache,
+                v_cache: layer.v_cache,
+                gate: s.gate,
+                concat: s.concat,
+                gated: s.gated,
+                attn_out: s.attn_out,
+                inv_freq: layer.inv_freq,
+                splitk: s.splitk.as_ref(),
+            };
+            self.encode_attention_rows(
+                encs,
+                src,
+                mid,
+                &layer.attn,
+                &ascratch,
+                s.attn_post,
+                &layer.attn_shape,
+                rows,
+            )?;
+            match &layer.ffn {
+                LayerFfnLowering::Dense { weights, shape } => {
+                    let fscratch = FfnScratch {
+                        normed: s.ffn_normed,
+                        gate: s.ffn_gate,
+                        up: s.ffn_up,
+                        act: s.ffn_act,
+                        down: s.ffn_down,
+                    };
+                    self.encode_gated_ffn_rows(
+                        encs, mid, dst, weights, &fscratch, s.ffn_post, shape, rows,
+                    )?;
+                }
+                LayerFfnLowering::Routed(_) | LayerFfnLowering::Hybrid(_) => {
+                    return Err("multi-position stack lowers dense FFN layers only".into());
+                }
+            }
+            src = dst;
+        }
+        Ok(src)
     }
 }
 

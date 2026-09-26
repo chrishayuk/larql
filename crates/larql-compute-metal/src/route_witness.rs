@@ -44,6 +44,9 @@ pub static LOWERED_ATTEND_SERIAL: AtomicU64 = AtomicU64::new(0);
 /// sequence-parallel kernel. The lowering's seqpar port is judged by this
 /// moving, not by a throughput number that might have another cause.
 pub static LOWERED_ATTEND_SEQPAR: AtomicU64 = AtomicU64::new(0);
+/// Attention ops encoded by the VINDEX3 lowering on SPLITK-1 (span split
+/// across threadgroups, then merged) — one bump per op, both passes.
+pub static LOWERED_ATTEND_SPLITK: AtomicU64 = AtomicU64::new(0);
 
 #[inline]
 pub(crate) fn bump(counter: &AtomicU64) {

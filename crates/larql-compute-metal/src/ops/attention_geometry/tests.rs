@@ -134,3 +134,73 @@ fn slices_accessor_matches_variant() {
     assert_eq!(AttentionGeometry::Serial.slices(), 0);
     assert_eq!(AttentionGeometry::SeqPar { slices: 6 }.slices(), 6);
 }
+
+const GEMMA3: AttentionGeometryQuery = AttentionGeometryQuery {
+    head_dim: 256,
+    num_q_heads: 8,
+    num_kv_heads: 4,
+    span: 0,
+};
+
+/// The Gemma 3 split-K row: none below 128 (the 32-span block drifted, so
+/// unlicensed), 8 chunks x 2 slices from 128, 16 x 2 from 512.
+#[test]
+fn gemma3_splitk_row_tiers() {
+    for span in [1u32, 32, 127] {
+        assert_eq!(
+            choose_splitk(SeqparRequest::Unset, &at(GEMMA3, span)),
+            None,
+            "span {span}"
+        );
+    }
+    for (span, chunks) in [
+        (128u32, 8usize),
+        (511, 8),
+        (512, 16),
+        (1024, 16),
+        (4096, 16),
+    ] {
+        assert_eq!(
+            choose_splitk(SeqparRequest::Unset, &at(GEMMA3, span)),
+            Some(SplitKGeometry { chunks, slices: 2 }),
+            "span {span}"
+        );
+    }
+}
+
+/// Any explicit request keeps the intra-threadgroup kernels — the A/B arm
+/// against split-K is `LARQL_KV_SEQPAR=<n>`.
+#[test]
+fn explicit_request_never_selects_splitk() {
+    for req in [
+        SeqparRequest::Off,
+        SeqparRequest::Auto,
+        SeqparRequest::Slices(4),
+    ] {
+        assert_eq!(choose_splitk(req, &at(GEMMA3, 2048)), None, "{req:?}");
+    }
+}
+
+/// No split-K row → none, however long the span.
+#[test]
+fn unmeasured_geometry_has_no_splitk() {
+    for g in [GPT_OSS, GLIMMER] {
+        assert_eq!(choose_splitk(SeqparRequest::Unset, &at(g, 4096)), None);
+    }
+}
+
+/// Every chosen chunk count respects the kernel floor and the scratch
+/// ceiling at every span the long kernel can serve.
+#[test]
+fn splitk_chunks_respect_kernel_bounds() {
+    use crate::ops::kv_splitk::{min_chunks, SPLITK_MAX_CHUNKS};
+    for span in 1u32..=4096 {
+        if let Some(g) = choose_splitk(SeqparRequest::Unset, &at(GEMMA3, span)) {
+            assert!(
+                g.chunks >= min_chunks(span) && g.chunks <= SPLITK_MAX_CHUNKS,
+                "span {span}"
+            );
+            assert!(g.chunks <= span as usize, "span {span}");
+        }
+    }
+}

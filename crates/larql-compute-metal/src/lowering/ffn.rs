@@ -33,8 +33,8 @@ use metal::{Buffer, ComputeCommandEncoderRef};
 use super::profile::{Stage, StageEncoders};
 
 use super::{
-    nvfp4_residual_fusion_enabled, nvfp4_segment, LoweredMatrix, MatvecOperands, MatvecTarget,
-    PostNorm,
+    nvfp4_residual_fusion_enabled, nvfp4_segment, LoweredMatrix, MatmulRowsTarget, MatvecOperands,
+    MatvecTarget, PostNorm,
 };
 use crate::MetalBackend;
 
@@ -321,6 +321,107 @@ impl MetalBackend {
                 encode_elementwise(enc, geglu, &[s.gate, s.up, s.act], shape.intermediate);
             }
         }
+    }
+}
+
+impl MetalBackend {
+    /// VERIFY-N: the gated FFN over `rows` positions, hidden states
+    /// `[rows, hidden]` in and out — pre-norm per row, gate/up/down as
+    /// multi-position matmuls (each weight stream read once for the
+    /// block), the combine as one elementwise dispatch over every row,
+    /// then the post-norm per row and one residual add.
+    ///
+    /// `s` holds `rows` positions in every buffer; `post_scratch` is
+    /// `[rows, hidden]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_gated_ffn_rows(
+        &self,
+        encs: &mut dyn StageEncoders,
+        h_in: &Buffer,
+        h_out: &Buffer,
+        w: &FfnWeights<'_>,
+        s: &FfnScratch<'_>,
+        post_scratch: &Buffer,
+        shape: &FfnShape,
+        rows: usize,
+    ) -> Result<(), String> {
+        let enc = encs.stage(Stage::DenseFfn);
+        self.encode_rms_norm_rows(
+            enc,
+            h_in,
+            0,
+            w.norm_weight,
+            s.normed,
+            0,
+            shape.hidden,
+            rows,
+            shape.norm_eps,
+            shape.norm_weight_offset,
+        );
+        for (m, out) in [(&w.gate, s.gate), (&w.up, s.up)] {
+            self.encode_matmul_rows(
+                enc,
+                m,
+                &MatmulRowsTarget {
+                    x: s.normed,
+                    x_offset: 0,
+                    out,
+                    out_offset: 0,
+                    n: shape.intermediate,
+                    k: shape.hidden,
+                    rows,
+                },
+            )?;
+        }
+        let len = rows * shape.intermediate;
+        match shape.activation {
+            FfnActivation::SituGlu { beta, linear_beta } => {
+                crate::kernels::ffn::bind_situ_glu(
+                    enc,
+                    &self.ffn.situ_glu_pipeline,
+                    (s.gate, 0),
+                    (s.up, 0),
+                    (s.act, 0),
+                    len as u32,
+                    beta,
+                    linear_beta,
+                    false,
+                );
+                super::dispatch_linear(enc, &self.ffn.situ_glu_pipeline, len);
+            }
+            FfnActivation::Silu | FfnActivation::GeluTanh => {
+                let geglu = match shape.activation {
+                    FfnActivation::GeluTanh => &self.ffn.geglu_gelu_tanh_pipeline,
+                    _ => &self.ffn.geglu_pipeline,
+                };
+                encode_elementwise(enc, geglu, &[s.gate, s.up, s.act], len);
+            }
+        }
+        self.encode_matmul_rows(
+            enc,
+            &w.down,
+            &MatmulRowsTarget {
+                x: s.act,
+                x_offset: 0,
+                out: s.down,
+                out_offset: 0,
+                n: shape.hidden,
+                k: shape.intermediate,
+                rows,
+            },
+        )?;
+        self.encode_branch_norm_then_residual_rows(
+            enc,
+            h_in,
+            s.down,
+            h_out,
+            w.post_norm.as_ref(),
+            post_scratch,
+            shape.hidden,
+            rows,
+            shape.residual_scale.unwrap_or(1.0),
+        );
+        Ok(())
     }
 }
 

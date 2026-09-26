@@ -22,7 +22,7 @@ use metal::Buffer;
 
 use super::profile::{Stage, StageEncoders};
 
-use super::{LoweredMatrix, MatvecTarget};
+use super::{LoweredMatrix, MatmulRowsTarget, MatvecTarget};
 use crate::MetalBackend;
 
 /// What the head reads.
@@ -100,6 +100,61 @@ impl MetalBackend {
     }
 }
 
+impl MetalBackend {
+    /// VERIFY-N: [`Self::encode_head`] over `rows` positions. `h_final`,
+    /// `s.normed` are `[rows, hidden]`; `s.raw_logits` and `logits_out`
+    /// are `[rows, vocab]`. The final norm runs per row, the projection
+    /// as one multi-position matmul, multiplier/softcap elementwise over
+    /// the block.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_head_rows(
+        &self,
+        encs: &mut dyn StageEncoders,
+        h_final: &Buffer,
+        logits_out: &Buffer,
+        w: &HeadWeights<'_>,
+        s: &HeadScratch<'_>,
+        shape: &HeadShape,
+        rows: usize,
+    ) -> Result<(), String> {
+        let enc = encs.stage(Stage::Head);
+        self.encode_rms_norm_rows(
+            enc,
+            h_final,
+            0,
+            w.norm_weight,
+            s.normed,
+            0,
+            shape.hidden,
+            rows,
+            shape.norm_eps,
+            shape.norm_weight_offset,
+        );
+        self.encode_matmul_rows(
+            enc,
+            &w.projection,
+            &MatmulRowsTarget {
+                x: s.normed,
+                x_offset: 0,
+                out: s.raw_logits,
+                out_offset: 0,
+                n: shape.vocab,
+                k: shape.hidden,
+                rows,
+            },
+        )?;
+        let pipeline = &self.norms.head_scale_softcap_pipeline;
+        enc.set_compute_pipeline_state(pipeline);
+        enc.set_buffer(0, Some(s.raw_logits), 0);
+        enc.set_buffer(1, Some(logits_out), 0);
+        super::set_u32(enc, 2, (rows * shape.vocab) as u32);
+        super::set_f32(enc, 3, shape.multiplier.unwrap_or(0.0));
+        super::set_f32(enc, 4, shape.softcap.unwrap_or(0.0));
+        super::dispatch_linear(enc, pipeline, rows * shape.vocab);
+        Ok(())
+    }
+}
+
 /// Elements one `argmax_partial` threadgroup scans. 256 threads × 16
 /// elements; a 262K vocabulary leaves 64 partials for the final pass.
 pub const ARGMAX_BLOCK: usize = 4096;
@@ -132,10 +187,23 @@ impl MetalBackend {
         n: usize,
         s: &ArgmaxScratch<'_>,
     ) {
+        self.encode_argmax_at(enc, x, 0, n, s);
+    }
+
+    /// [`Self::encode_argmax`] over `x[x_offset..]` (a byte offset) — one
+    /// position's logits inside a `[rows, vocab]` block.
+    pub fn encode_argmax_at(
+        &self,
+        enc: &metal::ComputeCommandEncoderRef,
+        x: &Buffer,
+        x_offset: u64,
+        n: usize,
+        s: &ArgmaxScratch<'_>,
+    ) {
         let blocks = argmax_partials(n);
         let p1 = &self.norms.argmax_partial_pipeline;
         enc.set_compute_pipeline_state(p1);
-        enc.set_buffer(0, Some(x), 0);
+        enc.set_buffer(0, Some(x), x_offset);
         super::set_u32(enc, 1, n as u32);
         super::set_u32(enc, 2, ARGMAX_BLOCK as u32);
         enc.set_buffer(3, Some(s.partial_vals), 0);

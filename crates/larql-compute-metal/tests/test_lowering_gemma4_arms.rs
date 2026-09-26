@@ -201,6 +201,7 @@ fn run_attention(gpu: &MetalBackend, fx: &AttnFixture, arms: AttnArms) -> Vec<f3
         gated: &gated,
         attn_out: &attn_out,
         inv_freq: &inv_freq,
+        splitk: None,
     };
     let shape = AttnShape {
         hidden: HIDDEN,
@@ -464,6 +465,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[StackLayer]) -> Vec<Vec<f32>>
             branch_sum: &hidden_bufs[11],
             zero: &zero,
         }),
+        splitk: None,
     };
     let post_scratch = &hidden_bufs[12];
     let caps: Vec<metal::Buffer> = (0..LAYERS).map(|_| gpu.lowering_scratch(HIDDEN)).collect();
