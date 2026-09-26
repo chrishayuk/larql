@@ -8,10 +8,10 @@ use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::{
     decode::DecodeSession,
     kv::RowKvState,
+    lowering::{LoweringIdentity, LoweringRegistry, SharedProvider},
     observe::{InputSite, StepEvent, StepObserver},
     operands::OperandSource,
     prepared::{ExecutionSlice, PreparedOperands},
-    production::ProductionBackend,
     provenance::ExecutionProvenance,
 };
 use crate::format::vindex3::opplan::{ComponentOpPlan, LayerFfn};
@@ -22,7 +22,7 @@ use crate::format::vindex3::opplan::{ComponentOpPlan, LayerFfn};
 pub struct PreparedCalibration {
     plan: ComponentOpPlan,
     operands: PreparedOperands,
-    backend: ProductionBackend,
+    backend: SharedProvider,
     site: CalibrationSite,
     source_image_sha256: String,
     candidate_prefix_sha256: String,
@@ -62,7 +62,10 @@ impl PreparedCalibration {
             } else {
                 image_digest(&prefix, source)?
             };
-        let backend = ProductionBackend::new();
+        // The CPU executor by request, from the shipped registry — not by
+        // privileged construction (LOWERING-PLUGIN-1, L3).
+        let backend =
+            LoweringRegistry::shipped().provider_shared(&LoweringIdentity::cpu_production())?;
         let operands = PreparedOperands::load(&prefix, source, &backend, ExecutionSlice::Full)?;
         let execution_sha256 = ExecutionProvenance::of(&operands).fingerprint();
         Ok(Self {
