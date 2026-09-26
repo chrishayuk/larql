@@ -73,6 +73,8 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 
 [dev-dependencies]
+# CONTINUATION-MEM-1's harness reads KvView::backing_addresses (test-utils only).
+larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
 tungstenite = "0.29"
 tempfile = "3"
 # Integration test wires a real GridServiceImpl alongside the server. Dev-only.

@@ -38,6 +38,7 @@ enum Backing<'a> {
 }
 
 impl<'a> Backing<'a> {
+    #[cfg(any(test, feature = "test-utils"))]
     fn address(self) -> usize {
         match self {
             Self::Rows(rows) => rows.as_ptr() as usize,
@@ -121,7 +122,7 @@ impl<'a> KvView<'a> {
     ) -> Result<Self, ViewRefusal> {
         assert!(width > 0, "a K/V row has a width");
         assert!(
-            keys.len() % width == 0 && keys.len() == values.len(),
+            keys.len().is_multiple_of(width) && keys.len() == values.len(),
             "contiguous K/V storage must be whole {width}-wide rows, equal in number: \
              {} K and {} V values",
             keys.len(),
@@ -191,9 +192,12 @@ impl<'a> KvView<'a> {
 
     /// The addresses of the storage this view lends, K then V: the row
     /// list of a row-backed view, the data of a contiguous one, the object
-    /// behind a `KvRows`. Identity only, never read through — for a check
-    /// that a handoff moved storage rather than copying it, and for
-    /// instruments attributing allocations to it.
+    /// behind a `KvRows`. Identity only, never read through — for
+    /// instruments (a handoff moved storage rather than copying it; which
+    /// allocations belong to a provider). Instrumentation, not part of the
+    /// logical view: compiled only for tests and `test-utils`, so physical
+    /// backing identity never becomes view semantics.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn backing_addresses(&self) -> [usize; 2] {
         [self.keys.address(), self.values.address()]
     }
