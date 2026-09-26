@@ -869,6 +869,18 @@ impl PlanBackend for ReferenceBackend {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        self.ffn_observed(call, &mut |_| {})
+    }
+
+    fn serves_ffn_down_input(&self) -> bool {
+        true
+    }
+
+    fn ffn_observed(
+        &self,
+        call: FfnCall<'_>,
+        tap: &mut dyn FnMut(&[f32]),
+    ) -> Result<Vec<f32>, VindexError> {
         super::production::require_executable_gate("reference", call.gate_policy)?;
         let up = matvec(call.up.as_f32()?, call.intermediate, call.hidden, call.x);
         let inner: Vec<f32> = match call.gate {
@@ -891,6 +903,7 @@ impl PlanBackend for ReferenceBackend {
             }
             None => up.iter().map(|u| activate(call.activation, *u)).collect(),
         };
+        tap(&inner);
         Ok(matvec(
             call.down.as_f32()?,
             call.hidden,
