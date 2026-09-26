@@ -32,6 +32,7 @@
 
 use super::super::backend::{AttentionStepCall, PlanBackend};
 use super::super::kv::{KvState, RowKvState};
+use super::super::kv_view::KvView;
 use super::super::operands::OperandStore;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::production::ProductionBackend;
@@ -192,12 +193,14 @@ fn both_realisations<B: PlanBackend>(
             width,
         );
         let out = backend
-            .attention_step(AttentionStepCall {
-                op: call,
-                position: offset,
-                keys: kv.keys(layer_index),
-                values: kv.values(layer_index),
-            })
+            .attention_step(
+                AttentionStepCall::new(
+                    call,
+                    offset,
+                    KvView::over_rows(kv.keys(layer_index), kv.values(layer_index)),
+                )
+                .unwrap(),
+            )
             .unwrap();
         stepped.keys.push(out.key.clone());
         stepped.values.push(out.value.clone());
@@ -289,12 +292,7 @@ fn stepping_the_same_position_twice_yields_identical_rows() {
             width,
         );
         backend
-            .attention_step(AttentionStepCall {
-                op: call,
-                position,
-                keys: &[],
-                values: &[],
-            })
+            .attention_step(AttentionStepCall::new(call, position, KvView::empty()).unwrap())
             .unwrap()
     };
 

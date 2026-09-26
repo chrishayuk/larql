@@ -863,6 +863,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     let past_keys: Vec<Vec<f32>> = self.kv.state().keys(index).to_vec();
                     let past_values: Vec<Vec<f32>> = self.kv.state().values(index).to_vec();
                     let base = position;
+                    let past = super::kv_view::KvView::over_rows(&past_keys, &past_values);
+                    // Conv-QKV reads its whole history (HistoryRange::Full).
+                    past.covers(0..base)?;
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
                     let projector = self.backend.dense_projector();
                     let mut planes = super::conv_qkv::layer_forward_with(
@@ -870,8 +873,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         &ops.weights()?,
                         &inputs,
                         recurrent,
-                        &past_keys,
-                        &past_values,
+                        past,
                         base,
                         projector,
                     );
@@ -891,12 +893,10 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         hidden,
                     );
                     let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Attention);
-                    let step = AttentionStepCall {
-                        op: call,
-                        position,
-                        keys: self.kv.state().keys(index),
-                        values: self.kv.state().values(index),
-                    };
+                    let state = self.kv.state();
+                    let rows =
+                        super::kv_view::KvView::over_rows(state.keys(index), state.values(index));
+                    let step = AttentionStepCall::new(call, position, rows)?;
                     // V3-HEAD-OBS-1: the same step, with the per-head tap
                     // armed when the observer asked for it. The tap fires
                     // inside the kernel; the structural event closes it

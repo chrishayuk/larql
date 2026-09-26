@@ -28,6 +28,7 @@ use larql_models::config::{
 
 use super::super::backend::{AttentionCall, AttentionStepCall, GateCall, PlanBackend, WeightSlice};
 use super::super::cpu::thread_projection_calls;
+use super::super::kv_view::KvView;
 use super::super::production::ProductionBackend;
 use crate::format::vindex3::fixtures::lcg_values;
 use crate::format::vindex3::graph::policy::AttentionSpan;
@@ -120,12 +121,7 @@ fn projections_during(f: impl FnOnce()) -> u64 {
 
 fn step(call: AttentionCall<'_>) -> Vec<f32> {
     ProductionBackend::new()
-        .attention_step(AttentionStepCall {
-            op: call,
-            position: 0,
-            keys: &[],
-            values: &[],
-        })
+        .attention_step(AttentionStepCall::new(call, 0, KvView::empty()).unwrap())
         .expect("the tiny fixture attends")
         .output
 }
