@@ -1,0 +1,62 @@
+# Stop a pull request's CI when the pull request closes.
+#
+# The per-workflow concurrency groups cancel a PR's runs only when a NEWER
+# commit is pushed to it. Merging or closing the PR pushes nothing, so every
+# run still queued or compiling for it keeps its runner — for a merged PR,
+# re-testing code that main's own push runs now cover. On 2026-09-26 that was
+# 55 of 122 queued runs, all on already-merged branches.
+#
+# Main's push runs are untouched: they are keyed by `run_id` so every main
+# commit keeps its own CI record (see the concurrency note in any per-crate
+# workflow).
+
+name: cancel closed PR runs
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    name: cancel runs for the closed pull request
+    # A fork's pull_request token is read-only and could not cancel anything.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No checkout: the job only calls the Actions API.
+      - name: Cancel this pull request's unfinished runs
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const pr = context.payload.pull_request;
+            // Every status a run can hold before it completes.
+            const unfinished = ["requested", "waiting", "pending", "queued", "in_progress"];
+
+            let cancelled = 0;
+            for (const status of unfinished) {
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRunsForRepo,
+                {owner, repo, branch: pr.head.ref, event: "pull_request", status, per_page: 100},
+              );
+              for (const run of runs) {
+                // This job itself runs on the PR's branch; never cancel it.
+                if (run.id === context.runId) continue;
+                // A branch name alone could belong to a fork's PR; require this repo.
+                if (run.head_repository?.full_name !== `${owner}/${repo}`) continue;
+                try {
+                  await github.rest.actions.cancelWorkflowRun({owner, repo, run_id: run.id});
+                  cancelled += 1;
+                  core.info(`cancelled ${run.name} #${run.run_number} (${run.head_sha.slice(0, 8)}, ${status})`);
+                } catch (err) {
+                  // A run that finished between listing and cancelling returns 409.
+                  if (err.status !== 409) throw err;
+                  core.info(`skipped ${run.name} #${run.run_number}: already finished`);
+                }
+              }
+            }
+            core.notice(`PR #${pr.number} ${pr.merged ? "merged" : "closed"}: cancelled ${cancelled} unfinished run(s)`);
