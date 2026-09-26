@@ -151,8 +151,11 @@ impl<'a> KvView<'a> {
     }
 
     /// K row at absolute `position`. Callers check [`covers`](Self::covers)
-    /// first; reaching the panic here is an executor bug, not a retention
-    /// one, and says so.
+    /// first (AttentionStepCall::new always does), so an out-of-range read
+    /// is an executor bug, not a retention one. Named in debug builds; in
+    /// release the backing's own bounds check still panics, without the
+    /// name — this is the hottest call in decode, and the per-read check
+    /// measured at ≈2.7% of qwen3-0.6b decode (continuation-view-1-notes).
     pub fn key(&self, position: usize) -> &'a [f32] {
         self.check(position);
         self.keys.row(self.base, position)
@@ -165,7 +168,7 @@ impl<'a> KvView<'a> {
     }
 
     fn check(&self, position: usize) {
-        assert!(
+        debug_assert!(
             self.base <= position && position < self.end,
             "executor bug: read position {position} outside the checked view [{}, {})",
             self.base,
