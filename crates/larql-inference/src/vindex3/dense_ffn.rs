@@ -322,14 +322,16 @@ pub fn prepare_coordinator<B: PlanBackend + ?Sized, T: FfnTransport + 'static>(
     Ok(ops)
 }
 
-/// Owns local KV. Any failed extension invalidates this session, so partially
-/// advanced attention state cannot be reused. Start a fresh session and replay
+/// Owns local continuation state, built once from the caller's selection
+/// (CONTINUATION-PLUGIN-1, C3): the coordinator never names a provider.
+/// Any failed extension invalidates this session, so partially advanced
+/// attention state cannot be reused. Start a fresh session and replay
 /// committed input to recover; remote workers retain no continuation state.
 pub struct DenseFfnSession<'a, B: PlanBackend> {
     plan: &'a ComponentOpPlan,
     ops: &'a PreparedOperands,
     backend: &'a B,
-    state: larql_vindex::format::vindex3::opplan::exec::kv::RowKvState,
+    state: larql_vindex::format::vindex3::opplan::exec::continuation_registry::BoxedContinuation,
     committed: usize,
     failed: bool,
 }
@@ -338,6 +340,7 @@ impl<'a, B: PlanBackend> DenseFfnSession<'a, B> {
         plan: &'a ComponentOpPlan,
         ops: &'a PreparedOperands,
         backend: &'a B,
+        continuation: &larql_vindex::format::vindex3::opplan::exec::continuation_registry::SelectedContinuation,
     ) -> Result<Self, InferenceError> {
         if !matches!(
             ops.slice(),
@@ -351,7 +354,7 @@ impl<'a, B: PlanBackend> DenseFfnSession<'a, B> {
             plan,
             ops,
             backend,
-            state: Default::default(),
+            state: continuation.build(),
             committed: 0,
             failed: false,
         })
@@ -370,7 +373,7 @@ impl<'a, B: PlanBackend> DenseFfnSession<'a, B> {
                     self.plan,
                     self.ops,
                     self.backend,
-                    &mut self.state,
+                    &mut *self.state,
                 )?;
             let mut logits = None;
             for input in inputs {

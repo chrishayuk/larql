@@ -1382,10 +1382,10 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
         let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
         let stream_transport = HttpFfnShards::connect_stream(&urls, None).unwrap();
         let stream_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), stream_transport).unwrap();
-        let mut stream_session = DenseFfnSession::new(runtime.plan(), &stream_ops, runtime.backend()).unwrap();
+        let mut stream_session = DenseFfnSession::new(runtime.plan(), &stream_ops, runtime.backend(), &row_continuation(runtime.plan())).unwrap();
         let binary_transport = HttpFfnShards::connect_binary(&urls, None).unwrap();
         let binary_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), binary_transport).unwrap();
-        let mut binary_session = DenseFfnSession::new(runtime.plan(), &binary_ops, runtime.backend()).unwrap();
+        let mut binary_session = DenseFfnSession::new(runtime.plan(), &binary_ops, runtime.backend(), &row_continuation(runtime.plan())).unwrap();
         let transport = HttpFfnShards::connect(&urls, None).unwrap();
         let ops = prepare_coordinator(
             &path,
@@ -1395,7 +1395,7 @@ async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
             transport,
         )
         .unwrap();
-        let mut remote = DenseFfnSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
+        let mut remote = DenseFfnSession::new(runtime.plan(), &ops, runtime.backend(), &row_continuation(runtime.plan())).unwrap();
         let mut local = runtime.session(&row_continuation(runtime.plan())).unwrap();
         let mut smoke = Vec::new();
         for (position, id) in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11].into_iter().enumerate() {
@@ -1629,10 +1629,20 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
             )
             .unwrap();
             assert_eq!(ops.residency_census().ffn.total(), 0);
-            let mut remote_a =
-                RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
-            let mut remote_b =
-                RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
+            let mut remote_a = RoutedExpertSession::new(
+                runtime.plan(),
+                &ops,
+                runtime.backend(),
+                &row_continuation(runtime.plan()),
+            )
+            .unwrap();
+            let mut remote_b = RoutedExpertSession::new(
+                runtime.plan(),
+                &ops,
+                runtime.backend(),
+                &row_continuation(runtime.plan()),
+            )
+            .unwrap();
             let mut local_a = runtime.session(&row_continuation(runtime.plan())).unwrap();
             let mut local_b = runtime.session(&row_continuation(runtime.plan())).unwrap();
             let bits = |row: Vec<f32>| row.into_iter().map(f32::to_bits).collect::<Vec<_>>();
@@ -1679,8 +1689,13 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
                 );
             }
             for mode in 1..=5 {
-                let mut failed =
-                    RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
+                let mut failed = RoutedExpertSession::new(
+                    runtime.plan(),
+                    &ops,
+                    runtime.backend(),
+                    &row_continuation(runtime.plan()),
+                )
+                .unwrap();
                 assert_eq!(
                     bits(failed.step(3).unwrap()),
                     bits(
@@ -1696,8 +1711,13 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
                 assert_eq!(failed.position(), 1);
                 fault.store(0, Ordering::SeqCst);
                 assert!(failed.step(17).unwrap_err().to_string().contains("invalid"));
-                let mut recovered =
-                    RoutedExpertSession::new(runtime.plan(), &ops, runtime.backend()).unwrap();
+                let mut recovered = RoutedExpertSession::new(
+                    runtime.plan(),
+                    &ops,
+                    runtime.backend(),
+                    &row_continuation(runtime.plan()),
+                )
+                .unwrap();
                 let mut local = runtime.session(&row_continuation(runtime.plan())).unwrap();
                 for id in [3, 17] {
                     assert_eq!(

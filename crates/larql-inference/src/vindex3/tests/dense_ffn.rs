@@ -136,7 +136,13 @@ fn dense_ffn_placement_matches_local_prefill_layers_logits_and_decode() {
         let mut reference =
             Vindex3Session::over_prepared(runtime.plan(), &local, runtime.backend(), &mut kv)
                 .unwrap();
-        let mut session = DenseFfnSession::new(runtime.plan(), &remote, runtime.backend()).unwrap();
+        let mut session = DenseFfnSession::new(
+            runtime.plan(),
+            &remote,
+            runtime.backend(),
+            &row(runtime.plan()),
+        )
+        .unwrap();
         assert_eq!(
             bits(&reference.prefill(&G_TOKENS).unwrap()),
             bits(&session.prefill(&G_TOKENS).unwrap())
@@ -246,7 +252,13 @@ fn dense_ffn_failure_invalidates_session_and_fresh_replay_recovers() {
             w,
         )
         .unwrap();
-        let mut session = DenseFfnSession::new(runtime.plan(), &remote, runtime.backend()).unwrap();
+        let mut session = DenseFfnSession::new(
+            runtime.plan(),
+            &remote,
+            runtime.backend(),
+            &row(runtime.plan()),
+        )
+        .unwrap();
         let initial = session.step(G_TOKENS[0]).unwrap();
         fault.store(mode, Ordering::SeqCst);
         let capture = dense_ffn::profile::Capture::start().unwrap();
@@ -262,7 +274,13 @@ fn dense_ffn_failure_invalidates_session_and_fresh_replay_recovers() {
             .unwrap_err()
             .to_string()
             .contains("invalid"));
-        let mut fresh = DenseFfnSession::new(runtime.plan(), &remote, runtime.backend()).unwrap();
+        let mut fresh = DenseFfnSession::new(
+            runtime.plan(),
+            &remote,
+            runtime.backend(),
+            &row(runtime.plan()),
+        )
+        .unwrap();
         assert_eq!(bits(&initial), bits(&fresh.step(G_TOKENS[0]).unwrap()));
         let mut reference = runtime.session(&row(runtime.plan())).unwrap();
         reference.step(G_TOKENS[0]).unwrap();
@@ -271,4 +289,85 @@ fn dense_ffn_failure_invalidates_session_and_fresh_replay_recovers() {
             bits(&fresh.step(G_TOKENS[1]).unwrap())
         );
     }
+}
+
+/// `row/v1`'s provider under another identity, counting what it builds —
+/// so a session can only have used it by going through the selection.
+struct CountingRow(Arc<AtomicUsize>);
+impl larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationFactory
+    for CountingRow
+{
+    fn identity(
+        &self,
+    ) -> larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity
+    {
+        larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity::new(
+            "counting-row",
+            1,
+        )
+    }
+    fn regions(
+        &self,
+    ) -> &[larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegion]
+    {
+        &larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegion::ALL
+    }
+    fn build(
+        &self,
+        _config: &ContinuationConfig,
+    ) -> larql_vindex::format::vindex3::opplan::exec::continuation_registry::BoxedContinuation {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::new(RowKvState::default())
+    }
+}
+
+#[test]
+fn dense_ffn_session_holds_local_state_built_from_the_callers_selection() {
+    // CONTINUATION-PLUGIN-1, C3: the coordinator names no provider. Its
+    // local state comes from the selection it is handed — built once and
+    // held across steps, not rebuilt per step as a replay would.
+    use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationFactory;
+    let dir = container_with(miniature_glimmer);
+    let runtime = Vindex3Runtime::open(dir.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    let remote = dense_ffn::prepare_coordinator(
+        dir.path(),
+        runtime.plan(),
+        runtime.operands(),
+        runtime.backend(),
+        workers(&runtime, dir.path(), true),
+    )
+    .unwrap();
+    let built = Arc::new(AtomicUsize::new(0));
+    let mut registry = ContinuationRegistry::new();
+    registry
+        .register(Box::new(CountingRow(built.clone())))
+        .unwrap();
+    let selected = registry
+        .select(
+            &CountingRow(built.clone()).identity(),
+            &ContinuationConfig::empty(),
+            &plan_continuation_geometry(runtime.plan()).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(built.load(Ordering::SeqCst), 0, "selection builds nothing");
+
+    let mut session =
+        DenseFfnSession::new(runtime.plan(), &remote, runtime.backend(), &selected).unwrap();
+    assert_eq!(built.load(Ordering::SeqCst), 1);
+    let mut reference = runtime.session(&row(runtime.plan())).unwrap();
+    assert_eq!(
+        bits(&reference.prefill(&G_TOKENS[..3]).unwrap()),
+        bits(&session.prefill(&G_TOKENS[..3]).unwrap())
+    );
+    for id in &G_TOKENS[3..] {
+        assert_eq!(
+            bits(&reference.step(*id).unwrap()),
+            bits(&session.step(*id).unwrap())
+        );
+    }
+    assert_eq!(
+        built.load(Ordering::SeqCst),
+        1,
+        "state is held, not rebuilt"
+    );
 }
