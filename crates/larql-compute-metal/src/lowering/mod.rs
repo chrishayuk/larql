@@ -713,6 +713,18 @@ impl MetalBackend {
     /// (`x[i]`, `x[i + head_dim/2]` are the real/imaginary pair), which
     /// is the detail an interleaved-convention kernel would get silently
     /// wrong.
+    ///
+    /// One position is a one-row [`Self::encode_rope_rows`]: decode and a
+    /// VERIFY-N block must rotate through the SAME kernel. `rope_rows` and
+    /// `rope_at_pos_batched` share their arithmetic in source, but under
+    /// fast math the compiler may lower a uniform `pos` and a per-thread
+    /// `pos` differently — the macos-14 runner's GPU does, and the two
+    /// disagreed in the last bits. One kernel makes verify == greedy a
+    /// property of the code, not of the GPU's compiler.
+    ///
+    /// The cos/sin amplitude — 1.0 for plain rope, YaRN's
+    /// `attention_amplitude` for a scaled layer — comes from the plan's
+    /// position policy, never invented here (A-9.4).
     #[allow(clippy::too_many_arguments)]
     pub fn encode_rope(
         &self,
@@ -725,22 +737,8 @@ impl MetalBackend {
         position: usize,
         amplitude: f32,
     ) {
-        let pipeline = &self.attention.rope_at_pos_batched_pipeline;
-        enc.set_compute_pipeline_state(pipeline);
-        enc.set_buffer(0, Some(x), x_offset);
-        set_u32(enc, 1, head_dim as u32);
-        enc.set_buffer(2, Some(inv_freq), 0);
-        set_u32(enc, 3, position as u32);
-        // rotary_dim 0 = rotate the whole head, matching `rope_rotate`.
-        set_u32(enc, 4, 0);
-        set_u32(enc, 5, num_heads as u32);
-        // The cos/sin amplitude — 1.0 for plain rope, YaRN's
-        // `attention_amplitude` for a scaled layer — comes from the plan's
-        // position policy, never invented here (A-9.4).
-        set_f32(enc, 6, amplitude);
-        enc.dispatch_thread_groups(
-            metal::MTLSize::new((head_dim / 2) as u64, num_heads as u64, 1),
-            metal::MTLSize::new(1, 1, 1),
+        self.encode_rope_rows(
+            enc, x, x_offset, num_heads, head_dim, inv_freq, position, amplitude, 1,
         );
     }
 
@@ -949,6 +947,7 @@ impl MetalBackend {
         set_u32(enc, 1, head_dim as u32);
         enc.set_buffer(2, Some(inv_freq), 0);
         set_u32(enc, 3, position as u32);
+        // rotary_dim 0 = rotate the whole head, matching `rope_rotate`.
         set_u32(enc, 4, 0);
         set_u32(enc, 5, num_heads as u32);
         set_f32(enc, 6, amplitude);

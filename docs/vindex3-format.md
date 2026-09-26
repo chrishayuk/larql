@@ -694,7 +694,9 @@ graph carries the same kinds executes with zero runtime edits.
   graph-encoded representation emits `.lyrw` segments — LYRW files are
   written only by the bank-shape import path, whose containers carry a
   `moe_manifest.json` and no graph. The two writers are disjoint;
-  unifying them is a named gate for 3.0 Final.
+  unifying them is a named gate for 3.0 Final, decided by
+  [ADR-0027](adr/0027-vindex3-single-container-shape.md): the graph shape is
+  the only normative one and LYRW v2 is kept as an import codec.
 - The **MoE manifest** (`moe_manifest.json`) describes routed programmes
   on bank-shape containers. A graph-encoded container carries none —
   routed or not (`encode` sets `moe_manifest: null` unconditionally);

@@ -51,12 +51,12 @@ mod gwkey1_search;
 mod gwread1_capture;
 #[path = "gwread1_replay.rs"]
 mod gwread1_replay;
+#[path = "gwstate1.rs"]
+mod gwstate1;
 #[path = "gwsup1_readout.rs"]
 mod gwsup1_readout;
 #[path = "gwv2.rs"]
 mod gwv2;
-#[path = "gwstate1.rs"]
-mod gwstate1;
 #[path = "observatory_heads.rs"]
 mod heads;
 #[path = "observatory_token_map.rs"]
