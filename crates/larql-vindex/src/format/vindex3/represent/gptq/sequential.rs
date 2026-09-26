@@ -47,6 +47,7 @@ impl EliminationPlan {
         let l = larql_compute::cholesky(reduced_h, ridge)
             .map_err(|e| VindexError::Parse(format!("nvfp4-gptq-v1: Cholesky(H_λ) failed: {e}")))?;
         let hinv = larql_compute::cholesky_inverse(&l);
+        drop(l);
         let l_of_hinv = larql_compute::cholesky(&hinv, 0.0)
             .map_err(|e| VindexError::Parse(format!("nvfp4-gptq-v1: Cholesky(H⁻¹) failed: {e}")))?;
         Ok(Self { l_of_hinv })

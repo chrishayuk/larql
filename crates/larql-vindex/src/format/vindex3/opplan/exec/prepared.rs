@@ -1662,7 +1662,7 @@ fn select_records<B: PlanBackend + ?Sized>(
         if !in_scope {
             continue;
         }
-        let Some(stored) = store.store().stored_dtype(&planned.operand) else {
+        let Some(stored) = store.stored_dtype(&planned.operand) else {
             continue;
         };
         let mut facts = RepresentationFacts::resolve_declared(
@@ -1887,7 +1887,7 @@ fn pinned_format(
     }) {
         return Ok(record.selection.realization.format());
     }
-    if store.store().stored_dtype(op).is_none() {
+    if store.stored_dtype(op).is_none() {
         return Ok(WeightFormat::F32);
     }
     Err(VindexError::Parse(format!(

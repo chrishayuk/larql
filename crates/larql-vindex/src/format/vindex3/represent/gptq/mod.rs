@@ -28,14 +28,10 @@
 //!      Q_N(W)
 //! ```
 //!
-//! This is milestone one of `ENCODER-R4.md`'s Sequence step 8: one
-//! tensor, given its calibration Hessian directly, quantised
-//! deterministically. It does not yet capture calibration activations
-//! (the sequential candidate-path forward-pass harness), does not wire
-//! into the VINDEX3 REPRESENT dispatch, and does not use the
-//! LAPACK-accelerated Cholesky R4.2 benchmarked — all three are later,
-//! separately-scoped expansions ("one tensor → one layer → sequential
-//! full model"), not implied by this module existing.
+//! The tensor kernel accepts a supplied Hessian. Calibrated REPRESENT dispatch
+//! and sequential candidate-prefix orchestration live in [`super::recipe`],
+//! keeping execution and artifact authority out of this numerical layer.
+//! Full-width accelerated factorization and R4 quality admission remain open.
 
 pub mod hessian;
 pub mod pack;

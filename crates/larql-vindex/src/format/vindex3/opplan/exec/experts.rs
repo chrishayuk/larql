@@ -1089,7 +1089,7 @@ fn bank_facts(
 ) -> Result<RepresentationFacts, VindexError> {
     let registry = store.registry();
     let declared = declared_bank_representation(op.expert_format);
-    match (store.store().stored_dtype(operand), declared) {
+    match (store.stored_dtype(operand), declared) {
         (Some(stored), declared) => Ok(RepresentationFacts::resolve_declared(
             registry, stored, declared,
         )),

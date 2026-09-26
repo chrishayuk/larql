@@ -143,7 +143,17 @@ fn binding(
         &authority.executable_root,
     ))
     .map_err(|e| VindexError::Parse(e.to_string()))?;
-    Ok(hash_bytes(&bytes))
+    // Preserve legacy/nearest bindings byte-for-byte. Calibrated derivation is
+    // integrity provenance, never an input to RepresentationStateId.
+    match &index.derivation {
+        None => Ok(hash_bytes(&bytes)),
+        Some(d) => {
+            d.validate(index)?;
+            Ok(hash_bytes(
+                &serde_json::to_vec(&(bytes, d)).map_err(|e| VindexError::Parse(e.to_string()))?,
+            ))
+        }
+    }
 }
 
 /// Called only by producers after their actual encoding/write decisions.

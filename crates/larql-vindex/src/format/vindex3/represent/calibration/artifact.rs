@@ -33,7 +33,7 @@ pub struct CalibrationKey {
 }
 
 impl CalibrationKey {
-    fn validate(&self) -> Result<(), VindexError> {
+    pub(crate) fn validate(&self) -> Result<(), VindexError> {
         if [
             &self.source_image_sha256,
             &self.candidate_prefix_sha256,
@@ -69,7 +69,7 @@ pub struct CalibrationManifest {
 }
 
 impl CalibrationManifest {
-    fn binding(&self) -> Result<String, VindexError> {
+    pub(crate) fn binding(&self) -> Result<String, VindexError> {
         json_digest(&(
             &self.schema,
             &self.key,
@@ -112,6 +112,11 @@ impl CalibrationArtifact {
     }
     pub fn values(&self) -> &[f64] {
         &self.values
+    }
+
+    /// Move the single statistic into its consumer without cloning a dense H.
+    pub(crate) fn into_parts(self) -> (CalibrationManifest, Vec<f64>) {
+        (self.manifest, self.values)
     }
 
     /// Fresh directory only. Manifest is written last; failures cannot leave a
