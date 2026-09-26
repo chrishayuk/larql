@@ -82,6 +82,7 @@ pub mod plan_roles;
 #[cfg(test)]
 mod plan_roles_tests;
 pub mod policy;
+pub mod produce;
 pub mod promotion;
 pub mod quality;
 pub mod reading;
@@ -415,7 +416,30 @@ fn encode_with(
 /// to the role its operator computes with, and that is the container's
 /// own judgement. The name heuristics answer only for what the plan does
 /// not cover — object-level roles, components with no plan.
-fn tensor_role(
+/// The objects that belong to the primary text model. A perception
+/// tower's tensors are named exactly like a decoder's, so the component's
+/// declared role is the only thing that separates them. Shared by the
+/// compiler and the search-record producer, so both classify alike.
+pub(crate) fn primary_text_objects(
+    inspection: &super::inspect::SystemInspection,
+) -> BTreeSet<String> {
+    let text: BTreeSet<&str> = inspection
+        .graph
+        .components
+        .iter()
+        .filter(|c| c.role == super::graph::component::ComponentRole::PrimaryText)
+        .map(|c| c.id.as_str())
+        .collect();
+    inspection
+        .graph
+        .objects
+        .iter()
+        .filter(|o| text.contains(o.component.as_str()))
+        .map(|o| o.id.clone())
+        .collect()
+}
+
+pub(crate) fn tensor_role(
     declared_roles: &plan_roles::PlanRoles,
     primary_text: &BTreeSet<String>,
     object: &str,
@@ -510,22 +534,7 @@ fn compile_inner(
     // tensors are named exactly like a decoder's, so the component's
     // declared role is the only thing that separates them — see
     // `policy::classify_in`.
-    let primary_text: BTreeSet<String> = {
-        let text: BTreeSet<&str> = inspection
-            .graph
-            .components
-            .iter()
-            .filter(|c| c.role == super::graph::component::ComponentRole::PrimaryText)
-            .map(|c| c.id.as_str())
-            .collect();
-        inspection
-            .graph
-            .objects
-            .iter()
-            .filter(|o| text.contains(o.component.as_str()))
-            .map(|o| o.id.clone())
-            .collect()
-    };
+    let primary_text = primary_text_objects(&inspection);
     // The plan's own operand bindings, which outrank tensor spellings.
     // Best-effort: a component whose plan does not build contributes
     // nothing here and its tensors fall back to name classification.

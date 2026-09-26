@@ -89,7 +89,7 @@ fn serve(
 /// A snapshot whose schema this build does not know is refused rather
 /// than served partially: a reader that does not know the schema string
 /// should not trust its reading of anything under it.
-fn load(path: &std::path::Path) -> Result<SearchSnapshot, Box<dyn std::error::Error>> {
+pub(crate) fn load(path: &std::path::Path) -> Result<SearchSnapshot, Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)
         .map_err(|e| format!("could not open the record at {}: {e}", path.display()))?;
     let snapshot: SearchSnapshot = serde_json::from_reader(BufReader::new(file))

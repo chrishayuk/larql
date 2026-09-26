@@ -81,6 +81,9 @@ pub enum Vindex3Command {
     /// reference over a token bank, with every validity proof, and write a
     /// report, per-position records and a receipt.
     Measure(measure::MeasureArgs),
+    /// AUTO-REP over a plan-v1 record: `init` produces a characterisation-only
+    /// record, `run` advances one through the propose, compile, measure, cut loop.
+    AutoRep(auto_rep::AutoRepArgs),
 }
 
 /// Which numerical realisation runs the plan. Both execute the *same*
@@ -596,10 +599,12 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
         Vindex3Command::Consequence(args) => consequence::run(args),
         Vindex3Command::TokenBank(args) => token_bank::run(args),
         Vindex3Command::Measure(args) => measure::run(args),
+        Vindex3Command::AutoRep(args) => auto_rep::run(args),
     }
 }
 
 mod artifact;
+pub(crate) mod auto_rep;
 mod bank;
 mod consequence;
 pub(crate) mod decode;

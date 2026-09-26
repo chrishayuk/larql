@@ -185,6 +185,60 @@ These land in PR 1 (kinds and binding) and PR 2 (ingestion), with W8 and W9 comm
 3. **Producer and CLI:** the snapshot producer, the lowered executor registration, and a `vindex3` verb
    that runs AUTO-REP over a produced record. Witness W7.
 
+## Amendment A2 (2026-09-26, before PR 3's implementation)
+
+Recorded before the code it governs. It narrows PR 3's scope and splits it; nothing above is withdrawn.
+
+### A2.1 The producer makes characterisation-only records
+
+A search record carries four judgement fields besides the gate:
+
+- `gate`;
+- `tail_support` (the tail observations a percentile needs before it can price anything);
+- `diagnostic_policy`;
+- `semantics.promotion_rule`.
+
+The only builder in the tree, a test fixture, fills them with Kimi values: `kimi-logit-balanced-v1`,
+`route_cal_1`, `bs2-kimi-v1`, and `kimi-balanced-v1-authority-only/v1`. Every one is a judgement about an
+instrument's readings, and none has been earned for plan-v1.
+
+So `represent::produce` builds only characterisation-only plan records:
+
+- `gate: None`.
+- A diagnostic policy with no observations.
+- A promotion rule id stating that nothing is promoted.
+- A tail-support policy whose provenance states it is not earned. Nothing reads it while the record has
+  no gate, since `adjudicate` returns `None` first.
+
+Slice 3's pre-registration installs all four together. Borrowing any Kimi value, or inventing a plan one
+here, is refused.
+
+**Surface.** The producer's surface uses the same role authority `compile_representation` uses: the
+container's plan roles for primary-text objects, and name classification otherwise. Both go through one
+shared helper, never a copy. That makes the roles the solver groups by the roles the compiler compiles.
+
+### A2.2 PR 3a: producer and verbs
+
+- `represent::produce::{produce, ProduceInputs, plan_surface, plan_instrument}`.
+- `larql vindex3 auto-rep init`: writes a produced record as JSON, which `optimizer-mcp --snapshot` can
+  load.
+- `larql vindex3 auto-rep run`: loads a record and runs AUTO-REP-1b with the interpreter plan-v1 executor
+  and a plugin-aware compiler, then writes back the advanced record and the campaign record. It refuses a
+  characterisation-only record, as `auto_rep::run` does, until slice 3 arms one.
+
+**W7** is as frozen: the producer's record, with only the test-only gate installed, is accepted by
+`auto_rep::run`, and its surface roles equal the container's plan roles. It adds:
+
+- the producer writes no Kimi value into any judgement field;
+- `init` round-trips through `optimizer-mcp`'s loader;
+- `run` on a produced, gate-less record refuses before compiling anything.
+
+### A2.3 PR 3b: the lowered executor
+
+A plan-v1 `ExperimentExecutor` over `LoweredArm`, registered by `larql-cli`, with arms named by lowering
+identity (Finding 1). It needs a Metal device. Its tests must fail, not skip, when the device or shader
+library is missing, and it lands as its own PR.
+
 ## Implementation record
 
 - **PR 1** (#579): the kinds, the binding and the optional gate. W1–W3, W9 and W8's adjudication half; eight mutations, each caught.
@@ -194,3 +248,8 @@ These land in PR 1 (kinds and binding) and PR 2 (ingestion), with W8 and W9 comm
   - **Mutations:** eight, each caught. Positions from a fixed length, seals unread, a declared per-sample length accepted, plan completeness skipped, facts and reading of different procedures accepted, the candidate arm reading the source, plan positions unchecked, and sample order unchecked.
 - **Finding 1, arm names.** The executor first named its arms by role (`reference`, `candidate`). plan-v1 records `arm_changed` from arm names, so two identical execution arms looked like a changed variable, and a candidate arm reading the SOURCE container passed as a measurement. Arms are now named by their lowering identity. The mutation that points the candidate arm at the source now fails three witnesses.
 - **Finding 2, `top5_overlap_mean`.** It is the mean COUNT of shared top-5 ids, in [0, 5], not a share. The first real run measured 4.30. The invariant bounds it by `TOP_K_OVERLAP`, and a witness refuses 5.5 and holds a real value above 1.
+- **PR 3a**: `represent::produce::{produce, ProduceInputs, plan_surface, plan_instrument}`, with `primary_text_objects` and `tensor_role` now shared with `compile_representation`; plus `larql vindex3 auto-rep init|run` with a plugin-aware compiler.
+  - The producer builds characterisation-only records, with no Kimi value in any judgement field. The end-to-end fixture is now produced by it, so W5, W6 and W8 run on a produced record.
+  - **W7:** the surface carries the plan's role where name classification sees nothing (the gated-delta projections classify `Unknown` by name), the record loads through `optimizer-mcp`'s loader, and the loop refuses the record until the test-only gate arms it.
+  - **Mutations:** five, each caught. A Kimi diagnostic leaked, name roles instead of plan roles, protections accepted, the tokenizer check skipped, and `init` overwriting.
+  - The name-roles mutation first SURVIVED, because the dense fixture's plan roles and name classification coincide. The hybrid gated-delta witness was added to kill it.
