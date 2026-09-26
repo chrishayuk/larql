@@ -43,8 +43,7 @@ fn window_v1_is_shipped_and_holds_only_kv() {
             &ContinuationConfig::empty(),
             &geometry,
         )
-        .err()
-        .expect("a hybrid plan needs regions window/v1 does not hold");
+        .expect_err("a hybrid plan needs regions window/v1 does not hold");
     assert!(
         matches!(refused, ContinuationRegistryError::Unsupported { .. }),
         "refused at selection, by capability: {refused}"

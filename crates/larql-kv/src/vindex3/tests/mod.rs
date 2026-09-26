@@ -39,7 +39,7 @@ use larql_vindex::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan}
 
 use crate::cache::KvCache;
 
-use super::CanonicalKvState;
+use super::{CanonicalKvState, WindowKvState};
 
 const CONTINUATION_STEPS: usize = 8;
 
@@ -545,23 +545,28 @@ fn canonical_states_a_valid_identity_distinct_from_row() {
 }
 
 /// C2: the shipped registry is a fresh VALUE on every call — registering
-/// into one leaves the next untouched — and it holds exactly the two
-/// built-ins, each selectable against a real plan's geometry.
+/// into one leaves the next untouched — and it holds exactly the shipped
+/// built-ins (row/v1, canonical/v1 and, since CONTINUATION-WINDOW-1,
+/// window/v1), each selectable against a real plan's geometry.
 #[test]
-fn shipped_continuations_is_a_fresh_value_holding_both_built_ins() {
+fn shipped_continuations_is_a_fresh_value_holding_every_built_in() {
     use larql_vindex::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
     use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
 
     let mut first = crate::shipped_continuations();
     assert_eq!(
         first.identities(),
-        [RowKvState::identity(), CanonicalKvState::identity()]
+        [
+            RowKvState::identity(),
+            CanonicalKvState::identity(),
+            WindowKvState::identity()
+        ]
     );
     let dup = first
         .register(Box::new(crate::CanonicalFactory))
         .unwrap_err();
     assert!(dup.to_string().contains("canonical/v1"), "{dup}");
-    assert_eq!(crate::shipped_continuations().len(), 2);
+    assert_eq!(crate::shipped_continuations().len(), 3);
 
     let (_dir, plan, _store) = fixture();
     let geometry = plan_continuation_geometry(&plan).unwrap();
