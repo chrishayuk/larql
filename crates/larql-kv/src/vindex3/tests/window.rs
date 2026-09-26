@@ -234,3 +234,95 @@ fn a_handoff_resumes_at_a_non_zero_base_and_keeps_advancing() {
     );
     assert_eq!(after.end() - after.base(), G_WINDOW);
 }
+
+// ---- window/v1's refusals and its factory ----------------------------------
+
+fn two_layers() -> [LayerKvGeometry; 2] {
+    [
+        LayerKvGeometry {
+            kv_dim: 2,
+            window: Some(3),
+            history: HistoryRange::Trailing(3),
+        },
+        LayerKvGeometry {
+            kv_dim: 2,
+            window: None,
+            history: HistoryRange::Full,
+        },
+    ]
+}
+
+#[test]
+fn recurrent_and_latent_state_are_refused_by_name() {
+    let mut state = WindowKvState::new();
+    state.prepare(&two_layers());
+    let recurrent = state
+        .recurrent_state(0)
+        .err()
+        .expect("window/v1 holds no recurrent state");
+    assert!(
+        recurrent.to_string().contains("WindowKvState"),
+        "{recurrent}"
+    );
+    let latent = state
+        .latent_state(1)
+        .err()
+        .expect("window/v1 holds no latent rows");
+    assert!(latent.to_string().contains("WindowKvState"), "{latent}");
+}
+
+#[test]
+fn a_resumed_prepare_keeps_its_rows_and_its_position() {
+    let mut state = WindowKvState::new();
+    state.prepare(&two_layers());
+    for p in 0..5 {
+        state.append(0, vec![p as f32, 0.0], vec![0.0, 0.0]);
+    }
+    state.set_position(5);
+    state.prepare(&two_layers());
+    assert_eq!(state.position(), 5);
+    let view = state.rows(0);
+    assert_eq!(
+        (view.base(), view.end()),
+        (2, 5),
+        "an announcement, not a reset"
+    );
+}
+
+#[test]
+#[should_panic(expected = "different program geometry")]
+fn a_resume_for_a_different_program_is_refused() {
+    let mut state = WindowKvState::new();
+    state.prepare(&two_layers());
+    let mut other = two_layers();
+    other[0].history = HistoryRange::Trailing(4);
+    state.prepare(&other);
+}
+
+#[test]
+#[should_panic(expected = "K row at layer 0 is 3 wide; the plan says 2")]
+fn a_misfit_key_row_is_refused() {
+    let mut state = WindowKvState::new();
+    state.prepare(&two_layers());
+    state.append(0, vec![0.0; 3], vec![0.0; 2]);
+}
+
+#[test]
+#[should_panic(expected = "V row at layer 1 is 1 wide; the plan says 2")]
+fn a_misfit_value_row_is_refused() {
+    let mut state = WindowKvState::new();
+    state.prepare(&two_layers());
+    state.append(1, vec![0.0; 2], vec![0.0; 1]);
+}
+
+#[test]
+fn the_factory_names_window_v1_and_holds_only_kv() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
+        ContinuationFactory, ContinuationRegion,
+    };
+    let factory = super::super::WindowFactory;
+    assert_eq!(factory.identity().to_string(), "window/v1");
+    assert_eq!(factory.regions(), &[ContinuationRegion::Kv]);
+    let built = factory.build(&ContinuationConfig::empty());
+    assert_eq!(built.position(), 0);
+}
