@@ -29,7 +29,6 @@ struct Layer {
 /// What one append left behind, checked against the plan.
 #[derive(Clone, Debug)]
 pub struct RetentionCheck {
-    pub layer: usize,
     pub position: usize,
     pub base: usize,
     pub end: usize,
@@ -122,7 +121,6 @@ impl ContinuationProvider for ExactRetention {
         l.values.drain(..dropped);
         l.base += dropped;
         self.checks.push(RetentionCheck {
-            layer,
             position,
             base: l.base,
             end: l.base + l.keys.len(),

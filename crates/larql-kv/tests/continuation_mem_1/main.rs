@@ -912,8 +912,7 @@ fn s3_a_retention_bug_is_refused_before_any_kernel() {
     // Resumed prefill takes the same door.
     let before = backend.attention_steps.load(Ordering::SeqCst);
     let err = prefill_prepared(&subject.plan, &ops, &[7, 8], &backend, &mut kv)
-        .err()
-        .expect("a resumed prefill lacking a required row must be refused");
+        .expect_err("a resumed prefill lacking a required row must be refused");
     assert_eq!(
         backend.attention_steps.load(Ordering::SeqCst),
         before,
