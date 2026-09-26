@@ -24,6 +24,9 @@ use super::alloc::{self, Event, EventKind, Scope, ScopeDelta};
 
 const F32_BYTES: usize = std::mem::size_of::<f32>();
 
+/// The live-table tag of allocations born inside an `append` scope.
+pub const APPEND_TAG: u8 = 1;
+
 /// What the harness can see of a provider's storage beyond the trait.
 pub trait Inspect: ContinuationProvider {
     /// The K and V matrix data pointers of `layer`, for a provider whose
@@ -247,7 +250,9 @@ impl<P: Inspect> Measured<P> {
         let mut ptrs = self.append_born.clone();
         ptrs.sort_unstable();
         ptrs.dedup();
-        ptrs.iter().filter_map(|&p| alloc::live_size(p)).sum()
+        ptrs.iter()
+            .filter_map(|&p| alloc::live_size_tagged(p, APPEND_TAG))
+            .sum()
     }
 
     pub fn inventory(&mut self) -> Vec<Backing> {
@@ -477,7 +482,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         let value_capacity_bytes = value.capacity() * F32_BYTES;
         let incoming = [key_ptr, value.as_ptr() as usize];
         let rows_before = self.inner.matrix_rows(layer);
-        let scope = alloc::enter();
+        let scope = alloc::enter_tagged(APPEND_TAG);
         self.inner.append(layer, key, value);
         let delta = scope.leave();
         let events = alloc::events(&delta);
@@ -521,11 +526,13 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
                 // not as a separate free; a separate free here is foreign
                 // to every class above.
                 EventKind::Free => t.unclassified += 1,
+                // A matrix's first allocation starts where its first row does, so
+                // matrix identity is checked before stored-row identity.
+                EventKind::Alloc if is_matrix => t.matrix_first_alloc_bytes += e.new_size as u64,
                 EventKind::Alloc if is_view => {
                     t.duplicate_allocs += 1;
                     t.duplicate_bytes += e.new_size as u64;
                 }
-                EventKind::Alloc if is_matrix => t.matrix_first_alloc_bytes += e.new_size as u64,
                 EventKind::ReallocMoved if is_matrix => {
                     t.matrix_moved += 1;
                     t.matrix_moved_bytes += e.old_size as u64;

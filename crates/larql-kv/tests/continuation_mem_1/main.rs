@@ -150,6 +150,36 @@ fn control_thread_integrity() {
     );
 }
 
+/// Tags survive address reuse: an allocation born in a tagged scope, freed,
+/// and its address reused by an untagged scope's allocation, is no longer
+/// reported as the tagged one (VIEW-1 V3: the append-born anti-cheat).
+#[test]
+fn control_tag_survives_address_reuse() {
+    let _serial = serial();
+    let tagged = alloc::enter_tagged(measured::APPEND_TAG);
+    let first = vec![1u8; 96];
+    let _ = tagged.leave();
+    let address = first.as_ptr() as usize;
+    assert_eq!(
+        alloc::live_size_tagged(address, measured::APPEND_TAG),
+        Some(96)
+    );
+    drop(first);
+    assert_eq!(alloc::live_size_tagged(address, measured::APPEND_TAG), None);
+    let untagged = alloc::enter();
+    let second = vec![2u8; 96];
+    let _ = untagged.leave();
+    if second.as_ptr() as usize == address {
+        assert_eq!(alloc::live_size(address), Some(96), "the reuse is live");
+        assert_eq!(
+            alloc::live_size_tagged(address, measured::APPEND_TAG),
+            None,
+            "a reused address must not answer as the append-born allocation"
+        );
+    }
+    drop(second);
+}
+
 /// Realloc classification: every growth is classified moved or in place
 /// by pointer comparison, and moved bytes are the old sizes of the moves.
 #[test]

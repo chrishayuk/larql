@@ -52,6 +52,12 @@ const TOMBSTONE: usize = usize::MAX;
 static TABLE_PTR: [AtomicUsize; TABLE_CAPACITY] =
     [const { AtomicUsize::new(EMPTY) }; TABLE_CAPACITY];
 static TABLE_SIZE: [AtomicUsize; TABLE_CAPACITY] = [const { AtomicUsize::new(0) }; TABLE_CAPACITY];
+/// The tag of the scope that made each entry (0 = untagged): an address
+/// freed and reused by an allocation from a different kind of scope must
+/// not be mistaken for the original.
+static TABLE_TAG: [AtomicU8; TABLE_CAPACITY] = [const { AtomicU8::new(0) }; TABLE_CAPACITY];
+/// The tag new entries of the open scope receive.
+static CURRENT_TAG: AtomicU8 = AtomicU8::new(0);
 static TABLE_LIVE: AtomicUsize = AtomicUsize::new(0);
 static TABLE_OVERFLOW: AtomicU64 = AtomicU64::new(0);
 
@@ -140,11 +146,18 @@ pub struct Scope {
 
 /// Open a scope on this thread. Allocation-free.
 pub fn enter() -> Scope {
+    enter_tagged(0)
+}
+
+/// [`enter`], with every allocation it makes tagged `tag` in the live
+/// table ([`live_size_tagged`]).
+pub fn enter_tagged(tag: u8) -> Scope {
     assert!(
         !ACTIVE.load(Relaxed),
         "measuring scopes do not nest; one is already open"
     );
     EVENT_COUNT.store(0, Relaxed);
+    CURRENT_TAG.store(tag, Relaxed);
     OWNER.store(thread_token(), Relaxed);
     let start = snapshot();
     ACTIVE.store(true, Relaxed);
@@ -207,6 +220,24 @@ pub fn live_size(ptr: usize) -> Option<usize> {
     None
 }
 
+/// [`live_size`], but only for an allocation made in a scope tagged `tag`
+/// (or reallocated from one): an address since freed and reused by a
+/// differently tagged allocation answers `None`.
+pub fn live_size_tagged(ptr: usize, tag: u8) -> Option<usize> {
+    let mut slot = hash(ptr);
+    for _ in 0..TABLE_CAPACITY {
+        match TABLE_PTR[slot].load(Relaxed) {
+            EMPTY => return None,
+            p if p == ptr => {
+                return (TABLE_TAG[slot].load(Relaxed) == tag)
+                    .then(|| TABLE_SIZE[slot].load(Relaxed));
+            }
+            _ => slot = (slot + 1) & (TABLE_CAPACITY - 1),
+        }
+    }
+    None
+}
+
 pub fn table_overflowed() -> bool {
     TABLE_OVERFLOW.load(Relaxed) > 0
 }
@@ -220,12 +251,13 @@ fn hash(ptr: usize) -> usize {
     ((ptr >> 4).wrapping_mul(0x9E37_79B9_7F4A_7C15)) & (TABLE_CAPACITY - 1)
 }
 
-fn table_insert(ptr: usize, size: usize) {
+fn table_insert(ptr: usize, size: usize, tag: u8) {
     let mut slot = hash(ptr);
     for _ in 0..TABLE_CAPACITY {
         let current = TABLE_PTR[slot].load(Relaxed);
         if current == EMPTY || current == TOMBSTONE || current == ptr {
             TABLE_SIZE[slot].store(size, Relaxed);
+            TABLE_TAG[slot].store(tag, Relaxed);
             TABLE_PTR[slot].store(ptr, Relaxed);
             if current != ptr {
                 TABLE_LIVE.fetch_add(1, Relaxed);
@@ -237,24 +269,25 @@ fn table_insert(ptr: usize, size: usize) {
     TABLE_OVERFLOW.fetch_add(1, Relaxed);
 }
 
-/// Forget `ptr`; returns whether it was held.
-fn table_remove(ptr: usize) -> bool {
+/// Forget `ptr`; returns its tag if it was held.
+fn table_remove(ptr: usize) -> Option<u8> {
     if TABLE_LIVE.load(Relaxed) == 0 {
-        return false;
+        return None;
     }
     let mut slot = hash(ptr);
     for _ in 0..TABLE_CAPACITY {
         match TABLE_PTR[slot].load(Relaxed) {
-            EMPTY => return false,
+            EMPTY => return None,
             p if p == ptr => {
+                let tag = TABLE_TAG[slot].load(Relaxed);
                 TABLE_PTR[slot].store(TOMBSTONE, Relaxed);
                 TABLE_LIVE.fetch_sub(1, Relaxed);
-                return true;
+                return Some(tag);
             }
             _ => slot = (slot + 1) & (TABLE_CAPACITY - 1),
         }
     }
-    false
+    None
 }
 
 fn log(kind: EventKind, old_ptr: usize, new_ptr: usize, old_size: usize, new_size: usize) {
@@ -317,16 +350,19 @@ unsafe impl GlobalAlloc for MeasuringAllocator {
                     EventKind::ReallocMoved
                 };
                 log(kind, ptr as usize, new as usize, layout.size(), new_size);
-                table_insert(new as usize, new_size);
+                table_insert(new as usize, new_size, CURRENT_TAG.load(Relaxed));
             }
             Some(false) => {
                 FOREIGN.fetch_add(1, Relaxed);
-                if held {
-                    table_insert(new as usize, new_size);
+                if let Some(tag) = held {
+                    table_insert(new as usize, new_size, tag);
                 }
             }
-            None if held => table_insert(new as usize, new_size),
-            None => {}
+            None => {
+                if let Some(tag) = held {
+                    table_insert(new as usize, new_size, tag);
+                }
+            }
         }
         new
     }
@@ -346,7 +382,7 @@ fn record_alloc(ptr: *mut u8, size: usize) {
             ALLOCS.fetch_add(1, Relaxed);
             ALLOC_BYTES.fetch_add(size as u64, Relaxed);
             log(EventKind::Alloc, 0, ptr as usize, 0, size);
-            table_insert(ptr as usize, size);
+            table_insert(ptr as usize, size, CURRENT_TAG.load(Relaxed));
         }
         Some(false) => {
             FOREIGN.fetch_add(1, Relaxed);
