@@ -80,6 +80,9 @@ pub struct AppendTraffic {
     pub matrix_in_place: u64,
     pub header_alloc_bytes: u64,
     pub incoming_freed: u64,
+    /// Frees of rows the provider had adopted earlier (VIEW-1 V4: a
+    /// retaining provider dropping rows below its base), by pointer.
+    pub evicted_frees: u64,
     pub unclassified: u64,
     /// The stored K row's address equals the moved-in K row's.
     pub adopted: bool,
@@ -522,6 +525,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
             }
             match e.kind {
                 EventKind::Free if incoming.contains(&e.old_ptr) => t.incoming_freed += 1,
+                EventKind::Free if self.adopted.contains_key(&e.old_ptr) => t.evicted_frees += 1,
                 // A matrix reallocation frees its old block inside realloc,
                 // not as a separate free; a separate free here is foreign
                 // to every class above.
@@ -550,6 +554,9 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
             let o = self.overlay.as_mut().expect("matched above");
             o.keys.push(k);
             o.values.push(v);
+        }
+        for e in events.iter().filter(|e| e.kind == EventKind::Free) {
+            self.adopted.remove(&e.old_ptr);
         }
         if t.adopted {
             self.adopted.insert(incoming[0], key_capacity_bytes);
