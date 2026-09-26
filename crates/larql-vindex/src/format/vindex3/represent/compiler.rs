@@ -171,6 +171,8 @@ pub struct CandidateIndex {
     /// Completed byte-bound representation authority; absent on legacy or in-progress artifacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authority: Option<super::candidate_authority::CandidateRepresentationAuthority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derivation: Option<super::derivation::DerivationRecord>,
 }
 
 impl CandidateIndex {
@@ -193,6 +195,7 @@ impl CandidateIndex {
         }
         Self {
             authority: None,
+            derivation: None,
             model: model.into(),
             source,
             object: object.into(),

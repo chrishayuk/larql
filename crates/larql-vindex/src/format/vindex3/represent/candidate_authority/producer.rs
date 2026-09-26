@@ -92,6 +92,10 @@ impl CompilationAuthority {
         })
     }
 
+    pub(crate) fn derivation(&mut self, record: super::super::derivation::DerivationRecord) {
+        self.index.derivation = Some(record);
+    }
+
     pub(crate) fn decided(&mut self, object: &str, tensor: &str, encoding: ResolvedEncoding) {
         self.decisions
             .insert((object.into(), tensor.into()), encoding);

@@ -16,15 +16,13 @@
 //! - **REPRESENT** adds a *lossy alternative encoding* beside the
 //!   canonical bytes. It preserves neither byte-equality (the pack is new
 //!   bytes) nor exact semantics (4-bit is an approximation), so it cannot
-//!   hide behind either gate and carries its own: the compiled bytes must
-//!   equal, bit for bit, what the runtime would have produced by
-//!   quantising at load.
+//!   hide behind either gate. Nearest packs must equal the transient nearest
+//!   quantizer byte-for-byte. Calibrated recipes instead bind completed bytes
+//!   to their derivation; consuming those bytes requires only the codec ABI.
 //!
-//! That gate is what makes the operation safe, and it is met by
-//! construction rather than by comparison: the compiler runs the *same two
-//! steps* the load path runs — [`OperandSource::load`] then
-//! [`quantize_nvfp4`] — so persisted and transient bytes cannot diverge
-//! without one of those two changing for both.
+//! The default path still loads through [`OperandSource::load`] and calls the
+//! transient nearest quantizer. [`compile_representation_recipe`] explicitly
+//! selects nearest or calibrated GPTQ without changing that default.
 //!
 //! ## What it is for
 //!
@@ -58,6 +56,7 @@ pub mod compile;
 pub mod compiler;
 pub mod constraint;
 pub mod decision;
+pub mod derivation;
 pub mod diagnostic;
 pub mod execution_cost;
 pub mod experiment;
@@ -82,6 +81,8 @@ mod plan_roles_tests;
 pub mod policy;
 pub mod promotion;
 pub mod quality;
+pub mod recipe;
+pub use recipe::{compile_representation_recipe, Nvfp4Recipe};
 #[cfg(feature = "reference-encoder")]
 pub mod reference_encoder;
 pub mod resampling;
@@ -106,7 +107,8 @@ use super::graph::object::{Fidelity, Representation};
 use super::index::{ContainerAuthority, RepresentationEntry, Vindex3Index};
 use super::inspect::inspect_container;
 use super::opplan::exec::operands::{OperandSource, OperandStore};
-use super::opplan::exec::weights::{quantize_nvfp4, LoadedWeight};
+#[cfg(test)]
+use super::opplan::exec::weights::LoadedWeight;
 use super::opplan::OperandRef;
 use crate::error::VindexError;
 use crate::format::filenames::INDEX_JSON;
@@ -440,7 +442,7 @@ pub fn compile_representation_with(
     spec: &RepresentSpec,
     encoders: &EncoderRegistry,
 ) -> Result<RepresentReport, VindexError> {
-    compile_inner(src, out, spec, encoders, None)
+    compile_inner(src, out, spec, encoders, None, None)
 }
 
 /// [`compile_representation_with`], with a registered encoder minimising
@@ -456,7 +458,7 @@ pub fn compile_representation_weighted(
     encoders: &EncoderRegistry,
     weights: &InputWeights,
 ) -> Result<RepresentReport, VindexError> {
-    compile_inner(src, out, spec, encoders, Some(weights))
+    compile_inner(src, out, spec, encoders, Some(weights), None)
 }
 
 fn compile_inner(
@@ -465,6 +467,7 @@ fn compile_inner(
     spec: &RepresentSpec,
     encoders: &EncoderRegistry,
     weights: Option<&InputWeights>,
+    recipes: Option<&recipe::Completed>,
 ) -> Result<RepresentReport, VindexError> {
     let target = if spec.encoding == DTYPE_NVFP4 {
         Target::Nvfp4
@@ -771,46 +774,34 @@ fn compile_inner(
                     Ok(bytes.len() as u64)
                 }
                 Some(TensorEncoding::Nvfp4(layout)) => {
-                    // The load path is `OperandSource::load` then
-                    // `quantize_nvfp4`. Running exactly those two here is
-                    // what makes persisted bytes bit-identical to
-                    // transient ones — see this module's header.
-                    let values = source.load(&OperandRef {
-                        object: entry.object.clone(),
-                        tensor: tensor.name.clone(),
-                        dtype: tensor.dtype.clone(),
-                        shape: tensor.shape.clone(),
-                    })?;
-                    let quantised = quantize_nvfp4(&values, layout.rows, layout.k, &tensor.name)?;
-                    let LoadedWeight::Nvfp4 {
-                        packed,
-                        scales,
-                        tensor_scale,
-                        ..
-                    } = &quantised
-                    else {
-                        return Err(VindexError::Parse(format!(
-                            "tensor `{}`: NVFP4 quantiser returned another format",
-                            tensor.name
-                        )));
+                    let bytes = if let Some(completed) = recipes {
+                        let (region, record) = completed
+                            .tensors
+                            .get(&(entry.object.clone(), tensor.name.clone()))
+                            .ok_or_else(|| {
+                                VindexError::Parse(format!(
+                                    "missing completed recipe for {}",
+                                    tensor.name
+                                ))
+                            })?;
+                        let bytes = region.bytes();
+                        if bytes.len() != layout.total_len
+                            || compile::hash_bytes(bytes) != record.payload_sha256
+                        {
+                            return Err(VindexError::Parse(
+                                "completed recipe payload changed".into(),
+                            ));
+                        }
+                        bytes.to_vec()
+                    } else {
+                        let values = source.load(&OperandRef {
+                            object: entry.object.clone(),
+                            tensor: tensor.name.clone(),
+                            dtype: tensor.dtype.clone(),
+                            shape: tensor.shape.clone(),
+                        })?;
+                        recipe::nearest(&values, layout, &tensor.name)?
                     };
-                    // `AlignedBytes::as_slice` exposes the whole
-                    // page-aligned allocation; only `logical_len` bytes are
-                    // the tensor. Persisting the padding would write 16 KB
-                    // tails of zeros into the pack and put the file out of
-                    // step with what `PackLayout` says it holds.
-                    let mut bytes = Vec::with_capacity(layout.total_len);
-                    bytes.extend_from_slice(&packed.as_slice()[..packed.logical_len()]);
-                    bytes.extend_from_slice(&scales.as_slice()[..scales.logical_len()]);
-                    bytes.extend_from_slice(&tensor_scale.to_le_bytes());
-                    if bytes.len() != layout.total_len {
-                        return Err(VindexError::Parse(format!(
-                            "tensor `{}`: packed {} bytes, layout implies {}",
-                            tensor.name,
-                            bytes.len(),
-                            layout.total_len
-                        )));
-                    }
                     w.write_all(&bytes)?;
                     tap(&bytes);
                     Ok(bytes.len() as u64)
@@ -872,7 +863,9 @@ fn compile_inner(
                 // precisely what a deployment artifact does.
                 source_representation_digest: Some(entry.payload_sha256.clone()),
                 encoder: Some(match target {
-                    Target::Nvfp4 => EncoderRecipe::current(),
+                    Target::Nvfp4 => recipes
+                        .map(|r| r.encoder(&entry.object))
+                        .unwrap_or_else(EncoderRecipe::current),
                     Target::KQuant(_) => kquant_encoder_recipe(),
                     Target::Encoder(encoder) => match weights.filter(|_| weighted_tensors > 0) {
                         Some(w) => EncoderRecipe::codec_weighted(&encoder.identity(), &w.digest),
@@ -1004,6 +997,9 @@ fn compile_inner(
     let serialised = serde_json::to_string_pretty(&index)
         .map_err(|e| VindexError::Parse(format!("serialise {INDEX_JSON}: {e}")))?;
     std::fs::write(out.join(INDEX_JSON), serialised)?;
+    if let Some(completed) = recipes {
+        candidate.derivation(completed.derivation.clone());
+    }
     let completed_candidate = candidate.finish(out)?;
     compiler::write_index_atomically(
         &completed_candidate,

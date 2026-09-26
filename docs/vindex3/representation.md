@@ -148,3 +148,9 @@ not an inventory of shipped commands.
 contract. CAL-1.1 supplies content-bound calibration artifacts and exact dense
 projection input capture through the library API; GPTQ dispatch and its admission
 run remain later stages.
+
+
+CAL-1.2 adds explicit library nearest/GPTQ recipe dispatch, execution-ordered
+candidate-prefix evolution, and payload-bound derivation in `candidate.json`.
+See the [CAL-1.2 implementation record](../represent-cal-1.md#cal-12-implementation-record)
+for supported sites and the boundary between integration and R4 admission.

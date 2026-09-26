@@ -1242,7 +1242,7 @@ pub enum OperandEdit {
     Column { index: usize, values: Vec<f32> },
 }
 
-/// Logical edits over stored operands, keyed by operand identity
+/// Logical edits and immutable packed replacements, keyed by operand identity
 /// (object + tensor). Applied inside [`OperandSource::load`] — after
 /// widening to f32, before any backend requantization — so **every
 /// weight format observes the same effective values** (`load_weight`
@@ -1250,6 +1250,8 @@ pub enum OperandEdit {
 #[derive(Debug)]
 pub struct OperandOverrides {
     edits: BTreeMap<(String, String), Vec<OperandEdit>>,
+    /// Immutable candidate packs; decoded only when this operand is loaded.
+    replacements: BTreeMap<(String, String), (Vec<usize>, WeightRegion)>,
     /// Process-unique identity, so two override sets are never
     /// mistaken for each other.
     id: u64,
@@ -1269,6 +1271,7 @@ impl Default for OperandOverrides {
     fn default() -> Self {
         Self {
             edits: BTreeMap::new(),
+            replacements: BTreeMap::new(),
             id: next_identity(),
             generation: 0,
         }
@@ -1284,6 +1287,7 @@ impl Clone for OperandOverrides {
     fn clone(&self) -> Self {
         Self {
             edits: self.edits.clone(),
+            replacements: self.replacements.clone(),
             id: next_identity(),
             generation: self.generation,
         }
@@ -1302,7 +1306,7 @@ impl OperandOverrides {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.edits.is_empty()
+        self.edits.is_empty() && self.replacements.is_empty()
     }
 
     /// Record one edit for an operand; edits apply in insertion order.
@@ -1317,6 +1321,43 @@ impl OperandOverrides {
     pub fn is_overridden(&self, operand: &OperandRef) -> bool {
         self.edits
             .contains_key(&(operand.object.clone(), operand.tensor.clone()))
+    }
+
+    fn packed_replacement(&self, operand: &OperandRef) -> Option<&WeightRegion> {
+        self.replacements
+            .get(&(operand.object.clone(), operand.tensor.clone()))
+            .map(|(_, region)| region)
+    }
+
+    /// Install a completed immutable NVFP4 pack for sequential offline capture.
+    /// Subsequent logical edits still apply after this replacement.
+    pub(crate) fn replace_nvfp4(&mut self, operand: &OperandRef, region: WeightRegion) {
+        self.generation += 1;
+        self.replacements.insert(
+            (operand.object.clone(), operand.tensor.clone()),
+            (operand.shape.clone(), region),
+        );
+    }
+
+    fn replacement(&self, operand: &OperandRef) -> Result<Option<Vec<f32>>, VindexError> {
+        let Some((shape, region)) = self
+            .replacements
+            .get(&(operand.object.clone(), operand.tensor.clone()))
+        else {
+            return Ok(None);
+        };
+        if shape != &operand.shape {
+            return Err(VindexError::Parse(
+                "candidate replacement shape mismatch".into(),
+            ));
+        }
+        use crate::format::vindex3::represent::codec::{codecs::nvfp4::NVFP4, RepresentationCodec};
+        Ok(Some(NVFP4.decode_packed(
+            region.bytes(),
+            shape,
+            NVFP4.terminal_extent(),
+            &operand.tensor,
+        )?))
     }
 
     /// Apply this operand's edits onto its widened f32 values.
@@ -1434,7 +1475,15 @@ impl<'a> OperandSource<'a> {
 
     /// Load one operand as f32, with any overlay edits applied.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
-        let mut values = self.base.load(operand)?;
+        let mut values = match self
+            .overrides
+            .map(|o| o.replacement(operand))
+            .transpose()?
+            .flatten()
+        {
+            Some(values) => values,
+            None => self.base.load(operand)?,
+        };
         if let Some(overrides) = self.overrides {
             overrides.apply(operand, &mut values)?;
         }
@@ -1449,11 +1498,27 @@ impl<'a> OperandSource<'a> {
         self.overrides.is_some_and(|o| o.is_overridden(operand))
     }
 
-    /// The container's recorded length for an operand's stored bytes —
-    /// the base store's record; an overlay edit changes values, not what
-    /// the container holds.
+    /// The effective stored length, including immutable candidate packs.
+    /// Logical row/column edits alone do not change stored length.
     pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
-        self.base.stored_len(operand)
+        self.overrides
+            .and_then(|o| o.packed_replacement(operand))
+            .map(|r| r.len())
+            .or_else(|| self.base.stored_len(operand))
+    }
+
+    /// The effective stored representation, including an immutable candidate
+    /// pack. Logical edits separately force a decoded realization.
+    pub fn stored_dtype(&self, operand: &OperandRef) -> Option<&str> {
+        if self
+            .overrides
+            .and_then(|o| o.packed_replacement(operand))
+            .is_some()
+        {
+            Some("NVFP4")
+        } else {
+            self.base.stored_dtype(operand)
+        }
     }
 
     /// Load one operand's stored bytes unwidened. Overlay edits are
@@ -1468,6 +1533,22 @@ impl<'a> OperandSource<'a> {
                      bypass them; load it widened instead",
                     operand.object, operand.tensor
                 )));
+            }
+        }
+        if let Some(overrides) = self.overrides {
+            if let Some((shape, region)) = overrides
+                .replacements
+                .get(&(operand.object.clone(), operand.tensor.clone()))
+            {
+                if shape != &operand.shape {
+                    return Err(VindexError::Parse(
+                        "candidate replacement shape mismatch".into(),
+                    ));
+                }
+                return Ok(RawOperand {
+                    dtype: "NVFP4".into(),
+                    bytes: region.bytes().to_vec(),
+                });
             }
         }
         self.base.load_raw(operand)

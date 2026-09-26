@@ -166,7 +166,6 @@ pub(super) fn image_digest(
     for operand in operands.values() {
         hash.update(json_digest(operand)?.as_bytes());
         let dtype = source
-            .store()
             .stored_dtype(operand)
             .ok_or_else(|| refused("missing prefix operand"))?;
         hash.update(json_digest(&dtype)?.as_bytes());

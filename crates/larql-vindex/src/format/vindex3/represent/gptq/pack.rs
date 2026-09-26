@@ -51,6 +51,17 @@ pub fn quantize_nvfp4_gptq(
     h_raw: &Array2<f64>,
     name: &str,
 ) -> Result<GptqPackOutcome, VindexError> {
+    quantize_nvfp4_gptq_owned(w0, rows, k, h_raw.clone(), name)
+}
+
+/// Consuming path for calibrated REPRESENT: no second raw Hessian copy.
+pub(crate) fn quantize_nvfp4_gptq_owned(
+    w0: &[f32],
+    rows: usize,
+    k: usize,
+    h_raw: Array2<f64>,
+    name: &str,
+) -> Result<GptqPackOutcome, VindexError> {
     if !k.is_multiple_of(NVFP4_GROUP_ELEMS) {
         return Err(VindexError::Parse(format!(
             "tensor `{name}`: k={k} is not a multiple of the NVFP4 \
@@ -78,11 +89,14 @@ pub fn quantize_nvfp4_gptq(
     // maintained formula that could drift from it.
     let tensor_scale = tensor_scale_for(w0);
 
-    let site = SiteHessian::from_raw(h_raw.clone());
+    let site = SiteHessian::from_raw(h_raw);
     let reduced_h = site.reduced();
     let ridge = site.damping_ridge();
+    let alive = site.alive().to_vec();
+    let dead_columns = site.dead().len();
+    drop(site); // raw H is released before factorization workspace is allocated
     let plan = EliminationPlan::build(&reduced_h, ridge)?;
-    let alive = site.alive();
+    drop(reduced_h);
 
     let mut packed = vec![0u8; rows * groups * NVFP4_GROUP_BYTES];
     let mut scales = vec![0u8; rows * groups];
@@ -128,7 +142,7 @@ pub fn quantize_nvfp4_gptq(
             scales,
             tensor_scale,
         },
-        dead_columns: site.dead().len(),
+        dead_columns,
         alive_columns: alive.len(),
         saturated_elements,
         total_elements: rows * k,

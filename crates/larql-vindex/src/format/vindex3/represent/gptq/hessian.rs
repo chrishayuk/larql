@@ -26,8 +26,8 @@ use ndarray::Array2;
 /// with the dead/alive partition GPTQ derives from it.
 ///
 /// Owns only the matrix and the partition, not how `raw` was produced;
-/// the sequential candidate-path capture that fills `raw` is a separate,
-/// not-yet-built concern (`ENCODER-R4.md` step 8's remaining half).
+/// candidate-path capture and artifact validation live in the separate
+/// REPRESENT calibration/recipe modules.
 pub struct SiteHessian {
     raw: Array2<f64>,
     /// Column indices with `raw[j,j] != 0`, ascending — original K order

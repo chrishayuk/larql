@@ -451,12 +451,12 @@ impl EncoderRecipe {
         format!("{}-v{}", self.algorithm, self.revision)
     }
 
-    /// Whether this build would reproduce a pack compiled by `self`
-    /// byte-for-byte.
+    /// Whether the default transient nearest path reproduces this recipe
+    /// byte-for-byte without calibration.
     ///
     /// The parity gate's precondition. `false` is not a defect — it means
-    /// the artifact predates an encoder change and must be compared by
-    /// behaviour rather than by bytes.
+    /// the artifact needs another recipe (and potentially calibration) to
+    /// reproduce. Execution still depends only on its codec.
     pub fn is_reproducible_by_this_build(&self) -> bool {
         *self == Self::current()
     }

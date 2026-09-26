@@ -1,7 +1,8 @@
 # REPRESENT-CAL-1 — calibrated encoder recipes
 
 **Status: accepted implementation contract. CAL-1.1 is implemented for dense
-softmax single-stream prefixes; later integration/admission gates remain open.** Scope: complete the existing NVFP4 GPTQ path, then add matched
+softmax single-stream prefixes. CAL-1.2 adds scoped library recipe dispatch;
+full-width R4 qualification and admission gates remain open.** Scope: complete the existing NVFP4 GPTQ path, then add matched
 unweighted and diagonal-input-weighted scale fitting. Allocation policy stays
 fixed. Observer-aware encoding and budget allocation follow this milestone.
 
@@ -304,8 +305,101 @@ CAL1_CONTAINER=/path/to/granite-4.2-3b.s6.vindex3 cargo test -p larql-vindex \
   --lib calibration_real_layer_inputs --no-default-features -- --ignored --nocapture
 ```
 
-GPTQ recipe dispatch, accelerated full-width factorization, iterative prefix
-construction, R4.0-CAL-B/R4.3 and B/C encoding remain the subsequent stages.
+CAL-1.2 below supplies scoped recipe dispatch and iterative prefix construction.
+Accelerated full-width factorization, R4.0-CAL-B/R4.3 and B/C encoding remain
+subsequent stages.
 Existing plugin-weighted compilation on main is a separate consumer; CAL-1.1
 does not pass raw sums to that interface as if they were already normalized
 moments or claim that NVFP4 weighted-scale fitting is implemented.
+
+
+## CAL-1.2 implementation record
+
+[`compile_representation_recipe`](../crates/larql-vindex/src/format/vindex3/represent/recipe.rs)
+is the explicit library entry point for `Nvfp4Recipe::Nearest` and
+`Nvfp4Recipe::Gptq(&request)`. Both write through the existing REPRESENT
+container compiler. The CLI's default and the existing nearest entry points
+remain unchanged; nearest requires neither a tokenizer nor calibration and
+retains its existing candidate identity and transient byte-parity gate.
+
+A `GptqRequest` names a component, a frozen `CalibrationBank`, and the exact
+tensors assigned to GPTQ. Each site requests either `CaptureTo(path)` or
+`Existing(path)`. All other eligible projections explicitly use nearest.
+The initial schedule covers dense softmax q/k/v/o/gate/up/down in ascending
+layer order. CAL-1.1 supplies no o-projection capture boundary, so o is nearest;
+requesting GPTQ there refuses. A requested protected, missing or unsupported
+site also refuses. This is scoped mixed-recipe integration, not closure of the
+uniform R4 arm. Other eligible tensors must be explicitly protected rather than
+silently encoded outside the supported schedule.
+
+Before encoding each GPTQ site, the compiler prepares the actual completed
+candidate prefix and derives its expected **DenseGram, calibration-population**
+key. New capture is persisted, released, and read through the same validated
+artifact reader as reuse. Wrong source, prefix, site, bank, execution, statistic
+or population refuses; an existing artifact is never replaced by a recapture.
+Raw uncentered f64 sums feed the frozen R4 damping and elimination algorithm
+without normalization. Tensor scale and every persisted E4M3 scale come from
+the original W0 nearest scale derivation; only E2M1 codes can differ.
+
+Completed packs are staged in private segment files and mmap-backed in the
+next capture's operand source. They expose their actual NVFP4 dtype and raw
+bytes to lowering: using decoded f32 replacements would silently choose a
+different CPU kernel. q/k/v/o are installed before FFN capture; gate/up before
+down; the completed layer before the next layer. The source stays immutable.
+The packed loader also delegates physical splitting to the codec, including
+NVFP4's three streams inside one payload; stream count alone does not imply
+separate tensor files.
+
+[`DerivationRecord`](../crates/larql-vindex/src/format/vindex3/represent/derivation.rs)
+lives in `candidate.json`. Its execution-ordered tensor entries name the recipe
+actually run, frozen parameters, source-value digest, calibration manifest
+and digest, payload digest and length, dead/alive columns and saturation.
+Source semantic identity and allocation-map digest bind the enclosing record.
+CandidateRepresentationAuthority validates each entry against the completed
+operand seals and includes derivation in its integrity binding. It does not
+add calibration to RepresentationStateId or decoding semantics. A segment
+containing several recipes declares `nvfp4-site-recipes-v1`; its per-tensor
+records are authoritative about which recipe produced each payload.
+
+Memory lifetime is structural: one artifact is captured/read and consumed at
+a time, its Vec moves into the Hessian without a raw-matrix clone, raw H is
+released before factorization, and the factorization and row workspace are
+dropped before the next site. Factorization still requires several matrices
+for **that site**. Capture still prepares a prefix image, and staged packed
+weights occupy disk/mapped address space; neither is a claim of constant total
+model memory. The scalar f64 factorization remains unsuitable for a production
+full-width campaign; acceleration and measured resource admission remain open.
+
+Gates cover persisted A/D scale identity and equal byte counts, nontrivial code
+changes, exact agreement of captured Grams with ordinary candidate execution,
+within-layer and second-layer falsifiers, refusal of a decoded-f32 execution
+identity, deterministic replay using existing artifacts, and rejection of
+wrong-key/diagonal artifacts before site encoding. The final candidate runs
+bit-identically after deleting the calibration directory, and its stored
+execution matches the completed packed prefix. An explicit-nearest comparison
+also preserves the legacy `candidate.json` bytes without calibration files.
+These are implementation gates, not a quality win, Q-bank admission or R4 closure.
+
+```rust,ignore
+use larql_vindex::format::vindex3::represent::{
+    compile_representation_recipe, Nvfp4Recipe, RepresentSpec,
+};
+use larql_vindex::format::vindex3::represent::recipe::{
+    CalibrationInput, GptqRequest,
+};
+
+// bank was created from a verified token bank or an explicitly frozen corpus.
+let request = GptqRequest {
+    component: "target".into(),
+    bank,
+    sites: [( // Exact object/tensor names from the operation plan.
+        ("target.decoder_stack".into(), "0.self_attn.q_proj.weight".into()),
+        CalibrationInput::CaptureTo(calibration_path),
+    )].into(),
+    // The caller's continuation selection, e.g. row/v1 from its registry.
+    continuation,
+};
+compile_representation_recipe(
+    source_path, output_path, &RepresentSpec::nvfp4(), Nvfp4Recipe::Gptq(&request),
+)?;
+```
