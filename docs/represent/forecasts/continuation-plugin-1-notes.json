@@ -297,5 +297,84 @@
         "doc gates": "clean"
       }
     }
+  },
+  "closure": {
+    "status": "CLOSED 2026-09-26. This record is final; nothing in it changes after this entry.",
+    "outcome": "All six waves built and held; F1–F5 held at every wave through C6. The claim holds, with one scoped limit (serving, below).",
+    "sha_map": {
+      "rule": "Wave entries above cite the commits as they were on their branches; the stack was rebased before merging, so several are not on main. They are left as written (they were true when recorded) and mapped here to what main carries. PR merge commits are first-parent on main.",
+      "freeze": {
+        "cited": "93f5bfe3 (branch v3-state-2; preserved on v3-state-2-prerebase-backup)",
+        "as_merged": "7afad395",
+        "pr": "#538",
+        "merge": "39eaca20"
+      },
+      "C1": {
+        "cited": "9f01d52d (as C2's base; preserved on v3-state-2-prerebase-backup)",
+        "execution": "1ec967b4",
+        "pr": "#539",
+        "merge": "21f18128"
+      },
+      "C2": {
+        "cited": "3c121e84 (as C3's base; preserved on v3-state-2-prerebase-backup)",
+        "execution": "7e71c37d",
+        "pr": "#540",
+        "merge": "a7f69949"
+      },
+      "C3": {
+        "cited": "24a3a255 (as C4's base; on no branch)",
+        "execution": "1af37d6d, then the coverage fix d810595c",
+        "pr": "#541",
+        "merge": "5430eaf2"
+      },
+      "C4": {
+        "freeze": "6e69c867 (the resume/recovery boundary, recorded before code)",
+        "execution": "6c0eaf6a",
+        "pr": "#542",
+        "merge": "4fdff6e1"
+      },
+      "C5": {
+        "freeze": "457ca2a5 (the external provider's design, before code)",
+        "execution": "90bbcb00",
+        "pr": "#543",
+        "merge": "8b3a171f"
+      },
+      "C6": {
+        "freeze": {
+          "cited": "aae9a52f (on no branch)",
+          "as_merged": "f5ecf746"
+        },
+        "execution": "59e1abd3, then 3b0654c3 (the fixture crate's CURRENT guide, a documentation-integrity fix)",
+        "pr": "#545",
+        "merge": "0aae2cea"
+      },
+      "unreferenced": "24a3a255 and aae9a52f are reachable from no branch and may be garbage-collected; the as-merged column is the durable citation."
+    },
+    "falsifiers_final": {
+      "F1": "held — the server handoff and the external provider travel as Box<dyn ContinuationProvider + Send> inside ContinuationHandoff; no trait change",
+      "F2": "held — 0 production sites name a built-in outside the 4-entry allowlist (baseline 16); loaded providers join the registry the run already selects from",
+      "F3": "held — ContinuationProvider has 9 methods and AttentionStepCall is unchanged through C6; the read contract stayed closed (opening it is VIEW-1)",
+      "F4": "held — no production branch on a family string; the scan carries a reasoned fixture exemption and its control",
+      "F5": "held — the external provider is refused at selection against a hybrid plan, before any append, in process (C5) and through the plugin path (C6)"
+    },
+    "success_final": {
+      "architectural": "HELD at the type level, with a scoped limit. An external provider reaches prefill, resume and decode through registration alone, in process (C5) and loaded from a real dylib through the CLI's loader and `larql run` (C6); its handoff is a ContinuationHandoff, the type the server's V3KvHandoff carries (C4). LIMIT: `larql serve` does not load continuation plugins (C6 out_of_scope) — the server selects canonical/v1 — so an external provider has not been SERVED. CONTINUATION-MEM-1's M6 later drove a wrapped, non-built-in factory through the real ResponseKvCache (insert → take → resume, zero-copy), which exercises the serving cache with a registered factory but under shipped identities.",
+      "closure": "HELD — every production path holding conversation state reaches it through identity, registry and recorded authority (C3 name ban; C4 sealed handoffs with the resume/recovery boundary)",
+      "non_regression": "HELD — row/v1 and canonical/v1 bit-identical through C1–C6 (C3 parity gate); re-confirmed independently by CONTINUATION-MEM-1 on 9 subjects, four real containers among them",
+      "invariant_no_speed_or_memory_win": "held as required — the programme changed authority, not representation; MEM-1 then measured what the representation costs"
+    },
+    "c6_dylib_evidence": "a test-only cdylib (crates/larql-continuation-fixture) built into its own target directory and dlopened through Plugins::load: ABI stamp larql-plugin/2 checked, provider registered via PluginRegistrar::continuation, the C5 journey bit-identical to canonical/v1 in logits, ids, position and every K/V row; `larql run --plugin … --continuation hostile-test-provider/v77` byte-identical to `--engine standard`; cargo metadata and a source scan prove the CLI links none of it; a mutation ignoring --continuation turned 3 of 4 binary tests red.",
+    "findings_carried_forward": [
+      "The read contract (`keys(layer) -> &[Vec<f32>]`, rows from position 0) makes a contiguous-buffer provider inexpressible without a mirror (C5) — measured by CONTINUATION-MEM-1 at 1× K/V payload on canonical/v1 (313 MB on gemma3-4b at 1,124 positions).",
+      "The plugin ABI stamp names compiler and commit but not cargo features (C6).",
+      "The default prepare_continuation's late refusal names 'a KV-only provider', not the identity (C5)."
+    ],
+    "successors": {
+      "CONTINUATION-MEM-1": "freeze #546 (main ffbc1238); executed #549 — measured the state contract; 7 of 8 forecasts held",
+      "CONTINUATION-VIEW-1": "next; scoped only from MEM-1's read-contract (class a) findings",
+      "CONTINUATION-WINDOW-1": "after VIEW-1; the first provider that drops rows outside the attention window",
+      "cross-process continuation": "a separate freeze (excluded here by design; see C4 out_of_scope)",
+      "serving plugins": "`larql serve --plugin` for continuation providers — unclaimed; the architectural limit above"
+    }
   }
 }
