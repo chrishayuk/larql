@@ -159,11 +159,11 @@ fn the_same_authority_resumes_the_recorded_state_untouched() {
     for layer in 0..LAYERS {
         for position in 0..POSITIONS {
             assert_eq!(
-                resumed.state().keys(layer)[position],
+                resumed.state().rows(layer).to_owned_rows().0[position],
                 row(layer, position, 0.0)
             );
             assert_eq!(
-                resumed.state().values(layer)[position],
+                resumed.state().rows(layer).to_owned_rows().1[position],
                 row(layer, position, 0.5)
             );
         }

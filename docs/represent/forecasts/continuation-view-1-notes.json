@@ -135,6 +135,275 @@
         "tests": "9,692 passed, 0 failed (--no-fail-fast; vindex, kv, inference, cli); server continuation targets pass"
       },
       "milestone": "execution no longer depends on the physical K/V representation; provider storage semantics are unchanged (V3 changes them)"
+    },
+    "V3": {
+      "name": "providers",
+      "status": "built and held",
+      "base": "main 3a99eade (V2 merged #567)",
+      "scope": [
+        "provider migration (row/v1, canonical/v1 loses its mirror, C5 HostileRows + the C6 fixture, the test doubles, MEM-1's Measured)",
+        "plugin ABI larql-plugin/2 → /3",
+        "acceptance A and C on the MEM-1 harness",
+        "Q1 re-measured after provider migration"
+      ],
+      "trait": {
+        "change": "`keys(&self, layer) -> &[Vec<f32>]` and `values(&self, layer) -> &[Vec<f32>]` are replaced by ONE method `rows(&self, layer) -> KvView<'_>`. ContinuationProvider goes from 9 methods to 8.",
+        "why_one_method": "K and V are always lent together over one [base, end); two methods let a provider lend mismatched lengths, which KvView::over_rows today has to assert against. One method makes the mismatch unrepresentable."
+      },
+      "canonical": {
+        "change": "canonical/v1 lends its authoritative matrices directly; the `rows: Vec<LayerRows>` mirror, `LayerRows` and `from_matrices` are DELETED (append no longer copies each row twice; from_cache no longer rebuilds the mirror).",
+        "backing": "KvView gains a third backing, `Contiguous { data: &[f32], width }` for K and V, read by static dispatch: row p at data[(p - base)·width ..]. Constructor `KvView::contiguous(base, width, keys, values)` refuses slices that are not whole rows or differ in length.",
+        "why_not_Dyn": "the orphan rule forbids larql-kv implementing larql-vindex's KvRows for ndarray's Array2; a newtype would work, but contiguous row-major storage is a fundamental layout (paged and windowed contiguous stores will use it too) and deserves the static path the Rows backing has. Dyn stays for everything else.",
+        "layout": "KvCache's Array2 is grown by push_row on axis 0 and is row-major; `as_slice()` must be Some. If it ever is not (a view or transposed matrix), canonical refuses by name rather than copying — a silent copy is exactly the mirror V3 removes."
+      },
+      "row_v1": "rows(layer) = KvView::over_rows(&keys, &values): no allocation, no copy (the V2 fast path)",
+      "migrated_implementors": "10: RowKvState, CanonicalKvState, C5 HostileRows (compiled into larql-continuation-fixture), Perturbed, RecordingKvState, RowsOnly, RowsOnlyLatent, KvOnly, NoLatent, MEM-1's Measured<P>. None gains a privileged path; each lends through rows().",
+      "executor": "the attention call sites pass provider.rows(layer) straight to AttentionStepCall::new. Conv-QKV still copies its held rows (now via `KvView::to_owned_rows`) before taking &mut recurrent_state — behaviour-neutral, Q1.",
+      "abi": {
+        "change": "larql-plugin/2 → larql-plugin/3 (plugin.rs:54): the continuation trait crossing the dylib boundary changed",
+        "proofs": [
+          "a /2 plugin is refused with the named revision mismatch (plugin_tests)",
+          "the /3 C6 fixture loads through the real loader",
+          "the C5 external journey passes in process",
+          "the C6 CLI journey passes through the dylib — all bit-identical to canonical/v1 as before"
+        ]
+      },
+      "measurement": {
+        "harness_changes_before_V3_code": "MEM-1's harness gains (1) a logits digest per phase in every record, so C can compare against a baseline, and (2) provider-retained live bytes (below). The baseline is taken on MAIN (3a99eade) with the harness change only, BEFORE any V3 code: fixtures, qwen3-0.6b, gemma3-4b (past its window), oute.",
+        "C": "row/v1 logits digests equal the baseline's on every subject; per-append row-sized allocations still 0 and adoption still 100%; 0 allocations inside rows()",
+        "A_structural": "canonical/v1: per-append duplicate allocations 0 (was exactly 2); logits digests equal the baseline's and row/v1's",
+        "A_anti_cheat": "NOT a grep. Measured records every allocation born inside the provider's own scopes (append, prepare…); at each phase end the provider-retained live bytes — the live-table sizes of those allocations still alive — must equal the provider's declared structural inventory exactly: for canonical the K and V matrix capacities (plus recurrent/latent where held); for row/v1 its outer Vec headers (its rows are adopted, born outside). Any renamed row cache would appear as live bytes outside the inventory and falsify A.",
+        "A_magnitude_secondary": "canonical/row K/V allocated ratio (forecast [1.0, 2.0], was [2.0, 3.0]) and gemma3-4b K/V bytes at 1,124 positions vs MEM-1's 883 MB (forecast ≈570 MB) — reported, not adjudicated",
+        "row_storage_accounting": "a view hides Vec capacities, so row/v1's row bytes come from the moved-in capacities of the rows it adopted (pointer identity, as MEM-1's M2), credited only while adopted",
+        "Q1": "oute after V3: if conv-QKV still copies exactly 2·h per call, recorded as 'provider migration did not change the borrow-induced copy' — not fixed in V3"
+      },
+      "provenance": "V2 merged over main's pre-existing larql-vindex coverage red (nine files, none VIEW-1's). V3 does not claim workspace-green while that persists; its gates name it separately.",
+      "found_during_implementation": [
+        {
+          "what": "11 ContinuationProvider implementors, not the 10 the freeze and V2 recorded",
+          "why": "represent/calibration/tests.rs gained one (a delegating test double) in #563 after the V1 recon; migrated like the others"
+        },
+        {
+          "what": "KvView::backing_addresses() (public): the addresses of the storage a view lends, K then V — identity only, never read through",
+          "why": "a view hides the row list's address, which MEM-1's I6 storage-identity check and its traffic classification need; a handoff-identity check needs exactly this"
+        },
+        {
+          "what": "CanonicalKvState::from_cache makes an adopted matrix in another memory order row-major ONCE, replacing the adopted copy",
+          "why": "rows() lends the matrix through the Contiguous backing, which needs a row-major slice; a freshly adopted cache could otherwise panic before its first append. A one-time conversion of the authority, never kept beside it"
+        },
+        {
+          "what": "canonical/v1 stays revision 1",
+          "why": "its identity doc: the revision 'moves when the same appended history would be served back differently, never for a faster store serving the same bits' — V3 serves the same bits from the same matrices"
+        }
+      ],
+      "instrument_corrections_before_adjudication": [
+        {
+          "id": "I-V3-1",
+          "fault": "append-born live bytes counted an address freed after an append and REUSED by an allocation inside an operator window scope (which also enters the live table)",
+          "found": "first V3 measurement: oute canonical/v1 read 131,072 B (exactly 16 rows of one 2,048-wide matrix) over its matrices; row/v1 +1,520 B over its headers — the only real subject with operator windows armed",
+          "confirmed": "the same oute run with the windows disabled (a temporary, uncommitted change): canonical append-born = matrices exactly (4,194,304 / 8,388,608 B), row/v1 = headers exactly",
+          "fix": "live-table entries carry the tag of the scope that made them (reallocs keep the original tag); the anti-cheat counts only APPEND-tagged allocations. New control `control_tag_survives_address_reuse`.",
+          "commit": "98a43610"
+        },
+        {
+          "id": "I-V3-2",
+          "fault": "a matrix's first allocation starts where its first row does, so on a layer's first append the matrix birth matched the stored-row pointer and was classified a duplicate",
+          "found": "first V3 measurement: canonical 'duplicate_allocs' = exactly 2 × layers (gemma 68, qwen 56, dense 4) while its append-born bytes equalled its matrices exactly",
+          "fix": "matrix identity is checked before stored-row identity",
+          "commit": "98a43610"
+        }
+      ],
+      "baseline": {
+        "binary": "built at 564e7cda (the harness change on main's code, before any V3 code); records carry 564e7cda",
+        "subjects": "mem1-dense, mem1-sliding, mem1-kda-mla, mem1-gated-delta, qwen3-0.6b, oute-mamba2attn-250m, gemma3-4b-it (1,124 positions)",
+        "use": "logits digests for C and A's bit-identity; append-born bytes as the anti-cheat's positive control (canonical = matrix + mirror views + view headers exactly on the fixtures). The baseline predates I-V3-1, so its oute append-born figure includes window reuse; it is a control only, never adjudicated."
+      },
+      "measurement_record": {
+        "records": "V3 run at 98a43610 (after I-V3-1/2) against the baseline at 564e7cda; subjects as the baseline",
+        "per_subject": {
+          "gemma3-4b-it": {
+            "canonical_kv_bytes": [
+              883490816,
+              570425344
+            ],
+            "canonical_append_born": 570425344,
+            "canonical_matrix": 570425344,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              313065472,
+              313065472
+            ],
+            "row_adopted": "38216/38216",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              2.8220640569395017,
+              1.8220640569395017
+            ]
+          },
+          "mem1-dense": {
+            "canonical_kv_bytes": [
+              8192,
+              4096
+            ],
+            "canonical_append_born": 4096,
+            "canonical_matrix": 4096,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              4096,
+              4096
+            ],
+            "row_adopted": "32/32",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              2.0,
+              1.0
+            ]
+          },
+          "mem1-gated-delta": {
+            "canonical_kv_bytes": [
+              3584,
+              2048
+            ],
+            "canonical_append_born": 2048,
+            "canonical_matrix": 2048,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              1536,
+              1536
+            ],
+            "row_adopted": "12/12",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              2.3333333333333335,
+              1.3333333333333333
+            ]
+          },
+          "mem1-kda-mla": {
+            "canonical_kv_bytes": [
+              0,
+              0
+            ],
+            "canonical_append_born": 0,
+            "canonical_matrix": 0,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              0,
+              0
+            ],
+            "row_adopted": "0/0",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              null,
+              null
+            ]
+          },
+          "mem1-sliding": {
+            "canonical_kv_bytes": [
+              1728,
+              1024
+            ],
+            "canonical_append_born": 1024,
+            "canonical_matrix": 1024,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              704,
+              704
+            ],
+            "row_adopted": "22/22",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              2.4545454545454546,
+              1.4545454545454546
+            ]
+          },
+          "oute-mamba2attn-250m": {
+            "canonical_kv_bytes": [
+              14680064,
+              8388608
+            ],
+            "canonical_append_born": 8388608,
+            "canonical_matrix": 8388608,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              6291456,
+              6291456
+            ],
+            "row_adopted": "384/384",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              2.3333333333333335,
+              1.3333333333333333
+            ]
+          },
+          "qwen3-0.6b": {
+            "canonical_kv_bytes": [
+              99090432,
+              58720256
+            ],
+            "canonical_append_born": 58720256,
+            "canonical_matrix": 58720256,
+            "canonical_duplicates": 0,
+            "row_kv_bytes": [
+              40370176,
+              40370176
+            ],
+            "row_adopted": "4928/4928",
+            "logits_equal_baseline": [
+              true,
+              true
+            ],
+            "canonical_over_row_decode": [
+              2.4545454545454546,
+              1.4545454545454546
+            ]
+          }
+        },
+        "after_measurement": "two commits after the measured SHA change no computed behaviour: KvView::backing_addresses gated to tests/test-utils (visibility), and is_multiple_of for the same predicate in KvView::contiguous"
+      },
+      "adjudication": {
+        "A": {
+          "verdict": "HELD",
+          "structural": "on all 7 subjects canonical/v1's append-born live bytes EQUAL its K/V matrix capacity exactly (e.g. gemma3-4b 570,425,344 = 570,425,344; oute 8,388,608 = 8,388,608): no second representation, renamed or not; duplicate allocations 0 (were exactly 2 per append); unclassified append events 0; logits digests equal the baseline's and row/v1's on every phase",
+          "magnitude_secondary": "gemma3-4b canonical K/V at 1,124 positions 883.5 MB → 570.4 MB (forecast ≈570 MB); canonical/row at decode 2.0–2.82 → 1.0–1.82, inside the forecast [1.0, 2.0] (qwen 2.45 → 1.45, gemma 2.82 → 1.82, oute 2.33 → 1.33, fixtures 1.0–1.45). The residual above 1.0 is matrix growth slack — provider work, out of scope"
+        },
+        "C": {
+          "verdict": "HELD",
+          "evidence": "row/v1 logits digests equal the baseline's on all 7 subjects and every phase; 0 duplicate and 0 row-sized allocations per append; every moved-in row adopted (gemma 38,216/38,216); K/V bytes unchanged (gemma 313,065,472 both)"
+        },
+        "S4": {
+          "verdict": "CLOSED",
+          "evidence": "stamp larql-plugin/3; `a_stamp_from_the_row_slice_continuation_contract_is_refused` and the /1 test pass; the loader names both stamps on refusal; the /3 C6 fixture loads through the real loader and its 10 in-process tests pass, including the conversation bit-identical to canonical/v1; the C6 CLI binary journey (4) and the C5 in-process journey (10) pass"
+        },
+        "Q1_after_V3": {
+          "measured": "oute: 72/72 conv-QKV calls still copy exactly 2·h rows",
+          "reading": "neither the view (V2) nor provider migration (V3) touched the borrow-induced copy: the executor still releases &self before taking &mut recurrent_state. Decisively outside VIEW-1's acceptance; a small operator/executor rung of its own (a split borrow, or reading held rows after the recurrent update)."
+        }
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "clippy -D warnings": "clean on 7 lines: vindex (all-targets), kv, inference, cli, server, demos, continuation-fixture",
+        "tests": "9,735 passed, 0 failed (--no-fail-fast; vindex, kv, inference, cli, demos, continuation-fixture); server: continuation_mem_1_handoff, test_openai_responses_v3, test_vindex3_serve pass",
+        "not_claimed": "workspace-green: main's pre-existing larql-vindex coverage-policy red (nine files, none VIEW-1's) is outside this wave and named separately"
+      },
+      "milestone": "VIEW-1's measured payoff: canonical/v1 holds ONE K/V representation (gemma 883.5 → 570.4 MB at 1,124 positions); the read contract no longer forces a mirror"
     }
   }
 }

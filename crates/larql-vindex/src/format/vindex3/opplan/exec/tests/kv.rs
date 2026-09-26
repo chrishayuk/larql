@@ -46,12 +46,8 @@ impl KvState for RecordingKvState {
         self.inner.append(layer, key, value);
     }
 
-    fn keys(&self, layer: usize) -> &[Vec<f32>] {
-        self.inner.keys(layer)
-    }
-
-    fn values(&self, layer: usize) -> &[Vec<f32>] {
-        self.inner.values(layer)
+    fn rows(&self, layer: usize) -> crate::format::vindex3::opplan::exec::kv_view::KvView<'_> {
+        self.inner.rows(layer)
     }
 
     fn position(&self) -> usize {
@@ -147,13 +143,13 @@ fn assert_rows_equal(a: &RowKvState, b: &RowKvState, layers: usize) {
     assert_eq!(a.position(), b.position(), "logical positions diverge");
     for layer in 0..layers {
         assert_eq!(
-            a.keys(layer),
-            b.keys(layer),
+            a.rows(layer).to_owned_rows().0,
+            b.rows(layer).to_owned_rows().0,
             "K rows diverge at layer {layer}"
         );
         assert_eq!(
-            a.values(layer),
-            b.values(layer),
+            a.rows(layer).to_owned_rows().1,
+            b.rows(layer).to_owned_rows().1,
             "V rows diverge at layer {layer}"
         );
     }
@@ -319,8 +315,8 @@ fn the_provider_learns_geometry_from_the_plan_and_keeps_the_rows() {
 
     // the state survives the session: one row per consumed position.
     for layer in 0..G_LAYERS {
-        assert_eq!(kv.keys(layer).len(), G_TOKENS.len());
-        assert_eq!(kv.values(layer).len(), G_TOKENS.len());
+        assert_eq!(kv.rows(layer).to_owned_rows().0.len(), G_TOKENS.len());
+        assert_eq!(kv.rows(layer).to_owned_rows().1.len(), G_TOKENS.len());
     }
 }
 
@@ -373,7 +369,11 @@ fn re_announcing_the_geometry_keeps_every_region_it_already_holds() {
     // The same geometry, announced again — as the next traversal does.
     provider.prepare_continuation(&geometry).unwrap();
 
-    assert_eq!(provider.keys(0), &[vec![1.0, 2.0]], "rows survive");
+    assert_eq!(
+        provider.rows(0).to_owned_rows().0,
+        &[vec![1.0, 2.0]],
+        "rows survive"
+    );
     assert_eq!(
         provider.recurrent_state(1).unwrap().buffer(0).cells()[0],
         9.0,
@@ -394,7 +394,11 @@ fn re_announcing_the_geometry_keeps_every_region_it_already_holds() {
             history: HistoryRange::Full,
         }; 3],
     );
-    assert_eq!(provider.keys(0).len(), 1, "still one row after re-prepare");
+    assert_eq!(
+        provider.rows(0).to_owned_rows().0.len(),
+        1,
+        "still one row after re-prepare"
+    );
 }
 
 /// Every refusal says which provider, which layer, and which region —

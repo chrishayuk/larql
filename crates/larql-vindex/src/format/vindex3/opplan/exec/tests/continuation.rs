@@ -481,11 +481,8 @@ fn a_kv_only_provider_refuses_the_two_region_layer() {
     impl ContinuationProvider for RowsOnly {
         fn prepare(&mut self, _layers: &[LayerKvGeometry]) {}
         fn append(&mut self, _layer: usize, _key: Vec<f32>, _value: Vec<f32>) {}
-        fn keys(&self, _layer: usize) -> &[Vec<f32>] {
-            &[]
-        }
-        fn values(&self, _layer: usize) -> &[Vec<f32>] {
-            &[]
+        fn rows(&self, _layer: usize) -> crate::format::vindex3::opplan::exec::kv_view::KvView<'_> {
+            crate::format::vindex3::opplan::exec::kv_view::KvView::empty()
         }
         fn position(&self) -> usize {
             0
@@ -563,11 +560,8 @@ fn a_kv_only_provider_refuses_a_latent_layer_and_names_that_region() {
     impl ContinuationProvider for RowsOnlyLatent {
         fn prepare(&mut self, _layers: &[LayerKvGeometry]) {}
         fn append(&mut self, _layer: usize, _key: Vec<f32>, _value: Vec<f32>) {}
-        fn keys(&self, _layer: usize) -> &[Vec<f32>] {
-            &[]
-        }
-        fn values(&self, _layer: usize) -> &[Vec<f32>] {
-            &[]
+        fn rows(&self, _layer: usize) -> crate::format::vindex3::opplan::exec::kv_view::KvView<'_> {
+            crate::format::vindex3::opplan::exec::kv_view::KvView::empty()
         }
         fn position(&self) -> usize {
             0

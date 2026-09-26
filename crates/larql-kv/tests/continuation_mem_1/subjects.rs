@@ -106,6 +106,23 @@ pub struct Journey {
 pub struct Outcome {
     pub logits: Vec<(&'static str, Vec<f32>)>,
     pub inventories: Vec<(&'static str, Vec<Backing>)>,
+    /// Append-born live bytes at each phase end (VIEW-1 V3 anti-cheat).
+    pub append_born: Vec<(&'static str, usize)>,
+}
+
+/// FNV-1a over the bits of every logit of `phase`, in order: two builds
+/// computed the same thing iff their digests match.
+pub fn logits_digest(logits: &[(&'static str, Vec<f32>)], phase: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for (_, row) in logits.iter().filter(|(p, _)| *p == phase) {
+        for x in row {
+            for byte in x.to_bits().to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+    }
+    format!("{hash:016x}")
 }
 
 pub const BATCHED: &str = "batched_prefill";
@@ -121,12 +138,14 @@ pub fn run<P: Inspect, B: PlanBackend>(
 ) -> Outcome {
     let mut logits = Vec::new();
     let mut inventories = Vec::new();
+    let mut append_born = Vec::new();
 
     kv.set_phase(BATCHED);
     let out = prefill_prepared(&subject.plan, ops, &journey.prefill, backend, kv).unwrap();
     logits.push((BATCHED, out.logits.expect("prefill logits")));
     kv.set_phase("inventory");
     inventories.push((BATCHED, kv.inventory()));
+    append_born.push((BATCHED, kv.append_born_live_bytes()));
 
     if !journey.resume.is_empty() {
         kv.set_phase(RESUMED);
@@ -134,6 +153,7 @@ pub fn run<P: Inspect, B: PlanBackend>(
         logits.push((RESUMED, out.logits.expect("resumed logits")));
         kv.set_phase("inventory");
         inventories.push((RESUMED, kv.inventory()));
+        append_born.push((RESUMED, kv.append_born_live_bytes()));
     }
 
     kv.set_phase(DECODE);
@@ -146,8 +166,10 @@ pub fn run<P: Inspect, B: PlanBackend>(
     }
     kv.set_phase("inventory");
     inventories.push((DECODE, kv.inventory()));
+    append_born.push((DECODE, kv.append_born_live_bytes()));
     Outcome {
         logits,
         inventories,
+        append_born,
     }
 }

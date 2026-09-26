@@ -860,12 +860,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     // out, conv history advanced by the forward, the
                     // step's row appended after — same choreography as
                     // the batch path, at one position.
-                    let past_keys: Vec<Vec<f32>> = self.kv.state().keys(index).to_vec();
-                    let past_values: Vec<Vec<f32>> = self.kv.state().values(index).to_vec();
                     let base = position;
-                    let past = super::kv_view::KvView::over_rows(&past_keys, &past_values);
+                    let held = self.kv.state().rows(index);
                     // Conv-QKV reads its whole history (HistoryRange::Full).
-                    past.covers(0..base)?;
+                    held.covers(0..base)?;
+                    let (past_keys, past_values) = held.to_owned_rows();
+                    let past = super::kv_view::KvView::over_rows(&past_keys, &past_values);
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
                     let projector = self.backend.dense_projector();
                     let mut planes = super::conv_qkv::layer_forward_with(
@@ -893,10 +893,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         hidden,
                     );
                     let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Attention);
-                    let state = self.kv.state();
-                    let rows =
-                        super::kv_view::KvView::over_rows(state.keys(index), state.values(index));
-                    let step = AttentionStepCall::new(call, position, rows)?;
+                    let step = AttentionStepCall::new(call, position, self.kv.state().rows(index))?;
                     // V3-HEAD-OBS-1: the same step, with the per-head tap
                     // armed when the observer asked for it. The tap fires
                     // inside the kernel; the structural event closes it

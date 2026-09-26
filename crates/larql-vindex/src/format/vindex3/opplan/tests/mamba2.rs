@@ -309,7 +309,11 @@ fn a_pure_ssm_container_encodes_closes_and_executes_generically() {
     // buffers, never KV rows.
     let state = provider.recurrent_state(0).expect("a recurrent layer");
     assert!(state.buffer(0).cells().iter().any(|v| *v != 0.0));
-    assert_eq!(provider.keys(0).len(), 0, "no KV row exists anywhere");
+    assert_eq!(
+        provider.rows(0).to_owned_rows().0.len(),
+        0,
+        "no KV row exists anywhere"
+    );
 
     // **Prefill-by-one equivalence, across the code-path seam.** The
     // batch above ran `execute_layer`; stepping the same tokens through

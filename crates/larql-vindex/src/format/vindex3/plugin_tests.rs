@@ -9,7 +9,7 @@ fn abi_is_terminated_and_names_its_parts() {
     assert!(ABI.ends_with('\0'));
     assert_eq!(ABI.matches('\0').count(), 1);
     let abi = abi();
-    assert!(abi.starts_with("larql-plugin/2 larql-vindex/"), "{abi}");
+    assert!(abi.starts_with("larql-plugin/3 larql-vindex/"), "{abi}");
     assert!(abi.contains("rustc"), "{abi}");
     assert!(abi.contains(" commit "), "{abi}");
 }
@@ -75,7 +75,19 @@ fn only_the_hosts_own_stamp_is_compatible() {
 #[test]
 fn a_stamp_from_an_earlier_contract_revision_is_refused() {
     let host = abi();
-    let earlier = host.replacen("larql-plugin/2 ", "larql-plugin/1 ", 1);
+    let earlier = host.replacen("larql-plugin/3 ", "larql-plugin/1 ", 1);
     assert_ne!(earlier, host);
     assert!(!abi_compatible(&earlier));
+}
+
+/// CONTINUATION-VIEW-1 V3: revision 3 changed the continuation trait a
+/// plugin's factories build (keys/values became one `rows` view). A /2
+/// plugin was compiled against the old trait and must be refused, however
+/// identical the compiler and commit.
+#[test]
+fn a_stamp_from_the_row_slice_continuation_contract_is_refused() {
+    let host = abi();
+    let row_slice = host.replacen("larql-plugin/3 ", "larql-plugin/2 ", 1);
+    assert_ne!(row_slice, host, "the host must stamp revision 3");
+    assert!(!abi_compatible(&row_slice));
 }

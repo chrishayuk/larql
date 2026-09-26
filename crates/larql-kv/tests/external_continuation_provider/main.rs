@@ -253,8 +253,13 @@ fn journey(
         step_logits,
         ids,
         position: state.position(),
-        keys: layers.clone().map(|l| state.keys(l).to_vec()).collect(),
-        values: layers.map(|l| state.values(l).to_vec()).collect(),
+        keys: layers
+            .clone()
+            .map(|l| state.rows(l).to_owned_rows().0.to_vec())
+            .collect(),
+        values: layers
+            .map(|l| state.rows(l).to_owned_rows().1.to_vec())
+            .collect(),
     }
 }
 

@@ -193,14 +193,7 @@ fn both_realisations<B: PlanBackend>(
             width,
         );
         let out = backend
-            .attention_step(
-                AttentionStepCall::new(
-                    call,
-                    offset,
-                    KvView::over_rows(kv.keys(layer_index), kv.values(layer_index)),
-                )
-                .unwrap(),
-            )
+            .attention_step(AttentionStepCall::new(call, offset, kv.rows(layer_index)).unwrap())
             .unwrap();
         stepped.keys.push(out.key.clone());
         stepped.values.push(out.value.clone());

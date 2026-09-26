@@ -47,6 +47,8 @@ default = []
 gpu = ["dep:larql-compute-metal", "larql-inference/gpu"]
 
 [dev-dependencies]
+# CONTINUATION-MEM-1's harness reads KvView::backing_addresses (test-utils only).
+larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3"
 # Test-only: Lloyd-Max codebook regeneration pins (turbo_quant/codebooks.rs).

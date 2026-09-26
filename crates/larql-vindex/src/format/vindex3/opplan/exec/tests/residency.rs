@@ -134,13 +134,13 @@ fn prepared_and_unprepared_paths_agree_bit_for_bit() {
     assert_eq!(kv_cold.position(), kv_warm.position());
     for layer in 0..plan.layers.len() {
         assert_eq!(
-            kv_cold.keys(layer),
-            kv_warm.keys(layer),
+            kv_cold.rows(layer).to_owned_rows().0,
+            kv_warm.rows(layer).to_owned_rows().0,
             "layer {layer} keys must be identical"
         );
         assert_eq!(
-            kv_cold.values(layer),
-            kv_warm.values(layer),
+            kv_cold.rows(layer).to_owned_rows().1,
+            kv_warm.rows(layer).to_owned_rows().1,
             "layer {layer} values must be identical"
         );
     }

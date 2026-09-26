@@ -495,9 +495,14 @@ fn a_caller_owned_kv_state_generates_identically_and_outlives_the_session() {
     let geometry = plan_kv_geometry(runtime.plan());
     let consumed = G_TOKENS.len() + NEW_TOKENS - 1;
     for (layer, geo) in geometry.iter().enumerate() {
-        assert_eq!(kv.keys(layer).len(), consumed);
-        assert_eq!(kv.values(layer).len(), consumed);
-        assert!(kv.keys(layer).iter().all(|row| row.len() == geo.kv_dim));
+        assert_eq!(kv.rows(layer).to_owned_rows().0.len(), consumed);
+        assert_eq!(kv.rows(layer).to_owned_rows().1.len(), consumed);
+        assert!(kv
+            .rows(layer)
+            .to_owned_rows()
+            .0
+            .iter()
+            .all(|row| row.len() == geo.kv_dim));
     }
     // …and the miniature's sliding+full split is explicit in that
     // geometry — no ModelArchitecture consulted anywhere in this test.
