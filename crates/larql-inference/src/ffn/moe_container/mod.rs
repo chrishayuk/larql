@@ -420,7 +420,7 @@ impl ContainerRoutedBackend {
     /// One line describing what this run actually composed.
     pub fn describe(&self, spine: &Path) -> String {
         format!(
-            "composed run: VINDEX2 spine {} + VINDEX3 routed banks {}",
+            "composed run: VINDEX2 spine {} + legacy LYRW bank-shape routed banks {}",
             spine.display(),
             self.container.root().display()
         )

@@ -49,7 +49,7 @@ surface that cannot produce the requested generation refuses by name.
 | CLI | `larql extract --generation {v2\|v3}` | `--generation v3` encodes; omitted = policy |
 | Factory | `extractor.options.generation: "v2"\|"v3"` → forwarded as `--generation` | absent = tool policy; a pin participates in `build_id` |
 | V3 producer | `larql vindex3 encode <hf-artifacts>` | the multi-artifact system encoder |
-| Bank import | `larql extract-index --expert-banks native --expert-banks-out DIR` | writes a V3 container in the **bank shape** (candidate spec §5.4): `moe_manifest.json` + LYRW segments, no system graph — the transitional import layout, not the graph shape the four surfaces above produce |
+| Legacy LYRW bank facility | `larql extract-index --expert-banks native --expert-banks-out DIR` | writes a **legacy bank-shape** container (candidate spec §5.4): `moe_manifest.json` + LYRW segments, no system graph. It is the input to `run`/`bench --routed-from`, **not a VINDEX3 3.0 model** ([ADR-0027](adr/0027-vindex3-single-container-shape.md)), and it is the only production bank-shape producer, pinned by `crates/larql-vindex/tests/bank_shape_producer_closure.rs` |
 
 ### What a V3 request produces
 
