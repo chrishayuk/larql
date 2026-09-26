@@ -37,6 +37,29 @@
       "identity_and_regions": "identity `window/v1`, registered in shipped_continuations beside row/v1 and canonical/v1; declares ONLY the Kv region, so a plan needing Recurrent or LatentKv is refused at selection (frozen scope)",
       "fixed_representation_capacity_declared": "per layer, the two row-list (Vec<Vec<f32>>) buffers: on a sliding layer their length never exceeds w + 1 (the appended row before the drain), so after warm-up their capacity stops growing — the only provider-born storage; every row allocation is adopted. W3 checks post-window growth of sliding-layer live K/V bytes against exactly this.",
       "full_span_layers": "HistoryRange::Full: base stays 0 and nothing is drained — identical storage behaviour to row/v1"
+    },
+    "W2": {
+      "name": "provider",
+      "status": "built and held",
+      "result": "window/v1 is exact, bounded by the plan authority, physically drops expired adopted rows, resumes correctly from non-zero base, and does not alter defaults.",
+      "what_landed": [
+        "crates/larql-kv/src/vindex3/window.rs: WindowKvState (identity window/v1) and WindowFactory (regions: Kv only), written fresh as production code — no check log, no seeding hooks",
+        "registry.rs: shipped_continuations registers window/v1 beside row/v1 and canonical/v1; larql run reaches it with --continuation window/v1 (the CLI's registry starts from shipped_continuations); defaults unchanged (larql serve: canonical/v1; larql run: row/v1)",
+        "the C3 name ban (larql-vindex tests/continuation_closure.rs) now bans WindowKvState outside its own module, so PLUGIN-1 F2 covers the new built-in",
+        "larql-kv README names window/v1"
+      ],
+      "behaviour": "per layer the backend's rows are adopted (never copied); after appending p every row below HistoryRange.required_start(p) is drained, its allocation dropped; a sliding layer holds w rows (w + 1 only between push and drain); a full-span layer never drains; lent through KvView::rows_from",
+      "witnesses": {
+        "crates/larql-kv/src/vindex3/tests/window.rs (4)": "shipped, and a hybrid plan is refused at selection by capability; base == required_start(p), end == p + 1, at most w rows held, rows adopted (the lent row IS the appended allocation) and every held absolute position reads back its own row, after every append; bit-identical to row/v1 through prefill, resumed prefill and decode on the sliding fixture with the sliding layer holding exactly its window; a sealed handoff filled until the sliding layer drained resumes with its base intact, decodes bit-identically to an uninterrupted row/v1 run, keeps advancing its base, and a second such handoff is refused under row/v1's authority",
+        "S3": "unchanged and still passing: VIEW-1 V4's seeded retention bug in the MEM-1 harness is refused before any kernel; no hooks were added to window/v1 for it"
+      },
+      "updated_existing_test": "PLUGIN-1 C2's `shipped_continuations_is_a_fresh_value_holding_every_built_in` named exactly row/v1 and canonical/v1; it now names the three shipped built-ins and still selects and builds each against the fixture",
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "clippy -D warnings": "clean on 7 lines (vindex all-targets, kv, inference, cli, server, demos, continuation-fixture)",
+        "tests": "9,753 passed, 0 failed (--no-fail-fast; vindex, kv, inference, cli, demos, continuation-fixture — larql-kv re-run 1,323/0 after the C2 update); server continuation, responses-v3 and vindex3-serve targets pass"
+      },
+      "physical_release_and_scaling": "measured in W3 on the MEM-1 harness across the frozen ladder, with deallocation witnessed on allocation identity"
     }
   }
 }
