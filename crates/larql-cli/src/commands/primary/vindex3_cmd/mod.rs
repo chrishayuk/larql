@@ -56,6 +56,11 @@ pub enum Vindex3Command {
     /// and marked approximate, and a profile then selects between
     /// representations that exist.
     Represent(RepresentArgs),
+    /// Observe a prompt through the canonical decode session and write a
+    /// lossless run record (V3-OBS-1 + V3-STREAM-1): carrier writes with
+    /// norms and a fixed projection, provenance, a verified receipt, and
+    /// the final position's top candidates on stdout.
+    Observe(observe::ObserveArgs),
     /// SENSITIVITY-1A: score every eligible tensor by the relative error
     /// quantising it introduces, from the weights alone and with no forward
     /// pass. One screen scores every candidate precision map.
@@ -65,6 +70,17 @@ pub enum Vindex3Command {
     /// frozen capture. Emits numbers only — aggregation and the bar live in
     /// `bench/prompts/quality-bank-1/`.
     Consequence(consequence::ConsequenceArgs),
+
+    /// MEASURE-PLAN-1's sealed corpus: `export` tokenises a prompt file with
+    /// a container's tokenizer into a bank; `import` seals ids another
+    /// harness already tokenised; `check` reads every sample against its
+    /// seal and the container's tokenizer.
+    TokenBank(token_bank::TokenBankArgs),
+
+    /// MEASURE-PLAN-1: teacher-force a candidate realization against a
+    /// reference over a token bank, with every validity proof, and write a
+    /// report, per-position records and a receipt.
+    Measure(measure::MeasureArgs),
 }
 
 /// Which numerical realisation runs the plan. Both execute the *same*
@@ -102,6 +118,17 @@ pub enum ExecBackend {
     ProductionQ6k,
     /// The `larql-compute` kernels, asking for a compiled Q4_K pack.
     ProductionQ4k,
+    /// The same compiled Q4_K pack, executed against a **Q8_K
+    /// activation** by the integer-dot kernel V2's CPU decode uses
+    /// (Q8K-ACT-1, `docs/q8k-act-1.md`). Lossy in the activation by
+    /// declaration; [`Self::ProductionQ4k`] keeps its f32-activation
+    /// meaning.
+    ProductionQ4kQ8k,
+    /// The same compiled NVFP4 pack as [`Self::ProductionNvfp4`], executed
+    /// against a **Q8 activation** with integer dot products (NVFP4-Q8-1,
+    /// `docs/nvfp4-q8-1.md`). Lossy in the activation by declaration;
+    /// [`Self::ProductionNvfp4`] keeps its f32-activation meaning.
+    ProductionNvfp4Q8,
     /// GPU matmuls via `larql-compute-metal` (rung 1: matrix work on
     /// the device, elementwise glue on the CPU).
     #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -187,6 +214,9 @@ pub struct ExecArgs {
     /// Numerical realisation to run the plan on.
     #[arg(long, value_enum, default_value_t = ExecBackend::Reference)]
     pub backend: ExecBackend,
+
+    #[command(flatten)]
+    pub plugin: plugins::PluginArgs,
 
     /// Where an execution representation may come from.
     ///
@@ -416,9 +446,24 @@ pub struct RepresentArgs {
     #[arg(long)]
     pub output: PathBuf,
 
-    /// Target encoding. `NVFP4` is the only compiler today.
+    /// Target encoding: `NVFP4`, a K-quant, or the label of an encoder a
+    /// `--plugin` registered.
     #[arg(long, default_value = "NVFP4")]
     pub encoding: String,
+
+    /// Load a larql plugin whose encoders `--encoding` may name, as
+    /// `vindex3 exec --plugin` loads codecs. Repeatable.
+    #[arg(long = "plugin", value_name = "PATH")]
+    pub plugins: Vec<PathBuf>,
+
+    /// Encode under input-feature weights: `E[x^2]` per input feature from a
+    /// `sensitivity --calibration` capture of this container (the mapping
+    /// `consequence` uses; `down_proj` reconstructed and gated, `o_proj`
+    /// unweighted for want of a site). The encoder must accept weights
+    /// (plugin encoders may; shipped compilers refuse), and the pack's
+    /// recipe records the capture's digest.
+    #[arg(long, value_name = "JSON")]
+    pub moments: Option<PathBuf>,
 
     /// Objects to compile. Repeat the flag to name several; omit to
     /// compile every object carrying an eligible tensor.
@@ -531,8 +576,11 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
         Vindex3Command::Ops(args) => run_ops(args),
         Vindex3Command::Exec(args) => run_exec(args),
         Vindex3Command::Represent(args) => run_represent(args),
+        Vindex3Command::Observe(args) => observe::run(args),
         Vindex3Command::Sensitivity(args) => sensitivity::run(args),
         Vindex3Command::Consequence(args) => consequence::run(args),
+        Vindex3Command::TokenBank(args) => token_bank::run(args),
+        Vindex3Command::Measure(args) => measure::run(args),
     }
 }
 
@@ -542,14 +590,20 @@ mod consequence;
 pub(crate) mod decode;
 mod exec;
 mod generate;
+mod input_moments;
+mod intervention;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
-mod lowered;
+pub(crate) mod lowered;
+pub(crate) mod measure;
+mod observe;
 mod ops;
 mod optional_op;
+pub(crate) mod plugins;
 pub(crate) mod prepare;
 mod realizations;
 mod sensitivity;
 mod teacher_force;
+mod token_bank;
 use exec::run_exec;
 use ops::run_ops;
 
@@ -731,7 +785,9 @@ fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
 /// of the operation is a number: the pack is only worth persisting if it is
 /// materially smaller than the bytes it was compiled from.
 fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> {
-    use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
+    use larql_vindex::format::vindex3::represent::{
+        compile_representation_weighted, compile_representation_with, RepresentSpec,
+    };
 
     let mut roles = larql_vindex::format::vindex3::represent::policy::RolePolicy::default();
     for name in &args.include_roles {
@@ -803,7 +859,34 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     let started = std::time::Instant::now();
-    let report = compile_representation(&args.container, &args.output, &spec)?;
+    let plugins = plugins::Plugins::load(&plugins::PluginArgs {
+        plugins: args.plugins.clone(),
+        lowering: None,
+        representation: None,
+    })?;
+    let report = match &args.moments {
+        Some(path) => {
+            let (weights, sources) = input_moments::input_weights(&args.container, path)?;
+            println!(
+                "  moments: {} (sha256 {})",
+                path.display(),
+                &weights.digest[..16]
+            );
+            for (source, n) in &sources {
+                println!("    {source:<36} {n} tensor(s)");
+            }
+            compile_representation_weighted(
+                &args.container,
+                &args.output,
+                &spec,
+                plugins.encoders,
+                &weights,
+            )?
+        }
+        None => {
+            compile_representation_with(&args.container, &args.output, &spec, plugins.encoders)?
+        }
+    };
 
     println!("\n── compiled ──");
     println!(
@@ -839,6 +922,21 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
         human_bytes(out_total),
         ratio
     );
+    let weighted: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.weighted_tensors)
+        .sum();
+    if args.moments.is_some() {
+        let compiled: usize = report
+            .compiled_objects
+            .iter()
+            .map(|c| c.compiled_tensors)
+            .sum();
+        println!(
+            "  encoded under input-feature weights: {weighted} of {compiled} compiled tensor(s)"
+        );
+    }
     let mut protected: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for c in &report.compiled_objects {

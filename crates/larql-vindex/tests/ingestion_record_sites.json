@@ -1,5 +1,10 @@
 [
   [
+    "larql-cli/src/commands/primary/shannon_trace/block_norms.rs",
+    "run_block_norms",
+    "record"
+  ],
+  [
     "larql-cli/src/commands/primary/vindex3_cmd/lowered/step.rs",
     "LoweredSession::step_impl",
     "record"
@@ -7,6 +12,21 @@
   [
     "larql-compute-metal/src/decode/token.rs",
     "MetalBackend::decode_token_with_moe_split_fn",
+    "record"
+  ],
+  [
+    "larql-compute-metal/src/submission_clock.rs",
+    "MetalBackend::commit_and_wait",
+    "record"
+  ],
+  [
+    "larql-compute/src/ffn/expert_weight/block_contrib_trace.rs",
+    "record_into",
+    "record"
+  ],
+  [
+    "larql-compute/src/ffn/expert_weight/mod.rs",
+    "ExpertWeightFfn::moe_block",
     "record"
   ],
   [
@@ -225,6 +245,11 @@
     "record"
   ],
   [
+    "larql-server/src/routes/openai/chat/stream.rs",
+    "stream_chat_completion",
+    "record"
+  ],
+  [
     "larql-server/src/routes/openai/chat/v3.rs",
     "respond",
     "record"
@@ -237,6 +262,11 @@
   [
     "larql-server/src/routes/openai/completions.rs",
     "handle_completions",
+    "record"
+  ],
+  [
+    "larql-server/src/routes/openai/completions.rs",
+    "stream_completions",
     "record"
   ],
   [
@@ -321,7 +351,7 @@
   ],
   [
     "larql-vindex/src/format/vindex3/opplan/exec/production.rs",
-    "ProductionBackend::routed_ffn",
+    "ProductionBackend::routed_ffn_impl",
     "record"
   ],
   [

@@ -185,22 +185,29 @@ impl VectorIndex {
                 return None;
             }
             let mmap: &[u8] = view.bytes.as_ref();
-            let mut cache = self.gate.f16_decode_cache.lock().unwrap();
-            if cache.len() <= layer {
-                cache.resize(layer + 1, None);
-            }
-            let miss = cache[layer].is_none();
-            if miss {
-                let byte_offset = view.slice.float_offset * 2;
-                let byte_end = byte_offset + view.slice.num_features * self.hidden_size * 2;
-                if byte_end > mmap.len() {
-                    return None;
+            // Take an `Arc` handle and release the lock before the matmul,
+            // for the same reason as `gate_knn_mmap_fast`: holding it across
+            // the multiply serialises concurrent callers on unrelated layers.
+            let data = {
+                let mut cache = self.gate.f16_decode_cache.lock().unwrap();
+                if cache.len() <= layer {
+                    cache.resize(layer + 1, None);
                 }
-                let raw = &mmap[byte_offset..byte_end];
-                cache[layer] = Some(larql_models::quant::half::decode_f16(raw));
-            }
-            self.touch_gate_cache_lru(layer, miss, &mut cache);
-            let data = cache[layer].as_ref().unwrap();
+                let miss = cache[layer].is_none();
+                if miss {
+                    let byte_offset = view.slice.float_offset * 2;
+                    let byte_end = byte_offset + view.slice.num_features * self.hidden_size * 2;
+                    if byte_end > mmap.len() {
+                        return None;
+                    }
+                    let raw = &mmap[byte_offset..byte_end];
+                    cache[layer] = Some(std::sync::Arc::new(
+                        larql_models::quant::half::decode_f16(raw),
+                    ));
+                }
+                self.touch_gate_cache_lru(layer, miss, &mut cache);
+                std::sync::Arc::clone(cache[layer].as_ref().unwrap())
+            };
             let arr = ArrayView2::from_shape(
                 (view.slice.num_features, self.hidden_size),
                 data.as_slice(),

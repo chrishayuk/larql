@@ -206,6 +206,7 @@ impl PlanBackend for Relabelled {
         Some(DispatchStats {
             device_nanos: 0,
             submissions: RELABELLED_SUBMISSIONS,
+            device_clock: None,
         })
     }
 }

@@ -433,6 +433,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                     softcap: None,
                     position_index: POS,
                     kv_len: T,
+                    residual_scale: None,
                 },
                 ffn: larql_compute_metal::lowering::stack::LayerFfnLowering::Dense {
                     weights: FfnWeights {
@@ -471,6 +472,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                         norm_eps: EPS,
                         norm_weight_offset: OFFSET,
                         activation: FfnActivation::Silu,
+                        residual_scale: None,
                     },
                 },
                 k_cache: &kv[l].0,

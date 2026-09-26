@@ -262,23 +262,25 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "rope_type",
         reaches: Carriage::Represented,
-        // PositionPolicy is `Rope { theta } | Yarn { theta, scaling } |
-        // None`: unscaled rotary, YaRN-scaled rotary (frequencies AND the
-        // attention amplitude), or no position encoding. Any other declared
-        // rope class (llama3, dynamic, ...) still has no variant and
-        // mismatches here — represented, not lowered: the interpreter and
-        // the lowering refuse a YaRN layer until A-9.3/A-9.4 execute it.
-        site: "Component.attention[].position (PositionPolicy::Rope | Yarn | Llama3)",
+        // PositionPolicy is `Rope { theta } | Linear { theta, factor } |
+        // Yarn { theta, scaling } | Llama3 { theta, scaling } | None`:
+        // unscaled rotary, positions divided before rotation, YaRN-scaled
+        // rotary (frequencies AND the attention amplitude), Llama-3
+        // wavelength bands, or no position encoding. Any other declared
+        // rope class (dynamic, ...) still has no variant and mismatches
+        // here — represented, not lowered: the interpreter and the
+        // lowering refuse a YaRN layer until A-9.3/A-9.4 execute it.
+        site: "Component.attention[].position (PositionPolicy::Rope | Linear | Yarn | Llama3)",
         probe: Some(probe_rope_type),
     },
-    // The YaRN block's own leaves, each carried on `PositionPolicy::Yarn`
-    // and answered from it. A checkpoint that declares them without
-    // declaring `rope_type: yarn` gets no answer, which is right — the
-    // leaves mean nothing outside that block.
+    // The scaling block's own leaves, each carried on the policy variant
+    // its `rope_type` selects and answered from it. A checkpoint that
+    // declares them without declaring a scaling `rope_type` gets no
+    // answer, which is right — the leaves mean nothing outside a block.
     CarriageRule {
         leaf: "factor",
         reaches: Carriage::Represented,
-        site: "Component.attention[].position ({Yarn,Llama3}.scaling.factor)",
+        site: "Component.attention[].position ({Yarn,Llama3}.scaling.factor | Linear.factor)",
         probe: Some(probe_scaling_factor),
     },
     CarriageRule {
@@ -1739,8 +1741,23 @@ fn llama3_block(component: &Component) -> Option<larql_models::Llama3RopeScaling
 fn probe_scaling_factor(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let factor = yarn_block(component)
         .map(|y| y.factor)
-        .or_else(|| llama3_block(component).map(|l| l.factor))?;
+        .or_else(|| llama3_block(component).map(|l| l.factor))
+        .or_else(|| linear_block(component))?;
     Some(json!(factor))
+}
+
+/// The linear position divisor a built layer carries, if any layer does.
+///
+/// Asked of every layer, not the first: on Gemma 3 the declaration
+/// reaches the full-attention layers only, and the sliding layers
+/// rotate plain — so the first layer of the table answers nothing while
+/// the block is carried five layers in.
+fn linear_block(component: &Component) -> Option<f64> {
+    component
+        .attention
+        .as_ref()?
+        .iter()
+        .find_map(|l| l.position.linear())
 }
 
 fn probe_llama3_low_freq(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {

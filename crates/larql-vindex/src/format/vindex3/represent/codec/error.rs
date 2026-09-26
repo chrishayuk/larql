@@ -22,6 +22,40 @@ pub enum CodecError {
     },
 
     #[error(
+        "tensor `{tensor}`: no encoder registered for `{label}` (it may still be decodable — \
+         this is the write-side registry, a separate question); registered encoders: [{}]",
+        registered.join(", ")
+    )]
+    NoEncoderRegistered {
+        tensor: String,
+        label: String,
+        registered: Vec<String>,
+    },
+
+    #[error(
+        "tensor `{tensor}`: encoder `{label}` does not accept input-feature weights; \
+         compile without them rather than have them ignored"
+    )]
+    WeightingUnsupported { tensor: String, label: String },
+
+    #[error("tensor `{tensor}`: {have} input-feature weights for a row of {need} elements")]
+    WeightingShape {
+        tensor: String,
+        need: usize,
+        have: usize,
+    },
+
+    #[error(
+        "tensor `{tensor}`: input-feature weight {index} is {value}; weights must be \
+         finite and non-negative"
+    )]
+    InvalidWeight {
+        tensor: String,
+        index: usize,
+        value: f64,
+    },
+
+    #[error(
         "tensor `{tensor}`: `{label}` needs stream `{stream}`, which was not bound; bound: [{}]",
         bound.join(", ")
     )]

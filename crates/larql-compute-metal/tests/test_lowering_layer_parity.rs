@@ -466,6 +466,7 @@ fn run_lowered(
         softcap: None,
         position_index: POS,
         kv_len: T,
+        residual_scale: None,
     };
 
     let gate_buf = gpu.lowering_weight(&f.gate.packed);
@@ -517,6 +518,7 @@ fn run_lowered(
         norm_eps: EPS,
         norm_weight_offset: NORM_OFFSET,
         activation: FfnActivation::Silu,
+        residual_scale: None,
     };
 
     match schedule {

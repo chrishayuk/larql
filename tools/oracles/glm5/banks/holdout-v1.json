@@ -1,0 +1,29 @@
+{
+  "name": "holdout-v1",
+  "role": "holdout",
+  "frozen": "2026-09-07",
+  "note": "FROZEN BEFORE ANY LOGITS WERE OBSERVED. No REPRESENT search and no gate calibration may read this bank; it exists only to qualify a candidate that calibration already selected. Disjoint from calibration-v1 in both text and category balance.",
+  "close_call_caveat": "The `close-call` category is an INTENT, not a measured property. Whether these prompts actually have small BF16 top-1 margins must be verified from the BF16 arm at run time, and prompts that turn out not to be close calls must be reported as such rather than quietly re-labelled.",
+  "prompts": [
+    {"category": "factual", "text": "The Pacific Ocean is the largest and deepest of the world's five oceans."},
+    {"category": "factual", "text": "Marie Curie remains the only person to win Nobel Prizes in two different sciences."},
+    {"category": "instructional", "text": "To reset the device, hold the power button for ten seconds and then release."},
+    {"category": "instructional", "text": "First, preheat the oven to 180 degrees. Then, sift the flour into a large bowl."},
+    {"category": "code", "text": "impl Iterator for Counter {\n    type Item = u32;\n    fn next(&mut self) -> Option<u32> {"},
+    {"category": "code", "text": "async function fetchAll(urls) {\n  return Promise.all(urls.map(u => fetch(u).then(r => r.json())));\n}"},
+    {"category": "maths", "text": "If a triangle has sides of length 3, 4 and 5, then it is a right triangle because"},
+    {"category": "reasoning", "text": "All mammals are warm-blooded. Whales are mammals. Therefore whales are"},
+    {"category": "multilingual", "text": "La bibliotheque municipale ouvre ses portes a neuf heures du matin, sauf le dimanche."},
+    {"category": "multilingual", "text": "El rio Amazonas atraviesa varios paises de America del Sur antes de llegar al mar."},
+    {"category": "long-context", "text": "The committee reconvened after a lengthy recess. Several members had submitted written objections during the interval, and the chair noted that each would be read into the record before any vote was taken. The first objection concerned the allocation of funds to the northern district, which the treasurer had described in an earlier session as provisional. After considerable discussion, the committee agreed that"},
+    {"category": "long-context", "text": "Sediment cores drawn from the lake bed record an unbroken sequence of annual layers. Each layer preserves pollen, ash and diatom assemblages characteristic of the season in which it formed. By counting the layers downward and cross-checking against radiocarbon dates from embedded plant fragments, researchers established a chronology extending back some twelve thousand years, from which they concluded that"},
+    {"category": "numeric", "text": "Q1 revenue was 4,182,000; Q2 was 3,947,500; Q3 was 5,310,250. The total for the three quarters is"},
+    {"category": "numeric", "text": "| region | units | margin |\n| north | 1204 | 0.31 |\n| south | 987 | 0.28 |\n| east | 1533 |"},
+    {"category": "rare-vocabulary", "text": "The sommelier described the wine as petrichor-laced, with a faintly esculent finish and a lingering hint of galbanum."},
+    {"category": "rare-vocabulary", "text": "Sesquipedalian obfuscation, however pellucid its intent, seldom improves the perspicuity of technical prose."},
+    {"category": "close-call", "text": "She opened the door and stepped"},
+    {"category": "close-call", "text": "The results were surprising, but not entirely"},
+    {"category": "close-call", "text": "He picked up the pen and began to"},
+    {"category": "close-call", "text": "It was the best of times, it was the"}
+  ]
+}

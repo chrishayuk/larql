@@ -111,8 +111,15 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
             bytes_per_weight: 0.5 + SCALE_WIDTH / geometry.q4_block as f64,
         },
         WeightFormat::Nvfp4 => ResidencyProfile::rebound(NVFP4_BITS_PER_WEIGHT),
+        // The same pack, copied into aligned buffers the same way; only the
+        // activation it runs against differs.
+        WeightFormat::Nvfp4Q8 => ResidencyProfile::rebound(NVFP4_BITS_PER_WEIGHT),
         WeightFormat::Mxfp4 => ResidencyProfile::stored(MXFP4_BITS_PER_WEIGHT),
-        WeightFormat::KQuant => ResidencyProfile::stored(KQUANT_WIDEST_BITS_PER_WEIGHT),
+        // The Q8_K binding is the same stored blocks; only the activation
+        // it runs against differs.
+        WeightFormat::KQuant | WeightFormat::KQuantQ8k => {
+            ResidencyProfile::stored(KQUANT_WIDEST_BITS_PER_WEIGHT)
+        }
         // Bound AS STORED, like a K-quant pack: the checkpoint's own
         // bytes, never widened at rest. That is the whole reason the
         // format is carried natively — a widened GLM-5.3-Flash would be
@@ -138,6 +145,18 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
         // weight, 0.2 % — but at a `[1, 32]` grid it would be a full bit,
         // and a forecast that silently omitted it would be 12 % light.
         WeightFormat::Fp8Block => ResidencyProfile::stored(FP8_BITS_PER_WEIGHT),
+        // Bound AS STORED, like every other native compact format — but
+        // this function only ever sees `WeightFormat`, never which codec
+        // produced the bytes, so it cannot look up a real bits/weight
+        // figure the way `KQuant`/`Fp8Block` do from a constant. The
+        // codec's own declared residency (`Acceleration`'s
+        // `ResidencyProfile`, set where the codec is registered) is the
+        // real number for this path; this generic entry exists only so
+        // the format is accounted for at all, not to price it.
+        WeightFormat::CodecOwned => ResidencyProfile {
+            class: ResidencyClass::Stored,
+            bytes_per_weight: 0.0,
+        },
     }
 }
 
@@ -183,8 +202,11 @@ pub fn requantised_image_bytes(
         | WeightFormat::Bf16
         | WeightFormat::F16
         | WeightFormat::Nvfp4
+        | WeightFormat::Nvfp4Q8
         | WeightFormat::Mxfp4
         | WeightFormat::KQuant
+        | WeightFormat::KQuantQ8k
+        | WeightFormat::CodecOwned
         // Stored as-is: there is no re-quantised image, so no bytes to price.
         | WeightFormat::Fp8Block => None,
     }

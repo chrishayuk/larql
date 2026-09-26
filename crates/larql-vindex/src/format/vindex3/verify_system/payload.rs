@@ -176,8 +176,9 @@ fn source_hash(
 }
 
 /// SHA-256 over a segment file's payload region (everything after the
-/// header), recomputed from the container now.
-fn payload_region_hash(path: &Path, payload_start: u64) -> Result<String, VindexError> {
+/// header), recomputed from the container now. Shared with MEASURE-PLAN-1's
+/// seal check, so the two cannot disagree about what a payload digest is.
+pub(crate) fn payload_region_hash(path: &Path, payload_start: u64) -> Result<String, VindexError> {
     let mut file = std::fs::File::open(path)?;
     file.seek(SeekFrom::Start(payload_start))?;
     let mut hasher = Sha256::new();

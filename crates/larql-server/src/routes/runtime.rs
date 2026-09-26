@@ -38,14 +38,17 @@ const STATUS_READY: &str = "ready";
 const FORMAT_VINDEX2: &str = "vindex2";
 const FORMAT_VINDEX3: &str = "vindex3";
 
-/// Whether this binary was compiled with Metal-accelerated MoE expert
+/// Whether this binary was compiled with V3 Metal execution or MoE expert
 /// dispatch. A compile-time fact, not a claim that Metal is currently
 /// driving generation — confirming that would need a live probe of a
 /// model's lazily-initialised Metal backend, and a read-only status
 /// endpoint shouldn't trigger GPU initialisation as a side effect.
 /// Follow-up once a probe exists that doesn't force it.
 const fn metal_compiled() -> bool {
-    cfg!(all(feature = "metal-experts", target_os = "macos"))
+    cfg!(all(
+        any(feature = "metal-experts", feature = "vindex3-metal"),
+        target_os = "macos"
+    ))
 }
 
 /// The `model` block for one resolved binding.
@@ -108,7 +111,19 @@ pub(crate) fn runtime_snapshot(state: &AppState) -> serde_json::Value {
         "model": served.as_ref().map(model_block),
         "backend": {
             "metal_compiled": metal_compiled(),
+            "selected": served.as_ref().and_then(|m| match m {
+                ServedModel::V3(m) => Some(m.backend.as_str()),
+                ServedModel::V2(_) => None,
+            }),
         },
+        "dense_ffn_shard": served.as_ref().and_then(|m| match m {
+            ServedModel::V3(m) => m.ffn_shard.as_ref(),
+            ServedModel::V2(_) => None,
+        }),
+        "layer_shard": served.as_ref().and_then(|m| match m {
+            ServedModel::V3(m) => m.shard.as_ref(),
+            ServedModel::V2(_) => None,
+        }),
         "memory": {
             "resident_bytes": crate::runtime_stats::resident_bytes(),
             "model_bytes": served.as_ref().and_then(model_bytes),
@@ -150,7 +165,10 @@ mod tests {
         let compiled = metal_compiled();
         assert_eq!(
             compiled,
-            cfg!(all(feature = "metal-experts", target_os = "macos"))
+            cfg!(all(
+                any(feature = "metal-experts", feature = "vindex3-metal"),
+                target_os = "macos"
+            ))
         );
     }
 }

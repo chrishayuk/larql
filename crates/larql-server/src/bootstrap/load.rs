@@ -18,6 +18,7 @@ use super::BoxError;
 
 #[derive(Clone, Default)]
 pub struct LoadVindexOptions {
+    pub v3_backend: crate::vindex3::V3Backend,
     pub no_infer: bool,
     pub ffn_only: bool,
     pub embed_only: bool,
@@ -97,27 +98,17 @@ pub enum LoadedArtifact {
 /// non-V2 generations.
 /// Options a VINDEX3 binding cannot honour, named for the refusal.
 ///
-/// The V3 branch of [`load_artifact`] takes only a path — slicing,
-/// service modes, and cache knobs have no V3 implementation. Accepting
-/// the flag and ignoring it is the dangerous failure: a `--layers 0-9`
-/// shard silently loads the *whole* model and answers complete
-/// requests, and `--no-infer` does not disable inference. Fail closed
-/// until V3 sharding exists (ROADMAP §N1 / V3 sharding).
+/// V3 implements CPU layer-prefix sharding. Other V2 service modes and
+/// expert ownership protocols remain unsupported and must fail closed.
 fn unsupported_v3_options(opts: &LoadVindexOptions) -> Vec<&'static str> {
     let mut named = Vec::new();
     if opts.no_infer {
         named.push("--no-infer");
     }
-    if opts.ffn_only {
-        named.push("--ffn-only");
-    }
     if opts.embed_only {
         named.push("--embed-only");
     }
-    if opts.layer_range.is_some() {
-        named.push("--layers");
-    }
-    if opts.expert_filter.is_some() {
+    if opts.expert_filter.is_some() && (!opts.ffn_only || opts.layer_range.is_none()) {
         named.push("--experts");
     }
     if opts.unit_filter.is_some() {
@@ -149,10 +140,7 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
             let unsupported = unsupported_v3_options(&opts);
             if !unsupported.is_empty() {
                 return Err(format!(
-                    "VINDEX3 containers do not support {} — a V3 binding serves the whole \
-                     model, so accepting these would silently ignore them (a `--layers` shard \
-                     would load the full model and answer complete requests). Remove them, or \
-                     serve a VINDEX2 container: {}",
+                    "VINDEX3 containers do not support {} — remove them or serve a VINDEX2 container: {}",
                     if unsupported.len() == 1 {
                         "this option"
                     } else {
@@ -163,13 +151,25 @@ pub fn load_artifact(path_str: &str, opts: LoadVindexOptions) -> Result<LoadedAr
                 .into());
             }
             info!("Loading VINDEX3 container: {}", path.display());
-            Ok(LoadedArtifact::V3(Box::new(crate::vindex3::load_v3_model(
-                &path,
+            Ok(LoadedArtifact::V3(Box::new(
+                crate::vindex3::load_v3_model_experts(
+                    &path,
+                    opts.v3_backend,
+                    opts.layer_range,
+                    opts.ffn_only,
+                    opts.expert_filter,
+                )?,
+            )))
+        }
+        larql_vindex::format::generation::ContainerGeneration::V2 => {
+            if opts.v3_backend != crate::vindex3::V3Backend::Cpu {
+                return Err("--v3-backend applies only to VINDEX3 containers".into());
+            }
+            Ok(LoadedArtifact::V2(Box::new(load_single_vindex(
+                &resolved_path_str,
+                opts,
             )?)))
         }
-        larql_vindex::format::generation::ContainerGeneration::V2 => Ok(LoadedArtifact::V2(
-            Box::new(load_single_vindex(&resolved_path_str, opts)?),
-        )),
     }
 }
 
@@ -486,6 +486,8 @@ pub fn load_single_vindex(
         release_mmap_after_request: opts.release_mmap_after_request,
         weights: std::sync::OnceLock::new(),
         weights_init: std::sync::Mutex::new(()),
+        bitnet_model: std::sync::OnceLock::new(),
+        bitnet_init: std::sync::Mutex::new(()),
         probe_labels,
         ffn_l2_cache: crate::ffn_l2_cache::FfnL2Cache::new(num_layers),
         layer_latency_tracker: std::sync::Arc::new(crate::metrics::LayerLatencyTracker::new()),
@@ -554,15 +556,29 @@ mod v3_option_tests {
             ..LoadVindexOptions::default()
         };
         let named = unsupported_v3_options(&opts);
-        for flag in [
-            "--no-infer",
-            "--ffn-only",
-            "--embed-only",
-            "--layers",
-            "--experts",
-            "--units",
-        ] {
+        for flag in ["--no-infer", "--embed-only", "--units"] {
             assert!(named.contains(&flag), "{flag} must be named in the refusal");
+        }
+    }
+
+    #[test]
+    fn experts_require_ffn_only_and_a_layer_range() {
+        for (ffn_only, layer_range) in [
+            (false, None),
+            (true, None),
+            (false, Some((0, 1))),
+            (true, Some((0, 1))),
+        ] {
+            let opts = LoadVindexOptions {
+                ffn_only,
+                layer_range,
+                expert_filter: Some((0, 2)),
+                ..LoadVindexOptions::default()
+            };
+            assert_eq!(
+                unsupported_v3_options(&opts).contains(&"--experts"),
+                !(ffn_only && layer_range.is_some())
+            );
         }
     }
 

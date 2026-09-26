@@ -1,5 +1,6 @@
 //! What a dense projection kernel must expose, and who threads it.
 
+use super::super::backend::KQuantActivation;
 use crate::format::vindex3::represent::kquant::KQuant;
 
 /// Who owns the machine while a primitive runs.
@@ -161,6 +162,7 @@ pub enum WeightRows<'a> {
         packed: &'a [u8],
         scales: &'a [u8],
         tensor_scale: f32,
+        activation: super::super::backend::Nvfp4Activation,
     },
     /// A stored ggml K-quant block stream — Q8_0, Q6_K or Q4_K — with
     /// the codec that names its layout. Scales are inside the blocks.
@@ -173,6 +175,12 @@ pub enum WeightRows<'a> {
     KQuant {
         blocks: &'a [u8],
         codec: KQuant,
+        /// Which arithmetic reads these blocks — fixed at load by the
+        /// pinned realization, and what [`PhysicalProjectionPlan::for_resident`]
+        /// observes to pick `FusedKQuant` or `FusedKQuantQ8k`.
+        ///
+        /// [`PhysicalProjectionPlan::for_resident`]: super::physical::PhysicalProjectionPlan::for_resident
+        activation: KQuantActivation,
     },
     /// Fine-grained (block-wise) FP8 straight from the checkpoint: E4M3
     /// codes in an ordinary row-major matrix, against a **two-dimensional**
@@ -246,7 +254,7 @@ impl WeightRows<'_> {
             // Blocks run along the row, so the stride is the codec's, and
             // a width off its grid has no rows at all — never a rounded
             // count that would put row 1 at the wrong offset.
-            Self::KQuant { blocks, codec } => codec
+            Self::KQuant { blocks, codec, .. } => codec
                 .row_bytes(in_dim)
                 .map_or(0, |per_row| blocks.len() / per_row),
             // One byte per element, so the row stride is the width.
@@ -303,6 +311,7 @@ impl WeightRows<'_> {
                 packed,
                 scales,
                 tensor_scale,
+                activation,
             } => {
                 // Groups run along the input axis, so a row slab is a
                 // contiguous run of both streams. The tensor scale is
@@ -313,9 +322,14 @@ impl WeightRows<'_> {
                     packed: &packed[start * per_row..(start + count) * per_row],
                     scales: &scales[start * groups..(start + count) * groups],
                     tensor_scale: *tensor_scale,
+                    activation: *activation,
                 }
             }
-            Self::KQuant { blocks, codec } => {
+            Self::KQuant {
+                blocks,
+                codec,
+                activation,
+            } => {
                 // Cut at the codec's row stride. A width off the block
                 // grid was refused at `WeightSlice::rows`, so a missing
                 // stride here is an executor bug, not a runtime
@@ -326,6 +340,7 @@ impl WeightRows<'_> {
                 Self::KQuant {
                     blocks: &blocks[start * per_row..(start + count) * per_row],
                     codec: *codec,
+                    activation: *activation,
                 }
             }
             Self::Fp8Block {

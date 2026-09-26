@@ -22,6 +22,8 @@ members = [
     "crates/larql-python",
     # boundary codec (Phase 1-3 of BOUNDARY_REF_PROTOCOL)
     "crates/larql-boundary",
+    # test-only cdylib: the C5 continuation provider as a plugin (C6 gate)
+    "crates/larql-continuation-fixture",
     # portable (extract to sibling repos later, names stable)
     "crates/model-compute",
 ]

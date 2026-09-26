@@ -20,9 +20,16 @@ mod backend_rows;
 mod bf16_gemv_bench;
 mod bf16_residency;
 mod bf16_zlib_execution;
+mod carrier_entry;
+mod carrier_write;
+mod carrier_write_real;
+mod codec_owned_weight;
 mod compact_consumption;
 mod composed_floor;
 mod continuation;
+mod continuation_handoff;
+mod continuation_identity;
+mod continuation_registry;
 mod controls;
 mod coverage_backend_decode;
 mod coverage_device;
@@ -31,12 +38,16 @@ mod decode;
 mod device;
 mod device_gate_refusal;
 mod draft_slice;
+mod external_embedding;
 mod f32_planes_execution;
 mod fp8_carriage;
 mod gated_delta_parity;
 mod gated_delta_tiny;
+mod head_replay;
 mod hybrid_traversal;
 mod hyper_connection;
+mod intervene;
+mod intervene_heads;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -74,6 +85,7 @@ mod nvfp4_projection;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
+mod provenance;
 mod realization;
 mod vq8_shared_execution;
 // Each module carries its OWN cfg: inserting a bare `mod` line above a
@@ -103,17 +115,25 @@ mod generate_baseline;
 mod generate_metal;
 mod generate_real;
 mod golden;
+mod head_observation;
+mod head_observation_gates;
 mod kernels;
 mod kimi_per_expert_prepared;
 mod kquant_projection;
 mod kquant_projection_real;
 mod kv;
+mod lens;
+mod linear_rope;
 mod llama3_rope;
 mod observe;
+mod observe_stats;
 mod overrides;
 mod parity;
 mod partial_residency;
+mod payload_prefix;
 mod recurrence_shape;
+mod reference_mrope;
+mod reference_refusal_arms;
 mod replay_capture;
 mod requirements;
 mod residency;
@@ -121,6 +141,7 @@ mod residency_budget;
 mod residency_census;
 mod routed;
 mod seam;
+mod selected_output_head;
 mod shared_projection;
 mod sinks_bias;
 mod smoke;
@@ -139,6 +160,7 @@ pub(super) use crate::format::vindex3::fixtures::{
 };
 mod latent_moe_execution;
 mod latent_moe_parity;
+mod one_shot_continuation;
 mod prefetch;
 mod sigmoid_router;
 mod stages_and_routing;
@@ -148,4 +170,21 @@ mod step_many;
 /// traversal gates use — one fixture, so the two cannot drift.
 mod hybrid_traversal_fixture {
     pub(super) use super::hybrid_traversal::hybrid;
+}
+
+/// `row/v1` selected for `plan` — the explicit continuation a test names
+/// now that the executor has no default (CONTINUATION-PLUGIN-1, C3).
+pub(crate) fn row_continuation(
+    plan: &super::super::ComponentOpPlan,
+) -> super::continuation_registry::SelectedContinuation {
+    let mut registry = super::continuation_registry::ContinuationRegistry::new();
+    registry.register(Box::new(super::kv::RowFactory)).unwrap();
+    let geometry = super::continuation::plan_continuation_geometry(plan).unwrap();
+    registry
+        .select(
+            &super::kv::RowKvState::identity(),
+            &super::continuation_authority::ContinuationConfig::empty(),
+            &geometry,
+        )
+        .unwrap()
 }

@@ -352,6 +352,36 @@ unsafe fn q8_row_asym_sdot(
     acc
 }
 
+/// The code-sum indices covering activation elements `lo..hi`.
+///
+/// Derived from the span rather than from `block / SUM_BLOCK`: a row's
+/// last activation block is short when `in_dim` is not a multiple of the
+/// block, and so is its run of sums (`quantise::code_sums` cuts them per
+/// row). A fixed stride read past the row there — the next row's sums on
+/// the portable path, past the slice on the unchecked one.
+#[inline]
+fn index_span(lo: usize, hi: usize) -> std::ops::Range<usize> {
+    lo / SUM_BLOCK..hi.div_ceil(SUM_BLOCK)
+}
+
+/// Refuses a row whose operands are shorter than `in_dim` declares.
+///
+/// The indexed kernels read `codes`, `qx` and `sums` unchecked on the
+/// SDOT path, so the lengths are proven once here, per row, before any
+/// of them is dereferenced.
+#[inline]
+fn check_indexed_row(codes: &[i8], qx: &[i8], sums: &[i16], in_dim: usize) {
+    assert!(
+        codes.len() >= in_dim && qx.len() >= in_dim && sums.len() >= in_dim.div_ceil(SUM_BLOCK),
+        "indexed Q8 row needs {in_dim} codes, {in_dim} activation codes and {} sums; got {}, {} \
+         and {}",
+        in_dim.div_ceil(SUM_BLOCK),
+        codes.len(),
+        qx.len(),
+        sums.len()
+    );
+}
+
 /// The indexed asymmetric row: K4's vector index load at block 16, K1's
 /// scalar-index row otherwise.
 #[inline]
@@ -364,6 +394,7 @@ fn q8_row_asym_with_index(
     in_dim: usize,
     block: usize,
 ) -> f32 {
+    check_indexed_row(codes, qx, sums, in_dim);
     #[cfg(target_arch = "aarch64")]
     if has_dotprod() && block == SDOT_LANES && !bit_identical_only() {
         // SAFETY: guarded by the runtime feature check.
@@ -399,9 +430,11 @@ pub(super) fn q8_row_asym_indexed(
     in_dim: usize,
     block: usize,
 ) -> f32 {
+    check_indexed_row(codes, qx, sums, in_dim);
     #[cfg(target_arch = "aarch64")]
     if has_dotprod() {
-        // SAFETY: guarded by the runtime feature check.
+        // SAFETY: guarded by the runtime feature check; operand lengths
+        // proven by `check_indexed_row`.
         return unsafe {
             q8_row_asym_indexed_sdot(codes, fold_scale, fold_mid, qx, sums, in_dim, block)
         };
@@ -410,7 +443,7 @@ pub(super) fn q8_row_asym_indexed(
 }
 
 /// The portable definition of the indexed row.
-fn q8_row_asym_indexed_portable(
+pub(super) fn q8_row_asym_indexed_portable(
     codes: &[i8],
     fold_scale: &[f32],
     fold_mid: &[f32],
@@ -419,7 +452,6 @@ fn q8_row_asym_indexed_portable(
     in_dim: usize,
     block: usize,
 ) -> f32 {
-    let per_block = block / SUM_BLOCK;
     let mut acc = 0.0f32;
     for (b, (s, m)) in fold_scale.iter().zip(fold_mid).enumerate() {
         let lo = b * block;
@@ -432,8 +464,8 @@ fn q8_row_asym_indexed_portable(
             dot += codes[i] as i32 * qx[i] as i32;
         }
         let mut wsum = 0i32;
-        for k in 0..per_block {
-            wsum += sums[b * per_block + k] as i32;
+        for k in index_span(lo, hi) {
+            wsum += sums[k] as i32;
         }
         acc += s * dot as f32 + m * wsum as f32;
     }
@@ -456,7 +488,6 @@ unsafe fn q8_row_asym_indexed_sdot(
     block: usize,
 ) -> f32 {
     use std::arch::aarch64::*;
-    let per_block = block / SUM_BLOCK;
     let mut acc = 0.0f32;
     for (b, (s, m)) in fold_scale.iter().zip(fold_mid).enumerate() {
         let lo = b * block;
@@ -480,8 +511,8 @@ unsafe fn q8_row_asym_indexed_sdot(
             i += 1;
         }
         let mut wsum = 0i32;
-        for k in 0..per_block {
-            wsum += *sums.get_unchecked(b * per_block + k) as i32;
+        for k in index_span(lo, hi) {
+            wsum += *sums.get_unchecked(k) as i32;
         }
         acc += s * dot as f32 + m * wsum as f32;
     }

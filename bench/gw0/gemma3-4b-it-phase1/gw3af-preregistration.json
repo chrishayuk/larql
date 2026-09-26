@@ -1,0 +1,152 @@
+{
+  "schema": "larql.gw3af.preregistration.v1",
+  "status": "frozen_pre_lookup",
+  "frozen_date": "2026-09-20",
+  "preregistration_sha256": "sha256:bf4f773521d3bba6d52498e943caaf75531cb048325618310b798858bcc4df1e",
+  "claim_boundary": "observational FFN execution-support recovery; not semantic recall, causal recall, or evidence that a feature is a logical edge",
+  "authorities": {
+    "input_manifest": {
+      "path": "manifest.json",
+      "file_sha256": "sha256:167d6bec75707e73c7afe392d1a7f036f81cff80be35ec9d34a0ae93e6da3ae6",
+      "manifest_sha256": "sha256:8dd49850bf1066421bedc2d9908b33e9be928e5da068b638cf08d3831bf1e53c"
+    },
+    "input_rows": {
+      "path": "input.jsonl",
+      "sha256": "sha256:faada97d311f206dae635f23fc4bdb1bd93085ac823e6e16cc2f009d6d954f43"
+    },
+    "sealed_gw0": {
+      "path": "../../../output/gw0-gemma3-4b-it-phase1/sealed/manifest.json",
+      "file_sha256": "sha256:a154a934046872eb43d9650e8a5fb639e1134e68e80c2dec79d63343a886ef7b",
+      "bundle_sha256": "sha256:ac9871abdaef1206298788fae15df9121542fb1f64496cccc07bc12b5751b6bf",
+      "census_sha256": "sha256:9db9f925d314554d03f6bae0e019694525b1840ddc7cfca22953e3b9885bbd3a"
+    },
+    "gw0b_reconciliation": {
+      "path": "../../../output/gw0b-gemma3-4b-it-phase1/reconciliation-report-final.json",
+      "sha256": "sha256:10c7af77077914c37b569d6a1c29ab06a8bec676c1e9686fe406c70873e956bc",
+      "attribution_root": "../../../output/gw0b-gemma3-4b-it-phase1/attributions-final",
+      "attribution_set": "input_artifacts.attributions",
+      "weight_image": "production-selected-effective-values"
+    },
+    "gw0b_promotions": {
+      "path": "../../../output/gw0b-gemma3-4b-it-phase1/feature-promotions.jsonl",
+      "sha256": "sha256:5f2b627199b5c07d5e1e80fe84392fb41e940bc3dc90c049faa96daedfda0e70"
+    },
+    "container_identity": "sha256:3954b0380955b8e00501f4823d93f08fece49962d358eb08150f333c4c4fb506",
+    "tokenizer_sha256": "sha256:4667f2089529e8e7657cfb6d1c19910ae71ff5f28aa7ab2ff2763330affad795"
+  },
+  "cohort": {
+    "unit": "reconstructed (edge_id, layer, ffn) transition-candidate site",
+    "eligible_sites": 231,
+    "ineligible_attention_only_rows": 195,
+    "execution_support_top_k": 100,
+    "eligible_addresses_per_site": 10240,
+    "causal_status": "untested"
+  },
+  "source_keys": {
+    "derivation": "deduplicated tokenization of every frozen semantic_edge.subject",
+    "tokenizer_options": {
+      "add_special_tokens": false
+    },
+    "query_rule": "union distinct token posting lists for the row subject",
+    "labels_forbidden_during_construction": [
+      "relation",
+      "target",
+      "split",
+      "execution attribution",
+      "retrieval outcome"
+    ]
+  },
+  "posting_rule": {
+    "score": "abs(feature_gate dot scaled_token_embedding)",
+    "tie_break": "feature_index_ascending",
+    "width_unit": "per_source_token_per_eligible_layer",
+    "widths": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      256
+    ]
+  },
+  "arms": [
+    {
+      "name": "unmasked",
+      "eligibility": "all container FFN layers",
+      "progressive": true
+    },
+    {
+      "name": "gw1-mask",
+      "eligibility": "independently frozen relation-only GW-1 mask",
+      "progressive": true,
+      "availability": "omit unless frozen before lookup generation"
+    },
+    {
+      "name": "oracle-layer",
+      "eligibility": "observed reconstructed FFN site layer",
+      "progressive": false,
+      "label": "descriptive_non_progressive"
+    }
+  ],
+  "metrics": {
+    "descriptive_execution_top_ns": [
+      20,
+      50,
+      100
+    ],
+    "progression_execution_top_n": 100,
+    "address_recall": "unique recovered top-100 support addresses / 100",
+    "top100_mass_recall": "sum contribution_l2 for recovered top-100 addresses / sum contribution_l2 for all recorded top-100 addresses",
+    "candidate_coverage": "unique candidate addresses / actual addresses in the row arm's eligible layers",
+    "progression_aggregation": "micro support-address recall versus address-weighted eligible-universe coverage",
+    "required_breakdowns": [
+      "site",
+      "relation",
+      "prompt_family",
+      "split",
+      "edge_family"
+    ]
+  },
+  "controls": {
+    "exact_walk_matched_candidate": "recompute exact mean-subject dense gate ranking in identical eligible layers and retain the postings arm's unique candidate count",
+    "semantic_null": {
+      "kind": "same_walk_layer_profile_and_exact_frozen_corpus_token_frequency",
+      "frequency_corpus": "sealed prompt token IDs plus target continuation token IDs",
+      "trials": 1000,
+      "seed": 306405654854,
+      "scope": "semantic-target descriptions only"
+    },
+    "layer_matched_random": {
+      "seed": 306405654854,
+      "scope": "descriptive address baseline"
+    },
+    "oracle_layer": "descriptive_non_progressive"
+  },
+  "progression_gate": {
+    "eligible_arms": [
+      "unmasked",
+      "gw1-mask"
+    ],
+    "minimum_micro_top100_address_recall": 0.95,
+    "maximum_address_weighted_candidate_coverage": 0.1,
+    "mass_recall_cannot_substitute_for_address_recall": true
+  },
+  "aligned_audit": {
+    "expected_rows": 8,
+    "descriptive_only": true,
+    "fields": [
+      "relation",
+      "layer",
+      "final_target_rank",
+      "final_target_log_probability",
+      "prompt_family",
+      "top100_contribution_herfindahl",
+      "top20_walk_absolute_score_entropy",
+      "largest_top100_contribution_dominance",
+      "independent_source_token_postings_hitting_support"
+    ]
+  }
+}

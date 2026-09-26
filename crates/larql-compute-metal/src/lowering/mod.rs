@@ -555,7 +555,8 @@ pub fn dispatch_linear(
 
 impl MetalBackend {
     /// Encode `out = branch, normalised if the plan carries a post-norm`,
-    /// then `h_out = h_in + out`.
+    /// then `h_out = h_in + residual_scale * out` (`residual_scale` is 1.0
+    /// when the plan carries no residual-scale op).
     ///
     /// The order is load-bearing and the reason this is one function
     /// rather than two calls at each site: the interpreter normalises the
@@ -563,6 +564,7 @@ impl MetalBackend {
     /// first and normalising the sum is a different model, and
     /// "post-attention norm" is an ambiguous enough name that a lowering
     /// could plausibly do either.
+    #[allow(clippy::too_many_arguments)]
     pub fn encode_branch_norm_then_residual(
         &self,
         enc: &ComputeCommandEncoderRef,
@@ -571,6 +573,7 @@ impl MetalBackend {
         h_out: &Buffer,
         post: Option<&PostNorm<'_>>,
         hidden: usize,
+        residual_scale: f32,
     ) {
         let addend = match post {
             Some(p) => {
@@ -590,6 +593,6 @@ impl MetalBackend {
             }
             None => branch,
         };
-        self.encode_residual_add(enc, h_in, addend, h_out, hidden, 1.0);
+        self.encode_residual_add(enc, h_in, addend, h_out, hidden, residual_scale);
     }
 }

@@ -12,9 +12,13 @@
 use larql_inference::layer_graph::generate::detok::Detokenizer;
 use larql_inference::vindex3::{continue_session, Vindex3Runtime};
 use larql_inference::{EosConfig, SamplingConfig};
-use larql_kv::CanonicalKvState;
+use larql_kv::{shipped_continuations, CanonicalFactory};
 use larql_vindex::format::vindex3::opplan::exec::continuation::{
     plan_continuation_geometry, LayerContinuationGeometry,
+};
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
+    ContinuationFactory, SelectedContinuation,
 };
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
@@ -121,10 +125,15 @@ impl Session {
                 // bit for bit.
                 let output = match compose_overrides(runtime, overlay)? {
                     Some(overrides) => runtime
-                        .execute_streaming_overlaid(&prompt_ids, &overrides, &mut sink)
+                        .execute_streaming_overlaid(
+                            &prompt_ids,
+                            &overrides,
+                            &v3_continuation(runtime)?,
+                            &mut sink,
+                        )
                         .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
                     None => runtime
-                        .execute_streaming(&prompt_ids, &mut sink)
+                        .execute_streaming(&prompt_ids, &v3_continuation(runtime)?, &mut sink)
                         .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
                 };
                 let logits = output.logits.ok_or_else(|| {
@@ -206,16 +215,16 @@ impl Session {
                 Ok(out)
             }
             Some(n) => {
-                let mut kv = CanonicalKvState::new();
+                let mut kv = v3_continuation(runtime)?.build();
                 let overrides = compose_overrides(runtime, overlay)?;
                 let prefill_logits = match &overrides {
-                    Some(ov) => runtime.prefill_into_overlaid(&prompt_ids, ov, &mut kv),
-                    None => runtime.prefill_into(&prompt_ids, &mut kv),
+                    Some(ov) => runtime.prefill_into_overlaid(&prompt_ids, ov, &mut *kv),
+                    None => runtime.prefill_into(&prompt_ids, &mut *kv),
                 }
                 .map_err(|e| LqlError::exec("v3 prefill failed", e))?;
                 let mut session = match &overrides {
-                    Some(ov) => runtime.session_with_kv_overlaid(&mut kv, ov),
-                    None => runtime.session_with_kv(&mut kv),
+                    Some(ov) => runtime.session_with_kv_overlaid(&mut *kv, ov),
+                    None => runtime.session_with_kv(&mut *kv),
                 }
                 .map_err(|e| LqlError::exec("v3 session failed", e))?;
                 let mut detok = Detokenizer::new(tokenizer);
@@ -527,7 +536,10 @@ impl Session {
         }
         out.push(String::new());
         out.push("CONTINUATION".into());
-        out.push("  provider: caller-owned KvState (CanonicalKvState default)".into());
+        out.push(format!(
+            "  provider: {} (LQL's declared continuation)",
+            CanonicalFactory.identity()
+        ));
         for (layer, g) in explain.continuation.iter().enumerate() {
             out.push(format!(
                 "  layer {layer}: kv_dim {} window {}",
@@ -565,7 +577,7 @@ impl Session {
     /// gate pins that tracing never changes arithmetic, and the LQL
     /// gate pins that the reported token equals INFER's.
     pub(crate) fn exec_v3_trace(&self, prompt: &str) -> Result<Vec<String>, LqlError> {
-        use larql_inference::vindex3::{RecordingObserver, StepEvent};
+        use larql_inference::vindex3::{CarrierForm, RecordingObserver, StepEvent, SublayerSite};
         let Backend::Vindex3 {
             runtime,
             tokenizer,
@@ -583,9 +595,10 @@ impl Session {
 
         // TRACE observes the same effective program INFER runs — a
         // compose edit must not fork the two.
+        let continuation = v3_continuation(runtime)?;
         let mut session = match compose_overrides(runtime, overlay)? {
-            Some(overrides) => runtime.session_overlaid(&overrides),
-            None => runtime.session(),
+            Some(overrides) => runtime.session_overlaid(&overrides, &continuation),
+            None => runtime.session(&continuation),
         }
         .map_err(|e| LqlError::exec("v3 session failed", e))?;
         let mut out = vec!["Trace (VINDEX3 program, observed execution):".into()];
@@ -603,9 +616,29 @@ impl Session {
                         out.push(format!("  layer {layer}: attention"))
                     }
                     StepEvent::FfnDone { layer } => out.push(format!("  layer {layer}: ffn")),
+                    StepEvent::CarrierWrite {
+                        layer,
+                        site,
+                        carrier,
+                    } => {
+                        let site = match site {
+                            SublayerSite::Attention => "attention",
+                            SublayerSite::Ffn => "ffn",
+                        };
+                        let carrier = match carrier {
+                            CarrierForm::Single => "single",
+                            CarrierForm::Bundle => "bundle",
+                            CarrierForm::History => "history",
+                        };
+                        out.push(format!("  layer {layer}: {site} write ({carrier} carrier)"))
+                    }
                     StepEvent::Logits { vocab } => {
                         out.push(format!("  output_head (vocab {vocab})"))
                     }
+                    // The executor may learn new events before TRACE
+                    // learns to print them; an unprinted event is not
+                    // an error.
+                    _ => {}
                 }
             }
         }
@@ -898,12 +931,28 @@ pub(crate) fn capture_layer_residual(
     };
     // The capture runs over the same effective program INFER runs —
     // V2's contract (its capture forward observes the patch overlay).
+    let continuation = v3_continuation(runtime)?;
     match overrides {
-        Some(overrides) => runtime.execute_streaming_overlaid(&prompt_ids, overrides, &mut sink),
-        None => runtime.execute_streaming(&prompt_ids, &mut sink),
+        Some(overrides) => {
+            runtime.execute_streaming_overlaid(&prompt_ids, overrides, &continuation, &mut sink)
+        }
+        None => runtime.execute_streaming(&prompt_ids, &continuation, &mut sink),
     }
     .map_err(|e| LqlError::exec("v3 capture pass failed", e))?;
     captured.ok_or_else(|| LqlError::Execution(format!("no residual captured at layer {layer}")))
+}
+
+/// LQL's continuation provider — the canonical cache, named by its
+/// factory's identity (CONTINUATION-PLUGIN-1, C3) and selected against the
+/// runtime's program before anything runs.
+pub(crate) fn v3_continuation(runtime: &V3Runtime) -> Result<SelectedContinuation, LqlError> {
+    runtime
+        .select_continuation(
+            &shipped_continuations(),
+            &CanonicalFactory.identity(),
+            &ContinuationConfig::empty(),
+        )
+        .map_err(|e| LqlError::exec("v3 continuation selection failed", e))
 }
 
 /// HF configs a container carries that declare the BOS token id, most

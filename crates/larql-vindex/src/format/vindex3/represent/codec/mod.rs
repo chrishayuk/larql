@@ -39,6 +39,7 @@ pub mod auxiliary;
 pub mod capability;
 pub mod codecs;
 pub mod conformance;
+pub mod encoder;
 pub mod error;
 pub mod extent;
 pub mod fidelity;
@@ -54,6 +55,7 @@ use std::ops::Range;
 
 pub use auxiliary::{admit_auxiliary_names, AuxiliaryMetadata, AuxiliarySpec};
 pub use capability::{AccessGranularity, CodecCapabilities, RequiredAccess};
+pub use encoder::{EncoderRegistry, RepresentationEncoder};
 pub use error::CodecError;
 pub use extent::{ExtentCertificate, RepresentationExtent};
 pub use fidelity::{DomainId, FidelityCertificate, MetricId, SemanticId};

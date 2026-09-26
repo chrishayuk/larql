@@ -672,3 +672,103 @@ fn a_text_config_that_declares_nothing_leaves_the_container_authoritative() {
     assert_eq!(identity.model_type, "gemma3");
     assert_eq!(identity.container_model_type, None);
 }
+
+// ── `vocab_size` from the embedding rows ─────────────────────────────
+
+/// `google/gemma-3-4b-it`'s `text_config`, which declares no `vocab_size`
+/// anywhere (HF leaves it at the class default), no head count and no
+/// head width.
+fn gemma3_shaped_without_vocab() -> serde_json::Value {
+    json!({
+        "architectures": ["Gemma3ForConditionalGeneration"],
+        "model_type": "gemma3",
+        "text_config": {
+            "model_type": "gemma3_text",
+            "hidden_size": 2560,
+            "intermediate_size": 10240,
+            "num_hidden_layers": 34,
+            "rope_scaling": { "factor": 8.0, "rope_type": "linear" },
+            "sliding_window": 1024
+        }
+    })
+}
+
+fn embedding(name: &str, rows: usize) -> crate::inventory::TensorFact {
+    crate::inventory::TensorFact {
+        name: name.to_string(),
+        dtype: "BF16".to_string(),
+        shape: vec![rows, 2560],
+        bytes: (rows * 2560 * 2) as u64,
+        file: "model.safetensors".to_string(),
+    }
+}
+
+/// The width the output head runs against, read off the table it is tied
+/// to, and the answer says which tensor spoke.
+#[test]
+fn an_undeclared_vocab_is_answered_by_the_embedding_rows_with_provenance() {
+    use crate::inventory::resolved::resolve_with_tensor_evidence;
+    let config = gemma3_shaped_without_vocab();
+    let identity = read_identity(&config);
+    let tensors = [embedding(
+        "language_model.model.embed_tokens.weight",
+        262_208,
+    )];
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &tensors);
+    assert_eq!(topology.vocab_size, Some(262_208));
+    assert_eq!(
+        topology.vocab_size_provenance,
+        Some(
+            crate::inventory::report::VocabSizeProvenance::EmbeddingRows {
+                tensor: "language_model.model.embed_tokens.weight".to_string(),
+            }
+        )
+    );
+}
+
+/// A declaration always wins: the estate is evidence for an absent fact,
+/// never an override of a present one, and the provenance says so.
+#[test]
+fn a_declared_vocab_is_the_declaration_whatever_the_estate_says() {
+    use crate::inventory::resolved::resolve_with_tensor_evidence;
+    let mut config = gemma3_shaped_without_vocab();
+    config["text_config"]["vocab_size"] = json!(262_208);
+    let identity = read_identity(&config);
+    let tensors = [embedding("language_model.model.embed_tokens.weight", 999)];
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &tensors);
+    assert_eq!(topology.vocab_size, Some(262_208));
+    assert_eq!(
+        topology.vocab_size_provenance,
+        Some(crate::inventory::report::VocabSizeProvenance::Declared)
+    );
+}
+
+/// No estate, no answer: the resolution without tensors leaves the width
+/// absent, and the surface refuses as it always did rather than filling
+/// in the class default.
+#[test]
+fn no_estate_leaves_an_undeclared_vocab_absent() {
+    let config = gemma3_shaped_without_vocab();
+    let identity = read_identity(&config);
+    let (_, topology) = resolve(&config, &identity);
+    assert_eq!(topology.vocab_size, None);
+    assert_eq!(topology.vocab_size_provenance, None);
+}
+
+/// Matched on the exact name under the architecture's own prefixes: a
+/// tower's or a projector's table whose name merely CONTAINS the key
+/// cannot answer for the text component's.
+#[test]
+fn only_the_text_components_own_embedding_answers() {
+    use crate::inventory::resolved::resolve_with_tensor_evidence;
+    let config = gemma3_shaped_without_vocab();
+    let identity = read_identity(&config);
+    let tensors = [
+        embedding("model.vision_tower.embed_tokens.weight", 5),
+        embedding("language_model.model.embed_tokens.weight.extra", 7),
+        embedding("xlanguage_model.model.embed_tokens.weight", 9),
+    ];
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &tensors);
+    assert_eq!(topology.vocab_size, None);
+    assert_eq!(topology.vocab_size_provenance, None);
+}

@@ -1,0 +1,44 @@
+name: Observatory
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'observatory/**'
+      - '.github/workflows/observatory.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'observatory/**'
+      - '.github/workflows/observatory.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bridge:
+    name: replay / types / lint / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: observatory
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: observatory/package-lock.json
+      - name: Use HTTPS for the pinned HAUSE dependency
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build

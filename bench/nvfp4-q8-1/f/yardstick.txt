@@ -1,0 +1,15 @@
+yardstick-q4k-q8k: admissible — 1810 positions over 69 samples, bank 74eded7e25c9b4ac7ae59bff4e6094765c739acfedaf35f1d9051d79cd10f375
+reference production-q4k  candidate production-q4k-q8k  changed: the arm only
+  all                n=1810   KL mean 6.550e-3  p50 1.556e-3  p99 7.333e-2  max 1.036e0  top-1 96.80%
+  factual            n=220    KL mean 4.900e-3  p50 1.492e-3  p99 4.045e-2  max 6.258e-2  top-1 95.45%
+  prose              n=152    KL mean 5.199e-3  p50 3.048e-3  p99 2.993e-2  max 5.494e-2  top-1 98.03%
+  code               n=334    KL mean 3.928e-3  p50 1.599e-5  p99 9.405e-2  max 2.215e-1  top-1 98.80%
+  arithmetic         n=182    KL mean 3.449e-3  p50 1.428e-3  p99 2.745e-2  max 3.908e-2  top-1 97.25%
+  structured         n=222    KL mean 1.861e-2  p50 9.872e-5  p99 4.388e-1  max 1.036e0  top-1 97.75%
+  uncertain          n=95     KL mean 5.182e-3  p50 2.656e-3  p99 3.314e-2  max 3.314e-2  top-1 97.89%
+  longform           n=605    KL mean 5.658e-3  p50 3.153e-3  p99 3.688e-2  max 1.153e-1  top-1 95.21%
+  margin 0.0-0.1     n=207    KL mean 1.190e-2  p50 5.997e-3  p99 1.153e-1  max 4.388e-1  top-1 74.88%
+  margin 0.1-0.5     n=563    KL mean 1.146e-2  p50 4.060e-3  p99 1.050e-1  max 1.036e0  top-1 98.93%
+  margin 0.5-1.0     n=1040   KL mean 2.828e-3  p50 2.527e-4  p99 3.208e-2  max 2.392e-1  top-1 100.00%
+-> bench/nvfp4-q8-1/f/yardstick
+exit 0

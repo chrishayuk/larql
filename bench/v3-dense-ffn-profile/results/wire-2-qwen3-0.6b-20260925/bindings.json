@@ -1,0 +1,786 @@
+[
+  {
+    "program": {
+      "schema": 1,
+      "artifact": "174704a03e8efccc25d3ccf66101fdde76a4bbbe95b31f1b5e408faf90354a0d",
+      "backend": "cpu",
+      "lowering": "cpu-production/v1",
+      "start": 0,
+      "end": 14,
+      "layers": 28,
+      "hidden": 1024
+    },
+    "operands": [
+      {
+        "layer": 0,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"0.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 0,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"0.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 0,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"0.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 1,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"1.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 1,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"1.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 1,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"1.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 2,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"2.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 2,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"2.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 2,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"2.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 3,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"3.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 3,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"3.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 3,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"3.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 4,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"4.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 4,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"4.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 4,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"4.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 5,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"5.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 5,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"5.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 5,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"5.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 6,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"6.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 6,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"6.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 6,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"6.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 7,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"7.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 7,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"7.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 7,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"7.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 8,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"8.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 8,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"8.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 8,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"8.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 9,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"9.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 9,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"9.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 9,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"9.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 10,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"10.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 10,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"10.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 10,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"10.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 11,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"11.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 11,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"11.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 11,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"11.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 12,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"12.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 12,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"12.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 12,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"12.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 13,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"13.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 13,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"13.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 13,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"13.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      }
+    ]
+  },
+  {
+    "program": {
+      "schema": 1,
+      "artifact": "174704a03e8efccc25d3ccf66101fdde76a4bbbe95b31f1b5e408faf90354a0d",
+      "backend": "cpu",
+      "lowering": "cpu-production/v1",
+      "start": 14,
+      "end": 28,
+      "layers": 28,
+      "hidden": 1024
+    },
+    "operands": [
+      {
+        "layer": 14,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"14.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 14,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"14.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 14,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"14.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 15,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"15.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 15,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"15.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 15,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"15.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 16,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"16.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 16,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"16.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 16,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"16.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 17,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"17.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 17,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"17.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 17,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"17.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 18,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"18.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 18,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"18.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 18,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"18.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 19,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"19.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 19,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"19.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 19,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"19.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 20,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"20.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 20,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"20.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 20,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"20.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 21,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"21.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 21,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"21.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 21,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"21.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 22,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"22.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 22,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"22.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 22,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"22.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 23,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"23.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 23,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"23.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 23,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"23.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 24,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"24.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 24,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"24.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 24,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"24.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 25,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"25.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 25,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"25.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 25,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"25.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 26,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"26.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 26,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"26.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 26,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"26.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 27,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"27.mlp.gate_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 27,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"27.mlp.up_proj.weight\",\"dtype\":\"BF16\",\"shape\":[3072,1024]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      },
+      {
+        "layer": 27,
+        "operand": "{\"object\":\"target.decoder_stack\",\"tensor\":\"27.mlp.down_proj.weight\",\"dtype\":\"BF16\",\"shape\":[1024,3072]}",
+        "representation": "BF16",
+        "codec": "Some(CodecIdentity { family: \"BF16\", revision: 1, group_elems: 1, element: \"bf16\", group_scale: \"none\", tensor_scale: \"none\", layout: \"row-major-le\" })",
+        "realization": "RealizationId { backend: Cpu, form: Decode(BlasF32) }",
+        "extent": "ExtentPin { selected: RepresentationExtent { depth: 0 }, options: [ExtentOption { certificate: ExtentCertificate { extent: RepresentationExtent { depth: 0 }, bits_per_weight: 16.0, radius: Some(FidelityCertificate { metric: MetricId(SemanticId { name: \"relative-rms\", version: 1 }), domain: DomainId(SemanticId { name: \"finite-normals\", version: 1 }), radius: 0.0 }) }, stored_bytes: Some(6291456) }] }",
+        "dependencies": "[]"
+      }
+    ]
+  }
+]

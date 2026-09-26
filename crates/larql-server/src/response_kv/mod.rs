@@ -119,6 +119,9 @@ pub struct ResponseKvCache {
     /// Total prompt tokens served from resumed KV across all engaged
     /// resumptions.
     reused_tokens_total: AtomicU64,
+    /// Hits whose state's recorded continuation authority refused to
+    /// resume under the model's (C4) — served by a fresh prefill.
+    refusals: AtomicU64,
 }
 
 impl ResponseKvCache {
@@ -137,6 +140,7 @@ impl ResponseKvCache {
             misses: AtomicU64::new(0),
             resumptions: AtomicU64::new(0),
             reused_tokens_total: AtomicU64::new(0),
+            refusals: AtomicU64::new(0),
         }
     }
 
@@ -242,6 +246,18 @@ impl ResponseKvCache {
     }
 
     /// Generations where resumption actually engaged.
+    /// Count a hit whose state's recorded authority refused to resume
+    /// under the model's continuation (C4). Counted apart from `misses`:
+    /// a refusal is state that existed and was rejected, not state that
+    /// was absent.
+    pub fn record_refusal(&self) {
+        self.refusals.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn refusals(&self) -> u64 {
+        self.refusals.load(Ordering::Relaxed)
+    }
+
     pub fn resumptions(&self) -> u64 {
         self.resumptions.load(Ordering::Relaxed)
     }

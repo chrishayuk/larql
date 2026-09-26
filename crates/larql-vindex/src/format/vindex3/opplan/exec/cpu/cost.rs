@@ -82,6 +82,12 @@ pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> Option<f64> {
         // of a compiled pack, and no harness has priced it. PARETO-1's v3
         // qualification is an EQUIVALENCE gate, not a rate.
         PhysicalProjectionPlan::FusedKQuant => None,
+        // Unmeasured: Q8K-ACT-1 measures it, and its result is not a
+        // harness rate until that experiment has adjudicated.
+        PhysicalProjectionPlan::FusedKQuantQ8k => None,
+        // Unmeasured for the same reason: NVFP4-Q8-1 measures it, and a
+        // forecast is not a rate until that experiment has adjudicated.
+        PhysicalProjectionPlan::FusedNvfp4Q8 => None,
         // Unpriced, deliberately, and not by omission: no harness has run
         // this kernel at a rate yet. Quoting a number here would let a
         // roofline claim a throughput nothing measured — the FP8 rung's
@@ -95,6 +101,10 @@ pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> Option<f64> {
         // never a deployment plan and its cost is quoted only so a
         // control run's ledger still adds up.
         PhysicalProjectionPlan::Bf16xQ8 => Some(121.66),
+        // Never executed by this crate's own kernels — an external
+        // backend pins and runs it, so no harness here has a rate to
+        // report.
+        PhysicalProjectionPlan::CodecOwned => None,
     }
 }
 

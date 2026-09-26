@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::commands::primary::vindex3_cmd::prepare::{
-    lowerings_for, with_lowerings, BackendVisitor,
+    lowerings_for, wanted_representation, with_lowerings, BackendVisitor,
 };
 use larql_vindex::format::vindex3::inspect::inspect_container;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
@@ -138,5 +138,39 @@ fn the_seam_refuses_an_absent_provider_with_nothing_read() {
     assert!(
         store.load_count() > 0,
         "the positive control read its operands"
+    );
+}
+
+/// The activation arms are providers of their own: each resolves to an
+/// identity distinct from the shipped CPU provider and from the other, is
+/// registered beside the shipped set, and the NVFP4 one wants the same
+/// pack as `production-nvfp4`.
+#[test]
+fn each_activation_arm_resolves_to_its_own_identity() {
+    use larql_vindex::format::vindex3::opplan::exec::production::{
+        NVFP4_Q8_IDENTITY_FAMILY, Q8K_IDENTITY_FAMILY,
+    };
+    use larql_vindex::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
+    let mut seen = vec![LoweringIdentity::cpu_production()];
+    for (choice, family) in [
+        (ExecBackend::ProductionQ4kQ8k, Q8K_IDENTITY_FAMILY),
+        (ExecBackend::ProductionNvfp4Q8, NVFP4_Q8_IDENTITY_FAMILY),
+    ] {
+        let (lowerings, resolved) = lowerings_for(choice).unwrap();
+        assert!(
+            resolved.to_string().contains(family),
+            "{choice:?}: {resolved}"
+        );
+        assert!(!seen.contains(&resolved), "{choice:?} shares an identity");
+        let provider = lowerings.provider(&resolved).unwrap();
+        assert_eq!(provider.identity(), resolved, "{choice:?}");
+        for shipped in LoweringRegistry::shipped().identities() {
+            assert!(lowerings.identities().contains(&shipped), "{choice:?}");
+        }
+        seen.push(resolved);
+    }
+    assert_eq!(
+        wanted_representation(ExecBackend::ProductionNvfp4Q8),
+        Some(DTYPE_NVFP4)
     );
 }

@@ -384,10 +384,12 @@ pub mod schemas {
 
     #[derive(Serialize, ToSchema)]
     pub struct RuntimeBackend {
-        /// Whether this binary was compiled with Metal-accelerated MoE
+        /// Whether this binary was compiled with V3 Metal execution or MoE
         /// expert dispatch — a compile-time fact, not a claim that
         /// Metal is driving the current request.
         pub metal_compiled: bool,
+        /// Explicitly selected V3 backend, or null for V2/unbound models.
+        pub selected: Option<String>,
     }
 
     #[derive(Serialize, ToSchema)]
@@ -432,6 +434,8 @@ pub mod schemas {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub model: Option<RuntimeModel>,
         pub backend: RuntimeBackend,
+        /// Versioned layer-worker binding, or null for a whole-model binding.
+        pub layer_shard: Option<serde_json::Value>,
         pub memory: RuntimeMemory,
         pub performance: RuntimePerformance,
         pub generation: RuntimeGeneration,

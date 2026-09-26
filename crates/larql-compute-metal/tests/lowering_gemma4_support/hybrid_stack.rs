@@ -335,6 +335,7 @@ impl StackLayer {
             softcap: None,
             position_index: S_POS,
             kv_len: S_T,
+            residual_scale: None,
         }
     }
 }

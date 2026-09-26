@@ -3,7 +3,7 @@
 //! One vertical slice, deliberately boring:
 //!
 //! ```text
-//! VINDEX3 container → Vindex3Runtime → CanonicalKvState
+//! VINDEX3 container → Vindex3Runtime → selected continuation provider
 //!     → prefill_into() → session_with_kv() → continue_session()
 //!     → existing SSE/JSON shaping
 //! ```
@@ -34,7 +34,14 @@ use larql_inference::vindex3::{
     continue_session, continue_session_masked, LogitsMask, PreparedVindex3, Vindex3Runtime,
 };
 use larql_inference::{EosConfig, SamplingConfig};
-use larql_kv::CanonicalKvState;
+use larql_kv::{shipped_continuations, CanonicalFactory};
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_handoff::{
+    ContinuationHandoff, ResumeRefusal,
+};
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
+    ContinuationFactory, SelectedContinuation,
+};
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
 };
@@ -43,13 +50,95 @@ use larql_vindex::tokenizers;
 use crate::error::ServerError;
 use crate::state::model_id_from_name;
 
+/// Backend requested at V3 bind time. An unavailable device is an error;
+/// explicit Metal selection never silently becomes CPU execution.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    serde::Deserialize,
+    serde::Serialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum V3Backend {
+    #[default]
+    Cpu,
+    Metal,
+}
+
+impl V3Backend {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Metal => "metal",
+        }
+    }
+
+    /// Bindable backend names for this build. Device presence is checked at load.
+    pub const fn available() -> &'static [&'static str] {
+        if cfg!(all(feature = "vindex3-metal", target_os = "macos")) {
+            &["cpu", "metal"]
+        } else {
+            &["cpu"]
+        }
+    }
+
+    fn lowerings(self) -> Result<(LoweringRegistry, LoweringIdentity), crate::bootstrap::BoxError> {
+        let registry = LoweringRegistry::shipped();
+        match self {
+            Self::Cpu => Ok((registry, LoweringIdentity::cpu_production())),
+            #[cfg(all(feature = "vindex3-metal", target_os = "macos"))]
+            Self::Metal => {
+                use larql_vindex::format::vindex3::opplan::exec::{
+                    backend::WeightFormat, device::DevicePlanBackend,
+                };
+                let gpu = larql_compute_metal::MetalBackend::new()
+                    .ok_or("no Metal device available for VINDEX3 serving")?;
+                let device = DevicePlanBackend::new(gpu, "metal-r3-f16", WeightFormat::F16);
+                Ok((
+                    registry.register(Box::new(device))?,
+                    LoweringIdentity::device_matmul(),
+                ))
+            }
+            #[cfg(not(all(feature = "vindex3-metal", target_os = "macos")))]
+            Self::Metal => {
+                Err("VINDEX3 Metal serving requires macOS and the vindex3-metal feature".into())
+            }
+        }
+    }
+}
+
 /// Component id a container's text stack is served under.
 const SERVED_COMPONENT: &str = "target";
+
+/// Binary authority and incarnation handle for an immutable FFN worker.
+pub struct FfnWireWorker {
+    pub handle: larql_router_protocol::vindex3_ffn::binary::Handle,
+    pub execution: larql_inference::vindex3::dense_ffn::BoundFfnWorker<SharedProvider>,
+}
+
+/// Binary authority and incarnation handle for selected expert transforms.
+pub struct ExpertWireWorker {
+    pub handle: larql_router_protocol::vindex3_experts::Handle,
+    pub execution: larql_inference::vindex3::routed_experts::BoundExpertWorker<SharedProvider>,
+}
 
 /// One bound VINDEX3 container: the opened runtime plus the serving
 /// glue (tokenizer, id). Holds no `ModelWeights` and no `VectorIndex`
 /// — structurally, the old inference path is unreachable from here.
 pub struct V3Model {
+    pub expert_wire: Option<ExpertWireWorker>,
+    /// The backend selected for this prepared model.
+    pub backend: V3Backend,
+    /// Present only on a stateless layer-prefix worker.
+    pub shard: Option<larql_router_protocol::vindex3::Binding>,
+    pub ffn_shard: Option<larql_router_protocol::vindex3_ffn::Binding>,
+    pub ffn_wire: Option<FfnWireWorker>,
     /// Model ID (derived from the container directory name).
     pub id: String,
     /// Container directory on disk.
@@ -57,7 +146,12 @@ pub struct V3Model {
     /// The program with its operands already lowered into the
     /// backend's execution form — model lifetime, shared by every
     /// request. Requests contribute only continuation state.
-    pub runtime: PreparedVindex3<SharedProvider>,
+    pub runtime: Arc<PreparedVindex3<SharedProvider>>,
+    /// Who holds every request's continuation state: selected once, at
+    /// binding, against this model's plan (CONTINUATION-PLUGIN-1, C3). A
+    /// fresh provider per request is built from it; nothing here names a
+    /// provider type.
+    pub continuation: SelectedContinuation,
     /// Tokenizer for the text-facing API (`tokenizer.json` in the
     /// container directory).
     pub tokenizer: tokenizers::Tokenizer,
@@ -90,6 +184,31 @@ pub struct V3Model {
 }
 
 impl V3Model {
+    /// Execute a stateless prefix while retaining the model's in-flight guard.
+    pub(crate) fn execute_layer_prefix(
+        &self,
+        request: larql_router_protocol::vindex3::Request,
+    ) -> Result<larql_router_protocol::vindex3::Response, ServerError> {
+        let binding = self
+            .shard
+            .as_ref()
+            .ok_or_else(|| ServerError::Unsupported("not a VINDEX3 layer shard".into()))?;
+        if request.binding != *binding {
+            return Err(ServerError::BadRequest(
+                "layer request binding mismatch".into(),
+            ));
+        }
+        let _guard = V3GenerationGuard::enter(Arc::clone(&self.requests_in_flight));
+        larql_inference::vindex3::distributed::forward(
+            self.runtime.plan(),
+            self.runtime.operands(),
+            self.runtime.backend(),
+            binding,
+            request.rows,
+        )
+        .map_err(|e| ServerError::BadRequest(e.to_string()))
+    }
+
     /// Current count of in-flight generations on this model. One
     /// relaxed atomic load — cheap enough to call from a status
     /// endpoint on every request, no lock. Exact count of what's
@@ -134,17 +253,78 @@ pub fn resolve_chat_template(family: &str, id: &str) -> larql_inference::prompt:
 /// and operand store (refusing closure defects), and load the
 /// container's tokenizer — the text API cannot serve ids-only.
 pub fn load_v3_model(path: &Path) -> Result<V3Model, Box<dyn std::error::Error + Send + Sync>> {
+    load_v3_model_with_backend(path, V3Backend::Cpu)
+}
+
+/// Bind with an explicit provider selection; prepare once before serving.
+pub fn load_v3_model_with_backend(
+    path: &Path,
+    backend: V3Backend,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_slice(path, backend, None)
+}
+
+/// Half-open startup layer range, as returned by `parse_layer_range`.
+/// Prepared without embeddings or output head.
+pub fn load_v3_model_slice(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_placement(path, backend, range, false)
+}
+
+pub fn load_v3_model_placement(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+    ffn_only: bool,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    load_v3_model_experts(path, backend, range, ffn_only, None)
+}
+
+pub fn load_v3_model_experts(
+    path: &Path,
+    backend: V3Backend,
+    range: Option<(usize, usize)>,
+    ffn_only: bool,
+    experts: Option<(usize, usize)>,
+) -> Result<V3Model, crate::bootstrap::BoxError> {
+    use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    if experts.is_some() && (!ffn_only || range.is_none()) {
+        return Err("V3 --experts requires --ffn-only and --layers".into());
+    }
+    if (range.is_some() || ffn_only) && backend != V3Backend::Cpu {
+        return Err("V3 layer sharding currently requires --v3-backend cpu".into());
+    }
+    let slice = match range {
+        Some((start, end)) if experts.is_some() => {
+            let (expert_start, expert_end) = experts.unwrap();
+            ExecutionSlice::RoutedExperts {
+                start,
+                end,
+                expert_start,
+                expert_end,
+            }
+        }
+        Some((start, end)) if ffn_only => ExecutionSlice::DenseFfns { start, end },
+        None if ffn_only => return Err("V3 --ffn-only requires an explicit --layers range".into()),
+        Some((start, end)) => ExecutionSlice::LayerRange { start, end },
+        None => ExecutionSlice::Full,
+    };
+    let (registry, identity) = backend.lowerings()?;
     // The served provider is resolved from the shipped registry by
     // identity, never constructed here (LOWERING-PLUGIN-1, L3).
     let runtime = Vindex3Runtime::open_via(
         path,
         SERVED_COMPONENT,
-        std::sync::Arc::new(LoweringRegistry::shipped()),
-        &LoweringIdentity::cpu_production(),
+        std::sync::Arc::new(registry),
+        &identity,
     )
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
-    .prepare()
+    .prepare_slice(slice)
     .map_err(|e| format!("prepare VINDEX3 operands: {e}"))?;
+    let runtime = Arc::new(runtime);
     let tokenizer = larql_vindex::load_vindex_tokenizer(path)
         .map_err(|e| format!("VINDEX3 container has no servable tokenizer.json: {e}"))?;
     // The container names itself (`index.model`); the directory name is
@@ -159,10 +339,56 @@ pub fn load_v3_model(path: &Path) -> Result<V3Model, Box<dyn std::error::Error +
         named => named.to_string(),
     };
     let family = runtime.family().to_string();
+    // The server's declared continuation is the canonical cache, named by
+    // its factory's identity and refused here — at binding, before any
+    // request — if it cannot hold a layer the plan keeps state on.
+    let continuation = runtime
+        .select_continuation(
+            &shipped_continuations(),
+            &CanonicalFactory.identity(),
+            &ContinuationConfig::empty(),
+        )
+        .map_err(|e| format!("select VINDEX3 continuation: {e}"))?;
+    let shard = if range.is_some() && !ffn_only {
+        Some(larql_inference::vindex3::distributed::binding(
+            path,
+            runtime.plan(),
+            runtime.operands(),
+        )?)
+    } else {
+        None
+    };
+    let ffn_wire = if ffn_only && experts.is_none() {
+        let execution =
+            larql_inference::vindex3::dense_ffn::BoundFfnWorker::new(path, Arc::clone(&runtime))?;
+        let mut handle = [0; 16];
+        getrandom::fill(&mut handle).map_err(|e| format!("create FFN worker handle: {e}"))?;
+        Some(FfnWireWorker { handle, execution })
+    } else {
+        None
+    };
+    let ffn_shard = ffn_wire.as_ref().map(|w| w.execution.binding().clone());
+    let expert_wire = if experts.is_some() {
+        let execution = larql_inference::vindex3::routed_experts::BoundExpertWorker::new(
+            path,
+            Arc::clone(&runtime),
+        )?;
+        let mut handle = [0; 16];
+        getrandom::fill(&mut handle).map_err(|e| format!("create expert worker handle: {e}"))?;
+        Some(ExpertWireWorker { handle, execution })
+    } else {
+        None
+    };
     let model = V3Model {
+        expert_wire,
+        shard,
+        ffn_shard,
+        ffn_wire,
+        backend,
         id: model_id_from_name(&name),
         path: path.to_path_buf(),
         runtime,
+        continuation,
         tokenizer,
         family,
         eos: EosConfig::from_vindex_dir(path),
@@ -196,6 +422,11 @@ pub struct V3Generation {
     /// How many of the run's prompt tokens were served from a resumed
     /// KV state instead of being re-prefilled (0 on a fresh run).
     pub reused_prompt_tokens: usize,
+    /// Set when a handoff was offered but its recorded authority refused
+    /// to resume under this model's continuation (C4). The generation
+    /// then ran from a fresh prefill — an explicit recovery the routes
+    /// must report, never a cache miss.
+    pub continuation_refused: Option<ResumeRefusal>,
     /// Wall-clock time of the `prefill_into` call below, in ms. The V3
     /// driver ([`larql_inference::vindex3::generate`]) carries no
     /// timing of its own, so this is measured here, around the two
@@ -209,13 +440,13 @@ pub struct V3Generation {
 }
 
 /// A generation's continuation state, detached from any session so it
-/// can outlive the request (N1): the KV plus exactly the token ids the
-/// KV has absorbed. `absorbed_ids` can be one short of prompt+emitted —
-/// the driver never steps the final emitted token on a budget stop —
-/// which is why the ids travel with the state instead of being
-/// re-derived by callers.
+/// can outlive the request (N1): the state, sealed with the authority
+/// that built it (C4), plus exactly the token ids it has absorbed.
+/// `absorbed_ids` can be one short of prompt+emitted — the driver never
+/// steps the final emitted token on a budget stop — which is why the ids
+/// travel with the state instead of being re-derived by callers.
 pub struct V3KvHandoff {
-    pub kv: CanonicalKvState,
+    pub continuation: ContinuationHandoff,
     pub absorbed_ids: Vec<u32>,
 }
 
@@ -265,10 +496,18 @@ pub fn generate_v3_constrained(
 /// [`generate_v3`] with KV continuation (N1). When `resume` carries a
 /// prior turn's [`V3KvHandoff`] whose `absorbed_ids` are a strict
 /// prefix of `prompt_ids`, only the unseen suffix is prefilled — the
-/// resumed positions cost nothing. Any mismatch (different rendering,
-/// tokenizer seam effects, an exhausted prompt) falls back to a full
-/// fresh prefill, so reuse is purely an optimisation: the produced
-/// tokens are identical either way, which the V3 serve tests pin.
+/// resumed positions cost nothing. A prompt mismatch (different
+/// rendering, tokenizer seam effects, an exhausted prompt) falls back to
+/// a full fresh prefill, so reuse is purely an optimisation: the
+/// produced tokens are identical either way, which the V3 serve tests
+/// pin.
+///
+/// Before the prompt is compared, the handoff's recorded authority must
+/// resume under this model's continuation (C4). If it refuses — provider
+/// absent, revision changed, configuration changed — the refused state
+/// is dropped and the generation recovers by a fresh prefill, reporting
+/// the refusal in [`V3Generation::continuation_refused`]. Recovery is
+/// this layer's decision; resume itself never makes it.
 ///
 /// The returned handoff holds the state through this generation for
 /// the next chain link.
@@ -331,8 +570,42 @@ pub fn generate_v3_request(
     // `V3GenerationGuard`'s doc comment for why entering here (rather
     // than in each route handler) is load-bearing for streaming
     // callers.
+    if model.ffn_shard.is_some() || model.expert_wire.is_some() {
+        return Err(ServerError::Unsupported(
+            "this VINDEX3 binding is a dense FFN worker; use /v1/vindex3/ffn".into(),
+        ));
+    }
+    if model.shard.is_some() {
+        return Err(ServerError::InferenceUnavailable(
+            "this VINDEX3 binding is a layer shard; use /v1/vindex3/layers through a coordinator"
+                .into(),
+        ));
+    }
     let _gen_guard = V3GenerationGuard::enter(Arc::clone(&model.requests_in_flight));
 
+    // The recorded authority answers first: state this model's
+    // continuation did not write is refused whatever the prompt, and the
+    // refusal is kept for the record rather than folded into a miss.
+    let (resume, continuation_refused) = match resume {
+        None => (None, None),
+        Some(h) => match h.continuation.resume(model.continuation.authority()) {
+            Ok(continuation) => (
+                Some(V3KvHandoff {
+                    continuation,
+                    absorbed_ids: h.absorbed_ids,
+                }),
+                None,
+            ),
+            Err(refusal) => {
+                tracing::warn!(
+                    model = %model.id,
+                    refusal = refusal.kind(),
+                    "{refusal}; recovering by a fresh prefill"
+                );
+                (None, Some(refusal))
+            }
+        },
+    };
     // A handoff is resumable only when the new prompt extends exactly
     // what the KV already absorbed.
     let resumed = resume.filter(|h| {
@@ -340,20 +613,23 @@ pub fn generate_v3_request(
             && h.absorbed_ids.len() < prompt_ids.len()
             && prompt_ids.starts_with(&h.absorbed_ids)
     });
-    let (mut kv, reused_prompt_tokens) = match resumed {
-        Some(h) => (h.kv, h.absorbed_ids.len()),
-        None => (CanonicalKvState::new(), 0),
+    let (mut continuation, reused_prompt_tokens) = match resumed {
+        Some(h) => (h.continuation, h.absorbed_ids.len()),
+        None => (model.continuation.begin(), 0),
     };
 
     let prefill_start = std::time::Instant::now();
     let prefill_logits = model
         .runtime
-        .prefill_into(&prompt_ids[reused_prompt_tokens..], &mut kv)
+        .prefill_into(
+            &prompt_ids[reused_prompt_tokens..],
+            continuation.state_mut(),
+        )
         .map_err(|e| ServerError::Internal(format!("v3 prefill: {e}")))?;
     let prefill_ms = crate::state::elapsed_ms(prefill_start);
     let mut session = model
         .runtime
-        .session_with_kv(&mut kv)
+        .session_with_kv(continuation.state_mut())
         .map_err(|e| ServerError::Internal(format!("v3 session: {e}")))?;
 
     let mut detok = Detokenizer::new(&model.tokenizer);
@@ -391,7 +667,7 @@ pub fn generate_v3_request(
     // The KV's logical position says exactly how many of
     // prompt + emitted it absorbed (the driver never steps the final
     // emitted token on a budget stop).
-    let absorbed_len = larql_vindex::format::vindex3::opplan::exec::kv::KvState::position(&kv);
+    let absorbed_len = continuation.position();
     let mut absorbed_ids = Vec::with_capacity(absorbed_len);
     absorbed_ids.extend_from_slice(prompt_ids);
     absorbed_ids.extend_from_slice(&result.tokens);
@@ -405,9 +681,13 @@ pub fn generate_v3_request(
             prompt_tokens: prompt_ids.len(),
             stopped_early,
             reused_prompt_tokens,
+            continuation_refused,
             prefill_ms,
             decode_ms_total,
         },
-        V3KvHandoff { kv, absorbed_ids },
+        V3KvHandoff {
+            continuation,
+            absorbed_ids,
+        },
     ))
 }

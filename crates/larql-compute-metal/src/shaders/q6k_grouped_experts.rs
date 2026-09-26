@@ -92,7 +92,7 @@ kernel void q6k_grouped_experts(
     const uint superblocks   = K / 256u;
     const uint bytes_per_row = superblocks * Q6KG_BLOCK_SIZE;
     // Offset table indirection is the whole difference from q6k_matvec.
-    device const uchar* row = W6K + offsets[slot] + row_idx * bytes_per_row;
+    device const uchar* row = W6K + (ulong)offsets[slot] + (ulong)row_idx * bytes_per_row;
     device const float* Xs  = X + (ulong)slot * XSTRIDE;
 
     // ---- body identical to q6k_matvec from here ----

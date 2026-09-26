@@ -3,6 +3,9 @@
 //! None of them spawns. Every one computes exactly the output rows it is
 //! handed; the executor decides how the rows were cut.
 
+use larql_models::quant::nvfp4::{NVFP4_GROUP_BYTES, NVFP4_GROUP_ELEMS};
+
+use super::super::backend::KQuantActivation;
 use super::projector::{CpuParallelism, DenseProjector, WeightRows};
 
 /// The literal transcription: one scalar dot per row, f32 weights.
@@ -202,10 +205,20 @@ impl DenseProjector for FusedQ4 {
 /// has no device kernel — Qwen3.8's 48 Gated DeltaNet layers — could
 /// have an NVFP4 pack compiled, verified, and then unrunnable anywhere.
 ///
-/// The arithmetic is `larql_models::quant::nvfp4::dequantize_into`'s
-/// association, applied a group at a time: the shared CPU kernel this
-/// delegates to is held bit-exact against decode-then-multiply by its
-/// own tests, so this arm and the oracle are the same program.
+/// Decoded in registers: each 16-element group's codes become values by
+/// one table lookup, are multiplied into the activation with vector
+/// FMAs, and the group's scale is applied once to the group's sum —
+/// `FusedQ4`'s architecture for NVFP4's interleaved nibbles and E4M3
+/// group scales. Like [`FusedQ8`] and [`FusedQ4`] it computes what the
+/// format DENOTES, pinned against [`nvfp4_row_dot_portable`] and the
+/// shared bit-exact decode-then-multiply kernel within float
+/// reassociation; it is not bit-identical to either, because summing a
+/// group in vector lanes is a different association.
+///
+/// It replaced a delegation to that shared kernel, which is scalar by
+/// construction (one running sum, so it can be bit-exact against the
+/// decoder) and measured 1.5 GB/s on granite-4.1-3b — a CPU NVFP4 model
+/// slower than the same model in BF16.
 pub struct FusedNvfp4;
 
 impl DenseProjector for FusedNvfp4 {
@@ -218,21 +231,160 @@ impl DenseProjector for FusedNvfp4 {
             packed,
             scales,
             tensor_scale,
+            ..
         } = weight_rows
         else {
             panic!("the fused nvfp4 kernel consumes nvfp4 weights only");
         };
-        let n = out.len();
-        let Some(values) =
-            larql_compute::cpu::nvfp4_gemv::nvfp4_gemv(packed, scales, tensor_scale, x, n, x.len())
-        else {
-            // The slab's geometry is settled before dispatch, so a
-            // refusal here means the two disagree — which is a bug in
-            // this file, not a runtime condition to absorb.
-            panic!("nvfp4 slab geometry does not describe [{n}, {}]", x.len());
-        };
-        out.copy_from_slice(&values);
+        let k = x.len();
+        let groups = k / NVFP4_GROUP_ELEMS;
+        // The slab's geometry is settled before dispatch, so a mismatch
+        // here is a bug in this file, not a runtime condition to absorb.
+        assert!(
+            k.is_multiple_of(NVFP4_GROUP_ELEMS)
+                && packed.len() == out.len() * groups * NVFP4_GROUP_BYTES
+                && scales.len() == out.len() * groups,
+            "nvfp4 slab geometry does not describe [{}, {k}]",
+            out.len()
+        );
+        let steps = e4m3_steps();
+        for (row, slot) in out.iter_mut().enumerate() {
+            *slot = nvfp4_row_dot(
+                &packed[row * groups * NVFP4_GROUP_BYTES..][..groups * NVFP4_GROUP_BYTES],
+                &scales[row * groups..][..groups],
+                tensor_scale,
+                steps,
+                x,
+            );
+        }
     }
+}
+
+/// Every E4M3 group scale's value, decoded once for the process rather
+/// than through a thread-local lookup per group.
+pub(super) fn e4m3_steps() -> &'static [f32; 256] {
+    static STEPS: std::sync::OnceLock<[f32; 256]> = std::sync::OnceLock::new();
+    STEPS.get_or_init(|| std::array::from_fn(|b| larql_models::quant::fp8::e4m3_to_f32(b as u8)))
+}
+
+/// E2M1 codes as TWICE their value, so every entry is an exact integer:
+/// `0, 0.5, 1, 1.5, 2, 3, 4, 6` and their negatives, doubled. The group
+/// sum is halved back when its scale is applied.
+pub(super) const E2M1_DOUBLED: [i8; 16] = [0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12];
+
+/// One row's dot product against its NVFP4 codes.
+#[inline]
+fn nvfp4_row_dot(
+    packed: &[u8],
+    scales: &[u8],
+    tensor_scale: f32,
+    steps: &[f32; 256],
+    x: &[f32],
+) -> f32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: NEON is baseline on aarch64; the caller pairs
+        // `packed`/`scales` with `x` (8 bytes and one scale per 16).
+        return unsafe { nvfp4_row_dot_neon(packed, scales, tensor_scale, steps, x) };
+    }
+    #[allow(unreachable_code)]
+    nvfp4_row_dot_portable(packed, scales, tensor_scale, steps, x)
+}
+
+/// The portable definition the NEON version must agree with: per group,
+/// `step · Σ e2m1(code_i) · x_i`, where `step = tensor_scale ·
+/// e4m3(scale)` and byte `b` carries element `2b` in its low nibble and
+/// `2b + 1` in its high one.
+pub(super) fn nvfp4_row_dot_portable(
+    packed: &[u8],
+    scales: &[u8],
+    tensor_scale: f32,
+    steps: &[f32; 256],
+    x: &[f32],
+) -> f32 {
+    let mut acc = 0.0f32;
+    for (g, &scale) in scales.iter().enumerate() {
+        let bytes = &packed[g * NVFP4_GROUP_BYTES..][..NVFP4_GROUP_BYTES];
+        let xs = &x[g * NVFP4_GROUP_ELEMS..][..NVFP4_GROUP_ELEMS];
+        let mut group = 0.0f32;
+        for (b, byte) in bytes.iter().enumerate() {
+            group += E2M1_DOUBLED[(byte & 0x0f) as usize] as f32 * xs[2 * b];
+            group += E2M1_DOUBLED[(byte >> 4) as usize] as f32 * xs[2 * b + 1];
+        }
+        acc += 0.5 * tensor_scale * steps[scale as usize] * group;
+    }
+    acc
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn nvfp4_row_dot_neon(
+    packed: &[u8],
+    scales: &[u8],
+    tensor_scale: f32,
+    steps: &[f32; 256],
+    x: &[f32],
+) -> f32 {
+    use std::arch::aarch64::*;
+    let lut = vld1q_s8(E2M1_DOUBLED.as_ptr());
+    let mask = vdup_n_u8(0x0f);
+    let (pp, xp) = (packed.as_ptr(), x.as_ptr());
+    let half_scale = 0.5 * tensor_scale;
+    // Two accumulators so consecutive groups' FMAs do not serialise.
+    let (mut acc0, mut acc1) = (vdupq_n_f32(0.0), vdupq_n_f32(0.0));
+    let group = |g: usize| -> float32x4_t {
+        let raw = vld1_u8(pp.add(g * NVFP4_GROUP_BYTES));
+        let lo = vand_u8(raw, mask);
+        let hi = vshr_n_u8::<4>(raw);
+        // Element 2b is byte b's low nibble, 2b+1 its high nibble.
+        let codes = vcombine_u8(vzip1_u8(lo, hi), vzip2_u8(lo, hi));
+        let v = vqtbl1q_s8(lut, codes);
+        let w = vmovl_s8(vget_low_s8(v));
+        let z = vmovl_s8(vget_high_s8(v));
+        let xb = xp.add(g * NVFP4_GROUP_ELEMS);
+        let mut s = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(w))), vld1q_f32(xb));
+        s = vfmaq_f32(
+            s,
+            vcvtq_f32_s32(vmovl_s16(vget_high_s16(w))),
+            vld1q_f32(xb.add(4)),
+        );
+        s = vfmaq_f32(
+            s,
+            vcvtq_f32_s32(vmovl_s16(vget_low_s16(z))),
+            vld1q_f32(xb.add(8)),
+        );
+        vfmaq_f32(
+            s,
+            vcvtq_f32_s32(vmovl_s16(vget_high_s16(z))),
+            vld1q_f32(xb.add(12)),
+        )
+    };
+    let groups = scales.len();
+    let mut g = 0usize;
+    while g + 2 <= groups {
+        let s0 = group(g);
+        let s1 = group(g + 1);
+        acc0 = vfmaq_n_f32(
+            acc0,
+            s0,
+            half_scale * steps[*scales.get_unchecked(g) as usize],
+        );
+        acc1 = vfmaq_n_f32(
+            acc1,
+            s1,
+            half_scale * steps[*scales.get_unchecked(g + 1) as usize],
+        );
+        g += 2;
+    }
+    if g < groups {
+        let s0 = group(g);
+        acc0 = vfmaq_n_f32(
+            acc0,
+            s0,
+            half_scale * steps[*scales.get_unchecked(g) as usize],
+        );
+    }
+    vaddvq_f32(vaddq_f32(acc0, acc1))
 }
 
 /// **Direct K-quant.** The stored ggml blocks — Q8_0, Q6_K or Q4_K —
@@ -266,8 +418,16 @@ impl DenseProjector for FusedKQuant {
     }
 
     fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
-        let WeightRows::KQuant { blocks, codec } = weight_rows else {
-            panic!("the direct K-quant kernel consumes stored K-quant blocks only");
+        let WeightRows::KQuant {
+            blocks,
+            codec,
+            activation: KQuantActivation::F32,
+        } = weight_rows
+        else {
+            panic!(
+                "the direct K-quant kernel consumes stored K-quant blocks bound for an f32 \
+                 activation only"
+            );
         };
         let n = out.len();
         let Some(values) = codec.gemv(blocks, x, n, x.len()) else {
@@ -276,6 +436,52 @@ impl DenseProjector for FusedKQuant {
             // file, not a runtime condition to absorb.
             panic!(
                 "{} slab geometry does not describe [{n}, {}]",
+                codec.name,
+                x.len()
+            );
+        };
+        out.copy_from_slice(&values);
+    }
+}
+
+/// **Direct K-quant against a Q8_K activation** (Q8K-ACT-1,
+/// `docs/q8k-act-1.md`). The same stored blocks [`FusedKQuant`] reads,
+/// multiplied by the integer-dot kernel V2's CPU decode runs: the
+/// activation is quantised once per call to Q8_K and the codec's
+/// [`gemv_q8k`](crate::format::vindex3::represent::kquant::KQuant::gemv_q8k)
+/// does the rest.
+///
+/// A separate kernel, not a mode of [`FusedKQuant`]: the bytes are the
+/// same and only the activation differs, so the difference has to be
+/// visible as a plan in every ledger line and every realization record,
+/// never inferred from an environment. Lossy in the activation by
+/// declaration; its fidelity contract is Q8K-ACT-1's, not PARETO-1's.
+///
+/// [`CpuParallelism::LibraryOwned`] for [`FusedKQuant`]'s reason: the
+/// `q4k_q8k` kernels split rows across their own pool.
+pub struct FusedKQuantQ8k;
+
+impl DenseProjector for FusedKQuantQ8k {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::LibraryOwned
+    }
+
+    fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
+        let WeightRows::KQuant {
+            blocks,
+            codec,
+            activation: KQuantActivation::Q8k,
+        } = weight_rows
+        else {
+            panic!("the Q8_K-activation kernel consumes K-quant blocks bound for a Q8_K activation only");
+        };
+        let n = out.len();
+        let Some(values) = codec.gemv_q8k(blocks, x, n, x.len()) else {
+            // Geometry is settled at `WeightSlice::rows`, and the loader
+            // refused any member without a Q8_K kernel, so a refusal here
+            // is a bug in this file, not a runtime condition to absorb.
+            panic!(
+                "{} Q8_K slab geometry does not describe [{n}, {}]",
                 codec.name,
                 x.len()
             );

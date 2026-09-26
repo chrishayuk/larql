@@ -50,12 +50,14 @@ use super::accounting::{
     declared_resident_for, expectations, reconcile, BlockGeometry, Bound, Expectation, Observed,
     Reconciliation, ResidencyBudget, ResourceLedger,
 };
-use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
+use super::backend::{MatrixClass, NormCall, PlanBackend, ProjectCall, WeightFormat, WeightSlice};
+use super::cpu::WeightRows;
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::kda::KdaOutputGateWeights;
 use super::lowering::{LoweringIdentity, LoweringRegistry};
-use super::operands::{OperandSource, SourceStamp};
+use super::operands::{OperandSource, OperandStore, SourceStamp};
+use super::quantise::SUM_BLOCK;
 use super::realization::{
     lowerings_stand_in, realization_residency, DependencyLifetime, DependencyPin, ExtentOption,
     ExtentPin, PinnedAuthorities, RealizationId, RealizationRecord, RepresentationFacts,
@@ -67,11 +69,13 @@ use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
 use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
+use larql_models::config::NormType;
 
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
     AttnResSiteOp, ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp,
-    LayerAttention, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp, OperandRef, OutputOp,
+    LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp, OperandRef,
+    OutputOp,
 };
 use super::attention_residual;
 use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
@@ -85,6 +89,22 @@ use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopo
 pub enum ExecutionSlice {
     /// Embedding, every layer, final norm and head — a whole model.
     Full,
+    /// Local stack with dense FFN matrices placed at an external provider.
+    DenseFfnCoordinator,
+    /// Local attention, router and endpoints, with expert transforms placed remotely.
+    RoutedExpertCoordinator,
+    /// Only expert rows in half-open layer and expert ranges.
+    RoutedExperts {
+        start: usize,
+        end: usize,
+        expert_start: usize,
+        expert_end: usize,
+    },
+    /// Dense FFN matrices only, prepared by `PreparedDenseFfns`.
+    DenseFfns { start: usize, end: usize },
+    /// Only token embedding and final norm/head, for a distributed coordinator.
+    /// No transformer layer operands are loaded.
+    Endpoints,
     /// Layers `[start, end)` of the stack and nothing else: no
     /// embedding, no final norm, no head. Hidden states in, hidden
     /// states out — the shape a layer-range shard executes.
@@ -116,8 +136,13 @@ impl ExecutionSlice {
     /// The layer indices this slice covers, as a half-open range.
     pub fn layers(&self, plan: &ComponentOpPlan) -> std::ops::Range<usize> {
         match self {
-            Self::Full => 0..plan.layers.len(),
-            Self::LayerRange { start, end } => *start..*end,
+            Self::Full | Self::DenseFfnCoordinator | Self::RoutedExpertCoordinator => {
+                0..plan.layers.len()
+            }
+            Self::Endpoints => 0..0,
+            Self::LayerRange { start, end }
+            | Self::DenseFfns { start, end }
+            | Self::RoutedExperts { start, end, .. } => *start..*end,
             Self::Draft { end } => 0..*end,
         }
     }
@@ -125,7 +150,33 @@ impl ExecutionSlice {
     /// Whether the slice carries the stack's ends — embedding on the
     /// way in, final norm and output head on the way out.
     pub fn is_whole_stack(&self) -> bool {
-        matches!(self, Self::Full | Self::Draft { .. })
+        matches!(
+            self,
+            Self::Full
+                | Self::DenseFfnCoordinator
+                | Self::RoutedExpertCoordinator
+                | Self::Endpoints
+                | Self::Draft { .. }
+        )
+    }
+
+    pub(super) fn contains(&self, plan: &ComponentOpPlan, operand: &PlannedOperand) -> bool {
+        let in_layer = operand
+            .layer
+            .is_some_and(|l| self.layers(plan).contains(&l));
+        let ffn = operand.operation == Operation::Project(MatrixClass::FfnProjection);
+        match self {
+            Self::RoutedExperts { .. } => {
+                in_layer && operand.operation == Operation::ExpertBankSlice
+            }
+            Self::RoutedExpertCoordinator => !matches!(
+                operand.operation,
+                Operation::ExpertBankSlice | Operation::ExpertProject { .. }
+            ),
+            Self::DenseFfns { .. } => in_layer && ffn,
+            Self::DenseFfnCoordinator => !ffn,
+            _ => in_layer || (operand.layer.is_none() && self.is_whole_stack()),
+        }
     }
 
     /// Refuse a slice the plan cannot satisfy. A shard asked for layers
@@ -133,6 +184,37 @@ impl ExecutionSlice {
     /// "as much as exists" would serve a silently wrong submodel — the
     /// same failure the V3 load options used to have.
     pub(super) fn validate(&self, plan: &ComponentOpPlan) -> Result<(), VindexError> {
+        if matches!(self, Self::DenseFfnCoordinator | Self::DenseFfns { .. }) {
+            super::dense_ffn::validate_plan(plan)?;
+        }
+        if matches!(
+            self,
+            Self::RoutedExpertCoordinator | Self::RoutedExperts { .. }
+        ) {
+            super::routed_experts::validate_plan(plan)?;
+        }
+        if let Self::RoutedExperts {
+            start,
+            end,
+            expert_start,
+            expert_end,
+        } = self
+        {
+            if start >= end
+                || *end > plan.layers.len()
+                || expert_start >= expert_end
+                || plan.layers[*start..*end].iter().any(|l| {
+                    l.ffn
+                        .as_ref()
+                        .and_then(|f| f.routed())
+                        .is_none_or(|r| *expert_end > r.experts)
+                })
+            {
+                return Err(VindexError::Parse(
+                    "routed worker layer or expert range outside plan".into(),
+                ));
+            }
+        }
         if let Self::Draft { end } = self {
             if *end == 0 {
                 return Err(VindexError::Parse(
@@ -150,7 +232,7 @@ impl ExecutionSlice {
             }
             return Ok(());
         }
-        let Self::LayerRange { start, end } = self else {
+        let (Self::LayerRange { start, end } | Self::DenseFfns { start, end }) = self else {
             return Ok(());
         };
         if start >= end {
@@ -191,6 +273,27 @@ impl PreparedNorm {
             weight_offset: self.op.weight_offset,
             eps: self.op.eps,
         })
+    }
+
+    /// The norm's kind, so a consumer decomposing a write through it can
+    /// refuse a kind whose linearisation it does not know.
+    pub(super) fn kind(&self) -> NormType {
+        self.op.kind
+    }
+
+    /// The learned weight, before the offset.
+    pub(super) fn weight(&self) -> &[f32] {
+        &self.weight
+    }
+
+    /// The offset added to the weight (`1.0` on a Gemma-style `(1 + w)`
+    /// norm, `0.0` otherwise).
+    pub(super) fn weight_offset(&self) -> f32 {
+        self.op.weight_offset
+    }
+
+    pub(super) fn eps(&self) -> f64 {
+        self.op.eps
     }
 }
 
@@ -1621,15 +1724,10 @@ fn select_records<B: PlanBackend + ?Sized>(
     // provider that qualified it, whether the caller resolved that
     // provider through a registry or handed it in directly.
     let lowering_provider = backend.identity();
-    let whole = slice.is_whole_stack();
-    let range = slice.layers(plan);
     let mut records = Vec::new();
     let mut refusals = Vec::new();
-    for planned in plan.planned_operands() {
-        let in_scope = match planned.layer {
-            Some(layer) => range.contains(&layer),
-            None => whole,
-        };
+    for mut planned in plan.planned_operands() {
+        let in_scope = slice.contains(plan, &planned);
         if !in_scope {
             continue;
         }
@@ -1645,6 +1743,12 @@ fn select_records<B: PlanBackend + ?Sized>(
         if store.is_overridden(&planned.operand) {
             facts = facts.overlaid();
         }
+        facts = facts.with_nvfp4_at_source(
+            store
+                .store()
+                .nvfp4_request_binds_at_source(&planned.operand, stored),
+        );
+        facts = facts.with_nvfp4_compiled(OperandStore::f16_request_binds_compiled_nvfp4(stored));
         let codec_provider = facts.registered.as_ref().map(|r| r.identity.clone());
         // What the ARTIFACT offers, priced per extent from the codec's own
         // declaration. The pin starts on the whole of it; a budget may
@@ -1665,6 +1769,16 @@ fn select_records<B: PlanBackend + ?Sized>(
                 };
                 for dependency in &mut dependencies {
                     dependency.lifetime = lifetime;
+                }
+                if let ExecutionSlice::RoutedExperts {
+                    expert_start,
+                    expert_end,
+                    ..
+                } = slice
+                {
+                    let count = planned.operand.shape[0];
+                    planned.logical_elements =
+                        planned.logical_elements / count * (expert_end - expert_start);
                 }
                 records.push((
                     RealizationRecord {
@@ -1839,7 +1953,7 @@ fn extent_pin(registry: &CodecRegistry, label: &str, planned: &PlannedOperand) -
 /// unread — or one the plan's own view failed to list, which is a
 /// disagreement between `planned_operands()` and the loader and is
 /// refused as such rather than defaulted.
-fn pinned_format(
+pub(super) fn pinned_format(
     records: &[RealizationRecord],
     store: OperandSource<'_>,
     op: &OperandRef,
@@ -1936,6 +2050,8 @@ pub struct PreparedOperands {
     /// the plan's per-layer ops and the KV state's layer rows.
     first_layer: usize,
     layers: Vec<PreparedLayer>,
+    dense_ffns: Option<super::dense_ffn::PreparedDenseFfns>,
+    routed_experts: Option<super::routed_experts::PreparedRoutedExperts>,
     final_norm: Option<PreparedNorm>,
     output: Option<(OutputOp, LoadedWeight)>,
     /// One pinned realization per planned operand this image executes,
@@ -1952,7 +2068,333 @@ pub struct PreparedOperands {
     attention_residual_exit: Option<PreparedAttnResExit>,
 }
 
+/// A gathered subset of the prepared output head.
+///
+/// This is an offline evidence object: it preserves the exact resident
+/// representation selected for the production image, but contains only the
+/// declared vocabulary rows.  It exists so a frozen candidate lens does not
+/// have to execute the entire vocabulary projection at every captured state.
+pub struct SelectedOutputHead {
+    token_ids: Vec<u32>,
+    projection: SelectedProjection,
+    hidden: usize,
+    multiplier: Option<f64>,
+    softcapping: Option<f32>,
+}
+
+enum SelectedProjection {
+    F32(Vec<f32>),
+    Bf16(Vec<u16>),
+    Q8 {
+        codes: Vec<i8>,
+        scales: Vec<f32>,
+        sums: Vec<i16>,
+        block: usize,
+    },
+}
+
+impl SelectedProjection {
+    fn slice(&self) -> WeightSlice<'_> {
+        match self {
+            Self::F32(values) => WeightSlice::F32(values),
+            Self::Bf16(values) => WeightSlice::Bf16(values),
+            Self::Q8 {
+                codes,
+                scales,
+                sums,
+                block,
+            } => WeightSlice::Q8 {
+                codes,
+                scales,
+                sums,
+                block: *block,
+            },
+        }
+    }
+
+    fn representation(&self) -> &'static str {
+        match self {
+            Self::F32(_) => "f32",
+            Self::Bf16(_) => "bf16",
+            Self::Q8 { .. } => "q8",
+        }
+    }
+}
+
+impl SelectedOutputHead {
+    /// Gather `token_ids`' rows of a resident `[vocab, hidden]` head, in its
+    /// own representation. Every id must be a distinct row of the head.
+    pub(super) fn gather(
+        head: WeightSlice<'_>,
+        vocab: usize,
+        hidden: usize,
+        token_ids: &[u32],
+        multiplier: Option<f64>,
+        softcapping: Option<f32>,
+    ) -> Result<Self, VindexError> {
+        if token_ids.is_empty() {
+            return Err(VindexError::Parse(
+                "selected output head requires at least one token".into(),
+            ));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for &token in token_ids {
+            let index = token as usize;
+            if index >= vocab {
+                return Err(VindexError::Parse(format!(
+                    "selected output token {token} is outside vocabulary {vocab}"
+                )));
+            }
+            if !seen.insert(token) {
+                return Err(VindexError::Parse(format!(
+                    "selected output token {token} is duplicated"
+                )));
+            }
+        }
+
+        let projection = match head.rows(vocab, hidden)? {
+            WeightRows::F32(values) => {
+                let mut selected = Vec::with_capacity(token_ids.len() * hidden);
+                for &token in token_ids {
+                    let start = token as usize * hidden;
+                    selected.extend_from_slice(&values[start..start + hidden]);
+                }
+                SelectedProjection::F32(selected)
+            }
+            WeightRows::Bf16(values) => {
+                let mut selected = Vec::with_capacity(token_ids.len() * hidden);
+                for &token in token_ids {
+                    let start = token as usize * hidden;
+                    selected.extend_from_slice(&values[start..start + hidden]);
+                }
+                SelectedProjection::Bf16(selected)
+            }
+            WeightRows::Q8 {
+                codes,
+                scales,
+                sums,
+                block,
+            } => {
+                let scales_per_row = hidden.div_ceil(block);
+                let sums_per_row = hidden.div_ceil(SUM_BLOCK);
+                let mut selected_codes = Vec::with_capacity(token_ids.len() * hidden);
+                let mut selected_scales = Vec::with_capacity(token_ids.len() * scales_per_row);
+                let mut selected_sums = if sums.is_empty() {
+                    Vec::new()
+                } else {
+                    Vec::with_capacity(token_ids.len() * sums_per_row)
+                };
+                for &token in token_ids {
+                    let row = token as usize;
+                    selected_codes.extend_from_slice(&codes[row * hidden..(row + 1) * hidden]);
+                    selected_scales.extend_from_slice(
+                        &scales[row * scales_per_row..(row + 1) * scales_per_row],
+                    );
+                    if !sums.is_empty() {
+                        selected_sums
+                            .extend_from_slice(&sums[row * sums_per_row..(row + 1) * sums_per_row]);
+                    }
+                }
+                SelectedProjection::Q8 {
+                    codes: selected_codes,
+                    scales: selected_scales,
+                    sums: selected_sums,
+                    block,
+                }
+            }
+            _ => {
+                return Err(VindexError::Parse(
+                    "selected output-head evidence refuses this prepared representation".into(),
+                ))
+            }
+        };
+        Ok(Self {
+            token_ids: token_ids.to_vec(),
+            projection,
+            hidden,
+            multiplier,
+            softcapping,
+        })
+    }
+
+    pub fn token_ids(&self) -> &[u32] {
+        &self.token_ids
+    }
+
+    pub fn representation(&self) -> &'static str {
+        self.projection.representation()
+    }
+
+    /// The raw output-head row for the `index`-th selected token, dequantised
+    /// to f32 from the exact prepared production realization — never a
+    /// second, independently reloaded or widened copy. Dequantisation
+    /// (bf16 widening, Q8 `code * scale`) is arithmetic, not a different
+    /// weight authority: it is the same conversion `backend.project`/
+    /// `output_head` already apply on this exact resident data.
+    pub fn row_f32(&self, index: usize) -> Result<Vec<f32>, VindexError> {
+        if index >= self.token_ids.len() {
+            return Err(VindexError::Parse(format!(
+                "selected output head row {index} is outside {} selected tokens",
+                self.token_ids.len()
+            )));
+        }
+        match &self.projection {
+            SelectedProjection::F32(values) => {
+                let start = index * self.hidden;
+                Ok(values[start..start + self.hidden].to_vec())
+            }
+            SelectedProjection::Bf16(values) => {
+                let start = index * self.hidden;
+                Ok(values[start..start + self.hidden]
+                    .iter()
+                    .map(|&bits| f32::from_bits(u32::from(bits) << 16))
+                    .collect())
+            }
+            SelectedProjection::Q8 {
+                codes,
+                scales,
+                block,
+                ..
+            } => {
+                let scales_per_row = self.hidden.div_ceil(*block);
+                let code_start = index * self.hidden;
+                let scale_start = index * scales_per_row;
+                Ok(codes[code_start..code_start + self.hidden]
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, &code)| {
+                        let scale = scales[scale_start + offset / block];
+                        f32::from(code) * scale
+                    })
+                    .collect())
+            }
+        }
+    }
+}
+
+/// The effective dense FFN matrices selected for execution, widened only for
+/// offline contribution accounting. A Q8 image contains the dequantised Q8
+/// values, not the container's original BF16 values.
+pub struct PreparedDenseFfnImage {
+    pub gate: Option<Vec<f32>>,
+    pub up: Vec<f32>,
+    pub down: Vec<f32>,
+}
+
 impl PreparedOperands {
+    /// Install an already artifact-bound provider before creating any sessions.
+    pub fn bind_dense_ffn_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn super::dense_ffn::DenseFfnProvider>,
+    ) -> Result<(), VindexError> {
+        if self.slice != ExecutionSlice::DenseFfnCoordinator {
+            return Err(VindexError::Parse(
+                "external FFN provider requires coordinator operands".into(),
+            ));
+        }
+        for layer in &mut self.layers {
+            if let Some(FfnOperands::External { provider: slot, .. }) = &mut layer.ffn {
+                *slot = Some(provider.clone());
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn ensure_stack_ready(&self) -> Result<(), VindexError> {
+        if matches!(
+            self.slice,
+            ExecutionSlice::DenseFfns { .. } | ExecutionSlice::RoutedExperts { .. }
+        ) {
+            return Err(VindexError::Parse(
+                "FFN/expert workers cannot execute a layer stack".into(),
+            ));
+        }
+        if self.layers.iter().any(|l| {
+            l.ffn
+                .as_ref()
+                .is_some_and(FfnOperands::routed_provider_missing)
+        }) {
+            return Err(VindexError::Parse(
+                "routed expert provider is not bound".into(),
+            ));
+        }
+        if self
+            .layers
+            .iter()
+            .any(|l| matches!(l.ffn, Some(FfnOperands::External { provider: None, .. })))
+        {
+            return Err(VindexError::Parse("dense FFN provider is not bound".into()));
+        }
+        Ok(())
+    }
+
+    pub fn routed_experts(&self) -> Option<&super::routed_experts::PreparedRoutedExperts> {
+        self.routed_experts.as_ref()
+    }
+    pub fn bind_routed_expert_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn super::routed_experts::RoutedExpertProvider>,
+    ) -> Result<(), VindexError> {
+        if self.slice != ExecutionSlice::RoutedExpertCoordinator {
+            return Err(VindexError::Parse(
+                "routed provider requires coordinator operands".into(),
+            ));
+        }
+        for layer in &mut self.layers {
+            if let Some(ffn) = &mut layer.ffn {
+                ffn.bind_routed_provider(provider.clone())?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn dense_ffns(&self) -> Option<&super::dense_ffn::PreparedDenseFfns> {
+        self.dense_ffns.as_ref()
+    }
+
+    pub fn dense_ffn_image(
+        &self,
+        plan: &ComponentOpPlan,
+        layer: usize,
+    ) -> Result<PreparedDenseFfnImage, VindexError> {
+        let layer_plan = plan.layers.get(layer).ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} is outside the component plan"))
+        })?;
+        let LayerFfn::Dense(op) = layer_plan
+            .ffn
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse(format!("layer {layer} carries no FFN")))?
+        else {
+            return Err(VindexError::Parse(format!(
+                "layer {layer} is not a dense FFN"
+            )));
+        };
+        let local = layer.checked_sub(self.first_layer).ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} precedes this prepared slice"))
+        })?;
+        let prepared = self.layers.get(local).ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} is outside this prepared slice"))
+        })?;
+        let ffn = prepared
+            .ffn
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse(format!("prepared layer {layer} carries no FFN")))?;
+        let (gate, up, down) = ffn
+            .dense_slices(layer_plan.ffn.as_ref().unwrap())
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "prepared layer {layer} is not the plan's dense FFN"
+                ))
+            })?;
+        Ok(PreparedDenseFfnImage {
+            gate: gate
+                .map(|weight| weight.decode_f32(op.intermediate_size, self.hidden))
+                .transpose()?,
+            up: up.decode_f32(op.intermediate_size, self.hidden)?,
+            down: down.decode_f32(self.hidden, op.intermediate_size)?,
+        })
+    }
+
     /// Lower `slice` of `plan`'s operands into `backend`'s execution
     /// form, and give the backend its chance to place them (device
     /// residency). Every operand this slice needs is loaded here, and
@@ -1998,6 +2440,16 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
+        if matches!(
+            slice,
+            ExecutionSlice::DenseFfns { .. }
+                | ExecutionSlice::DenseFfnCoordinator
+                | ExecutionSlice::RoutedExperts { .. }
+                | ExecutionSlice::RoutedExpertCoordinator
+        ) && store.stamp() != OperandSource::from(store.store()).stamp()
+        {
+            return Err(VindexError::Parse("FFN placement requires base artifact operands; overlays are not bound by this protocol".into()));
+        }
         // **Every declared residual topology is traversable here.**
         // Single-stream always was; hyper-connections joined it in wave
         // 19 when the bundle was witnessed on both the decode step and
@@ -2040,6 +2492,66 @@ impl PreparedOperands {
             ))
         })?;
         let hidden = embedding.table.shape[1];
+        if matches!(slice, ExecutionSlice::DenseFfns { .. }) {
+            let dense_ffns = super::dense_ffn::PreparedDenseFfns::load(
+                plan,
+                store,
+                backend,
+                &slice,
+                &realizations,
+                hidden,
+            )?;
+            let prepared = Self {
+                stamp,
+                first_layer: slice.layers(plan).start,
+                slice,
+                hidden,
+                embed_table: None,
+                layers: Vec::new(),
+                final_norm: None,
+                output: None,
+                registry: store.registry(),
+                realizations,
+                topology: plan.residual_topology,
+                hyper_connection_head: None,
+                attention_residual_exit: None,
+                dense_ffns: Some(dense_ffns),
+                routed_experts: None,
+            };
+            prepared.verify_pins()?;
+            prepared.reconcile(plan, store)?;
+            return Ok(prepared);
+        }
+        if matches!(slice, ExecutionSlice::RoutedExperts { .. }) {
+            let worker = super::routed_experts::PreparedRoutedExperts::load(
+                plan,
+                store,
+                backend,
+                &slice,
+                &realizations,
+                hidden,
+            )?;
+            let prepared = Self {
+                stamp,
+                first_layer: slice.layers(plan).start,
+                slice,
+                hidden,
+                embed_table: None,
+                layers: Vec::new(),
+                final_norm: None,
+                output: None,
+                registry: store.registry(),
+                realizations,
+                topology: plan.residual_topology,
+                hyper_connection_head: None,
+                attention_residual_exit: None,
+                dense_ffns: None,
+                routed_experts: Some(worker),
+            };
+            prepared.verify_pins()?;
+            prepared.reconcile(plan, store)?;
+            return Ok(prepared);
+        }
         let embed_table = if whole {
             Some(store.load(&embedding.table)?)
         } else {
@@ -2079,8 +2591,10 @@ impl PreparedOperands {
             // with no bank never reads the value, and gets the widened
             // form so nothing compact is implied.
             let bank_format = match layer.ffn.as_ref().and_then(|f| f.routed()) {
-                Some(_) => bank_pin(&realizations, index)?,
-                None => BankPin {
+                Some(_) if slice != ExecutionSlice::RoutedExpertCoordinator => {
+                    bank_pin(&realizations, index)?
+                }
+                _ => BankPin {
                     format: WeightFormat::F32,
                     access: super::realization::MappedAccess::Demand,
                 },
@@ -2159,7 +2673,16 @@ impl PreparedOperands {
                     .ffn
                     .as_ref()
                     .map(|ffn| {
-                        FfnOperands::load(ffn, store, &ffn_format, bank_format, &shared_format)
+                        if slice == ExecutionSlice::DenseFfnCoordinator {
+                            Ok(FfnOperands::External {
+                                layer: index,
+                                provider: None,
+                            })
+                        } else if slice == ExecutionSlice::RoutedExpertCoordinator {
+                            FfnOperands::load_routed_coordinator(ffn, store, index)
+                        } else {
+                            FfnOperands::load(ffn, store, &ffn_format, bank_format, &shared_format)
+                        }
                     })
                     .transpose()?,
                 post_ffn: layer
@@ -2241,6 +2764,8 @@ impl PreparedOperands {
             topology,
             hyper_connection_head,
             attention_residual_exit,
+            dense_ffns: None,
+            routed_experts: None,
         };
         // **The executor runs what was pinned.** Every resident matrix
         // holds the representation its record named, checked here so a
@@ -2323,6 +2848,18 @@ impl PreparedOperands {
                  realizations {pinned:?} — the loader drifted from the selector"
             ))
         };
+        if let Some(ffns) = &self.dense_ffns {
+            let mut expected: Vec<_> = self
+                .realizations
+                .iter()
+                .map(|r| r.selection.realization.format())
+                .collect();
+            expected.sort_by_key(|f| format!("{f:?}"));
+            let resident = observed(ffns.matrices());
+            if expected != resident {
+                return Err(mismatch("dense FFN worker".into(), expected, resident));
+            }
+        }
         for (offset, layer) in self.layers.iter().enumerate() {
             let index = self.first_layer + offset;
             let attention = pinned(Some(index), &|o| {
@@ -2362,6 +2899,12 @@ impl PreparedOperands {
     /// for it — the OBSERVATION side of the accounting, read off the
     /// resident objects and never off a declaration.
     pub fn bound(&self, plan: &ComponentOpPlan) -> Result<Vec<Observed>, VindexError> {
+        if let Some(experts) = &self.routed_experts {
+            return experts.bound();
+        }
+        if let Some(ffns) = &self.dense_ffns {
+            return ffns.bound(plan);
+        }
         let mut out = Vec::new();
         if let (Some(embedding), Some(table)) = (&plan.embedding, &self.embed_table) {
             out.push(Observed {
@@ -2406,7 +2949,24 @@ impl PreparedOperands {
         store: OperandSource<'_>,
         geometry: BlockGeometry,
     ) -> Vec<Expectation> {
-        expectations(&self.realizations, |op| store.stored_len(op), geometry)
+        expectations(
+            &self.realizations,
+            |op| {
+                let full = store.stored_len(op)?;
+                if let ExecutionSlice::RoutedExperts {
+                    expert_start,
+                    expert_end,
+                    ..
+                } = self.slice
+                {
+                    let count = *op.shape.first()?;
+                    Some(full / count as u64 * (expert_end - expert_start) as u64)
+                } else {
+                    Some(full)
+                }
+            },
+            geometry,
+        )
     }
 
     /// Bind the declarations AGAINST the observations: every pin meets
@@ -2528,6 +3088,17 @@ impl PreparedOperands {
 
     pub fn residency_census(&self) -> ResidencyCensus {
         let mut census = ResidencyCensus::default();
+        if let Some(ffns) = &self.dense_ffns {
+            for weight in ffns.matrices() {
+                census.ffn.add(weight);
+            }
+        }
+        if let Some(experts) = &self.routed_experts {
+            for weight in experts.matrices() {
+                census.ffn.add(weight);
+            }
+            census.glue.widened_f32 += experts.bias_bytes();
+        }
         if let Some(table) = &self.embed_table {
             census.embedding.widened_f32 += std::mem::size_of_val(&table[..]);
         }
@@ -2611,6 +3182,12 @@ impl PreparedOperands {
                 out.regions += 1;
             }
         };
+        if let Some(ffns) = &self.dense_ffns {
+            ffns.matrices().iter().for_each(|w| add(w));
+        }
+        if let Some(experts) = &self.routed_experts {
+            experts.matrices().iter().for_each(|w| add(w));
+        }
         for layer in &self.layers {
             match &layer.attention {
                 PreparedAttention::Softmax(ops) => {
@@ -2643,6 +3220,12 @@ impl PreparedOperands {
                 census.add(address, bytes);
             }
         };
+        if let Some(ffns) = &self.dense_ffns {
+            ffns.matrices().iter().for_each(|w| add(w));
+        }
+        if let Some(experts) = &self.routed_experts {
+            experts.matrices().iter().for_each(|w| add(w));
+        }
         for layer in &self.layers {
             match &layer.attention {
                 PreparedAttention::Softmax(ops) => {
@@ -2704,6 +3287,177 @@ impl PreparedOperands {
     }
 
     /// Hidden width, read from the plan's embedding op.
+    /// The exit's arithmetic on one `[hidden]` carrier: the prepared
+    /// final norm, then [`Self::head_over_normed`]. `None` when the image
+    /// carries no output head (a layer-range slice).
+    ///
+    /// V3-LENS-1's one head path: the decode exit calls this, a logit
+    /// lens calls this on an intermediate carrier, and there is no
+    /// second spelling of "the head" for the two to disagree on.
+    pub fn head_logits<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+    ) -> Result<Option<Vec<f32>>, VindexError> {
+        if self.output().is_none() {
+            return Ok(None);
+        }
+        let normed;
+        let final_hidden: &[f32] = match self.final_norm() {
+            Some(norm) => {
+                normed = norm.apply(backend, carrier);
+                &normed
+            }
+            None => carrier,
+        };
+        self.head_over_normed(backend, final_hidden)
+    }
+
+    /// The prepared output head over an ALREADY final-normed vector, with
+    /// the head's multiplier and softcap; `None` when the image carries
+    /// no output head. The batch exit norms a plane row by row and then
+    /// calls this per row; the decode exit and the lens reach it through
+    /// [`Self::head_logits`].
+    pub fn head_over_normed<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        final_hidden: &[f32],
+    ) -> Result<Option<Vec<f32>>, VindexError> {
+        match self.output() {
+            Some((output, weight)) => Ok(Some(backend.output_head(
+                weight.slice(),
+                output.projection.shape[0],
+                self.hidden(),
+                final_hidden,
+                output.multiplier,
+                output.softcapping,
+            )?)),
+            None => Ok(None),
+        }
+    }
+
+    /// V3-HEAD-OBS-1, property A4: one query head's share of the output
+    /// projection, `W_o[:, h·d..(h+1)·d] · x`, computed by the SAME
+    /// projection kernel and the same pinned realisation the executor's
+    /// `o_proj` uses — the head's slice of the input is placed in a
+    /// zero vector of the projection's full input width and the whole
+    /// projection runs, so a consumer never carries a second `W_o`. The
+    /// O bias is NOT added: it is a once-only term the consumer adds
+    /// after summing heads (see [`Self::attention_output_bias`]).
+    /// Refuses a layer outside the executed range, a layer whose
+    /// attention has no softmax heads, or an `x` of the wrong width.
+    pub fn head_projection<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        layer: usize,
+        head: usize,
+        head_dim: usize,
+        num_q_heads: usize,
+        x: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        let prepared = self.prepared_layer(layer)?;
+        let PreparedAttention::Softmax(ops) = &prepared.attention else {
+            return Err(VindexError::Parse(format!(
+                "layer {layer}'s attention has no softmax heads to project"
+            )));
+        };
+        if x.len() != head_dim {
+            return Err(VindexError::Parse(format!(
+                "head projection expects a {head_dim}-wide head input, got {}",
+                x.len()
+            )));
+        }
+        if head >= num_q_heads {
+            return Err(VindexError::Parse(format!(
+                "head {head} is outside this layer's {num_q_heads} query heads"
+            )));
+        }
+        let q_rows = num_q_heads * head_dim;
+        let mut padded = vec![0.0f32; q_rows];
+        padded[head * head_dim..(head + 1) * head_dim].copy_from_slice(x);
+        backend.project(ProjectCall {
+            weight: ops.w_o.slice(),
+            out_dim: self.hidden,
+            in_dim: q_rows,
+            x: &padded,
+        })
+    }
+
+    /// The attention output projection's bias for a layer, if the plan
+    /// declares one — the once-only term of the head-sum law.
+    pub fn attention_output_bias(&self, layer: usize) -> Result<Option<&[f32]>, VindexError> {
+        let prepared = self.prepared_layer(layer)?;
+        let PreparedAttention::Softmax(ops) = &prepared.attention else {
+            return Ok(None);
+        };
+        Ok(ops.biases.as_ref().map(|b| b[3].as_slice()))
+    }
+
+    /// The post-attention norm a layer applies to its attention output
+    /// before the residual write, if it has one.
+    pub(super) fn post_attention_norm(
+        &self,
+        layer: usize,
+    ) -> Result<Option<&PreparedNorm>, VindexError> {
+        Ok(self.prepared_layer(layer)?.post_attention.as_ref())
+    }
+
+    /// Whether a layer's attention is a softmax family this image taps.
+    pub fn attention_has_heads(&self, layer: usize) -> Result<bool, VindexError> {
+        Ok(matches!(
+            self.prepared_layer(layer)?.attention,
+            PreparedAttention::Softmax(_)
+        ))
+    }
+
+    fn prepared_layer(&self, layer: usize) -> Result<&PreparedLayer, VindexError> {
+        let first = self.first_layer;
+        layer
+            .checked_sub(first)
+            .and_then(|offset| self.layers.get(offset))
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "layer {layer} is outside this image's executed layers {first}..{}",
+                    first + self.layers.len()
+                ))
+            })
+    }
+
+    /// The declared embedding operation, including its scale and optional norm.
+    /// Shared by local token execution and distributed coordinators.
+    pub fn embed_token<B: PlanBackend + ?Sized>(
+        &self,
+        plan: &ComponentOpPlan,
+        backend: &B,
+        token: u32,
+    ) -> Result<Vec<f32>, VindexError> {
+        let embedding = plan
+            .embedding
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse("component has no embedding op".into()))?;
+        let table = self.embed_table().ok_or_else(|| {
+            VindexError::Parse("this prepared image has no embedding table".into())
+        })?;
+        let hidden = self.hidden();
+        if hidden == 0 || token as usize >= table.len() / hidden {
+            return Err(VindexError::Parse(format!(
+                "token id {token} is outside the embedding table"
+            )));
+        }
+        let mut row = backend.embed(table, hidden, token, embedding.scale);
+        if let Some(norm) = embedding.norm {
+            row = backend.norm(NormCall {
+                kind: norm.kind,
+                x: &row,
+                weight: &[],
+                weight_offset: 0.0,
+                eps: norm.eps,
+            });
+        }
+        Ok(row)
+    }
+
+    /// Width of one residual row.
     pub fn hidden(&self) -> usize {
         self.hidden
     }
@@ -2717,6 +3471,106 @@ impl PreparedOperands {
     /// slice does).
     pub fn has_output(&self) -> bool {
         self.output.is_some()
+    }
+
+    /// Vocabulary readout of an already reduced carrier. This performs only
+    /// the prepared final norm and output head, with their pinned realization,
+    /// multiplier and soft-capping. It does not execute layers or mutate KV.
+    ///
+    /// The caller owns boundary semantics: apply a recorded layer scale first
+    /// when reading a post-add/pre-scale observation. Bundle/history reduction
+    /// must not be guessed by an analysis caller.
+    pub fn readout_carrier<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        let normalized = self.normalize_carrier_for_readout(backend, carrier)?;
+        let (op, weight) = self
+            .output
+            .as_ref()
+            .expect("normalization requires an output head");
+        backend.output_head(
+            weight.slice(),
+            op.projection.shape[0],
+            self.hidden,
+            &normalized,
+            op.multiplier,
+            op.softcapping,
+        )
+    }
+
+    /// Gather declared vocabulary rows from the output head in the exact
+    /// representation held by this prepared image.
+    ///
+    /// The current evidence path admits the CPU production formats used by
+    /// the GW programme (f32, stored bf16 and realised Q8).  Any other format
+    /// refuses rather than widening or silently changing its arithmetic.
+    pub fn select_output_head(&self, token_ids: &[u32]) -> Result<SelectedOutputHead, VindexError> {
+        let (op, weight) = self
+            .output
+            .as_ref()
+            .ok_or_else(|| VindexError::Parse("prepared slice has no output head".into()))?;
+        SelectedOutputHead::gather(
+            weight.slice(),
+            op.projection.shape[0],
+            self.hidden,
+            token_ids,
+            op.multiplier,
+            op.softcapping,
+        )
+    }
+
+    /// Read an already reduced carrier against a previously gathered output
+    /// head.  Final normalisation, multiplier and softcap are identical to
+    /// [`Self::readout_carrier`]; the projection is the same backend call over
+    /// fewer rows, so it agrees up to that backend's summation order — equal
+    /// on aarch64, within an ulp on x86 SIMD — not bit for bit in general.
+    pub fn readout_carrier_selected<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+        head: &SelectedOutputHead,
+    ) -> Result<Vec<f32>, VindexError> {
+        if head.hidden != self.hidden {
+            return Err(VindexError::Parse(
+                "selected output head and prepared carrier widths differ".into(),
+            ));
+        }
+        let normalized = self.normalize_carrier_for_readout(backend, carrier)?;
+        backend.output_head(
+            head.projection.slice(),
+            head.token_ids.len(),
+            self.hidden,
+            &normalized,
+            head.multiplier,
+            head.softcapping,
+        )
+    }
+
+    /// The exact prepared final-norm input to the output head, for a vocabulary
+    /// geometry lens. Caller supplies an already reduced, layer-scaled carrier.
+    /// No layers, output projection, or KV mutation are executed here.
+    pub fn normalize_carrier_for_readout<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        self.ensure_lowered_by(backend)?;
+        if carrier.len() != self.hidden || carrier.iter().any(|v| !v.is_finite()) {
+            return Err(VindexError::Parse(
+                "readout requires a finite, hidden-width carrier".into(),
+            ));
+        }
+        if self.output.is_none() {
+            return Err(VindexError::Parse(
+                "prepared slice has no output head for readout".into(),
+            ));
+        }
+        Ok(match &self.final_norm {
+            Some(norm) => norm.apply(backend, carrier),
+            None => carrier.to_vec(),
+        })
     }
 
     pub(super) fn embed_table(&self) -> Option<&[f32]> {

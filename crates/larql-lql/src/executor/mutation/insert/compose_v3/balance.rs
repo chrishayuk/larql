@@ -23,7 +23,9 @@ use crate::executor::tuning::{
     canonical_prompt, BALANCE_ITERS, BALANCE_PROBE_TOP_K, CROSS_ITERS, DOWN_SCALE,
     MAX_PRIORS_CHECKED, MAX_STALE, PRIOR_FLOOR, PROB_CEILING, PROB_FLOOR, UP_SCALE,
 };
-use crate::executor::vindex3::{compose_overrides, encode_v3_prompt, top_k_probs, V3Runtime};
+use crate::executor::vindex3::{
+    compose_overrides, encode_v3_prompt, top_k_probs, v3_continuation, V3Runtime,
+};
 use crate::executor::{Backend, Session};
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
 use larql_vindex::tokenizers::Tokenizer;
@@ -38,11 +40,13 @@ pub(crate) fn probe_target_prob(
     prompt_ids: &[u32],
     target: &str,
 ) -> Result<f64, LqlError> {
+    let continuation = v3_continuation(runtime)?;
     let output = match compose_overrides(runtime, overlay)? {
         Some(overrides) => {
-            runtime.execute_streaming_overlaid(prompt_ids, &overrides, &mut |_| Ok(()))
+            runtime
+                .execute_streaming_overlaid(prompt_ids, &overrides, &continuation, &mut |_| Ok(()))
         }
-        None => runtime.execute_streaming(prompt_ids, &mut |_| Ok(())),
+        None => runtime.execute_streaming(prompt_ids, &continuation, &mut |_| Ok(())),
     }
     .map_err(|e| LqlError::exec("balance: v3 probe failed", e))?;
     let logits = output

@@ -16,8 +16,13 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-cli/**'
+      - 'crates/vindex-cli/**'
+      - 'docs/generated/**'
       - 'crates/larql-lql/**'
       - 'crates/larql-kv/**'
+      # the C6 gate builds and loads this fixture (it includes the C5
+      # provider from crates/larql-kv/tests, already covered above)
+      - 'crates/larql-continuation-fixture/**'
       - 'crates/larql-vindex/**'
       - 'crates/larql-models/**'
       - 'crates/larql-inference/src/**'
@@ -29,8 +34,13 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-cli/**'
+      - 'crates/vindex-cli/**'
+      - 'docs/generated/**'
       - 'crates/larql-lql/**'
       - 'crates/larql-kv/**'
+      # the C6 gate builds and loads this fixture (it includes the C5
+      # provider from crates/larql-kv/tests, already covered above)
+      - 'crates/larql-continuation-fixture/**'
       - 'crates/larql-vindex/**'
       - 'crates/larql-models/**'
       - 'crates/larql-inference/src/**'
@@ -158,6 +168,9 @@ jobs:
       - name: Tests (default features) on macOS
         if: runner.os == 'macOS'
         run: cargo test -p larql-cli
+
+      - name: Format CLI documentation authority
+        run: cargo test -p vindex-cli --bin vindex current_documentation_facts
 
       # R3B: validates the checked-out PR's own registry/index.json +
       # registry/models/*.json, through the exact assembly/validation

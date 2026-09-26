@@ -19,6 +19,9 @@
 //! executable plan alone — `larql-kv` consults no `ModelArchitecture`
 //! anywhere on this path.
 
+mod registry_parity;
+mod resume_anti_cheat;
+
 use larql_vindex::format::vindex3::fixtures::{
     encode_fixture_container, miniature_glimmer, G_HEAD_DIM, G_KV_HEADS, G_LAYERS, G_TOKENS,
     G_WINDOW,
@@ -408,4 +411,140 @@ fn recurrent_layers_get_buffers_and_kv_layers_still_refuse() {
         7.0,
         "a resumed preparation must not reset the continuation"
     );
+}
+
+/// Spare matrix capacity must survive appends. This detects the old full-prefix
+/// allocation/copy without a noisy wall-clock performance assertion.
+#[test]
+fn appends_reuse_matrix_capacity_and_preserve_every_stored_bit() {
+    let mut cache = KvCache::with_layers(1);
+    let mut k = ndarray::Array2::zeros((0, 2));
+    let mut v = ndarray::Array2::zeros((0, 2));
+    k.reserve_rows(128).unwrap();
+    v.reserve_rows(128).unwrap();
+    let kp = k.as_ptr();
+    let vp = v.as_ptr();
+    cache.set_layer(0, (k, v));
+    let mut state = CanonicalKvState::from_cache(cache);
+    state.prepare(&[LayerKvGeometry {
+        kv_dim: 2,
+        window: Some(3),
+    }]);
+    for i in 0..128 {
+        let key = vec![i as f32, -0.0];
+        let value = vec![-(i as f32), f32::from_bits(0x7fc00001)];
+        state.append(0, key.clone(), value.clone());
+        let (k, v) = state.cache().get_layer(0).unwrap();
+        assert_eq!(k.as_ptr(), kp, "K reallocated with reserved capacity");
+        assert_eq!(v.as_ptr(), vp, "V reallocated with reserved capacity");
+        assert_eq!(
+            k.nrows(),
+            i + 1,
+            "the declared attention window must not evict state"
+        );
+        for j in 0..2 {
+            assert_eq!(k[(i, j)].to_bits(), key[j].to_bits());
+            assert_eq!(v[(i, j)].to_bits(), value[j].to_bits());
+            assert_eq!(state.keys(0)[i][j].to_bits(), key[j].to_bits());
+            assert_eq!(state.values(0)[i][j].to_bits(), value[j].to_bits());
+        }
+    }
+}
+
+#[test]
+fn append_accepts_an_adopted_column_major_cache() {
+    use ndarray::ShapeBuilder;
+    let mut cache = KvCache::with_layers(1);
+    let k = ndarray::Array2::from_shape_vec((2, 2).f(), vec![1., 3., 2., 4.]).unwrap();
+    cache.set_layer(0, (k.clone(), k));
+    let mut state = CanonicalKvState::from_cache(cache);
+    state.prepare(&[LayerKvGeometry {
+        kv_dim: 2,
+        window: None,
+    }]);
+    state.append(0, vec![5., 6.], vec![7., 8.]);
+    assert_eq!(state.keys(0), &[vec![1., 2.], vec![3., 4.], vec![5., 6.]]);
+    assert_eq!(state.values(0), &[vec![1., 2.], vec![3., 4.], vec![7., 8.]]);
+    assert_eq!(
+        state.cache().get_layer(0).unwrap().0.row(2).to_vec(),
+        vec![5., 6.]
+    );
+}
+
+#[test]
+fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation::{
+        LayerContinuationGeometry, LayerLatentKvGeometry,
+    };
+    use larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError;
+    let mut state = CanonicalKvState::new();
+    assert!(matches!(
+        state.latent_state(1),
+        Err(ContinuationError::LatentUnsupported { layer: 1, .. })
+    ));
+    let geometry = [
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 2,
+            window: None,
+        }),
+        LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 3 }),
+    ];
+    state.prepare_continuation(&geometry).unwrap();
+    assert!(matches!(
+        state.latent_state(0),
+        Err(ContinuationError::NotLatent { layer: 0, .. })
+    ));
+    assert!(state.latent_state(1).unwrap().is_empty());
+    state.latent_state(1).unwrap().append(vec![1.0, -0.0, 3.0]);
+    state.append(0, vec![4.0, 5.0], vec![6.0, 7.0]);
+    state.set_position(1);
+    state.prepare_continuation(&geometry).unwrap();
+    let rows = state.latent_state(1).unwrap().rows();
+    assert_eq!(rows, &[vec![1.0, -0.0, 3.0]]);
+    assert_eq!(rows[0][1].to_bits(), (-0.0f32).to_bits());
+    assert_eq!(state.keys(0), &[vec![4.0, 5.0]]);
+    assert_eq!(state.position(), 1);
+}
+
+/// C1 of CONTINUATION-PLUGIN-1: the canonical provider names itself, and
+/// the two built-ins are distinct authorities — the handoff that will carry
+/// an identity (C4) must be able to tell them apart.
+#[test]
+fn canonical_states_a_valid_identity_distinct_from_row() {
+    let canonical = CanonicalKvState::identity();
+    canonical.validate().unwrap();
+    assert_eq!(canonical.to_string(), "canonical/v1");
+    assert_ne!(canonical, RowKvState::identity());
+}
+
+/// C2: the shipped registry is a fresh VALUE on every call — registering
+/// into one leaves the next untouched — and it holds exactly the two
+/// built-ins, each selectable against a real plan's geometry.
+#[test]
+fn shipped_continuations_is_a_fresh_value_holding_both_built_ins() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+    use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+
+    let mut first = crate::shipped_continuations();
+    assert_eq!(
+        first.identities(),
+        [RowKvState::identity(), CanonicalKvState::identity()]
+    );
+    let dup = first
+        .register(Box::new(crate::CanonicalFactory))
+        .unwrap_err();
+    assert!(dup.to_string().contains("canonical/v1"), "{dup}");
+    assert_eq!(crate::shipped_continuations().len(), 2);
+
+    let (_dir, plan, _store) = fixture();
+    let geometry = plan_continuation_geometry(&plan).unwrap();
+    for identity in first.identities() {
+        let selected = first
+            .select(&identity, &ContinuationConfig::empty(), &geometry)
+            .unwrap();
+        assert_eq!(selected.authority().identity, identity);
+        let mut built = selected.build();
+        built.prepare_continuation(&geometry).unwrap();
+        assert_eq!(built.position(), 0);
+    }
 }

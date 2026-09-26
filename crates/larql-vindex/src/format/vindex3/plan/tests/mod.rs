@@ -4,6 +4,7 @@ mod architecture_identity;
 mod capability;
 mod carriage;
 mod compare;
+mod gemma3;
 mod gemma4;
 mod hybrid_linear_attention;
 mod identity;

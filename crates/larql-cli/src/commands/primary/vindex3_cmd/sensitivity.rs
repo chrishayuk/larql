@@ -350,7 +350,6 @@ fn capture_moments(
     calibration: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-    use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
     let out = args
         .moments
         .clone()
@@ -392,8 +391,8 @@ fn capture_moments(
     for (n, e) in entries.iter().enumerate() {
         // A fresh state per prompt, as Q-BANK-2 established: every
         // position must see the context its own prompt gives it.
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::with_kv_state(&plan, &store, &backend, &mut kv)?;
+        let mut kv = crate::commands::primary::continuation::select_for(&plan, None)?.build();
+        let mut session = DecodeSession::with_kv_state(&plan, &store, &backend, &mut *kv)?;
         for &t in &e.ids {
             session.step_observed(t, &mut collector)?;
             positions += 1;

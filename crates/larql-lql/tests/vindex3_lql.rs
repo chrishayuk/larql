@@ -100,7 +100,14 @@ fn direct_arm(container: &Path) -> Vec<u32> {
 fn inference_arm(container: &Path) -> Vec<u32> {
     let runtime = Vindex3Runtime::open(container, COMPONENT, ProductionBackend::new()).unwrap();
     let ids = prompt_ids(container);
-    let mut session = runtime.session().unwrap();
+    let continuation = runtime
+        .select_continuation(
+            &larql_kv::shipped_continuations(),
+            &larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::identity(),
+            &larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig::empty(),
+        )
+        .unwrap();
+    let mut session = runtime.session(&continuation).unwrap();
     generate_session(
         &mut session,
         &ids,
@@ -339,6 +346,15 @@ fn trace_is_observational_and_agrees_with_explain() {
     assert!(text.contains("position 0"), "{text}");
     assert!(text.contains("layer 0: attention"), "{text}");
     assert!(text.contains("layer 0: ffn"), "{text}");
+    // V3-OBS-1: the writes are in the stream too, named by site and form.
+    assert!(
+        text.contains("layer 0: attention write (single carrier)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("layer 1: ffn write (single carrier)"),
+        "{text}"
+    );
     assert!(text.contains("layer 1: attention"), "{text}");
     assert!(text.contains("layer 1: ffn"), "{text}");
     assert!(text.contains("output_head (vocab 29)"), "{text}");
@@ -350,7 +366,12 @@ fn trace_is_observational_and_agrees_with_explain() {
         .iter()
         .filter(|l| l.trim_start().starts_with("layer ") && l.contains("kv_dim"))
         .count();
-    let observed_layers = trace.iter().filter(|l| l.contains(": ffn")).count();
+    // The FFN BOUNDARY line ends the layer; the FFN write line
+    // (`: ffn write (...)`) is the carrier write inside it, not a layer.
+    let observed_layers = trace
+        .iter()
+        .filter(|l| l.trim_end().ends_with(": ffn"))
+        .count();
     assert_eq!(explained_layers, observed_layers, "explain/trace disagree");
 
     // Observation is observational: the traced greedy token is INFER's.

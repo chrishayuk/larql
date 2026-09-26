@@ -1,5 +1,7 @@
 # Vindex Server — Remote Knowledge & Inference
 
+**Class: ARCHIVE.** This versioned early server draft is retained as written. The [server README](../README.md) and [interface guide](../../../docs/runtime-surfaces.md) describe the current V2/V3 service boundary; mounted routes/capabilities decide availability.
+
 **Version:** 0.1  
 **Date:** 2026-04-01  
 **Status:** Draft  
@@ -743,7 +745,7 @@ a 404.
 
 `previous_response_id` chains on a V3 runtime resume from a resident KV
 state rather than re-prefilling the whole conversation. The producing
-turn's `V3KvHandoff { kv, absorbed_ids }` stays in a bounded, TTL-swept
+turn's `V3KvHandoff { continuation, absorbed_ids }` stays in a bounded, TTL-swept
 cache keyed by response id (`--v3-kv-cache-entries`, default 4;
 `--v3-kv-ttl-secs`, default 600; swept by the maintenance sweeper).
 
@@ -766,10 +768,23 @@ Three further contracts:
 - **Session-owned when the client asks.** A request carrying
   `X-Session-Id` binds a session that owns the retained state, so
   `DELETE /v1/sessions/{id}` frees it (§4.5).
+- **Authority-checked before the prefix (CONTINUATION-PLUGIN-1 C4).**
+  The retained state is sealed with the continuation authority that
+  built it: provider identity and configuration digest, compared
+  separately. Before the prompt is compared, that authority must equal
+  the one the model's binding selected. Otherwise the resume contract
+  refuses (`provider_absent`, `revision_changed` or
+  `configuration_changed`, naming both sides), and the refused state is
+  dropped, never reinterpreted. The server then recovers with a full
+  fresh prefill, but only explicitly: the response carries
+  `usage.input_tokens_details.continuation_refused` (`kind`, `reason`,
+  `recovery: "fresh_prefill"`), and `/v1/stats` counts it under
+  `refusals`. It is never counted as a miss. The field is absent when
+  nothing was refused. The produced tokens still equal a fresh run's.
 
 Observability: a hit surfaces as `usage.input_tokens_details.
 cached_tokens`; `/v1/stats.server.v3_kv` carries `hits`, `misses`,
-`resumptions`, `reused_tokens_total`. `hits - resumptions` is the live
+`resumptions`, `refusals`, `reused_tokens_total`. `hits - resumptions` is the live
 **prefix-stability gap** — resident state found but unusable under
 exact token-id identity.
 

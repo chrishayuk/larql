@@ -1,0 +1,5 @@
+binary: a7f6994944a9312528366ab536985431eef0b7a0 (release) sha256 d614b3467637762ffa3bb155d34c292a4490032338a912162649837c0ee272b5
+tree clean outside bench/ and docs/: 0 changed crate paths
+Fri 25 Sep 2026 00:19:40 BST
+ 0:19  up 18 days,  8:12, 1 user, load averages: 10.78 9.50 5.64
+LARQL_* env: 0 vars

@@ -117,6 +117,10 @@ pub(super) fn exit_latent<B: super::backend::PlanBackend + ?Sized>(
 
 /// A layer's FFN operands, loaded once in the backend's declared format.
 pub(super) enum FfnOperands {
+    External {
+        layer: usize,
+        provider: Option<std::sync::Arc<dyn super::dense_ffn::DenseFfnProvider>>,
+    },
     /// Every variant boxed: the routed operands carry a bank and a shared
     /// branch, the hybrid both programs, and the dense one is then the odd
     /// one out — one pointer each keeps the enum the size of a word.
@@ -173,6 +177,10 @@ impl LoadedNormWeight {
 /// the shape their bank stores them, the shared branch when the plan
 /// carries one, plus Gemma 4's router conditioning when the op carries it.
 pub(super) struct RoutedOperands {
+    placement: Option<(
+        usize,
+        Option<std::sync::Arc<dyn super::routed_experts::RoutedExpertProvider>>,
+    )>,
     router: Vec<f32>,
     router_bias: Option<Vec<f32>>,
     router_scale: Option<Vec<f32>>,
@@ -242,6 +250,73 @@ impl ExpertMatrices {
 }
 
 impl FfnOperands {
+    pub(super) fn load_routed_coordinator(
+        ffn: &LayerFfn,
+        store: OperandSource<'_>,
+        layer: usize,
+    ) -> Result<Self, VindexError> {
+        let LayerFfn::Routed(op) = ffn else {
+            return Err(VindexError::Parse(
+                "routed coordinator requires routed layer".into(),
+            ));
+        };
+        Ok(Self::Routed(Box::new(RoutedOperands {
+            placement: Some((layer, None)),
+            router: store.load(&op.router)?,
+            router_bias: op.router_bias.as_ref().map(|r| store.load(r)).transpose()?,
+            router_scale: op
+                .router_scale
+                .as_ref()
+                .map(|r| store.load(r))
+                .transpose()?,
+            router_per_expert_scale: op
+                .router_per_expert_scale
+                .as_ref()
+                .map(|r| store.load(r))
+                .transpose()?,
+            router_norm_eps: op.router_norm_eps,
+            experts: ExpertMatrices::Fused {
+                gate_up: Vec::new(),
+                down: Vec::new(),
+            },
+            gate_up_bias: None,
+            down_bias: None,
+            shared: None,
+            latent: None,
+        })))
+    }
+    pub(super) fn routed_provider_missing(&self) -> bool {
+        matches!(self, Self::Routed(r) if matches!(r.placement, Some((_, None))))
+    }
+    pub(super) fn bind_routed_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn super::routed_experts::RoutedExpertProvider>,
+    ) -> Result<(), VindexError> {
+        let Self::Routed(r) = self else {
+            return Err(VindexError::Parse("not a routed coordinator layer".into()));
+        };
+        let Some((_, slot)) = &mut r.placement else {
+            return Err(VindexError::Parse(
+                "routed layer is resident, not placed".into(),
+            ));
+        };
+        *slot = Some(provider);
+        Ok(())
+    }
+    pub(super) fn dense_slices<'a>(
+        &'a self,
+        ffn: &'a LayerFfn,
+    ) -> Option<(Option<WeightSlice<'a>>, WeightSlice<'a>, WeightSlice<'a>)> {
+        match (self, ffn) {
+            (Self::Dense(dense), LayerFfn::Dense(_)) => Some((
+                dense.gate.as_ref().map(LoadedWeight::slice),
+                dense.up.slice(),
+                dense.down.slice(),
+            )),
+            _ => None,
+        }
+    }
+
     pub(super) fn load(
         ffn: &LayerFfn,
         store: OperandSource<'_>,
@@ -282,6 +357,7 @@ impl FfnOperands {
                 .map(|b| (Operation::Project(MatrixClass::FfnProjection), b))
         };
         match (self, ffn) {
+            (Self::External { .. }, LayerFfn::Dense(_)) => Ok(Vec::new()),
             (Self::Dense(d), LayerFfn::Dense(op)) => Ok(dense(d.bound(op)).collect()),
             (Self::Routed(r), LayerFfn::Routed(op)) => Ok(r.bound(op)),
             (Self::Hybrid(h), LayerFfn::Hybrid(op)) => {
@@ -300,6 +376,7 @@ impl FfnOperands {
     /// realization and are not projections of the plan's operands.
     pub(super) fn dense_matrices(&self) -> Vec<&LoadedWeight> {
         match self {
+            Self::External { .. } => Vec::new(),
             Self::Dense(d) => d.loaded_matrices(),
             Self::Routed(_) => Vec::new(),
             Self::Hybrid(h) => h.dense.loaded_matrices(),
@@ -309,6 +386,7 @@ impl FfnOperands {
     /// Every matrix operand, for residency accounting.
     pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
         match self {
+            Self::External { .. } => Vec::new(),
             Self::Dense(dense) => dense.loaded_matrices(),
             Self::Routed(routed) => routed.loaded_matrices(),
             Self::Hybrid(hybrid) => {
@@ -322,6 +400,7 @@ impl FfnOperands {
     /// Every matrix operand, for residency preparation.
     pub(super) fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
         match self {
+            Self::External { .. } => Vec::new(),
             Self::Dense(dense) => dense.weight_slices(),
             Self::Routed(routed) => routed.weight_slices(),
             Self::Hybrid(hybrid) => {
@@ -342,6 +421,15 @@ impl FfnOperands {
         hidden: usize,
     ) -> Result<Vec<f32>, VindexError> {
         match (self, ffn) {
+            (Self::External { layer, provider }, LayerFfn::Dense(_)) => {
+                super::dense_ffn::validate_row(x, hidden)?;
+                let out = provider
+                    .as_ref()
+                    .ok_or_else(|| VindexError::Parse("dense FFN provider is not bound".into()))?
+                    .apply(*layer, x)?;
+                super::dense_ffn::validate_row(&out, hidden)?;
+                Ok(out)
+            }
             (Self::Dense(dense), LayerFfn::Dense(op)) => dense.apply(op, backend, x, hidden),
             (Self::Routed(routed), LayerFfn::Routed(op)) => routed.apply(op, backend, x, x, hidden),
             _ => Err(VindexError::Parse(
@@ -514,6 +602,9 @@ impl RoutedOperands {
     /// The two banks, each one operand over its per-expert objects. A
     /// per-expert bank is refused before it is loaded, so it binds nothing.
     pub(super) fn bound<'a>(&'a self, op: &'a RoutedFfnOp) -> Vec<(Operation, Bound<'a>)> {
+        if self.placement.is_some() {
+            return Vec::new();
+        }
         let mut out: Vec<(Operation, Bound<'a>)> = match (&op.bank, &self.experts) {
             (
                 ExpertBank::Packed { gate_up, down },
@@ -683,7 +774,7 @@ impl RoutedOperands {
                 ))
             }
         };
-        let mut routed = backend.routed_ffn(RoutedFfnCall {
+        let call = RoutedFfnCall {
             x: expert_x,
             hidden: expert_width,
             intermediate: op.expert_intermediate_size,
@@ -709,7 +800,18 @@ impl RoutedOperands {
             router_scale: self.router_scale.as_deref(),
             router_per_expert_scale: self.router_per_expert_scale.as_deref(),
             router_norm_eps: self.router_norm_eps,
-        })?;
+        };
+        let mut routed = match &self.placement {
+            Some((layer, Some(provider))) => {
+                backend.routed_ffn_placed(call, *layer, provider.as_ref())?
+            }
+            Some((_, None)) => {
+                return Err(VindexError::Parse(
+                    "routed expert provider is not bound".into(),
+                ))
+            }
+            None => backend.routed_ffn(call)?,
+        };
         // Leave the bottleneck. `routed` is the WEIGHTED AGGREGATE at the
         // latent width — the oracle's `routed_sum` — so the norm applies
         // to one vector per token here, after top-k weighting and
@@ -841,6 +943,7 @@ impl RoutedOperands {
             None => None,
         };
         Ok(Self {
+            placement: None,
             router: store.load(&op.router)?,
             router_bias: op.router_bias.as_ref().map(|b| store.load(b)).transpose()?,
             router_scale: op
@@ -1012,7 +1115,11 @@ fn from_f32(
             "expert bank `{name}` cannot be made q4-resident: the bank is widened to f32 on \
              the way in, so there is nothing compact left to keep"
         ))),
-        WeightFormat::KQuant => Err(VindexError::Parse(format!(
+        WeightFormat::Nvfp4Q8 => Err(VindexError::Parse(format!(
+            "expert bank `{name}` cannot bind a stored NVFP4 pack for a Q8 activation: the bank \
+             is widened to f32 on the way in, so there is no stored pack left to bind"
+        ))),
+        WeightFormat::KQuant | WeightFormat::KQuantQ8k => Err(VindexError::Parse(format!(
             "expert bank `{name}` cannot bind a stored K-quant: the bank is widened to f32 on \
              the way in, so the stored blocks are no longer what is being bound"
         ))),
@@ -1026,6 +1133,15 @@ fn from_f32(
         WeightFormat::Bf16 | WeightFormat::Q8 => Err(VindexError::Parse(format!(
             "tensor `{name}`: compact residency needs the stored bytes, and this expert path \
              has already widened to f32"
+        ))),
+        // Same reasoning as Bf16/Q8/KQuant above, and sharper: this
+        // format's bytes are whatever a codec's own encoder produced, and
+        // this path has neither a codec to ask nor the stored bytes left
+        // to keep — only an already-widened f32 image.
+        WeightFormat::CodecOwned => Err(VindexError::Parse(format!(
+            "expert bank `{name}` cannot bind codec-owned bytes: the bank is widened to f32 on \
+             the way in, so there are no stored bytes left to hand back, and this loader has no \
+             codec to re-encode them through"
         ))),
     }
 }

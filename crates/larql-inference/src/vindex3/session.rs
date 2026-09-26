@@ -1,6 +1,7 @@
 //! The format-neutral session contract and its VINDEX3 realisation.
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::BoxedContinuation;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
 use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandSource;
@@ -61,18 +62,20 @@ pub struct Vindex3Session<'a, B: PlanBackend> {
 
 impl<'a, B: PlanBackend> Vindex3Session<'a, B> {
     /// Load the plan's operands and open an incremental session at
-    /// position zero. The plan must carry an output head — a session
-    /// that cannot produce logits cannot serve generation.
+    /// position zero over `state` — a fresh provider the caller built,
+    /// normally from a selection. The plan must carry an output head — a
+    /// session that cannot produce logits cannot serve generation.
     pub fn new<'s>(
         plan: &'a ComponentOpPlan,
         store: impl Into<OperandSource<'s>>,
         backend: &'a B,
+        state: BoxedContinuation,
     ) -> Result<Self, InferenceError> {
         if plan.output.is_none() {
             return Err(headless_plan_error(&plan.component));
         }
         Ok(Self {
-            inner: DecodeSession::new(plan, store, backend)?,
+            inner: DecodeSession::new(plan, store, backend, state)?,
         })
     }
 
@@ -158,5 +161,24 @@ impl<B: PlanBackend> Vindex3Session<'_, B> {
             .step_observed(token, observer)?
             .logits
             .ok_or_else(missing_logits_error)
+    }
+
+    /// The step with interventions armed (V3-INTERVENE-1 carrier
+    /// addresses, V3-INTERVENE-2 head addresses): both plans are
+    /// admitted against the prepared image before the token executes,
+    /// and the firings say which declared interventions applied.
+    pub fn step_intervened(
+        &mut self,
+        token: u32,
+        observer: &mut dyn larql_vindex::format::vindex3::opplan::exec::observe::StepObserver,
+        interventions: &larql_vindex::format::vindex3::opplan::exec::intervene::InterventionPlan,
+        head_interventions: &larql_vindex::format::vindex3::opplan::exec::intervene_heads::HeadInterventionPlan,
+    ) -> Result<
+        larql_vindex::format::vindex3::opplan::exec::intervene::InterventionStepOutput,
+        InferenceError,
+    > {
+        Ok(self
+            .inner
+            .step_intervened(token, observer, interventions, head_interventions)?)
     }
 }

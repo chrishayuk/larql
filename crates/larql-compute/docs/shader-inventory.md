@@ -1,5 +1,7 @@
 # Metal shader inventory + retention survey
 
+**Class: ARCHIVE.** This inventory is a snapshot, not a current count or dispatch contract. Current [Metal sources](../../larql-compute-metal/src/shaders/) and [backend controls](../../larql-compute-metal/README.md) are the implementation authority.
+
 **Date**: 2026-05-09
 **Purpose**: Per-shader audit of `crates/larql-compute-metal/src/shaders/` under the model-agnosticity constraint — shaders need to support not just Gemma 3/4 but Llama 1/2/3, Mistral, DeepSeek, Qwen, and other transformer LM families. The previous Gemma-A/B-falsification cleanup pattern (e.g. NR2 deletion) over-prioritised current-Gemma performance and risks deleting capability that other models need.
 

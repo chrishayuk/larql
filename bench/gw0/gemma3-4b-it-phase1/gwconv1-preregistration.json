@@ -1,0 +1,150 @@
+{
+  "adjudication": {
+    "cross_relation_generality": "the train-selected global site has positive mean candidate_raw adjusted gain in at least three of four relations on both validation and test",
+    "emergence_timing": "descriptive only: signed site distance and fraction at-or-before emergence; it cannot rescue a failed held-out gain gate",
+    "full_support": "global_operator AND relation_routing AND cross_relation_generality",
+    "global_operator": "at the train-selected global site, lower 95% bounds for carrier, candidate_raw and candidate_zscore adjusted gain are all above zero on validation and test",
+    "no_post_hoc_site_or_window": true,
+    "relation_routing": "at the four train-selected relation sites, the pooled relation-specific test lower 95% bounds for all three adjusted gains are above zero"
+  },
+  "authorities": {
+    "candidates": {
+      "identity_sha256": "sha256:08600e83faf6c8aeb845b32eabfdfebf4d3a538e6e12eab295ece7656bf79f8d",
+      "path": "gwsup1-candidates.json",
+      "sha256": "sha256:9888da65cde8836d6a43c8197934d5c018d51ffb216b3e5aa78149b7b8b8862f"
+    },
+    "container_identity": "sha256:3954b0380955b8e00501f4823d93f08fece49962d358eb08150f333c4c4fb506",
+    "gwsup1_adjudication": {
+      "identity_sha256": "sha256:37121efe0049e586bc8200866d763e7178e8e416cb28ad2f58e0d8c251579bd4",
+      "path": "../../../output/gwsup1-gemma3-4b-it-phase1/adjudication.json",
+      "sha256": "sha256:bbcd7b8b8b246807162b5b44976b5a343fca6e2b020fa635b4d45924da50d730",
+      "verdict": "full_conjunctive_gate_not_met"
+    },
+    "gwsup1_after_readout": {
+      "candidate_logits_sha256": "sha256:c6ed9287814d862e5f9fe323814f1d3c47d5c4a3b10025b8ce55d3d6511cd014",
+      "path": "../../../output/gwsup1-gemma3-4b-it-phase1/readout-manifest.json",
+      "rows_sha256": "sha256:aa7326a077c388b46b8e10feb80ec48b596cb41fad6fb571ee08d20427a7c7cb",
+      "selected_full_head_parity": {
+        "bit_mismatches": 0,
+        "edge_id": "gw0e-01487f23dc3b50e5",
+        "max_abs_difference": 0.0,
+        "selected_tokens": 126,
+        "site_index": 0
+      },
+      "sha256": "sha256:4c5960076237f7a8d54683d0aa3bb5d3956ff8c8cf1b69e06e636560671335ec"
+    },
+    "gwsup1_preregistration": {
+      "identity_sha256": "sha256:1ed1116eb2a800fe312f1c540ee396ddbb6dbe93aec553463f02a5a65690db73",
+      "path": "gwsup1-preregistration.json",
+      "sha256": "sha256:b066fe8bc8cc8fc58acc22e50ce031ea86ee624aab05982adecb1dc57aa47b3e"
+    },
+    "input_manifest": {
+      "path": "manifest.json",
+      "sha256": "sha256:167d6bec75707e73c7afe392d1a7f036f81cff80be35ec9d34a0ae93e6da3ae6"
+    },
+    "plan_sha256": "sha256:f8f24893c784750598660b2ff724d1fa103fefa788ca791e4f464a6f2a225ddf",
+    "readout_basis": "prepared-production-effective-final-norm-and-q8-output-head/v1",
+    "sealed_gw0": {
+      "bundle_sha256": "sha256:ac9871abdaef1206298788fae15df9121542fb1f64496cccc07bc12b5751b6bf",
+      "census_sha256": "sha256:9db9f925d314554d03f6bae0e019694525b1840ddc7cfca22953e3b9885bbd3a",
+      "path": "../../../output/gw0-gemma3-4b-it-phase1/sealed/manifest.json",
+      "sha256": "sha256:a154a934046872eb43d9650e8a5fb639e1134e68e80c2dec79d63343a886ef7b"
+    }
+  },
+  "claim_boundary": "observational convergence-operator localization; not causal attribution, not proof of a graph edge, and not authorization for attention-head semantics",
+  "cohort": {
+    "execution_rows": 426,
+    "prompt_rows_per_edge": 3,
+    "relation_by_split": {
+      "capital": {
+        "test": 7,
+        "train": 23,
+        "validation": 8
+      },
+      "currency": {
+        "test": 7,
+        "train": 20,
+        "validation": 7
+      },
+      "hypernym": {
+        "test": 8,
+        "train": 24,
+        "validation": 8
+      },
+      "language": {
+        "test": 6,
+        "train": 18,
+        "validation": 6
+      }
+    },
+    "semantic_edges": 142,
+    "splits": {
+      "test": 28,
+      "train": 85,
+      "validation": 29
+    },
+    "statistical_unit": "unique (subject, relation, target) semantic edge"
+  },
+  "frozen_date": "2026-09-21",
+  "interpretation_contract": {
+    "attention_selected": "prioritizes HEAD decomposition but does not itself identify a head",
+    "candidate_only": "semantic readout convergence without demonstrated carrier alignment",
+    "carrier_only": "geometric alignment without demonstrated semantic convergence",
+    "ffn_selected": "prioritizes FFN write-family analysis but does not identify a feature edge",
+    "held_out_global": "a stable shared convergence locus",
+    "held_out_relation_sites": "relation-conditioned convergence routing",
+    "train_only": "discovery, not a stable operator"
+  },
+  "measurements": {
+    "adjusted_gain": "same-fact gain minus matched-control gain; positive means excess convergence",
+    "candidate_raw": {
+      "gain": "JS before minus JS after",
+      "similarity": "negative mean pairwise Jensen-Shannon divergence over the 126-token restricted softmax"
+    },
+    "candidate_zscore": {
+      "gain": "z-score JS before minus z-score JS after",
+      "similarity": "negative mean pairwise JS after independently z-scoring each state's 126 logits"
+    },
+    "carrier": {
+      "gain": "after similarity minus before similarity",
+      "similarity": "mean of the three pairwise carrier cosines in a same-fact prompt triplet"
+    },
+    "control": "the three frozen same-split, same-relation, same-prompt-family, different-subject-and-target rows already bound by GW-SUP-1",
+    "emergence_relation": "selected-site order minus the edge's median sealed emergence-site order",
+    "operator_class": "attention or FFN from the immutable site universe"
+  },
+  "preregistration_sha256": "sha256:03a01d91bedd69a3ca825c5857a37f796daed088dd557582bbb049cd23fcf8ea",
+  "question": "which observed writes make same-fact prompt trajectories more alike than frozen relation-matched controls?",
+  "schema": "larql.gwconv1.preregistration.v1",
+  "selection": {
+    "discovery_split": "train only",
+    "global_site": "site with maximum train mean adjusted candidate_raw gain across all 85 edges; earliest site wins an exact tie",
+    "held_out_sites_may_not_move": true,
+    "relation_sites": "within each relation, site with maximum train mean adjusted candidate_raw gain; earliest exact tie",
+    "validation_or_test_outcomes_may_not_select_a_site": true
+  },
+  "states": {
+    "after": "sealed carrier-after artifact, followed by the recorded layer_scale when present",
+    "before": "sealed carrier-before artifact at the observed write",
+    "candidate_after_readout": "immutable GW-SUP-1 candidate-logits.f32 authority",
+    "candidate_before_readout": "new read-only selected-row pass over sealed before carriers",
+    "candidate_vocabulary": "the unchanged frozen GW-SUP-1 126-token decoder vocabulary",
+    "order": "layer ascending, attention then FFN",
+    "prompt_reexecution": false,
+    "sites": 68,
+    "zero_norm_or_zero_candidate_variance": "refuse"
+  },
+  "statistics": {
+    "global_stratification": "relation-stratified",
+    "interval": "10000-sample percentile cluster bootstrap over semantic edges",
+    "relation_specific": "within-relation edge bootstrap",
+    "seed": 1398100531,
+    "site_profile_descriptives": [
+      "positive adjusted-gain mass captured by top 1, 2, 4 and 8 sites",
+      "Herfindahl and effective-site count over positive adjusted gain",
+      "attention-versus-FFN adjusted gain"
+    ],
+    "validation_and_test_reported_separately": true
+  },
+  "status": "frozen_pre_before_readout"
+}

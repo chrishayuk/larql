@@ -16,11 +16,13 @@
 
 use std::path::Path;
 
-use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
+use larql_inference::vindex3::{open_component_in, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::lowering::{LoweringIdentity, LoweringRegistry};
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 
+use super::plugins::Plugins;
 use super::ExecBackend;
 
 type BoxErr = Box<dyn std::error::Error>;
@@ -45,12 +47,21 @@ pub(crate) fn prepare(
     component: &str,
     backend: ExecBackend,
     source: RepresentationSource,
+    plugins: &Plugins,
 ) -> Result<OpenedComponent, BoxErr> {
     let policy = OpenPolicy {
-        want: wanted_representation(backend).map(str::to_string),
+        want: plugins
+            .want
+            .clone()
+            .or_else(|| wanted_representation(backend).map(str::to_string)),
         source,
     };
-    Ok(open_component(container, component, policy)?)
+    Ok(open_component_in(
+        container,
+        component,
+        policy,
+        plugins.codecs,
+    )?)
 }
 
 /// Parse `--representation-source`.
@@ -86,10 +97,10 @@ pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str
     // states which representation it executes.
     match backend {
         ExecBackend::Reference | ExecBackend::Production => None,
-        ExecBackend::ProductionNvfp4 => Some(DTYPE_NVFP4),
+        ExecBackend::ProductionNvfp4 | ExecBackend::ProductionNvfp4Q8 => Some(DTYPE_NVFP4),
         ExecBackend::ProductionQ8 => Some(kquant::Q8_0.name),
         ExecBackend::ProductionQ6k => Some(kquant::Q6_K.name),
-        ExecBackend::ProductionQ4k => Some(kquant::Q4_K.name),
+        ExecBackend::ProductionQ4k | ExecBackend::ProductionQ4kQ8k => Some(kquant::Q4_K.name),
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::Metal
         | ExecBackend::MetalMxfp4
@@ -114,7 +125,7 @@ pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str
 /// pre-lowering numbers could not (they mixed kernel families and
 /// starvation). `None` for every interpreted arm.
 #[cfg(all(feature = "gpu", target_os = "macos"))]
-pub(super) fn lowered_formats(
+pub(crate) fn lowered_formats(
     backend: ExecBackend,
 ) -> Option<(
     larql_vindex::format::vindex3::opplan::exec::backend::WeightFormats,
@@ -163,6 +174,8 @@ pub(super) fn lowered_formats(
         | ExecBackend::ProductionQ8
         | ExecBackend::ProductionQ6k
         | ExecBackend::ProductionQ4k
+        | ExecBackend::ProductionQ4kQ8k
+        | ExecBackend::ProductionNvfp4Q8
         | ExecBackend::Metal
         | ExecBackend::MetalMxfp4
         | ExecBackend::MetalMxfp4All
@@ -214,6 +227,22 @@ pub(crate) fn lowerings_for(
         | ExecBackend::ProductionQ8
         | ExecBackend::ProductionQ6k
         | ExecBackend::ProductionQ4k => Ok((shipped, LoweringIdentity::cpu_production())),
+        // Q8K-ACT-1: the production executor constructed for the Q8_K
+        // activation, registered under its OWN identity — the same pins
+        // compute different numbers under it, so an image prepared for
+        // one provider must never execute under the other.
+        ExecBackend::ProductionQ4kQ8k => {
+            let q8k = ProductionBackend::q8k_activation();
+            let identity = q8k.identity();
+            Ok((shipped.register(Box::new(q8k))?, identity))
+        }
+        // NVFP4-Q8-1: the same construction for the NVFP4 pack's Q8
+        // activation, under its own identity for the same reason.
+        ExecBackend::ProductionNvfp4Q8 => {
+            let q8 = ProductionBackend::nvfp4_q8_activation();
+            let identity = q8.identity();
+            Ok((shipped.register(Box::new(q8))?, identity))
+        }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalLowered
         | ExecBackend::MetalLoweredFfn
@@ -355,10 +384,28 @@ pub(crate) fn lowerings_for(
 /// constructed for it.
 pub(crate) fn with_plan_backend<V: BackendVisitor>(
     backend: ExecBackend,
+    plugins: &Plugins,
     visitor: V,
 ) -> Result<V::Out, BoxErr> {
-    let (lowerings, identity) = lowerings_for(backend)?;
+    let (lowerings, identity) = lowerings_with(backend, plugins)?;
     with_lowerings(&lowerings, &identity, visitor)
+}
+
+/// [`lowerings_for`], plus every lowering provider a `--plugin`
+/// registered, asked for the provider `--lowering` names when it names
+/// one. A plugin provider joins the registry under the identity it
+/// states, so a clash with a shipped or `--backend`-configured provider
+/// is refused as a duplicate, never a replacement.
+pub(crate) fn lowerings_with(
+    backend: ExecBackend,
+    plugins: &Plugins,
+) -> Result<(LoweringRegistry, LoweringIdentity), BoxErr> {
+    let (mut lowerings, identity) = lowerings_for(backend)?;
+    for factory in &plugins.lowerings {
+        lowerings = lowerings.register(factory())?;
+    }
+    let identity = plugins.select.clone().unwrap_or(identity);
+    Ok((lowerings, identity))
 }
 
 /// Hand `visitor` the provider `identity` names in `lowerings`, or

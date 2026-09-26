@@ -15,8 +15,8 @@
 //! template: the prompt is encoded raw, exactly as the BitNet arm does
 //! (a template is a follow-up on both). No sampler: greedy, so a run
 //! doubles as a fixture. And no flag it cannot honour is accepted
-//! silently — the dense path's engine, composition, expert and image
-//! flags are refused by name rather than dropped.
+//! silently. Scoped image inputs, exact state providers and CPU layer
+//! workers compose with the interpreter; unsupported engine flags refuse.
 //!
 //! Weights are loaded once, at model lifetime; every prompt — the one on
 //! the command line, or each line of the chat loop — gets a brand-new
@@ -38,20 +38,23 @@ use larql_inference::vindex3::OpenedComponent;
 use larql_vindex::format::filenames::TOKENIZER_JSON;
 use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use larql_vindex::tokenizers::Tokenizer;
 
+use super::continuation::{select_in, ContinuationChoice};
 use super::run_cmd::{KvCacheKind, RunArgs};
 use super::vindex3_cmd::decode::{greedy_decode, DecodeReport, Flow};
+use super::vindex3_cmd::plugins::Plugins;
 use super::vindex3_cmd::prepare::{
     prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT, ENGINE_PREFIX,
 };
 use super::vindex3_cmd::ExecBackend;
 
+mod inputs;
 #[cfg(test)]
 mod tests;
 
@@ -118,6 +121,47 @@ pub(super) fn run_to(
     status: &mut dyn Write,
 ) -> Result<(), BoxErr> {
     refuse_inapplicable_flags(args)?;
+    let Some(path) = &args.v3_profile else {
+        return run_inner(container, args, input, out, status);
+    };
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let capture = larql_inference::vindex3::dense_ffn::profile::Capture::start()?;
+    let result = run_inner(container, args, input, out, status);
+    let rows = capture.finish();
+    let routed = rows
+        .iter()
+        .flat_map(|r| &r.provider_calls)
+        .any(|c| c["kind"] == "routed_ffn");
+    serde_json::to_writer(
+        &mut file,
+        &serde_json::json!({
+            "schema": "larql.v3.position-profile.v1",
+            "artifact": container,
+            "placement": if args.v3_ffn_shards.is_empty() { "local" } else if routed { "remote-routed-experts" } else { "remote-dense-ffn" },
+            "complete": result.is_ok(),
+            "ffn_wire": (!args.v3_ffn_shards.is_empty()).then_some(args.v3_ffn_wire.as_deref().unwrap_or("binary")),
+            "positions": rows.len(),
+            "units": "nanoseconds; body bytes exclude HTTP/TLS headers",
+        }),
+    )?;
+    writeln!(file)?;
+    for row in rows {
+        serde_json::to_writer(&mut file, &row)?;
+        writeln!(file)?;
+    }
+    result
+}
+
+fn run_inner(
+    container: &Path,
+    args: &RunArgs,
+    input: &mut dyn BufRead,
+    out: &mut dyn Write,
+    status: &mut dyn Write,
+) -> Result<(), BoxErr> {
     let backend = select_backend(args.metal)?;
     let tokenizer_path = container.join(TOKENIZER_JSON);
     if !tokenizer_path.is_file() {
@@ -131,17 +175,21 @@ pub(super) fn run_to(
     let tokenizer = Tokenizer::from_file(&tokenizer_path)
         .map_err(|e| format!("load {}: {e}", tokenizer_path.display()))?;
     let eos = EosConfig::from_vindex_dir(container);
+    let plugins = Plugins::load(&args.plugin)?;
     let prepared = prepare(
         container,
         DEFAULT_COMPONENT,
         backend,
         RepresentationSource::Auto,
+        &plugins,
     )?;
     with_plan_backend(
         backend,
+        &plugins,
         Runner {
             container,
             args,
+            continuations: &plugins.continuations,
             prepared: &prepared,
             tokenizer: &tokenizer,
             eos: &eos,
@@ -155,14 +203,72 @@ pub(super) fn run_to(
 /// The dense path's flags this arm cannot honour, refused by name.
 ///
 /// The container's own program runs through the VINDEX3 interpreter with
-/// its own continuation state; the engine, composition, expert and image
-/// flags all describe the dense VINDEX2 engine. Refused together, so one
-/// message names every flag that has to go.
+/// its own continuation state. Only explicitly integrated providers and
+/// input/distribution protocols are accepted; other engine flags refuse.
 fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
+    if args.v3_profile.is_some()
+        && (args.prompt.is_none()
+            || args.metal
+            || args.continuation.is_some()
+            || !args.v3_shards.is_empty()
+            || args.kv_cache != KvCacheKind::Standard
+            || args
+                .engine
+                .as_deref()
+                .is_some_and(|e| !matches!(e, "row" | "standard")))
+    {
+        return Err("--v3-profile requires a prompt and CPU row/standard KV; layer replay, Metal and explicit --continuation are not covered".into());
+    }
+
+    if args.v3_shard_token_env.is_some()
+        && args.v3_shards.is_empty()
+        && args.v3_ffn_shards.is_empty()
+    {
+        return Err("--v3-shard-token-env requires --v3-shards or --v3-ffn-shards".into());
+    }
+    if !args.v3_ffn_shards.is_empty()
+        && (args.metal
+            || args.engine.is_some()
+            || args.continuation.is_some()
+            || args.kv_cache != KvCacheKind::Standard
+            || !args.v3_shards.is_empty())
+    {
+        return Err("--v3-ffn-shards uses CPU with local row KV; do not combine with --metal, --engine, --continuation, --kv-cache or --v3-shards".into());
+    }
+    if !args.v3_shards.is_empty()
+        && (args.metal
+            || args.engine.is_some()
+            || args.continuation.is_some()
+            || args.kv_cache != KvCacheKind::Standard)
+    {
+        return Err("--v3-shards uses CPU stateless prefix replay; do not combine with --metal, --engine, --continuation or --kv-cache".into());
+    }
+    if args.continuation.is_none() && !args.continuation_options.is_empty() {
+        return Err(
+            "--continuation-option needs --continuation to name the provider it configures".into(),
+        );
+    }
+    if args.mm_weights.is_some() && args.image.is_empty() {
+        return Err("--mm-weights requires --image".into());
+    }
+    if args.kv_cache == KvCacheKind::None
+        && args
+            .engine
+            .as_deref()
+            .is_some_and(|e| e != crate::commands::primary::continuation::REPLAY_ENGINE)
+    {
+        return Err("--kv-cache none conflicts with the selected --engine".into());
+    }
     let set: Vec<&str> = [
         ("--top", args.top != SINGLE_PREDICTION),
-        ("--kv-cache", args.kv_cache != KvCacheKind::Standard),
-        ("--engine", args.engine.is_some()),
+        ("--context-window", args.context_window != 0),
+        ("--kv-cache", args.kv_cache == KvCacheKind::MarkovBounded),
+        (
+            "--engine",
+            args.engine
+                .as_deref()
+                .is_some_and(|s| !crate::commands::primary::continuation::is_known_engine(s)),
+        ),
         ("--ffn", args.ffn.is_some()),
         ("--routed-from", args.routed_from.is_some()),
         ("--experts", args.experts),
@@ -171,8 +277,6 @@ fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
         ("--constrained", args.constrained),
         ("--moe-shards", args.moe_shards.is_some()),
         ("--moe-units-manifest", args.moe_units_manifest.is_some()),
-        ("--image", !args.image.is_empty()),
-        ("--mm-weights", args.mm_weights.is_some()),
     ]
     .into_iter()
     .filter_map(|(flag, given)| given.then_some(flag))
@@ -214,6 +318,8 @@ fn select_backend(metal: bool) -> Result<ExecBackend, BoxErr> {
 struct Runner<'a> {
     container: &'a Path,
     args: &'a RunArgs,
+    /// The shipped continuation providers plus any `--plugin` loaded.
+    continuations: &'a ContinuationRegistry,
     prepared: &'a OpenedComponent,
     tokenizer: &'a Tokenizer,
     eos: &'a EosConfig,
@@ -228,12 +334,72 @@ impl BackendVisitor for Runner<'_> {
     fn visit<B: PlanBackend>(self, backend: &B) -> Result<(), BoxErr> {
         let loading = Instant::now();
         // The expensive, immutable half — once, for every prompt.
-        let ops = PreparedOperands::load(
-            &self.prepared.plan,
-            &self.prepared.store,
-            backend,
-            ExecutionSlice::Full,
-        )?;
+        let routed = self
+            .prepared
+            .plan
+            .layers
+            .iter()
+            .any(|l| l.ffn.as_ref().and_then(|f| f.routed()).is_some());
+        let ops = if !self.args.v3_ffn_shards.is_empty() && routed {
+            if self
+                .args
+                .v3_ffn_wire
+                .as_deref()
+                .is_some_and(|w| w != "binary")
+            {
+                return Err("routed expert placement currently requires binary HTTP".into());
+            }
+            let token = self
+                .args
+                .v3_shard_token_env
+                .as_deref()
+                .map(std::env::var)
+                .transpose()?;
+            let transport = larql_router::vindex3_experts::HttpExpertShards::connect(
+                &self.args.v3_ffn_shards,
+                token.as_deref(),
+            )?;
+            larql_inference::vindex3::routed_experts::prepare_coordinator(
+                self.container,
+                &self.prepared.plan,
+                (&self.prepared.store).into(),
+                backend,
+                transport,
+            )?
+        } else if !self.args.v3_ffn_shards.is_empty() {
+            let token = self
+                .args
+                .v3_shard_token_env
+                .as_deref()
+                .map(std::env::var)
+                .transpose()?;
+            let connect = if self.args.v3_ffn_wire.as_deref() == Some("json") {
+                larql_router::vindex3_ffn::HttpFfnShards::connect
+            } else if self.args.v3_ffn_wire.as_deref() == Some("stream") {
+                larql_router::vindex3_ffn::HttpFfnShards::connect_stream
+            } else {
+                larql_router::vindex3_ffn::HttpFfnShards::connect_binary
+            };
+            let transport = connect(&self.args.v3_ffn_shards, token.as_deref())?;
+            larql_inference::vindex3::dense_ffn::prepare_coordinator(
+                self.container,
+                &self.prepared.plan,
+                (&self.prepared.store).into(),
+                backend,
+                transport,
+            )?
+        } else {
+            PreparedOperands::load(
+                &self.prepared.plan,
+                &self.prepared.store,
+                backend,
+                if self.args.v3_shards.is_empty() {
+                    ExecutionSlice::Full
+                } else {
+                    ExecutionSlice::Endpoints
+                },
+            )?
+        };
         let engine = format!("{ENGINE_PREFIX}-{}", backend.name());
         let identity = resolved_display_name(&self.prepared.model_name, self.container);
         if self.args.verbose {
@@ -245,6 +411,8 @@ impl BackendVisitor for Runner<'_> {
             )?;
         }
         let model = ResidentModel {
+            container: self.container,
+            family: &self.prepared.family,
             plan: &self.prepared.plan,
             ops: &ops,
             backend,
@@ -252,6 +420,7 @@ impl BackendVisitor for Runner<'_> {
             eos: self.eos,
             engine: &engine,
             args: self.args,
+            continuations: self.continuations,
         };
         if let Some(prompt) = self.args.prompt.as_deref() {
             return model.generate(prompt, self.out, self.status);
@@ -262,6 +431,8 @@ impl BackendVisitor for Runner<'_> {
 
 /// One loaded model, ready to answer any number of prompts.
 struct ResidentModel<'a, B: PlanBackend> {
+    container: &'a Path,
+    family: &'a str,
     plan: &'a ComponentOpPlan,
     ops: &'a PreparedOperands,
     backend: &'a B,
@@ -269,6 +440,18 @@ struct ResidentModel<'a, B: PlanBackend> {
     eos: &'a EosConfig,
     engine: &'a str,
     args: &'a RunArgs,
+    continuations: &'a ContinuationRegistry,
+}
+
+impl<B: PlanBackend> ResidentModel<'_, B> {
+    /// What this run's command line asked of continuation.
+    fn continuation_choice(&self) -> ContinuationChoice<'_> {
+        ContinuationChoice {
+            engine: self.args.engine.as_deref(),
+            identity: self.args.continuation.as_deref(),
+            options: &self.args.continuation_options,
+        }
+    }
 }
 
 impl<B: PlanBackend> ResidentModel<'_, B> {
@@ -280,6 +463,15 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         out: &mut dyn Write,
         status: &mut dyn Write,
     ) -> Result<(), BoxErr> {
+        if !self.args.v3_ffn_shards.is_empty()
+            || !self.args.v3_shards.is_empty()
+            || self.args.engine.is_some()
+            || self.args.continuation.is_some()
+            || self.args.kv_cache == KvCacheKind::None
+            || !self.args.image.is_empty()
+        {
+            return inputs::generate(self, prompt, out, status);
+        }
         let encoded = self
             .tokenizer
             .encode(prompt, true)
@@ -287,8 +479,10 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         let ids = encoded.get_ids();
         // A brand-new continuation state per prompt. Not a reset — a
         // replacement, so there is nothing that *could* carry over.
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut kv)?;
+        let continuation = select_in(self.continuations, self.plan, &self.continuation_choice())?;
+        let mut kv = continuation.build();
+        let mut session =
+            DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *kv)?;
         let mut detok = Detokenizer::new(self.tokenizer);
         detok.seed(ids);
         let decoded = greedy_decode(&mut session, ids, self.args.max_tokens, &mut |id, _| {
@@ -316,6 +510,12 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
             )?;
         }
         if self.args.verbose {
+            writeln!(
+                status,
+                "[{}] continuation={}",
+                self.engine,
+                continuation.authority().identity
+            )?;
             writeln!(
                 status,
                 "[{}] {} prompt tokens in {:.2} s, {} generated",

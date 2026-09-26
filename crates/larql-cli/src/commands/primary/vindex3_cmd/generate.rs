@@ -48,7 +48,8 @@ pub(super) fn run_generate<B: PlanBackend>(
     }
 
     let loading = Instant::now();
-    let mut session = DecodeSession::new(plan, store, backend)?;
+    let continuation = crate::commands::primary::continuation::select_for(plan, None)?;
+    let mut session = DecodeSession::new(plan, store, backend, continuation.build())?;
     let load_seconds = loading.elapsed().as_secs_f64();
     eprintln!("weights resident in {load_seconds:.1} s");
     report_residency(&session.residency_census());
@@ -114,6 +115,23 @@ pub(super) fn run_generate<B: PlanBackend>(
                 per_token * 1e6
                     / (stats.submissions as f64 / (report.decode_tokens + prompt.len()) as f64),
             );
+            // The device's own clock splits a call three ways: host work
+            // around the submission, queue latency (commit to completion
+            // that is not GPU execution), and the GPU's own span.
+            if let Some(clock) = stats.device_clock {
+                let positions = (report.decode_tokens + prompt.len()) as f64;
+                let ms = |nanos: u64| nanos as f64 / 1e6 / positions;
+                let done = ms(clock.commit_to_done_nanos);
+                let gpu = ms(clock.gpu_nanos);
+                println!(
+                    "  split: host {:.1} + queue {:.1} + gpu {:.1} ms/token \
+                     ({} submissions counted by the device)",
+                    (per_token * 1e3 - done).max(0.0),
+                    (done - gpu).max(0.0),
+                    gpu,
+                    clock.submissions,
+                );
+            }
             println!(
                 "glue:   {:.0} ms/token (everything not inside a device call)",
                 (report.mean_seconds_per_token - per_token) * 1e3,
@@ -280,12 +298,17 @@ fn report_projections(seconds: f64, tallies: &[(PhysicalProjectionPlan, PlanTall
         if t.calls == 0 {
             continue;
         }
+        let rate = t
+            .rate_gbps()
+            .map_or_else(|| "unmeasured".to_string(), |r| format!("{r:.1} GB/s"));
         println!(
-            "  {:<12} {:>8.2} GB over {:>4} calls, {:>5} worker slabs   {}",
+            "  {:<12} {:>8.2} GB over {:>4} calls, {:>5} worker slabs, {:>7.1} ms, {:>11}   {}",
             format!("{plan:?}"),
             t.bytes as f64 / 1e9,
             t.calls,
             t.slabs,
+            t.nanos as f64 / 1e6,
+            rate,
             plan.arithmetic(),
         );
     }
@@ -479,7 +502,6 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     use larql_vindex::format::vindex3::opplan::exec::accounting::{
         expectations, BlockGeometry, ResourceLedger,
     };
-    use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
     use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
     use larql_vindex::format::vindex3::opplan::exec::routing_trace;
     use larql_vindex::format::vindex3::opplan::exec::timing::OpClass;
@@ -592,8 +614,8 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     let mut first_logits: Option<Vec<f32>> = None;
     let mut first_generated: Option<Vec<u32>> = None;
     for pass in 1..=repeat.max(1) {
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+        let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
+        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
         let label = if pass < counted_from {
             "warmup"
         } else if pass == 1 {

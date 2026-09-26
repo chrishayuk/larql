@@ -22,6 +22,35 @@ impl MetalBackend {
     /// variants: threshold-gated `bf16_gemv` and direct
     /// `bf16_gemv_force`).
     ///
+    /// The same GEMV, encoded into an EXISTING encoder.
+    ///
+    /// Sibling of `encode_f32_gemv_into` with an identical binding
+    /// layout, so a caller can bind a small matrix at the precision the
+    /// checkpoint stores it without splitting its command buffer — which
+    /// on the KDA path would cost a submission, ~130x a dispatch.
+    pub(crate) fn encode_bf16_gemv_into(
+        &self,
+        enc: &metal::ComputeCommandEncoderRef,
+        w: &metal::Buffer,
+        x: &metal::Buffer,
+        out: &metal::Buffer,
+        n: usize,
+        k: usize,
+    ) {
+        let kernel = &self.bf16_gemv_pipeline;
+        let (n32, k32) = (n as u32, k as u32);
+        enc.set_compute_pipeline_state(&kernel.state);
+        enc.set_buffer(0, Some(w), 0);
+        enc.set_buffer(1, Some(x), 0);
+        enc.set_buffer(2, Some(out), 0);
+        enc.set_bytes(3, 4, &n32 as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(4, 4, &k32 as *const u32 as *const std::ffi::c_void);
+        enc.dispatch_thread_groups(
+            metal::MTLSize::new((n as u64).div_ceil(kernel.rows_per_tg), 1, 1),
+            metal::MTLSize::new(kernel.threads_per_tg, 1, 1),
+        );
+    }
+
     /// `w_bf16` is `n * k` little-endian `u16` codes, row-major — the
     /// checkpoint's own bytes, bound to the device without a widening
     /// pass. Returns `None` only when the pooled staging buffer cannot

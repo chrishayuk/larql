@@ -8,6 +8,7 @@
 //! rather than re-deriving a whole decoder layer.
 
 use super::*;
+use crate::trait_impl::kda::SmallMatrix;
 
 /// Reach the routed weights of a layer built by `layer_weights`, for
 /// the controls that corrupt one field. Panics on a dense layer, which
@@ -175,15 +176,16 @@ impl Fixture {
             q_conv1d: &f[0],
             k_conv1d: &f[1],
             v_conv1d: &f[2],
-            f_a_proj: &f[3],
-            f_b_proj: &f[4],
-            g_a_proj: &f[5],
-            g_b_proj: &f[6],
-            b_proj: &f[7],
+            f_a_proj: SmallMatrix::F32(&f[3]),
+            f_b_proj: SmallMatrix::F32(&f[4]),
+            g_a_proj: SmallMatrix::F32(&f[5]),
+            g_b_proj: SmallMatrix::F32(&f[6]),
+            b_proj: SmallMatrix::F32(&f[7]),
             a_log: &f[8],
             dt_bias: &f[9],
             o_norm: &f[10],
             norm_eps: EPS,
+            gate_form: larql_models::config::KdaGateForm::Softplus,
         }
     }
 
@@ -396,6 +398,55 @@ fn a_non_resident_selection_is_refused() {
     ));
     // Still usable — a refusal must not have left the backend wedged.
     assert!(m.kimi_decoder_layer(f.layer(&state), &f.x).is_ok());
+}
+
+/// An identity bank whose offsets pass 32 bits is REFUSED, not wrapped.
+///
+/// `expert * stride` used to be formed in `u32`: past 4 GiB it wrapped
+/// (release) to an in-bounds offset — another expert's weights — and the
+/// host validator, doing the same arithmetic, agreed with the wrapped
+/// value. Here expert 1 sits just inside `u32` and genuinely inside the
+/// bank, so the ONLY fault is expert 2's width: a refusal of any other
+/// kind would mean the width was never checked.
+///
+/// The bank is a zeroed allocation that validation measures and never
+/// reads, so it stays virtual.
+#[test]
+fn an_identity_bank_past_32_bit_offsets_is_refused_not_wrapped() {
+    const { assert!(EXPERTS > 2, "expert 2 must exist to overflow") };
+    let m = backend();
+    let f = fixture();
+    let state = KdaDeviceState::zeros(&m, shape());
+    let stride = u32::MAX / 2 + 1;
+    let per = INTER * HIDDEN * std::mem::size_of::<u16>();
+    let huge = vec![0u8; stride as usize + per];
+    let identity = ExpertAddressing::Identity {
+        experts: EXPERTS,
+        stride,
+    };
+
+    let mut w = f.layer(&state);
+    {
+        let moe = moe_mut(&mut w);
+        for bank in [&mut moe.gate, &mut moe.up, &mut moe.down] {
+            bank.routed.bytes = &huge;
+            bank.addressing = identity;
+        }
+    }
+    let overflow = 2 * u64::from(stride);
+    assert_eq!(
+        m.kimi_decoder_layer(w, &f.x).map(|(o, _)| o),
+        Err(GroupedError::OffsetExceedsAddressWidth {
+            slot: 0,
+            offset: overflow,
+        })
+    );
+    assert_eq!(
+        identity.offset_of(2),
+        Some(overflow),
+        "the host offset is formed in 64 bits, not wrapped to {}",
+        overflow as u32
+    );
 }
 
 /// Host-side shape faults refuse before anything is encoded.
@@ -930,7 +981,7 @@ fn identity_addressing_equals_a_table_that_spells_out_the_same_offsets() {
         stride,
     };
     for e in 0..EXPERTS {
-        assert_eq!(a.offset_of(e), Some((e * per) as u32));
+        assert_eq!(a.offset_of(e), Some((e * per) as u64));
     }
     assert_eq!(
         a.offset_of(EXPERTS),

@@ -366,6 +366,8 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             kv_cache: run_cmd::KvCacheKind::Standard,
             context_window: 0,
             engine: None,
+            continuation: None,
+            continuation_options: Vec::new(),
             ffn: c.ffn,
             routed_from: c.routed_from,
             emit_ids: false,
@@ -387,9 +389,15 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             // ChatArgs struct will grow its own --image flag.
             image: Vec::new(),
             mm_weights: None,
+            v3_shards: Vec::new(),
+            v3_ffn_shards: Vec::new(),
+            v3_ffn_wire: None,
+            v3_profile: None,
+            v3_shard_token_env: None,
             // Chat is text-only today; speech arrives via `run --speak`
             // (and later a chat session feeding the speech stream).
             speak: false,
+            plugin: Default::default(),
             voice: None,
             codec_cmd: None,
             speech_out: None,
@@ -413,6 +421,10 @@ struct ServeArgs {
     /// Path to a .vindex directory (or `hf://` path).
     #[arg(value_name = "VINDEX_PATH")]
     vindex_path: Option<String>,
+
+    /// VINDEX3 execution backend (requires a matching larql-server build).
+    #[arg(long, value_parser = ["cpu", "metal"])]
+    v3_backend: Option<String>,
 
     /// Serve all .vindex directories in this folder.
     #[arg(long)]
@@ -723,7 +735,7 @@ fn run_dev(cmd: DevCommand) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
+fn serve_command_args(args: &ServeArgs) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut cmd_args = Vec::new();
     if let Some(ref path) = args.vindex_path {
         // Resolve cache shorthands / owner-name / hf:// → actual path so
@@ -741,6 +753,10 @@ fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref dir) = args.dir {
         cmd_args.push("--dir".into());
         cmd_args.push(dir.display().to_string());
+    }
+    if let Some(ref backend) = args.v3_backend {
+        cmd_args.push("--v3-backend".into());
+        cmd_args.push(backend.clone());
     }
     cmd_args.push("--port".into());
     cmd_args.push(args.port.to_string());
@@ -839,6 +855,11 @@ fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         cmd_args.push(path.display().to_string());
     }
 
+    Ok(cmd_args)
+}
+
+fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let cmd_args = serve_command_args(&args)?;
     let exe = std::env::current_exe().ok();
     let server_bin = exe
         .as_ref()
@@ -988,5 +1009,42 @@ mod trampoline_tests {
         let input = args(&["larql", "walk", "--flag", "value"]);
         let out = rewrite_legacy_argv(input.clone());
         assert_eq!(out.len(), input.len() + 1);
+    }
+}
+
+#[cfg(test)]
+mod documentation_tests {
+    use clap::CommandFactory;
+
+    #[test]
+    fn current_documentation_facts_match_clap() {
+        let facts: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/generated/current-facts.json"))
+                .unwrap();
+        let command = super::Cli::command();
+        let vindex3 = command.find_subcommand("vindex3").unwrap();
+        let mut names: Vec<_> = vindex3.get_subcommands().map(|c| c.get_name()).collect();
+        names.sort_unstable();
+        assert_eq!(facts["commands"]["larql_vindex3"], serde_json::json!(names));
+    }
+}
+
+#[cfg(test)]
+mod serve_backend_tests {
+    use super::*;
+
+    #[test]
+    fn serve_forwards_explicit_backend_and_rejects_unknown_names() {
+        for backend in ["cpu", "metal"] {
+            let cli = Cli::try_parse_from(["larql", "serve", "--v3-backend", backend]).unwrap();
+            let Commands::Serve(args) = cli.command else {
+                panic!("expected serve")
+            };
+            let command = serve_command_args(&args).unwrap();
+            assert!(command
+                .windows(2)
+                .any(|pair| pair == ["--v3-backend", backend]));
+        }
+        assert!(Cli::try_parse_from(["larql", "serve", "--v3-backend", "typo"]).is_err());
     }
 }

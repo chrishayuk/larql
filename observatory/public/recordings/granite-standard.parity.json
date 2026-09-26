@@ -1,0 +1,12 @@
+{
+  "criterion": "all finite vocabulary logits bit-identical at every prompt position",
+  "observed_sha256": "5f77c8f8043a599577ffc9948b683eb9ddd6534b562f234e564958781bc80608",
+  "positions": 5,
+  "result": "pass",
+  "run_id": "standard-1789916123150343000-39449",
+  "schema": "larql.observatory.parity-witness.v1",
+  "scope": "same production CPU backend, same prepared image, fresh KV per arm; not HF parity, cross-backend parity, or a timing witness",
+  "source_sha256": "8915cc58b32cb5c131398ff122af71f26277fbb44f10dfc7766c580964feda01",
+  "unobserved_sha256": "5f77c8f8043a599577ffc9948b683eb9ddd6534b562f234e564958781bc80608",
+  "writes": 400
+}

@@ -113,7 +113,19 @@ pub struct PlanTally {
     pub nanos_many: u64,
 }
 
+/// Nanoseconds per second, and bytes per decimal gigabyte, for rates.
+const NANOS_PER_SECOND: f64 = 1e9;
+const BYTES_PER_GB: f64 = 1e9;
+
 impl PlanTally {
+    /// The plan's effective streaming rate in decimal GB/s: bytes read over
+    /// the plan's OWN projection time. `None` when no time was recorded, so
+    /// an unmeasured plan cannot read as a rate of zero.
+    pub fn rate_gbps(&self) -> Option<f64> {
+        (self.nanos > 0)
+            .then(|| (self.bytes as f64 / BYTES_PER_GB) / (self.nanos as f64 / NANOS_PER_SECOND))
+    }
+
     /// Positions served per call — the REALISED group width.
     ///
     /// The number that turns a disappointing CPU-7C clock into a
@@ -264,9 +276,16 @@ pub struct ProjectionLedger {
     q8_x_q8: Tally,
     fused_nvfp4: Tally,
     fused_kquant: Tally,
+    fused_kquant_q8k: Tally,
+    fused_nvfp4_q8: Tally,
     fused_fp8_block: Tally,
     q4_x_q8: Tally,
     bf16_x_q8: Tally,
+    /// Never incremented by this crate's own kernels — an external
+    /// backend that pins this plan keeps its own accounting, not this
+    /// one — but the arm needs a bucket for the tally lookup to stay
+    /// total.
+    codec_owned: Tally,
     /// The same time, cut by operator class instead of by arithmetic.
     sites: [SiteTally; 4],
 }
@@ -280,11 +299,14 @@ impl ProjectionLedger {
             PhysicalProjectionPlan::FusedQ8 => &self.fused_q8,
             PhysicalProjectionPlan::FusedQ4 => &self.fused_q4,
             PhysicalProjectionPlan::FusedNvfp4 => &self.fused_nvfp4,
+            PhysicalProjectionPlan::FusedNvfp4Q8 => &self.fused_nvfp4_q8,
             PhysicalProjectionPlan::FusedKQuant => &self.fused_kquant,
+            PhysicalProjectionPlan::FusedKQuantQ8k => &self.fused_kquant_q8k,
             PhysicalProjectionPlan::FusedFp8Block => &self.fused_fp8_block,
             PhysicalProjectionPlan::Q8xQ8 => &self.q8_x_q8,
             PhysicalProjectionPlan::Q4xQ8 => &self.q4_x_q8,
             PhysicalProjectionPlan::Bf16xQ8 => &self.bf16_x_q8,
+            PhysicalProjectionPlan::CodecOwned => &self.codec_owned,
         }
     }
 
@@ -334,7 +356,7 @@ impl ProjectionLedger {
     /// Every plan, so a reader enumerates rather than remembers. A caller
     /// that listed the plans itself would stop covering a new one on the
     /// day it was added.
-    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 11] {
+    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 13] {
         [
             PhysicalProjectionPlan::ScalarF32,
             PhysicalProjectionPlan::BlasF32,
@@ -346,7 +368,9 @@ impl ProjectionLedger {
             // reported its bytes nowhere — exactly the silent omission
             // this method's doc comment says it exists to prevent.
             PhysicalProjectionPlan::FusedNvfp4,
+            PhysicalProjectionPlan::FusedNvfp4Q8,
             PhysicalProjectionPlan::FusedKQuant,
+            PhysicalProjectionPlan::FusedKQuantQ8k,
             PhysicalProjectionPlan::FusedFp8Block,
             PhysicalProjectionPlan::Q8xQ8,
             PhysicalProjectionPlan::Q4xQ8,
@@ -401,6 +425,8 @@ impl ProjectionLedger {
         // survived every reset, so a priced step could carry the load.
         self.fused_nvfp4.reset();
         self.fused_kquant.reset();
+        self.fused_kquant_q8k.reset();
+        self.fused_nvfp4_q8.reset();
         self.fused_fp8_block.reset();
         self.q8_x_q8.reset();
         self.q4_x_q8.reset();
@@ -434,10 +460,13 @@ impl ProjectionLedger {
             fused_q4: ZERO,
             fused_nvfp4: ZERO,
             fused_kquant: ZERO,
+            fused_kquant_q8k: ZERO,
+            fused_nvfp4_q8: ZERO,
             fused_fp8_block: ZERO,
             q8_x_q8: ZERO,
             q4_x_q8: ZERO,
             bf16_x_q8: ZERO,
+            codec_owned: ZERO,
             #[allow(clippy::declare_interior_mutable_const)]
             sites: [const {
                 SiteTally {

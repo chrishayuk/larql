@@ -33,10 +33,18 @@ pub const TOKEN_ROLE_KEYS: &[&str] = &[
     "eoa_token_id",
     // A second spelling HF Gemma 4 ships beside `eoa_token_id`, same value.
     "eoa_token_index",
+    // Gemma 3's spellings of the image span: `Gemma3Config` names the
+    // soft token and its delimiters `*_index` where Gemma 4 says `*_id`.
+    "image_token_index",
+    "boi_token_index",
+    "eoi_token_index",
 ];
 
-/// Root-level count of soft tokens one image expands to.
-pub const SOFT_TOKENS_PER_IMAGE_KEY: &str = "vision_soft_tokens_per_image";
+/// Root-level count of soft tokens one image expands to, in each family's
+/// spelling: Gemma 4's `vision_soft_tokens_per_image`, Gemma 3's
+/// `mm_tokens_per_image`. One fact, so the first spelling present answers.
+pub const SOFT_TOKENS_PER_IMAGE_KEYS: &[&str] =
+    &["vision_soft_tokens_per_image", "mm_tokens_per_image"];
 
 /// Component keys whose declared ABSENCE (`null`) is itself an interface
 /// fact: the checkpoint says it has no such tower.
@@ -88,11 +96,11 @@ pub fn read_interface(config: &Value) -> Option<InterfaceReading> {
             interface.token_roles.push(((*key).to_string(), id));
         }
     }
-    if let Some(n) = config
-        .get(SOFT_TOKENS_PER_IMAGE_KEY)
-        .and_then(Value::as_u64)
+    if let Some((key, n)) = SOFT_TOKENS_PER_IMAGE_KEYS
+        .iter()
+        .find_map(|key| config.get(key).and_then(Value::as_u64).map(|n| (*key, n)))
     {
-        consumed_paths.insert(SOFT_TOKENS_PER_IMAGE_KEY.to_string());
+        consumed_paths.insert(key.to_string());
         interface.soft_tokens_per_image = Some(n);
     }
     for key in OPTIONAL_COMPONENT_KEYS {

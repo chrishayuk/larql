@@ -395,7 +395,13 @@ fn the_hybrid_executes_and_both_state_regions_survive_the_step() {
     // boundary (a window of one would be a different operator), the KV
     // rows accumulate, and the rotary angle follows the ABSOLUTE
     // position.
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut stepped = None;
     for token in prompt {
         stepped = session.step(token).unwrap().logits;

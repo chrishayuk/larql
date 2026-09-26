@@ -35,6 +35,10 @@ use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::PlannedOperand;
 use crate::format::vindex3::represent::kquant::KQuant;
 
+/// V3-INTERVENE-2: a per-head intervention applier — `(head, ctx_h)`,
+/// mutating the head's mixed value in place.
+pub type HeadIntervene<'a> = dyn FnMut(usize, &mut [f32]) + 'a;
+
 /// The numerical representation a backend wants matrix operands in.
 ///
 /// Asked once by the interpreter (a capability, like [`PlanBackend::name`],
@@ -113,6 +117,15 @@ pub enum WeightFormat {
     /// size worth nothing and the scale format worth 1.27x in relative RMS
     /// and 1.7x in worst-element error.
     Nvfp4,
+    /// The same stored NVFP4 pack as [`Self::Nvfp4`], bound to run against a
+    /// **Q8 activation** (NVFP4-Q8-1, `docs/nvfp4-q8-1.md`).
+    ///
+    /// Byte-for-byte the same residency, and like [`Self::KQuantQ8k`] a
+    /// separate format only because the executor OBSERVES its kernel from
+    /// what is resident: the activation form is fixed at load, by the
+    /// realization the provider pinned. Stored packs only; nothing is
+    /// quantised at load.
+    Nvfp4Q8,
     /// A stored ggml K-quant pack — Q8_0, Q6_K or Q4_K — kept as the
     /// container holds it and executed in place by the codec's kernel.
     ///
@@ -127,9 +140,59 @@ pub enum WeightFormat {
     /// K-quant; a backend asking for it over anything else is refused at
     /// load rather than served a manufactured pack.
     KQuant,
+    /// The same stored K-quant blocks as [`Self::KQuant`], bound to run
+    /// against a **Q8_K activation** (Q8K-ACT-1, `docs/q8k-act-1.md`).
+    ///
+    /// Byte-for-byte the same residency. It is a separate format because
+    /// the executor OBSERVES its kernel from what is resident and never
+    /// chooses again: the activation form has to be fixed at load, by the
+    /// realization the provider pinned, or the plan that ran would not be
+    /// the plan that was selected. Only for members with a Q8_K kernel
+    /// (Q4_K, Q6_K); any other member is refused at load.
+    KQuantQ8k,
     /// Fine-grained (block-wise) FP8: the checkpoint's own E4M3 codes
     /// against a two-dimensional grid of f32 scales.
     Fp8Block,
+    /// The stored bytes themselves, uninterpreted, for whichever codec
+    /// the operand's representation names — carried with a copy of that
+    /// name, never decoded, widened, or otherwise judged here.
+    ///
+    /// Like [`Self::KQuant`], the format names a capability, not a
+    /// member: which codec produced the bytes is a property of the
+    /// operand, read from the container and handed back alongside them.
+    /// This loader has no registry of what any codec's bytes mean and
+    /// asks none — a backend requesting this format is the only party
+    /// that can interpret what comes back, by matching the returned name
+    /// itself. Only ever declared by a backend prepared to do that; a
+    /// backend that says nothing here never receives it.
+    CodecOwned,
+}
+
+/// The activation form a stored K-quant is bound to run against — fixed
+/// at load from the pinned realization, so the kernel is read back off
+/// the resident operand rather than chosen a second time.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum KQuantActivation {
+    /// f32 activation: the codec's own dequantise-and-FMA kernel.
+    #[default]
+    F32,
+    /// The activation quantised once per call to Q8_K (int8, one scale
+    /// per 256), multiplied by the integer-dot `q4k_q8k` family. Lossy in
+    /// the activation, by declaration.
+    Q8k,
+}
+
+/// The activation form a stored NVFP4 pack is bound to run against, fixed
+/// at load from the pinned realization.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Nvfp4Activation {
+    /// f32 activation: FP4 codes widened and multiplied in f32.
+    #[default]
+    F32,
+    /// The activation quantised once per call to int8, one scale per
+    /// 16-element NVFP4 group, and multiplied by an integer dot product.
+    /// The weight side stays exact; lossy in the activation, by declaration.
+    Q8,
 }
 
 /// Which matrix a format question is about. Formats are declared per
@@ -220,6 +283,7 @@ pub enum WeightSlice<'a> {
         packed: &'a [u8],
         scales: &'a [u8],
         tensor_scale: f32,
+        activation: Nvfp4Activation,
     },
     /// A stored ggml K-quant block stream, still compact, with the codec
     /// that names its layout. Scales live inside the blocks, so this is
@@ -227,6 +291,7 @@ pub enum WeightSlice<'a> {
     KQuant {
         blocks: &'a [u8],
         codec: KQuant,
+        activation: KQuantActivation,
     },
     /// Fine-grained FP8: E4M3 codes and the f32 scale grid, both the
     /// checkpoint's own bytes. TWO streams, and unlike every other pair
@@ -238,9 +303,52 @@ pub enum WeightSlice<'a> {
         block_cols: usize,
         scale_cols: usize,
     },
+    /// The stored bytes themselves, exactly as [`WeightFormat::CodecOwned`]
+    /// promises: one stream, one name, zero interpretation. `label` is
+    /// the operand's own stored representation name (a container's
+    /// `dtype`/encoding field) — a plain string this loader read and
+    /// passed through, not a type it knows the meaning of.
+    CodecOwned {
+        bytes: &'a [u8],
+        label: &'a str,
+    },
 }
 
 impl<'a> WeightSlice<'a> {
+    /// Materialise the effective f32 matrix represented by this resident
+    /// slice. This is an offline evidence path, not an execution path: GW-0B
+    /// uses it to express contribution addresses in the exact weight image
+    /// the selected kernel consumed.
+    pub fn decode_f32(&self, out_dim: usize, in_dim: usize) -> Result<Vec<f32>, VindexError> {
+        let rows = self.rows(out_dim, in_dim)?;
+        match rows {
+            WeightRows::F32(values) => Ok(values.to_vec()),
+            WeightRows::Bf16(values) => Ok(values
+                .iter()
+                .map(|bits| f32::from_bits(u32::from(*bits) << 16))
+                .collect()),
+            WeightRows::Q8 {
+                codes,
+                scales,
+                block,
+                ..
+            } => {
+                let blocks_per_row = in_dim.div_ceil(block);
+                Ok((0..out_dim * in_dim)
+                    .map(|index| {
+                        let row = index / in_dim;
+                        let column = index % in_dim;
+                        f32::from(codes[index]) * scales[row * blocks_per_row + column / block]
+                    })
+                    .collect())
+            }
+            _ => Err(VindexError::Parse(
+                "offline dense-FFN attribution cannot materialise this resident weight form"
+                    .to_string(),
+            )),
+        }
+    }
+
     /// The f32 view a CPU backend computes with. A backend that declared
     /// `F32` can never legitimately receive `F16`, so this is fail-closed
     /// evidence of an interpreter bug, not a conversion point.
@@ -340,6 +448,7 @@ impl<'a> WeightSlice<'a> {
                 packed,
                 scales,
                 tensor_scale,
+                activation,
             } => {
                 // Groups run along the input axis and the group size is
                 // the format's, not a policy's: `k/16` scale bytes and
@@ -360,11 +469,16 @@ impl<'a> WeightSlice<'a> {
                         packed,
                         scales,
                         tensor_scale: *tensor_scale,
+                        activation: *activation,
                     }),
                     _ => Err(short(packed.len() * 2)),
                 }
             }
-            WeightSlice::KQuant { blocks, codec } => {
+            WeightSlice::KQuant {
+                blocks,
+                codec,
+                activation,
+            } => {
                 // The stride is the codec's: blocks run along the row,
                 // and a width off the block grid describes no rows.
                 let Some(per_row) = codec.row_bytes(in_dim) else {
@@ -398,6 +512,7 @@ impl<'a> WeightSlice<'a> {
                 Ok(WeightRows::KQuant {
                     blocks,
                     codec: *codec,
+                    activation: *activation,
                 })
             }
             WeightSlice::Fp8Block {
@@ -443,7 +558,7 @@ impl<'a> WeightSlice<'a> {
     /// This slice's representation, for diagnostics. Never dispatched on
     /// — a backend that branched on the name instead of the variant would
     /// be one `match` away from silently accepting a format it cannot run.
-    pub fn representation(&self) -> &'static str {
+    pub fn representation(&self) -> &'a str {
         match self {
             WeightSlice::F32(_) => "f32",
             WeightSlice::Bf16(_) => "bf16",
@@ -454,6 +569,7 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::Nvfp4 { .. } => "nvfp4",
             WeightSlice::KQuant { codec, .. } => codec.name,
             WeightSlice::Fp8Block { .. } => "fp8-block",
+            WeightSlice::CodecOwned { label, .. } => label,
         }
     }
 
@@ -467,7 +583,8 @@ impl<'a> WeightSlice<'a> {
             | WeightSlice::Mxfp4 { .. }
             | WeightSlice::Nvfp4 { .. }
             | WeightSlice::KQuant { .. }
-            | WeightSlice::Fp8Block { .. } => Err(VindexError::Parse(
+            | WeightSlice::Fp8Block { .. }
+            | WeightSlice::CodecOwned { .. } => Err(VindexError::Parse(
                 "backend declared f32 weights but was handed another format — interpreter \
                  loaded the wrong representation"
                     .to_string(),
@@ -753,6 +870,11 @@ pub struct DispatchStats {
     pub device_nanos: u64,
     /// Device submissions made (one per command buffer).
     pub submissions: u64,
+    /// The device's own account of the buffers it waited on: commit to
+    /// completion, and GPU execution. `None` when the device does not
+    /// measure. With `device_nanos`, it splits a device call into host
+    /// work, queue latency and GPU time.
+    pub device_clock: Option<larql_compute::SubmissionClock>,
 }
 
 /// A shared handle IS the provider it holds: every method, the provided
@@ -809,6 +931,31 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
         (**self).attention_step(call)
     }
 
+    fn serves_attention_heads(&self) -> bool {
+        (**self).serves_attention_heads()
+    }
+
+    fn attention_step_observed(
+        &self,
+        call: AttentionStepCall<'_>,
+        tap: &mut dyn FnMut(super::observe::AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step_observed(call, tap)
+    }
+
+    fn serves_head_intervention(&self) -> bool {
+        (**self).serves_head_intervention()
+    }
+
+    fn attention_step_intervened(
+        &self,
+        call: AttentionStepCall<'_>,
+        tap: Option<&mut dyn FnMut(super::observe::AttentionHeadRecord<'_>)>,
+        head_intervene: &mut HeadIntervene<'_>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        (**self).attention_step_intervened(call, tap, head_intervene)
+    }
+
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         (**self).ffn(call)
     }
@@ -823,6 +970,20 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         (**self).routed_ffn(call)
+    }
+    fn expert_transform(
+        &self,
+        call: super::routed_experts::ExpertTransformCall<'_>,
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).expert_transform(call)
+    }
+    fn routed_ffn_placed(
+        &self,
+        call: RoutedFfnCall<'_>,
+        layer: usize,
+        provider: &dyn super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<f32>, VindexError> {
+        (**self).routed_ffn_placed(call, layer, provider)
     }
 
     fn output_head(
@@ -939,6 +1100,53 @@ pub trait PlanBackend: Sync {
     /// borrow another backend's step to fill the gap.
     fn attention_step(&self, call: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError>;
 
+    /// V3-HEAD-OBS-1: whether this backend's softmax attention core can
+    /// hand an observer one [`super::observe::AttentionHeadRecord`] per
+    /// query head. `false` by default, and a request against a backend
+    /// that says so is refused before the first token executes.
+    fn serves_attention_heads(&self) -> bool {
+        false
+    }
+
+    /// [`Self::attention_step`] with the per-head tap armed: the same
+    /// arithmetic, with each query head's distribution and mixed value
+    /// handed to `tap` between aggregation and the output gate. The
+    /// default refuses, matching [`Self::serves_attention_heads`].
+    fn attention_step_observed(
+        &self,
+        _call: AttentionStepCall<'_>,
+        _tap: &mut dyn FnMut(super::observe::AttentionHeadRecord<'_>),
+    ) -> Result<AttentionStepOut, VindexError> {
+        Err(VindexError::Parse(format!(
+            "per-head attention observation is not served by the {} backend",
+            self.name()
+        )))
+    }
+
+    /// V3-INTERVENE-2: whether this backend's softmax attention core can
+    /// take a per-head intervention — mutate `ctx_h` in place, after the
+    /// (uninintervened) head record fires and before the gate multiply.
+    /// `false` by default, matching [`Self::serves_attention_heads`].
+    fn serves_head_intervention(&self) -> bool {
+        false
+    }
+
+    /// [`Self::attention_step`] with a per-head intervention armed, and
+    /// optionally the per-head tap too (records still see the
+    /// uninintervened `ctx_h`, J3). The default refuses, matching
+    /// [`Self::serves_head_intervention`].
+    fn attention_step_intervened(
+        &self,
+        _call: AttentionStepCall<'_>,
+        _tap: Option<&mut dyn FnMut(super::observe::AttentionHeadRecord<'_>)>,
+        _head_intervene: &mut HeadIntervene<'_>,
+    ) -> Result<AttentionStepOut, VindexError> {
+        Err(VindexError::Parse(format!(
+            "per-head attention intervention is not served by the {} backend",
+            self.name()
+        )))
+    }
+
     /// Fallible for the same reason as [`Self::attention`]: a backend
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
@@ -983,6 +1191,30 @@ pub trait PlanBackend: Sync {
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// One unweighted expert, with its own biases. No routing or reduction.
+    fn expert_transform(
+        &self,
+        _call: super::routed_experts::ExpertTransformCall<'_>,
+    ) -> Result<Vec<f32>, VindexError> {
+        Err(VindexError::Parse(format!(
+            "{} does not support selected expert transforms",
+            self.name()
+        )))
+    }
+
+    /// Route and reduce locally while a bound provider executes selected IDs.
+    fn routed_ffn_placed(
+        &self,
+        _call: RoutedFfnCall<'_>,
+        _layer: usize,
+        _provider: &dyn super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<f32>, VindexError> {
+        Err(VindexError::Parse(format!(
+            "{} does not support routed expert placement",
+            self.name()
+        )))
+    }
 
     /// Vocabulary projection plus the head's optional multiplier and
     /// softcap, in that order.

@@ -1,0 +1,10 @@
+2026-09-25T17:24:07.206020Z  INFO larql_server::bootstrap: larql-server v0.2.0
+2026-09-25T17:24:07.206448Z  INFO larql_server::bootstrap:   Q4K/Q6K×Q8K kernel class: q4k_matvec=neon-asm q6k_matvec=neon-asm q4k_gate_up=neon-asm
+2026-09-25T17:24:07.206492Z  INFO larql_server::bootstrap:   decode options: q4k_direct_attn=on q4k_attn_int8=on q4k_lm_head=on q4k_direct_ffn=on q4k_asm=on spin_pool=on moe_q4k_direct=on
+2026-09-25T17:24:07.206937Z  INFO larql_server::bootstrap::load: Loading VINDEX3 container: /Users/christopherhay/chris-models/gpt-oss-20b.vindex3
+2026-09-25T17:24:34.955382Z  INFO larql_server::bootstrap: Infer timeout: 60s
+2026-09-25T17:24:34.955469Z  INFO larql_server::bootstrap: Maintenance sweeper: every 60s (session TTL 3600s)
+2026-09-25T17:24:34.955477Z  INFO larql_server::bootstrap: Single-model mode: 6cee5e81ee83917806bbde320786a8fb61efebee (VINDEX3)
+2026-09-25T17:24:34.957138Z  INFO larql_server::bootstrap: OpenAPI: /swagger-ui and /v1/openapi.json enabled
+2026-09-25T17:24:34.957174Z  INFO larql_server::bootstrap: Max concurrent: 100
+2026-09-25T17:24:34.957187Z  INFO larql_server::bootstrap: Listening: http://127.0.0.1:19281

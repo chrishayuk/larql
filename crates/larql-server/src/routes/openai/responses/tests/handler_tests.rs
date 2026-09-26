@@ -15,6 +15,7 @@ fn outcome(text: &str, stopped: bool) -> GenerationOutcome {
         completion_tokens: 2,
         kv_handoff: None,
         reused_prompt_tokens: 0,
+        continuation_refused: None,
         tally: crate::runtime_stats::GenerationTally::new(),
     }
 }

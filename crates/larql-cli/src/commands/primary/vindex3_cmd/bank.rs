@@ -17,8 +17,8 @@
 //!
 //! So state is not *reset* between entries — it is *replaced*. Operands
 //! are prepared once (the expensive part, and immutable); every entry gets
-//! a brand-new [`RowKvState`], which cannot carry anything because it did
-//! not exist a moment ago. The session asserts it starts at position 0 and
+//! a brand-new provider built from the selected continuation, which cannot
+//! carry anything because it did not exist a moment ago. The session asserts it starts at position 0 and
 //! ends at exactly the entry's length, so a leak is a failure rather than
 //! a silent contamination.
 
@@ -27,7 +27,6 @@ use std::path::Path;
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
@@ -67,8 +66,8 @@ pub fn run_bank<B: PlanBackend>(
     for (n, entry) in entries.iter().enumerate() {
         // A brand-new continuation state per entry. Not a reset — a
         // replacement, so there is nothing that *could* carry over.
-        let mut kv = RowKvState::default();
-        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+        let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
+        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
         if session.position() != 0 {
             return Err(format!(
                 "{}: session started at position {} — state leaked from the previous entry",

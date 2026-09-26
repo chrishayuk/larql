@@ -33,6 +33,7 @@ larql-vindex = { path = "../larql-vindex" }
 safetensors = "0.7"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = "0.10"
 tokenizers = "0.21"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
@@ -235,6 +236,14 @@ name = "shard_query_demo"
 path = "examples/server/shard_query_demo.rs"
 
 # --- vindex ----------------------------------------------------
+[[example]]
+name = "observatory_record"
+path = "examples/inference/observatory_record.rs"
+
+[[example]]
+name = "attr1d_witness"
+path = "examples/inference/attr1d_witness.rs"
+
 [[example]]
 name = "demo_features"
 path = "examples/vindex/demo_features.rs"

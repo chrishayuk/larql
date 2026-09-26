@@ -1,23 +1,12 @@
 //! `larql recipe build` — the Vindex Factory build-stage driver
 //! (docs/vindex-factory.md §7).
 //!
-//! Scope, decided after tracing the actual reusable tooling (none of
-//! the spec's original reuse assumptions held as written — see each
-//! stage module's doc comment for the specific correction): this
-//! module runs PREFLIGHT through RELEASE for real, orchestrating
-//! existing `larql` subcommands as subprocesses via [`runner`]. MIRROR
-//! (R2) and REGISTER (chuk-experiments-server) are not implemented
-//! here — nothing in this codebase talks to either today, and the
-//! spec's own text assumes they're owned by the rig's worker
-//! infrastructure, not the `larql` binary itself; [`record::BuildRecord`]
-//! is the structured hand-off point for an external wrapper to do both,
-//! the same way `dec0-loopback.sh` already wraps `dec-bench`'s JSON
-//! output. Reconstruction-fidelity and logit-match numeric checks
-//! (§8.1) are also not implemented — building them correctly needs
-//! per-architecture tensor-naming knowledge this session has no way to
-//! validate against real model weights, so VERIFY here covers checksum
-//! integrity only (reusing the existing `larql verify` command) rather
-//! than a confident-but-unvalidated numeric check.
+//! Verification capability is checked before any side effects. Recipes require
+//! reconstruction and logit-match verification; the stage implementation only
+//! supplies local checksums, so the public driver currently refuses at PREFLIGHT.
+//! `from_hub` also requires a verifier that re-pulls published bytes. The stage
+//! orchestration is retained and tested for when those gates are implemented.
+//! MIRROR and REGISTER remain external orchestration concerns.
 
 mod record;
 mod runner;
@@ -41,6 +30,29 @@ const FULL_OUTPUT_SUBDIR: &str = "full.vindex";
 /// failure is encoded in [`BuildRecord::status`], not a Rust `Err`, so
 /// a caller always has a JSON-printable result either way.
 pub fn run(runner: &dyn CommandRunner, recipe: &Recipe, scratch_dir: &Path) -> BuildRecord {
+    // Recipe verification is mandatory. A checksum pass cannot discharge
+    // reconstruction/logit requirements, and must never authorize publication.
+    if let Err(message) = stages::verify::check_supported(&recipe.spec.verify) {
+        return BuildRecord {
+            build_id: crate::build_id(recipe),
+            recipe_name: recipe.metadata.name.clone(),
+            outputs: recipe
+                .spec
+                .outputs
+                .iter()
+                .map(|o| OutputRecord::new(&o.preset))
+                .collect(),
+            status: BuildStatus::Failed {
+                stage: Stage::Preflight,
+                message,
+            },
+        };
+    }
+    run_stages(runner, recipe, scratch_dir)
+}
+
+/// Stage orchestration after the verification-capability preflight.
+fn run_stages(runner: &dyn CommandRunner, recipe: &Recipe, scratch_dir: &Path) -> BuildRecord {
     let build_id = crate::build_id(recipe);
     let mut output_records: Vec<OutputRecord> = recipe
         .spec

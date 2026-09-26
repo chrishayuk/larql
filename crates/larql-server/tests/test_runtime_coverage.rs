@@ -146,7 +146,10 @@ async fn runtime_reports_the_bound_v2_model() {
     assert!(v["memory"]["resident_bytes"].is_null());
     assert_eq!(
         v["backend"]["metal_compiled"],
-        cfg!(all(feature = "metal-experts", target_os = "macos"))
+        cfg!(all(
+            any(feature = "metal-experts", feature = "vindex3-metal"),
+            target_os = "macos"
+        ))
     );
 }
 

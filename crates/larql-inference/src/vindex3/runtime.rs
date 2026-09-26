@@ -14,6 +14,12 @@ use std::sync::Arc;
 
 use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
+use larql_vindex::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_identity::ContinuationIdentity;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
+    ContinuationRegistry, SelectedContinuation,
+};
 use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
@@ -23,9 +29,11 @@ use larql_vindex::format::vindex3::opplan::exec::operands::{
 };
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::exec::{
-    execute_plan_streaming, prefill_plan, prefill_prepared, FinalOutput, PlaneEvent,
+    execute_plan_streaming, execute_plan_streaming_in, prefill_plan, prefill_prepared,
+    requires_continuation, FinalOutput, PlaneEvent,
 };
 use larql_vindex::format::vindex3::opplan::{plan_component_ops, ClosureDefect, ComponentOpPlan};
+use larql_vindex::format::vindex3::represent::codec::CodecRegistry;
 
 use crate::error::InferenceError;
 
@@ -82,6 +90,18 @@ pub fn open_component(
     component: &str,
     policy: OpenPolicy,
 ) -> Result<OpenedComponent, InferenceError> {
+    open_component_in(container, component, policy, CodecRegistry::builtin())
+}
+
+/// [`open_component`], with the operand store decoding through `codecs`
+/// from the first byte — the path a caller holding codecs this build
+/// does not ship (a loaded plugin) opens through.
+pub fn open_component_in(
+    container: &Path,
+    component: &str,
+    policy: OpenPolicy,
+    codecs: &'static CodecRegistry,
+) -> Result<OpenedComponent, InferenceError> {
     let inspection = inspect_container(container, false)?;
     let outcome = plan_component_ops(&inspection, container, component)?;
     if !outcome.closed() {
@@ -90,11 +110,12 @@ pub fn open_component(
     let plan = outcome.plan.ok_or_else(|| {
         InferenceError::Parse(format!("component `{component}` produced no plan"))
     })?;
-    let store = OperandStore::open_for(
+    let store = OperandStore::open_in(
         container,
         &inspection,
         policy.want.as_deref(),
         policy.source,
+        codecs,
     )?;
     // The container names itself (`index.model`) — identity travels
     // with the artifact, never a sidecar or a directory name — and
@@ -222,10 +243,27 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
         &self.family
     }
 
-    /// Open an incremental session at position zero. Each call loads
-    /// the operands in the backend's declared weight format.
-    pub fn session(&self) -> Result<Vindex3Session<'_, B>, InferenceError> {
-        Vindex3Session::new(&self.plan, &self.store, &self.backend)
+    /// Select `identity` under `config` from the caller's `registry` for
+    /// this runtime's plan (CONTINUATION-PLUGIN-1, C3): refused here,
+    /// before any state exists, if the provider cannot hold a layer the
+    /// plan keeps state on.
+    pub fn select_continuation(
+        &self,
+        registry: &ContinuationRegistry,
+        identity: &ContinuationIdentity,
+        config: &ContinuationConfig,
+    ) -> Result<SelectedContinuation, InferenceError> {
+        select_for_plan(&self.plan, registry, identity, config)
+    }
+
+    /// Open an incremental session at position zero over a fresh
+    /// provider built from `continuation`. Each call loads the operands
+    /// in the backend's declared weight format.
+    pub fn session(
+        &self,
+        continuation: &SelectedContinuation,
+    ) -> Result<Vindex3Session<'_, B>, InferenceError> {
+        Vindex3Session::new(&self.plan, &self.store, &self.backend, continuation.build())
     }
 
     /// [`session`](Self::session) with a mutation overlay's operand
@@ -234,11 +272,13 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
     pub fn session_overlaid(
         &self,
         overrides: &OperandOverrides,
+        continuation: &SelectedContinuation,
     ) -> Result<Vindex3Session<'_, B>, InferenceError> {
         Vindex3Session::new(
             &self.plan,
             OperandSource::overlaid(&self.store, overrides),
             &self.backend,
+            continuation.build(),
         )
     }
 
@@ -276,19 +316,25 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
     /// point runs (observation is subscription, never a second
     /// executor); no continuation state is kept, so use it for
     /// analyses (residual capture, retrieval keys), not generation.
+    ///
+    /// `continuation` names who would hold state: a plan whose layers keep
+    /// state beyond softmax attention runs over a fresh provider built
+    /// from it, which ends with the call; a wholly-softmax plan needs none
+    /// and materialises no rows.
     pub fn execute_streaming(
         &self,
         tokens: &[u32],
+        continuation: &SelectedContinuation,
         sink: &mut dyn FnMut(PlaneEvent) -> Result<(), larql_vindex::VindexError>,
     ) -> Result<FinalOutput, InferenceError> {
-        Ok(execute_plan_streaming(
+        stream_over(
             &self.plan,
-            &self.store,
+            OperandSource::from(&self.store),
             tokens,
             &self.backend,
-            None,
+            continuation,
             sink,
-        )?)
+        )
     }
 
     /// The runtime's operand resolver (base representation, no
@@ -308,16 +354,17 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
         &self,
         tokens: &[u32],
         overrides: &OperandOverrides,
+        continuation: &SelectedContinuation,
         sink: &mut dyn FnMut(PlaneEvent) -> Result<(), larql_vindex::VindexError>,
     ) -> Result<FinalOutput, InferenceError> {
-        Ok(execute_plan_streaming(
+        stream_over(
             &self.plan,
             OperandSource::overlaid(&self.store, overrides),
             tokens,
             &self.backend,
-            None,
+            continuation,
             sink,
-        )?)
+        )
     }
 
     /// [`prefill_into`](Self::prefill_into) with a mutation overlay's
@@ -516,6 +563,16 @@ impl<B: PlanBackend> PreparedVindex3<B> {
         out.logits.ok_or_else(headless_prefill_error)
     }
 
+    /// [`Vindex3Runtime::select_continuation`] for the prepared model.
+    pub fn select_continuation(
+        &self,
+        registry: &ContinuationRegistry,
+        identity: &ContinuationIdentity,
+        config: &ContinuationConfig,
+    ) -> Result<SelectedContinuation, InferenceError> {
+        select_for_plan(&self.plan, registry, identity, config)
+    }
+
     /// The component's executable plan — the model-meaning authority.
     pub fn plan(&self) -> &ComponentOpPlan {
         &self.plan
@@ -577,4 +634,45 @@ impl<B: PlanBackend> PreparedVindex3<B> {
         self.lowerings = Some(lowerings);
         self
     }
+}
+
+/// Select a continuation provider against `plan`'s declared geometry.
+fn select_for_plan(
+    plan: &ComponentOpPlan,
+    registry: &ContinuationRegistry,
+    identity: &ContinuationIdentity,
+    config: &ContinuationConfig,
+) -> Result<SelectedContinuation, InferenceError> {
+    let geometry = plan_continuation_geometry(plan)
+        .map_err(|e| InferenceError::from(larql_vindex::VindexError::Parse(e)))?;
+    registry
+        .select(identity, config, &geometry)
+        .map_err(|e| InferenceError::from(larql_vindex::VindexError::from(e)))
+}
+
+/// One streamed traversal: over a fresh provider from `continuation` when
+/// the plan keeps state beyond softmax attention, stateless otherwise.
+fn stream_over<B: PlanBackend>(
+    plan: &ComponentOpPlan,
+    source: OperandSource<'_>,
+    tokens: &[u32],
+    backend: &B,
+    continuation: &SelectedContinuation,
+    sink: &mut dyn FnMut(PlaneEvent) -> Result<(), larql_vindex::VindexError>,
+) -> Result<FinalOutput, InferenceError> {
+    if !requires_continuation(plan) {
+        return Ok(execute_plan_streaming(
+            plan, source, tokens, backend, None, sink,
+        )?);
+    }
+    let mut state = continuation.build();
+    Ok(execute_plan_streaming_in(
+        plan,
+        source,
+        tokens,
+        backend,
+        None,
+        sink,
+        &mut *state,
+    )?)
 }

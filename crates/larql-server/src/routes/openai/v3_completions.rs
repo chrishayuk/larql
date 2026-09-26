@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! V2: ModelWeights + VectorIndex → generate_streaming
-//! V3: Vindex3Runtime → CanonicalKvState → prefill_into
+//! V3: Vindex3Runtime → selected continuation → prefill_into
 //!       → session_with_kv → continue_session
 //! ```
 

@@ -325,6 +325,25 @@ fn rope_scaling_defaults_and_config_read() {
     let a = DefaultsArch(cfg);
     assert_eq!(a.rope_scaling_type(), Some("linear"));
     assert_eq!(a.rope_scaling_factor(), 8.0);
+    // The read lives in the trait default: a family with no override
+    // divides every layer's positions by the declared factor, as HF's
+    // `_compute_linear_scaling_rope_parameters` does. This used to be a
+    // hardcoded `1.0`, which served every non-Gemma linear-scaled
+    // checkpoint unscaled.
+    assert_eq!(a.linear_rope_scaling(), Some(8.0));
+    assert_eq!(a.rope_position_divisor_for_layer(0), 8.0);
+    assert_eq!(a.rope_position_divisor_for_layer(3), 8.0);
+    assert_eq!(
+        a.declared_rope_scaling(),
+        DeclaredRopeScaling::Linear { factor: 8.0 }
+    );
+    assert_eq!(
+        a.position_policy_for_layer(0),
+        PositionPolicy::Linear {
+            theta: a.rope_base_for_layer(0),
+            factor: 8.0
+        }
+    );
 }
 
 /// `openai/gpt-oss-20b`'s block verbatim. The scaling type is the only
@@ -910,6 +929,22 @@ fn the_direct_form_carries_neither_a_rank_nor_an_epsilon() {
     let form = arch_with_q_lora(None).mla_query_form();
     assert_eq!(form.rank(), None);
     assert_eq!(form.norm_eps(), None);
+}
+
+/// An architecture that never mentions the DSA indexer answers `None` on
+/// every one of its seven accessors — `None` means "not a DSA
+/// architecture" the same way it means "unjudged" for the epsilon
+/// accessors above.
+#[test]
+fn dsa_accessors_default_to_none_for_a_non_dsa_architecture() {
+    let arch = DefaultsArch(base_config());
+    assert_eq!(arch.dsa_index_topk(), None);
+    assert_eq!(arch.dsa_index_n_heads(), None);
+    assert_eq!(arch.dsa_index_head_dim(), None);
+    assert_eq!(arch.dsa_indexer_wq_b_key(0), None);
+    assert_eq!(arch.dsa_indexer_wk_key(0), None);
+    assert_eq!(arch.dsa_indexer_k_norm_key(0), None);
+    assert_eq!(arch.dsa_indexer_weights_proj_key(0), None);
 }
 
 // ── tie_word_embeddings ──────────────────────────────────────────────

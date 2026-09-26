@@ -1,6 +1,8 @@
 //! `larql run` on a VINDEX3 container: detection, the refusals, and text
 //! out of the dense fixture through the container's own tokenizer.
 
+mod images;
+
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -201,7 +203,7 @@ fn dense_engine_flags_are_refused_by_name_before_anything_loads() {
     let container = fixture_container(root.path(), false);
     let err = run_capturing(
         &container,
-        &[PROMPT, "--experts", "--top", "5", "--engine", "standard"],
+        &[PROMPT, "--experts", "--top", "5", "--engine", "turbo-quant"],
         "",
     )
     .expect_err("dense-engine flags are not honoured");
@@ -338,4 +340,207 @@ fn ids_and_timings_go_to_the_status_stream() {
     assert!(status.contains("prompt ids: [1, 2, 3]"), "{status}");
     assert!(status.contains("generated ids: ["), "{status}");
     assert!(status.contains("prompt tokens in"), "{status}");
+}
+
+#[test]
+fn explicit_kv_providers_preserve_text_ids_and_stop_strings() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    let baseline =
+        run_capturing_with_status(&container, &[PROMPT, "--max-tokens", "9", "--emit-ids"], "")
+            .unwrap();
+    for flags in [
+        vec!["--engine", "standard"],
+        vec!["--engine", "row"],
+        vec!["--continuation", "row/v1"],
+        vec!["--engine", "no-cache"],
+        vec!["--kv-cache", "none"],
+    ] {
+        let argv = [vec![PROMPT, "--max-tokens", "9", "--emit-ids"], flags].concat();
+        assert_eq!(
+            run_capturing_with_status(&container, &argv, "").unwrap(),
+            baseline
+        );
+    }
+    let first = baseline.0.split_whitespace().next().unwrap();
+    declare_stop(&container, serde_json::json!({"stop_strings":[first]}));
+    for engine in ["standard", "row", "no-cache"] {
+        assert_eq!(
+            run_capturing(&container, &[PROMPT, "--engine", engine], "").unwrap(),
+            "\n"
+        );
+    }
+}
+
+#[test]
+fn v3_input_flags_reject_conflicting_or_unusable_requests() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for flags in [
+        vec!["--context-window", "10"],
+        vec!["--mm-weights", "missing"],
+        vec!["--engine", "standard", "--kv-cache", "none"],
+        vec!["--v3-shards", "http://127.0.0.1:1", "--metal"],
+        vec!["--image", "missing.png"],
+    ] {
+        assert!(run_capturing(&container, &[vec![PROMPT], flags].concat(), "").is_err());
+    }
+}
+
+#[test]
+fn multimodal_plan_preserves_position_order_and_precomputed_scaling() {
+    use larql_compute::forward::{EmbeddingChunk, EmbeddingPlan, PositionScheme};
+    use larql_inference::vindex3::input::InputPosition;
+    let rows = ndarray::arr2(&[[0.25, -0.5], [0.75, 1.0]]);
+    let plan = EmbeddingPlan {
+        chunks: vec![
+            EmbeddingChunk::Tokens(vec![1]),
+            EmbeddingChunk::Precomputed {
+                rows,
+                modality: larql_models::Modality::Image,
+            },
+            EmbeddingChunk::Tokens(vec![2, 3]),
+        ],
+        positions: PositionScheme::Sequential,
+    };
+    let inputs = super::inputs::from_embedding_plan(plan).unwrap();
+    assert_eq!(inputs.len(), 5);
+    assert!(matches!(inputs[0], InputPosition::Token(1)));
+    assert!(matches!(&inputs[1],InputPosition::Embedding(row) if row==&[0.25,-0.5]));
+    assert!(matches!(&inputs[2],InputPosition::Embedding(row) if row==&[0.75,1.0]));
+    assert!(matches!(inputs[3], InputPosition::Token(2)));
+    assert!(matches!(inputs[4], InputPosition::Token(3)));
+}
+
+#[test]
+fn dense_ffn_placement_refuses_conflicting_execution_flags_before_connecting() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for extra in [
+        vec!["--metal"],
+        vec!["--engine", "row"],
+        vec!["--kv-cache", "none"],
+    ] {
+        let mut flags = vec![PROMPT, "--v3-ffn-shards", "http://127.0.0.1:1"];
+        flags.extend(extra);
+        let error = run_capturing(&container, &flags, "").unwrap_err();
+        assert!(error.contains("--v3-ffn-shards uses CPU"), "{error}");
+    }
+    let parsed = Shell::try_parse_from([
+        "larql",
+        container.to_str().unwrap(),
+        PROMPT,
+        "--v3-ffn-shards",
+        "http://a,http://b",
+        "--v3-shard-token-env",
+        "FFN_TOKEN",
+    ])
+    .unwrap()
+    .run;
+    assert_eq!(parsed.v3_ffn_shards, ["http://a", "http://b"]);
+    assert!(Shell::try_parse_from([
+        "larql",
+        container.to_str().unwrap(),
+        PROMPT,
+        "--v3-ffn-shards",
+        "http://a",
+        "--v3-shards",
+        "http://b"
+    ])
+    .is_err());
+}
+
+#[test]
+fn cpu_profile_preserves_ids_and_refuses_to_overwrite() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    let profile = root.path().join("profile.jsonl");
+    let plain =
+        run_capturing_with_status(&container, &[PROMPT, "--max-tokens", "3", "--emit-ids"], "")
+            .unwrap();
+    let flags = [
+        PROMPT,
+        "--max-tokens",
+        "3",
+        "--emit-ids",
+        "--v3-profile",
+        profile.to_str().unwrap(),
+    ];
+    let measured = run_capturing_with_status(&container, &flags, "").unwrap();
+    assert_eq!(plain, measured);
+    let explicit_continuation = [&flags[..], &["--continuation", "row/v1"]].concat();
+    let error = run_capturing(&container, &explicit_continuation, "").unwrap_err();
+    assert!(error.contains("explicit --continuation"), "{error}");
+    let text = std::fs::read_to_string(&profile).unwrap();
+    let rows: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows[0]["complete"], true);
+    assert_eq!(rows[0]["placement"], "local");
+    assert!(rows.len() >= 4);
+    for (position, row) in rows[1..].iter().enumerate() {
+        assert_eq!(row["position"], position);
+        assert_eq!(row["complete"], true);
+        assert_eq!(row["provider_calls"], serde_json::json!([]));
+    }
+    assert!(run_capturing(&container, &flags, "").is_err());
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), text);
+}
+
+#[test]
+fn binary_ffn_wire_flag_is_explicit_and_scoped() {
+    for wire in ["binary", "json", "stream"] {
+        let run = Shell::try_parse_from([
+            "larql",
+            "model",
+            "hello",
+            "--v3-ffn-shards",
+            "http://a",
+            "--v3-ffn-wire",
+            wire,
+        ])
+        .unwrap()
+        .run;
+        assert_eq!(run.v3_ffn_wire.as_deref(), Some(wire));
+    }
+    assert!(Shell::try_parse_from(["larql", "model", "hello", "--v3-ffn-wire", "binary"]).is_err());
+    assert!(Shell::try_parse_from([
+        "larql",
+        "model",
+        "hello",
+        "--v3-ffn-shards",
+        "http://a",
+        "--v3-ffn-wire",
+        "q8"
+    ])
+    .is_err());
+}
+
+/// CONTINUATION-PLUGIN-1 C3: `--engine` is an alias, and every path
+/// reports the identity it resolved — the default, each alias, and the
+/// replay mode over the default provider. An unknown engine refuses.
+#[test]
+fn every_run_path_reports_the_continuation_identity_it_resolved() {
+    let root = tempfile::tempdir().unwrap();
+    let container = fixture_container(root.path(), true);
+    for (flags, expected) in [
+        (vec![], "continuation=row/v1"),
+        (vec!["--engine", "row"], "continuation=row/v1"),
+        (vec!["--engine", "standard"], "continuation=canonical/v1"),
+        (
+            vec!["--engine", "no-cache"],
+            "continuation=no-cache over row/v1",
+        ),
+    ] {
+        let argv = [
+            vec![PROMPT, "--max-tokens", "2", "--verbose"],
+            flags.clone(),
+        ]
+        .concat();
+        let (_, status) = run_capturing_with_status(&container, &argv, "").unwrap();
+        assert!(status.contains(expected), "{flags:?}: {status}");
+    }
+    let err = run_capturing(&container, &[PROMPT, "--engine", "turbo-quant"], "").unwrap_err();
+    assert!(err.contains("--engine"), "{err}");
 }

@@ -179,7 +179,7 @@ pub enum OutputContent {
 
 /// Token accounting, Responses field names (`input_tokens`, not
 /// `prompt_tokens`).
-#[derive(Serialize, Clone, Copy, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct ResponseUsage {
     pub input_tokens: usize,
     /// OpenAI's cached-token detail: how many `input_tokens` were
@@ -190,10 +190,31 @@ pub struct ResponseUsage {
 }
 
 /// The `usage.input_tokens_details` object (OpenAI Responses shape).
-#[derive(Serialize, Clone, Copy, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct InputTokensDetails {
     pub cached_tokens: usize,
+    /// larql extension, present only when it happened (C4): the chained
+    /// response's continuation state refused to resume, and this
+    /// response was generated from a fresh prefill instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation_refused: Option<ContinuationRefusal>,
 }
+
+/// What `usage.input_tokens_details.continuation_refused` records: the
+/// refusal's kind and reason, and the recovery the server took.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct ContinuationRefusal {
+    /// `provider_absent`, `revision_changed` or `configuration_changed`.
+    pub kind: &'static str,
+    /// The refusal as the resume contract stated it, naming both sides.
+    pub reason: String,
+    /// What the server did instead. Always [`FRESH_PREFILL_RECOVERY`].
+    pub recovery: &'static str,
+}
+
+/// The only recovery the server takes from a refused continuation: a
+/// full prefill of the prompt under this model's own continuation.
+pub const FRESH_PREFILL_RECOVERY: &str = "fresh_prefill";
 
 /// `incomplete_details` on the envelope when status is `incomplete`.
 #[derive(Serialize, Clone, Debug)]

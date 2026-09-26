@@ -109,7 +109,7 @@ Four proofs, each with a minimal witness, then adversarial confirmations:
 | Representation is not a dtype | progressive / residual codec (`R = R₀ + Δ₁ + … + Δₙ`) | extents with meaning; prefix identity; residency choosing depth; "enough representation" as a planner request |
 | Representation is not self-contained bytes | VQ / codebook | `AuxiliaryOperands` in anger: an encoded operand depending on another represented object |
 | Storage is not execution residency | entropy-coded bf16 (zstd / ANS) | sequential access refused by name for row plans; storage / decoded / executable / workspace residency told apart |
-| Canonical semantics are source-independent | HF round-trip, then `.fs3`/`.fsc` lowering | meaning → foreign vocabulary without special-case reconstruction |
+| Canonical semantics are source-independent | HF round-trip, then lowering into a foreign out-of-tree stream/container | meaning → foreign vocabulary without special-case reconstruction |
 
 Adversarial confirmations: ternary / base-243 (element and byte boundaries
 diverge), per-row mixed rate (shape does not determine offset), permutation
@@ -229,6 +229,11 @@ Two wording boundaries stay explicit:
   integration tests compile as separate crates against exported API. It does
   not claim runtime discovery or distributed package loading; a plugin here
   is an external crate linked at compile time.
+  *Successor (2026-09-24):* shared-library loading now exists — a plugin
+  registers codecs, encoders and lowering providers through
+  `format::vindex3::plugin`, loaded only when named with `--plugin`, behind
+  an ABI stamp that pins compiler and commit. It is still not discovery:
+  see [plugins](vindex3/plugins.md). This rung's claim is unchanged.
 - "Stored label wins" makes the **stored representation authoritative**. The
   expert-format declaration is a legacy default consulted only for a carrier
   dialect whose label names no codec. They are one rule with a fallback, not

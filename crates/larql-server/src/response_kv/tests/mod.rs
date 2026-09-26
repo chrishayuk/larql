@@ -5,7 +5,9 @@
 mod ownership;
 
 use super::*;
-use larql_kv::CanonicalKvState;
+use larql_kv::{shipped_continuations, CanonicalFactory};
+use larql_vindex::format::vindex3::opplan::exec::continuation_authority::ContinuationConfig;
+use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationFactory;
 
 /// Small capacity so eviction is observable without bulk inserts.
 const TEST_MAX_ENTRIES: usize = 2;
@@ -15,8 +17,16 @@ const TEST_TTL_SECS: u64 = 10;
 const TEST_MODEL: &str = "m-test";
 
 fn handoff(ids: &[u32]) -> V3KvHandoff {
+    let continuation = shipped_continuations()
+        .select(
+            &CanonicalFactory.identity(),
+            &ContinuationConfig::empty(),
+            &[],
+        )
+        .unwrap()
+        .begin();
     V3KvHandoff {
-        kv: CanonicalKvState::new(),
+        continuation,
         absorbed_ids: ids.to_vec(),
     }
 }

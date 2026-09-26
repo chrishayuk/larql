@@ -1,5 +1,7 @@
 # larql-python — Python Bindings for Vindex
 
+**Class: ARCHIVE.** The draft API below is retained as a design record. Current exports and source-build instructions are in the [Python crate README](../crates/larql-python/README.md); [runtime interfaces](runtime-surfaces.md) explain its V2/V3 limits.
+
 **Version:** 0.1  
 **Date:** 2026-04-01  
 **Status:** Draft  

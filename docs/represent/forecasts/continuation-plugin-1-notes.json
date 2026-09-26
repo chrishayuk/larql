@@ -1,0 +1,380 @@
+{
+  "programme": "CONTINUATION-PLUGIN-1",
+  "forecast": "continuation-plugin-1.json (frozen at 93f5bfe3)",
+  "rule": "The execution record. The forecast is not edited; a wave that finds the design must change writes the change and the reason here.",
+  "merge_policy": "One small PR per wave; each wave's gates (the forecast's gates_before_each_push) run before its push.",
+  "waves": {
+    "C1": {
+      "name": "continuation identity",
+      "status": "built and held",
+      "branch": "v3-state-2",
+      "base": "93f5bfe3 (the freeze, on main 43b2e9d9)",
+      "date": "2026-09-24",
+      "what_landed": [
+        "`exec/continuation_identity.rs`: `ContinuationIdentity { family: String, revision: u32 }` — Eq/Ord/Hash/serde, Display `family/vN`, `validate()`.",
+        "`exec/provider_identity.rs`: the ONE family/revision rule, taking the plane name for its messages. `LoweringIdentity::validate` now delegates to it; its refusal texts are byte-identical to before (the existing `lowering::tests` pass unchanged).",
+        "Built-in identities as `pub const` pairs in each provider's own module, read through an inherent `identity()`: `RowKvState::identity()` = `row/v1` (`exec/kv.rs`), `CanonicalKvState::identity()` = `canonical/v1` (`larql-kv/src/vindex3/mod.rs`).",
+        "`ContinuationIdentity` re-exported from `larql_inference::vindex3` beside the rest of the continuation seam."
+      ],
+      "witnesses": {
+        "the_row_provider_states_a_valid_identity": "exec/tests/continuation_identity.rs",
+        "identity_is_family_and_revision_both": "same file — revision and family each distinguish; ordering is by family then revision",
+        "identity_round_trips_through_serde": "same file — the exact JSON a handoff (C4) will carry",
+        "continuation_and_lowering_share_one_rule": "same file — the control: one table of eight inputs driven through BOTH planes; every verdict agrees, each refusal names its own plane, and the reason text after the plane prefix is identical",
+        "canonical_states_a_valid_identity_distinct_from_row": "larql-kv/src/vindex3/tests/mod.rs"
+      },
+      "departure_from_the_lowering_pattern": "LOWERING-PLUGIN-1 L1 made `PlanBackend::identity()` a REQUIRED trait method, so the compiler proved every implementor stated one. C1 cannot: F3 holds the ContinuationProvider contract at nine methods. 'Every production provider states an identity' is therefore witnessed by enumeration (two production impls at baseline, both covered) rather than by the type system. C2 closes the gap structurally: a provider becomes selectable only through a factory, and a factory states its identity to register.",
+      "falsifiers": {
+        "F3": "held — `ContinuationProvider` has 9 methods; `AttentionStepCall` unchanged",
+        "F1": "not yet exercised (C4)",
+        "F2": "not yet exercised (C3); construction sites unchanged at 16",
+        "F4": "not yet exercised (C2)",
+        "F5": "not yet exercised (C2/C5)"
+      },
+      "measured_at_merge": {
+        "trait_methods": 9,
+        "non_test_construction_sites": 16
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy -p larql-vindex -p larql-kv -p larql-inference -p larql-server -p larql-cli -p larql-lql --all-targets -D warnings": "clean",
+        "cargo test -p larql-vindex -p larql-kv": "exit 0; larql-vindex lib 4943 passed, 0 failed, 9 ignored",
+        "cargo check --workspace --all-targets": "clean",
+        "trait method count / construction sites": "9 / 16",
+        "doc gates": "check_doc_links, check_doc_references, check_contract_index — clean"
+      }
+    },
+    "C2": {
+      "name": "continuation registry",
+      "status": "built and held",
+      "branch": "v3-state-2",
+      "base": "9f01d52d (C1)",
+      "date": "2026-09-24",
+      "what_landed": [
+        "`exec/continuation_registry.rs`: `ContinuationFactory` (identity, declared `regions()`, `validate_config` defaulting to 'takes no options', `build` → `BoxedContinuation = Box<dyn ContinuationProvider + Send>`); `ContinuationRegistry` — a value, `Clone`, no static and no default; `register` refuses invalid and duplicate identities; `select(identity, config, geometry)` refuses unregistered (naming what is), refused configuration, and the first layer whose region is not declared, all BEFORE anything is built; `SelectedContinuation` carries the authority and builds a fresh provider per call.",
+        "`exec/continuation_authority.rs`: `ContinuationConfig` (key=value, key order, shape refusals), `ConfigDigest` = `sha256:` over a domain tag, the identity and the canonical form, and `ContinuationAuthority { identity, config_digest }` — serde, the pair C4 carries.",
+        "`ContinuationRegion { Kv, LatentKv, Recurrent, KvAndRecurrent }` with `required_by(&LayerContinuationGeometry)`; refusal texts reuse `continuation::region_name`, the plan's one vocabulary.",
+        "Built-in factories beside their providers: `RowFactory` (exec/kv.rs), `CanonicalFactory` and `shipped_continuations()` — a fresh registry value per call (larql-kv/src/vindex3/registry.rs). Both declare all four regions and take no options.",
+        "No call site migrated: C2 must not change graph semantics, and it changes none. Migration is C3."
+      ],
+      "witnesses": {
+        "exec/tests/continuation_registry.rs (12)": "configuration shape and key order; digest pinned to values computed OUTSIDE the crate (Python hashlib over the documented canonical form); digest moves with value, key set, family and revision but not key order; authority's two fields independent; registration refusals; unregistered names the registry; configuration refused by the provider that reads it; hybrid plan refused at selection naming layer 2 / recurrent (F5); KV + Recurrent separately do not hold a conv-QKV layer; stateless layers ask nothing; every build is a fresh provider driven through the full hybrid contract as a trait object",
+        "larql-kv shipped_continuations_is_a_fresh_value_holding_both_built_ins": "two identities in order, registering into one leaves the next at two, both select and build against the miniature fixture plan's real geometry",
+        "mutation control": "disabling the region check in `select` (`if false && …`) turned exactly the two F5 witnesses red (10 passed, 2 failed); restored and re-verified"
+      },
+      "departures_from_the_forecast": [
+        "The frozen boundary lists `Stateless` among the capability vocabulary. It is NOT a capability here: a stateless layer asks nothing of a provider, so declaring it would be a capability that can never be absent — an enum value no provider could meaningfully decline, which the same boundary forbids. Selection skips stateless layers; `a_stateless_layer_asks_nothing_of_a_provider` pins that a provider declaring nothing accepts an all-stateless plan.",
+        "The config digest covers the identity as well as the configuration (as frozen). Consequence for C4: the two authority fields are compared separately, identity first, so a changed identity reports as a provider/revision refusal and never as a configuration mismatch."
+      ],
+      "falsifiers": {
+        "F1": "held so far — `Box<dyn ContinuationProvider + Send>` holds RowKvState and CanonicalKvState with no trait change; the server handoff itself is C4",
+        "F3": "held — 9 trait methods; AttentionStepCall unchanged",
+        "F4": "held in the registry — selection is identity equality plus declared regions; no family literal in continuation_registry.rs or continuation_authority.rs (grep exit 1). The CLI string switch remains until C3.",
+        "F5": "witnessed at the registry with a mutation control; end-to-end before prefill is C5's",
+        "F2": "not yet exercised (C3)"
+      },
+      "measured_at_merge": {
+        "trait_methods": 9,
+        "non_test_construction_sites": "16 call sites unchanged, plus the 2 factory `build`s that C3's allowlist will name"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy (six crates) --all-targets -D warnings": "clean",
+        "cargo test -p larql-vindex -p larql-kv": "exit 0; larql-vindex lib 4955 passed (C1 4943 + 12), larql-kv lib 1255 passed",
+        "cargo check --workspace --all-targets": "clean",
+        "doc gates": "clean"
+      }
+    },
+    "C3": {
+      "name": "built-ins behind the registry",
+      "status": "built and held",
+      "branch": "v3-state-2",
+      "base": "3c121e84 (C2)",
+      "date": "2026-09-24",
+      "scope_decision": "STRICT, chosen by the user before implementation: every one of the 16 baseline sites — call-scoped scratch included — reaches its provider through a SelectedContinuation. The alternative (a single allowlisted executor scratch function) was declined because it would reinterpret the frozen 'all 16'.",
+      "what_landed": [
+        "Executor (larql-vindex): `DecodeSession::new` takes the provider it owns (`BoxedContinuation`) — the hidden `row/v1` default is gone. The one-shot forward no longer manufactures a `RowKvState` for a stack with state beyond softmax attention: without state it REFUSES, naming the layer; `execute_slice_in` / `execute_plan_streaming_in` / `execute_prepared_streaming_in` take caller-selected state (must be fresh, position 0). `requires_continuation(plan)` exposes the executor's one rule so callers ask rather than re-derive.",
+        "`PayloadPrefix::prepare` and `InterpreterArm::prepare` take a `SelectedContinuation` and build a fresh provider per probe / scored sample.",
+        "Inference: `Vindex3Runtime::select_continuation` / `PreparedVindex3::select_continuation` select against the runtime's own plan; `session`/`session_overlaid` take the selection; `execute_streaming`/`_overlaid` take it and build state only when `requires_continuation` says so (a softmax plan still materialises no rows); `ReplaySession` (no-cache) is a replay MODE over the selection's provider. The `RowKvState` re-export is replaced by the registry surface.",
+        "CLI: `commands/primary/continuation.rs` — the ONE alias table (`row`→row/v1, `standard`→canonical/v1), the declared default (`row`), the replay mode name, `select_for(plan, engine)` from a fresh shipped registry, and `one_shot_state(plan)`. Every CLI site (run, generate, bench, bank, observe, sensitivity, teacher-force, measure, exec) selects there; the engine string switch is gone. Every run path reports the identity it resolved (`continuation=row/v1`, `continuation=no-cache over row/v1`).",
+        "LQL: `v3_continuation(runtime)` selects `CanonicalFactory`'s identity (no family string) for INFER, TRACE, capture and the compose balance probe.",
+        "Server: `V3Model.continuation` is selected ONCE at binding against the plan (refused at load, before any request); fresh request state is `model.continuation.build()`; `V3KvHandoff.kv` is a `BoxedContinuation` (F1 held — no trait change). The authority beside it is C4.",
+        "Tests migrated (~70 sites) to name `row/v1` explicitly; `exec/tests/mod.rs::row_continuation(plan)` and an inference `row(plan)` helper."
+      ],
+      "witnesses": {
+        "crates/larql-vindex/tests/continuation_closure.rs": "the NAME ban as executable policy: no production file outside a 4-entry allowlist (each with its reason) names RowKvState or CanonicalKvState in code; control 1 — every allowlisted file still names one (no stale permission); control 2 — a seeded violation in each of four spellings (constructor, struct literal, inferred Default, use) written into a temp crate tree turns the full scan RED; prose and names that merely contain a built-in's name pass",
+        "crates/larql-kv/src/vindex3/tests/registry_parity.rs": "direct CanonicalKvState == registry canonical/v1 == registry row/v1 == direct RowKvState, one Record each (prefill logits, K/V rows, recurrent buffers, latent rows, position, every step's logits, generated ids) — on miniature_glimmer crossing its sliding window, and on hybrid_kda_mla_f32_model (KDA recurrence + MLA latent; asserts both regions exist and the recurrence moved)",
+        "negative control": "a provider moving ONE value by one ULP is caught on both fixtures",
+        "crates/larql-cli .../continuation_tests.rs + run_cmd_vindex3 tests": "alias resolution, unknown-engine refusal naming the known set, selection names its authority, one_shot_state follows the executor rule on a dense and a hybrid plan; end to end, `--verbose` reports the resolved identity on the default, both aliases and replay",
+        "existing gates": "the original KV-1 gate is unchanged and passes against the direct types"
+      },
+      "findings": [
+        "The first version of the negative control nudged the recurrent state's ZERO start by one ULP; the subnormal (≈1e-45) was absorbed exactly by the first KDA update and the hybrid gate read 'equal'. A ULP of zero is not a perturbation. The control now nudges the largest cell once the sequence is live, and is caught. Recorded because the same mistake would make any 'bit-identical' gate on a recurrent stack vacuous.",
+        "Five larql-vindex tests ran one-shot forwards over hybrid fixtures (draft_slice ×2, k3_rep_gate_closure ×3 via execute_text) and had silently used the executor's manufactured RowKvState. They now name their state (`execute_slice_in(…, &mut RowKvState::default())`) — the hidden default had test callers as well as production ones."
+      ],
+      "departures_from_the_forecast": [
+        "The forecast's C3 text lists `CanonicalKvState::new / from_cache and RowKvState::default` as the spellings; per the user's review before freezing, the gate bans the type NAMES (stronger). The allowlist has four entries rather than 'providers' modules and the factory module' alone: `larql-kv/src/lib.rs` re-exports the provider crate's own type (the from_cache/into_cache bridge), with that reason in the test.",
+        "Line comments are exempt from the name ban: documentation may still explain history. Stale architecture comments that named a built-in as THE provider (server module headers) were rewritten anyway."
+      ],
+      "falsifiers": {
+        "F1": "held — the server handoff holds `Box<dyn ContinuationProvider + Send>` with no trait change",
+        "F2": "held — 0 production sites name a built-in outside the allowlist (closure scan), including the executor's former one-shot default and DecodeSession::new's default",
+        "F3": "held — 9 trait methods; AttentionStepCall unchanged. The new executor `_in` entry points are traversal API, not provider contract.",
+        "F4": "held — family literals appear only in the CLI alias table and the providers' own identity constants (grep); LQL and server name `CanonicalFactory.identity()`",
+        "F5": "held at every production entry — selection happens at CLI select_for, runtime select_continuation, and server binding, all before prefill; end-to-end with a foreign provider is C5"
+      },
+      "measured_at_merge": {
+        "trait_methods": 9,
+        "non_test_sites_naming_a_built_in": "0 outside the 4-entry allowlist (baseline: 16 construction sites across 15 files)"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy (six crates) --all-targets -D warnings": "clean (two #[allow(clippy::too_many_arguments)] in the file idiom: InterpreterArm::prepare, the cfg(test) mutation hook)",
+        "cargo test -p larql-vindex -p larql-kv -p larql-inference -p larql-lql -p larql-server -p larql-cli": "exit 0, --no-fail-fast; larql-vindex lib 5004 passed, larql-kv lib 1258, larql-inference lib 1564",
+        "cargo check --workspace --all-targets": "clean (examples included)",
+        "doc gates": "clean",
+        "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
+      }
+    },
+    "C4": {
+      "name": "authority in durable handoffs",
+      "status": "built and held",
+      "branch": "continuation-plugin-1/c4",
+      "base": "24a3a255 (C3, rebased onto main 39eaca20)",
+      "date": "2026-09-24",
+      "boundary_clarification": {
+        "recorded_before_code": true,
+        "question": "The server's ResponseKvCache documents continuation reuse as 'purely an optimisation': any mismatch falls back to a full prefill and can never change produced tokens. C4's anti-cheat forbids 'silently restarting from a fresh prefill'. Both cannot hold on the server path unless the layer each applies to is named.",
+        "decision": "C4's no-fallback / no-rebuild / no-fresh-prefill invariant applies to the continuation RESUME operation itself. Resume compares the recorded authority with the resolving one and either returns the recorded state or a typed refusal — provider absent, revision changed, configuration changed, each naming both sides; it never builds, selects or prefills anything. A higher layer (the server) MAY recover by a full fresh prefill, but only as an explicit recovery action: the refusal and its reason are recorded on the response and in the cache's counters, and the record says a fresh prefill occurred. A refused handoff is never reinterpreted as a cache miss.",
+        "unchanged": "A prompt that does not extend the handoff's absorbed ids remains an ordinary cache miss (the N1 optimisation contract): that is a prompt mismatch, not a continuation refusal, and the authority comparison runs before it so an incompatible state is reported as such regardless of the prompt.",
+        "anti_cheat_layer": "The config-A/config-B witness runs at the resume-contract layer, so it proves no fallback, rebuild or prefill INSIDE resume; the server's explicit recovery is witnessed separately.",
+        "analogue": "F1's possible Send bound: a clarification of the boundary, recorded before implementation, not a retrofit of the result."
+      },
+      "out_of_scope": "Cross-process continuation (writing provider state to storage and resuming it in another process) is NOT C4 or C5: it needs a serialization/storage contract the nine-method provider trait deliberately lacks (F3). It belongs to the post-plugin sequence beside CONTINUATION-MEM-1, under its own freeze. C5's frozen path stays in-process: register → prefill → decode → handoff → resume.",
+      "what_landed": [
+        "`exec/continuation_handoff.rs`: `ContinuationHandoff { authority, state }`, fields private, created only by `SelectedContinuation::begin()`, so state is sealed with the authority that built it and cannot be re-paired. `resume(&ContinuationAuthority)` returns the handoff or a `ResumeRefusal` (`ProviderAbsent` / `RevisionChanged` / `ConfigurationChanged`, each naming both sides, with a stable `kind()` token). It builds, selects and prefills nothing; on refusal the state is dropped. Identity is compared before the digest.",
+        "Server: `V3KvHandoff { continuation: ContinuationHandoff, absorbed_ids }`. `generate_v3_request` runs the authority check BEFORE the prefix check; on refusal it warns and recovers by `model.continuation.begin()` + full prefill, reporting `V3Generation::continuation_refused`.",
+        "Responses route: `usage.input_tokens_details.continuation_refused { kind, reason, recovery: \"fresh_prefill\" }`, omitted when nothing was refused; `ResponseKvCache::record_refusal` / `refusals()` and `/v1/stats.server.v3_kv.refusals`, counted apart from `misses` (state found and rejected, not absent). `ResponseUsage` loses `Copy` (it now carries a String).",
+        "`ContinuationHandoff` and `ResumeRefusal` re-exported from `larql_inference::vindex3`; server spec N1 section documents the check."
+      ],
+      "witnesses": {
+        "exec/tests/continuation_handoff.rs (10)": "sealing; same authority resumes the recorded rows untouched with zero builds; an equal authority from another selection resumes (authority is by value); each refusal kind names both sides; identity compared before digest; exactly one accepting case (control); a refusal builds nothing on either side; authority serde round-trip",
+        "larql-kv vindex3/tests/resume_anti_cheat.rs (4)": "the frozen anti-cheat on a REAL recurrent+latent hybrid prefill: v77 config A state vs a resuming registry of v77 config B + canonical/v1 + row/v1 → ConfigurationChanged naming both digests, (hostile, canonical, row) builds (0,0,0); control: the same handoff under config A from a second registry resumes and decodes bit-identically to an uninterrupted canonical/v1 run; revision bump → RevisionChanged; built-ins-only registry resolving canonical/v1 → ProviderAbsent, never a fallback",
+        "larql-server tests/test_openai_responses_v3_prefix.rs (+2)": "row/v1 state with a PERFECT id prefix is refused (ProviderAbsent), reused=0, tokens equal a fresh run, the returned handoff carries the binding's authority; control: the binding's own state with the same prefix resumes. Over HTTP: the response records kind/reason/recovery, cached_tokens 0, hits count the found state, refusals=1, misses=0, output equals the cold chain",
+        "mutation controls": "permissive resume (`between(..).filter(|_| false)`) turned 7 refusal tests red, the resume control stayed green; bypassing the server's authority check turned both server C4 rows red; both mutations reverted and re-verified"
+      },
+      "falsifiers": {
+        "F1": "held — the handoff holds `Box<dyn ContinuationProvider + Send>` inside `ContinuationHandoff`; no trait change",
+        "F2": "held — no built-in constructed on the resume path; recovery goes through the binding's own selection",
+        "F3": "held — 9 trait methods; AttentionStepCall unchanged. `ContinuationHandoff`/`ResumeRefusal` are authority plumbing beside the provider, not provider contract",
+        "F4": "held — the comparison is identity/digest equality; no family literal in continuation_handoff.rs or the server resume path",
+        "F5": "unchanged (C5)"
+      },
+      "scope_note": "The server's Responses N1 cache is the only durable handoff in the tree: CLI, LQL and inference sessions hold provider state within one call. `larql vindex3 exec` resume restores interpreter trace planes, not a continuation provider, and is out of scope.",
+      "gates": {
+        "cargo fmt --all --check": "clean (run last)",
+        "cargo clippy (six crates) --all-targets -D warnings": "clean",
+        "cargo test -p larql-vindex -p larql-kv -p larql-inference -p larql-lql -p larql-server -p larql-cli": "0 failed; vindex 5339, kv 1298, inference 1824, cli 996, lql 1105, server 1288",
+        "cargo check --workspace --all-targets --locked": "clean",
+        "doc gates": "clean",
+        "not run locally": "per-file llvm-cov; CI's coverage gate is the authority"
+      }
+    },
+    "C5": {
+      "name": "hostile external provider",
+      "status": "built and held",
+      "branch": "continuation-plugin-1/c5",
+      "base": "C4 (continuation-plugin-1/c4)",
+      "date": "2026-09-25",
+      "rule": "Frozen before implementation, as LOWERING-PLUGIN-1 L5 was: what the provider may borrow from the crates is decided HERE, so a proof that needed an internal cannot be quietly re-described as one that did not.",
+      "design_frozen_before_implementation": {
+        "where": "`crates/larql-kv/tests/external_continuation_provider/` (`main.rs` the journey and controls, `provider.rs` the provider and factory, `genericity.rs` the source scan). An integration test is a separate crate in cargo's model: it sees only what `larql-kv` and `larql-vindex` export. larql-kv because `canonical/v1`, the parity reference, lives there. No new workspace crate.",
+        "identity": "`hostile-test-provider/v77`, spelled in the test target and in test modules only.",
+        "shape": "Deliberately boring: row semantics, KV only (`regions() == [Kv]`), its own storage type and its own position counter, and `validate_config` accepting one option (`bits`) it records but does not act on — enough for configuration to be a second authority. `recurrent_state` / `latent_state` refuse by naming the provider (the trait makes both REQUIRED).",
+        "may_borrow": "Exported API only: the `ContinuationProvider` trait and its geometry/error types, `ContinuationFactory`/`ContinuationRegistry`/`SelectedContinuation`/`ContinuationHandoff`, `shipped_continuations()`, the fixtures and the reference backend. Anything else it turns out to need is a finding, recorded either way.",
+        "expected_departure_from_the_forecast": "The forecast says 'one contiguous buffer per layer'. The read contract is `keys(layer) -> &[Vec<f32>]`, which a single contiguous `Vec<f32>` cannot answer without also holding per-row `Vec`s. F3 forbids opening the read contract in C1–C5, so the provider stores rows as the trait returns them. If implementation confirms this, it is recorded as a finding for the stage-2 read-contract freeze (VIEW-1), not worked around."
+      },
+      "controls_frozen": [
+        "the journey: register (beside canonical/v1 and row/v1) → capability match against a sliding-window plan → factory construction → prepare → prefill → decode → sealed handoff held apart from any session → resume under an authority selected from a SECOND registry → decode on; K/V rows, logits and ids bit-identical to canonical/v1 driven through the same shape",
+        "the caller named it: in a registry holding canonical/v1, row/v1 and the external provider, only the external factory builds (per-factory build counts), so 'the registry resolved what was named' is told apart from 'it was the only implementation that could run'",
+        "the numbers are its own: a sibling provider identical except that it corrupts one stored value makes the record differ, so no shipped path is answering underneath",
+        "F5: against the recurrent+latent hybrid, selection refuses naming the first layer and region, with ZERO builds; and the late path is shown to exist — the same provider driven directly (bypassing selection) is refused mid-prefill by ContinuationError — so the early refusal is selection's doing",
+        "C4 inherited: a second registry holding the provider at v78 refuses the v77 handoff as RevisionChanged; config bits=3 against a bits=4 handoff refuses as ConfigurationChanged",
+        "F4 genericity: no non-test `.rs` under any crate's `src/` contains the external family, its type names or its constants; positive control — the same scanner, over the same files, finds the family `canonical` that this build DOES ship"
+      ],
+      "out_of_scope": "dynamic loading (C6); cross-process persistence (separate freeze); opening the read contract (F3, stage 2)",
+      "what_landed": [
+        "`crates/larql-kv/tests/external_continuation_provider/`: `provider.rs` (`HostileRows` + `HostileFactory`, and the corrupting sibling), `main.rs` (the journey and its controls), `genericity.rs` (the source scan and its positive control). Nine tests.",
+        "**No production file changed.** `git diff --stat HEAD -- crates` over the implementation is empty apart from the new test directory: every step of the journey was reachable through exported API."
+      ],
+      "witnesses": {
+        "the_journey": "`an_external_provider_carries_a_conversation_bit_identical_to_canonical`: registered beside canonical/v1 and row/v1 (every build counted) → selected against the sliding-window plan → begin → prefill → 3 decode steps → handoff held apart from every session → resumed under an authority selected from a SECOND registry → 3 more steps. Prefill logits, every step's logits, ids, position and every layer's K/V rows equal canonical/v1 driven through the same shape; builds (external, canonical, row) = (1,0,0) for the writer and (0,0,0) for the reader; the conversation crosses the sliding window.",
+        "the_numbers_are_its_own": "`the_numbers_are_the_external_providers_own`: the honest provider equals canonical/v1; the sibling that moves one stored key by one ULP does not",
+        "F5": "`a_hybrid_plan_is_refused_at_selection_with_nothing_built`: against the KDA+MLA hybrid, selection refuses `Unsupported` naming the provider, the first recurrent/latent layer and its declared `[Kv]`, with zero builds anywhere. Control `control_the_late_refusal_path_exists_so_the_early_one_is_selections`: the same provider built directly is refused mid-prefill, so the early refusal is selection's doing",
+        "C4_inherited": "revision v78 refuses the v77 handoff as RevisionChanged; `bits=3` against a `bits=4` handoff refuses as configuration_changed; an unknown option is refused by the provider that reads it, naming the one it takes",
+        "F4_genericity": "`no_production_source_names_the_external_provider`: the family, `HostileRows` and `HostileFactory` appear in no non-test `.rs` under any crate's `src/` (≥100 files); positive control: the same scanner finds the shipped family literal `\"canonical\"`",
+        "mutation_controls": "a planted `// hostile-test-provider` line in `larql-kv/src/vindex3/registry.rs` turned the genericity scan red, naming the file; declaring `ContinuationRegion::ALL` turned the F5 test red; both reverted and re-verified"
+      },
+      "findings": [
+        "**The contiguous-buffer departure is confirmed by the type, not by taste.** `keys(layer) -> &[Vec<f32>]` can only be answered from storage that already holds one `Vec` per row, so 'one contiguous buffer per layer' is not expressible without opening the read contract. F3 forbids that in C1–C5; the provider stores rows. This is input to the stage-2 read-contract freeze (VIEW-1), where a slice-of-rows view is the question.",
+        "**The late refusal does not name the provider.** A KV-only provider that takes the trait's DEFAULT `prepare_continuation` is refused mid-prefill as \"`a KV-only provider` holds no recurrent state, which layer 0 requires\" — the default cannot know who it is running for. Selection refuses first and names the identity, so production callers never see this text; a provider can override `prepare_continuation` to name itself (no new method, F3 unaffected). Recorded, not changed here: C5 changes no production file.",
+        "**What the provider had to borrow, and nothing more:** the trait, `LayerKvGeometry`, `ContinuationError`, `RecurrentState`/`LatentKvRows` (only as the types of its two refusals), the registry surface and `ContinuationHandoff`. No `pub(super)` item was needed."
+      ],
+      "falsifiers": {
+        "F1": "held — the external provider travels as `Box<dyn ContinuationProvider + Send>` inside `ContinuationHandoff`",
+        "F2": "held — the registry that holds the built-ins built none of them in the external journey (counted)",
+        "F3": "held — 9 trait methods, `AttentionStepCall` unchanged; the provider implemented the six it must plus its two required refusals and took the default `prepare_continuation`",
+        "F4": "held — genericity scan with a positive control and a planted-violation red control",
+        "F5": "held — a hybrid plan is refused at selection with nothing built; the late path exists and is pre-empted"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "cargo clippy -p larql-kv --all-targets -D warnings": "clean",
+        "cargo test -p larql-kv": "0 failed; 1307 passed across 15 binaries (9 new)",
+        "production files changed": "none"
+      }
+    },
+    "C6": {
+      "name": "dynamic loading",
+      "status": "built and held",
+      "branch": "continuation-plugin-1/c6",
+      "base": "C5 (continuation-plugin-1/c5)",
+      "date": "2026-09-25",
+      "decision": "AUTOMATED, chosen by the user over a manual demonstration like #526's: C6's claim is the deployment-relevant one, so it gets a CI gate that can go red, not a recorded run.",
+      "scope": "Add `PluginRegistrar::continuation(Box<dyn ContinuationFactory>)`, carry it through `into_parts()`, register loaded factories over `shipped_continuations()`, add `--continuation family/vN` and `--continuation-option k=v` beside `--engine`, and prove the path. NOT in scope: plugin manifests, discovery, dependency negotiation, hot reload, portability beyond the existing unix `dlopen` loader, or any other redesign of the plugin ABI.",
+      "design_frozen_before_implementation": {
+        "fixture": "A new test-only workspace member `crates/larql-continuation-fixture/` (`publish = false`, `crate-type = [\"cdylib\"]`). It is a FIXTURE, not a third shipped provider or an SDK example. It contains the C5 provider itself, included by `#[path]` from `crates/larql-kv/tests/external_continuation_provider/provider.rs`, so the dylib and the C5 proof are one source, never two copies. It exports `larql_plugin!(register)`, and `register` calls `PluginRegistrar::continuation(...)` with `hostile-test-provider/v77`. It depends on `larql-vindex` with the CLI's default feature set, so the host and the plugin see the same types.",
+        "abi": "Adding a field to `PluginRegistrar` changes its layout. The stamp's contract revision goes `larql-plugin/1` → `larql-plugin/2`, so a revision-1 plugin is refused by name before it runs. This is the only ABI change; it is required for safety, not a redesign.",
+        "host": "`Plugins::load` collects the loaded continuation factories. The CLI's ONE continuation selection (`commands/primary/continuation.rs`) composes `shipped_continuations()` plus the loaded factories and resolves through the same `select_for` every run path uses, with no plugin-specific selection path. `--continuation` takes `family/vN` and is refused together with `--engine`; `--continuation-option` is parsed by `ContinuationConfig::parse`.",
+        "where_the_gate_lives": "larql-cli is binary-only, so the journey is a unit-test module inside larql-cli (`vindex3_cmd/tests/continuation_plugin.rs`) that calls the real loader (`Plugins::load` → `dlopen` → ABI stamp → exported register symbol). A subprocess test runs the built `larql` binary for the argument path.",
+        "building_the_fixture": "The test builds the fixture itself with `$CARGO build -p larql-continuation-fixture --locked` into a SEPARATE target directory under the test's target dir. Cargo holds its build lock on a target directory for the whole `cargo test` run, so a nested build into the same one would deadlock. The cost of that build is measured and recorded. A build failure fails the test; it is never a skip.",
+        "windows": "The loader stays `cfg(unix)`. A `cfg(not(unix))` regression test pins the existing refusal (`loading plugins is implemented for unix dlopen only`), naming the path."
+      },
+      "controls_frozen": [
+        "the journey through the real loader: dylib → ABI check → `larql_plugin_register` → `PluginRegistrar::continuation` → factories added over `shipped_continuations()` → the CLI's `select_for` resolves `hostile-test-provider/v77` → begin → prefill → decode → sealed handoff held outside any session → resume under an authority re-selected through the same path → decode. Logits, ids, position and every K/V row are bit-identical to `canonical/v1`, the C5 gate unchanged.",
+        "overlay, not replacement: the same composed registry still selects `canonical/v1` and `row/v1`, and its identities are exactly shipped + loaded, in that order.",
+        "anti-cheat, no static linking: the fixture crate is not a dependency of larql-cli in any table, and the test source names no fixture type (checked by `cargo metadata` plus a source scan of larql-cli). The loaded factory's identity comes back from the dylib; its builds happen in code the test binary does not contain.",
+        "the CLI argument path: `larql run <fixture container> --plugin <dylib> --continuation hostile-test-provider/v77 --verbose` reports `continuation=hostile-test-provider/v77` and generates the same token ids as `--engine standard`. `--continuation` together with `--engine` is refused. An unknown `--continuation` family is refused naming the registered set, loaded ones included.",
+        "ABI: a stamp with the wrong contract revision is refused before registration (unit test on `abi_compatible`).",
+        "windows: the unsupported-loader refusal is pinned by a `cfg(not(unix))` test."
+      ],
+      "honest_limit": "The CLI binary has no verb that saves a handoff and resumes it (the server's Responses chain is the only durable handoff). So the handoff/resume half of the journey runs in-process through the CLI's own loader and selection code, and the binary subprocess covers the argument path and generation equality. Both use the real dylib.",
+      "out_of_scope": "Windows dylib loading; plugin manifests, discovery or versions beyond the stamp; serving `--plugin` from `larql serve` (the server selects `canonical/v1` at binding — a separate question)",
+      "freeze_commit": "aae9a52f (the prospective authority for this wave; the execution and merge commits are recorded separately)",
+      "what_landed": [
+        "`PluginRegistrar::continuation(Box<dyn ContinuationFactory>)` and `PluginRegistrations::continuations`; ABI stamp `larql-plugin/1` → `larql-plugin/2`.",
+        "`crates/larql-continuation-fixture/`: test-only `cdylib` (`publish = false`), the C5 provider included by `#[path]`, registered through `larql_plugin!`. Its `gpu` feature mirrors larql-cli's, and the gate builds it with exactly the features of the CLI under test (the stamp names compiler and commit, not features; CI also runs `--no-default-features`).",
+        "CLI: `Plugins.continuations` = `shipped_continuations()` + loaded factories; `select_in(registry, plan, choice)` is the one resolver and `select_for` is it over the shipped registry; `larql run --continuation family/vN --continuation-option k=v` (refused with `--engine`, with `--v3-shards`, and an option without `--continuation`). Every run path reports the identity it resolved.",
+        "larql-cli workflow triggers on `crates/larql-continuation-fixture/**`; `docs/vindex3/plugins.md` documents the fourth plugin kind and the flags.",
+        "C5's genericity scan gains an explicit fixture-crate exemption with its reason and a stale-permission control (the fixture is a crate under `crates/*/src` that names the provider by design)."
+      ],
+      "witnesses": {
+        "in_process (larql-cli vindex3_cmd/tests/continuation_plugin.rs, 10 unix)": "the C5 journey through `Plugins::load` (dlopen → ABI stamp → `larql_plugin_register` → `PluginRegistrar::continuation`) and `select_in`, bit-identical to canonical/v1 in logits, ids, position and every K/V row; overlay: identities are exactly shipped + loaded and the built-ins still select; without the plugin the identity is unregistered (the provider exists only in the dylib); loading it twice is refused as a duplicate naming the path; F5 through the plugin path; choice refusals; the loaded provider's options reach it; anti-cheat: `cargo metadata` shows larql-cli depends on the fixture in no table (positive control: it is found as a cdylib package, and larql-vindex is found among larql-cli's dependencies), and no larql-cli source names the fixture's types",
+        "binary (tests/test_continuation_plugin_cli.rs, 4 unix)": "`larql run --plugin <dylib> --continuation hostile-test-provider/v77 --verbose` prints the plugin's registration and `continuation=hostile-test-provider/v77`, and generates byte-identical stdout to `--engine standard` (`continuation=canonical/v1`); an unknown continuation is refused naming the registered set, loaded provider included; `--continuation` with `--engine` refused; an option without `--continuation` refused",
+        "abi": "`a_stamp_from_an_earlier_contract_revision_is_refused` (larql-vindex plugin_tests)",
+        "windows": "`plugins_are_refused_by_name_off_unix` (cfg(not(unix)))",
+        "mutation_control": "making the run path ignore `--continuation` turned 3 of the 4 binary tests red; the fourth (option without `--continuation`) is refused before selection by `refuse_inapplicable_flags` and is unaffected by design; reverted"
+      },
+      "measurements": {
+        "fixture_build": "≈26 s for a clean build into its own target directory (`<target>/c6-plugin-fixture`), once per test binary; a nested build into the running test's target directory would wait on cargo's own build lock."
+      },
+      "findings": [
+        "The ABI stamp does not cover cargo features. Host and plugin must compile the shared types identically; the continuation types carry no `cfg(feature)`, but the gate removes the question by building the fixture with the CLI's own feature set. Worth stamping features if the plugin surface grows.",
+        "C5's genericity scan could not distinguish a declared test-fixture crate from production. It now carries an explicit, reasoned, self-checking exemption; the first C6 gate run was red on exactly this."
+      ],
+      "falsifiers": {
+        "F1": "held",
+        "F2": "held — loaded providers join the registry the run already selects from; no plugin-specific construction",
+        "F3": "held — 9 trait methods; the only contract change is the registrar field and its stamp revision",
+        "F4": "held — scan with a reasoned fixture exemption and its control",
+        "F5": "held through the plugin path"
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "cargo clippy (six crates + fixture) --all-targets -D warnings": "clean",
+        "cargo test (six crates)": "0 failed; vindex 5340, kv 1308, inference 1824, cli 1010, lql 1105, server 1288",
+        "cargo check --workspace --all-targets --locked": "clean (Cargo.lock gains the fixture package)",
+        "doc gates": "clean"
+      }
+    }
+  },
+  "closure": {
+    "status": "CLOSED 2026-09-26. This record is final; nothing in it changes after this entry.",
+    "outcome": "All six waves built and held; F1–F5 held at every wave through C6. The claim holds, with one scoped limit (serving, below).",
+    "sha_map": {
+      "rule": "Wave entries above cite the commits as they were on their branches; the stack was rebased before merging, so several are not on main. They are left as written (they were true when recorded) and mapped here to what main carries. PR merge commits are first-parent on main.",
+      "freeze": {
+        "cited": "93f5bfe3 (branch v3-state-2; preserved on v3-state-2-prerebase-backup)",
+        "as_merged": "7afad395",
+        "pr": "#538",
+        "merge": "39eaca20"
+      },
+      "C1": {
+        "cited": "9f01d52d (as C2's base; preserved on v3-state-2-prerebase-backup)",
+        "execution": "1ec967b4",
+        "pr": "#539",
+        "merge": "21f18128"
+      },
+      "C2": {
+        "cited": "3c121e84 (as C3's base; preserved on v3-state-2-prerebase-backup)",
+        "execution": "7e71c37d",
+        "pr": "#540",
+        "merge": "a7f69949"
+      },
+      "C3": {
+        "cited": "24a3a255 (as C4's base; on no branch)",
+        "execution": "1af37d6d, then the coverage fix d810595c",
+        "pr": "#541",
+        "merge": "5430eaf2"
+      },
+      "C4": {
+        "freeze": "6e69c867 (the resume/recovery boundary, recorded before code)",
+        "execution": "6c0eaf6a",
+        "pr": "#542",
+        "merge": "4fdff6e1"
+      },
+      "C5": {
+        "freeze": "457ca2a5 (the external provider's design, before code)",
+        "execution": "90bbcb00",
+        "pr": "#543",
+        "merge": "8b3a171f"
+      },
+      "C6": {
+        "freeze": {
+          "cited": "aae9a52f (on no branch)",
+          "as_merged": "f5ecf746"
+        },
+        "execution": "59e1abd3, then 3b0654c3 (the fixture crate's CURRENT guide, a documentation-integrity fix)",
+        "pr": "#545",
+        "merge": "0aae2cea"
+      },
+      "unreferenced": "24a3a255 and aae9a52f are reachable from no branch and may be garbage-collected; the as-merged column is the durable citation."
+    },
+    "falsifiers_final": {
+      "F1": "held — the server handoff and the external provider travel as Box<dyn ContinuationProvider + Send> inside ContinuationHandoff; no trait change",
+      "F2": "held — 0 production sites name a built-in outside the 4-entry allowlist (baseline 16); loaded providers join the registry the run already selects from",
+      "F3": "held — ContinuationProvider has 9 methods and AttentionStepCall is unchanged through C6; the read contract stayed closed (opening it is VIEW-1)",
+      "F4": "held — no production branch on a family string; the scan carries a reasoned fixture exemption and its control",
+      "F5": "held — the external provider is refused at selection against a hybrid plan, before any append, in process (C5) and through the plugin path (C6)"
+    },
+    "success_final": {
+      "architectural": "HELD at the type level, with a scoped limit. An external provider reaches prefill, resume and decode through registration alone, in process (C5) and loaded from a real dylib through the CLI's loader and `larql run` (C6); its handoff is a ContinuationHandoff, the type the server's V3KvHandoff carries (C4). LIMIT: `larql serve` does not load continuation plugins (C6 out_of_scope) — the server selects canonical/v1 — so an external provider has not been SERVED. CONTINUATION-MEM-1's M6 later drove a wrapped, non-built-in factory through the real ResponseKvCache (insert → take → resume, zero-copy), which exercises the serving cache with a registered factory but under shipped identities.",
+      "closure": "HELD — every production path holding conversation state reaches it through identity, registry and recorded authority (C3 name ban; C4 sealed handoffs with the resume/recovery boundary)",
+      "non_regression": "HELD — row/v1 and canonical/v1 bit-identical through C1–C6 (C3 parity gate); re-confirmed independently by CONTINUATION-MEM-1 on 9 subjects, four real containers among them",
+      "invariant_no_speed_or_memory_win": "held as required — the programme changed authority, not representation; MEM-1 then measured what the representation costs"
+    },
+    "c6_dylib_evidence": "a test-only cdylib (crates/larql-continuation-fixture) built into its own target directory and dlopened through Plugins::load: ABI stamp larql-plugin/2 checked, provider registered via PluginRegistrar::continuation, the C5 journey bit-identical to canonical/v1 in logits, ids, position and every K/V row; `larql run --plugin … --continuation hostile-test-provider/v77` byte-identical to `--engine standard`; cargo metadata and a source scan prove the CLI links none of it; a mutation ignoring --continuation turned 3 of 4 binary tests red.",
+    "findings_carried_forward": [
+      "The read contract (`keys(layer) -> &[Vec<f32>]`, rows from position 0) makes a contiguous-buffer provider inexpressible without a mirror (C5) — measured by CONTINUATION-MEM-1 at 1× K/V payload on canonical/v1 (313 MB on gemma3-4b at 1,124 positions).",
+      "The plugin ABI stamp names compiler and commit but not cargo features (C6).",
+      "The default prepare_continuation's late refusal names 'a KV-only provider', not the identity (C5)."
+    ],
+    "successors": {
+      "CONTINUATION-MEM-1": "freeze #546 (main ffbc1238); executed #549 — measured the state contract; 7 of 8 forecasts held",
+      "CONTINUATION-VIEW-1": "next; scoped only from MEM-1's read-contract (class a) findings",
+      "CONTINUATION-WINDOW-1": "after VIEW-1; the first provider that drops rows outside the attention window",
+      "cross-process continuation": "a separate freeze (excluded here by design; see C4 out_of_scope)",
+      "serving plugins": "`larql serve --plugin` for continuation providers — unclaimed; the architectural limit above"
+    }
+  }
+}

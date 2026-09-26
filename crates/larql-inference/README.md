@@ -1,337 +1,66 @@
 # larql-inference
 
-Inference engine for transformer models. Forward pass, BLAS-fused attention, hardware-accelerated matmul backends, and pluggable FFN routing.
-
-## Overview
-
-This crate runs transformer forward passes with Apple Accelerate (AMX) and optional Metal GPU acceleration. It uses `larql-vindex` for gate KNN (sparse feature selection) and `larql-models` for weight loading and architecture definitions.
-
-```rust
-use larql_inference::InferenceModel;
-
-// Load a model
-let model = InferenceModel::load("google/gemma-3-4b-it")?;
-
-// Run inference
-let result = larql_inference::predict(
-    model.weights(), model.tokenizer(), &token_ids, 5,
-);
-println!("Top prediction: {} ({:.1}%)", result.predictions[0].0, result.predictions[0].1 * 100.0);
-```
-
-## Generation stack
-
-```rust
-use larql_inference::{
-    open_inference_vindex, generate_streaming, ChatSession,
-    SamplingConfig, EosConfig, Detokenizer,
-};
-
-let index = open_inference_vindex(&vindex_path)?;            // strict loader
-let result = generate_streaming(
-    weights, &tokenizer, &token_ids, max_tokens,
-    &index, &*backend, &cache, 13..num_layers,
-    SamplingConfig::temperature(0.8).with_top_p(0.9).with_seed(42),
-    &EosConfig::from_vindex_dir(&vindex_path),
-    |_id, text, _prob| { print!("{text}"); std::io::stdout().flush().ok(); },
-);
-```
-
-| Type | Role |
-|------|------|
-| [`SamplingConfig`] / [`Sampler`] | Greedy / temperature / top-k / top-p / seeded. Sparse hot path is <2µs/call (<0.02% of decode budget) — see [PERFORMANCE.md](PERFORMANCE.md#sampling-overhead). |
-| [`EosConfig`] | Stop-token detection. Reads `generation_config.json::eos_token_id` + `stop_strings`, layered on a built-in list (Gemma `<end_of_turn>`, ChatML `<|im_end|>`, Llama-3 `<|eot_id|>`). Falls back to `skip_special=false` decode when the streaming detok strips a special EOS marker. |
-| [`Detokenizer`] | Cumulative-decode delta for streaming output. Preserves HF `▁` leading-space across SP and BPE tokenizers. Equivalent to llama.cpp `llama_token_to_piece`. |
-| [`ChatSession`] | Multi-turn token buffer with whole-turn eviction at `max_context`. Pluggable [`TurnRenderer`] (Gemma / ChatML / Llama-3 built in). |
-| [`generate`] / [`generate_with_sampling`] / [`generate_streaming`] | Three public entry points — greedy → sampled → streamed. Each thinly wraps the next so adding sampling or a callback is opt-in without breaking existing callers. |
-| [`open_inference_vindex`] | Strict vindex loader. Propagates stride / manifest errors loudly (rebuild guidance) instead of silently degrading to a slower path. Use this in any tool that loads a vindex for inference. |
-
-[`SamplingConfig`]: layer_graph::SamplingConfig
-[`Sampler`]: layer_graph::Sampler
-[`EosConfig`]: layer_graph::EosConfig
-[`Detokenizer`]: layer_graph::Detokenizer
-[`ChatSession`]: layer_graph::ChatSession
-[`TurnRenderer`]: layer_graph::TurnRenderer
-[`generate`]: layer_graph::generate
-[`generate_with_sampling`]: layer_graph::generate_with_sampling
-[`generate_streaming`]: layer_graph::generate_streaming
-[`open_inference_vindex`]: vindex::open_inference_vindex
-
-## Engine diagnostic
-
-`larql diag <vindex>` (CLI) reports which kernel paths the loader will pick, validates Q4_K/Q6_K manifest strides, and (with `--probe`) runs a real forward to print the per-stage timing breakdown. Catches the silent-slowdown classes (stale 148-byte Q4_K stride → all-NaN; `vocab_size=0` → 4× slower lm_head fallback) at a glance:
-
-```
-$ larql diag output/gemma3-4b-v2.vindex
-Stride validation:
-  ✓ 238 entries match canonical stride
-LM-head path resolution (which kernel fires per next-token):
-  → Q4 matvec (Metal fast)   lm_head_q4 mmap = true, vocab_size > 0 = true  → ~1.9 ms
-     f16 gemv (tied embed)    ...
-     f32 KNN (lm_head.bin)    ...
-     f32 BLAS gemv (slow)     ...
-```
-
-## Key Components
-
-| Module | Purpose |
-|--------|---------|
-| `attention/` | BLAS-fused GQA attention: block, GQA, GPU dispatch, RoPE |
-| `forward/` | Forward pass: embed, layer, predict, PLE (per-layer embeddings), trace |
-| `ffn/` | FFN evaluation: `WeightFfn`, `SparseFfn`, plus `remote/` (HTTP single-shard) and `moe_remote/` (gRPC expert grid) |
-| `layer_graph/` | Layer graphs + generation: `pipeline_layer`, `predict`, `prefill`, plus `generate/` (eos, detok, sampling, chat_session, gpu/cpu loops, lm_head, types) and `grid/` (remote MoE/FFN orchestration) |
-| `residual.rs` | RMS norm, layer norm |
-| `trace/` | Residual stream decomposition and tiered storage |
-| `vindex/` | `open_inference_vindex` (strict loader) + `WalkFfn` (mmap'd FFN) + `q4k_forward/` |
-| `kv_engine/` | `KvEngine` trait + `EngineInfo` + `DecodeStageSummary` — abstract dispatch surface shared with `larql-kv` (engine impls live there). `DecodeStageSummary` now includes W10's `avg_state_capture_us` / `avg_state_materialise_us` / `avg_state_append_us` timers. |
-| `kv_dispatch/` (`mod.rs`, `cpu.rs`, `helpers.rs`) | `KvDispatch` per-layer-intent trait (sync) + `EngineBackend: ComputeBackend + KvDispatch` umbrella; the `CpuBackend` impl lives here, the `MetalBackend` impl in `larql-compute-metal` (ADR-0022); `helpers::kv_prefill_via_dispatch` / `kv_decode_step_via_dispatch` (sync) + `_async` variants drive the per-layer prefill/decode loop. W10 adds `coarse_decode_step_with_state_masked` + `read_kv_row_at` on the trait. Spec: [`compute-backend-redesign.md`](docs/specs/compute-backend-redesign.md). |
-| `async_compute_backend/` (`mod.rs`, `cpu.rs`) | `AsyncComputeBackend: ComputeBackend + KvDispatch + Send` sibling trait — deferred-dispatch intent surface with `AttentionHandle` / `ResidualUploadHandle` for one-command-buffer-per-decode-step batching on GPU backends. CPU is a degenerate `Ready*` wrapper (parity reference); the Metal backend lives in `larql-compute-metal` (ADR-0022). Spec: [`async-compute-backend.md`](docs/specs/async-compute-backend.md). |
-| `vindex3/` | VINDEX3 inference runtime — the seam where the executable model program meets the generation machinery (VI3-INF) |
-| `ffn_policy/` | FFN backend selection, per-layer routing policy, and live router construction |
-| `speech/` | Speech-model generation drivers — engine-shaped composition for models whose output domain is not text |
-| `ternary/` | BitNet 1.58 native-ternary inference building blocks |
-| `residual_diff/` | Per-layer residual capture + comparison for backend parity testing |
-| `decode_stages.rs` | Opt-in per-stage decode timers (`LARQL_DECODE_STAGES=1`) for splitting remote-MoE decode wall-time |
-| `experts/` | WASM expert dispatcher and registry |
-| `chat/` | Jinja-driven chat templates loaded from vindex |
-| `capture.rs` | Residual-stream vector capture for probing |
-| `model.rs` | Model loading (re-exports from larql-models) |
-
-> Weight-level graph walkers live in the `larql-vindex` crate (`walker/`), not here.
-
-## Compute Backend
-
-All GPU pipeline operations use `larql_compute::ComputeBackend`:
-
-```rust
-use larql_compute::{default_backend, ComputeBackend};
-
-let backend = default_backend();  // Auto-selects CPU or Metal, calibrates
-println!("Using: {} ({})", backend.name(), backend.device_info());
-```
-
-The inference crate builds `FullPipelineLayer` structs (per-layer architecture params + quantized weights) and passes them to `backend.decode_token()` or `backend.prefill_q4()`. All model-specific behavior (norm type, activation, head_dim, RoPE base) is parameterized per-layer — no model-type branching in the compute path.
-
-**CPU path**: BLAS matmul via Apple Accelerate (AMX). Used for attention in `predict_honest`.
-**GPU path** (`--features gpu`): Q4_K/Q8 Metal shaders with KV cache. Used for decode and prefill.
-
-```bash
-# Build with Metal GPU support
-cargo build --release -p larql-inference --features gpu
-```
-
-## BLAS-Fused Attention
-
-The attention kernel uses BLAS `gemv` inside an online-softmax loop. For each query position:
-
-1. `scores = K[0..=qi] @ Q[qi]` (BLAS gemv, AMX-accelerated)
-2. Scale + optional softcap + two-pass softmax (f64 accumulation)
-3. `output = V[0..=qi]^T @ softmax_scores` (BLAS gemv)
-
-Never allocates the `[seq, seq]` attention matrix. At Gemma-3's head_dim=256, **1.6x faster** than the materialized path. Supports GQA, softcap (Gemma2), attention weight capture.
-
-## WalkFfn
-
-The WalkFfn replaces the dense down projection with a zero-copy mmap read from the vindex:
-
-1. Gate + up projections from model weights (exact, same as dense)
-2. GEGLU activation (exact, same as dense)
-3. Down projection from mmap'd `down_features.bin` (zero-copy, feature-major)
-4. Result is identical to dense FFN — **and faster** (517ms vs 535ms)
-
-The mmap'd feature-major layout has better page cache behavior than the safetensors weight layout.
-
-Build the required vindex files:
-```bash
-cargo run --release -p larql-vindex --example build_convert_gates_f32 -- path/to/vindex
-cargo run --release -p larql-vindex --example build_down_features -- path/to/vindex
-cargo run --release -p larql-vindex --example build_up_features -- path/to/vindex
-```
-
-### Walk-only mode
-
-Drop FFN weights — 16.6GB → 5.5GB:
-
-```rust
-let model = InferenceModel::load_walk_only("google/gemma-3-4b-it")?;
-// Frees 10.7 GB of FFN tensors. Requires down_features.bin + up_features.bin.
-```
-
-### Server
-
-```bash
-cargo run --release -p larql-server -- path/to/vindex --port 8080
-
-curl -X POST http://localhost:8080/v1/infer \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "The capital of France is", "top": 5, "mode": "walk"}'
-```
-
-## Examples
-
-### Generation stack
-
-```bash
-# Token spacing — standalone, no model. Shows the bug
-# ("thecapitaloffranceisparis") and the fix. Lives in larql-demos.
-cargo run --release -p larql-demos --example detok_demo
-
-# Sampling overhead — standalone benchmark across vocab sizes
-# (32K/128K/256K) and configs (greedy/temp/top-p/top-k).
-cargo run --release -p larql-inference --example bench_sampling
-
-# Sampling, EOS, streaming, chat — model-backed, in larql-demos.
-cargo run --release --features gpu -p larql-demos \
-  --example sampling_demo  -- --vindex output/gemma3-4b-v2.vindex
-cargo run --release --features gpu -p larql-demos \
-  --example streaming_demo -- --vindex output/gemma3-4b-v2.vindex --max-tokens 24
-cargo run --release --features gpu -p larql-demos \
-  --example eos_demo       -- --vindex output/gemma3-4b-v2.vindex --max-tokens 80
-cargo run --release --features gpu -p larql-demos \
-  --example chat_demo      -- --vindex output/gemma3-4b-v2.vindex --max-context 256
-```
-
-### Other
-
-```bash
-# Walk inference benchmark (dense vs walk vs HNSW, needs model + vindex)
-cargo run --release -p larql-inference --example bench_walk_inference -- \
-  --model google/gemma-3-4b-it --vindex path/to/vindex
-
-# Fused attention demo (larql-demos) and benchmark
-cargo run --release -p larql-demos --example attention_demo
-cargo run --release -p larql-inference --example bench_attention
-
-# Backend demo (larql-demos) and benchmark (CPU vs Metal)
-cargo run --release -p larql-demos --example backend_demo --features gpu
-cargo run --release -p larql-inference --example bench_backend --features gpu
-
-# Full inference benchmark (needs model weights)
-cargo run --release -p larql-inference --example bench_inference
-
-# End-to-end inference demo (needs model weights)
-cargo run --release -p larql-demos --example inference_demo
-
-# Clustering and pair matching demos
-cargo run -p larql-demos --example clustering_demo
-cargo run -p larql-demos --example pair_matching_demo
-
-# Per-stage L0 bisect: CPU prefill vs Metal KV-cached decode. Locates
-# which sub-stage (norm / Q / K / V / attn / O / FFN) first diverges.
-# Closed the open Gemma 4 31B parity gap (2026-04-25 ship log) by
-# pointing at the FFN block when every attention stage matched at cos=1.0.
-cargo run --release --features gpu -p larql-inference \
-    --example stage_bisect -- <vindex> "The capital of France is" 0
-```
-
-### Vindex tools
-
-```bash
-# Convert gate vectors from f16 to f32 (zero-copy mmap)
-cargo run --release -p larql-vindex --example build_convert_gates_f32 -- path/to/vindex
-
-# Build feature-major down vectors (contiguous per-feature layout)
-cargo run --release -p larql-vindex --example build_down_features -- path/to/vindex
-```
-
-## Tests
-
-```bash
-# Inference lib tests (904 tests, 65.67% line coverage)
-cargo test -p larql-inference --lib
-
-# Gemma 3 4B regression smoke test (set the env var):
-LARQL_VINDEX_PATH=$(pwd)/output/gemma3-4b-v2.vindex CI_INTEGRATION=1 \
-  cargo test --release -p larql-inference --test test_gemma3_smoke -- --ignored
-
-# All tests including ignored (per-component, kept for reference)
-cargo test -p larql-inference
-
-# HNSW tests
-cargo test -p larql-vindex --test test_hnsw --release
-
-# Individual test suites
-cargo test -p larql-inference --test test_fused_attention             # 23 tests
-cargo test -p larql-inference --test test_backend                     # 19 tests
-cargo test -p larql-inference --test test_modules                     # 15 tests
-cargo test -p larql-inference --test test_trace                       # 14 tests
-cargo test -p larql-inference --test test_logits_goldens              # 13 tests
-cargo test -p larql-inference --test test_arch_golden                 # 10 tests
-cargo test -p larql-inference --test test_layer_graph_integration     #  7 tests
-cargo test -p larql-inference --test test_decode_consistency          #  5 tests
-```
-
-Walker tests live in `larql-vindex`; weight-level walkers moved out of this crate.
-
-| Area | Tests | Coverage |
-|------|-------|----------|
-| Generation: EOS / detok / sampling / chat session | 38 | Builtin stops, special-token EOS via tokenizer fallback, leading-space, seed reproducibility, top-k/top-p truncation, whole-turn eviction |
-| Vindex strict loader | 2 | open_inference_vindex error paths |
-| Backend (ComputeBackend) | 19 | Shape, correctness, batch, Metal vs CPU |
-| Fused attention | 23 | GQA, softcap, capture, reference agreement, edge cases |
-| FFN + modules | 15 | SiLU, GELU, dense, highway, multi-position |
-| Trace stores | 14 | Write/read, tiers, boundaries, additive property |
-| Logits goldens | 13 | LM-head dispatch correctness across Q4_K / f16 / f32 paths |
-| Arch goldens | 10 | Per-arch fingerprint (Gemma 2/3/4, Llama, Mistral, Qwen) |
-| Layer-graph integration | 7 | DenseLayerGraph + WalkLayerGraph + cached graph round-trip |
-| Decode consistency | 5 | CPU-decode equality across batch sizes / KV-cache states |
-| Unit (lib) | total 904 | Core module tests + everything above. **65.67% line / 67.69% region / 72.96% function coverage; 64 of 127 files at ≥90% line cov.** See [CHANGELOG.md](CHANGELOG.md) for the per-file lift table. |
-| Gemma 3 4B smoke (`#[ignore]`) | 1 | First-token regression — gated on `LARQL_VINDEX_PATH` + `CI_INTEGRATION=1` |
-
-## Crate Dependencies
-
-```
-larql-models      ModelWeights, architecture traits, quant
-larql-compute     ComputeBackend, Q4 matvec, Metal GPU (used by vindex + walk_ffn Q4 paths)
-larql-vindex      VectorIndex, gate KNN, adaptive residency, Q4 gates
-larql-core        Graph, Edge, algorithms (knowledge graph engine)
-    ↓
-larql-inference   Forward pass, attention, backends, WalkFfn
-```
-
-> **Note:** The GPU pipeline paths (`predict_honest`, `predict_pipeline`) use `larql_compute::ComputeBackend`
-> with `FullPipelineLayer` structs that carry per-layer architecture params from `larql_models::ModelArchitecture`.
-> The CPU attention and FFN paths use direct BLAS calls via ndarray. Both paths produce identical results.
-
-### Vindex module structure
+**Class: CURRENT.** Runtime and session composition for LARQL: opening model
+artifacts, generation, chat, FFN routing, VINDEX3 execution records and lenses.
+[Architecture](../../docs/vindex3/architecture.md) ·
+[execution](../../docs/vindex3/execution.md) ·
+[status](../../docs/vindex3/status.md).
+[Full stack map](../../docs/architecture-stack.md) and
+[workspace dependencies/features](../../docs/generated/workspace-facts.md).
+
+CPU forward math, attention kernels, normalization and substrate dispatch traits
+live in `larql-compute`; Metal is a peer backend in `larql-compute-metal`.
+This crate composes them with sessions, tokenizers, routing and engine state.
+Re-exports retained for compatibility do not change ownership.
+
+[input](src/vindex3/input.rs) supplies checked external rows, cached input
+sessions and exact full-history replay. [distributed](src/vindex3/distributed.rs)
+composes endpoint operands with stateless CPU layer workers through a transport
+trait. See [scopes and tests](../../docs/vindex3/runtime-followups.md).
+
+## VINDEX3 runtime
+
+The [vindex3 module](src/vindex3/) opens a container's declared component
+program rather than reconstructing `ModelWeights`. `Vindex3Runtime` and
+`PreparedVindex3` bind the canonical interpreter, operand/representation policy
+and numerical realization. `Vindex3Session` advances execution;
+`LogitsSession` exposes prefill, step and position to generation machinery.
+Continuation state is supplied through the `KvState` seam.
+
+The canonical interpreter and `PlanBackend` contract live in `larql-vindex`.
+This crate owns run-record composition, provenance/receipts, vocabulary lenses
+and attribution adapters around those execution events. Observation uses the
+same decode traversal. See the [runtime guide](../../docs/vindex3-runtime.md)
+and [observation guide](../../docs/vindex3/observation-and-intervention.md).
+
+## Other engine surfaces
 
 | Module | Responsibility |
-|--------|---------------|
-| `types` | FeatureMeta, GateIndex trait, WalkHit, callbacks |
-| `core` | VectorIndex struct, constructors, loading, accessors |
-| `gate` | Gate KNN: search, batch, scores, HNSW, warmup |
-| `walk` | Walk FFN data: mmap'd down/up feature-major vectors |
-| `hnsw` | HNSW graph index |
-| `mutate` | INSERT/DELETE mutations |
-| `router` | MoE expert routing |
+|---|---|
+| [layer_graph](src/layer_graph/) | Layer orchestration, generation and distributed routing |
+| [ffn](src/ffn/) | Engine-level FFN composition including remote routing |
+| [vindex](src/vindex/) | V2 opening and index-backed FFN execution |
+| [kv_engine](src/kv_engine/) | Engine traits consumed by the KV implementations |
+| [chat](src/chat/) | Chat templates and conversation rendering |
+| [trace](src/trace/) | Residual trace handling |
+| [vindex3](src/vindex3/) | Container runtime, sessions, records and attribution |
 
-## Documentation
+V2 and V3 have different authority models. The V3 path does not translate the
+container into a V2 index in order to execute it. Backend capability and
+representation compatibility are checked at opening/preparation boundaries.
 
-| Doc | Content |
-|-----|---------|
-| [PERFORMANCE.md](PERFORMANCE.md) | Component breakdown, cross-crate comparison, Ollama reference |
-| [ROADMAP.md](ROADMAP.md) | Forward-looking work + open frontiers |
-| [CHANGELOG.md](CHANGELOG.md) | Dated ship log (coverage push, bug fixes, H12 splits, MockArch fixtures, magic-strings cleanup) |
-| [docs/adr/001](docs/adr/001-fused-attention.md) | BLAS-fused online softmax attention |
-| [docs/adr/002](docs/adr/002-walk-ffn.md) | WalkFfn — zero-copy mmap'd down projection |
-| [docs/adr/003](docs/adr/003-cached-layer-graph.md) | Cached layer graph for template-fixed layers |
-| [docs/adr/004](docs/adr/004-predict-honest.md) | predict_honest — production pipeline with per-layer params |
-| [docs/adr/005](docs/adr/005-per-layer-graph.md) | PerLayerGraph — adaptive per-layer strategy |
+## Development
 
-### Engine + State Policy specs
+```bash
+cargo test -p larql-inference
+```
 
-The KV-engine taxonomy and W10 / state-bridge work live in this
-crate's `docs/specs/` directory. Read in this order:
+Use `--no-default-features` on non-macOS platforms. Model-backed ignored tests
+need their declared checkpoints and are separate from the ordinary crate
+suite. Runnable capability examples live in [larql-demos](../larql-demos/);
+benchmarks remain with the owning crates.
 
-| Spec | Role |
-|------|------|
-| [`state-policy.md`](../larql-kv/docs/state-policy.md) | Engine identity = `(canonical_state, derivative_state, contract)`. The vocabulary every engine spec inherits. |
-| [`engine-state-vs-execution.md`](docs/specs/engine-state-vs-execution.md) | The orthogonal cut: engine identity vs execution dispatch. §11 documents W10's mask cascade as a worked example. |
-| [`kv-engine-unification.md`](docs/specs/kv-engine-unification.md) | The `KvEngine` trait surface. §4.4 documents W10's `StateDumpMask` + `read_kv_row_at` widening. |
-| [`zone-engine.md`](docs/specs/zone-engine.md) | **Top-level composer.** Sequences PREDICT / WALK / CACHE zones between choke points. |
-| [`layer-engine.md`](docs/specs/layer-engine.md) v0.4 | Inner per-layer composer for WALK zones (subsumed under ZoneEngine). |
-| [`markov-residual-engine.md`](docs/specs/markov-residual-engine.md), [`markov-residual-codec-engine.md`](docs/specs/markov-residual-codec-engine.md), [`windowed-checkpoint-engine.md`](docs/specs/windowed-checkpoint-engine.md), [`standard-engine.md`](docs/specs/standard-engine.md), [`turbo-quant-engine.md`](docs/specs/turbo-quant-engine.md), [`apollo-engine.md`](docs/specs/apollo-engine.md), [`no-cache-engine.md`](docs/specs/no-cache-engine.md), [`boundary-kv-engine.md`](docs/specs/boundary-kv-engine.md), [`boundary-per-layer-engine.md`](docs/specs/boundary-per-layer-engine.md) | Per-engine contracts; each marks its W10 opt-in path where applicable. |
-
-## License
-
-Apache-2.0
+For deeper references see [inference-engine.md](../../docs/inference-engine.md),
+[FFN routing](../../docs/ffn-graph-layer.md),
+[KV state policy](../larql-kv/docs/state-policy.md), and
+[the documentation index](../../docs/README.md).

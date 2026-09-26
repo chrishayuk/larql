@@ -163,20 +163,13 @@ impl ModelArchitecture for Gemma3Arch {
     /// `scaling_type = linear` as global-only because that matches what
     /// `Gemma3TextConfig` produces from the same input.
     fn rope_position_divisor_for_layer(&self, layer: usize) -> f64 {
-        let rs = match self.config.rope_scaling.as_ref() {
-            Some(rs) => rs,
-            None => return 1.0,
+        let Some(factor) = self.linear_rope_scaling() else {
+            return crate::config::UNSCALED_POSITION_DIVISOR;
         };
-        if !rs
-            .scaling_type
-            .eq_ignore_ascii_case(crate::ROPE_TYPE_LINEAR)
-        {
-            return 1.0;
-        }
         if self.is_sliding_window_layer(layer) {
-            1.0
+            crate::config::UNSCALED_POSITION_DIVISOR
         } else {
-            rs.factor
+            factor
         }
     }
 
@@ -242,6 +235,9 @@ mod tests {
             qk_nope_head_dim: None,
             qk_rope_head_dim: None,
             v_head_dim: None,
+            index_topk: None,
+            index_n_heads: None,
+            index_head_dim: None,
             rope_scaling,
             attn_logit_softcapping: None,
             final_logit_softcapping: None,
@@ -376,6 +372,44 @@ mod tests {
         // Layers 5, 11, 17, ... are full attention; everyone else sliding.
         assert_eq!(arch.rope_position_divisor_for_layer(5), 8.0);
         assert_eq!(arch.rope_position_divisor_for_layer(4), 1.0);
+    }
+
+    /// The per-layer policy the container carries: the declared divisor
+    /// reaches a full-attention layer as `Linear` at the global base, and
+    /// a sliding layer rotates plain at the local base — HF's per-layer-
+    /// type expansion of the flat block, layer by layer.
+    #[test]
+    fn linear_rope_policy_reaches_full_attention_layers_only() {
+        use crate::config::PositionPolicy;
+        let arch = Gemma3Arch::from_config(synth_config(Some(RopeScaling {
+            scaling_type: "linear".into(),
+            factor: 8.0,
+            llama3_low_freq_factor: None,
+            llama3_high_freq_factor: None,
+            llama3_original_max_position_embeddings: None,
+            yarn_beta_fast: None,
+            yarn_beta_slow: None,
+            yarn_truncate: None,
+            yarn_mscale: None,
+            yarn_mscale_all_dim: None,
+            gemma3_global_only: true,
+        })));
+        assert_eq!(
+            arch.position_policy_for_layer(5),
+            PositionPolicy::Linear {
+                theta: arch.rope_base_for_layer(5),
+                factor: 8.0
+            }
+        );
+        assert_eq!(
+            arch.position_policy_for_layer(4),
+            PositionPolicy::Rope { theta: 10_000.0 }
+        );
+        assert_ne!(
+            arch.rope_base_for_layer(5),
+            10_000.0,
+            "the two spans rotate at different bases"
+        );
     }
 
     // ─── Phase 1a: MultiModalProtocol contract ────────────────────────────

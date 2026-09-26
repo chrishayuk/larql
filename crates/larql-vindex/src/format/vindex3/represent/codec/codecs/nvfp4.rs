@@ -178,9 +178,13 @@ impl RepresentationCodec for Nvfp4Codec {
     fn accelerations(&self) -> Vec<Acceleration> {
         // The loader copies a pack's regions into page-aligned buffers
         // and changes no value: rebound, not stored in place.
-        vec![Acceleration::cpu(
-            PhysicalProjectionPlan::FusedNvfp4,
-            ResidencyProfile::rebound(Self::bits_per_weight()),
-        )]
+        let rebound = ResidencyProfile::rebound(Self::bits_per_weight());
+        // The same pack against a Q8 activation (NVFP4-Q8-1). Only the
+        // `production-nvfp4-q8` provider selects it; declaring it changes
+        // nothing another provider picks.
+        vec![
+            Acceleration::cpu(PhysicalProjectionPlan::FusedNvfp4, rebound),
+            Acceleration::cpu(PhysicalProjectionPlan::FusedNvfp4Q8, rebound),
+        ]
     }
 }

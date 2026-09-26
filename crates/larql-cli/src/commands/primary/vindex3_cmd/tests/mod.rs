@@ -1,15 +1,46 @@
 //! CLI-level gates for the vindex3 verbs.
 
 mod calibration_digest;
+mod continuation_plugin;
 mod decode;
 mod exec_resume;
 mod generate;
 mod lowerings;
+mod measure;
+mod observe;
 mod realizations;
 mod sizes;
+mod token_bank;
 
 use super::*;
 use std::io::Write;
+
+/// Write a word-level `tokenizer.json` into `dir` (created if absent):
+/// `[UNK]` is id 0 and `words[i]` is id `i + 1`. Enough tokenizer for a
+/// token bank, with ids a small fixture model's vocabulary contains.
+fn write_word_tokenizer(dir: &std::path::Path, words: &[&str]) {
+    use std::collections::HashMap;
+    use tokenizers::models::wordlevel::WordLevel;
+    use tokenizers::pre_tokenizers::whitespace::Whitespace;
+    std::fs::create_dir_all(dir).unwrap();
+    let vocab: HashMap<String, u32> = std::iter::once("[UNK]")
+        .chain(words.iter().copied())
+        .enumerate()
+        .map(|(i, w)| (w.to_string(), i as u32))
+        .collect();
+    let model = WordLevel::builder()
+        .vocab(vocab.into_iter().collect())
+        .unk_token("[UNK]".into())
+        .build()
+        .unwrap();
+    let mut tk = tokenizers::Tokenizer::new(model);
+    tk.with_pre_tokenizer(Some(Whitespace {}));
+    tk.save(
+        dir.join(larql_vindex::format::vindex3::represent::token_bank::TOKENIZER_FILE),
+        false,
+    )
+    .unwrap();
+}
 
 /// `judged` controls whether the config carries a key no registry has
 /// seen — the difference between an admissible and a blocked plan.

@@ -37,11 +37,13 @@ use larql_vindex::format::vindex3::opplan::{ComponentOpPlan, LayerPlan};
 
 /// One matrix operand, resident on the device.
 mod dump;
+pub(crate) mod measure_arm;
 mod profile;
 mod resident;
 mod routed;
 mod run;
 mod step;
+mod teacher_force;
 #[cfg(test)]
 mod tests;
 
@@ -186,6 +188,11 @@ pub struct LoweredSession<'a> {
     /// caller's, not the argmax's, and a committed wrong-token step
     /// would execute (and burn GPU time) before being discarded.
     decode_chain: bool,
+    /// Command buffers committed, cumulative — a look-ahead that is later
+    /// discarded included, since the device ran it. Counted where `commit`
+    /// is called, so a submission rate is observed, never inferred from
+    /// the one-buffer-per-token design.
+    submissions: u64,
 }
 
 /// Set to keep the argmax on the host (full-logits readback + scan) —
@@ -274,6 +281,23 @@ impl<'a> LoweredSession<'a> {
             return Err(VindexError::Parse(format!(
                 "layer {} carries a layer scalar on a non-hybrid FFN, which the stack encoder \
                  applies only on the hybrid arm today; refusing",
+                l.layer
+            )));
+        }
+        // A residual-scale op (Granite `residual_multiplier`) rides the
+        // attention and dense/hybrid FFN residual adds; the routed FFN's
+        // served MoE path owns its own residual combine and has no slot
+        // for it, so refuse rather than silently add the branch unscaled.
+        if let Some(l) = plan.layers.iter().find(|l| {
+            l.residual_scale.is_some()
+                && matches!(
+                    l.ffn,
+                    Some(larql_vindex::format::vindex3::opplan::LayerFfn::Routed(_))
+                )
+        }) {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries a residual scale on a routed FFN, whose served combine has \
+                 no residual-scale slot; refusing",
                 l.layer
             )));
         }
@@ -593,6 +617,7 @@ impl<'a> LoweredSession<'a> {
             device_embed,
             last_device_id: None,
             decode_chain: false,
+            submissions: 0,
         })
     }
 
@@ -696,6 +721,14 @@ impl<'a> LoweredSession<'a> {
                         theta,
                         amplitude: 1.0,
                     },
+                    // Linear rides the shared table too — its `inv_freq`
+                    // is the plain series divided by the factor, built in
+                    // `new` — at unit amplitude, written explicitly for
+                    // the reason Llama-3's is.
+                    PositionPolicy::Linear { theta, .. } => LoweredPosition::Scaled {
+                        theta,
+                        amplitude: 1.0,
+                    },
                     // No lowering exists for a relative scheme. It
                     // lowers to `None` — no rotation — and the executor
                     // refuses rather than running it unpositioned, so the
@@ -717,6 +750,7 @@ impl<'a> LoweredSession<'a> {
                     _ => None,
                 },
                 softcap: a.logit_softcapping,
+                residual_scale: plan_layer.residual_scale,
                 position_index: t,
                 kv_len: t + 1,
             },
@@ -754,6 +788,7 @@ impl<'a> LoweredSession<'a> {
                                     .expect("checked in `new`")
                             },
                         ),
+                        residual_scale: plan_layer.residual_scale,
                     },
                 },
                 FfnResident::Routed(routed) => {
@@ -795,6 +830,7 @@ impl<'a> LoweredSession<'a> {
                                 .weight_offset,
                             activation: ffn_activation(op.dense.activation, op.dense.gate_policy)
                                 .expect("checked in `new`"),
+                            residual_scale: plan_layer.residual_scale,
                         },
                         routed: RoutedFfnLowering {
                             moe: h.routed.moe(),

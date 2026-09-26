@@ -372,6 +372,92 @@ fn stream_completions(
 
     tokio::task::spawn_blocking(move || {
         let _gen_guard = runtime.clone().enter_generation();
+
+        // BitNet (--keep-quant) vindexes take the native-ternary
+        // streaming path: skips the dense weights write-lock (which
+        // serialises all generation) and runs
+        // generate_streaming_bitnet against the pre-loaded
+        // BitnetModel at ~1.4 GB resident instead of ~5 GB.
+        if model.is_bitnet() {
+            let bitnet_guard = match model.get_or_load_bitnet() {
+                Ok(g) => g,
+                Err(e) => {
+                    let _ = tx.blocking_send(error_chunk(&e));
+                    return;
+                }
+            };
+            let bitnet: &larql_inference::ternary::BitnetModel = &bitnet_guard;
+            let encoding = match model.tokenizer.encode(prompt.as_str(), true) {
+                Ok(e) => e,
+                Err(e) => {
+                    let _ = tx.blocking_send(error_chunk(&format!("tokenize: {e}")));
+                    return;
+                }
+            };
+            let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
+            if prompt_ids.is_empty() {
+                let _ = tx.blocking_send(error_chunk("prompt tokenises to empty"));
+                return;
+            }
+
+            let (sampling, eos) = super::util::build_sampling_eos(sampling_params, &stop_strings);
+
+            let cmpl_id_cb = cmpl_id.clone();
+            let model_id_cb = model_id.clone();
+            let tx_cb = tx.clone();
+            let stop_strings_cb = stop_strings.clone();
+            let mut completion_text = String::new();
+            let mut early_stop = false;
+            let mut emitted = 0usize;
+            let _ = larql_inference::ternary::generate_streaming_bitnet(
+                bitnet,
+                &model.tokenizer,
+                &prompt_ids,
+                max_tokens,
+                sampling,
+                &eos,
+                |_id, text, _ms| {
+                    if early_stop {
+                        return;
+                    }
+                    let chunk =
+                        build_text_completion_chunk(&cmpl_id_cb, &model_id_cb, Some(text), None);
+                    if tx_cb.blocking_send(chunk).is_err() {
+                        early_stop = true;
+                        return;
+                    }
+                    completion_text.push_str(text);
+                    emitted += 1;
+                    if !stop_strings_cb.is_empty()
+                        && contains_any(&completion_text, &stop_strings_cb)
+                    {
+                        early_stop = true;
+                    }
+                },
+            );
+
+            // Record the generation the same way the dense path does,
+            // or `/v1/stats` would report BitNet traffic as zero
+            // throughput. `add_v3` takes plain counts, which is all the
+            // ternary path produces (no GenerateResult); the split
+            // between prefill and decode is not separately measured
+            // here, so the whole span is attributed to decode.
+            let mut tally = crate::runtime_stats::GenerationTally::new();
+            let elapsed = crate::state::elapsed_ms(call_started);
+            tally.add_v3(prompt_ids.len(), emitted, 0.0, elapsed);
+            runtime.record(tally.into_sample(elapsed));
+
+            let finish_reason: &'static str = if early_stop || emitted < max_tokens {
+                FINISH_REASON_STOP
+            } else {
+                FINISH_REASON_LENGTH
+            };
+            let final_chunk =
+                build_text_completion_chunk(&cmpl_id, &model_id, None, Some(finish_reason));
+            let _ = tx.blocking_send(final_chunk);
+            return;
+        }
+
         let mut weights_guard = match model.lock_weights_for_gen() {
             Ok(w) => w,
             Err(e) => {

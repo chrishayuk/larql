@@ -378,6 +378,12 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let qk_rope_head_dim = text_config["qk_rope_head_dim"].as_u64().map(|v| v as usize);
     let v_head_dim = text_config["v_head_dim"].as_u64().map(|v| v as usize);
 
+    // DSA (DeepSeek Sparse Attention) indexer fields — GLM-5.2. Config
+    // facts only; nothing downstream reads these yet.
+    let index_topk = text_config["index_topk"].as_u64().map(|v| v as usize);
+    let index_n_heads = text_config["index_n_heads"].as_u64().map(|v| v as usize);
+    let index_head_dim = text_config["index_head_dim"].as_u64().map(|v| v as usize);
+
     // RoPE scaling. Four shapes appear in the wild:
     //
     // 1. Flat with `factor` (Llama 2-style linear, simple `rope_type=linear`).
@@ -770,6 +776,9 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         qk_nope_head_dim,
         qk_rope_head_dim,
         v_head_dim,
+        index_topk,
+        index_n_heads,
+        index_head_dim,
         rope_scaling,
         attn_logit_softcapping,
         final_logit_softcapping,

@@ -400,6 +400,21 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// value: inert at the uniform all-MoE stack, blocking for any real
 /// per-layer topology.
 ///
+/// **23** — linear rope scaling is represented and Gemma 3's interface
+/// spellings are read. `PositionPolicy::Linear` carries `rope_scaling =
+/// {linear, factor}` on the layers the architecture says it reaches
+/// (Gemma 3: full-attention layers only), so `rope_type: "linear"` and its
+/// `factor` are admissible where they used to mismatch. `image_token_index`
+/// / `boi_token_index` / `eoi_token_index` / `mm_tokens_per_image` are the
+/// image binding under Gemma 3's names and `vision_use_head` is the SigLIP
+/// tower's pooling-head fact, so none of the five grades `Unknown` any
+/// longer. And a `vocab_size` the config omits is answered by the
+/// embedding table's row count, recorded with its provenance, so the text
+/// execution surface completes. Forecast before the code: every Gemma 3
+/// checkpoint moves from seven text-generation blockers to zero; nothing
+/// else moves. Not new mathematics: `larql-compute`'s `rope_freq_plan`
+/// has always taken a position divisor.
+///
 /// **4** — Llama-3 wavelength-band rope scaling is represented.
 /// `PositionPolicy::Llama3` carries the block, so a checkpoint declaring
 /// `rope_type: "llama3"` is admissible where it used to be refused. Not
@@ -423,7 +438,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 22;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 23;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

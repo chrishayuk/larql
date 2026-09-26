@@ -19,14 +19,22 @@
 //! the observation, and a projection helper that sat somewhere else would
 //! be one refactor away from choosing its own kernel again.
 
-use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, WeightRep};
+use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, ScaleSpan, WeightRep};
 use super::integer::{activation_scaling, Bf16xQ8, Q4xQ8, Q8xQ8};
 use super::kernels::{
-    BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32,
+    BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedKQuantQ8k, FusedNvfp4, FusedQ4, FusedQ8,
+    ScalarF32,
 };
-use super::projector::{DenseProjector, WeightRows};
+use super::nvfp4_q8::{FusedNvfp4Q8, NVFP4_Q8_ACTIVATION_BLOCK};
+use super::projector::{CpuParallelism, DenseProjector, WeightRows};
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat, WeightSlice};
+use crate::format::vindex3::opplan::exec::backend::{
+    KQuantActivation, MatrixClass, Nvfp4Activation, WeightFormat, WeightSlice,
+};
+
+/// Q8_K's activation block: one f32 scale per this many elements. A
+/// property of the ggml format the `q4k_q8k` kernels read, not a policy.
+pub const Q8K_ACTIVATION_BLOCK: usize = 256;
 
 /// Default performance-cluster L2, used where the machine does not
 /// report one. The value this rung measured against (Apple M3 Max).
@@ -67,6 +75,11 @@ pub enum PhysicalProjectionPlan {
     /// representation with no execution path cannot be measured, and
     /// before this arm every NVFP4 backend was a device backend.
     FusedNvfp4,
+    /// The same stored NVFP4 pack against a **Q8 activation**, one scale
+    /// per 16-element group, with an exact int32 sum per group
+    /// (NVFP4-Q8-1). Reached by OBSERVATION of the resident binding, which
+    /// the `production-nvfp4-q8` provider pins; never chosen by a policy.
+    FusedNvfp4Q8,
     /// A stored ggml K-quant — Q8_0, Q6_K or Q4_K — executed in place by
     /// the kernel its codec names. PARETO-1's v3 arm.
     ///
@@ -77,6 +90,11 @@ pub enum PhysicalProjectionPlan {
     /// policy's only say is whether a stored pack executes in place at
     /// all — [`kquant_execution`] — never which codec.
     FusedKQuant,
+    /// The same stored K-quant blocks against a **Q8_K activation**: the
+    /// integer-dot kernel V2's CPU decode uses (Q8K-ACT-1). Reached by
+    /// OBSERVATION of the resident binding, which the
+    /// `production-q4k-q8k` provider pins; never chosen by a policy.
+    FusedKQuantQ8k,
     /// Fine-grained FP8 resident, decoded and tile-scaled in registers.
     ///
     /// Reached by OBSERVATION like [`Self::FusedKQuant`], and with less
@@ -105,6 +123,16 @@ pub enum PhysicalProjectionPlan {
     /// arm: it isolates activation quantisation from weight
     /// quantisation, and is never chosen for speed.
     Bf16xQ8,
+    /// A kernel this crate does not implement, over
+    /// [`WeightFormat::CodecOwned`](super::super::backend::WeightFormat::CodecOwned)
+    /// bytes. Nothing in `larql-vindex` ever pins or executes this
+    /// variant — [`PlanBackend::select`](super::super::backend::PlanBackend::select)
+    /// exists precisely so an external backend can pin its OWN kernel
+    /// without this crate knowing what it is; this arm exists only so
+    /// the enum has somewhere to name that possibility, the same reason
+    /// [`WeightFormat::CodecOwned`](super::super::backend::WeightFormat::CodecOwned)
+    /// does.
+    CodecOwned,
 }
 
 /// **Which arithmetic the projections run in**, for the whole process.
@@ -119,7 +147,7 @@ pub enum PhysicalProjectionPlan {
 /// a bank run is one process per arm, and a value that could change
 /// mid-decode would make the resulting distribution describe no single
 /// representation.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize)]
 pub enum ArithmeticArm {
     /// Compact weights against an f32 activation — what ships today.
     #[default]
@@ -241,6 +269,28 @@ pub fn arithmetic_arm() -> ArithmeticArm {
     })
 }
 
+/// [`PhysicalProjectionPlan::CodecOwned`]'s kernel slot. This crate never
+/// selects that plan (only an external `PlanBackend` pins it, and such a
+/// backend runs its own arithmetic in its own `project`/`ffn`/
+/// `output_head` methods without ever calling `PhysicalProjectionPlan::
+/// kernel`), so this exists only to keep [`PhysicalProjectionPlan::kernel`]
+/// total; reaching it is an interpreter bug, not a codec's doing, and it
+/// says so rather than guessing at an answer.
+struct NoInTreeKernel;
+
+impl DenseProjector for NoInTreeKernel {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::Serial
+    }
+
+    fn project_rows(&self, _weight_rows: WeightRows<'_>, _x: &[f32], _out: &mut [f32]) {
+        unreachable!(
+            "PhysicalProjectionPlan::CodecOwned has no in-tree kernel; an external PlanBackend \
+             must pin this plan and run its own arithmetic without calling `kernel()`"
+        );
+    }
+}
+
 impl PhysicalProjectionPlan {
     /// The representation the loader must make resident for this plan.
     pub fn format(self) -> WeightFormat {
@@ -250,8 +300,11 @@ impl PhysicalProjectionPlan {
             Self::FusedQ8 | Self::Q8xQ8 => WeightFormat::Q8,
             Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
             Self::FusedNvfp4 => WeightFormat::Nvfp4,
+            Self::FusedNvfp4Q8 => WeightFormat::Nvfp4Q8,
             Self::FusedKQuant => WeightFormat::KQuant,
+            Self::FusedKQuantQ8k => WeightFormat::KQuantQ8k,
             Self::FusedFp8Block => WeightFormat::Fp8Block,
+            Self::CodecOwned => WeightFormat::CodecOwned,
         }
     }
 
@@ -295,10 +348,30 @@ impl PhysicalProjectionPlan {
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
             },
+            // One activation scale per NVFP4 group, stated here for
+            // `FusedKQuantQ8k`'s reason: the geometry is the kernel's, not
+            // the process's CPU-5 arm.
+            Self::FusedNvfp4Q8 => Arithmetic {
+                weight: WeightRep::Nvfp4,
+                activation: ActivationRep::Q8 {
+                    span: ScaleSpan::Block(NVFP4_Q8_ACTIVATION_BLOCK),
+                },
+                accumulator: AccumulatorRep::I32,
+            },
             Self::FusedKQuant => Arithmetic {
                 weight: WeightRep::KQuant,
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
+            },
+            // Q8_K is its own geometry — one scale per 256, whatever the
+            // process's CPU-5 arm says — so it is stated here, not read
+            // through `activation_scaling`.
+            Self::FusedKQuantQ8k => Arithmetic {
+                weight: WeightRep::KQuant,
+                activation: ActivationRep::Q8 {
+                    span: ScaleSpan::Block(Q8K_ACTIVATION_BLOCK),
+                },
+                accumulator: AccumulatorRep::I32,
             },
             Self::FusedFp8Block => Arithmetic {
                 weight: WeightRep::Fp8Block,
@@ -322,6 +395,14 @@ impl PhysicalProjectionPlan {
                 activation: int8_act,
                 accumulator: AccumulatorRep::I32,
             },
+            // Never pinned by this crate's own `select`. The external
+            // kernel's activation and accumulator are its own; stating
+            // `F32` for them would describe a kernel this crate never saw.
+            Self::CodecOwned => Arithmetic {
+                weight: WeightRep::CodecOwned,
+                activation: ActivationRep::CodecOwned,
+                accumulator: AccumulatorRep::CodecOwned,
+            },
         }
     }
 
@@ -339,11 +420,14 @@ impl PhysicalProjectionPlan {
             Self::FusedQ8 => &FusedQ8,
             Self::FusedQ4 => &FusedQ4,
             Self::FusedNvfp4 => &FusedNvfp4,
+            Self::FusedNvfp4Q8 => &FusedNvfp4Q8,
             Self::FusedKQuant => &FusedKQuant,
+            Self::FusedKQuantQ8k => &FusedKQuantQ8k,
             Self::FusedFp8Block => &FusedFp8Block,
             Self::Q8xQ8 => &Q8xQ8,
             Self::Q4xQ8 => &Q4xQ8,
             Self::Bf16xQ8 => &Bf16xQ8,
+            Self::CodecOwned => &NoInTreeKernel,
         }
     }
 
@@ -464,15 +548,21 @@ impl PhysicalProjectionPlan {
                 ArithmeticArm::Q4TimesQ8 => Self::Q4xQ8,
                 _ => Self::FusedQ4,
             },
-            // No integer arm consumes NVFP4: its two scale levels are not
-            // expressible as the single per-block f32 the SDOT paths
-            // assume, so there is one kernel and the arm does not enter
-            // into it.
-            WeightRows::Nvfp4 { .. } => Self::FusedNvfp4,
+            // No CPU-5 integer arm consumes NVFP4: its two scale levels are
+            // not expressible as the single per-block f32 those SDOT paths
+            // assume, so the arm does not enter into it. The binding does:
+            // a pack bound for a Q8 activation runs NVFP4-Q8-1's kernel.
+            WeightRows::Nvfp4 { activation, .. } => match activation {
+                Nvfp4Activation::F32 => Self::FusedNvfp4,
+                Nvfp4Activation::Q8 => Self::FusedNvfp4Q8,
+            },
             // One kernel per codec and no integer arm, so the bytes
             // determine execution outright — and the codec they name
             // travels with them rather than with the plan.
-            WeightRows::KQuant { .. } => Self::FusedKQuant,
+            WeightRows::KQuant { activation, .. } => match activation {
+                KQuantActivation::F32 => Self::FusedKQuant,
+                KQuantActivation::Q8k => Self::FusedKQuantQ8k,
+            },
             // Fine-grained FP8 has exactly one arm: the format is the
             // checkpoint's own and there is no policy choice to make —
             // unlike bf16 above, whose bytes are ambiguous between two
@@ -622,7 +712,7 @@ pub const KQUANT_EXEC_WIDEN: &str = "widen";
 /// meaningful because both arms live in ONE binary, so "the kernel
 /// changed the answer" cannot be confused with "the compiler did". Same
 /// rule, same reason, as `weights::staged::STAGE_ENV`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize)]
 pub enum KQuantExecution {
     /// Execute the stored blocks in place:
     /// [`PhysicalProjectionPlan::FusedKQuant`].
@@ -630,6 +720,15 @@ pub enum KQuantExecution {
     Direct,
     /// Decode to f32 at load and run the f32 path, as v2 did.
     Widen,
+    /// Execute the stored blocks in place against a Q8_K activation:
+    /// [`PhysicalProjectionPlan::FusedKQuantQ8k`] (Q8K-ACT-1). Members
+    /// with no Q8_K kernel keep [`Self::Direct`]'s realization.
+    ///
+    /// Deliberately NOT reachable from [`KQUANT_EXEC_ENV`]: it is a
+    /// provider — `ProductionBackend::q8k_activation`, under its own
+    /// lowering identity — so a run's arm is named by what executed it,
+    /// never by an environment a later reader has to reconstruct.
+    DirectQ8k,
 }
 
 impl KQuantExecution {

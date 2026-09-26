@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Model architecture definitions for LARQL — traits, config parsing, tensor key mappings"
+description = "Model source description, inventory, weight loading, quantized formats and multimodal contracts for LARQL."
 keywords = ["transformer", "model-config", "llm", "architecture"]
 categories = ["data-structures"]
 

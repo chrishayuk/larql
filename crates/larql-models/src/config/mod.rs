@@ -47,6 +47,7 @@ pub use activation::{
 };
 pub use architecture::{
     default_position_policy_for_layer, score_scale_from_query_pre_attn_scalar, ModelArchitecture,
+    UNSCALED_POSITION_DIVISOR,
 };
 pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,

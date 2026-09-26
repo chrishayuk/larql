@@ -9,6 +9,7 @@ pub mod bench;
 pub mod cache;
 pub mod capabilities_cmd;
 pub mod card_cmd;
+pub(crate) mod continuation;
 pub mod dec_bench;
 pub mod diag_cmd;
 pub mod inspect_hf_cmd;

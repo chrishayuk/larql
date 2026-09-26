@@ -194,16 +194,23 @@ impl ExpertAddressing<'_> {
         }
     }
 
-    /// The offset an expert resolves to, host-side.
-    pub fn offset_of(&self, expert: usize) -> Option<u32> {
+    /// The offset an expert resolves to, host-side, in 64 bits.
+    ///
+    /// Wide on purpose: `expert * stride` in `u32` wraps (release) or
+    /// panics (debug) once a bank passes 4 GiB, and a wrapped offset is
+    /// another expert's weights. The device table is still `u32`, so a
+    /// caller that binds this must refuse what does not fit —
+    /// [`validate_layer`] does.
+    pub fn offset_of(&self, expert: usize) -> Option<u64> {
         match self {
-            ExpertAddressing::Identity { experts, stride } => {
-                (expert < *experts).then(|| expert as u32 * stride)
-            }
+            ExpertAddressing::Identity { experts, stride } => (expert < *experts)
+                .then(|| (expert as u64).checked_mul(u64::from(*stride)))
+                .flatten(),
             ExpertAddressing::Table(t) => t
                 .get(expert)
                 .copied()
-                .filter(|o| *o != layer_shader::NOT_RESIDENT),
+                .filter(|o| *o != layer_shader::NOT_RESIDENT)
+                .map(u64::from),
         }
     }
 }
@@ -876,12 +883,34 @@ fn validate_layer(
         // Every ADDRESSABLE expert must lie inside the routed bank. For
         // an identity bank that is every expert; for a packed one only
         // those the table names.
-        for off in (0..experts).filter_map(|e| bank.addressing.offset_of(e)) {
+        //
+        // An identity bank is walked expert by expert and never filtered:
+        // `offset_of` answers `None` there only when `expert * stride`
+        // overflows, and skipping that expert would admit exactly the
+        // bank this check exists to refuse.
+        for expert in 0..experts {
+            let off = match (bank.addressing, bank.addressing.offset_of(expert)) {
+                (_, Some(off)) => off,
+                (ExpertAddressing::Table(_), None) => continue,
+                (ExpertAddressing::Identity { stride, .. }, None) => {
+                    return Err(GroupedError::OffsetExceedsAddressWidth {
+                        slot: name,
+                        offset: (expert as u64).saturating_mul(u64::from(stride)),
+                    })
+                }
+            };
+            // The device offset table and the address kernel carry `u32`.
+            let Ok(device_off) = u32::try_from(off) else {
+                return Err(GroupedError::OffsetExceedsAddressWidth {
+                    slot: name,
+                    offset: off,
+                });
+            };
             let need = off as usize + per;
             if need > bank.routed.bytes.len() {
                 return Err(GroupedError::OffsetOutOfRange {
                     slot: name,
-                    offset: off,
+                    offset: device_off,
                     need,
                     have: bank.routed.bytes.len(),
                 });

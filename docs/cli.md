@@ -22,7 +22,7 @@ a local directory path — see [Model resolution](#model-resolution) below.
 | `slice <source>` | Carve a subset of a vindex (`client` / `attn` / `embed` / `server` / `browse` / `router` / `expert-server`). |
 | `publish <source>` | Publish a vindex to HuggingFace — full + slice siblings + collections. |
 | `rm <model>` | Evict a cached vindex. |
-| `bench <model>` | Benchmark decode throughput on a real vindex (Metal / CPU / Ollama). |
+| `bench <model>` | Benchmark decode throughput on a real vindex or VINDEX3 container (Metal / CPU / Ollama). |
 | `accuracy <model>` | Split-axis accuracy suite for KV engines — parametric vs in-context vs conflict, scored by top-1 match and Shannon bits/token. |
 | `dec-bench <subcmd>` | DEC residual-replay loadgen — `capture` a residual pool, `replay` batch × wire × dispatch sweeps, `drift` the C6 wire-fidelity gate. |
 | `k3-ledger <subcmd>` | K3 serving ledger — miss budget, weight touch, dense-precision frontier and speculative block economics, derived from the checkpoint's own tensor table. |
@@ -221,7 +221,48 @@ larql bench gemma3-4b-it-vindex --backends metal,cpu
 larql bench gemma3-4b-it-vindex --ollama gemma3:4b
 larql bench gemma4-26b-a4b.vindex --moe-shards "0-63=http://a:8081,64-127=http://b:8082"
 LARQL_GPU_ROUTE=1 larql bench gpt-oss-20b-q4k.vindex --warmup 16 -n 256 --routed-from ~/models/gpt-oss-20b-experts-mxfp4.v3
+larql bench model.vindex3 --backends cpu,metal,production-q4k --ollama gemma3:4b
 ```
+
+**VINDEX3 containers.** A V3 container is detected by generation and benched
+through its own program on the serving path: operands prepared once, a batch
+prefill into fresh continuation state, then a decode session stepping one
+greedy token at a time. Opening and preparation are reported on stderr and
+excluded from the row. The row statistic is the V2 one (mean, p50 and p99 over
+every step after `--warmup`), so V2 and V3 rows are the same measurement;
+`larql vindex3 exec --generate` reports a last-half mean instead.
+
+In `--backends`, `cpu` is the `production` kernels that `larql run` and
+`larql serve` execute, and `metal` is the Metal realization (`larql run
+--metal`). Any `larql vindex3 exec --backend` name is also accepted, for
+example `production-q4k` or `metal-lowered`. Rows are labelled
+`vindex3-<backend>`. On device backends, the note splits each token into
+time inside device calls, interpreter glue and submissions per token. When
+the device measures its own command buffers (Metal does), the device time is
+split further, as `device D ms/tok (host H + queue Q + gpu G)`:
+- **host:** work around each submission (staging, encode, readback);
+- **queue:** commit to completion that is not GPU execution;
+- **gpu:** the GPU's own span. Flags that configure
+the V2 engine or its remote paths (`--engine`, `--ffn`, `--wire`,
+`--ffn-policy`, `--moe-shards`, `--routed-from`, `--bench-grid`,
+`--via-executor`, `--profile`, `--metal`, `--concurrent`) are refused by name.
+`--ollama` remains available as an external baseline.
+
+The lowered Metal arms (`metal-lowered`, `metal-lowered-ffn`,
+`metal-lowered-no-head`, `metal-lowered-mxfp4`, `metal-lowered-mxfp4-ffn`,
+`metal-lowered-f16`) execute outside the interpreter, one command buffer per
+token, and are timed by the same row statistic:
+- **Loading:** weights are made resident once.
+- **Warm-up:** one untimed token, then the session is reset to position 0.
+- **Prompt:** executed one position per step. There is no batch prefill on
+  this path, so its prefill column is not comparable with an interpreter row's.
+- **Device note:** `gpu G ms/tok + off-gpu O ms/tok`. The note sums the command
+  buffers' GPU span, and counts submissions at each commit. The host never
+  blocks inside a device call on this path, so there is no call time to split.
+- **Reset check:** the timed run must begin with the same ids as the warm-up
+  from a fresh session, or the row is refused.
+- **Fingerprint:** covers the generated text only. The lowered decode reads
+  back the device argmax id, not the logits.
 
 ### `larql accuracy`
 
@@ -1935,7 +1976,11 @@ larql vindex3 <SUBCOMMAND> [OPTIONS]
 | `inspect <container>` | Reconstruct and check a container solely from its own contents — no source checkpoint, no architecture registry. `--verify` re-hashes every segment; `--execution-complete` additionally requires every component with executable objects to carry the surface those operations read. |
 | `verify <artifacts...> --container <DIR>` | Prove source ≡ encoded: four-authority semantic comparison plus per-representation byte equivalence, both ends re-hashed now. Exits non-zero on any disagreement. |
 | `ops <container>` | Emit the generic operation plan of one component, solely from the container. Operand closure is the gate: every stack tensor must classify into a role a declared op consumes, with the geometry the surface states. Exits non-zero on any closure defect. |
-| `exec <container> --tokens <IDS>` | Execute one component's own program from the container alone. `--dump-layers` writes per-layer hidden states in the `shannon layer-dump` format so `layer-diff` can compare against an upstream trace. `larql run <container> [prompt]` is the text-in/text-out shell over the same interpreter. |
+| `exec <container> --tokens <IDS>` | Execute one component's own program from the container alone. `--dump-layers` writes per-layer hidden states in the `shannon layer-dump` format so `layer-diff` can compare against an upstream trace. `larql run <container> [prompt]` is the text-in/text-out shell over the same interpreter. `--plugin <PATH>` loads codecs and lowering providers from a shared library; `--representation <ENCODING>` asks for a stored representation the backend does not name; `--lowering <family/vN>` executes on another registered provider ([plugins](vindex3/plugins.md)). |
+| `represent <container> --output <DIR> [--encoding <E>] [--deployment] [--object <O>]... [--include-role <R>]... [--protect <P[@LO-HI]>]... [--protect-layers <LO-HI>]... [--plugin <PATH>]... [--moments <JSON>]` | Compile a physical representation of the container's objects beside the canonical bytes (or, with `--deployment`, in place of them). `--encoding` is `NVFP4` (default), a K-quant, or an encoding a `--plugin`'s encoder registers. The conservative role policy compiles the bulk projections and preserves embedding, head and small vectors; `--include-role` and `--protect`/`--protect-layers` move that boundary deliberately. Each pack is `segments/<object>@<ENCODING>.bin`, marked `approximate`, with its codec identity and encoder recipe recorded. `--moments` encodes under per-input-feature weights from a `sensitivity --calibration` capture of the same container (encoders that implement weighting only) ([representation](vindex3/representation.md)). |
+| `observe <container> (--prompt <TEXT> \| --tokens <IDS>) --record <FILE> [--heads [--heads-top-k <N>]] [--intervene <DECL.json>] [--capture <L:site:p,…> --capture-out <FILE>]` | A prompt in, a run record out (V3-OBS-1 + V3-STREAM-1). Tokenises with the container's own tokenizer (or takes ids), prepares the image once, steps every token through the canonical decode session with the lossless recorder and the stats observer attached — carrier and delta norms, a fixed projection (`--basis-dims`/`--basis-seed`, or `--basis-rows <JSON>` for a registered reader with `--basis-id`), the run's provenance and a verified receipt — and writes it as JSON lines. `--generate <N>` continues greedily with those positions observed too. Prints the ids that ran, the provenance fingerprint, the log hash and the final position's top `--top-k` candidates with log-probabilities. `--backend` as for `exec` (default `production`). Never a logit lens, never a second traversal. |
+| `token-bank export <container> --prompts <JSON> --output <DIR> [--max-tokens <N>]` / `token-bank import <container> --ids <JSON> --output <DIR>` / `token-bank check <bank> --container <DIR>` | MEASURE-PLAN-1's corpus (`docs/measure-plan-1.md`). `export` tokenises a prompt file (Q-BANK-1's `prompts.json` shape) with the container's own tokenizer into a sealed bank (`teacher-forced-token-bank/v1`): one `seq-NNN.u32` per sample, each with a sha256 seal, and a bank id derived from the manifest. It tokenises exactly as `bench/prompts/quality-bank-1/run_bank.py` does (raw text, special tokens, a 128-id cap by default). `import` seals ids another harness already tokenised (`{"bank", "samples": [{"id", "category", "ids"}]}`) verbatim — no text, no special tokens, no cap — refusing a sample shorter than three ids or holding an id outside the container tokenizer's vocabulary. `check` reads every sample against its seal and refuses a bank from another tokenizer. |
+| `measure --reference <DIR> --reference-backend <B> --candidate <DIR> --candidate-backend <B> --bank <DIR> --sequences <N> --label <NAME> --output <DIR>` | MEASURE-PLAN-1's procedure (`teacher-forced-two-arm/plan-v1`). It teacher-forces two realizations over a token bank and compares them. Every metric is over the full vocabulary, in nats: KL, top-1, top-5, ΔNLL, split by category and by the reference's top-1 margin. Before any number counts, it proves the null arm (the reference, twice, bit for bit), the changed variable, each arm's physical attribution, byte identity of what both arms share, every seal, and that the bank belongs to both models. Refusals are typed: `Inadmissible` means numbers exist but are not evidence; `ExecutionFailure` means nothing was measured. Writes `report.json`, `positions.jsonl` and `receipt.json`; a refusal exits non-zero and still writes a receipt. Backends are `exec`'s, including lowered Metal arms. `--plugin` loads plugins for both arms; `--reference-lowering`/`--candidate-lowering` (`family/vN`) and `--reference-representation`/`--candidate-representation` (an encoding) override, per arm, the provider and the stored representation the backend would name — a lowered Metal arm refuses both. The candidate defaults to `--candidate-source stored`. No gate is applied: the procedure characterises, and decisions are pre-registered separately. |
 
 **`larql vindex3 exec`** flags:
 

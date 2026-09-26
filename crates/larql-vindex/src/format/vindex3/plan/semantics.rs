@@ -440,6 +440,12 @@ pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
     // head width (equal to `head_dim` on Gemma 4 vision).
     "pooling_kernel_size",
     "position_embedding_size",
+    // SigLIP's attention-pooling head (Gemma 3's `vision_config`):
+    // `true` places a `head.*` parameter set after the encoder, `false`
+    // (what every Gemma 3 checkpoint ships) means the tower's last
+    // hidden state is its output and no head tensors exist. A fact about
+    // which tensors the tower holds.
+    "vision_use_head",
     // Input standardisation: its parameters are the placed `std_scale` /
     // `std_bias` tensors; the flag says they apply.
     "standardize", // mamba_ssm's own spelling of the hidden width, read through the
@@ -474,6 +480,15 @@ pub const INTERFACE_SEMANTIC_KEYS: &[&str] = &[
     "default_output_length",
     "use_bidirectional_attention",
     "audio_config",
+    // Gemma 3's spellings of the same image join: `Gemma3Config` names
+    // the soft token and its delimiters `*_index` where Gemma 4 says
+    // `*_id`, and the soft-token count `mm_tokens_per_image`. Read by
+    // the interface reader under these names, so they are credited as
+    // read and, like Gemma 4's, required by the image capability alone.
+    "image_token_index",
+    "boi_token_index",
+    "eoi_token_index",
+    "mm_tokens_per_image",
 ];
 
 /// Identity facts inert for a forward pass wherever they appear.

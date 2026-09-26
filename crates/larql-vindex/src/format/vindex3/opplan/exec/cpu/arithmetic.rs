@@ -73,6 +73,11 @@ pub enum WeightRep {
     /// arithmetic is exact against what the reference loader would have
     /// materialised.
     Fp8Block,
+    /// Whatever an external kernel reads from
+    /// [`WeightSlice::CodecOwned`](super::super::backend::WeightSlice::CodecOwned) —
+    /// this crate has no arithmetic to state, since it has no kernel over
+    /// these bytes at all.
+    CodecOwned,
 }
 
 /// Over how many elements ONE activation scale applies.
@@ -96,6 +101,10 @@ pub enum ActivationRep {
     F32,
     /// Symmetric int8 at a stated scale geometry.
     Q8 { span: ScaleSpan },
+    /// Whatever an external kernel over codec-owned bytes does with the
+    /// activation. This crate does not know it, so it does not state it:
+    /// saying `F32` here would describe a kernel it never saw.
+    CodecOwned,
 }
 
 /// Where the products land before they are scaled back to f32.
@@ -106,6 +115,9 @@ pub enum AccumulatorRep {
     /// **Exact** integer accumulation within a block; the only rounding
     /// is the one multiply-add per block that scales it back.
     I32,
+    /// An external kernel's own accumulator — unknown here, as
+    /// [`ActivationRep::CodecOwned`].
+    CodecOwned,
 }
 
 /// The complete arithmetic of one projection.
@@ -131,6 +143,7 @@ impl fmt::Display for WeightRep {
             Self::Nvfp4 => write!(f, "NVFP4"),
             Self::KQuant => write!(f, "KQUANT"),
             Self::Fp8Block => write!(f, "FP8_BLOCK"),
+            Self::CodecOwned => write!(f, "CODEC_OWNED"),
         }
     }
 }
@@ -145,6 +158,7 @@ impl fmt::Display for ActivationRep {
             Self::Q8 {
                 span: ScaleSpan::Block(n),
             } => write!(f, "Q8[{n}]"),
+            Self::CodecOwned => write!(f, "CODEC_OWNED"),
         }
     }
 }
@@ -154,6 +168,7 @@ impl fmt::Display for AccumulatorRep {
         match self {
             Self::F32 => write!(f, "F32"),
             Self::I32 => write!(f, "I32"),
+            Self::CodecOwned => write!(f, "CODEC_OWNED"),
         }
     }
 }
@@ -187,10 +202,21 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
             PhysicalProjectionPlan::FusedBf16,
             PhysicalProjectionPlan::Bf16xQ8,
         ],
-        // One kernel, so residency determines execution outright — the
-        // invariant this function exists to expose, satisfied trivially.
-        WeightRep::Nvfp4 => &[PhysicalProjectionPlan::FusedNvfp4],
-        WeightRep::KQuant => &[PhysicalProjectionPlan::FusedKQuant],
+        // Two kernels over the same stored pack: the f32 activation and
+        // the Q8 one (NVFP4-Q8-1). As for K-quants, the resident
+        // binding's activation form decides, fixed at load.
+        WeightRep::Nvfp4 => &[
+            PhysicalProjectionPlan::FusedNvfp4,
+            PhysicalProjectionPlan::FusedNvfp4Q8,
+        ],
+        // Two kernels over the same stored blocks: the f32 activation
+        // and the Q8_K one (Q8K-ACT-1). Residency does NOT determine
+        // execution here by the weight rep alone — the resident binding's
+        // activation form does, fixed at load from the pinned realization.
+        WeightRep::KQuant => &[
+            PhysicalProjectionPlan::FusedKQuant,
+            PhysicalProjectionPlan::FusedKQuantQ8k,
+        ],
         // One kernel, for a stronger reason than NVFP4's: these are the
         // checkpoint's own bytes, so no policy produced them and none can
         // choose otherwise.
@@ -203,5 +229,9 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
             PhysicalProjectionPlan::FusedQ4,
             PhysicalProjectionPlan::Q4xQ8,
         ],
+        // One kernel, for the strongest reason yet: this crate has none
+        // of its own over these bytes, so the only plan resident-as-this
+        // makes possible is the one that hands off to an external one.
+        WeightRep::CodecOwned => &[PhysicalProjectionPlan::CodecOwned],
     }
 }

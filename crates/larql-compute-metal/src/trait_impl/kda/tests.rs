@@ -142,15 +142,16 @@ impl Weights {
             q_conv1d: &self.conv[0],
             k_conv1d: &self.conv[1],
             v_conv1d: &self.conv[2],
-            f_a_proj: &self.fa,
-            f_b_proj: &self.fb,
-            g_a_proj: &self.ga,
-            g_b_proj: &self.gb,
-            b_proj: &self.bp,
+            f_a_proj: SmallMatrix::F32(&self.fa),
+            f_b_proj: SmallMatrix::F32(&self.fb),
+            g_a_proj: SmallMatrix::F32(&self.ga),
+            g_b_proj: SmallMatrix::F32(&self.gb),
+            b_proj: SmallMatrix::F32(&self.bp),
             a_log: &self.a_log,
             dt_bias: &self.dt,
             o_norm: &self.o_norm,
             norm_eps: self.eps,
+            gate_form: larql_models::config::KdaGateForm::Softplus,
         }
     }
 }
@@ -395,6 +396,207 @@ fn shape_faults_are_refused_before_the_encoder_opens() {
         .is_ok());
 }
 
+/// A `head_dim` the recurrence's one-threadgroup-per-head mapping cannot
+/// cover is refused before encoding. Without the refusal the step
+/// completes normally and value columns past the threadgroup are never
+/// written — half the state frozen, no fault.
+#[test]
+fn a_head_dim_past_the_recurrence_threadgroup_is_refused() {
+    let m = backend();
+    let w = weights();
+    let max = kda_shader::RECURRENCE_THREADS_PER_TG as usize;
+    let wide = KdaShape {
+        head_dim: max + 1,
+        ..shape()
+    };
+    let state = KdaDeviceState::zeros(&m, wide);
+    assert_eq!(
+        m.kda_attention_step(w.device(), wide, &state, &synth(HIDDEN, 0.0))
+            .map(|_| ()),
+        Err(GroupedError::KdaGeometryUnsupported {
+            field: "head_dim",
+            value: max + 1,
+            min: 1,
+            max,
+        })
+    );
+    // The boundary itself is admitted by the geometry check.
+    assert!(MetalBackend::validate_kda_geometry(KdaShape {
+        head_dim: max,
+        ..shape()
+    })
+    .is_ok());
+}
+
+/// Every degenerate extent refuses by name. `conv_kernel = 0` is the one
+/// that matters most: the short-conv kernel computes `kernel - 1` in
+/// `uint` and would walk ~4G history entries.
+#[test]
+fn degenerate_kda_extents_are_refused_by_name() {
+    for (field, bad) in [
+        (
+            "conv_kernel",
+            KdaShape {
+                conv_kernel: 0,
+                ..shape()
+            },
+        ),
+        (
+            "head_dim",
+            KdaShape {
+                head_dim: 0,
+                ..shape()
+            },
+        ),
+        (
+            "num_heads",
+            KdaShape {
+                num_heads: 0,
+                ..shape()
+            },
+        ),
+        (
+            "hidden",
+            KdaShape {
+                hidden: 0,
+                ..shape()
+            },
+        ),
+    ] {
+        match MetalBackend::validate_kda_geometry(bad) {
+            Err(GroupedError::KdaGeometryUnsupported {
+                field: got,
+                value: 0,
+                ..
+            }) => {
+                assert_eq!(got, field)
+            }
+            other => panic!("{field}=0 must be refused by name, got {other:?}"),
+        }
+    }
+    assert!(MetalBackend::validate_kda_geometry(shape()).is_ok());
+}
+
+/// Each small operand one element short refuses NAMING that operand,
+/// before the encoder opens. The wide projections are covered by
+/// `shape_faults_are_refused_before_the_encoder_opens`.
+#[test]
+fn every_short_kda_operand_is_refused_by_name() {
+    let m = backend();
+    let w = weights();
+    let shape = shape();
+    let state = KdaDeviceState::zeros(&m, shape);
+    let x = synth(HIDDEN, 0.0);
+    let short = |v: &[f32]| v.len() - 1;
+    let base = w.device();
+    let cases = [
+        (
+            "q_conv1d",
+            KdaDeviceWeights {
+                q_conv1d: &w.conv[0][..short(&w.conv[0])],
+                ..base
+            },
+        ),
+        (
+            "k_conv1d",
+            KdaDeviceWeights {
+                k_conv1d: &w.conv[1][..short(&w.conv[1])],
+                ..base
+            },
+        ),
+        (
+            "v_conv1d",
+            KdaDeviceWeights {
+                v_conv1d: &w.conv[2][..short(&w.conv[2])],
+                ..base
+            },
+        ),
+        (
+            "f_a_proj",
+            KdaDeviceWeights {
+                f_a_proj: SmallMatrix::F32(&w.fa[..short(&w.fa)]),
+                ..base
+            },
+        ),
+        (
+            "f_b_proj",
+            KdaDeviceWeights {
+                f_b_proj: SmallMatrix::F32(&w.fb[..short(&w.fb)]),
+                ..base
+            },
+        ),
+        (
+            "g_a_proj",
+            KdaDeviceWeights {
+                g_a_proj: SmallMatrix::F32(&w.ga[..short(&w.ga)]),
+                ..base
+            },
+        ),
+        (
+            "g_b_proj",
+            KdaDeviceWeights {
+                g_b_proj: SmallMatrix::F32(&w.gb[..short(&w.gb)]),
+                ..base
+            },
+        ),
+        (
+            "b_proj",
+            KdaDeviceWeights {
+                b_proj: SmallMatrix::F32(&w.bp[..short(&w.bp)]),
+                ..base
+            },
+        ),
+        (
+            "a_log",
+            KdaDeviceWeights {
+                a_log: &w.a_log[..short(&w.a_log)],
+                ..base
+            },
+        ),
+        (
+            "dt_bias",
+            KdaDeviceWeights {
+                dt_bias: &w.dt[..short(&w.dt)],
+                ..base
+            },
+        ),
+        (
+            "o_norm",
+            KdaDeviceWeights {
+                o_norm: &w.o_norm[..short(&w.o_norm)],
+                ..base
+            },
+        ),
+    ];
+    for (operand, d) in cases {
+        match m.kda_attention_step(d, shape, &state, &x) {
+            Err(GroupedError::KdaOperandShape { operand: got, .. }) => {
+                assert_eq!(got, operand)
+            }
+            other => panic!(
+                "{operand} one short must be refused by name, got {:?}",
+                other.map(|_| ())
+            ),
+        }
+    }
+    // A bf16 matrix that is not a whole number of codes is refused too,
+    // rather than rounded down to a length that happens to match.
+    let fa_bytes: Vec<u8> = w.fa.iter().flat_map(|v| narrow(*v).to_le_bytes()).collect();
+    let mut d = w.device();
+    let mut odd = fa_bytes.clone();
+    odd.push(0);
+    d.f_a_proj = SmallMatrix::Bf16(&odd);
+    assert!(matches!(
+        m.kda_attention_step(d, shape, &state, &x),
+        Err(GroupedError::KdaOperandShape {
+            operand: "f_a_proj",
+            ..
+        })
+    ));
+    // Still usable, which is the real assertion.
+    assert!(m.kda_attention_step(w.device(), shape, &state, &x).is_ok());
+}
+
 /// `KdaShape`'s derived quantities, and that `zeroed` really is zero —
 /// a recurrent state starting from a recycled buffer's leftovers would
 /// produce a plausible wrong answer on token one.
@@ -525,15 +727,16 @@ impl DualBanks {
             q_conv1d: &f.conv[0],
             k_conv1d: &f.conv[1],
             v_conv1d: &f.conv[2],
-            f_a_proj: &f.fa,
-            f_b_proj: &f.fb,
-            g_a_proj: &f.ga,
-            g_b_proj: &f.gb,
-            b_proj: &f.bp,
+            f_a_proj: SmallMatrix::F32(&f.fa),
+            f_b_proj: SmallMatrix::F32(&f.fb),
+            g_a_proj: SmallMatrix::F32(&f.ga),
+            g_b_proj: SmallMatrix::F32(&f.gb),
+            b_proj: SmallMatrix::F32(&f.bp),
             a_log: &f.a_log,
             dt_bias: &f.dt,
             o_norm: &f.o_norm,
             norm_eps: f.eps,
+            gate_form: larql_models::config::KdaGateForm::Softplus,
         }
     }
 }

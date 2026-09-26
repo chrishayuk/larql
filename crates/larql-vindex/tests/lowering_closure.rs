@@ -22,8 +22,10 @@ const CONSTRUCTORS: [&str; 4] = [
     "DevicePlanBackend::with_formats(",
 ];
 
-/// The files the fate table permits to construct a provider, and why.
-const PERMITTED: [(&str, &str); 3] = [
+/// The baseline fate table plus subsequent explicit composition sites.
+/// The server addition is documented in its CURRENT README; the frozen
+/// LOWERING-PLUGIN-1 experiment record remains unchanged.
+const PERMITTED: [(&str, &str); 4] = [
     (
         "larql-vindex/src/format/vindex3/opplan/exec/lowering.rs",
         "the registry's own `shipped()` — the one place the shipped providers are built, as a value",
@@ -31,6 +33,10 @@ const PERMITTED: [(&str, &str); 3] = [
     (
         "larql-vindex/src/format/vindex3/opplan/exec/device.rs",
         "the device provider's CPU glue — an implementation detail inside a provider, not authority over which provider runs",
+    ),
+    (
+        "larql-server/src/vindex3.rs",
+        "the server's explicit backend composition site registers its configured device provider; runtime opening resolves that identity from the registry",
     ),
     (
         "larql-cli/src/commands/primary/vindex3_cmd/prepare.rs",

@@ -44,6 +44,22 @@ const NEW_TOKENS: usize = 16;
 const PROMPT: &str = "[3]";
 const COMPONENT: &str = "target";
 
+fn row_continuation(
+    plan: &larql_vindex::format::vindex3::opplan::ComponentOpPlan,
+) -> larql_inference::vindex3::SelectedContinuation {
+    use larql_vindex::format::vindex3::opplan::exec::{
+        continuation::plan_continuation_geometry, continuation_authority::ContinuationConfig,
+        kv::RowKvState,
+    };
+    larql_kv::shipped_continuations()
+        .select(
+            &RowKvState::identity(),
+            &ContinuationConfig::empty(),
+            &plan_continuation_geometry(plan).unwrap(),
+        )
+        .unwrap()
+}
+
 /// Encode the miniature container and give it a servable tokenizer
 /// (`[N]` ↔ id N, no pre-tokenizer).
 fn v3_container() -> tempfile::TempDir {
@@ -498,10 +514,9 @@ async fn stats_answers_on_a_v3_only_server_and_carries_the_server_block() {
     assert!(json["server"]["sessions"]["active"].is_number());
 }
 
-/// A V3 container must refuse the slicing / service-mode options rather
-/// than accept and ignore them. Accepting `--layers 0-9` silently
-/// loaded the *whole* model and answered complete requests; `--no-infer`
-/// did not disable inference.
+/// Service modes without a V3 implementation must refuse rather than
+/// silently accept flags such as `--no-infer`. CPU layer slicing is
+/// tested separately through its actual HTTP contract.
 #[test]
 fn a_v3_container_refuses_options_it_cannot_honour() {
     let container = v3_container();
@@ -516,16 +531,9 @@ fn a_v3_container_refuses_options_it_cannot_honour() {
             },
         ),
         (
-            "--layers",
+            "--embed-only",
             LoadVindexOptions {
-                layer_range: Some((0, 1)),
-                ..LoadVindexOptions::default()
-            },
-        ),
-        (
-            "--ffn-only",
-            LoadVindexOptions {
-                ffn_only: true,
+                embed_only: true,
                 ..LoadVindexOptions::default()
             },
         ),
@@ -915,4 +923,882 @@ async fn v2_only_surfaces_refuse_a_v3_container_as_unsupported_not_absent() {
     let json = common::body_json(resp.into_body()).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "control: {json}");
     assert_eq!(json["error"], "no model loaded", "control: {json}");
+}
+
+#[tokio::test]
+async fn lifecycle_reports_selected_backend_and_refuses_an_implicit_switch() {
+    let container = v3_container();
+    let state = common::state(vec![]);
+    let app = larql_server::routes::single_model_router(state);
+    let path = container.path().to_string_lossy();
+    let loaded = common::post_json(
+        app.clone(),
+        "/v1/runtime/model",
+        serde_json::json!({"path": path, "backend": "cpu"}),
+    )
+    .await;
+    assert_eq!(loaded.status(), StatusCode::OK);
+    let body = common::body_json(loaded.into_body()).await;
+    assert_eq!(body["backend"]["selected"], "cpu");
+    let conflict = common::post_json(
+        app.clone(),
+        "/v1/runtime/model",
+        serde_json::json!({"path": path, "backend": "metal"}),
+    )
+    .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let bad = common::post_json(
+        app,
+        "/v1/runtime/model",
+        serde_json::json!({"path": path, "backend": "typo"}),
+    )
+    .await;
+    assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[cfg(not(all(feature = "vindex3-metal", target_os = "macos")))]
+#[test]
+fn unavailable_metal_is_refused_instead_of_serving_on_cpu() {
+    let container = v3_container();
+    let result = load_artifact(
+        container.path().to_str().unwrap(),
+        LoadVindexOptions {
+            v3_backend: larql_server::vindex3::V3Backend::Metal,
+            ..Default::default()
+        },
+    );
+    let err = result
+        .err()
+        .expect("Metal must not fall back to CPU")
+        .to_string();
+    assert!(err.contains("vindex3-metal"), "{err}");
+}
+
+/// Explicit opt-in: requires a real Metal device; it never passes by skipping
+/// device creation or falling back to CPU. Run serially with vindex3-metal.
+#[cfg(all(feature = "vindex3-metal", target_os = "macos"))]
+#[test]
+#[ignore = "requires a real Metal device"]
+fn selected_metal_backend_executes_the_v3_fixture() {
+    use larql_server::vindex3::{load_v3_model_with_backend, V3Backend};
+    let container = v3_container();
+    let model = load_v3_model_with_backend(container.path(), V3Backend::Metal).unwrap();
+    assert_eq!(model.backend, V3Backend::Metal);
+    let ids = model
+        .tokenizer
+        .encode(PROMPT, true)
+        .unwrap()
+        .get_ids()
+        .to_vec();
+    let result = generate_v3(
+        &model,
+        &ids,
+        NEW_TOKENS,
+        SamplingConfig::greedy(),
+        &EosConfig::builtin(),
+        |_, _| {},
+    )
+    .unwrap();
+    let expected: Vec<_> = direct_arm(container.path(), NEW_TOKENS)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        result.ids, expected,
+        "fixture's greedy tokens must agree with CPU"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v3_layer_workers_over_http_match_local_execution_and_refuse_bad_requests() {
+    use larql_inference::vindex3::{
+        distributed::{artifact_identity, DistributedSession},
+        LogitsSession,
+    };
+    use larql_router::vindex3::HttpLayerShards;
+    use larql_router_protocol::vindex3::{Binding, PATH};
+    use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    let container = v3_container();
+    let full = larql_server::routes::single_model_router(v3_state(container.path()));
+    let response = full
+        .oneshot(Request::builder().uri(PATH).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    for (range, backend) in [
+        ((2, 3), larql_server::vindex3::V3Backend::Cpu),
+        ((1, 0), larql_server::vindex3::V3Backend::Cpu),
+        ((0, usize::MAX), larql_server::vindex3::V3Backend::Cpu),
+        ((0, 0), larql_server::vindex3::V3Backend::Metal),
+    ] {
+        assert!(load_artifact(
+            container.path().to_str().unwrap(),
+            LoadVindexOptions {
+                layer_range: Some(range),
+                v3_backend: backend,
+                ..Default::default()
+            }
+        )
+        .is_err());
+    }
+    let mut urls = Vec::new();
+    let mut servers = Vec::new();
+    for layer in 0..2 {
+        let state = v3_state(container.path());
+        let LoadedArtifact::V3(model) = load_artifact(
+            container.path().to_str().unwrap(),
+            LoadVindexOptions {
+                layer_range: Some(
+                    larql_server::bootstrap::parse_layer_range(&format!("{layer}-{layer}"))
+                        .unwrap(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("V3")
+        };
+        assert_eq!(model.runtime.operands().layer_count(), 1);
+        assert!(!model.runtime.operands().has_output());
+        state.model_set.write().unwrap().v3_models = vec![Arc::new(*model)];
+        let app = larql_server::routes::single_model_router(state);
+        // A worker never serves a partial stack as a complete language model.
+        let denied = common::post_json(
+            app.clone(),
+            "/v1/completions",
+            serde_json::json!({"prompt":PROMPT,"max_tokens":1}),
+        )
+        .await;
+        assert!(!denied.status().is_success());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        urls.push(format!("http://{}", listener.local_addr().unwrap()));
+        servers.push(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap()
+        }));
+    }
+    let client = reqwest::Client::new();
+    let binding: Binding = client
+        .get(format!("{}{PATH}", urls[0]))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut wrong = binding.clone();
+    wrong.end = 2;
+    for body in [
+        serde_json::json!({"binding":wrong,"rows":[vec![0.0;binding.hidden]]}),
+        serde_json::json!({"binding":binding,"rows":[[0.0]]}),
+    ] {
+        assert_eq!(
+            client
+                .post(format!("{}{PATH}", urls[0]))
+                .json(&body)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let path = container.path().to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+        let identity = artifact_identity(&path, runtime.plan()).unwrap();
+        let endpoints = runtime.prepare_slice(ExecutionSlice::Endpoints).unwrap();
+        let transport = HttpLayerShards::connect(&urls, None).unwrap();
+        let mut remote = DistributedSession::new(
+            endpoints.plan(),
+            endpoints.operands(),
+            endpoints.backend(),
+            &identity,
+            transport,
+        )
+        .unwrap();
+        let local = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new())
+            .unwrap()
+            .prepare()
+            .unwrap();
+        let mut kv = CanonicalKvState::new();
+        let mut reference = local.session_with_kv(&mut kv).unwrap();
+        // Sliding window is three: this fixture actually crosses its boundary.
+        for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
+            let a = reference.step(id).unwrap();
+            let b = remote.step(id).unwrap();
+            let delta = a
+                .iter()
+                .zip(&b)
+                .map(|(x, y)| (x - y).abs())
+                .fold(0.0f32, f32::max);
+            assert!(delta < 1e-5, "HTTP logit delta {delta}");
+        }
+    })
+    .await
+    .unwrap();
+    for server in servers {
+        server.abort();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v3_dense_ffn_workers_over_http_preserve_local_continuation() {
+    use larql_inference::vindex3::{
+        dense_ffn::{prepare_coordinator, DenseFfnSession},
+        LogitsSession,
+    };
+    use larql_router::vindex3_ffn::HttpFfnShards;
+    use larql_router_protocol::vindex3_ffn::{Binding, PATH};
+    use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+    let container = v3_container();
+    let mut urls = Vec::new();
+    let mut servers = Vec::new();
+    assert!(load_artifact(
+        container.path().to_str().unwrap(),
+        LoadVindexOptions {
+            ffn_only: true,
+            ..Default::default()
+        }
+    )
+    .is_err());
+    for layer in 0..2 {
+        let LoadedArtifact::V3(model) = load_artifact(
+            container.path().to_str().unwrap(),
+            LoadVindexOptions {
+                ffn_only: true,
+                layer_range: Some(
+                    larql_server::bootstrap::parse_layer_range(&format!("{layer}-{layer}"))
+                        .unwrap(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("V3")
+        };
+        let ops = model.runtime.operands();
+        assert_eq!(
+            ops.slice(),
+            &ExecutionSlice::DenseFfns {
+                start: layer,
+                end: layer + 1
+            }
+        );
+        assert!(!ops.has_output());
+        let census = ops.residency_census();
+        assert_eq!(census.attention.total(), 0);
+        assert_eq!(census.embedding.total(), 0);
+        assert_eq!(census.glue.total(), 0);
+        assert!(census.ffn.total() > 0);
+        let state = v3_state(container.path());
+        state.model_set.write().unwrap().v3_models = vec![Arc::new(*model)];
+        let app = larql_server::routes::single_model_router(state);
+        let denied = common::post_json(
+            app.clone(),
+            "/v1/completions",
+            serde_json::json!({"prompt":PROMPT,"max_tokens":1}),
+        )
+        .await;
+        assert!(!denied.status().is_success());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        urls.push(format!("http://{}", listener.local_addr().unwrap()));
+        servers.push(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap()
+        }));
+    }
+    let client = reqwest::Client::new();
+    let binding: Binding = client
+        .get(format!("{}{PATH}", urls[0]))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let good =
+        serde_json::json!({"binding":binding,"layer":0,"row":vec![0.3;binding.program.hidden]});
+    let a: serde_json::Value = client
+        .post(format!("{}{PATH}", urls[0]))
+        .json(&good)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let b: serde_json::Value = client
+        .post(format!("{}{PATH}", urls[0]))
+        .json(&good)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(a, b);
+    let mut wrong = binding.clone();
+    wrong.program.artifact = "0".repeat(64);
+    for body in [
+        serde_json::json!({"binding":binding,"layer":1,"row":vec![0.3;binding.program.hidden]}),
+        serde_json::json!({"binding":binding,"layer":0,"row":[0.3]}),
+        serde_json::json!({"binding":wrong,"layer":0,"row":vec![0.3;binding.program.hidden]}),
+    ] {
+        assert_eq!(
+            client
+                .post(format!("{}{PATH}", urls[0]))
+                .json(&body)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    use larql_router_protocol::vindex3_ffn::binary::{self, Direction};
+    let opened: binary::Opened = client
+        .post(format!("{}{}", urls[0], binary::OPEN_PATH))
+        .json(&binding)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(opened.binding, binding);
+    let mut mismatched = binding.clone();
+    mismatched.program.artifact = "0".repeat(64);
+    assert_eq!(
+        client
+            .post(format!("{}{}", urls[0], binary::OPEN_PATH))
+            .json(&mismatched)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let packet = binary::encode(
+        Direction::Request,
+        opened.handle,
+        17,
+        0,
+        &vec![0.3; binding.program.hidden],
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let response = client
+            .post(format!("{}{}", urls[0], binary::PATH))
+            .header(reqwest::header::CONTENT_TYPE, binary::CONTENT_TYPE)
+            .body(packet.clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        let decoded =
+            binary::decode(&response, Direction::Response, binding.program.hidden).unwrap();
+        assert_eq!(decoded.sequence, 17);
+        let expected: larql_router_protocol::vindex3_ffn::Response =
+            serde_json::from_value(a.clone()).unwrap();
+        assert_eq!(
+            decoded.row.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            expected.row.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+        );
+    }
+    // A fresh preparation of the very same artifact invalidates old handles.
+    let LoadedArtifact::V3(reopened) = load_artifact(
+        container.path().to_str().unwrap(),
+        LoadVindexOptions {
+            ffn_only: true,
+            layer_range: Some((0, 1)),
+            ..Default::default()
+        },
+    )
+    .unwrap() else {
+        panic!("V3")
+    };
+    assert_ne!(reopened.ffn_wire.as_ref().unwrap().handle, opened.handle);
+    for mode in 0..6 {
+        let mut bad = packet.clone();
+        match mode {
+            0 => bad[4..20].copy_from_slice(&reopened.ffn_wire.as_ref().unwrap().handle),
+            1 => bad[28..32].copy_from_slice(&1u32.to_le_bytes()),
+            2 => {
+                bad.pop();
+            }
+            3 => bad.push(0),
+            4 => bad[32..36].copy_from_slice(&0u32.to_le_bytes()),
+            _ => bad[binary::HEADER_BYTES..binary::HEADER_BYTES + 4]
+                .copy_from_slice(&f32::NAN.to_bits().to_le_bytes()),
+        }
+        assert_eq!(
+            client
+                .post(format!("{}{}", urls[0], binary::PATH))
+                .header(reqwest::header::CONTENT_TYPE, binary::CONTENT_TYPE)
+                .body(bad)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let path = container.path().to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        use tungstenite::{client::IntoClientRequest, Message};
+        let opened: binary::Opened = reqwest::blocking::Client::new().post(format!("{}{}", urls[0], binary::OPEN_PATH)).json(&binding).send().unwrap().json().unwrap();
+        for fault in 0..7 {
+            let address = urls[0].strip_prefix("http://").unwrap();
+            let tcp = std::net::TcpStream::connect(address).unwrap();
+            tcp.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            let mut request = format!("ws://{address}{}", binary::STREAM_PATH).into_client_request().unwrap();
+            request.headers_mut().insert("Sec-WebSocket-Protocol", binary::STREAM_PROTOCOL.parse().unwrap());
+            let (mut socket, _) = tungstenite::client(request, tcp).unwrap();
+            socket.send(Message::Text(r#"{"profile":false}"#.into())).unwrap();
+            let mut frame = binary::encode(binary::Direction::Request, opened.handle, 1, 0, &vec![0.3;binding.program.hidden]).unwrap();
+            // A valid operation first proves the stream is admitted. Duplicate
+            // sequence, unlike stateless HTTP replay, is then a protocol error.
+            socket.send(Message::Binary(frame.clone().into())).unwrap();
+            assert!(matches!(socket.read().unwrap(), Message::Binary(_)));
+            frame[20..28].copy_from_slice(&2u64.to_le_bytes());
+            match fault {
+                0 => frame[4] ^= 1,
+                1 => frame[28..32].copy_from_slice(&1u32.to_le_bytes()),
+                2 => frame[20..28].copy_from_slice(&1u64.to_le_bytes()),
+                3 => frame[36..40].copy_from_slice(&f32::NAN.to_bits().to_le_bytes()),
+                4 => { frame.pop(); },
+                5 => frame.push(0),
+                6 => frame[32..36].copy_from_slice(&0u32.to_le_bytes()),
+                _ => unreachable!(),
+            }
+            socket.send(Message::Binary(frame.into())).unwrap();
+            assert!(!matches!(socket.read(), Ok(Message::Binary(_))), "stream accepted fault {fault}");
+        }
+        let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+        let stream_transport = HttpFfnShards::connect_stream(&urls, None).unwrap();
+        let stream_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), stream_transport).unwrap();
+        let mut stream_session = DenseFfnSession::new(runtime.plan(), &stream_ops, runtime.backend(), &row_continuation(runtime.plan())).unwrap();
+        let binary_transport = HttpFfnShards::connect_binary(&urls, None).unwrap();
+        let binary_ops = prepare_coordinator(&path, runtime.plan(), runtime.operands(), runtime.backend(), binary_transport).unwrap();
+        let mut binary_session = DenseFfnSession::new(runtime.plan(), &binary_ops, runtime.backend(), &row_continuation(runtime.plan())).unwrap();
+        let transport = HttpFfnShards::connect(&urls, None).unwrap();
+        let ops = prepare_coordinator(
+            &path,
+            runtime.plan(),
+            runtime.operands(),
+            runtime.backend(),
+            transport,
+        )
+        .unwrap();
+        let mut remote = DenseFfnSession::new(runtime.plan(), &ops, runtime.backend(), &row_continuation(runtime.plan())).unwrap();
+        let mut local = runtime.session(&row_continuation(runtime.plan())).unwrap();
+        let mut smoke = Vec::new();
+        for (position, id) in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11].into_iter().enumerate() {
+            use larql_inference::vindex3::dense_ffn::profile::Capture;
+            let capture = Capture::start().unwrap();
+            let expected = local.step(id).unwrap();
+            let local_rows = capture.finish();
+            assert_eq!(local_rows.len(), 1);
+            assert!(local_rows[0].provider_calls.is_empty());
+            let capture = Capture::start().unwrap();
+            let actual = remote.step(id).unwrap();
+            let rows = capture.finish();
+            assert_eq!(rows.len(), 1);
+            let row = &rows[0];
+            assert!(row.complete);
+            assert_eq!(row.position, position);
+            assert_eq!(row.total_ns, row.attention_ns + row.ffn_ns + row.reentry_ns + row.other_ns);
+            assert_eq!(row.provider_calls.len(), 2);
+            for (layer, call) in row.provider_calls.iter().enumerate() {
+                assert_eq!(call["layer"], layer);
+                assert_eq!(call["complete"], true);
+                assert!(call["request_bytes"].as_u64().unwrap() > 0);
+                assert!(call["response_bytes"].as_u64().unwrap() > 0);
+                let worker = &call["worker"];
+                assert!(worker["ffn_ns"].as_u64().unwrap() <= worker["execute_ns"].as_u64().unwrap());
+                assert!(worker["execute_ns"].as_u64().unwrap() <= worker["handler_ns"].as_u64().unwrap());
+            }
+            let capture = Capture::start().unwrap();
+            let binary_logits = binary_session.step(id).unwrap();
+            let binary_rows = capture.finish();
+            assert_eq!(binary_logits.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+            for call in &binary_rows[0].provider_calls {
+                assert_eq!(call["request_bytes"], binary::HEADER_BYTES + 4 * ops.hidden());
+                assert_eq!(call["response_bytes"], call["request_bytes"]);
+            }
+            let capture = Capture::start().unwrap();
+            let stream_logits = stream_session.step(id).unwrap();
+            let stream_rows = capture.finish();
+            assert_eq!(stream_logits.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+            for call in &stream_rows[0].provider_calls {
+                assert_eq!(call["request_bytes"], binary::HEADER_BYTES + 4 * ops.hidden());
+                assert_eq!(call["response_bytes"], call["request_bytes"]);
+                assert!(call["telemetry_bytes"].as_u64().unwrap() > 0);
+                assert!(call["websocket_overhead_bytes"].as_u64().unwrap() > 0);
+                assert!(call["worker"]["ffn_ns"].as_u64().unwrap() <= call["worker"]["handler_ns"].as_u64().unwrap());
+            }
+            smoke.push(serde_json::json!({"token_id": id, "local": local_rows[0], "remote": rows[0]}));
+            assert_eq!(
+                expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                actual.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+            );
+        }
+        // Optional diagnostic artifact, explicitly a tiny debug fixture, not a benchmark.
+        if let Some(path) = std::env::var_os("LARQL_V3_FFN_SMOKE_PROFILE") {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(path).unwrap();
+            writeln!(file, "{}", serde_json::json!({"schema": "larql.v3.ffn-smoke.v1", "benchmark": false, "layers": 2, "hidden": ops.hidden(), "profile": "debug synthetic HTTP loopback; no exclusivity or warmup claim"})).unwrap();
+            for row in smoke { writeln!(file, "{row}").unwrap(); }
+        }
+    })
+    .await
+    .unwrap();
+    for server in servers {
+        server.abort();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_history() {
+    use larql_inference::vindex3::{
+        routed_experts::{self, ExpertOutput, ExpertTransport, RoutedExpertSession},
+        LogitsSession,
+    };
+    use larql_router::vindex3_experts::HttpExpertShards;
+    use larql_router_protocol::vindex3_experts as wire;
+    use larql_vindex::format::vindex3::fixtures_routed::{miniature_routed, VOCAB};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Transport {
+        inner: Arc<HttpExpertShards>,
+        bindings: Vec<wire::Binding>,
+        fault: Arc<AtomicUsize>,
+    }
+    impl ExpertTransport for Transport {
+        fn bindings(&self) -> Vec<wire::Binding> {
+            self.bindings.clone()
+        }
+        fn forward(
+            &self,
+            shard: usize,
+            layer: usize,
+            ids: &[usize],
+            row: &[f32],
+        ) -> Result<Vec<ExpertOutput>, String> {
+            if layer == 1 && self.fault.load(Ordering::SeqCst) == 1 {
+                return Err("injected worker timeout".into());
+            }
+            let mut rows = self.inner.forward(shard, layer, ids, row)?;
+            if layer == 1 {
+                match self.fault.load(Ordering::SeqCst) {
+                    2 => {
+                        rows.pop();
+                    }
+                    3 => rows[0].expert = 99,
+                    4 => rows[0].row[0] = f32::NAN,
+                    5 => {
+                        rows[0].row.pop();
+                    }
+                    _ => {}
+                }
+            }
+            rows.reverse();
+            Ok(rows)
+        }
+    }
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        miniature_routed,
+        checkpoint.path(),
+        container.path(),
+        "routed-serve-fixture",
+    );
+    std::fs::write(
+        container.path().join("tokenizer.json"),
+        synthetic_tokenizer_json(VOCAB),
+    )
+    .unwrap();
+    for topology in [
+        vec![(0, 2, 0, 4)],
+        vec![(0, 2, 0, 2), (0, 2, 2, 4)],
+        vec![(0, 1, 0, 4), (1, 2, 0, 1), (1, 2, 1, 4)],
+    ] {
+        let mut servers = Vec::new();
+        let mut urls = Vec::new();
+        for (start, end, expert_start, expert_end) in topology {
+            let LoadedArtifact::V3(model) = load_artifact(
+                container.path().to_str().unwrap(),
+                LoadVindexOptions {
+                    ffn_only: true,
+                    layer_range: Some((start, end)),
+                    expert_filter: Some((expert_start, expert_end)),
+                    ..Default::default()
+                },
+            )
+            .unwrap() else {
+                panic!("V3 worker")
+            };
+            assert!(model.runtime.operands().routed_experts().is_some());
+            assert!(!model.runtime.operands().has_output());
+            let state = v3_state(container.path());
+            state.model_set.write().unwrap().v3_models = vec![Arc::new(*model)];
+            let app = larql_server::routes::single_model_router(state);
+            assert!(!common::post_json(
+                app.clone(),
+                "/v1/completions",
+                serde_json::json!({"prompt":PROMPT,"max_tokens":1})
+            )
+            .await
+            .status()
+            .is_success());
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            urls.push(format!("http://{}", listener.local_addr().unwrap()));
+            servers.push(tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap()
+            }));
+        }
+        let path = container.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let runtime = Vindex3Runtime::open(&path, COMPONENT, ProductionBackend::new()).unwrap();
+            let inner = Arc::new(HttpExpertShards::connect(&urls, None).unwrap());
+            let bindings = inner.bindings();
+            let fault = Arc::new(AtomicUsize::new(0));
+            let make = |bindings| Transport {
+                inner: inner.clone(),
+                bindings,
+                fault: fault.clone(),
+            };
+            // Each mutated field must independently trip admission before local payload reads.
+            for mutation in 0..7 {
+                let mut bad = bindings.clone();
+                let want = match mutation {
+                    0 => {
+                        bad.clear();
+                        "incomplete"
+                    }
+                    1 => {
+                        bad.push(bad[0].clone());
+                        "overlapping"
+                    }
+                    2 => {
+                        bad[0].program.artifact = "0".repeat(64);
+                        "artifact"
+                    }
+                    3 => {
+                        bad[0].program.lowering = "cpu-production/v999".into();
+                        "provider"
+                    }
+                    4 => {
+                        bad[0].regions.push(' ');
+                        "region"
+                    }
+                    5 => {
+                        bad[0].program.hidden += 1;
+                        "dimensions"
+                    }
+                    _ => {
+                        bad[0].operands[0].representation = "different".into();
+                        "representation"
+                    }
+                };
+                let before = runtime.operands().store().bytes_read();
+                let error = match routed_experts::prepare_coordinator(
+                    &path,
+                    runtime.plan(),
+                    runtime.operands(),
+                    runtime.backend(),
+                    make(bad),
+                ) {
+                    Ok(_) => panic!("accepted mutation {mutation}"),
+                    Err(e) => e.to_string(),
+                };
+                assert!(error.contains(want), "{mutation}: {error}");
+                assert_eq!(runtime.operands().store().bytes_read(), before);
+            }
+            let ops = routed_experts::prepare_coordinator(
+                &path,
+                runtime.plan(),
+                runtime.operands(),
+                runtime.backend(),
+                make(bindings.clone()),
+            )
+            .unwrap();
+            assert_eq!(ops.residency_census().ffn.total(), 0);
+            let mut remote_a = RoutedExpertSession::new(
+                runtime.plan(),
+                &ops,
+                runtime.backend(),
+                &row_continuation(runtime.plan()),
+            )
+            .unwrap();
+            let mut remote_b = RoutedExpertSession::new(
+                runtime.plan(),
+                &ops,
+                runtime.backend(),
+                &row_continuation(runtime.plan()),
+            )
+            .unwrap();
+            let mut local_a = runtime.session(&row_continuation(runtime.plan())).unwrap();
+            let mut local_b = runtime.session(&row_continuation(runtime.plan())).unwrap();
+            let bits = |row: Vec<f32>| row.into_iter().map(f32::to_bits).collect::<Vec<_>>();
+            for id in [3, 17, 28, 0, 11, 3, 17, 28, 0, 11] {
+                let capture =
+                    larql_inference::vindex3::dense_ffn::profile::Capture::start().unwrap();
+                let profiled = remote_a.step(id).unwrap();
+                let trace = capture.finish();
+                assert_eq!(bits(profiled), bits(local_a.step(id).unwrap()));
+                assert_eq!(trace.len(), 1);
+                assert!(trace[0].complete);
+                let calls = &trace[0].provider_calls;
+                assert_eq!(
+                    calls.iter().filter(|c| c["kind"] == "routed_ffn").count(),
+                    2
+                );
+                assert_eq!(
+                    calls
+                        .iter()
+                        .filter(|c| c["kind"] == "expert_fanout")
+                        .count(),
+                    2
+                );
+                for shard in calls.iter().filter(|c| c["kind"] == "expert_shard") {
+                    assert_eq!(shard["complete"], true);
+                    let transport = &shard["transport"][0];
+                    assert_eq!(transport["worker_profile_complete"], true);
+                    assert_eq!(transport["complete"], true);
+                    let count = shard["selected_count"].as_u64().unwrap();
+                    assert_eq!(transport["request_bytes"], 40 + count * 4 + 32 * 4);
+                    assert_eq!(transport["response_bytes"], 40 + count * (4 + 32 * 4));
+                    assert!(
+                        transport["worker"]["experts_ns"].as_u64().unwrap()
+                            <= transport["worker"]["execute_ns"].as_u64().unwrap()
+                    );
+                    assert!(
+                        shard["dispatch_finish_ns"].as_u64().unwrap()
+                            >= shard["dispatch_start_ns"].as_u64().unwrap()
+                    );
+                }
+                assert_eq!(
+                    bits(remote_b.step((id + 1) % VOCAB as u32).unwrap()),
+                    bits(local_b.step((id + 1) % VOCAB as u32).unwrap())
+                );
+            }
+            for mode in 1..=5 {
+                let mut failed = RoutedExpertSession::new(
+                    runtime.plan(),
+                    &ops,
+                    runtime.backend(),
+                    &row_continuation(runtime.plan()),
+                )
+                .unwrap();
+                assert_eq!(
+                    bits(failed.step(3).unwrap()),
+                    bits(
+                        runtime
+                            .session(&row_continuation(runtime.plan()))
+                            .unwrap()
+                            .step(3)
+                            .unwrap()
+                    )
+                );
+                fault.store(mode, Ordering::SeqCst);
+                assert!(failed.step(17).is_err());
+                assert_eq!(failed.position(), 1);
+                fault.store(0, Ordering::SeqCst);
+                assert!(failed.step(17).unwrap_err().to_string().contains("invalid"));
+                let mut recovered = RoutedExpertSession::new(
+                    runtime.plan(),
+                    &ops,
+                    runtime.backend(),
+                    &row_continuation(runtime.plan()),
+                )
+                .unwrap();
+                let mut local = runtime.session(&row_continuation(runtime.plan())).unwrap();
+                for id in [3, 17] {
+                    assert_eq!(
+                        bits(recovered.step(id).unwrap()),
+                        bits(local.step(id).unwrap())
+                    );
+                }
+            }
+            let client = reqwest::blocking::Client::new();
+            let b = &bindings[0];
+            let open = format!("{}{}", urls[0], wire::OPEN_PATH);
+            let opened: wire::Opened = client.post(&open).json(b).send().unwrap().json().unwrap();
+            let mut bad = b.clone();
+            bad.regions.push(' ');
+            assert_eq!(
+                client.post(&open).json(&bad).send().unwrap().status(),
+                StatusCode::BAD_REQUEST
+            );
+            let good = wire::encode_request(
+                opened.handle,
+                1,
+                b.program.start,
+                &[b.expert_start],
+                &vec![0.1; b.program.hidden],
+            )
+            .unwrap();
+            let post = |body: Vec<u8>| {
+                client
+                    .post(format!("{}{}", urls[0], wire::BINARY_PATH))
+                    .header(reqwest::header::CONTENT_TYPE, wire::CONTENT_TYPE)
+                    .body(body)
+                    .send()
+                    .unwrap()
+            };
+            let first = post(good.clone())
+                .error_for_status()
+                .unwrap()
+                .bytes()
+                .unwrap();
+            let profiled = client
+                .post(format!("{}{}", urls[0], wire::BINARY_PATH))
+                .header(reqwest::header::CONTENT_TYPE, wire::CONTENT_TYPE)
+                .header(wire::PROFILE_HEADER, "1")
+                .body(good.clone())
+                .send()
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+            assert!(profiled.headers().contains_key(wire::PROFILE_HEADER));
+            assert_eq!(first, profiled.bytes().unwrap());
+            assert_eq!(
+                first,
+                post(good.clone())
+                    .error_for_status()
+                    .unwrap()
+                    .bytes()
+                    .unwrap()
+            );
+            for mutation in 0..6 {
+                let mut bad = good.clone();
+                match mutation {
+                    0 => bad[4] ^= 1,
+                    1 => bad[28..32].copy_from_slice(&(b.program.end as u32).to_le_bytes()),
+                    2 => bad[40..44].copy_from_slice(&(b.expert_end as u32).to_le_bytes()),
+                    3 => {
+                        bad.pop();
+                    }
+                    4 => bad.push(0),
+                    _ => bad[44..48].copy_from_slice(&f32::NAN.to_bits().to_le_bytes()),
+                }
+                assert_eq!(
+                    post(bad).status(),
+                    StatusCode::BAD_REQUEST,
+                    "worker mutation {mutation}"
+                );
+            }
+        })
+        .await
+        .unwrap();
+        for server in servers {
+            server.abort();
+        }
+    }
 }

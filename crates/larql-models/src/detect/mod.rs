@@ -19,6 +19,7 @@ use crate::architectures::gemma2::Gemma2Arch;
 use crate::architectures::gemma3::Gemma3Arch;
 use crate::architectures::gemma4::Gemma4Arch;
 use crate::architectures::generic::GenericArch;
+use crate::architectures::glm5::GlmMoeDsaArch;
 use crate::architectures::glm5_next::Glm5NextArch;
 use crate::architectures::gpt2::Gpt2Arch;
 use crate::architectures::gpt_oss::GptOssArch;
@@ -202,6 +203,10 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         // of any future bare `glm` prefix so a GLM-4 config cannot capture
         // it.
         t if t.starts_with("glm5_next") => Box::new(Glm5NextArch::from_config(model_config)),
+        // GLM-5.2 (MoE + MLA, same model.* naming as DeepSeek-V3, plus a DSA
+        // sparse-attention indexer represented in config only — see
+        // `architectures/glm5/mod.rs` for scope).
+        "glm_moe_dsa" => Box::new(GlmMoeDsaArch::from_config(model_config)),
         "kimi_k3" => Box::new(KimiK3Arch::from_config(model_config)),
         "kimi_linear" => Box::new(KimiLinearArch::from_config(model_config)),
         // StarCoder 2

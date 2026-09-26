@@ -60,7 +60,11 @@ pub fn parse_layer_range(s: &str) -> Result<(usize, usize), BoxError> {
     if end < start {
         return Err(format!("--layers: end ({end}) must be >= start ({start})").into());
     }
-    Ok((start, end + 1))
+    Ok((
+        start,
+        end.checked_add(1)
+            .ok_or("--layers: end overflows the exclusive bound")?,
+    ))
 }
 
 pub fn normalize_serve_alias(args: Vec<String>) -> Vec<String> {
@@ -85,6 +89,10 @@ pub struct Cli {
     /// Path to a .vindex directory (or hf:// path).
     #[arg(value_name = "VINDEX_PATH")]
     pub vindex_path: Option<String>,
+
+    /// VINDEX3 execution backend (Metal requires the vindex3-metal build feature).
+    #[arg(long, value_enum, default_value = "cpu")]
+    pub v3_backend: crate::vindex3::V3Backend,
 
     /// Serve all .vindex directories in this folder.
     #[arg(long)]

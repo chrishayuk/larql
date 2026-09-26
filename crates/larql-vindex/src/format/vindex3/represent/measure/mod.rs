@@ -37,6 +37,7 @@
 //! 48 B model to run.
 
 pub mod outcome;
+pub mod plan;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod teacher_forced;
 

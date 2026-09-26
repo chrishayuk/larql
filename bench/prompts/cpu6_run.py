@@ -43,7 +43,7 @@ def clean_env(bank_dir):
 
 
 def run(cmd, env):
-    subprocess.run([sys.executable, os.path.join(BANK1, "run_bank.py"), *cmd],
+    subprocess.run([sys.executable, os.path.join(BANK1, "run_bank_legacy.py"), *cmd],
                    check=True, env=env)
 
 

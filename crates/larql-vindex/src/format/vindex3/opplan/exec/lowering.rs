@@ -87,31 +87,10 @@ impl LoweringIdentity {
     /// refusal: an empty or blank family, one that would not survive a
     /// file name or a flag (anything outside `[A-Za-z0-9_-]`), or a
     /// revision of zero, which is the "unstated" value and never a real
-    /// one.
+    /// one. The rule is shared with the continuation plane
+    /// (`provider_identity`).
     pub fn validate(&self) -> Result<(), VindexError> {
-        if self.family.trim().is_empty() {
-            return Err(VindexError::Parse(
-                "lowering identity: the family is empty".into(),
-            ));
-        }
-        if let Some(bad) = self
-            .family
-            .chars()
-            .find(|c| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '-'))
-        {
-            return Err(VindexError::Parse(format!(
-                "lowering identity: family `{}` contains `{bad}`; only ASCII letters, digits, \
-                 `_` and `-` name a provider",
-                self.family
-            )));
-        }
-        if self.revision == 0 {
-            return Err(VindexError::Parse(format!(
-                "lowering identity: `{}` declares revision 0, which means unstated",
-                self.family
-            )));
-        }
-        Ok(())
+        super::provider_identity::validate("lowering", &self.family, self.revision)
     }
 }
 

@@ -1,5 +1,7 @@
 # LARQL positioning vs ollama, vLLM, llama.cpp
 
+**Class: RECORD.** This dated positioning and aim-validation record keeps its original claims and results. Start with [current architecture](architecture-stack.md) and [VINDEX3 status](vindex3/status.md) for the present system.
+
 **Date**: 2026-05-09
 **Audience**: anyone framing what LARQL *is* and *is not* relative to the dominant inference engines.
 **Companion docs**:

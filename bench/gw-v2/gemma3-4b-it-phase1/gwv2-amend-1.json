@@ -1,0 +1,80 @@
+{
+  "amendment_sha256": "sha256:bb5ebb48e52768e50ff5a26954bf8873489c1ab01d0fec1272e2f52caa3b2d5b",
+  "date": "2026-09-21",
+  "donor_map": {
+    "identity": "sha256:3ed66fc2432fe2d967ab58243faea729d0dbd0ed19f211ae6b58d17d7afec45c",
+    "path": "gwv2-donor-map.json",
+    "sha256": "sha256:f0c868254e6b7a798d383db803f4695e7c7de010af122b14ff35093205f29d60"
+  },
+  "name": "GW-V2-AMEND-1",
+  "original_protocol": {
+    "identity": "sha256:830c2ceb97fce4f2d03e74e207d04e54257cd5b38e830a93047a86b6bd4fd006",
+    "path": "gwv2-protocol.json",
+    "sha256": "sha256:da84a97940037221f2f260d58905154be138fe28a0f784c317e8a4f52f8ab360"
+  },
+  "permutation": {
+    "description": "partially shuffled sham; not complete subject destruction",
+    "donor": "cyclic successor in sorted order",
+    "fixed": [
+      "prompt family",
+      "token ordinal"
+    ],
+    "order": "SHA256 of UTF-8 compact JSON [27022031,relation,token_count,subject_id], ensure_ascii=false, separators comma/colon; tie by subject_id",
+    "reuse": "identical mapping across prompt families, depths and ranks",
+    "seed": 27022031,
+    "shuffled_fit_rows": 522,
+    "shuffled_subjects": 42,
+    "singleton_treatment": "unchanged, explicitly unshuffled",
+    "singletons": [
+      "KNA",
+      "STP"
+    ],
+    "strata": [
+      "relation",
+      "subject_token_count"
+    ],
+    "total_fit_rows": 603,
+    "total_train_subjects": 44
+  },
+  "population": {
+    "identity": "sha256:d73e0783adc0c26777ed9f0e4b880133814c39d0283cd7d816cd72cd1d37c23c",
+    "path": "population-manifest.json",
+    "sha256": "sha256:92d9611ed22719c3a00cf72b3e545440c7e17ad3b2bc42d2129b6860503ee94a"
+  },
+  "pre_seal_v2_activations_examined": false,
+  "pre_seal_v2_fits_or_replays": false,
+  "pre_seal_v2_model_prompts_executed": 0,
+  "reporting": {
+    "complete_population": "All 666 registered executions; train, validation and test reported separately; all 35 sham cells.",
+    "diagnostic_only": true,
+    "frontier_role": null,
+    "heldout_membership": "No held-out row has a training donor assignment. Do not invent a shuffled-only held-out subset.",
+    "matched_controls": "Retain the original bound control for each included recipient; never rematch after filtering.",
+    "selection_role": null,
+    "shuffled_rows_only": "Train recipient rows whose sealed donor subject differs; 42 countries, 378 executions, 522 token positions. Report all 35 sham cells separately.",
+    "targets": "Causal effects and reconstruction diagnostics use the natural recipient reference, not shuffled donor correctness.",
+    "threshold": null,
+    "train_prediction": "Leave recipient subject out. For sham fits also omit fit rows whose sealed donor is that subject; never rewire the sealed donor map."
+  },
+  "schema": "larql.gwv2.amendment.v1",
+  "scope": "Only resolve fit-sham token correspondence discovered during outcome-free execution preflight on 21 September 2026, and freeze its diagnostic reporting.",
+  "seal_order": [
+    "donor map",
+    "amendment",
+    "capture",
+    "fit all primary and sham cells",
+    "replay",
+    "adjudication"
+  ],
+  "status": "frozen_before_capture_fit_replay",
+  "unchanged": [
+    "original protocol bytes",
+    "population",
+    "hypothesis",
+    "primary 35-cell grid",
+    "predictor family",
+    "primary analysis",
+    "thresholds",
+    "frontier criterion"
+  ]
+}

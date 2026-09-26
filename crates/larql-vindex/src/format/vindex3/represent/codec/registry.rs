@@ -44,7 +44,14 @@ impl CodecRegistry {
     /// The codecs this build ships.
     pub fn builtin() -> &'static CodecRegistry {
         static BUILTIN: OnceLock<CodecRegistry> = OnceLock::new();
-        BUILTIN.get_or_init(|| {
+        BUILTIN.get_or_init(Self::shipped)
+    }
+
+    /// A fresh registry holding exactly what [`Self::builtin`] holds, for
+    /// a caller that registers more codecs on top — a plugin host
+    /// (`format::vindex3::plugin`). Never a default anything consults.
+    pub fn shipped() -> Self {
+        {
             Self::new()
                 .register(Box::new(float::BF16))
                 .and_then(|r| r.register(Box::new(float::F16)))
@@ -65,7 +72,7 @@ impl CodecRegistry {
                 .and_then(|r| r.register(Box::new(kquant::Q5_K)))
                 .and_then(|r| r.register(Box::new(kquant::Q3_K)))
                 .expect("the built-in codecs carry distinct labels and families")
-        })
+        }
     }
 
     pub fn codecs(&self) -> impl Iterator<Item = &dyn RepresentationCodec> {

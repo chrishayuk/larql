@@ -1,0 +1,94 @@
+{
+  "schema": "larql.gwts1.programme-dependencies.v1",
+  "status": "frozen_pre_population_capture",
+  "frozen_date": "2026-09-21",
+  "dependency_sha256": "sha256:43d8128d1d96ced883ed3ae8f6b3334ea03ff0bd91686a8e09970a75785a2bb4",
+  "gwts1_protocol_sha256": "sha256:d873d238d99406dc8a549681aa746e750a9d4b802e24ff21a8eb26d152a97d55",
+  "human_spec": {
+    "path": "../../docs/gw-ts-1-dependencies.md",
+    "sha256": "sha256:56ec231662588822ed7370d8d95ec7f7b81139bd4a6ac2a598b99838b57fdb76"
+  },
+  "observational_branch": [
+    [
+      "head_obs_1",
+      "attr_1d"
+    ],
+    [
+      "attr_1d",
+      "run_experiment_subjects"
+    ],
+    [
+      "run_experiment_subjects",
+      "population_transition_support_capture"
+    ],
+    [
+      "population_transition_support_capture",
+      "gw_ts_1_recurrence_and_prediction"
+    ]
+  ],
+  "causal_branch": [
+    [
+      "head_obs_1",
+      "attr_1d"
+    ],
+    [
+      "attr_1d",
+      "attr_1c"
+    ],
+    [
+      "intervene_1",
+      "attr_1c"
+    ]
+  ],
+  "explicit_non_dependencies": [
+    [
+      "attr_1c",
+      "population_transition_support_capture"
+    ],
+    [
+      "attr_1c",
+      "gw_ts_1_recurrence_and_prediction"
+    ],
+    [
+      "intervene_1",
+      "gw_ts_1_recurrence_and_prediction"
+    ]
+  ],
+  "forbidden_gwts1_inputs": [
+    "intervention outcome",
+    "causal label",
+    "intervention-derived event rank",
+    "ATTR-1C necessity result",
+    "ATTR-1C sufficiency result"
+  ],
+  "coordinate_join": {
+    "authority": "ATTR-1D and the frozen GW-TS-1 observational extraction rule",
+    "attr_1c_may": "append causal evidence under an existing coordinate",
+    "attr_1c_may_not": [
+      "add observational events",
+      "remove observational events",
+      "merge observational events",
+      "reorder observational events",
+      "relabel observational events",
+      "update path prototypes",
+      "update thresholds",
+      "update alignment",
+      "update candidate vocabularies"
+    ],
+    "gwts1_may_not": "select ATTR-1C primary intervention coordinates from recurrence or prediction outcomes"
+  },
+  "executability_promotion": {
+    "requires_independent_positive_verdicts": [
+      "gw_ts_1_recurrence_and_prediction",
+      "attr_1c_causal_consequence"
+    ],
+    "requires_new_freeze": [
+      "skip/route/prefetch/substitute operation",
+      "correctness floor",
+      "calibration rule",
+      "measured-work gate"
+    ],
+    "single_positive_is_sufficient": false
+  },
+  "amendment_rule": "orchestration changes receive a new dependency identity and explicit amendment; they do not rewrite the bound GW-TS-1 protocol"
+}

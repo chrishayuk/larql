@@ -11,16 +11,13 @@
 //! | [`DecodeBackend`]             | KV-cached decode + prefill + MoE hook (Metal-shaped) |
 //! | (umbrella) `ComputeBackend`   | `name`, `device_info`, [`Capability`] probe   |
 //!
-//! The engine-facing intent surface (`KvDispatch`) is a *sibling* of
-//! `ComputeBackend`, not a sub-trait. It lives in `larql-inference`
-//! (sibling to `FfnBackend`) so its CPU and Metal impls can call into
-//! the inference-side forward-pass functions without inducing a dep
-//! cycle on `larql-compute`. New [`Capability`] flags
-//! (`FusedAttentionStep`, `WindowedAttentionStep`, `NativeKvCodec`,
-//! `PipelinedBoundaryUpload`, `FusedResidualNorm`, `KvHandleNative`)
-//! stay here — they describe what the *substrate* supports, regardless
-//! of where the dispatch trait lives. See
-//! `crates/larql-inference/docs/specs/compute-backend-redesign.md` §10.2.
+//! The engine-facing intent surface (`KvDispatch`) is a sibling of
+//! `ComputeBackend`, not a sub-trait. It lives in this crate's
+//! `kv_dispatch` module alongside the CPU forward substrate (ADR-0022).
+//! `AsyncComputeBackend` is the deferred-dispatch contract; Metal implements
+//! both in `larql-compute-metal`. Inference composes the traits and retains
+//! compatibility re-exports. Capability flags describe numerical support;
+//! they do not move session or routing ownership into the substrate.
 //!
 //! Most callers stay typed against `&dyn ComputeBackend`; the
 //! sub-trait split is mainly an implementation-side organising
@@ -40,7 +37,7 @@ pub use capability::Capability;
 pub use decode::{DecodeBackend, DecodeHeadPlan, DecodeStateDump, ProfileTimings, StateDumpMask};
 pub use factory::{backend_from_spec, BackendCtor, BackendKind, BackendSelectError};
 pub use helpers::{dot_proj_gpu, matmul_gpu};
-pub use matmul::{MatMul, MatMulOp};
+pub use matmul::{MatMul, MatMulOp, SubmissionClock};
 pub use quant_matvec::QuantMatVec;
 
 /// Hardware compute backend — the umbrella trait every caller binds.

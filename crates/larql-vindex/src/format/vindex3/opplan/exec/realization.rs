@@ -50,6 +50,17 @@ pub struct RepresentationFacts {
     /// f32-space fact with no stored bytes, so no direct realization can
     /// honour it; only decode can.
     pub overlaid: bool,
+    /// Whether an NVFP4 request for this operand binds at source
+    /// precision — read from `OperandStore::nvfp4_request_binds_at_source`,
+    /// the same fact the loader binds by. A backend that pins NVFP4 must
+    /// honour it or its pin and the resident bytes disagree.
+    pub nvfp4_at_source: bool,
+    /// Whether an f16 request for this operand binds its compiled NVFP4
+    /// image as stored — read from
+    /// `OperandStore::f16_request_binds_compiled_nvfp4`, the same fact the
+    /// loader binds by. A backend that pins f16 must honour it for the
+    /// same reason.
+    pub nvfp4_compiled: bool,
 }
 
 /// A registered codec's declarations, copied out so a backend never holds
@@ -80,12 +91,28 @@ impl RepresentationFacts {
             label: label.to_string(),
             registered: registry.by_label(label).map(RegisteredFacts::of),
             overlaid: false,
+            nvfp4_at_source: false,
+            nvfp4_compiled: false,
         }
     }
 
     /// The same facts, with an overlay edit standing on the operand.
     pub fn overlaid(mut self) -> Self {
         self.overlaid = true;
+        self
+    }
+
+    /// The same facts, with the store's answer to whether an NVFP4
+    /// request binds this operand at source precision.
+    pub fn with_nvfp4_at_source(mut self, at_source: bool) -> Self {
+        self.nvfp4_at_source = at_source;
+        self
+    }
+
+    /// The same facts, with the store's answer to whether an f16 request
+    /// binds this operand's compiled NVFP4 image as stored.
+    pub fn with_nvfp4_compiled(mut self, compiled: bool) -> Self {
+        self.nvfp4_compiled = compiled;
         self
     }
 
@@ -392,6 +419,14 @@ pub enum SelectionReason {
     ReferenceOracle,
     /// An overlay edit stands on the operand; only decode can honour it.
     OverlaidEdit,
+    /// The class table asked for NVFP4, and the container holds this
+    /// operand at source precision; it binds at f16 instead, as the loader
+    /// does, and manufactures nothing.
+    SourcePrecisionHeld,
+    /// The class table asked for f16, and the container stores this
+    /// operand compiled to NVFP4 with no source bytes; it binds as stored,
+    /// as the loader does, and manufactures nothing.
+    CompiledPrecisionHeld,
 }
 
 impl SelectionReason {
@@ -408,6 +443,12 @@ impl SelectionReason {
             Self::EmbeddingGather => "table decoded whole, gathered per token",
             Self::ReferenceOracle => "reference oracle",
             Self::OverlaidEdit => "an overlay edit stands on the operand; only decode honours it",
+            Self::SourcePrecisionHeld => {
+                "the container holds it at source precision; bound at f16, not the class format"
+            }
+            Self::CompiledPrecisionHeld => {
+                "the container stores it compiled to NVFP4 with no source; bound as stored, not the class format"
+            }
         }
     }
 }

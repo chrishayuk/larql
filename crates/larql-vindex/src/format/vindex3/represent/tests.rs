@@ -115,6 +115,7 @@ fn compiled_bytes_equal_what_the_loader_would_have_quantised() {
                 packed: want_packed,
                 scales: want_scales,
                 tensor_scale: want_scale,
+                ..
             } = &loaded
             else {
                 panic!("asked for NVFP4, got another format");
@@ -694,11 +695,13 @@ fn stored_and_transient_bind_identical_weights() {
             packed: sp,
             scales: ss,
             tensor_scale: st,
+            ..
         },
         LoadedWeight::Nvfp4 {
             packed: tp,
             scales: ts,
             tensor_scale: tt,
+            ..
         },
     ) = (&stored, &transient)
     else {
@@ -1079,6 +1082,43 @@ fn a_protected_depth_range_is_carried_not_compiled() {
     );
 }
 
+#[test]
+fn a_protection_that_decides_nothing_is_refused_before_anything_is_written() {
+    // `v-proj` protects no tensor: before the map check this compiled
+    // every v_proj and recorded a map claiming they were held back.
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+
+    let typo = tmp.path().join("typo.vindex3");
+    let mut spec = RepresentSpec::nvfp4();
+    spec.protect = policy::Protections::default().projection("v-proj");
+    let err = compile_representation(&src, &typo, &spec)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("`v-proj -> source` matches no eligible tensor"),
+        "{err}"
+    );
+    assert!(
+        !typo.exists(),
+        "a refused map must not leave an output behind"
+    );
+
+    // A protection wholly inside an earlier one is dead, and says which.
+    let dead = tmp.path().join("dead.vindex3");
+    spec.protect = policy::Protections::default()
+        .projection("v_proj")
+        .projection_in("v_proj", 0, 0);
+    let err = compile_representation(&src, &dead, &spec)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("decided first by exception(s) [0]"), "{err}");
+    assert!(!dead.exists());
+}
+
 /// The precision map is authority, and both arms must run the SAME
 /// program.
 ///
@@ -1155,11 +1195,13 @@ fn a_mixed_precision_map_runs_identically_on_both_arms() {
                     packed: p1,
                     scales: s1,
                     tensor_scale: t1,
+                    ..
                 },
                 LoadedWeight::Nvfp4 {
                     packed: p2,
                     scales: s2,
                     tensor_scale: t2,
+                    ..
                 },
             ) => {
                 assert!(!t.name.contains("q_proj"), "{} should be protected", t.name);
@@ -1517,4 +1559,544 @@ fn an_uncompilable_kquant_names_the_ones_that_are() {
     for name in ["Q8_0", "Q6_K", "Q4_K"] {
         assert!(err.contains(name), "the refusal must list {name}: {err}");
     }
+}
+
+// NVFP4-Q8-1 at the loader: the Q8 arm binds the SAME stored pack for a
+// Q8 activation, keeps every source-precision binding the f32 arm makes,
+// and refuses to quantise at load under its name.
+
+fn load_as(
+    dir: &std::path::Path,
+    source: RepresentationSource,
+    op: &OperandRef,
+    format: WeightFormat,
+) -> Result<(LoadedWeight, OperandStore), VindexError> {
+    let inspection = inspect_container(dir, false).unwrap();
+    let store = OperandStore::open_for(dir, &inspection, Some(DTYPE_NVFP4), source).unwrap();
+    let loaded = load_weight((&store).into(), op, format)?;
+    Ok((loaded, store))
+}
+
+fn operand_of(src: &std::path::Path) -> OperandRef {
+    let (object, tensor, dtype, shape) = a_compiled_tensor(src);
+    OperandRef {
+        object,
+        tensor,
+        dtype,
+        shape,
+    }
+}
+
+#[test]
+fn the_q8_arm_binds_the_stored_pack_for_a_q8_activation() {
+    use crate::format::vindex3::opplan::exec::backend::{Nvfp4Activation, WeightSlice};
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, _) = compiled_pair(&tmp);
+    let op = operand_of(&src);
+    let (f32_arm, _) =
+        load_as(&out, RepresentationSource::Stored, &op, WeightFormat::Nvfp4).unwrap();
+    let (q8_arm, store) = load_as(
+        &out,
+        RepresentationSource::Stored,
+        &op,
+        WeightFormat::Nvfp4Q8,
+    )
+    .unwrap();
+    assert_eq!(f32_arm.format(), WeightFormat::Nvfp4);
+    assert_eq!(q8_arm.format(), WeightFormat::Nvfp4Q8);
+    let (
+        LoadedWeight::Nvfp4 {
+            packed: ap,
+            scales: a_s,
+            tensor_scale: at,
+            ..
+        },
+        LoadedWeight::Nvfp4 {
+            packed: bp,
+            scales: bs,
+            tensor_scale: bt,
+            activation,
+        },
+    ) = (&f32_arm, &q8_arm)
+    else {
+        panic!("both arms bind the NVFP4 pack");
+    };
+    assert_eq!(
+        &ap.as_slice()[..ap.logical_len()],
+        &bp.as_slice()[..bp.logical_len()]
+    );
+    assert_eq!(
+        &a_s.as_slice()[..a_s.logical_len()],
+        &bs.as_slice()[..bs.logical_len()]
+    );
+    assert_eq!(at.to_bits(), bt.to_bits());
+    assert_eq!(*activation, Nvfp4Activation::Q8);
+    let WeightSlice::Nvfp4 {
+        activation: sliced, ..
+    } = q8_arm.slice()
+    else {
+        panic!("an NVFP4 binding slices as NVFP4");
+    };
+    assert_eq!(sliced, Nvfp4Activation::Q8);
+    assert_eq!(store.runtime_quantised(), 0, "the Q8 arm quantised at load");
+}
+
+#[test]
+fn the_q8_arm_keeps_a_source_precision_binding() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, _, _) = compiled_pair(&tmp);
+    let op = operand_of(&src);
+    let (loaded, store) = load_as(
+        &src,
+        RepresentationSource::Stored,
+        &op,
+        WeightFormat::Nvfp4Q8,
+    )
+    .unwrap();
+    assert!(matches!(loaded, LoadedWeight::F16(_)));
+    assert_eq!(store.runtime_quantised(), 0);
+    assert_eq!(store.bound_at_stored_precision(), 1);
+}
+
+#[test]
+fn the_q8_arm_refuses_to_quantise_at_load() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, _) = compiled_pair(&tmp);
+    let op = operand_of(&src);
+    let err = match load_as(
+        &out,
+        RepresentationSource::Transient,
+        &op,
+        WeightFormat::Nvfp4Q8,
+    ) {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("a transient request would quantise at load and must be refused"),
+    };
+    assert!(
+        err.contains("NVFP4 x Q8") && err.contains("quantised at load"),
+        "{err}"
+    );
+}
+
+/// Compile the dense fixture into a registered encoder's pack. The double
+/// stores raw little-endian f32, so the fixture's F32 tensors must come
+/// back as exactly their source bytes.
+fn encoder_pair(
+    tmp: &tempfile::TempDir,
+) -> (std::path::PathBuf, std::path::PathBuf, RepresentReport) {
+    use codec::encoder::tests::RawF32Codec;
+    use codec::RepresentationCodec;
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("encoder.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(RawF32Codec))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: RawF32Codec.encoding_label().to_string(),
+        ..RepresentSpec::nvfp4()
+    };
+    let report = compile_representation_with(&src, &out, &spec, &encoders)
+        .expect("a registered encoder is a compiler");
+    (src, out, report)
+}
+
+#[test]
+fn a_registered_encoder_compiles_a_pack_of_its_own_bytes() {
+    use codec::encoder::tests::RawF32Codec;
+    use codec::RepresentationCodec;
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, report) = encoder_pair(&tmp);
+    assert!(!report.compiled_objects.is_empty());
+
+    let label = RawF32Codec.encoding_label();
+    let src_index = index_of(&src);
+    let out_index = index_of(&out);
+    let mut checked = 0usize;
+    for entry in out_index.representations.values() {
+        if entry.encoding != label {
+            continue;
+        }
+        assert_eq!(entry.codec.as_ref(), Some(&RawF32Codec.identity()));
+        assert_eq!(
+            entry.encoder.as_ref(),
+            Some(&EncoderRecipe::codec(&RawF32Codec.identity()))
+        );
+        let source_entry = &src_index.representations[entry.compiled_from.as_ref().unwrap()];
+        let read = |dir: &std::path::Path, segment: &str| {
+            let (header, start) = read_segment_header(&dir.join(segment)).unwrap();
+            let bytes = std::fs::read(dir.join(segment)).unwrap();
+            header
+                .tensors
+                .into_iter()
+                .map(|t| {
+                    let at = (start + t.offset) as usize;
+                    (t.name, (t.dtype, bytes[at..at + t.len as usize].to_vec()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let packed = read(&out, &entry.segment);
+        let source = read(&src, &source_entry.segment);
+        for (name, (dtype, bytes)) in &packed {
+            if dtype == label {
+                assert_eq!(source[name].0, "F32", "{name}");
+                assert_eq!(
+                    bytes, &source[name].1,
+                    "{name}: raw f32 is the source bytes"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(
+        checked > 0,
+        "no tensor was compiled into the encoder's pack"
+    );
+}
+
+#[test]
+fn a_registered_encoders_pack_is_marked_approximate_in_the_graph() {
+    use codec::encoder::tests::RawF32Codec;
+    use codec::RepresentationCodec;
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, out, report) = encoder_pair(&tmp);
+    let graph: super::super::graph::SystemGraph =
+        serde_json::from_str(&std::fs::read_to_string(out.join(SYSTEM_GRAPH_JSON)).unwrap())
+            .unwrap();
+    for compiled in &report.compiled_objects {
+        let object = graph
+            .objects
+            .iter()
+            .find(|o| o.id == compiled.object)
+            .unwrap();
+        assert!(object.representations.iter().any(|r| {
+            r.encoding == RawF32Codec.encoding_label() && r.fidelity == Fidelity::Approximate
+        }));
+    }
+}
+
+#[test]
+fn an_unknown_encoding_names_the_registered_encoders() {
+    use codec::encoder::tests::RawF32Codec;
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("out.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(RawF32Codec))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: "NOT_AN_ENCODING".into(),
+        ..RepresentSpec::nvfp4()
+    };
+    let err = compile_representation_with(&src, &out, &spec, &encoders)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("registered encoders: TEST_RAW_F32"), "{err}");
+    assert!(!out.exists());
+}
+
+use codec::RepresentationCodec as _;
+
+/// How a [`QuirkyEncoder`] departs from the honest raw-f32 double.
+#[derive(Clone, Copy)]
+enum Quirk {
+    /// Answers `InstanceSized`: its length is learned by encoding.
+    InstanceSized,
+    /// Refuses every shape, so every tensor is carried.
+    RefusesEveryShape,
+    /// States the honest length, then writes one byte more.
+    MisstatesItsLength,
+    /// Honest, and accepts input-feature weights (it writes raw f32, so
+    /// the weights cannot change its bytes; it checks their length).
+    AcceptsWeights,
+}
+
+/// The raw-f32 double with one quirk in how it reports or writes lengths.
+struct QuirkyEncoder(Quirk);
+
+impl codec::RepresentationCodec for QuirkyEncoder {
+    fn encoding_label(&self) -> &'static str {
+        codec::encoder::tests::RawF32Codec.encoding_label()
+    }
+    fn identity(&self) -> CodecIdentity {
+        codec::encoder::tests::RawF32Codec.identity()
+    }
+    fn streams(&self) -> &'static [codec::StreamSpec] {
+        codec::encoder::tests::RawF32Codec.streams()
+    }
+    fn capabilities(&self) -> codec::CodecCapabilities {
+        codec::encoder::tests::RawF32Codec.capabilities()
+    }
+    fn extents(&self) -> Vec<codec::ExtentCertificate> {
+        codec::encoder::tests::RawF32Codec.extents()
+    }
+    fn stored_bytes(
+        &self,
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+    ) -> Result<u64, CodecError> {
+        match self.0 {
+            Quirk::InstanceSized => Err(CodecError::InstanceSized {
+                tensor: tensor.into(),
+                label: self.encoding_label().into(),
+            }),
+            Quirk::RefusesEveryShape => Err(CodecError::Destination {
+                tensor: tensor.into(),
+                need: 0,
+                have: 1,
+            }),
+            Quirk::MisstatesItsLength | Quirk::AcceptsWeights => {
+                codec::encoder::tests::RawF32Codec.stored_bytes(shape, extent, tensor)
+            }
+        }
+    }
+    fn validate(
+        &self,
+        operands: &codec::CodecOperands<'_>,
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+    ) -> Result<(), CodecError> {
+        codec::encoder::tests::RawF32Codec.validate(operands, shape, extent, tensor)
+    }
+    fn decode_rows(
+        &self,
+        operands: &codec::CodecOperands<'_>,
+        shape: &[usize],
+        rows: std::ops::Range<usize>,
+        extent: codec::RepresentationExtent,
+        dst: &mut [f32],
+        tensor: &str,
+    ) -> Result<(), CodecError> {
+        codec::encoder::tests::RawF32Codec.decode_rows(operands, shape, rows, extent, dst, tensor)
+    }
+    fn decode_residency(&self) -> codec::ResidencyProfile {
+        codec::encoder::tests::RawF32Codec.decode_residency()
+    }
+}
+
+impl RepresentationEncoder for QuirkyEncoder {
+    fn encode_packed(
+        &self,
+        values: &[f32],
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+    ) -> Result<Vec<u8>, CodecError> {
+        let mut bytes =
+            codec::encoder::tests::RawF32Codec.encode_packed(values, shape, extent, tensor)?;
+        if matches!(self.0, Quirk::MisstatesItsLength) {
+            bytes.push(0);
+        }
+        Ok(bytes)
+    }
+    fn encode_packed_weighted(
+        &self,
+        values: &[f32],
+        shape: &[usize],
+        extent: codec::RepresentationExtent,
+        tensor: &str,
+        input_weights: &[f64],
+    ) -> Result<Vec<u8>, CodecError> {
+        if !matches!(self.0, Quirk::AcceptsWeights) {
+            return Err(CodecError::WeightingUnsupported {
+                tensor: tensor.into(),
+                label: self.encoding_label().into(),
+            });
+        }
+        let row: usize = shape[1..].iter().product();
+        if input_weights.len() != row {
+            return Err(CodecError::WeightingShape {
+                tensor: tensor.into(),
+                need: row,
+                have: input_weights.len(),
+            });
+        }
+        self.encode_packed(values, shape, extent, tensor)
+    }
+}
+
+/// Compile the dense fixture with a [`QuirkyEncoder`].
+fn compile_quirky(
+    tmp: &tempfile::TempDir,
+    quirk: Quirk,
+) -> (std::path::PathBuf, Result<RepresentReport, VindexError>) {
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("quirky.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(QuirkyEncoder(quirk)))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: QuirkyEncoder(quirk).encoding_label().to_string(),
+        ..RepresentSpec::nvfp4()
+    };
+    let result = compile_representation_with(&src, &out, &spec, &encoders);
+    (out, result)
+}
+
+#[test]
+fn an_instance_sized_encoder_is_encoded_while_planning() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result) = compile_quirky(&tmp, Quirk::InstanceSized);
+    let report = result.expect("an instance-sized encoder still compiles");
+    let compiled: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.compiled_tensors)
+        .sum();
+    assert!(compiled > 0);
+    // The segment table was planned from the encoded lengths, so every
+    // compiled tensor's recorded length is what the encoder wrote.
+    let index = index_of(&out);
+    let label = QuirkyEncoder(Quirk::InstanceSized).encoding_label();
+    for entry in index
+        .representations
+        .values()
+        .filter(|e| e.encoding == label)
+    {
+        let (header, _) = read_segment_header(&out.join(&entry.segment)).unwrap();
+        for t in header.tensors.iter().filter(|t| t.dtype == label) {
+            let elements: usize = t.shape.iter().product();
+            assert_eq!(t.len as usize, elements * 4, "{}", t.name);
+        }
+    }
+}
+
+#[test]
+fn an_encoder_that_refuses_every_shape_compiles_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result) = compile_quirky(&tmp, Quirk::RefusesEveryShape);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("eligible"), "{err}");
+    assert!(!out.join(INDEX_JSON).exists());
+}
+
+#[test]
+fn an_encoder_whose_bytes_contradict_its_stated_length_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result) = compile_quirky(&tmp, Quirk::MisstatesItsLength);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("its codec states"), "{err}");
+    assert!(!out.join(INDEX_JSON).exists());
+}
+
+/// Weights for every 2-D tensor of the dense fixture's first compilable
+/// object except one, so both the weighted and the unweighted path run.
+fn fixture_weights(src: &std::path::Path) -> (InputWeights, usize) {
+    let index = index_of(src);
+    let mut by_tensor = BTreeMap::new();
+    let mut skipped = 0;
+    for entry in index.representations.values() {
+        let (header, _) = read_segment_header(&src.join(&entry.segment)).unwrap();
+        for t in header.tensors.iter().filter(|t| t.shape.len() == 2) {
+            if skipped == 0 {
+                skipped += 1;
+                continue;
+            }
+            by_tensor.insert(
+                (entry.object.clone(), t.name.clone()),
+                vec![1.0; t.shape[1]],
+            );
+        }
+    }
+    (
+        InputWeights {
+            by_tensor,
+            digest: "fixture-weights".into(),
+        },
+        skipped,
+    )
+}
+
+fn compile_weighted(
+    tmp: &tempfile::TempDir,
+    quirk: Quirk,
+    encoding: Option<&str>,
+) -> (
+    std::path::PathBuf,
+    Result<RepresentReport, VindexError>,
+    usize,
+) {
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("weighted.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+    let encoders = EncoderRegistry::new()
+        .register(Box::new(QuirkyEncoder(quirk)))
+        .unwrap();
+    let spec = RepresentSpec {
+        encoding: encoding
+            .unwrap_or(QuirkyEncoder(quirk).encoding_label())
+            .to_string(),
+        ..RepresentSpec::nvfp4()
+    };
+    let (weights, skipped) = fixture_weights(&src);
+    let result = compile_representation_weighted(&src, &out, &spec, &encoders, &weights);
+    (out, result, skipped)
+}
+
+#[test]
+fn weights_reach_the_encoder_and_the_recipe_names_their_digest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result, skipped) = compile_weighted(&tmp, Quirk::AcceptsWeights, None);
+    let report = result.expect("a weighted compile");
+    let compiled: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.compiled_tensors)
+        .sum();
+    let weighted: usize = report
+        .compiled_objects
+        .iter()
+        .map(|c| c.weighted_tensors)
+        .sum();
+    assert!(weighted > 0);
+    assert!(
+        weighted <= compiled - skipped.min(compiled),
+        "a tensor with no weights is encoded unweighted and not counted"
+    );
+    let identity = QuirkyEncoder(Quirk::AcceptsWeights).identity();
+    let packs: Vec<_> = index_of(&out)
+        .representations
+        .into_values()
+        .filter(|e| e.compiled_from.is_some())
+        .collect();
+    assert!(!packs.is_empty());
+    for e in packs {
+        assert_eq!(
+            e.encoder,
+            Some(EncoderRecipe::codec_weighted(&identity, "fixture-weights"))
+        );
+    }
+}
+
+#[test]
+fn an_encoder_without_weighting_refuses_rather_than_ignores_weights() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result, _) = compile_weighted(&tmp, Quirk::InstanceSized, None);
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("does not accept input-feature weights"),
+        "{err}"
+    );
+    assert!(!out.join(INDEX_JSON).exists());
+}
+
+#[test]
+fn a_shipped_compiler_refuses_weights() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, result, _) = compile_weighted(&tmp, Quirk::AcceptsWeights, Some(DTYPE_NVFP4));
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("shipped compiler"), "{err}");
+    assert!(!out.exists());
 }

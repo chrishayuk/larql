@@ -121,6 +121,11 @@ const IMAGE_BINDING_KEYS: &[&str] = &[
     "eoi_token_id",
     "video_token_id",
     "vision_soft_tokens_per_image",
+    // Gemma 3's spellings of the same binding.
+    "image_token_index",
+    "boi_token_index",
+    "eoi_token_index",
+    "mm_tokens_per_image",
 ];
 
 const AUDIO_BINDING_KEYS: &[&str] = &[

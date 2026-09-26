@@ -74,6 +74,18 @@ pub struct LoadedModel {
     /// once `weights` is populated, callers skip the mutex via the
     /// fast-path `OnceLock::get` check.
     pub weights_init: std::sync::Mutex<()>,
+    /// BitNet 1.58 model with native ternary weights.  Populated
+    /// when the loaded vindex was built with `--keep-quant`
+    /// (i.e. `config.bitnet_layout.is_some()`).  When present, the
+    /// route handlers prefer this over `weights` for inference
+    /// because the native-ternary path runs the full forward at
+    /// ~1.4 GB instead of ~5 GB resident.  Eager-loaded by
+    /// `force_load_bitnet_model` from `bootstrap::serve` (unless
+    /// `--lazy-weights`).
+    pub bitnet_model: std::sync::OnceLock<std::sync::RwLock<larql_inference::ternary::BitnetModel>>,
+    /// Init guard for the bitnet model load — same pattern as
+    /// `weights_init` but for the ternary path.
+    pub bitnet_init: std::sync::Mutex<()>,
     /// Probe-confirmed feature labels: (layer, feature) → relation name.
     /// Loaded from feature_labels.json if present.
     pub probe_labels: HashMap<(usize, usize), String>,
@@ -171,6 +183,71 @@ impl LoadedModel {
         self.ensure_weights_cell().map(|_| ())
     }
 
+    /// Whether this vindex was built with `--keep-quant` and
+    /// therefore has the BitNet 1.58 native-ternary artifacts
+    /// (`bitnet/` + `bitnet_layout` in index.json).  Route handlers
+    /// dispatch on this to pick the ternary forward path.
+    pub fn is_bitnet(&self) -> bool {
+        self.config.bitnet_layout.is_some()
+    }
+
+    /// Whether this vindex was built `--dense-only`: it has the
+    /// dense weights + BitNet I2_S artifacts but NO gate vectors /
+    /// HNSW clustering, so walk-mode inference cannot run against
+    /// it (the KNN store is empty).  Detected by an empty gate-layer
+    /// list in index.json (`build_vindex_dense_only` leaves
+    /// `layer_infos` empty).  Route handlers force dense-mode
+    /// inference on such vindexes regardless of the requested mode,
+    /// since walk would silently return nothing useful.
+    pub fn is_dense_only(&self) -> bool {
+        self.config.layers.is_empty()
+    }
+
+    /// Get a read guard on the lazy-loaded BitNet model.  Returns
+    /// `Err` when the vindex isn't a BitNet (callers should check
+    /// `is_bitnet()` first).
+    pub fn get_or_load_bitnet(
+        &self,
+    ) -> Result<std::sync::RwLockReadGuard<'_, larql_inference::ternary::BitnetModel>, String> {
+        let cell = self.ensure_bitnet_cell()?;
+        cell.read()
+            .map_err(|e| format!("bitnet RwLock poisoned: {e}"))
+    }
+
+    /// Eager-load the BitNet model from disk before the listener
+    /// binds.  Mirrors `force_load_weights` but for the ternary
+    /// path; called by `bootstrap::serve` when the vindex is
+    /// BitNet-shaped and `--lazy-weights` was not passed.
+    pub fn force_load_bitnet_model(&self) -> Result<(), String> {
+        if self.infer_disabled || !self.is_bitnet() {
+            return Ok(());
+        }
+        self.ensure_bitnet_cell().map(|_| ())
+    }
+
+    fn ensure_bitnet_cell(
+        &self,
+    ) -> Result<&std::sync::RwLock<larql_inference::ternary::BitnetModel>, String> {
+        // Fast path.
+        if let Some(cell) = self.bitnet_model.get() {
+            return Ok(cell);
+        }
+        // Single-flight slow path.
+        let _init_guard = self.bitnet_init.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(cell) = self.bitnet_model.get() {
+            return Ok(cell);
+        }
+        if !self.is_bitnet() {
+            return Err("vindex has no bitnet_layout (not a --keep-quant build)".into());
+        }
+        let model = larql_inference::ternary::load_bitnet_model(&self.path)
+            .map_err(|e| format!("failed to load bitnet model: {e}"))?;
+        let _ = self.bitnet_model.set(std::sync::RwLock::new(model));
+        self.bitnet_model
+            .get()
+            .ok_or_else(|| "bitnet cell unset after set".to_string())
+    }
+
     /// Acquire an exclusive write guard on the loaded weights.
     ///
     /// Used by the OpenAI generation path (`/v1/completions`,
@@ -184,6 +261,29 @@ impl LoadedModel {
     pub fn lock_weights_for_gen(
         &self,
     ) -> Result<std::sync::RwLockWriteGuard<'_, ModelWeights>, String> {
+        // A BitNet `--keep-quant` container has no dense weight manifest to
+        // load, so `ensure_weights_cell` would fail here with a bare
+        // "No such file or directory" from whichever tensor file it reached
+        // first. Every non-streaming generation path funnels through this
+        // one method (`openai/completions.rs` batch loop,
+        // `openai/chat/handler.rs`, `openai/responses/engine.rs`), so
+        // naming the real reason once here covers all of them rather than
+        // three separate checks that have to stay in agreement.
+        //
+        // Refused rather than silently routed to the ternary path: these
+        // callers hold a `&mut ModelWeights` for the whole generation, and
+        // there is no dense `ModelWeights` to hand them. The ternary
+        // engine is reachable through `/v1/infer` and the streaming
+        // surfaces, which do not need one.
+        if self.is_bitnet() {
+            return Err(
+                "this vindex is a BitNet --keep-quant build and carries no dense \
+                 weights; non-streaming generation is not supported on it. Use \
+                 POST /v1/infer, or /v1/completions and /v1/chat/completions \
+                 with \"stream\": true, which take the native-ternary path."
+                    .to_string(),
+            );
+        }
         let cell = self.ensure_weights_cell()?;
         cell.write()
             .map_err(|e| format!("weights RwLock poisoned: {e}"))
@@ -343,6 +443,8 @@ mod loaded_model_tests {
             release_mmap_after_request: release_mmap,
             weights: std::sync::OnceLock::new(),
             weights_init: std::sync::Mutex::new(()),
+            bitnet_model: std::sync::OnceLock::new(),
+            bitnet_init: std::sync::Mutex::new(()),
             probe_labels: HashMap::new(),
             ffn_l2_cache: crate::ffn_l2_cache::FfnL2Cache::new(1),
             layer_latency_tracker: std::sync::Arc::new(crate::metrics::LayerLatencyTracker::new()),
@@ -390,6 +492,183 @@ mod loaded_model_tests {
         assert!(
             f32_model.config.quant != QuantFormat::Q4K,
             "None config → f32 branch (load_model_weights_with_opts + WalkFfn::new_unlimited)"
+        );
+    }
+
+    #[test]
+    fn is_dense_only_detects_empty_gate_layers() {
+        // A normal vindex has gate layers -> not dense-only.
+        let normal = tiny_loaded_model(QuantFormat::None, false);
+        assert!(
+            !normal.is_dense_only(),
+            "vindex with gate layers must not be dense-only"
+        );
+        assert!(
+            !normal.is_bitnet(),
+            "and a plain vindex carries no bitnet_layout"
+        );
+
+        // A --dense-only BitNet vindex has zero gate layers.  Build
+        // one by emptying the layer list + setting bitnet_layout.
+        let mut cfg = tiny_config(QuantFormat::None);
+        cfg.layers = Vec::new();
+        cfg.bitnet_layout = Some(larql_vindex::config::BitnetLayout::default());
+        let mut dense_only = tiny_loaded_model(QuantFormat::None, false);
+        dense_only.config = cfg;
+        assert!(
+            dense_only.is_dense_only(),
+            "dense-only vindex (empty gate layers) must be detected"
+        );
+        assert!(dense_only.is_bitnet(), "and it is a BitNet vindex");
+    }
+
+    #[test]
+    fn bitnet_guards_refuse_a_dense_vindex_with_a_useful_message() {
+        // `ensure_bitnet_cell`'s refusal path: asking a non-BitNet vindex
+        // for a ternary model must name *why* rather than surfacing a
+        // load error from a file that was never going to exist.
+        let model = tiny_loaded_model(QuantFormat::None, false);
+        // `BitnetModel` is not `Debug`, so match rather than `expect_err`.
+        let Err(err) = model.get_or_load_bitnet() else {
+            unreachable!("a dense vindex has no ternary model to hand out")
+        };
+        assert!(
+            err.contains("bitnet_layout") && err.contains("keep-quant"),
+            "the error must say the container is not a --keep-quant build, \
+             got: {err}"
+        );
+    }
+
+    #[test]
+    fn force_load_bitnet_model_is_a_noop_when_infer_disabled() {
+        // `bootstrap::serve` calls this unconditionally for every model,
+        // so it has to stay quiet on a --no-infer server even when the
+        // container *is* BitNet-shaped: eagerly loading ternary weights
+        // into a process that refuses to infer would spend the memory a
+        // --no-infer operator asked not to spend.
+        let mut cfg = tiny_config(QuantFormat::None);
+        cfg.bitnet_layout = Some(larql_vindex::config::BitnetLayout::default());
+        let mut model = tiny_loaded_model(QuantFormat::None, false);
+        model.config = cfg;
+        model.infer_disabled = true;
+        assert!(model.is_bitnet(), "fixture must be BitNet-shaped");
+        assert!(
+            model.force_load_bitnet_model().is_ok(),
+            "must no-op rather than error under --no-infer"
+        );
+        assert!(
+            model.bitnet_model.get().is_none(),
+            "and must not have loaded anything"
+        );
+    }
+
+    #[test]
+    fn bitnet_load_failure_names_the_container() {
+        // A container that *claims* to be BitNet (bitnet_layout present)
+        // but has no `bitnet/` artifacts on disk must fail with the load
+        // error, not the "not a --keep-quant build" refusal: the two are
+        // different operator problems. The first says "this vindex is the
+        // wrong kind", the second says "this vindex is the right kind and
+        // is broken/incomplete", and reporting the wrong one sends the
+        // operator to rebuild a container that only needs its files back.
+        //
+        // Reachable without any weights: the fixture's path points at no
+        // bitnet/ directory, which is exactly the on-disk state of a
+        // truncated or partially-copied container.
+        let mut cfg = tiny_config(QuantFormat::None);
+        cfg.bitnet_layout = Some(larql_vindex::config::BitnetLayout::default());
+        let mut model = tiny_loaded_model(QuantFormat::None, false);
+        model.config = cfg;
+        assert!(model.is_bitnet(), "fixture must be BitNet-shaped");
+
+        let Err(err) = model.get_or_load_bitnet() else {
+            unreachable!("there are no bitnet/ artifacts to load")
+        };
+        assert!(
+            err.contains("failed to load bitnet model"),
+            "a BitNet-shaped container with missing artifacts must report a \
+             load failure, not the wrong-kind refusal, got: {err}"
+        );
+        assert!(
+            !err.contains("not a --keep-quant build"),
+            "must not claim the container is the wrong kind: {err}"
+        );
+        // A failed load must leave the cell empty so a later attempt (after
+        // the operator restores the files) still tries, rather than caching
+        // the failure for the process lifetime.
+        assert!(
+            model.bitnet_model.get().is_none(),
+            "a failed load must not poison the cell"
+        );
+    }
+
+    #[test]
+    fn lock_weights_for_gen_refuses_bitnet_with_an_actionable_message() {
+        // Regression: on a real --keep-quant container the three
+        // non-streaming generation paths (openai completions batch loop,
+        // chat handler, responses engine) all reached
+        // `ensure_weights_cell` and surfaced a bare "No such file or
+        // directory" as a 503 -- there is no dense weight manifest in such
+        // a container. Caught only against the real
+        // microsoft/bitnet-b1.58-2B-4T model, because the synthetic
+        // fixture is a dense V2 container that has those files.
+        //
+        // The message has to say what to use instead: the ternary engine
+        // *is* reachable, just not through a path that needs
+        // `&mut ModelWeights`.
+        let mut cfg = tiny_config(QuantFormat::None);
+        cfg.bitnet_layout = Some(larql_vindex::config::BitnetLayout::default());
+        let mut model = tiny_loaded_model(QuantFormat::None, false);
+        model.config = cfg;
+        assert!(model.is_bitnet(), "fixture must be BitNet-shaped");
+
+        let Err(err) = model.lock_weights_for_gen() else {
+            unreachable!("a --keep-quant container has no dense weights to lock")
+        };
+        assert!(
+            err.contains("keep-quant") && err.contains("no dense"),
+            "must name the container kind as the reason, got: {err}"
+        );
+        assert!(
+            err.contains("/v1/infer") && err.contains("stream"),
+            "must point at the paths that do work, got: {err}"
+        );
+
+        // And the dense case must be unaffected: a plain container still
+        // reaches the loader (and fails on the missing fixture files, not
+        // on this guard).
+        let dense = tiny_loaded_model(QuantFormat::None, false);
+        let Err(dense_err) = dense.lock_weights_for_gen() else {
+            unreachable!("the tiny fixture has no weight files on disk")
+        };
+        assert!(
+            !dense_err.contains("keep-quant"),
+            "a dense container must not hit the BitNet guard: {dense_err}"
+        );
+    }
+
+    #[test]
+    fn bitnet_model_not_loaded_by_default() {
+        // Same lazy-load contract as `weights`: the ternary cell stays
+        // empty until `get_or_load_bitnet`, and `force_load_bitnet_model`
+        // is a no-op on a vindex that is not BitNet-shaped (rather than
+        // an error), so `bootstrap::serve` can call it unconditionally.
+        let model = tiny_loaded_model(QuantFormat::None, false);
+        assert!(
+            model.bitnet_model.get().is_none(),
+            "bitnet cell must start empty"
+        );
+        assert!(
+            model.force_load_bitnet_model().is_ok(),
+            "force_load_bitnet_model must no-op on a non-BitNet vindex"
+        );
+        assert!(
+            model.bitnet_model.get().is_none(),
+            "and must not populate the cell"
+        );
+        assert!(
+            model.get_or_load_bitnet().is_err(),
+            "explicitly asking for a bitnet model on a dense vindex is an error"
         );
     }
 

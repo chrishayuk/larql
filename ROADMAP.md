@@ -550,6 +550,55 @@ Established by repeated failure, not preference:
   re-extraction as a second candidate cause.
 - **Mini-K3, Kimi-Linear, K3** — the conformance envelope beyond Gemma.
 
+### Planned V3 capabilities (added 2026-09-22)
+
+Two capabilities are planned for VINDEX3 and are **outside the current release
+gate** unless V3 is advertised as supporting them. Until then, the explicit
+refusals are the desired behaviour: they keep the boundary truthful rather than
+half-supporting either feature. The current refusals are listed in
+[VINDEX3 status](docs/vindex3/status.md#planned-capabilities).
+
+Partial execution is the more architectural item and comes first. The
+multimodal handoff then reuses its boundary, identity and provenance rules.
+
+**1. Partial execution and sharding.** Freeze the contract before shard planning
+or execution is implemented:
+
+- ownership of layer (and expert/unit) ranges;
+- boundary state — the hidden state crossing a shard edge, and the continuation
+  state each shard owns (KV, recurrent state) so that shards compose;
+- deterministic reconstruction of a whole-model result from shards;
+- provenance: which shard, container identity and realization produced each
+  boundary;
+- failure and retry semantics.
+
+The internal `ExecutionSlice::LayerRange` preparation slice (hidden states in,
+token ids refused) is substrate for this item, not the contract.
+
+Acceptance:
+
+- a single shard covering the whole stack is identical to unsharded execution;
+- multi-shard reconstruction matches unsharded execution;
+- an unsupported plan refuses explicitly (the server's current `--layers` /
+  `--experts` refusal becomes this refusal, scoped to what remains unsupported).
+
+**2. Multimodal embedding handoff.** Define how externally produced image,
+audio or other embeddings enter the executor. The handoff is
+representation-neutral: V3 does not need to understand the modality.
+
+- identity of the embedding and its producer;
+- shape, dtype and layout;
+- positional metadata — where it splices into the token stream;
+- provenance and lifecycle.
+
+Acceptance:
+
+- text-only parity is unchanged;
+- embedding injection is deterministic;
+- a mixed-modality execution witness;
+- malformed or incompatible handoffs refuse cleanly (the current `larql run`
+  `--image` / `--mm-weights` refusal becomes this refusal).
+
 ---
 ## Query / Edit / Interpret — first-class functionality track (added 2026-05-28)
 
@@ -4334,7 +4383,7 @@ vendor stacks wait for codec + ring + device integration.
 
 ## P2 — Film checklist
 
-- [ ] Confirm Gemma 4 26B A4B public config (expert count, top-K, active-param figure, GQA ratio). Replace every `~` in `docs/replay/demo-script-gemma4-moe.md` (not yet created).
+- [ ] Confirm Gemma 4 26B A4B public config (expert count, top-K, active-param figure, GQA ratio). Replace every `~` in `docs/replay/demo-script-gemma4-moe.md` (gitignored working artifact -- `docs/replay/` is not tracked, so the file is local to whoever is cutting the film).
 - [ ] Measure real footprint + latency on `google/gemma-4-31b-it` for Act 1.
 - [ ] Reliability pass on `RemoteWalkBackend` (timeouts, retries, partial shard outage). **(P2 per ADR-019.)**
 - [ ] `RemoteExpertBackend` same reliability pass. **(P2 per ADR-019.)**

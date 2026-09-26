@@ -68,6 +68,7 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         dump_dir: None,
         draft_depth: None,
         profile: false,
+        plugin: Default::default(),
     }))
     .expect("greedy decode over the fixture must complete");
 }
@@ -105,6 +106,7 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         dump_dir: None,
         draft_depth: None,
         profile: false,
+        plugin: Default::default(),
     }))
     .expect("the residency curve must complete both passes");
 }
@@ -140,6 +142,7 @@ fn a_warmup_that_leaves_nothing_counted_is_refused() {
         dump_dir: None,
         draft_depth: None,
         profile: false,
+        plugin: Default::default(),
     }))
     .unwrap_err()
     .to_string();
@@ -177,6 +180,7 @@ fn an_unknown_expert_access_is_refused_by_name() {
         dump_dir: None,
         draft_depth: None,
         profile: false,
+        plugin: Default::default(),
     }))
     .unwrap_err()
     .to_string();

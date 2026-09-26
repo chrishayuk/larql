@@ -335,6 +335,9 @@ pub fn resolve_with_tensor_evidence(
         num_kv_heads: cfg.num_kv_heads,
         head_dim: cfg.head_dim,
         vocab_size: cfg.vocab_size,
+        vocab_size_provenance: cfg
+            .vocab_size
+            .map(|_| super::report::VocabSizeProvenance::Declared),
         sliding_window: cfg.sliding_window,
         attention: AttentionSummary {
             sliding_layers,
@@ -359,7 +362,57 @@ pub fn resolve_with_tensor_evidence(
         conv_qkv_provenance: cfg.conv_qkv_provenance.clone(),
         pad_vocab_size_multiple: cfg.pad_vocab_size_multiple,
     };
+    let mut topology = topology;
+    resolve_vocab_size_from_embedding_rows(&mut topology, arch.as_ref(), tensors);
     (detection, topology)
+}
+
+/// The output-head width when the config omits `vocab_size`: the
+/// embedding table's row count, from the tensor estate.
+///
+/// Gemma 3 declares no `vocab_size` anywhere — HF's `Gemma3TextConfig`
+/// leaves it at its class default (262 208) — so the resolution had
+/// nothing and the execution surface refused every Gemma 3 checkpoint.
+/// The default is not assumed here: the embedding's rows are read, and
+/// the answer is recorded as [`VocabSizeProvenance::EmbeddingRows`] with
+/// the tensor that gave it. A declaration always wins (its provenance is
+/// `Declared` and this function does nothing), and no estate means no
+/// answer — `resolve` without tensors leaves the width absent, and the
+/// surface refuses as before.
+///
+/// The embedding is found under the architecture's own key
+/// (`embed_key`) beneath each prefix it strips, matched on the exact
+/// name — never by fragment, so a projector's or a tower's embedding
+/// cannot answer for the text component's.
+///
+/// [`VocabSizeProvenance::EmbeddingRows`]: super::report::VocabSizeProvenance::EmbeddingRows
+fn resolve_vocab_size_from_embedding_rows(
+    topology: &mut ResolvedTopology,
+    arch: &dyn ModelArchitecture,
+    tensors: &[super::report::TensorFact],
+) {
+    if topology.vocab_size.is_some() {
+        return;
+    }
+    const NO_PREFIX: &str = "";
+    let embed_key = arch.embed_key();
+    let candidate = arch
+        .key_prefixes_to_strip()
+        .iter()
+        .copied()
+        .chain(std::iter::once(NO_PREFIX))
+        .map(|prefix| format!("{prefix}{embed_key}"))
+        .find_map(|name| tensors.iter().find(|t| t.name == name));
+    let Some(embedding) = candidate else {
+        return;
+    };
+    let Some(&rows) = embedding.shape.first() else {
+        return;
+    };
+    topology.vocab_size = Some(rows);
+    topology.vocab_size_provenance = Some(super::report::VocabSizeProvenance::EmbeddingRows {
+        tensor: embedding.name.clone(),
+    });
 }
 
 /// The architecture-relative prefix of a layer's packed expert bank: the

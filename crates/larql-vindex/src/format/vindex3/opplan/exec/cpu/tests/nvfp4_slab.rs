@@ -40,6 +40,7 @@ fn a_pack_becomes_rows_and_reports_them_from_its_own_bytes() {
         packed: &packed,
         scales: &scales,
         tensor_scale: TENSOR_SCALE,
+        activation: Default::default(),
     };
     let rows = slice.rows(4, 32).expect("a well-formed pack yields rows");
     assert_eq!(rows.rows(32), 4, "row count is derived, not asserted");
@@ -57,6 +58,7 @@ fn slicing_rows_cuts_codes_and_scales_together_and_keeps_the_tensor_scale() {
         packed: &packed,
         scales: &scales,
         tensor_scale: TENSOR_SCALE,
+        activation: Default::default(),
     };
 
     let slab = all.slice_rows(32, 2, 2);
@@ -64,6 +66,7 @@ fn slicing_rows_cuts_codes_and_scales_together_and_keeps_the_tensor_scale() {
         packed: p,
         scales: s,
         tensor_scale,
+        ..
     } = slab
     else {
         panic!("slicing an NVFP4 slab must yield an NVFP4 slab");
@@ -87,6 +90,7 @@ fn a_width_that_is_not_a_whole_number_of_groups_refuses() {
         packed: &packed,
         scales: &scales,
         tensor_scale: TENSOR_SCALE,
+        activation: Default::default(),
     };
     let err = slice
         .rows(2, NVFP4_GROUP_ELEMS + 1)
@@ -107,6 +111,7 @@ fn a_short_pack_refuses_rather_than_returning_fewer_rows() {
         packed: &packed,
         scales: &scales,
         tensor_scale: TENSOR_SCALE,
+        activation: Default::default(),
     };
     assert!(
         slice.rows(4, 32).is_err(),
@@ -125,6 +130,7 @@ fn enough_codes_but_too_few_scales_still_refuses() {
         packed: &packed,
         scales: short_scales,
         tensor_scale: TENSOR_SCALE,
+        activation: Default::default(),
     };
     assert!(
         slice.rows(4, 32).is_err(),
@@ -152,6 +158,7 @@ fn nvfp4_has_one_kernel_and_no_arithmetic_arm_can_move_it() {
         packed: &packed,
         scales: &scales,
         tensor_scale: TENSOR_SCALE,
+        activation: Default::default(),
     };
     let plan = PhysicalProjectionPlan::for_resident(rows, 32);
     assert_eq!(

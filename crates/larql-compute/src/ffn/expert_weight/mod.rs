@@ -20,6 +20,13 @@
 //! instrument for the entire model class the K3 ladder is built on. See
 //! `docs/k3-funnel.md` §4.7.
 
+// Public for the same reason as `trace` below: the env-resolved sink is
+// process-global (`OnceLock`), so an end-to-end exercise needs its own test
+// binary, reachable only through a `pub` path.
+pub mod block_contrib_trace;
+/// The static half of BW12-0's contribution formula — no forward pass,
+/// so it's a plain function rather than a trace sink.
+pub mod down_col_norms;
 pub(crate) mod gate;
 /// Expert selection — public because the VINDEX3 production backend runs
 /// the served selection rule rather than a second transcription of it.
@@ -135,10 +142,23 @@ impl<'a> ExpertWeightFfn<'a> {
         Some(all.row(expert).to_vec())
     }
 
-    /// Run one expert over the token rows routed to it.
-    ///
-    /// `rows` is `[n, hidden]`; the result is `[n, hidden]`, unweighted.
-    fn run_expert(&self, layer: usize, expert: usize, rows: &Array2<f32>) -> Option<Array2<f32>> {
+    /// Run one expert over the token rows routed to it (`rows` is
+    /// `[n, hidden]`; the result is `[n, hidden]`, unweighted), additionally
+    /// returning the pre-down activation (`[n, intermediate]`) — the real,
+    /// policy-correct post-gate value (GPT-OSS's
+    /// [`larql_models::ExpertGatePolicy::ClampedGlu`] included, via
+    /// [`gate::apply`]), not an approximation of it. `moe_block` uses
+    /// only the summed output; the activation exists for BW12-0's
+    /// block-contribution trace ([`block_contrib_trace`]):
+    /// `|activation[i]| * down_col_norm[i]` is R4's `|φ(g)·u|·‖d_i‖`
+    /// formula, generalised to whichever gate policy this architecture
+    /// actually uses instead of assuming SiLU.
+    fn run_expert_observed(
+        &self,
+        layer: usize,
+        expert: usize,
+        rows: &Array2<f32>,
+    ) -> Option<(Array2<f32>, Array2<f32>)> {
         let arch = self.arch();
         let w_gate = arch
             .expert_ffn_gate_key(layer, expert)
@@ -162,7 +182,7 @@ impl<'a> ExpertWeightFfn<'a> {
         if let Some(bias) = self.expert_down_bias(layer, expert) {
             add_bias(&mut out, &bias);
         }
-        Some(out)
+        Some((out, activation))
     }
 
     /// The MoE block: route every token, run each hit expert once over all of
@@ -231,7 +251,8 @@ impl<'a> ExpertWeightFfn<'a> {
                 continue;
             }
             let rows = x.select(Axis(0), tokens);
-            let expert_out = self.run_expert(layer, expert, &rows)?;
+            let (expert_out, activation) = self.run_expert_observed(layer, expert, &rows)?;
+            block_contrib_trace::record(layer, expert, &activation);
             for (i, (&token, &weight)) in tokens.iter().zip(weights.iter()).enumerate() {
                 let contribution = &expert_out.slice(s![i, ..]) * weight;
                 let mut dst = out.slice_mut(s![token, ..]);

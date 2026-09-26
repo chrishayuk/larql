@@ -33,7 +33,13 @@ fn rel_rms(a: &[f32], b: &[f32]) -> f32 {
 /// `probe`, and return the probe's logits.
 fn many_then_step(batch: &[u32], probe: u32) -> Vec<f32> {
     let (_c, plan, store) = hybrid();
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     session.step_many(batch).unwrap();
     assert_eq!(session.position(), batch.len());
     session
@@ -46,7 +52,13 @@ fn many_then_step(batch: &[u32], probe: u32) -> Vec<f32> {
 /// The same, one position at a time.
 fn stepped_then_step(batch: &[u32], probe: u32) -> Vec<f32> {
     let (_c, plan, store) = hybrid();
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     for &t in batch {
         session.step(t).unwrap();
     }
@@ -92,7 +104,13 @@ fn a_later_token_does_not_reach_an_earlier_position() {
         whole.push(last);
 
         let (_c, plan, store) = hybrid();
-        let mut inside = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+        let mut inside = DecodeSession::new(
+            &plan,
+            &store,
+            &ReferenceBackend,
+            Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+        )
+        .unwrap();
         let in_batch = inside
             .step_many(&whole)
             .unwrap()
@@ -130,7 +148,13 @@ fn changing_a_token_inside_the_batch_moves_the_token_after_it() {
 #[test]
 fn an_empty_advance_refuses() {
     let (_c, plan, store) = hybrid();
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     assert!(session.step_many(&[]).is_err());
     assert_eq!(session.position(), 0, "a refused call must move nothing");
 }
@@ -142,7 +166,13 @@ fn an_empty_advance_refuses() {
 #[test]
 fn a_bad_token_late_in_the_batch_moves_nothing() {
     let (_c, plan, store) = hybrid();
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     assert!(session.step_many(&[1, 2, u32::MAX]).is_err());
     assert_eq!(session.position(), 0, "a refused batch must move nothing");
 }

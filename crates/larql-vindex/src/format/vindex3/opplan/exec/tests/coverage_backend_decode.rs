@@ -64,7 +64,13 @@ fn decode_last_logits<B: PlanBackend>(
     store: &OperandStore,
     backend: &B,
 ) -> Option<Vec<f32>> {
-    let mut session = DecodeSession::new(plan, store, backend).unwrap();
+    let mut session = DecodeSession::new(
+        plan,
+        store,
+        backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut last = None;
     for &token in TOKENS.iter() {
         last = session.step(token).unwrap().logits;
@@ -106,6 +112,7 @@ fn as_f32_returns_f32_and_refuses_every_other_representation() {
                 packed: &FOREIGN_BYTES,
                 scales: &FOREIGN_BYTES,
                 tensor_scale: NVFP4_TENSOR_SCALE,
+                activation: Default::default(),
             },
         ),
         (
@@ -113,6 +120,7 @@ fn as_f32_returns_f32_and_refuses_every_other_representation() {
             WeightSlice::KQuant {
                 blocks: &FOREIGN_BYTES,
                 codec: crate::format::vindex3::represent::kquant::Q8_0,
+                activation: crate::format::vindex3::opplan::exec::backend::KQuantActivation::F32,
             },
         ),
     ];
@@ -158,9 +166,14 @@ fn a_two_norm_plan_decodes_and_matches_the_batch_traversal() {
 fn a_session_refuses_a_plan_without_an_embedding_op() {
     let (_container, mut plan, store) = dense_fixture();
     plan.embedding = None;
-    let err = DecodeSession::new(&plan, &store, &ReferenceBackend::new())
-        .err()
-        .expect("no embedding op must refuse");
+    let err = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend::new(),
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .err()
+    .expect("no embedding op must refuse");
     let message = parse_message(err);
     assert!(message.contains("has no embedding op"), "{message}");
     assert!(message.contains(&plan.component), "{message}");
@@ -172,7 +185,13 @@ fn a_session_refuses_a_plan_without_an_embedding_op() {
 fn a_token_outside_the_embedding_table_is_refused_without_advancing() {
     let (_container, plan, store) = dense_fixture();
     let backend = ReferenceBackend::new();
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     session.step(TOKENS[0]).unwrap();
     let refused = session
         .step(OUT_OF_TABLE_TOKEN)
@@ -247,9 +266,14 @@ fn a_session_fails_closed_on_an_unresolvable_operand_at_every_site() {
         ("ffn", ffn_broken),
         ("head", head_broken),
     ] {
-        let err = DecodeSession::new(&broken, &store, &backend)
-            .err()
-            .unwrap_or_else(|| panic!("{site}: an unresolvable operand must refuse"));
+        let err = DecodeSession::new(
+            &broken,
+            &store,
+            &backend,
+            Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{site}: an unresolvable operand must refuse"));
         let message = parse_message(err);
         assert!(message.contains(UNRESOLVABLE_TENSOR), "{site}: {message}");
     }
@@ -262,7 +286,13 @@ fn a_session_fails_closed_on_an_unresolvable_operand_at_every_site() {
 fn a_backend_ffn_refusal_propagates_out_of_the_step() {
     let (_container, plan, store) = dense_fixture();
     let backend = RefusingBackend::new(RefusedOp::Ffn);
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let refused = session
         .step(TOKENS[0])
         .err()
@@ -277,7 +307,13 @@ fn a_backend_ffn_refusal_propagates_out_of_the_step() {
 fn a_backend_output_head_refusal_propagates_out_of_the_step() {
     let (_container, plan, store) = dense_fixture();
     let backend = RefusingBackend::new(RefusedOp::OutputHead);
-    let mut session = DecodeSession::new(&plan, &store, &backend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &backend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let refused = session
         .step(TOKENS[0])
         .err()

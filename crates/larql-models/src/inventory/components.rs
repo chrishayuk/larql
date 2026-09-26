@@ -118,6 +118,12 @@ pub struct TowerExecution {
     pub use_clipped_linears: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub global_head_dim: Option<usize>,
+    /// SigLIP's attention-pooling head (Gemma 3's `vision_use_head`):
+    /// `true` places a `head.*` parameter set after the encoder, `false`
+    /// — what every Gemma 3 checkpoint ships — means the tower's last
+    /// hidden state is its output and no head tensors exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_head: Option<bool>,
 }
 
 impl TowerExecution {
@@ -340,6 +346,7 @@ fn read_component(root_key: &str, object: &Value) -> ComponentReading {
             standardize: cursor.bool_at("standardize"),
             use_clipped_linears: cursor.bool_at("use_clipped_linears"),
             global_head_dim: cursor.usize_at("global_head_dim"),
+            use_head: cursor.bool_at("vision_use_head"),
         },
     };
     ComponentReading {

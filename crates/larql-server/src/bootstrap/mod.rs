@@ -142,6 +142,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
         };
 
     let load_opts = LoadVindexOptions {
+        v3_backend: cli.v3_backend,
         no_infer: cli.no_infer,
         ffn_only: cli.ffn_only,
         embed_only: cli.embed_only,
@@ -195,7 +196,12 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
     if !cli.no_memcheck && !cli.lazy_weights {
         let total_estimate: u64 = models
             .iter()
-            .filter(|m| !m.infer_disabled)
+            // BitNet (--keep-quant) vindexes don't allocate dense
+            // BitLinear tensors at load time — the resident size
+            // estimator targets the dense path and would massively
+            // over-count for them.  Skip until estimate_resident_bytes
+            // grows a bitnet-aware branch.
+            .filter(|m| !m.infer_disabled && !m.is_bitnet())
             .map(|m| m.config.estimate_resident_bytes())
             .sum();
         if total_estimate > 0 {
@@ -239,6 +245,26 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                 continue;
             }
             let load_start = std::time::Instant::now();
+            // BitNet vindex (--keep-quant) skips the dense load and
+            // pre-loads the native ternary path instead.  Saves ~5 GB
+            // of dense allocation per model on a 2 B BitNet.
+            if m.is_bitnet() {
+                info!("Pre-loading BitNet model for '{}' …", m.id);
+                if let Err(e) = m.force_load_bitnet_model() {
+                    return Err(format!(
+                        "failed to load bitnet model for '{}': {} \
+                         (pass --lazy-weights to defer until first request)",
+                        m.id, e
+                    )
+                    .into());
+                }
+                info!(
+                    "  Pre-loaded BitNet model for '{}' in {:.1}s",
+                    m.id,
+                    load_start.elapsed().as_secs_f64(),
+                );
+                continue;
+            }
             info!("Pre-loading model weights for '{}' …", m.id);
             if let Err(e) = m.force_load_weights() {
                 return Err(format!(

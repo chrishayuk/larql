@@ -147,6 +147,24 @@ pub struct Detection {
     pub validation_errors: Vec<String>,
 }
 
+/// Where the resolution's `vocab_size` came from.
+///
+/// Two authorities can answer, and the answer is recorded beside the
+/// number so a consumer never has to guess which one spoke. The
+/// embedding table's row count is the fact the output head actually
+/// runs against (the tied head emits exactly that many logits), so it is
+/// evidence for the width, not a default standing in for one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum VocabSizeProvenance {
+    /// The checkpoint declares `vocab_size` (root or `text_config`).
+    Declared,
+    /// The checkpoint omits it — Gemma 3 leaves it at the HF class
+    /// default — and the embedding table's row count answered. `tensor`
+    /// is the name as the estate spells it.
+    EmbeddingRows { tensor: String },
+}
+
 /// The topology the serving path would run, including the per-layer
 /// attention policy table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +181,11 @@ pub struct ResolvedTopology {
     pub num_kv_heads: usize,
     pub head_dim: usize,
     pub vocab_size: Option<usize>,
+    /// Which authority answered `vocab_size`. Additive: an inventory JSON
+    /// written before it reads as `None`, which for a declared vocab is
+    /// the only answer it could have had.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocab_size_provenance: Option<VocabSizeProvenance>,
     pub sliding_window: Option<usize>,
     /// How far the programme is declared to run — `max_position_embeddings`
     /// or a family's spelling of it. Read here so the graph can record it:

@@ -1,0 +1,16 @@
+wired 49 weight streams in 0.0 s
+wired 50 weight streams in 0.0 s
+c-to-h: admissible — 1664 positions over 69 samples, bank 78139521f956cb0e84764f5723cbbf784db63e3947ed7cb590f0e3432740e6df
+reference metal-lowered  candidate metal-lowered  changed: target.output_head@NVFP4
+  all                n=1664   KL mean 7.143e-3  p50 6.533e-3  p99 2.597e-2  max 3.665e-2  top-1 95.49%
+  factual            n=199    KL mean 6.544e-3  p50 5.582e-3  p99 2.418e-2  max 2.896e-2  top-1 95.98%
+  prose              n=142    KL mean 8.871e-3  p50 8.971e-3  p99 2.490e-2  max 2.814e-2  top-1 95.07%
+  code               n=273    KL mean 2.968e-3  p50 6.990e-4  p99 1.975e-2  max 2.235e-2  top-1 97.80%
+  arithmetic         n=157    KL mean 7.690e-3  p50 7.436e-3  p99 2.524e-2  max 3.302e-2  top-1 96.82%
+  structured         n=196    KL mean 4.116e-3  p50 1.237e-3  p99 2.597e-2  max 3.052e-2  top-1 96.43%
+  uncertain          n=85     KL mean 8.012e-3  p50 7.676e-3  p99 2.223e-2  max 2.223e-2  top-1 97.65%
+  longform           n=612    KL mean 9.507e-3  p50 9.005e-3  p99 2.790e-2  max 3.665e-2  top-1 93.46%
+  margin 0.0-0.1     n=453    KL mean 1.087e-2  p50 1.064e-2  p99 2.490e-2  max 2.970e-2  top-1 84.33%
+  margin 0.1-0.5     n=587    KL mean 9.193e-3  p50 8.257e-3  p99 2.896e-2  max 3.665e-2  top-1 99.32%
+  margin 0.5-1.0     n=624    KL mean 2.507e-3  p50 9.151e-4  p99 1.590e-2  max 3.317e-2  top-1 100.00%
+-> ~/chris-source/larql/.claude/worktrees/head-fid-2/bench/head-fid-2/c-to-h

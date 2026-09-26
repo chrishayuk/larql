@@ -437,6 +437,14 @@ mod tests {
             "qk_nope_head_dim",
             "qk_rope_head_dim",
             "v_head_dim",
+            // GLM-5.2's DSA indexer, which sits on top of MLA. It is
+            // registered extraction-tier only: no compute path implements
+            // its top-k token selection, so no vindex-served model can use
+            // these, and a served DSA model would already miss the MLA
+            // geometry above.
+            "index_topk",
+            "index_n_heads",
+            "index_head_dim",
             // Vision tower presence. The multimodal path loads its own
             // config rather than reconstructing from the vindex.
             "has_vision_config",

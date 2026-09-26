@@ -1,0 +1,348 @@
+{
+  "source_sha256": "12cdf4d9d06f5675233d71556c2158702cff88dd89efe42af72ab9dfb345dbd4",
+  "run_id": "gemma3-4b-france-lens",
+  "prompt_tokens": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563
+  ],
+  "basis": {
+    "dims": 3,
+    "hash_hex": "95aa4aef2123ff801c6b2a6e8d62496739bdf480ffa6c44351c905a98bcbe06b",
+    "hidden": 2560,
+    "id": "seed-24301-3x2560",
+    "provider": "seeded-orthonormal-v1"
+  },
+  "writes": 408,
+  "readouts": 204,
+  "events": 1446,
+  "checkpoints": [
+    {
+      "stats": {
+        "sequence": 2,
+        "timestamp_ns": 20650375,
+        "position": 0,
+        "kind": "carrier_stats",
+        "layer": 0,
+        "site": "attention",
+        "norm": 642.5778779203565,
+        "delta_norm": 639.434625371019,
+        "layer_scale": null,
+        "projection": [
+          -25.774178,
+          -18.502384,
+          18.285866
+        ],
+        "probe": []
+      },
+      "write": {
+        "sequence": 3,
+        "timestamp_ns": 20663667,
+        "position": 0,
+        "kind": "carrier_write",
+        "layer": 0,
+        "site": "attention",
+        "carrier": "single"
+      },
+      "lens": null
+    },
+    {
+      "stats": {
+        "sequence": 1210,
+        "timestamp_ns": 20848910542,
+        "position": 5,
+        "kind": "carrier_stats",
+        "layer": 0,
+        "site": "ffn",
+        "norm": 805.0019365004472,
+        "delta_norm": 338.9479644098229,
+        "layer_scale": null,
+        "projection": [
+          -37.302254,
+          -22.289206,
+          9.100919
+        ],
+        "probe": []
+      },
+      "write": {
+        "sequence": 1212,
+        "timestamp_ns": 20980749084,
+        "position": 5,
+        "kind": "carrier_write",
+        "layer": 0,
+        "site": "ffn",
+        "carrier": "single"
+      },
+      "lens": {
+        "sequence": 1211,
+        "timestamp_ns": 20980748167,
+        "position": 5,
+        "kind": "readout",
+        "layer": 0,
+        "site": "ffn",
+        "method": "head-v1",
+        "tokens": [
+          {
+            "id": 9079,
+            "logprob": -48.97897028849158,
+            "rank": 14055
+          },
+          {
+            "id": 7001,
+            "logprob": -60.56840872690711,
+            "rank": 59343
+          }
+        ],
+        "top": [
+          {
+            "id": 238627,
+            "logprob": -0.4686400882962687
+          }
+        ]
+      }
+    },
+    {
+      "stats": {
+        "sequence": 1371,
+        "timestamp_ns": 23503224167,
+        "position": 5,
+        "kind": "carrier_stats",
+        "layer": 23,
+        "site": "ffn",
+        "norm": 38412.31504950696,
+        "delta_norm": 2888.867128940728,
+        "layer_scale": null,
+        "projection": [
+          -1089.4749,
+          -1251.6775,
+          789.41394
+        ],
+        "probe": []
+      },
+      "write": {
+        "sequence": 1373,
+        "timestamp_ns": 23627949209,
+        "position": 5,
+        "kind": "carrier_write",
+        "layer": 23,
+        "site": "ffn",
+        "carrier": "single"
+      },
+      "lens": {
+        "sequence": 1372,
+        "timestamp_ns": 23627948500,
+        "position": 5,
+        "kind": "readout",
+        "layer": 23,
+        "site": "ffn",
+        "method": "head-v1",
+        "tokens": [
+          {
+            "id": 9079,
+            "logprob": -3.8100560892467215,
+            "rank": 10
+          },
+          {
+            "id": 7001,
+            "logprob": -9.10809647926137,
+            "rank": 234
+          }
+        ],
+        "top": [
+          {
+            "id": 1144,
+            "logprob": -2.0941184748058035
+          }
+        ]
+      }
+    },
+    {
+      "stats": {
+        "sequence": 1378,
+        "timestamp_ns": 23634199584,
+        "position": 5,
+        "kind": "carrier_stats",
+        "layer": 24,
+        "site": "ffn",
+        "norm": 40683.051918590936,
+        "delta_norm": 3227.9769670495766,
+        "layer_scale": null,
+        "projection": [
+          -1175.3624,
+          -1530.7766,
+          837.23755
+        ],
+        "probe": []
+      },
+      "write": {
+        "sequence": 1380,
+        "timestamp_ns": 23708980167,
+        "position": 5,
+        "kind": "carrier_write",
+        "layer": 24,
+        "site": "ffn",
+        "carrier": "single"
+      },
+      "lens": {
+        "sequence": 1379,
+        "timestamp_ns": 23708979792,
+        "position": 5,
+        "kind": "readout",
+        "layer": 24,
+        "site": "ffn",
+        "method": "head-v1",
+        "tokens": [
+          {
+            "id": 9079,
+            "logprob": -0.36038475576211226,
+            "rank": 1
+          },
+          {
+            "id": 7001,
+            "logprob": -4.985052877100003,
+            "rank": 8
+          }
+        ],
+        "top": [
+          {
+            "id": 9079,
+            "logprob": -0.36038475576211226
+          }
+        ]
+      }
+    },
+    {
+      "stats": {
+        "sequence": 1392,
+        "timestamp_ns": 23851975750,
+        "position": 5,
+        "kind": "carrier_stats",
+        "layer": 26,
+        "site": "ffn",
+        "norm": 46456.14041240776,
+        "delta_norm": 4000.87707332175,
+        "layer_scale": null,
+        "projection": [
+          -1397.9288,
+          -1645.2517,
+          834.28467
+        ],
+        "probe": []
+      },
+      "write": {
+        "sequence": 1394,
+        "timestamp_ns": 23952854834,
+        "position": 5,
+        "kind": "carrier_write",
+        "layer": 26,
+        "site": "ffn",
+        "carrier": "single"
+      },
+      "lens": {
+        "sequence": 1393,
+        "timestamp_ns": 23952854750,
+        "position": 5,
+        "kind": "readout",
+        "layer": 26,
+        "site": "ffn",
+        "method": "head-v1",
+        "tokens": [
+          {
+            "id": 9079,
+            "logprob": -0.0010202578566627096,
+            "rank": 1
+          },
+          {
+            "id": 7001,
+            "logprob": -8.750633066084202,
+            "rank": 3
+          }
+        ],
+        "top": [
+          {
+            "id": 9079,
+            "logprob": -0.0010202578566627096
+          }
+        ]
+      }
+    },
+    {
+      "stats": {
+        "sequence": 1441,
+        "timestamp_ns": 24619717375,
+        "position": 5,
+        "kind": "carrier_stats",
+        "layer": 33,
+        "site": "ffn",
+        "norm": 67842.71073478952,
+        "delta_norm": 4660.802083471362,
+        "layer_scale": null,
+        "projection": [
+          -2227.6553,
+          -2349.2349,
+          1214.0723
+        ],
+        "probe": []
+      },
+      "write": {
+        "sequence": 1443,
+        "timestamp_ns": 24720556334,
+        "position": 5,
+        "kind": "carrier_write",
+        "layer": 33,
+        "site": "ffn",
+        "carrier": "single"
+      },
+      "lens": {
+        "sequence": 1442,
+        "timestamp_ns": 24720554292,
+        "position": 5,
+        "kind": "readout",
+        "layer": 33,
+        "site": "ffn",
+        "method": "head-v1",
+        "tokens": [
+          {
+            "id": 9079,
+            "logprob": -0.22265967015508892,
+            "rank": 1
+          },
+          {
+            "id": 7001,
+            "logprob": -7.38808592442755,
+            "rank": 34
+          }
+        ],
+        "top": [
+          {
+            "id": 9079,
+            "logprob": -0.22265967015508892
+          }
+        ]
+      }
+    }
+  ],
+  "terminal": {
+    "event": {
+      "sequence": 1445,
+      "timestamp_ns": 24792256959,
+      "position": 5,
+      "kind": "logits",
+      "vocab": 262208
+    },
+    "receipt": {
+      "events": 1446,
+      "last_sequence": 1445,
+      "log_sha256": "4b049cbae7f51c81582e0792267315e5dee50dd84e5ef9bfb971bab5509138c9",
+      "provenance_fingerprint": "4f8b37e72a92fd0b9a21486bc6228b7c4d226d0eeceab5b611ee9b8e20c1f04c",
+      "complete": true,
+      "live_dropped": 0,
+      "head_passes": 204,
+      "lens_failure": null
+    },
+    "output": ""
+  }
+}

@@ -19,6 +19,7 @@
 
 use std::time::Instant;
 
+use crate::submission_clock::gpu_times;
 use crate::MetalBackend;
 
 /// One call, broken down. All values microseconds.
@@ -42,21 +43,6 @@ pub struct CallProfile {
     pub readback: f64,
     /// Whole call, wall.
     pub total: f64,
-}
-
-/// Read `GPUStartTime` / `GPUEndTime` off a completed command buffer.
-fn gpu_times(cmd: &metal::CommandBufferRef) -> (f64, f64) {
-    use metal::foreign_types::ForeignTypeRef;
-    use objc::{msg_send, sel, sel_impl};
-    let raw: *mut objc::runtime::Object = cmd.as_ptr() as *mut _;
-    // SAFETY: both selectors exist on MTLCommandBuffer and return
-    // CFTimeInterval (double); the buffer has completed, so they are
-    // populated.
-    unsafe {
-        let start: f64 = msg_send![raw, GPUStartTime];
-        let end: f64 = msg_send![raw, GPUEndTime];
-        (start, end)
-    }
 }
 
 impl MetalBackend {

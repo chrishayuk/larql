@@ -319,7 +319,13 @@ fn a_pure_ssm_container_encodes_closes_and_executes_generically() {
     // must all survive being advanced one position at a time — and both
     // paths run the same sequential arithmetic, so the agreement is
     // bitwise, not approximate.
-    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut session = DecodeSession::new(
+        &plan,
+        &store,
+        &ReferenceBackend,
+        Box::new(crate::format::vindex3::opplan::exec::kv::RowKvState::default()),
+    )
+    .unwrap();
     let mut stepped = None;
     for token in [3u32, 17, 5] {
         stepped = session.step(token).unwrap().logits;

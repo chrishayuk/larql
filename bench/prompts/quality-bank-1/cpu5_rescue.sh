@@ -50,7 +50,7 @@ for spec in "${RUNGS[@]}"; do
       "$CENSUS/${label}.census" || true
 
   # QUALITY on the screen subset, against the shared bank reference.
-  python3 "$HERE/run_bank.py" compare "$CONTAINER" "$SCREEN" \
+  python3 "$HERE/run_bank_legacy.py" compare "$CONTAINER" "$SCREEN" \
       --backend production --source auto --label "$label"
-  python3 "$HERE/run_bank.py" report "$SCREEN" --label "$label"
+  python3 "$HERE/run_bank_legacy.py" report "$SCREEN" --label "$label"
 done

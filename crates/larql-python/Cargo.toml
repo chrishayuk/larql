@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Python bindings for LARQL knowledge graph engine and vindex"
+description = "PyO3 bindings for LARQL graphs, VectorIndex access, LQL sessions, walks and traces."
 
 [lib]
 name = "_native"
@@ -18,12 +18,17 @@ larql-kv = { path = "../larql-kv" }
 larql-models = { path = "../larql-models" }
 larql-vindex = { path = "../larql-vindex" }
 larql-lql = { path = "../larql-lql" }
-pyo3 = { version = "0.29", features = ["extension-module"] }
+pyo3 = { version = "0.29" }
 numpy = "0.29"
 ndarray = "0.16"
 memmap2 = "0.9"
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
+larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
+tempfile = "3"
 
 [lints]
 workspace = true

@@ -129,6 +129,7 @@ fn parse_layer_range_rejects_bad_shapes() {
     assert!(parse_layer_range("x-2").is_err());
     assert!(parse_layer_range("2-x").is_err());
     assert!(parse_layer_range("3-2").is_err());
+    assert!(parse_layer_range(&format!("0-{}", usize::MAX)).is_err());
 }
 
 #[test]
@@ -167,6 +168,7 @@ fn discover_vindexes_returns_sorted_dirs_with_index_json() {
 #[test]
 fn load_options_are_copyable() {
     let opts = LoadVindexOptions {
+        v3_backend: Default::default(),
         no_infer: true,
         ffn_only: false,
         embed_only: false,

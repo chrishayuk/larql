@@ -269,7 +269,7 @@ The sink is a learned per-head logit that competes in the softmax and is then di
 
 A sink logit of +8 dominates the softmax unless real attention logits exceed it. These are large, positive, and present in every layer — this is a systematic error, not a rounding drift.
 
-**Consequence: larql's GPT-OSS forward pass is not faithful today**, on a path the docs call supported — `README.md:609` and `AGENTS.md:125` both direct users to `INFER` for GPT-OSS. That claim needs either a fix or a caveat.
+**Consequence: larql's GPT-OSS forward pass is not faithful today**, on a path the docs call supported — [the README at the audit commit](https://github.com/chrishayuk/larql/blob/66f80656dfec5b829737c1e8bcda6726cae83962/README.md#L617) and [AGENTS.md at that commit](https://github.com/chrishayuk/larql/blob/66f80656dfec5b829737c1e8bcda6726cae83962/AGENTS.md#L125) both direct users to `INFER` for GPT-OSS. That claim needs either a fix or a caveat.
 
 **What is *not* yet established:** the end-to-end magnitude. The mass a sink actually takes depends on the runtime attention logits it competes against, which this measurement does not capture. Sizing it is precisely a **GB** job — `larql shannon verify` against the reference — and GB now has a specific, named thing to catch instead of a general hope of noticing.
 

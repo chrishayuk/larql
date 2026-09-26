@@ -167,6 +167,7 @@ fn every_representation_names_itself_and_only_bf16_answers_as_bf16() {
                 packed: &bytes,
                 scales: &bytes,
                 tensor_scale: 1.0,
+                activation: Default::default(),
             },
             "nvfp4",
         ),

@@ -37,6 +37,12 @@ const IDENTITY_SCALE: f32 = 1.0;
 /// file, not a neutral scale that happens to be one.
 const SITU_DEFAULT_BETA: f32 = 1.0;
 
+/// The position divisor of an unscaled rotary: positions enter the
+/// rotation as declared. What `rope_position_divisor_for_layer` answers
+/// for every layer of a checkpoint without linear scaling, and for the
+/// layers a family's override leaves plain (Gemma 3's sliding layers).
+pub const UNSCALED_POSITION_DIVISOR: f64 = 1.0;
+
 /// Attention score scale from a declared `query_pre_attn_scalar` (or any
 /// other scalar the score is `1/sqrt` of, e.g. `head_dim`).
 ///
@@ -1671,6 +1677,57 @@ pub trait ModelArchitecture: Send + Sync {
         None
     }
 
+    // ── DSA (DeepSeek Sparse Attention) indexer — GLM-5.2 ──
+    //
+    // GLM-5.2 (`glm_moe_dsa`) layers a sparse top-k token-selection
+    // indexer on top of MLA: a small side-attention picks which cached
+    // K/V entries the real MLA attention is even allowed to look at.
+    // These seven methods expose the indexer's config facts and tensor
+    // keys **for extraction/inspection only** — no compute path in
+    // `larql` implements the indexer's top-k selection or consumes
+    // these values. An architecture returning non-default answers here
+    // has done nothing but publish inert facts; wiring the sparse
+    // attention forward pass is a separate, unimplemented piece of work.
+
+    /// Number of key/value entries the indexer selects per query
+    /// (`index_topk` in config.json). `None` = not a DSA architecture.
+    fn dsa_index_topk(&self) -> Option<usize> {
+        None
+    }
+
+    /// Number of indexer attention heads (`index_n_heads`).
+    fn dsa_index_n_heads(&self) -> Option<usize> {
+        None
+    }
+
+    /// Per-head dimension of the indexer's own (small) attention
+    /// (`index_head_dim`) — distinct from the main attention's head
+    /// dimensions above.
+    fn dsa_index_head_dim(&self) -> Option<usize> {
+        None
+    }
+
+    /// Indexer query down-projection weight key.
+    fn dsa_indexer_wq_b_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
+    /// Indexer key projection weight key.
+    fn dsa_indexer_wk_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
+    /// Indexer key-norm weight key.
+    fn dsa_indexer_k_norm_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
+    /// Indexer per-head selection-weight projection key (turns the
+    /// indexer's own attention scores into the top-k selection weights).
+    fn dsa_indexer_weights_proj_key(&self, _layer: usize) -> Option<String> {
+        None
+    }
+
     // ── RoPE scaling ──
 
     /// RoPE scaling type (None, "linear", "yarn", "dynamic", "llama3").
@@ -1730,15 +1787,40 @@ pub trait ModelArchitecture: Send + Sync {
         crate::defaults::DEFAULT_NORM_EPS
     }
 
-    /// Per-layer RoPE position divisor from `rope_scaling`. Used to honour
-    /// linear rope-scaling and the Gemma 3 per-layer-type structured form.
-    /// Default: 1.0 (no scaling).
+    /// Per-layer RoPE position divisor from `rope_scaling`: the linear
+    /// `factor` when the checkpoint declares `rope_type: "linear"`,
+    /// [`UNSCALED_POSITION_DIVISOR`] otherwise.
     ///
-    /// Gemma 3 overrides this to return the linear `factor` on global
-    /// layers only and 1.0 on sliding layers, matching the HF
-    /// `Gemma3TextConfig.rope_scaling.full_attention` structure.
+    /// **The read lives in the trait default**, for the reason recorded
+    /// on [`Self::yarn_rope_scaling`]: `rope_type: "linear"` is a config
+    /// fact, and HF's `_compute_linear_scaling_rope_parameters` applies
+    /// it to every rotating layer of any family that declares it. This
+    /// used to return `1.0` unconditionally and let Gemma 3 opt in, which
+    /// is the shape that doc-comment warns about — a Llama-2 long-context
+    /// checkpoint declaring `{type: linear, factor: 2}` was served
+    /// unscaled.
+    ///
+    /// Gemma 3 overrides this to return the `factor` on global layers
+    /// only and `1.0` on sliding layers, matching the HF
+    /// `Gemma3TextConfig.rope_scaling.full_attention` structure — the
+    /// legitimate override: which layers the block reaches is fixed by
+    /// the architecture, not by the config.
     fn rope_position_divisor_for_layer(&self, _layer: usize) -> f64 {
-        1.0
+        self.linear_rope_scaling()
+            .unwrap_or(UNSCALED_POSITION_DIVISOR)
+    }
+
+    /// The linear position divisor when the checkpoint declares
+    /// `rope_scaling = {rope_type: linear, factor}`; `None` for every
+    /// other scaling family and for no block at all.
+    ///
+    /// The checkpoint-wide declaration. Which layers it reaches is
+    /// [`Self::rope_position_divisor_for_layer`]'s answer.
+    fn linear_rope_scaling(&self) -> Option<f64> {
+        let rs = self.config().rope_scaling.as_ref()?;
+        rs.scaling_type
+            .eq_ignore_ascii_case(rope_types::ROPE_TYPE_LINEAR)
+            .then_some(rs.factor)
     }
 
     /// `llama3` RoPE scaling parameters when the checkpoint declares them.
@@ -1828,6 +1910,9 @@ pub trait ModelArchitecture: Send + Sync {
         }
         if let Some(llama3) = self.llama3_rope_scaling() {
             return DeclaredRopeScaling::Llama3(llama3);
+        }
+        if let Some(factor) = self.linear_rope_scaling() {
+            return DeclaredRopeScaling::Linear { factor };
         }
         DeclaredRopeScaling::None
     }
@@ -1937,6 +2022,22 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
     // One resolution of "which scaling family did this checkpoint
     // declare", asked once and composed with the per-layer theta below.
     let scaling = arch.declared_rope_scaling();
+    // Linear scaling is declared once for the checkpoint but REACHES a
+    // layer by the architecture's answer: HF applies Gemma 3's block to
+    // its full-attention layers only. Resolved per layer here, before
+    // the two branches below, so each sees the divisor this layer
+    // actually runs under — `None` on a layer the family leaves plain.
+    let scaling = match scaling {
+        DeclaredRopeScaling::Linear { .. } => {
+            let divisor = arch.rope_position_divisor_for_layer(layer);
+            if divisor == UNSCALED_POSITION_DIVISOR {
+                DeclaredRopeScaling::None
+            } else {
+                DeclaredRopeScaling::Linear { factor: divisor }
+            }
+        }
+        declared => declared,
+    };
     match arch
         .config()
         .layer_rope_theta
@@ -1967,6 +2068,18 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
                 theta: arch.rope_base_for_layer(layer),
                 scaling,
             },
+            // Composed with the rotary SHAPE, not built over it: a linear
+            // divisor on a partial or multi-axis rotary has no variant,
+            // so that layer keeps its shape and the plan's carriage gate
+            // refuses the unpaired `factor` — the same fallthrough
+            // `from_declared_theta_with_scaling` takes, so the two
+            // branches of this function cannot disagree.
+            DeclaredRopeScaling::Linear { factor } => {
+                match arch.rotary_policy(arch.rope_base_for_layer(layer)) {
+                    PositionPolicy::Rope { theta } => PositionPolicy::Linear { theta, factor },
+                    shaped => shaped,
+                }
+            }
             DeclaredRopeScaling::None => arch.rotary_policy(arch.rope_base_for_layer(layer)),
         },
     }

@@ -163,7 +163,8 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
             | WeightSlice::Q8 { .. }
             | WeightSlice::Q4 { .. }
             | WeightSlice::KQuant { .. }
-            | WeightSlice::Fp8Block { .. } => {
+            | WeightSlice::Fp8Block { .. }
+            | WeightSlice::CodecOwned { .. } => {
                 return Err(VindexError::Parse(format!(
                     "the device backend has no {} kernel; declare F16 or F32 for it",
                     weight.representation()
@@ -208,10 +209,13 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
                          geometry, or out of memory"
                     ))
                 }),
+            // The device kernel reads the codes; the activation binding is a
+            // CPU realization, and no device class table ever pins it.
             WeightSlice::Nvfp4 {
                 packed,
                 scales,
                 tensor_scale,
+                ..
             } => device
                 .nvfp4_gemv(packed, scales, tensor_scale, x, out_dim, in_dim)
                 .ok_or_else(|| {
@@ -290,6 +294,7 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
                     packed,
                     scales,
                     tensor_scale,
+                    ..
                 } => Some((packed, scales, tensor_scale, n, k)),
                 _ => None,
             })
@@ -365,9 +370,15 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
 
     fn dispatch_stats(&self) -> Option<DispatchStats> {
         use std::sync::atomic::Ordering;
+        let device_clock = self
+            .device
+            .lock()
+            .expect("device dispatch lock")
+            .submission_clock();
         Some(DispatchStats {
             device_nanos: self.device_nanos.load(Ordering::Relaxed),
             submissions: self.submissions.load(Ordering::Relaxed),
+            device_clock,
         })
     }
 
@@ -413,7 +424,20 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         }
         // This backend's class table is its own declaration for its own
         // target: the one candidate it offers, named as such.
-        let format = self.formats.for_class(class);
+        let asked = self.formats.for_class(class);
+        // An NVFP4 class format over an operand the container holds at
+        // source precision binds at f16 — the loader's rule, read from the
+        // same fact — so the pin names what will actually be resident.
+        // And the mirror: an f16 class format over an operand the container
+        // stores compiled to NVFP4 binds the compiled image, since no source
+        // bytes exist to narrow.
+        let (format, reason) = if asked == WeightFormat::Nvfp4 && facts.nvfp4_at_source {
+            (WeightFormat::F16, SelectionReason::SourcePrecisionHeld)
+        } else if asked == WeightFormat::F16 && facts.nvfp4_compiled {
+            (WeightFormat::Nvfp4, SelectionReason::CompiledPrecisionHeld)
+        } else {
+            (asked, SelectionReason::DeviceClassTable)
+        };
         let id = RealizationId {
             backend: RealizationBackend::Device,
             form: RealizationForm::DeviceResident(format),
@@ -421,7 +445,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         Ok(Selection {
             realization: id,
             residency: resident_profile(format),
-            reason: SelectionReason::DeviceClassTable,
+            reason,
             candidates: vec![id],
         })
     }
@@ -442,7 +466,8 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 | WeightSlice::Q8 { .. }
                 | WeightSlice::Q4 { .. }
                 | WeightSlice::KQuant { .. }
-                | WeightSlice::Fp8Block { .. } => continue,
+                | WeightSlice::Fp8Block { .. }
+                | WeightSlice::CodecOwned { .. } => continue,
                 WeightSlice::F16(bytes) => streams.push(bytes),
                 WeightSlice::Mxfp4 { packed, scales }
                 | WeightSlice::Nvfp4 { packed, scales, .. } => {

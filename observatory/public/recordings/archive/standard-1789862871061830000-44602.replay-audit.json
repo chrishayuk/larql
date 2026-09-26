@@ -1,0 +1,25 @@
+{
+  "run_id": "standard-1789862871061830000-44602",
+  "provenance": "executor",
+  "status": "completed",
+  "coverage": "complete",
+  "writes": 400,
+  "events": 804,
+  "dropped": 0,
+  "gaps": [],
+  "probe_method": "dot-raw-v1",
+  "source_sha256": "ad862cb2b051ee65103a0767ade4f2f6e2027d44b0ea0cf5f9fbab9bd4fe4792",
+  "audit": {
+    "schema": "larql.observatory.replay-audit.v1",
+    "run_id": "standard-1789862871061830000-44602",
+    "provenance": "executor",
+    "coverage": "complete",
+    "writes_checked": 400,
+    "events_checked": 804,
+    "duplicate_deliveries": 0,
+    "replay_checkpoints": 33,
+    "source_values": "exact",
+    "save_reopen": "exact",
+    "execution_parity": "not_checked"
+  }
+}

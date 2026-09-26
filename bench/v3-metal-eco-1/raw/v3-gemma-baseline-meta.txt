@@ -1,0 +1,5 @@
+sha 2c3dc28458cc5ba365dbb71b9f17e2673cd6ae0c branch feat/metal-submission-clock dirty=0
+binary Sep 23 15:16:33 2026
+Apple M3 Max
+prompt: Write a detailed history of the Roman Empire from its founding to its fall.
+container: ~/chris-models/gemma3-4b-it.nvfp4.vindex3

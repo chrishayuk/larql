@@ -137,6 +137,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "qk_nope_head_dim",
     "qk_rope_head_dim",
     "v_head_dim",
+    // DSA sparse-attention indexer (GLM-5.2) — config facts only
+    "index_topk",
+    "index_n_heads",
+    "index_head_dim",
     // norms
     "rms_norm_eps",
     "layer_norm_eps",

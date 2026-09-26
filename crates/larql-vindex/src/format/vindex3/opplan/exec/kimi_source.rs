@@ -67,6 +67,7 @@ pub struct KimiGeometry {
     pub branch_scale: f32,
     pub renormalize: bool,
     pub kda: KdaShape,
+    pub kda_gate_form: Option<larql_models::config::KdaGateForm>,
     pub mla: MlaShape,
     /// The epsilon MLA's latent norm runs at, READ FROM THE GRAPH.
     ///
@@ -184,6 +185,8 @@ fn geometry_from_graph(graph: &serde_json::Value) -> Result<KimiGeometry, Vindex
         )? as usize,
         branch_scale: need_f(&moe["branch_scale"], "moe.branch_scale")? as f32,
         renormalize,
+        kda_gate_form: serde_json::from_value(exec["kda_gate_form"].clone())
+            .map_err(|e| VindexError::Parse(format!("kda_gate_form: {e}")))?,
         kda: KdaShape {
             hidden,
             num_heads: need(&kda["num_heads"], "kda.num_heads")? as usize,
@@ -384,6 +387,8 @@ impl KimiSourceModel {
                 )),
             ));
         }
+        let gate_form = larql_compute_metal::trait_impl::kda::declared_gate_form(g.kda_gate_form)
+            .map_err(|e| VindexError::Parse(format!("layer {layer}: {e:?}")))?;
         // A compiled KDA candidate substitutes the four wide projections
         // and NOTHING else — the f32 operands below still come from the
         // source stack, exactly as the behavioural evidence was earned.
@@ -396,6 +401,7 @@ impl KimiSourceModel {
                     qkv_offsets: b.qkv_offsets,
                     o_proj: b.o_proj,
                     encoding: b.encoding,
+                    gate_form,
                     f32s,
                 },
                 DeviceState::Kda(KdaDeviceState::zeros(metal, g.kda)),
@@ -432,6 +438,7 @@ impl KimiSourceModel {
                 // compiled KDA-projection candidate is a later rung's
                 // overlay arm, not a silent default.
                 encoding: MetalEncoding::Bf16,
+                gate_form,
                 f32s,
             },
             DeviceState::Kda(KdaDeviceState::zeros(metal, g.kda)),

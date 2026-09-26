@@ -421,6 +421,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                     softcap: None,
                     position_index: t,
                     kv_len: t + 1,
+                    residual_scale: None,
                 },
                 ffn: larql_compute_metal::lowering::stack::LayerFfnLowering::Dense {
                     weights: FfnWeights {
@@ -459,6 +460,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                         norm_eps: EPS,
                         norm_weight_offset: OFFSET,
                         activation: FfnActivation::Silu,
+                        residual_scale: None,
                     },
                 },
                 k_cache: &d.kv[ci].0,

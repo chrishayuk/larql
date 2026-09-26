@@ -1,0 +1,86 @@
+{
+  "schema": "larql.v3.dense-loopback-diagnostic.v1",
+  "benchmark_gate": false,
+  "peer_exclusivity": "unconfirmed; no promoted performance claim",
+  "revision": "b2f24c1ddd24cafc743d4bbda6b8f15fccad7b18",
+  "model": "/Users/christopherhay/chris-models/qwen3-0.6b.vindex3",
+  "index": {
+    "version": 4,
+    "model": "Qwen3-0.6B",
+    "family": "qwen3",
+    "hidden_size": 1024,
+    "num_layers": 28,
+    "system_graph": "system_graph.json",
+    "representations": {
+      "target.decoder_stack@BF16": {
+        "object": "target.decoder_stack",
+        "encoding": "BF16",
+        "segment": "segments/target.decoder_stack.bin",
+        "tensor_count": 308,
+        "payload_bytes": 880932864,
+        "payload_sha256": "4e76d1f1e8411d334b3db85d5b7c2b69dc7321d5d5e605140c2945c2b921ce9e",
+        "segment_sha256": "5956d8c415f1e00cfce17aac493d03c60f0a2b1f0847b21991501d7b2a1116de"
+      },
+      "target.embedding@BF16": {
+        "object": "target.embedding",
+        "encoding": "BF16",
+        "segment": "segments/target.embedding.bin",
+        "tensor_count": 1,
+        "payload_bytes": 311164928,
+        "payload_sha256": "8f29acf519434862d95613b2b4f6b9d14933a5e4d16baebf8ac0b33b410acfb6",
+        "segment_sha256": "89cf6366b1fd0564a29a3f120c6157436006222ef146d9dd40444e98fc86b433"
+      },
+      "target.final_norm@BF16": {
+        "object": "target.final_norm",
+        "encoding": "BF16",
+        "segment": "segments/target.final_norm.bin",
+        "tensor_count": 1,
+        "payload_bytes": 2048,
+        "payload_sha256": "40983d5d6018627e0ea73b2f7650e67c42ab160ceb82404016799eaffdf9d078",
+        "segment_sha256": "8b48cd41cbe21f715108778c63d38052df5640cb2409289e639d69052acdb798"
+      },
+      "target.output_head@BF16": {
+        "object": "target.output_head",
+        "encoding": "BF16",
+        "segment": "segments/target.output_head.bin",
+        "tensor_count": 1,
+        "payload_bytes": 311164928,
+        "payload_sha256": "8f29acf519434862d95613b2b4f6b9d14933a5e4d16baebf8ac0b33b410acfb6",
+        "segment_sha256": "fc82adeef3fa167956cfa4db7f69ed31fe6beac8dc50668bea6495be3afd2145"
+      }
+    },
+    "profiles": [
+      {
+        "name": "exact"
+      }
+    ],
+    "segments": {
+      "segments/target.decoder_stack": 1,
+      "segments/target.embedding": 1,
+      "segments/target.final_norm": 1,
+      "segments/target.output_head": 1
+    }
+  },
+  "metadata_sha256": {
+    "index.json": "aa5e9c606a8eb07a2479435aea066e7a53887e8506e5819cb0faefa10e28adf9",
+    "system_graph.json": "50dc12dfb4c945dc5dda524129b13bcdc23007727fa63f7ab00758bd7f5c6c54"
+  },
+  "binary_sha256": {
+    "larql": "ed442599c479587e399b2e1cad0554a4f433e429d1bbdbc819b70bd39f77700e",
+    "larql-server": "0ea2efab4da0f324ebce1821c2be1be930386920e806260a48fa6130c09156af"
+  },
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "prompt": "Explain step by step why the sky is blue, including how sunlight interacts with the atmosphere.",
+  "max_tokens": 48,
+  "skip_decode": 8,
+  "wire": "json",
+  "wire_comparison": true,
+  "clock": "per-position profile; load/tokenization/output excluded",
+  "started_utc": "2026-09-25T00:21:08Z"
+}
