@@ -84,6 +84,9 @@ sparse-bank machinery.
    normative VINDEX3 container. Where the wording cannot be made honest,
    the PR makes the flag refuse. `write_container` stays for the LYRW
    conformance fixtures, kernel bring-up and the import examples.
+   (Executed: the route stays as the one pinned legacy facility, because
+   `run`/`bench --routed-from` consume its output; see closure
+   criterion 1.)
 5. **The "bank-ABI pre-freeze" gate (§21 gate 6) is re-based on the graph
    shape.** The LYRW bank ABI is no longer frozen into 3.0, so rows that
    certify *that* ABI stop being 3.0 gates. Rows that certify a
@@ -147,9 +150,22 @@ eligibility audit belongs to E8. This entry only keeps the observation.
 Gate 1 is **executed** when all of these hold, each backed by a test or
 recorded check:
 
-1. **No production V3 bank writer.** `write_container` has no caller
-   outside test, fixture and example code. This is pinned by a test or a CI
-   grep, not by review.
+1. **Exactly one production bank-shape producer, and it is labelled
+   legacy.** The bank shape has a live consumer: `larql run` and `larql
+   bench --routed-from DIR` compose a VINDEX2 spine with bank-shape
+   routed banks, on CPU and Metal, through `ContainerRoutedBackend`.
+   Its only producer is `extract-index --expert-banks native|auto
+   --expert-banks-out`, which runs through
+   `extract::orchestrate::write_native_container` → `ContainerBuilder`.
+   Chosen 2026-09-26: keep that route as the single enumerated legacy
+   LYRW facility, rather than retiring it or first migrating
+   `--routed-from` to graph containers. Its CLI help and runtime output
+   name it as legacy LYRW and not a VINDEX3 3.0 model.
+   `crates/larql-vindex/tests/bank_shape_producer_closure.rs` scans every
+   non-test source file in the workspace, and pins every production
+   reference to `write_container` or `ContainerBuilder` to that one owner.
+   A new producer fails the test. Retiring the facility later means
+   removing the owner and emptying the pin together.
 2. **Named legacy recognition.** `larql vindex3 inspect` and `verify` on
    fixture A report it as a legacy bank-shape container, non-normative
    since 3.0, and name the migration path. A test pins the wording's

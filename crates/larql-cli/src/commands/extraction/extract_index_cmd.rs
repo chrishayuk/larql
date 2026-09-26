@@ -47,14 +47,19 @@ pub struct ExtractIndexArgs {
     level: larql_vindex::ExtractLevel,
 
     /// Expert-bank route: `legacy` (inline k-quant, today's behaviour),
-    /// `native` (VINDEX3 container in the checkpoint's own representation
-    /// — refuses rather than downgrades if the source cannot supply it),
-    /// or `auto` (admission policy decides). Native/auto require
-    /// `--expert-banks-out`.
+    /// `native` (a separate legacy LYRW bank-shape container in the
+    /// checkpoint's own representation — refuses rather than downgrades if
+    /// the source cannot supply it), or `auto` (admission policy decides).
+    /// Native/auto require `--expert-banks-out`.
+    ///
+    /// The bank container is the input to `run`/`bench --routed-from`,
+    /// not a VINDEX3 3.0 model (ADR-0027: the graph container is the sole
+    /// normative shape). For VINDEX3 use `--generation v3` or
+    /// `larql vindex3 encode`.
     #[arg(long, default_value = "legacy", value_parser = parse_expert_banks)]
     expert_banks: larql_vindex::ExtractionRequest,
 
-    /// Destination directory for the native expert-bank container.
+    /// Destination directory for the legacy LYRW bank-shape container.
     #[arg(long)]
     expert_banks_out: Option<std::path::PathBuf>,
 

@@ -151,7 +151,8 @@ pub struct BenchArgs {
     #[arg(long, value_name = "SHARDS")]
     pub moe_shards: Option<String>,
 
-    /// Serve the routed expert banks from a VINDEX3 container, exactly as
+    /// Serve the routed expert banks from a legacy LYRW bank-shape
+    /// container (`extract-index --expert-banks-out`), exactly as
     /// `larql run --routed-from` composes them. Everything else — the
     /// prompt, the instrument, the spine — is identical to the plain
     /// bench, so a run without this flag is the controlled comparison.

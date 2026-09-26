@@ -121,8 +121,10 @@ pub fn build_vindex_streaming(
             ));
         };
         let outcome = ctx.extract_expert_banks(expert_banks, dest)?;
-        ctx.callbacks
-            .on_stage(&format!("expert banks: {outcome:?} -> {}", dest.display()));
+        ctx.callbacks.on_stage(&format!(
+            "legacy LYRW expert banks: {outcome:?} -> {}",
+            dest.display()
+        ));
     }
     ctx.write_gate_vectors()?;
     ctx.write_router_weights()?;

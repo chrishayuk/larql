@@ -154,8 +154,9 @@ pub struct RunArgs {
     #[arg(long, value_name = "URL")]
     pub ffn: Option<String>,
 
-    /// Serve the routed expert banks from a VINDEX3 container, keeping the
-    /// rest of the model (tokenizer, config, embeddings, attention, norms,
+    /// Serve the routed expert banks from a legacy LYRW bank-shape
+    /// container (`extract-index --expert-banks-out`; not a VINDEX3 3.0
+    /// model, ADR-0027), keeping the rest of the model (tokenizer, config, embeddings, attention, norms,
     /// routers, dense/shared FFN, LM head) from the VINDEX2 `MODEL` argument.
     ///
     /// Exactly one operand source is replaced — spec §4 classes 4 and 5 —
