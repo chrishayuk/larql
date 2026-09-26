@@ -439,6 +439,12 @@ impl FfnOperands {
         }
     }
 
+    /// Whether [`Self::apply_observed`] can serve this layer: a loaded
+    /// dense FFN only. Hybrid, external and routed layers refuse.
+    pub(super) fn serves_down_input(&self, ffn: &LayerFfn) -> bool {
+        matches!((self, ffn), (Self::Dense(_), LayerFfn::Dense(_)))
+    }
+
     /// Capture the dense down input on the same backend call that consumes it.
     pub(super) fn apply_observed<B: super::backend::PlanBackend + ?Sized>(
         &self,

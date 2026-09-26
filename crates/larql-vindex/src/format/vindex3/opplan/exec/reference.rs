@@ -872,6 +872,10 @@ impl PlanBackend for ReferenceBackend {
         self.ffn_observed(call, &mut |_| {})
     }
 
+    fn serves_ffn_down_input(&self) -> bool {
+        true
+    }
+
     fn ffn_observed(
         &self,
         call: FfnCall<'_>,

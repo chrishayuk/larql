@@ -437,6 +437,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 self.backend.name()
             )));
         }
+        self.admit_ffn_down_input(observer)?;
         let run = self.run(
             Entry::Token(token),
             observer,
@@ -521,6 +522,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 self.backend.name()
             )));
         }
+        self.admit_ffn_down_input(observer)?;
         if !head_interventions.is_none() && !self.backend.serves_head_intervention() {
             return Err(VindexError::Parse(format!(
                 "per-head attention intervention is not served by the {} backend",
@@ -582,6 +584,36 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     }
 
     /// The one decode step. Every public and test entry above is this.
+    /// CAL-1.1: a down-input request the step cannot serve refuses
+    /// before the token executes, as the per-head request does — never
+    /// mid-step, after earlier layers have written KV and emitted
+    /// observations. Judged over exactly the layers the loop runs.
+    fn admit_ffn_down_input(&self, observer: &dyn StepObserver) -> Result<(), VindexError> {
+        let ops = self.ops.get();
+        let first = ops.first_layer();
+        for (offset, state) in ops.layers().iter().enumerate() {
+            let index = first + offset;
+            let (Some(ffn), Some(ffn_op)) = (&state.ffn, &self.plan.layers[index].ffn) else {
+                continue;
+            };
+            if !observer.wants_ffn_down_input(index) {
+                continue;
+            }
+            if !self.backend.serves_ffn_down_input() {
+                return Err(VindexError::Parse(format!(
+                    "FFN down-input capture is not served by the {} backend",
+                    self.backend.name()
+                )));
+            }
+            if !ffn.serves_down_input(ffn_op) {
+                return Err(VindexError::Parse(format!(
+                    "FFN down-input capture at layer {index} requires a dense FFN"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn run(
         &mut self,
         entry: Entry,

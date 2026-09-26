@@ -960,6 +960,10 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
         (**self).ffn(call)
     }
 
+    fn serves_ffn_down_input(&self) -> bool {
+        (**self).serves_ffn_down_input()
+    }
+
     fn ffn_observed(
         &self,
         call: FfnCall<'_>,
@@ -1159,6 +1163,13 @@ pub trait PlanBackend: Sync {
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// CAL-1.1: whether [`Self::ffn_observed`] can hand an observer the
+    /// dense down input. `false` by default, and a request against a
+    /// backend that says so is refused before the token executes.
+    fn serves_ffn_down_input(&self) -> bool {
+        false
+    }
 
     /// Borrow the actual intermediate immediately before down projection.
     /// The default refuses rather than reconstructing another backend's input.

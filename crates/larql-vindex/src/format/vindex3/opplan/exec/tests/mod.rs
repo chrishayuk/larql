@@ -40,6 +40,7 @@ mod device_gate_refusal;
 mod draft_slice;
 mod external_embedding;
 mod f32_planes_execution;
+mod ffn_down_input_admission;
 mod fp8_carriage;
 mod gated_delta_parity;
 mod gated_delta_tiny;
