@@ -292,6 +292,14 @@ pub enum Criterion {
     /// indistinguishable from a synthetic one. See
     /// [`super::activation`].
     ActivationAuthority,
+    /// plan-v1: KL p99, nats over the full vocabulary.
+    PlanKlP99,
+    /// plan-v1: mean KL, nats over the full vocabulary.
+    PlanKlMean,
+    /// plan-v1: share of positions whose argmax moved.
+    PlanTop1Disagreement,
+    /// plan-v1: mean ΔNLL of the actual next token.
+    PlanDeltaNllMean,
 }
 
 impl Criterion {
@@ -307,6 +315,10 @@ impl Criterion {
             Criterion::RouteDisplacement => "route_mixture_mass",
             Criterion::CoveredMass => "min_covered_mass",
             Criterion::ActivationAuthority => "activations",
+            Criterion::PlanKlP99 => "plan_kl_p99",
+            Criterion::PlanKlMean => "plan_kl_mean",
+            Criterion::PlanTop1Disagreement => "plan_top1_disagreement",
+            Criterion::PlanDeltaNllMean => "plan_delta_nll_mean",
         }
     }
 }

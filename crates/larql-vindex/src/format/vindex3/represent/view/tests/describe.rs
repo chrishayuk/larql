@@ -15,7 +15,7 @@ fn the_declared_identity_is_the_snapshots_own() {
     assert_eq!(described.surface_identity, snap.graph().surface_identity());
     assert_eq!(described.surface_tensors, snap.space().surface.len());
     assert_eq!(described.objective, snap.objective());
-    assert_eq!(&described.contract, snap.gate());
+    assert_eq!(described.contract.as_ref(), snap.gate());
     assert_eq!(&described.tail_support, snap.tail_support());
     assert_eq!(described.transition_policy, snap.graph().policy());
     assert_eq!(&described.semantics, snap.semantics());
@@ -31,8 +31,20 @@ fn the_frozen_contract_travels_with_every_verdict_it_licenses() {
     // The gate id is what makes a verdict mean anything a year later:
     // change a threshold and it is a different gate, so a reader who
     // has this string knows exactly what was asked.
-    assert_eq!(described.contract.id, snap.gate().id);
-    assert_eq!(described.contract.kl_p99_max, 3.5e-3);
+    assert_eq!(
+        described.contract.as_ref().unwrap().id(),
+        snap.gate().unwrap().id()
+    );
+    assert_eq!(
+        described
+            .contract
+            .as_ref()
+            .unwrap()
+            .as_kimi()
+            .unwrap()
+            .kl_p99_max,
+        3.5e-3
+    );
     assert_eq!(described.objective, Objective::MinimiseLogicalBytes);
 }
 

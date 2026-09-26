@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::measurement::TailSupport;
 use super::quality::QualityBank;
+use super::reading::{Observation, PlanObservation};
 
 /// The exact quantity a [`super::constraint::Margin`] reports — the JOIN
 /// KEY between a constraint vector, the calibration registry, and a
@@ -47,6 +48,13 @@ pub enum Statistic {
     RouteMixtureMassMax,
     Positions,
     CoveredMass,
+    /// plan-v1 KL p99, nats over the full vocabulary. A different
+    /// quantity from [`Self::KlP99`], which is over the top 2048 ids.
+    PlanKlP99,
+    PlanKlMean,
+    /// `1 − top1_agreement`.
+    PlanTop1Disagreement,
+    PlanDeltaNllMean,
 }
 
 impl Statistic {
@@ -64,6 +72,10 @@ impl Statistic {
             Self::RouteMixtureMassMax => "routed mixture moved at max",
             Self::Positions => "positions",
             Self::CoveredMass => "covered mass at the worst position",
+            Self::PlanKlP99 => "full-vocabulary kl p99",
+            Self::PlanKlMean => "full-vocabulary kl mean",
+            Self::PlanTop1Disagreement => "top-1 disagreement share",
+            Self::PlanDeltaNllMean => "mean next-token nll change",
         }
     }
 }
@@ -114,6 +126,50 @@ impl Statistic {
             }
             Self::Positions => (Some(bank.positions as f64), None),
             Self::CoveredMass => (bank.min_covered_mass, None),
+            // A Kimi bank does not measure plan-v1 statistics.
+            Self::PlanKlP99
+            | Self::PlanKlMean
+            | Self::PlanTop1Disagreement
+            | Self::PlanDeltaNllMean => (None, None),
+        }
+    }
+
+    /// Read this statistic off a reading of either kind. A statistic the
+    /// reading's instrument does not measure is absent, never zero.
+    pub fn observe_reading(self, reading: &Observation) -> (Option<f64>, Option<TailSupport>) {
+        match reading {
+            Observation::Kimi(bank) => self.observe(bank),
+            Observation::Plan(plan) => self.observe_plan(plan),
+        }
+    }
+
+    /// Read this statistic off a plan-v1 reading.
+    pub fn observe_plan(self, plan: &PlanObservation) -> (Option<f64>, Option<TailSupport>) {
+        let all = &plan.all;
+        match self {
+            // Dense: every position contributes a KL value.
+            Self::PlanKlP99 => (
+                Some(all.kl_p99),
+                Some(TailSupport {
+                    quantile: 0.99,
+                    observations: plan.positions,
+                }),
+            ),
+            Self::PlanKlMean => (Some(all.kl_mean), None),
+            Self::PlanTop1Disagreement => (Some(1.0 - all.top1_agreement), None),
+            Self::PlanDeltaNllMean => (all.delta_nll_mean, None),
+            Self::Positions => (Some(plan.positions as f64), None),
+            // plan-v1 measures none of the Kimi statistics.
+            Self::KlP99
+            | Self::Top1Flips
+            | Self::Top10Changes
+            | Self::RouteFlips
+            | Self::RouteFlipRate
+            | Self::Top1MassDisplaced
+            | Self::Top10MassDisplacedP99
+            | Self::RouteMixtureMassP99
+            | Self::RouteMixtureMassMax
+            | Self::CoveredMass => (None, None),
         }
     }
 }
@@ -156,7 +212,11 @@ impl Statistic {
             | Self::Top1MassDisplaced
             | Self::Top10MassDisplacedP99
             | Self::RouteMixtureMassP99
-            | Self::RouteMixtureMassMax => Better::Lower,
+            | Self::RouteMixtureMassMax
+            | Self::PlanKlP99
+            | Self::PlanKlMean
+            | Self::PlanTop1Disagreement
+            | Self::PlanDeltaNllMean => Better::Lower,
             // Sufficiency conditions on the MEASUREMENT, not costs the
             // candidate pays: more positions and wider coverage are
             // strictly more evidence.

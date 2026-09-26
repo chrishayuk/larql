@@ -105,13 +105,16 @@ fn the_controls_come_from_the_record_and_never_from_the_adapters_defaults() {
     // The gate. `measure/mod.rs` names this discrepancy as the reason
     // the request type exists: the runner held a literal while an
     // optimiser record declares something else.
-    assert_eq!(request.gate(), "kimi-logit-balanced-v1");
-    assert_ne!(request.gate(), DEFAULT_GATE);
+    assert_eq!(request.gate(), Some("kimi-logit-balanced-v1"));
+    assert_ne!(request.gate(), Some(DEFAULT_GATE));
     assert_eq!(
         request.resolve_gate().expect("resolves"),
-        kimi_logit_balanced_v1()
+        Some(kimi_logit_balanced_v1().into())
     );
-    assert_eq!(&request.resolve_gate().expect("resolves"), snapshot.gate());
+    assert_eq!(
+        request.resolve_gate().expect("resolves").as_ref(),
+        snapshot.gate()
+    );
 
     // The slice. `LARQL_Q2A_SEQUENCES` took 32 of 256 and nothing
     // recorded which 32; the bank declares which, and how many.

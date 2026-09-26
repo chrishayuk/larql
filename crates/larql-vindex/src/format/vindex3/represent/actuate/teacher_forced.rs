@@ -131,7 +131,15 @@ impl TeacherForcedExecutor {
             candidate: artifacts.candidate(request)?,
             quality_bank: artifacts.corpus(request)?,
             sequences: request.sequences(),
-            gate: request.gate().to_string(),
+            gate: request
+                .gate()
+                .ok_or_else(|| {
+                    not_instructable(
+                        "the Kimi procedure evaluates a gate; a characterisation-only record has none"
+                            .to_string(),
+                    )
+                })?
+                .to_string(),
             label: request.label(),
         };
         instructed
@@ -169,7 +177,7 @@ impl ExperimentExecutor for TeacherForcedExecutor {
             // what it handed over, so restating it is a claim rather
             // than a formality.
             key: request.key().clone(),
-            observation: receipt.bank,
+            observation: receipt.bank.into(),
             verified: receipt.verified,
             execution_note,
         })

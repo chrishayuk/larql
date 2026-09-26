@@ -181,7 +181,7 @@ fn snapshot(root: ResolvedState, measurements: MeasurementRegistry) -> SearchSna
         },
         SearchConfig {
             objective: Objective::MinimiseLogicalBytes,
-            gate: kimi_logit_balanced_v1(),
+            gate: Some(kimi_logit_balanced_v1().into()),
             tail_support: TailSupportPolicy::route_cal_1(),
             calibrations: SearchCalibrationRegistry::default(),
             diagnostic_policy: DiagnosticPolicy::bs2_kimi_v1(),

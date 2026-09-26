@@ -1,0 +1,896 @@
+{
+  "schema": "represent-search-snapshot/v1",
+  "space": {
+    "surface": {
+      "entries": [
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.k_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.o_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.q_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.v_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        }
+      ]
+    },
+    "base_map": {
+      "name": "m",
+      "encoding": "NVFP4",
+      "roles": [
+        "decoder-linear"
+      ]
+    },
+    "vocabulary": {
+      "edits": []
+    },
+    "applied": []
+  },
+  "config": {
+    "objective": "MinimiseLogicalBytes",
+    "gate": {
+      "id": "kimi-logit-balanced-v1",
+      "positions_min": 4096,
+      "kl_p99_max": 0.0035,
+      "top1_mass_displaced_max": 0.12,
+      "top10_mass_displaced_p99_max": 0.12,
+      "route_mixture_mass_p99_max": 0.15,
+      "route_mixture_mass_max": 0.25,
+      "covered_mass_min": 0.55
+    },
+    "tail_support": {
+      "min_tail_observations": 5.0,
+      "provenance": "ROUTE-CAL-1 (2026-08-31): a 256-position diagnostic observed 1-105 route-change events and reported the most expensive route move in the programme as free"
+    },
+    "calibrations": {
+      "entries": []
+    },
+    "diagnostic_policy": {
+      "id": "bs2-kimi-v1",
+      "observations": [
+        {
+          "statistic": "KlP99",
+          "purpose": "ContractPreview"
+        },
+        {
+          "statistic": "Top1MassDisplaced",
+          "purpose": "ContractPreview"
+        },
+        {
+          "statistic": "Top10MassDisplacedP99",
+          "purpose": "ContractPreview"
+        },
+        {
+          "statistic": "RouteMixtureMassP99",
+          "purpose": "ContractPreview"
+        },
+        {
+          "statistic": "RouteFlipRate",
+          "purpose": "SearchEvidence"
+        }
+      ]
+    },
+    "semantics": {
+      "candidate_generation": "exchange-1-out-1-in/v1",
+      "pre_measurement_pruning": "ruling-1-three-prunes/v1",
+      "evidence_interpretation": "search-evidence-ladder/v1",
+      "promotion_rule": "decide-promotion-ordinal/v1",
+      "ranking_rule": "physical-prize-first/v1",
+      "physical_accounting": "logical-bytes/v1",
+      "layout_admission": "pack-layout-admission/v1"
+    },
+    "ranking": {
+      "rule": "PhysicalPrizeFirst"
+    },
+    "standing_intent": {
+      "bank": "36418e070c3c1dc10aacbe139d5b16018c7379abf93523f2156e728ccff9ffbd",
+      "scale": "Authority",
+      "instrument": "276d230b217fa7d689e79f76c2ab5fba6e91f7366f353316f9aedf69d62a184b"
+    },
+    "protocol": {
+      "bank": {
+        "schema": "kimi-teacher-forced/v1",
+        "manifest_sha256": "17d59a6b",
+        "samples": [
+          "seq-000",
+          "seq-001",
+          "seq-002",
+          "seq-003",
+          "seq-004",
+          "seq-005",
+          "seq-006",
+          "seq-007",
+          "seq-008",
+          "seq-009",
+          "seq-010",
+          "seq-011",
+          "seq-012",
+          "seq-013",
+          "seq-014",
+          "seq-015",
+          "seq-016",
+          "seq-017",
+          "seq-018",
+          "seq-019",
+          "seq-020",
+          "seq-021",
+          "seq-022",
+          "seq-023",
+          "seq-024",
+          "seq-025",
+          "seq-026",
+          "seq-027",
+          "seq-028",
+          "seq-029",
+          "seq-030",
+          "seq-031",
+          "seq-032",
+          "seq-033",
+          "seq-034",
+          "seq-035",
+          "seq-036",
+          "seq-037",
+          "seq-038",
+          "seq-039",
+          "seq-040",
+          "seq-041",
+          "seq-042",
+          "seq-043",
+          "seq-044",
+          "seq-045",
+          "seq-046",
+          "seq-047",
+          "seq-048",
+          "seq-049",
+          "seq-050",
+          "seq-051",
+          "seq-052",
+          "seq-053",
+          "seq-054",
+          "seq-055",
+          "seq-056",
+          "seq-057",
+          "seq-058",
+          "seq-059",
+          "seq-060",
+          "seq-061",
+          "seq-062",
+          "seq-063",
+          "seq-064",
+          "seq-065",
+          "seq-066",
+          "seq-067",
+          "seq-068",
+          "seq-069",
+          "seq-070",
+          "seq-071",
+          "seq-072",
+          "seq-073",
+          "seq-074",
+          "seq-075",
+          "seq-076",
+          "seq-077",
+          "seq-078",
+          "seq-079",
+          "seq-080",
+          "seq-081",
+          "seq-082",
+          "seq-083",
+          "seq-084",
+          "seq-085",
+          "seq-086",
+          "seq-087",
+          "seq-088",
+          "seq-089",
+          "seq-090",
+          "seq-091",
+          "seq-092",
+          "seq-093",
+          "seq-094",
+          "seq-095",
+          "seq-096",
+          "seq-097",
+          "seq-098",
+          "seq-099",
+          "seq-100",
+          "seq-101",
+          "seq-102",
+          "seq-103",
+          "seq-104",
+          "seq-105",
+          "seq-106",
+          "seq-107",
+          "seq-108",
+          "seq-109",
+          "seq-110",
+          "seq-111",
+          "seq-112",
+          "seq-113",
+          "seq-114",
+          "seq-115",
+          "seq-116",
+          "seq-117",
+          "seq-118",
+          "seq-119",
+          "seq-120",
+          "seq-121",
+          "seq-122",
+          "seq-123",
+          "seq-124",
+          "seq-125",
+          "seq-126",
+          "seq-127",
+          "seq-128",
+          "seq-129",
+          "seq-130",
+          "seq-131",
+          "seq-132",
+          "seq-133",
+          "seq-134",
+          "seq-135",
+          "seq-136",
+          "seq-137",
+          "seq-138",
+          "seq-139",
+          "seq-140",
+          "seq-141",
+          "seq-142",
+          "seq-143",
+          "seq-144",
+          "seq-145",
+          "seq-146",
+          "seq-147",
+          "seq-148",
+          "seq-149",
+          "seq-150",
+          "seq-151",
+          "seq-152",
+          "seq-153",
+          "seq-154",
+          "seq-155",
+          "seq-156",
+          "seq-157",
+          "seq-158",
+          "seq-159",
+          "seq-160",
+          "seq-161",
+          "seq-162",
+          "seq-163",
+          "seq-164",
+          "seq-165",
+          "seq-166",
+          "seq-167",
+          "seq-168",
+          "seq-169",
+          "seq-170",
+          "seq-171",
+          "seq-172",
+          "seq-173",
+          "seq-174",
+          "seq-175",
+          "seq-176",
+          "seq-177",
+          "seq-178",
+          "seq-179",
+          "seq-180",
+          "seq-181",
+          "seq-182",
+          "seq-183",
+          "seq-184",
+          "seq-185",
+          "seq-186",
+          "seq-187",
+          "seq-188",
+          "seq-189",
+          "seq-190",
+          "seq-191",
+          "seq-192",
+          "seq-193",
+          "seq-194",
+          "seq-195",
+          "seq-196",
+          "seq-197",
+          "seq-198",
+          "seq-199",
+          "seq-200",
+          "seq-201",
+          "seq-202",
+          "seq-203",
+          "seq-204",
+          "seq-205",
+          "seq-206",
+          "seq-207",
+          "seq-208",
+          "seq-209",
+          "seq-210",
+          "seq-211",
+          "seq-212",
+          "seq-213",
+          "seq-214",
+          "seq-215",
+          "seq-216",
+          "seq-217",
+          "seq-218",
+          "seq-219",
+          "seq-220",
+          "seq-221",
+          "seq-222",
+          "seq-223",
+          "seq-224",
+          "seq-225",
+          "seq-226",
+          "seq-227",
+          "seq-228",
+          "seq-229",
+          "seq-230",
+          "seq-231",
+          "seq-232",
+          "seq-233",
+          "seq-234",
+          "seq-235",
+          "seq-236",
+          "seq-237",
+          "seq-238",
+          "seq-239",
+          "seq-240",
+          "seq-241",
+          "seq-242",
+          "seq-243",
+          "seq-244",
+          "seq-245",
+          "seq-246",
+          "seq-247",
+          "seq-248",
+          "seq-249",
+          "seq-250",
+          "seq-251",
+          "seq-252",
+          "seq-253",
+          "seq-254",
+          "seq-255"
+        ],
+        "positions_per_sample": 32
+      },
+      "instrument": {
+        "metric": "kl(baseline || candidate)",
+        "truncation": 2048,
+        "aggregation": "distribution{min,p50,p95,p99,max}",
+        "token_selection": "teacher-forced, all positions",
+        "procedure": "q2a-teacher-forced/baseline-vs-overlay"
+      },
+      "procedure": "teacher-forced-two-arm/v1"
+    }
+  },
+  "facts": {
+    "graph": {
+      "policy": "StrictlyImprovingPhysical",
+      "model": {
+        "artifact": "kimi-linear-48b",
+        "semantic": {
+          "graph_hash": "aligned-vindex3",
+          "representations": [
+            {
+              "representation": "target.decoder_stack",
+              "object": "",
+              "encoding": "",
+              "segment": "target.decoder_stack",
+              "tensor_count": 0,
+              "payload_bytes": 0,
+              "payload_sha256": "seg-dddd",
+              "segment_sha256": "",
+              "codec": null
+            }
+          ],
+          "catalogue_hash": ""
+        }
+      },
+      "surface_identity": "d828ea757c434a8217f261141aefaf2436c1b66798fb668a22edaf73e0499749",
+      "root": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+      "nodes": {
+        "4e39eb4a6db4363631f87112112e09289aca2ea310804cdd663b0807098506ac": {
+          "physical_id": "4e39eb4a6db4363631f87112112e09289aca2ea310804cdd663b0807098506ac",
+          "logical_bytes": 13682673664,
+          "realizations": {
+            "7d24bc648ca5ff93fcce786eac1d393cd31a563b53e29e8ef7ffb6875436982a": {
+              "realization_id": "7d24bc648ca5ff93fcce786eac1d393cd31a563b53e29e8ef7ffb6875436982a",
+              "state": {
+                "id": "4e39eb4a6db4363631f87112112e09289aca2ea310804cdd663b0807098506ac",
+                "model": {
+                  "artifact": "kimi-linear-48b",
+                  "semantic": {
+                    "graph_hash": "aligned-vindex3",
+                    "representations": [
+                      {
+                        "representation": "target.decoder_stack",
+                        "object": "",
+                        "encoding": "",
+                        "segment": "target.decoder_stack",
+                        "tensor_count": 0,
+                        "payload_bytes": 0,
+                        "payload_sha256": "seg-dddd",
+                        "segment_sha256": "",
+                        "codec": null
+                      }
+                    ],
+                    "catalogue_hash": ""
+                  }
+                },
+                "surface_identity": "d828ea757c434a8217f261141aefaf2436c1b66798fb668a22edaf73e0499749",
+                "decisions": {
+                  "decisions": [
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.k_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.o_proj.weight",
+                      "encoding": "Source"
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.q_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.v_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    }
+                  ]
+                }
+              },
+              "logical_bytes": 13682673664
+            }
+          }
+        },
+        "b2b3ab98e0130e18fe721086017208c11205ee311b87475ff783598af67eccd8": {
+          "physical_id": "b2b3ab98e0130e18fe721086017208c11205ee311b87475ff783598af67eccd8",
+          "logical_bytes": 13602484352,
+          "realizations": {
+            "337be875241ae0e3cfdb817edbc91be75cfc0a36843d0e7d1956e5b50b08f474": {
+              "realization_id": "337be875241ae0e3cfdb817edbc91be75cfc0a36843d0e7d1956e5b50b08f474",
+              "state": {
+                "id": "b2b3ab98e0130e18fe721086017208c11205ee311b87475ff783598af67eccd8",
+                "model": {
+                  "artifact": "kimi-linear-48b",
+                  "semantic": {
+                    "graph_hash": "aligned-vindex3",
+                    "representations": [
+                      {
+                        "representation": "target.decoder_stack",
+                        "object": "",
+                        "encoding": "",
+                        "segment": "target.decoder_stack",
+                        "tensor_count": 0,
+                        "payload_bytes": 0,
+                        "payload_sha256": "seg-dddd",
+                        "segment_sha256": "",
+                        "codec": null
+                      }
+                    ],
+                    "catalogue_hash": ""
+                  }
+                },
+                "surface_identity": "d828ea757c434a8217f261141aefaf2436c1b66798fb668a22edaf73e0499749",
+                "decisions": {
+                  "decisions": [
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.k_proj.weight",
+                      "encoding": "Source"
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.o_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.q_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.v_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    }
+                  ]
+                }
+              },
+              "logical_bytes": 13602484352
+            }
+          }
+        },
+        "b2ed9a8c455e51171bf7c5cf645f93aed9ef4862d87313da028def50f60a888a": {
+          "physical_id": "b2ed9a8c455e51171bf7c5cf645f93aed9ef4862d87313da028def50f60a888a",
+          "logical_bytes": 13600393216,
+          "realizations": {
+            "f1be4f63f385d9563a013894fb36453f9d2e589de507916b568e1d52be2f3fdc": {
+              "realization_id": "f1be4f63f385d9563a013894fb36453f9d2e589de507916b568e1d52be2f3fdc",
+              "state": {
+                "id": "b2ed9a8c455e51171bf7c5cf645f93aed9ef4862d87313da028def50f60a888a",
+                "model": {
+                  "artifact": "kimi-linear-48b",
+                  "semantic": {
+                    "graph_hash": "aligned-vindex3",
+                    "representations": [
+                      {
+                        "representation": "target.decoder_stack",
+                        "object": "",
+                        "encoding": "",
+                        "segment": "target.decoder_stack",
+                        "tensor_count": 0,
+                        "payload_bytes": 0,
+                        "payload_sha256": "seg-dddd",
+                        "segment_sha256": "",
+                        "codec": null
+                      }
+                    ],
+                    "catalogue_hash": ""
+                  }
+                },
+                "surface_identity": "d828ea757c434a8217f261141aefaf2436c1b66798fb668a22edaf73e0499749",
+                "decisions": {
+                  "decisions": [
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.k_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.o_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.q_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.v_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    }
+                  ]
+                }
+              },
+              "logical_bytes": 13600393216
+            }
+          }
+        },
+        "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea": {
+          "physical_id": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+          "logical_bytes": 13684764800,
+          "realizations": {
+            "5db03ff88eb30293c2b5e2edec163b4fd9600a0b04312d744dff9b4e08e51f55": {
+              "realization_id": "5db03ff88eb30293c2b5e2edec163b4fd9600a0b04312d744dff9b4e08e51f55",
+              "state": {
+                "id": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+                "model": {
+                  "artifact": "kimi-linear-48b",
+                  "semantic": {
+                    "graph_hash": "aligned-vindex3",
+                    "representations": [
+                      {
+                        "representation": "target.decoder_stack",
+                        "object": "",
+                        "encoding": "",
+                        "segment": "target.decoder_stack",
+                        "tensor_count": 0,
+                        "payload_bytes": 0,
+                        "payload_sha256": "seg-dddd",
+                        "segment_sha256": "",
+                        "codec": null
+                      }
+                    ],
+                    "catalogue_hash": ""
+                  }
+                },
+                "surface_identity": "d828ea757c434a8217f261141aefaf2436c1b66798fb668a22edaf73e0499749",
+                "decisions": {
+                  "decisions": [
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.k_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.o_proj.weight",
+                      "encoding": "Source"
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.q_proj.weight",
+                      "encoding": {
+                        "Compiled": "NVFP4"
+                      }
+                    },
+                    {
+                      "object": "target.decoder_stack",
+                      "tensor": "0.self_attn.v_proj.weight",
+                      "encoding": "Source"
+                    }
+                  ]
+                }
+              },
+              "logical_bytes": 13684764800
+            }
+          }
+        }
+      },
+      "edges": {
+        "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea\u00024e39eb4a6db4363631f87112112e09289aca2ea310804cdd663b0807098506ac\u00027d24bc648ca5ff93fcce786eac1d393cd31a563b53e29e8ef7ffb6875436982a\u0002−M26 +K24\u0001-M26\u0001+K24": {
+          "parent": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+          "child": "4e39eb4a6db4363631f87112112e09289aca2ea310804cdd663b0807098506ac",
+          "child_realization": "7d24bc648ca5ff93fcce786eac1d393cd31a563b53e29e8ef7ffb6875436982a",
+          "action": {
+            "label": "−M26 +K24",
+            "removed": [
+              "M26"
+            ],
+            "added": [
+              "K24"
+            ]
+          },
+          "physical_delta": -2091136,
+          "provenance": [
+            {
+              "by": "rung5/N2"
+            }
+          ]
+        },
+        "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea\u0002b2b3ab98e0130e18fe721086017208c11205ee311b87475ff783598af67eccd8\u0002337be875241ae0e3cfdb817edbc91be75cfc0a36843d0e7d1956e5b50b08f474\u0002−K25 +H\u0001-K25\u0001+H": {
+          "parent": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+          "child": "b2b3ab98e0130e18fe721086017208c11205ee311b87475ff783598af67eccd8",
+          "child_realization": "337be875241ae0e3cfdb817edbc91be75cfc0a36843d0e7d1956e5b50b08f474",
+          "action": {
+            "label": "−K25 +H",
+            "removed": [
+              "K25"
+            ],
+            "added": [
+              "H"
+            ]
+          },
+          "physical_delta": -82280448,
+          "provenance": [
+            {
+              "by": "rung5/N1"
+            }
+          ]
+        },
+        "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea\u0002b2ed9a8c455e51171bf7c5cf645f93aed9ef4862d87313da028def50f60a888a\u0002f1be4f63f385d9563a013894fb36453f9d2e589de507916b568e1d52be2f3fdc\u0002−M26 +H\u0001-M26\u0001+H": {
+          "parent": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+          "child": "b2ed9a8c455e51171bf7c5cf645f93aed9ef4862d87313da028def50f60a888a",
+          "child_realization": "f1be4f63f385d9563a013894fb36453f9d2e589de507916b568e1d52be2f3fdc",
+          "action": {
+            "label": "−M26 +H",
+            "removed": [
+              "M26"
+            ],
+            "added": [
+              "H"
+            ]
+          },
+          "physical_delta": -84371584,
+          "provenance": [
+            {
+              "by": "rung5/N1"
+            }
+          ]
+        }
+      }
+    },
+    "measurements": {
+      "observations": [
+        {
+          "key": {
+            "state": "b2b3ab98e0130e18fe721086017208c11205ee311b87475ff783598af67eccd8",
+            "bank": "36418e070c3c1dc10aacbe139d5b16018c7379abf93523f2156e728ccff9ffbd",
+            "scale": "Authority",
+            "instrument": "276d230b217fa7d689e79f76c2ab5fba6e91f7366f353316f9aedf69d62a184b",
+            "digest": "7b3b3a33106b5ff06fee074cb71055912e817898424439367ad56d5d2beab49d"
+          },
+          "observation": {
+            "positions": 8192,
+            "logits": {
+              "kl_p50": 0.0,
+              "kl_p95": 0.0,
+              "kl_p99": 0.0040563,
+              "max_logit_delta": 0.0,
+              "top1_flips": 0,
+              "top10_changes": 0
+            },
+            "routing": {
+              "route_flips": 1309,
+              "positions_with_route_change": 0,
+              "layers_with_route_change": 0,
+              "route_weight_mass_moved": {
+                "count": 8192,
+                "min": 0.0,
+                "p50": 0.0,
+                "p95": 0.0,
+                "p99": 0.113,
+                "max": 0.19
+              }
+            },
+            "min_covered_mass": 0.6315,
+            "top10_mass_displaced": {
+              "count": 8192,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.065,
+              "max": 0.065
+            },
+            "top1_mass_displaced": {
+              "count": 8192,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.03,
+              "max": 0.03
+            }
+          }
+        },
+        {
+          "key": {
+            "state": "f3cbada09f91ad063db5e76ad5df77f17de3b11b597d7051b2d57c73cd14adea",
+            "bank": "36418e070c3c1dc10aacbe139d5b16018c7379abf93523f2156e728ccff9ffbd",
+            "scale": "Authority",
+            "instrument": "276d230b217fa7d689e79f76c2ab5fba6e91f7366f353316f9aedf69d62a184b",
+            "digest": "7ea7b2d3fd4fc0394693285ffc3c949da1119e255f405aafbd9e88b49a679b4f"
+          },
+          "observation": {
+            "positions": 8192,
+            "logits": {
+              "kl_p50": 0.0,
+              "kl_p95": 0.0,
+              "kl_p99": 0.0033532,
+              "max_logit_delta": 0.0,
+              "top1_flips": 0,
+              "top10_changes": 0
+            },
+            "routing": {
+              "route_flips": 1427,
+              "positions_with_route_change": 0,
+              "layers_with_route_change": 0,
+              "route_weight_mass_moved": {
+                "count": 8192,
+                "min": 0.0,
+                "p50": 0.0,
+                "p95": 0.0,
+                "p99": 0.113,
+                "max": 0.19
+              }
+            },
+            "min_covered_mass": 0.6315,
+            "top10_mass_displaced": {
+              "count": 8192,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.065,
+              "max": 0.065
+            },
+            "top1_mass_displaced": {
+              "count": 8192,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.03,
+              "max": 0.03
+            }
+          }
+        },
+        {
+          "key": {
+            "state": "4e39eb4a6db4363631f87112112e09289aca2ea310804cdd663b0807098506ac",
+            "bank": "36418e070c3c1dc10aacbe139d5b16018c7379abf93523f2156e728ccff9ffbd",
+            "scale": "Authority",
+            "instrument": "276d230b217fa7d689e79f76c2ab5fba6e91f7366f353316f9aedf69d62a184b",
+            "digest": "b34e1ae548b83442d94b8c5561d197563b56d5026239cd194b73d84f1563e742"
+          },
+          "observation": {
+            "positions": 8192,
+            "logits": {
+              "kl_p50": 0.0,
+              "kl_p95": 0.0,
+              "kl_p99": 0.003648,
+              "max_logit_delta": 0.0,
+              "top1_flips": 0,
+              "top10_changes": 0
+            },
+            "routing": {
+              "route_flips": 1570,
+              "positions_with_route_change": 0,
+              "layers_with_route_change": 0,
+              "route_weight_mass_moved": {
+                "count": 8192,
+                "min": 0.0,
+                "p50": 0.0,
+                "p95": 0.0,
+                "p99": 0.113,
+                "max": 0.19
+              }
+            },
+            "min_covered_mass": 0.6315,
+            "top10_mass_displaced": {
+              "count": 8192,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.065,
+              "max": 0.065
+            },
+            "top1_mass_displaced": {
+              "count": 8192,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.03,
+              "max": 0.03
+            }
+          }
+        }
+      ]
+    },
+    "byte_ledgers": {},
+    "execution_cost": {
+      "observations": []
+    }
+  }
+}

@@ -198,7 +198,7 @@ impl Fixture {
         observation.top1_mass_displaced = None;
         Observed {
             key: self.prepared.request().unwrap().key().clone(),
-            observation,
+            observation: observation.into(),
             verified: VerifiedFacts {
                 compiled_layers: vec![0],
                 compiled_projections: [
@@ -216,7 +216,7 @@ impl Fixture {
                 seal_checked_operands: 7,
                 invariant_neighbour_layer: Some(1),
                 positions: self.positions,
-                gate_evaluated: self.snapshot.gate().id.clone(),
+                gate_evaluated: self.snapshot.gate().unwrap().id().to_string(),
             },
             execution_note: "tiny deterministic observation fixture".into(),
         }
@@ -268,7 +268,7 @@ fn freshly_sealed_incomplete_run_with_correct_positions_and_gate_refuses() {
     let mut observed = f.observed(0.01);
     observed.verified = VerifiedFacts {
         positions: 8,
-        gate_evaluated: f.snapshot.gate().id.clone(),
+        gate_evaluated: f.snapshot.gate().unwrap().id().to_string(),
         ..Default::default()
     };
     assert!(!observed.verified.complete());
@@ -442,9 +442,16 @@ fn tampered_artifact_and_malformed_observation_refuse_before_writes() {
     for kind in ["positions", "nonfinite", "count", "empty-report"] {
         let mut observed = f.observed(0.01);
         match kind {
-            "positions" => observed.observation.positions = 0,
-            "nonfinite" => observed.observation.logits.kl_p99 = f64::NAN,
-            "count" => observed.observation.logits.top1_flips = 9,
+            "positions" => observed.observation.as_kimi_mut().unwrap().positions = 0,
+            "nonfinite" => observed.observation.as_kimi_mut().unwrap().logits.kl_p99 = f64::NAN,
+            "count" => {
+                observed
+                    .observation
+                    .as_kimi_mut()
+                    .unwrap()
+                    .logits
+                    .top1_flips = 9
+            }
             _ => observed.verified = VerifiedFacts::default(),
         }
         let a = MeasurementArtifact::from_execution(&f.prepared, &observed, &f.evidence()).unwrap();
@@ -477,7 +484,10 @@ fn protocol_source_bank_and_candidate_mutations_refuse_transactionally() {
                         .samples
                         .push("other".into());
                 } else {
-                    config.gate.positions_min += 1;
+                    match config.gate.as_mut().unwrap() {
+                        super::super::reading::Gate::Kimi(gate) => gate.positions_min += 1,
+                        super::super::reading::Gate::Plan(gate) => gate.positions_min += 1,
+                    }
                 }
                 snapshot =
                     SearchSnapshot::new(snapshot.space().clone(), config, snapshot.facts().clone());
@@ -565,14 +575,15 @@ fn unreadable_authorities_and_invalid_distributions_cannot_change_facts() {
             "bank" => std::fs::remove_file(f.corpus.join("manifest.json")).unwrap(),
             "distribution" => {
                 let mut observed = f.observed(0.01);
-                observed.observation.top1_margin = Some(super::super::quality::Distribution {
-                    count: 0,
-                    min: 0.0,
-                    p50: 1.0,
-                    p95: 0.5,
-                    p99: 2.0,
-                    max: 3.0,
-                });
+                observed.observation.as_kimi_mut().unwrap().top1_margin =
+                    Some(super::super::quality::Distribution {
+                        count: 0,
+                        min: 0.0,
+                        p50: 1.0,
+                        p95: 0.5,
+                        p99: 2.0,
+                        max: 3.0,
+                    });
                 a = MeasurementArtifact::from_execution(&f.prepared, &observed, &f.evidence())
                     .unwrap();
             }
@@ -779,7 +790,7 @@ fn bank_relocation_preserves_authority_but_reordering_does_not() {
     f.prepared = PreparedExperiment::of(&f.snapshot);
     let observed = |fixture: &Fixture| {
         let mut o = fixture.observed(0.01);
-        o.observation.positions = 16;
+        o.observation.as_kimi_mut().unwrap().positions = 16;
         o.verified.positions = 16;
         o
     };
@@ -965,4 +976,43 @@ fn changed_baseline_segment_refuses_even_when_candidate_and_source_declaration_s
     assert!(shown.contains("source container payloads"), "{shown}");
     assert!(shown.contains(&entry.segment_sha256));
     assert!(shown.contains(&super::super::compile::hash_bytes(&bytes)));
+}
+
+/// MEASURE-PLAN-2 W2 at ingestion: a plan-v1 reading sealed into an
+/// artifact for a Kimi-gated record is refused before anything reads its
+/// values, and the record is untouched.
+#[test]
+fn a_plan_reading_is_refused_by_a_kimi_gated_record() {
+    use super::super::measure::plan::metrics::Aggregate;
+    use super::super::reading::{Observation, PlanObservation, PlanProcedure};
+    let f = Fixture::new();
+    let all = Aggregate {
+        positions: 8,
+        kl_mean: 1e-4,
+        kl_p50: 1e-4,
+        kl_p99: 2e-4,
+        kl_max: 3e-4,
+        top1_agreement: 1.0,
+        top5_overlap_mean: 1.0,
+        delta_nll_mean: Some(0.0),
+        max_abs_delta_mean: 0.1,
+        max_abs_delta_p99: 0.2,
+    };
+    let mut observed = f.observed(0.001);
+    observed.observation = Observation::Plan(PlanObservation {
+        procedure: PlanProcedure,
+        sequences: 1,
+        positions: 8,
+        all,
+        by_category: vec![],
+        by_margin_band: vec![],
+    });
+    let artifact =
+        MeasurementArtifact::from_execution(&f.prepared, &observed, &f.evidence()).unwrap();
+    let mut snapshot = f.snapshot.clone();
+    let refusal = refused_without_change(&f, &mut snapshot, &artifact);
+    assert!(
+        matches!(&refusal, IngestionRefusal::Authority { what, .. } if what == "reading kind of the procedure"),
+        "{refusal}"
+    );
 }

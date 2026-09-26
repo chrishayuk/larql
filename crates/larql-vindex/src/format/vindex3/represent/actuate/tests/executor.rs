@@ -112,7 +112,7 @@ impl ExperimentExecutor for Stub {
                 .answers_about
                 .clone()
                 .unwrap_or_else(|| request.key().clone()),
-            observation: fixtures::authority_reading(0.0, 0),
+            observation: fixtures::authority_reading(0.0, 0).into(),
             verified: Default::default(),
             execution_note: format!("stub answering to {}", self.procedure),
         })

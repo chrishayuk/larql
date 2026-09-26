@@ -70,8 +70,7 @@ use super::super::map::PrecisionMap;
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::participation::ParticipationDeclaration;
 use super::super::promotion::PromotionCandidate;
-use super::super::quality::QualityBank;
-use super::super::quality::QualityGate;
+use super::super::reading::{Gate, Observation};
 use super::super::search_evidence::SearchCalibrationRegistry;
 use super::accounting::PhysicalAccountingFacts;
 use super::action_space::ActionVocabulary;
@@ -227,7 +226,10 @@ pub struct SearchSpace {
 pub struct SearchConfig {
     pub objective: Objective,
     /// The frozen behavioural contract conclusions are drawn against.
-    pub gate: QualityGate,
+    /// `None` is a characterisation-only record (MEASURE-PLAN-2 A1.1):
+    /// readings are held and replayed, and nothing is adjudicated,
+    /// admitted or promoted.
+    pub gate: Option<Gate>,
     pub tail_support: TailSupportPolicy,
     /// What this programme has learned about its own instruments — the
     /// `SearchEvidence` ladder's registrations.
@@ -349,8 +351,9 @@ impl SearchSnapshot {
         self.config.objective
     }
 
-    pub fn gate(&self) -> &QualityGate {
-        &self.config.gate
+    /// The contract, or `None` for a characterisation-only record.
+    pub fn gate(&self) -> Option<&Gate> {
+        self.config.gate.as_ref()
     }
 
     pub fn tail_support(&self) -> &TailSupportPolicy {
@@ -401,12 +404,15 @@ impl SearchSnapshot {
 
     /// **The verdict on one observation**, computed from the stored
     /// reading and the stored gate. `None` when no such experiment was
-    /// run — a miss, which is a fact about the record and not a failure.
+    /// run — a miss, which is a fact about the record and not a failure —
+    /// and when the record has no gate, or the reading is of another
+    /// instrument than the gate's (which ingestion refuses to admit).
     pub fn adjudicate(&self, key: &MeasurementKey) -> Option<Adjudication> {
         let observation = self.facts.measurements.get(key)?;
+        let constraints = ConstraintVector::judge(self.config.gate.as_ref()?, observation).ok()?;
         Some(Adjudication {
             key: key.clone(),
-            constraints: ConstraintVector::of(&self.config.gate, observation),
+            constraints,
         })
     }
 
@@ -426,10 +432,17 @@ impl SearchSnapshot {
             // A measurement of a state this graph does not hold belongs
             // to another search; it is not this frontier's business.
             if let Some(entry) = by_state.get_mut(key.state()) {
-                entry.push(Adjudication {
-                    key: key.clone(),
-                    constraints: ConstraintVector::of(&self.config.gate, observation),
-                });
+                let judged = self
+                    .config
+                    .gate
+                    .as_ref()
+                    .and_then(|gate| ConstraintVector::judge(gate, observation).ok());
+                if let Some(constraints) = judged {
+                    entry.push(Adjudication {
+                        key: key.clone(),
+                        constraints,
+                    });
+                }
             }
         }
         by_state
@@ -636,10 +649,16 @@ impl SearchSnapshot {
             tail_policy: self.config.tail_support.clone(),
         };
         let mut candidates = Vec::new();
+        // Promotion ranking is defined over the Kimi instrument only.
+        let Some(gate) = self.config.gate.as_ref().and_then(Gate::as_kimi) else {
+            return Ok(candidates);
+        };
         for edge in self.facts.graph.edges() {
             let (Some(parent_bank), Some(child_bank)) = (
-                self.reading_of(edge.parent(), scale),
-                self.reading_of(edge.child(), scale),
+                self.reading_of(edge.parent(), scale)
+                    .and_then(Observation::as_kimi),
+                self.reading_of(edge.child(), scale)
+                    .and_then(Observation::as_kimi),
             ) else {
                 continue;
             };
@@ -653,8 +672,8 @@ impl SearchSnapshot {
                 &self.facts.execution_cost,
                 parent_ledger,
                 child_ledger,
-                ConstraintVector::of(&self.config.gate, parent_bank),
-                ConstraintVector::of(&self.config.gate, child_bank),
+                ConstraintVector::of(gate, parent_bank),
+                ConstraintVector::of(gate, child_bank),
             )?;
             candidates.push(SearchCandidate {
                 id: edge.action().label.clone(),
@@ -676,7 +695,7 @@ impl SearchSnapshot {
         &'a self,
         state: &'a RepresentationStateId,
         scale: EvidenceScale,
-    ) -> Option<&'a QualityBank> {
+    ) -> Option<&'a Observation> {
         self.facts
             .measurements
             .of_state(state)

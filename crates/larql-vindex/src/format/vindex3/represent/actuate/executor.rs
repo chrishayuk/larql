@@ -62,7 +62,7 @@ use std::path::{Path, PathBuf};
 
 use super::super::compiler::read_source_identity;
 use super::super::measure::outcome::{MeasurementRefusal, VerifiedFacts};
-use super::super::quality::QualityBank;
+use super::super::reading::Observation;
 use super::super::state::identity::RepresentationStateId;
 use super::super::state::key::MeasurementKey;
 use super::request::MeasurementRequest;
@@ -171,7 +171,7 @@ pub struct Observed {
     /// The experiment this is an observation OF, as the executor
     /// restates it. Checked against what was requested.
     pub key: MeasurementKey,
-    pub observation: QualityBank,
+    pub observation: Observation,
     /// Every validity condition the run checked.
     pub verified: VerifiedFacts,
     /// What the executor actually did, in its own vocabulary — a

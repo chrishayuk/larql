@@ -8,7 +8,7 @@ use super::super::actuate::executor::Observed;
 use super::super::actuate::prepare::PreparedExperiment;
 use super::super::compile::hash_bytes;
 use super::super::measure::outcome::VerifiedFacts;
-use super::super::quality::QualityBank;
+use super::super::reading::Observation;
 use super::super::state::key::MeasurementKey;
 use super::state_evidence::EstablishedState;
 
@@ -60,7 +60,7 @@ pub struct MeasurementArtifact {
     source_semantic_digest: String,
     /// Independently read artifact binding captured with the observation.
     candidate_authority_digest: String,
-    observation: QualityBank,
+    observation: Observation,
     /// Every validity condition the run checked. The executor's own
     /// account of itself: evidence to be re-derived against, never an
     /// authority to be trusted.
@@ -80,7 +80,7 @@ struct Sealed<'a> {
     procedure: &'a str,
     source_semantic_digest: &'a str,
     candidate_authority_digest: &'a str,
-    observation: &'a QualityBank,
+    observation: &'a Observation,
     verified: &'a VerifiedFacts,
     execution_note: &'a str,
 }
@@ -145,7 +145,7 @@ impl MeasurementArtifact {
         procedure: impl Into<String>,
         source_semantic_digest: impl Into<String>,
         candidate_authority_digest: &str,
-        observation: QualityBank,
+        observation: Observation,
         verified: VerifiedFacts,
         execution_note: impl Into<String>,
     ) -> Result<Self, ArtifactRefusal> {
@@ -282,7 +282,7 @@ impl MeasurementArtifact {
         &self.candidate_authority_digest
     }
 
-    pub fn observation(&self) -> &QualityBank {
+    pub fn observation(&self) -> &Observation {
         &self.observation
     }
 

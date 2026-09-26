@@ -56,7 +56,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::compile::hash_bytes;
 use super::super::measurement::EvidenceScale;
-use super::super::quality::QualityBank;
+use super::super::reading::Observation;
 use super::evidence_bank::EvidenceBankId;
 use super::identity::RepresentationStateId;
 use super::instrument::InstrumentSemanticsId;
@@ -148,7 +148,7 @@ impl Ord for MeasurementKey {
 
 /// **Observations, keyed by what they observed.**
 ///
-/// Holds [`QualityBank`]s — the readings — and nothing about what they
+/// Holds [`Observation`]s — the readings, of whichever instrument — and nothing about what they
 /// meant. A registry that also stored verdicts would have to be
 /// invalidated whenever a contract moved; this one does not.
 ///
@@ -159,7 +159,7 @@ impl Ord for MeasurementKey {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(into = "RegistryRecords", try_from = "RegistryRecords")]
 pub struct MeasurementRegistry {
-    observations: BTreeMap<MeasurementKey, QualityBank>,
+    observations: BTreeMap<MeasurementKey, Observation>,
 }
 
 /// The persisted shape.
@@ -171,7 +171,7 @@ struct RegistryRecords {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RegistryRecord {
     key: MeasurementKey,
-    observation: QualityBank,
+    observation: Observation,
 }
 
 impl From<MeasurementRegistry> for RegistryRecords {
@@ -218,8 +218,8 @@ impl TryFrom<RegistryRecords> for MeasurementRegistry {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeasurementConflict {
     pub key: MeasurementKey,
-    pub expected: QualityBank,
-    pub observed: QualityBank,
+    pub expected: Observation,
+    pub observed: Observation,
 }
 
 impl std::fmt::Display for MeasurementConflict {
@@ -240,7 +240,7 @@ impl MeasurementRegistry {
         self.observations.contains_key(key)
     }
 
-    pub fn get(&self, key: &MeasurementKey) -> Option<&QualityBank> {
+    pub fn get(&self, key: &MeasurementKey) -> Option<&Observation> {
         self.observations.get(key)
     }
 
@@ -261,7 +261,7 @@ impl MeasurementRegistry {
     pub fn of_state<'a>(
         &'a self,
         state: &'a RepresentationStateId,
-    ) -> impl Iterator<Item = (&'a MeasurementKey, &'a QualityBank)> + 'a {
+    ) -> impl Iterator<Item = (&'a MeasurementKey, &'a Observation)> + 'a {
         self.observations
             .iter()
             .filter(move |(k, _)| &k.state == state)
@@ -286,15 +286,15 @@ impl MeasurementRegistry {
     pub(in crate::format::vindex3::represent) fn record_fixture(
         &mut self,
         key: MeasurementKey,
-        observation: QualityBank,
+        observation: impl Into<Observation>,
     ) -> Result<(), Box<MeasurementConflict>> {
-        self.record_validated(key, observation)
+        self.record_validated(key, observation.into())
     }
 
     fn record_validated(
         &mut self,
         key: MeasurementKey,
-        observation: QualityBank,
+        observation: Observation,
     ) -> Result<(), Box<MeasurementConflict>> {
         match self.observations.get(&key) {
             Some(held) if held == &observation => Ok(()),
