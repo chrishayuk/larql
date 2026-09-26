@@ -193,6 +193,23 @@ recorded check:
    not raise authority or fidelity. Where the inventory finds none, this
    criterion is met by recording that, and re-extraction from source is
    the migration path.
+   *Executed 2026-09-26: none found.* A bank container is an `index.json`
+   with `version` ≥ 3, a `moe_manifest` and no `system_graph`.
+
+   | Scope searched | V3 containers | Bank-shape |
+   | --- | --- | --- |
+   | This workstation: `~/chris-models`, `~/.cache` (larql and Hugging Face caches), `~/chris-source` (every checkout and worktree), `/Volumes`, `/tmp` — 52 `index.json` files | 22 | 0 |
+   | Hugging Face: all 26 model and dataset repos visible to the owner's token, file lists checked for `.lyrw` and `moe_manifest.json` | — | 0 |
+   | This repository's tracked files | — | 0 |
+
+   The published vindex repos are all VINDEX2, and the c8/c9 Gemma
+   layer imports recorded in `docs/vindex3-experiments.md` are no longer
+   on disk. Out of reach: ephemeral remote GPU hosts and copies held
+   elsewhere; `larql show` and `larql verify` still read a bank container
+   met there, and name the migration (criterion 2). So no re-encode
+   witness is owed, and `LEGACY_BANK_MIGRATION`'s re-extraction path
+   stands. A bank-shape artifact that has to survive would reopen this
+   criterion.
 4. **A graph-shape conformance fixture** exists: tiny, deterministic,
    routed + shared, with an oracle. It replaces fixture A as the fixture
    gate 3's reader is certified against.
