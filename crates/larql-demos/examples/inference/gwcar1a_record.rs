@@ -10,6 +10,7 @@ use larql_vindex::format::vindex3::opplan::exec::{
     decode::DecodeSession,
     head_replay::replay_attention_mixture,
     intervene::{vector_sha256, Address, Intervention, InterventionPlan, VectorProvenance},
+    intervene_heads::HeadInterventionPlan,
     kv::RowKvState,
     observe::NoopObserver,
     operands::OperandStore,
@@ -165,8 +166,12 @@ fn terminal(
     let mut kv = prefix.clone();
     let mut session = DecodeSession::over_prepared(plan, tail_ops, backend, &mut kv)?;
     let mut observer = TailCarrier::default();
-    let result =
-        session.step_from_carrier_intervened(natural_carrier, &mut observer, &intervention)?;
+    let result = session.step_from_carrier_intervened(
+        natural_carrier,
+        &mut observer,
+        &intervention,
+        &HeadInterventionPlan::none(),
+    )?;
     if result.firings.len() != 1 {
         return Err("CAR-1A attention-write intervention did not fire once".into());
     }
