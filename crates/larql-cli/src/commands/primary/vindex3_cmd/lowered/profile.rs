@@ -25,16 +25,28 @@ pub(super) struct StageBytes {
     /// Output projection.
     pub attn_out: usize,
     pub dense_ffn: usize,
+    /// The part of `dense_ffn` the gate and up projections read — priced
+    /// on [`Stage::FfnGateUp`] when the lowering split it out.
+    pub dense_gate_up: usize,
+    /// The part of `dense_ffn` the down projection reads.
+    pub dense_down: usize,
     pub experts: usize,
     pub head: usize,
 }
 
 impl StageBytes {
-    fn for_stage(&self, stage: Stage) -> Option<usize> {
+    /// Bytes priced on `stage`. When the projections ran as their own
+    /// stages (`split_o`, `split_ffn`), their bytes go there and the glue
+    /// stage that used to carry them reads none — no byte is priced twice.
+    fn for_stage(&self, stage: Stage, split_o: bool, split_ffn: bool) -> Option<usize> {
         match stage {
             Stage::AttnProj => Some(self.attn_proj),
-            Stage::AttnOut => Some(self.attn_out),
+            Stage::AttnOut if split_o => None,
+            Stage::AttnOut | Stage::AttnOProj => Some(self.attn_out),
+            Stage::DenseFfn if split_ffn => None,
             Stage::DenseFfn => Some(self.dense_ffn),
+            Stage::FfnGateUp => Some(self.dense_gate_up),
+            Stage::FfnDown => Some(self.dense_down),
             Stage::Experts | Stage::RoutedFfn => Some(self.experts),
             Stage::Head => Some(self.head),
             _ => None,
@@ -86,6 +98,8 @@ impl StageLedger {
             "  {:<12} {:>9} {:>6} {:>6} {:>10} {:>9} {:>8}",
             "stage", "ms/tok", "%", "runs", "MB/tok", "GB/s", "floor ms"
         ));
+        let split_o = self.profile.stage_ns.contains_key(&Stage::AttnOProj);
+        let split_ffn = self.profile.stage_ns.contains_key(&Stage::FfnGateUp);
         for stage in Stage::ALL {
             let Some(ns) = self.profile.stage_ns.get(&stage) else {
                 continue;
@@ -97,7 +111,7 @@ impl StageLedger {
             } else {
                 0.0
             };
-            let (mb, gbs, floor) = match self.bytes.for_stage(stage) {
+            let (mb, gbs, floor) = match self.bytes.for_stage(stage, split_o, split_ffn) {
                 Some(b) if b > 0 => {
                     let gb = b as f64 / 1e9;
                     (

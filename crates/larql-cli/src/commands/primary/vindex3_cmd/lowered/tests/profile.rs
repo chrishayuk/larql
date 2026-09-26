@@ -31,10 +31,8 @@ fn render_prices_byte_classes_and_averages_over_tokens() {
     let mut ledger = StageLedger {
         bytes: StageBytes {
             attn_proj: 367_000_000, // exactly 1.00 ms at the 367 GB/s ceiling
-            attn_out: 0,
-            dense_ffn: 0,
-            experts: 734_000_000, // 2.00 ms floor
-            head: 0,
+            experts: 734_000_000,   // 2.00 ms floor
+            ..Default::default()
         },
         ..Default::default()
     };
@@ -94,9 +92,87 @@ fn stage_bytes_total_and_class_mapping() {
         attn_proj: 1,
         attn_out: 2,
         dense_ffn: 4,
+        dense_gate_up: 3,
+        dense_down: 1,
         experts: 8,
         head: 16,
     };
+    // The gate/up and down parts partition `dense_ffn`; the total counts
+    // the class once.
     assert_eq!(b.total(), 31);
     let _ = BTreeMap::<Stage, u64>::new();
+}
+
+/// When the lowering ran the projections as their own stages, their bytes
+/// are priced there and the glue stages that used to carry them print
+/// dashes — no byte is priced twice.
+#[test]
+fn split_projection_stages_take_the_bytes_from_their_glue() {
+    let mut ledger = StageLedger {
+        bytes: StageBytes {
+            attn_out: 367_000_000,
+            dense_ffn: 1_101_000_000,
+            dense_gate_up: 734_000_000,
+            dense_down: 367_000_000,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let t = token(
+        &[
+            (Stage::AttnOut, 0.1),
+            (Stage::AttnOProj, 2.0),
+            (Stage::DenseFfn, 0.2),
+            (Stage::FfnGateUp, 4.0),
+            (Stage::FfnDown, 1.0),
+        ],
+        7.3,
+        0,
+    );
+    ledger.record(&t, 7.3);
+    let lines = ledger.render();
+    let row = |label: &str| {
+        lines
+            .iter()
+            .find(|l| l.trim_start().starts_with(label))
+            .unwrap_or_else(|| panic!("{label} row in {lines:?}"))
+            .clone()
+    };
+    // attn.o_proj: 367 MB over 2 ms = 184 GB/s; its glue prints dashes.
+    assert!(row("attn.o_proj").contains("184"), "{lines:?}");
+    assert!(row("attn.out ").contains(" - "), "{lines:?}");
+    // ffn.gate_up: 734 MB over 4 ms = 184 GB/s; ffn.down 367 MB over 1 ms.
+    assert!(row("ffn.gate_up").contains("734.0"), "{lines:?}");
+    assert!(row("ffn.gate_up").contains("184"), "{lines:?}");
+    assert!(row("ffn.down").contains("367"), "{lines:?}");
+    assert!(row("ffn.dense").contains(" - "), "{lines:?}");
+}
+
+/// Without the split stages the lumped classes keep their bytes.
+#[test]
+fn lumped_stages_keep_their_bytes_without_the_split() {
+    let mut ledger = StageLedger {
+        bytes: StageBytes {
+            attn_out: 367_000_000,
+            dense_ffn: 1_101_000_000,
+            dense_gate_up: 734_000_000,
+            dense_down: 367_000_000,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    ledger.record(
+        &token(&[(Stage::AttnOut, 1.0), (Stage::DenseFfn, 3.0)], 4.0, 0),
+        4.0,
+    );
+    let lines = ledger.render();
+    let find = |label: &str| {
+        lines
+            .iter()
+            .find(|l| l.trim_start().starts_with(label))
+            .unwrap_or_else(|| panic!("{label} row in {lines:?}"))
+            .clone()
+    };
+    assert!(find("attn.out").contains("367.0"), "{lines:?}");
+    assert!(find("ffn.dense").contains("1101.0"), "{lines:?}");
 }

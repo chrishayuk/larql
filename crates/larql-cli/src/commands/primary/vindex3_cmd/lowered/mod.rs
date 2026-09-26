@@ -934,6 +934,10 @@ impl<'a> LoweredSession<'a> {
             let (dense, experts) = l.ffn.bytes_per_token();
             b.dense_ffn += dense;
             b.experts += experts;
+            if let FfnResident::Dense { gate, up, down } = &l.ffn {
+                b.dense_gate_up += gate.bytes() + up.bytes();
+                b.dense_down += down.bytes();
+            }
         }
         if let Some(h) = &self.head {
             b.head = h.bytes();

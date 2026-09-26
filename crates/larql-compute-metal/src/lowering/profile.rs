@@ -46,11 +46,22 @@ pub enum Stage {
     AttnQkOps,
     /// Attention over the KV cache.
     AttnCore,
-    /// Sigmoid gate, output projection + bias, post-norm, residual.
+    /// Sigmoid gate, output projection + bias, post-norm, residual. On
+    /// the single-position path the projection itself is [`Stage::AttnOProj`]
+    /// and this keeps the glue around it.
     AttnOut,
+    /// The attention output projection GEMV alone (single-position path).
+    AttnOProj,
     /// Dense gated FFN: pre-norm, gate/up, activation, down, post-norm,
-    /// residual.
+    /// residual. On the single-position dense path the projections are
+    /// [`Stage::FfnGateUp`] and [`Stage::FfnDown`] and this keeps the
+    /// glue: pre-norm, activation, post-norm, residual.
     DenseFfn,
+    /// The dense FFN's gate and up projection GEMV(s) alone.
+    FfnGateUp,
+    /// The dense FFN's down projection GEMV alone (with the residual when
+    /// the plan folds it into the write).
+    FfnDown,
     /// A routed FFN encoded by the served descriptor path as one block
     /// (gpt-oss) — router, experts and combine together.
     RoutedFfn,
@@ -71,13 +82,16 @@ pub enum Stage {
 
 impl Stage {
     /// Every stage, in encode order.
-    pub const ALL: [Stage; 13] = [
+    pub const ALL: [Stage; 16] = [
         Stage::AttnNorm,
         Stage::AttnProj,
         Stage::AttnQkOps,
         Stage::AttnCore,
         Stage::AttnOut,
+        Stage::AttnOProj,
         Stage::DenseFfn,
+        Stage::FfnGateUp,
+        Stage::FfnDown,
         Stage::RoutedFfn,
         Stage::FfnNorms,
         Stage::Router,
@@ -95,7 +109,10 @@ impl Stage {
             Stage::AttnQkOps => "attn.qk_ops",
             Stage::AttnCore => "attn.core",
             Stage::AttnOut => "attn.out",
+            Stage::AttnOProj => "attn.o_proj",
             Stage::DenseFfn => "ffn.dense",
+            Stage::FfnGateUp => "ffn.gate_up",
+            Stage::FfnDown => "ffn.down",
             Stage::RoutedFfn => "ffn.routed",
             Stage::FfnNorms => "ffn.norms",
             Stage::Router => "ffn.router",
