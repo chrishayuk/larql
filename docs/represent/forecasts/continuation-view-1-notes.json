@@ -1,0 +1,25 @@
+{
+  "programme": "CONTINUATION-VIEW-1",
+  "forecast": "continuation-view-1.json (frozen at main 8b911f20, #552; not edited)",
+  "rule": "The execution record. The forecast is not edited; a wave that finds the design must change writes the change and the reason here.",
+  "waves": {
+    "V1": {
+      "name": "one retention authority",
+      "status": "design recorded before code",
+      "base": "main 8b911f20",
+      "design": {
+        "policy": "`HistoryRange { Full, Trailing(usize) }` in exec/kv.rs beside LayerKvGeometry, with `HistoryRange::of_span(span, window)` — ONE exhaustive match over AttentionSpan, the only place the policy is written — and `required_range(position) -> Range<usize>` (= required_start(position)..position + 1).",
+        "mapping": "Sliding + Some(w) → Trailing(w); Sliding + None → Full (no declared bound to apply); Full → Full; Windowed → Full (its extent is spatial, not a position count — the AttentionSpan::Windowed doc already forbids inferring dead positions from it). Exactly the two formulas it replaces.",
+        "plan_owned": "`AttentionOp::history()` = of_span(op.span, op.window). LayerKvGeometry gains `history: HistoryRange`, set from the plan op in plan_continuation_geometry (ConvQkv and any other KV side: Full), so the authority reaches providers (B needs it in V4). `window` stays a geometry fact, informational as before.",
+        "backends": "reference, production and device take their floor from `call.history().required_range(position).start`, where `AttentionCall::history()` = of_span(call.span, call.window) — the call's span and window are copied from the plan op at the one construction site (exec/mod.rs). production's `source_start` becomes a thin call to it (device reuses it); reference's local match is deleted.",
+        "why_a_field_on_geometry": "`LayerKvGeometry.window` is copied from op.window regardless of span (exec/continuation.rs:260). A provider that read `window` alone would drop rows on a Full or Windowed layer carrying Some(w). The span-aware authority must travel with the geometry.",
+        "not_changed": "larql-compute's `window_start` (V2 GQA) and the Metal lowering's window: different paths, outside VIEW-1's backends"
+      },
+      "witnesses_planned": {
+        "behaviour_neutral_table": "required_range(position).start equals the replaced formula for every span × window ∈ {None, 1, 3, 1024} × position ∈ 0..2100",
+        "S2_scan": "a source scan: no reference/production/device backend file matches on AttentionSpan or computes a floor from `window`; seeded-violation RED control",
+        "parity": "the full larql-vindex / larql-kv / larql-inference suites unchanged, and the MEM-1 harness's row/canonical bit-identical parity on the fixtures"
+      }
+    }
+  }
+}
