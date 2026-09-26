@@ -1,8 +1,11 @@
 use super::super::{candidate_authority::read_candidate_evidence, compiler::CandidateIndex};
 use super::*;
 use crate::format::vindex3::opplan::exec::{
+    continuation::plan_continuation_geometry,
+    continuation_authority::ContinuationConfig,
+    continuation_registry::{ContinuationFactory, ContinuationRegistry},
     decode::DecodeSession,
-    kv::RowKvState,
+    kv::{RowFactory, RowKvState},
     observe::{InputSite, StepEvent, StepObserver},
     operands::{OperandEdit, RepresentationSource},
     production::ProductionBackend,
@@ -84,7 +87,20 @@ impl Fixture {
             component: "target".into(),
             bank: self.bank(),
             sites,
+            continuation: self.continuation(),
         }
+    }
+    /// The built-in row provider, selected by identity as production callers do.
+    fn continuation(&self) -> SelectedContinuation {
+        let mut registry = ContinuationRegistry::new();
+        registry.register(Box::new(RowFactory)).unwrap();
+        registry
+            .select(
+                &RowFactory.identity(),
+                &ContinuationConfig::empty(),
+                &plan_continuation_geometry(&self.plan).unwrap(),
+            )
+            .unwrap()
     }
     fn out(&self, name: &str) -> PathBuf {
         self.dir.path().join(name)
@@ -255,7 +271,11 @@ fn cal12_sequential_stored_candidate_has_frozen_scales_and_independent_derivatio
                 c.key.site.projection,
             )
             .unwrap()
-            .capture(&request.bank, StatisticKind::DenseGram)
+            .capture(
+                &request.bank,
+                StatisticKind::DenseGram,
+                &request.continuation,
+            )
             .unwrap();
             if c.key.site.layer == 1 && c.key.site.projection == Projection::Query {
                 assert_ne!(captured.values(), canonical.values());
@@ -324,6 +344,7 @@ fn cal12_sequential_stored_candidate_has_frozen_scales_and_independent_derivatio
     // Replaying only persisted artifacts reproduces the complete candidate.
     let replay_request = GptqRequest {
         component: request.component.clone(),
+        continuation: request.continuation.clone(),
         bank: request.bank.clone(),
         sites: request
             .sites
@@ -381,10 +402,13 @@ fn cal12_existing_artifacts_require_exact_dense_calibration_key_before_site_enco
     let bank = f.bank();
     let prepared = PreparedCalibration::prepare(&f.plan, &f.store, 0, Projection::Query).unwrap();
     let path = f.out("artifact");
-    let artifact = prepared.capture(&bank, StatisticKind::DenseGram).unwrap();
+    let artifact = prepared
+        .capture(&bank, StatisticKind::DenseGram, &f.continuation())
+        .unwrap();
     artifact.write(&path).unwrap();
     let mut request = GptqRequest {
         component: "target".into(),
+        continuation: f.continuation(),
         bank,
         sites: BTreeMap::from([(
             (q.object.clone(), q.tensor.clone()),
@@ -432,7 +456,11 @@ fn cal12_existing_artifacts_require_exact_dense_calibration_key_before_site_enco
     // An actual valid diagonal artifact also refuses; no implicit dense upgrade.
     let diag = f.out("diagonal");
     prepared
-        .capture(&request.bank, StatisticKind::DiagonalSecondMoment)
+        .capture(
+            &request.bank,
+            StatisticKind::DiagonalSecondMoment,
+            &request.continuation,
+        )
         .unwrap()
         .write(&diag)
         .unwrap();

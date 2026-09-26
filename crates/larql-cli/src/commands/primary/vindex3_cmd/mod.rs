@@ -242,6 +242,21 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume"])]
     pub generate: Option<usize>,
 
+    /// With `--generate` on a `metal-lowered*` backend: prompt-lookup
+    /// speculative decoding. When the context's trailing n-gram (n >= 2)
+    /// occurred earlier, the `N-1` tokens that followed it are verified
+    /// together with the last token in one N-position forward, and the
+    /// longest agreeing prefix is kept. Output ids are the greedy ids
+    /// exactly; only the schedule changes. No match → an ordinary step.
+    #[arg(long, requires = "generate", value_parser = clap::value_parser!(u16).range(2..=8))]
+    pub speculate: Option<u16>,
+
+    /// With `--generate`: stop at the container's EOS ids
+    /// (`generation_config.json`), in both the greedy and `--speculate`
+    /// loops, instead of decoding the full count past end-of-turn.
+    #[arg(long, requires = "generate")]
+    pub stop_at_eos: bool,
+
     /// With `--generate`: observe the prepared image's residency BETWEEN
     /// tokens — mapped address space against the pages of it physically
     /// resident, page faults, peak RSS, and where each token's time went

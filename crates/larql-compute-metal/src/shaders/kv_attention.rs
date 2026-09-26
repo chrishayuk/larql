@@ -11,25 +11,31 @@
 pub const SHADER: &str = r#"
 // Fast decode attention — small threadgroup memory for high occupancy.
 // 4KB scores = max 1024 tokens. Enough for decode (grows by 1 per step).
-kernel void kv_attention(
-    device const float* Q       [[buffer(0)]],
-    device const float* K_cache [[buffer(1)]],
-    device const float* V_cache [[buffer(2)]],
-    device float*       out     [[buffer(3)]],
-    constant uint&      T       [[buffer(4)]],
-    constant uint&      head_dim[[buffer(5)]],
-    constant uint&      num_q   [[buffer(6)]],
-    constant uint&      num_kv  [[buffer(7)]],
-    constant float&     scale   [[buffer(8)]],
-    constant uint&      window_size [[buffer(9)]],
-    constant float*     sinks   [[buffer(10)]],  // per-Q-head sink logits
-    constant uint&      has_sinks [[buffer(11)]], // 0 = slot is a placeholder
-    constant float&     softcap [[buffer(12)]],  // 0.0 = disabled
-    uint tg_id  [[threadgroup_position_in_grid]],
-    uint tid    [[thread_index_in_threadgroup]],
-    uint tg_sz  [[threads_per_threadgroup]],
-    uint lane   [[thread_index_in_simdgroup]],
-    uint sg_id  [[simdgroup_index_in_threadgroup]])
+// The decode attention body, shared by `kv_attention` (one position) and
+// `kv_attention_rows` (a verify block's positions as grid.y) so the two are
+// the same arithmetic by construction. Threadgroup arrays are the caller's:
+// MSL allows them only at kernel scope.
+inline void kv_attention_body(
+    device const float* Q,
+    device const float* K_cache,
+    device const float* V_cache,
+    device float*       out,
+    uint                T,
+    uint                head_dim,
+    uint                num_q,
+    uint                num_kv,
+    float               scale,
+    uint                window_size,
+    constant float*     sinks,
+    uint                has_sinks,
+    float               softcap,
+    uint tg_id,
+    uint tid,
+    uint tg_sz,
+    uint lane,
+    uint sg_id,
+    threadgroup float*  tg_scores,
+    threadgroup float*  tg_sg_vals)
 {
     uint head = tg_id;
     if (head >= num_q) return;
@@ -39,8 +45,7 @@ kernel void kv_attention(
 
     uint t_start = (window_size > 0 && T > window_size) ? T - window_size : 0;
 
-    // Small threadgroup scores — 4KB = max 1024 tokens
-    threadgroup float tg_scores[1024];
+    // Small threadgroup scores — 4KB = max 1024 tokens (caller-owned).
 
     // Phase 1: Q·K dot products + max
     float local_max = -1e30f;
@@ -62,7 +67,6 @@ kernel void kv_attention(
     }
 
     float sg_max = simd_max(local_max);
-    threadgroup float tg_sg_vals[8];
     if (lane == 0) tg_sg_vals[sg_id] = sg_max;
     threadgroup_barrier(mem_flags::mem_threadgroup);
     float global_max = tg_sg_vals[0];
@@ -114,6 +118,66 @@ kernel void kv_attention(
         }
         out_head[d] = acc;
     }
+}
+
+kernel void kv_attention(
+    device const float* Q       [[buffer(0)]],
+    device const float* K_cache [[buffer(1)]],
+    device const float* V_cache [[buffer(2)]],
+    device float*       out     [[buffer(3)]],
+    constant uint&      T       [[buffer(4)]],
+    constant uint&      head_dim[[buffer(5)]],
+    constant uint&      num_q   [[buffer(6)]],
+    constant uint&      num_kv  [[buffer(7)]],
+    constant float&     scale   [[buffer(8)]],
+    constant uint&      window_size [[buffer(9)]],
+    constant float*     sinks   [[buffer(10)]],  // per-Q-head sink logits
+    constant uint&      has_sinks [[buffer(11)]], // 0 = slot is a placeholder
+    constant float&     softcap [[buffer(12)]],  // 0.0 = disabled
+    uint tg_id  [[threadgroup_position_in_grid]],
+    uint tid    [[thread_index_in_threadgroup]],
+    uint tg_sz  [[threads_per_threadgroup]],
+    uint lane   [[thread_index_in_simdgroup]],
+    uint sg_id  [[simdgroup_index_in_threadgroup]])
+{
+    threadgroup float tg_scores[1024];
+    threadgroup float tg_sg_vals[8];
+    kv_attention_body(Q, K_cache, V_cache, out, T, head_dim, num_q, num_kv, scale,
+                      window_size, sinks, has_sinks, softcap,
+                      tg_id, tid, tg_sz, lane, sg_id, tg_scores, tg_sg_vals);
+}
+
+// VERIFY-N: `kv_attention` over a block of `rows` consecutive positions in
+// ONE dispatch. Grid (num_q, rows): row r is position base + r, so its
+// cache length is T + r (T is row 0's), and its Q and output are row r of
+// `[rows, num_q, head_dim]`. Each row runs the shared body unchanged — the
+// same arithmetic as a `kv_attention` dispatch at that position.
+kernel void kv_attention_rows(
+    device const float* Q       [[buffer(0)]],
+    device const float* K_cache [[buffer(1)]],
+    device const float* V_cache [[buffer(2)]],
+    device float*       out     [[buffer(3)]],
+    constant uint&      T       [[buffer(4)]],
+    constant uint&      head_dim[[buffer(5)]],
+    constant uint&      num_q   [[buffer(6)]],
+    constant uint&      num_kv  [[buffer(7)]],
+    constant float&     scale   [[buffer(8)]],
+    constant uint&      window_size [[buffer(9)]],
+    constant float*     sinks   [[buffer(10)]],
+    constant uint&      has_sinks [[buffer(11)]],
+    constant float&     softcap [[buffer(12)]],
+    uint2 tg_pos [[threadgroup_position_in_grid]],
+    uint tid    [[thread_index_in_threadgroup]],
+    uint2 tg_sz2 [[threads_per_threadgroup]],   // uint2: must match the 2-D grid's width
+    uint lane   [[thread_index_in_simdgroup]],
+    uint sg_id  [[simdgroup_index_in_threadgroup]])
+{
+    threadgroup float tg_scores[1024];
+    threadgroup float tg_sg_vals[8];
+    const ulong row_off = (ulong)tg_pos.y * num_q * head_dim;
+    kv_attention_body(Q + row_off, K_cache, V_cache, out + row_off, T + tg_pos.y,
+                      head_dim, num_q, num_kv, scale, window_size, sinks, has_sinks,
+                      softcap, tg_pos.x, tid, tg_sz2.x, lane, sg_id, tg_scores, tg_sg_vals);
 }
 
 kernel void kv_attention_long(
@@ -256,25 +320,31 @@ kernel void kv_attention_long(
 //
 // Caller contract: `tg_sz` must be a multiple of `head_dim` and at least
 // `head_dim`; `tg_sz <= 1024` so `tg_partial` covers `n_slices * head_dim`.
-kernel void kv_attention_seqpar(
-    device const float* Q       [[buffer(0)]],
-    device const float* K_cache [[buffer(1)]],
-    device const float* V_cache [[buffer(2)]],
-    device float*       out     [[buffer(3)]],
-    constant uint&      T       [[buffer(4)]],
-    constant uint&      head_dim[[buffer(5)]],
-    constant uint&      num_q   [[buffer(6)]],
-    constant uint&      num_kv  [[buffer(7)]],
-    constant float&     scale   [[buffer(8)]],
-    constant uint&      window_size [[buffer(9)]],
-    constant float*     sinks   [[buffer(10)]],
-    constant uint&      has_sinks [[buffer(11)]],
-    constant float&     softcap [[buffer(12)]],
-    uint tg_id  [[threadgroup_position_in_grid]],
-    uint tid    [[thread_index_in_threadgroup]],
-    uint tg_sz  [[threads_per_threadgroup]],
-    uint lane   [[thread_index_in_simdgroup]],
-    uint sg_id  [[simdgroup_index_in_threadgroup]])
+// The sequence-parallel decode body, shared by `kv_attention_seqpar` and
+// `kv_attention_seqpar_rows` (a verify block's positions as grid.y), so the
+// two are the same arithmetic by construction.
+inline void kv_attention_seqpar_body(
+    device const float* Q,
+    device const float* K_cache,
+    device const float* V_cache,
+    device float*       out,
+    uint                T,
+    uint                head_dim,
+    uint                num_q,
+    uint                num_kv,
+    float               scale,
+    uint                window_size,
+    constant float*     sinks,
+    uint                has_sinks,
+    float               softcap,
+    uint tg_id,
+    uint tid,
+    uint tg_sz,
+    uint lane,
+    uint sg_id,
+    threadgroup float*  tg_scores,
+    threadgroup float*  tg_partial,
+    threadgroup float*  tg_sg_vals)
 {
     uint head = tg_id;
     if (head >= num_q) return;
@@ -282,9 +352,7 @@ kernel void kv_attention_seqpar(
     device const float* q = Q + head * head_dim;
     uint t_start = (window_size > 0 && T > window_size) ? T - window_size : 0;
 
-    threadgroup float tg_scores[1024];
     // n_slices * head_dim <= tg_sz <= 1024 by the caller contract.
-    threadgroup float tg_partial[1024];
 
     // ---- Phases 1-2: unchanged from kv_attention ----
     float local_max = -1e30f;
@@ -304,7 +372,6 @@ kernel void kv_attention_seqpar(
     }
 
     float sg_max = simd_max(local_max);
-    threadgroup float tg_sg_vals[32];
     if (lane == 0) tg_sg_vals[sg_id] = sg_max;
     threadgroup_barrier(mem_flags::mem_threadgroup);
     float global_max = tg_sg_vals[0];
@@ -359,6 +426,67 @@ kernel void kv_attention_seqpar(
         out[head * head_dim + tid] = sum;
     }
 }
+kernel void kv_attention_seqpar(
+    device const float* Q       [[buffer(0)]],
+    device const float* K_cache [[buffer(1)]],
+    device const float* V_cache [[buffer(2)]],
+    device float*       out     [[buffer(3)]],
+    constant uint&      T       [[buffer(4)]],
+    constant uint&      head_dim[[buffer(5)]],
+    constant uint&      num_q   [[buffer(6)]],
+    constant uint&      num_kv  [[buffer(7)]],
+    constant float&     scale   [[buffer(8)]],
+    constant uint&      window_size [[buffer(9)]],
+    constant float*     sinks   [[buffer(10)]],
+    constant uint&      has_sinks [[buffer(11)]],
+    constant float&     softcap [[buffer(12)]],
+    uint tg_id  [[threadgroup_position_in_grid]],
+    uint tid    [[thread_index_in_threadgroup]],
+    uint tg_sz  [[threads_per_threadgroup]],
+    uint lane   [[thread_index_in_simdgroup]],
+    uint sg_id  [[simdgroup_index_in_threadgroup]])
+{
+    threadgroup float tg_scores[1024];
+    threadgroup float tg_partial[1024];
+    threadgroup float tg_sg_vals[32];
+    kv_attention_seqpar_body(Q, K_cache, V_cache, out, T, head_dim, num_q, num_kv, scale,
+                             window_size, sinks, has_sinks, softcap,
+                             tg_id, tid, tg_sz, lane, sg_id, tg_scores, tg_partial, tg_sg_vals);
+}
+
+// VERIFY-N: `kv_attention_seqpar` over a block of `rows` positions in ONE
+// dispatch — grid (num_q, rows), row r at position base + r (cache length
+// T + r, Q/output row r of `[rows, num_q, head_dim]`), each row the shared
+// body unchanged.
+kernel void kv_attention_seqpar_rows(
+    device const float* Q       [[buffer(0)]],
+    device const float* K_cache [[buffer(1)]],
+    device const float* V_cache [[buffer(2)]],
+    device float*       out     [[buffer(3)]],
+    constant uint&      T       [[buffer(4)]],
+    constant uint&      head_dim[[buffer(5)]],
+    constant uint&      num_q   [[buffer(6)]],
+    constant uint&      num_kv  [[buffer(7)]],
+    constant float&     scale   [[buffer(8)]],
+    constant uint&      window_size [[buffer(9)]],
+    constant float*     sinks   [[buffer(10)]],
+    constant uint&      has_sinks [[buffer(11)]],
+    constant float&     softcap [[buffer(12)]],
+    uint2 tg_pos  [[threadgroup_position_in_grid]],
+    uint  tid     [[thread_index_in_threadgroup]],
+    uint2 tg_sz2  [[threads_per_threadgroup]],   // uint2: must match the 2-D grid's width
+    uint  lane    [[thread_index_in_simdgroup]],
+    uint  sg_id   [[simdgroup_index_in_threadgroup]])
+{
+    threadgroup float tg_scores[1024];
+    threadgroup float tg_partial[1024];
+    threadgroup float tg_sg_vals[32];
+    const ulong row_off = (ulong)tg_pos.y * num_q * head_dim;
+    kv_attention_seqpar_body(Q + row_off, K_cache, V_cache, out + row_off, T + tg_pos.y,
+                             head_dim, num_q, num_kv, scale, window_size, sinks, has_sinks,
+                             softcap, tg_pos.x, tid, tg_sz2.x, lane, sg_id, tg_scores, tg_partial, tg_sg_vals);
+}
+
 
 
 // ---------------------------------------------------------------------
@@ -603,6 +731,18 @@ kernel void kv_cache_append(
 pub struct AttendKernel;
 impl crate::kernels::ShaderKernel for AttendKernel {
     const KERNEL_NAME: &'static str = "kv_attention";
+}
+
+/// VERIFY-N: `kv_attention` with a block's positions as grid.y.
+pub struct AttendRowsKernel;
+impl crate::kernels::ShaderKernel for AttendRowsKernel {
+    const KERNEL_NAME: &'static str = "kv_attention_rows";
+}
+
+/// VERIFY-N: `kv_attention_seqpar` with a block's positions as grid.y.
+pub struct AttendSeqParRowsKernel;
+impl crate::kernels::ShaderKernel for AttendSeqParRowsKernel {
+    const KERNEL_NAME: &'static str = "kv_attention_seqpar_rows";
 }
 
 pub struct AttendLongKernel;

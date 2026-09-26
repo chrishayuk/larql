@@ -1,0 +1,79 @@
+{
+  "programme": "REPRESENT-DEPTH-1",
+  "artifact_kind": "experimental freeze. Written BEFORE the arms run and BEFORE any remedy is designed.",
+  "written": "2026-09-17",
+  "base": "branch `represent-pareto-1`, after the FRONTIER-SPEND-1 finding",
+  "follows": "docs/represent/forecasts/represent-frontier-spend-1-finding.json",
+
+  "THE_INVARIANT": "Evidence strength determines which conclusions are licensed; it is not evidence that a candidate is superior.",
+
+  "THE_CONTRACT": "Holding candidate identity, physical facts and observed ordering values fixed, increasing the measurement depth of ONLY ONE candidate must not create or reverse an evidence preference solely because its evidence became priceable.",
+
+  "THE_ALLOWANCE_that_must_survive_any_remedy": "New measurements MAY change preference when they contribute new accepted evidence VALUES. What is forbidden is measurement DEPTH ITSELF acting as evidence of merit. A remedy that blocks the first in order to block the second has broken the search.",
+
+  "WHY_NOW": "FRONTIER-SPEND-1 found the defect firing 1488 of 1488 times, always on the first escalation, always with `deciding: []`, with the two exploration policies landing on different destinations in 500 of 744 shared landscapes. A K3 search cannot afford 500-position authority runs across a large candidate set, so heterogeneous depth is not an optimisation there — it is the only affordable mode. Under the current contract whichever K3 representation was investigated deeply first would look best, and the trace would say `deciding: []` while doing it.",
+
+  "DIAGNOSIS_MoveClass_carries_two_concepts": {
+    "the_uneven_split": "Three of the four variants are statements about the CANDIDATE; one is a statement about US.",
+    "Unpriced_tier_3": "'buys time and consumes no measurable headroom anywhere' — MERIT",
+    "Priced_tier_2": "'buys time at a measurable cost' — MERIT",
+    "Unscorable_tier_1": "'buys time, but a cost could not be scored' — KNOWLEDGE",
+    "Worthless_tier_0": "'buys no time, however cheap' — MERIT",
+    "the_defect_in_one_line": "`Unscorable` is a knowledge state wearing a merit rank, and it is ranked BELOW both priced variants — so a candidate whose cost merely could not be measured is outranked by one whose cost was measured, regardless of what those costs are."
+  },
+
+  "REPAIR_SHAPE_stated_now_so_the_implementation_can_be_checked_not_invented": {
+    "principle": "Stage 1 is ADMISSIBILITY, not PRECEDENCE.",
+    "current": "pool = candidates where tier == best_tier",
+    "required": "pool = candidates where tier > 0",
+    "what_this_preserves": "`Worthless` stays excluded and `None{EveryMoveWorthless}` keeps its meaning, which PARETO-1 and FRONTIER-SCALE-1 depend on. `Unscorable`, `Priced` and `Unpriced` all remain comparable downstream, where `comparable()` already restricts each PAIR to the statistics both observed and that order — the shared-evidence rule this contract needs already exists one stage lower.",
+    "the_economy_it_preserves": "Cheap evidence can still dominate candidates away, so a search need not price all 16 candidates before learning anything. 500-position runs are paid only on unresolved frontier members where pricing is actually required. That is the 8-to-500, 62.5x economy the ladder exists for.",
+    "status": "SHAPE ONLY. No implementation is authorised by this document. The arms below run against the CURRENT contract first."
+  },
+
+  "A_FOURTH_AMBIGUITY_STATE_is_required": {
+    "the_gap": "When the proxies tie, the physical stage is required, and the unresolved frontier members do NOT have comparable pricing authority, the honest answer is neither a selection nor any of the three existing reasons. It is not conflicting proxies, not absent ordering evidence, and not indistinguishability.",
+    "must_not_overload": "`AmbiguityReason::IndistinguishableOnEveryProxy` already means something else — every comparable proxy is equal AND no physical difference separates them. Reusing it here would silently merge 'they are the same' with 'we cannot yet tell'.",
+    "meaning": "Pricing evidence is incomplete across this frontier; control returns to exploration with a named reason to spend.",
+    "note": "Naming it is in scope for the freeze. Implementing it is not."
+  },
+
+  "ARMS_run_against_the_CURRENT_contract": {
+    "note": "Each arm states what the CONTRACT requires and what the current implementation is PREDICTED to do. A prediction that misses is recorded, not smoothed.",
+    "A1_conflict_price_A": {
+      "setup": "A and B in conflict at cheap depth. Price A only.",
+      "contract_requires": "Ambiguous{ConflictingOrderingProxies} — the conflict is untouched by how hard A was looked at.",
+      "predicted_current": "SelectForAuthority{A} with empty `dominated` and `deciding`."
+    },
+    "A2_conflict_price_B": {
+      "setup": "The same conflict. Price B only.",
+      "contract_requires": "Ambiguous{ConflictingOrderingProxies}.",
+      "predicted_current": "SelectForAuthority{B} with empty evidence — the mirror of A1, which is what makes it depth and not merit."
+    },
+    "A3_HEADLINE_price_only_the_loser": {
+      "setup": "A dominates B on BOTH proxies at cheap depth, so A is the unique cheap winner. Price ONLY B.",
+      "contract_requires": "A still wins. B being measured harder is not a reason to prefer it.",
+      "predicted_current": "SelectForAuthority{B} — THE LOSER WINS. A candidate that lost on evidence wins by being measured more.",
+      "why_headline": "It is the clearest single statement of the defect available, and stronger than the symmetric conflict arms: the outcome is not merely unjustified, it is inverted."
+    },
+    "A4_price_only_the_winner": {
+      "setup": "Same as A3, but price ONLY A.",
+      "contract_requires": "A wins, and wins ON THE EVIDENCE — `dominated` names B and `deciding` names the separating proxies.",
+      "predicted_current": "SelectForAuthority{A} with EMPTY `dominated` and `deciding`. The right candidate for the wrong reason. This arm's failure is not the answer but the justification, which is why asserting the evidence and not just the winner matters."
+    },
+    "A5_price_both": {
+      "setup": "Both candidates priced.",
+      "contract_requires": "Normal semantics resume — the frontier decides, and the physical stage may legitimately act if the quality evidence leaves it unresolved.",
+      "predicted_current": "PASSES. Depth is uniform, so stage 1 is a no-op. This is the control that shows the defect is specific to UNEQUAL depth."
+    },
+    "A6_permutation": {
+      "setup": "Every arm above, with candidate enumeration reversed.",
+      "contract_requires": "The complete `PromotionDecision`, including full `PromotionEvidence`, identical.",
+      "predicted_current": "PASSES — R4-F1 is intact. The defect is not an ordering leak; it is a precedence leak, and the two must not be confused."
+    }
+  },
+
+  "SEQUENCE": "Run the arms against the current contract. Record whether the loser-win prediction fires. ONLY after that, design the remedy. A remedy designed alongside the measurement is a remedy chosen for how well it makes the measurement green.",
+
+  "out_of_scope": "No change to `decide_promotion` in this document. No implementation of the fourth ambiguity state. No rerun of FRONTIER-SPEND-1 — that waits for the remedy, and its driver is already committed and annotated for it."
+}

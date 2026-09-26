@@ -31,6 +31,7 @@ pub mod kda;
 pub mod kimi_layer;
 pub mod kv_append_attend_fused;
 pub mod kv_attention;
+pub mod kv_attention_splitk;
 pub mod layer_norm;
 pub mod mla;
 pub mod moe_descriptor;
@@ -121,6 +122,7 @@ pub fn all_shaders() -> String {
     // Attention
     src.push_str(causal_attention::SHADER);
     src.push_str(kv_attention::SHADER);
+    src.push_str(kv_attention_splitk::SHADER);
     src.push_str(kv_append_attend_fused::SHADER);
     src.push_str(attn_fused::SHADER);
     src.push_str(rope::SHADER);

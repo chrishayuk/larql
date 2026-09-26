@@ -115,7 +115,110 @@ const MEASURED: &[MeasuredGeometry] = &[
         num_kv_heads: 2,
         tiers: &[(0, 0), (1024, 8)],
     },
+    // Gemma 3 4B through the VINDEX3 lowering (8 query heads, 4 KV heads,
+    // head_dim 256; NVFP4 body + head, M3 Max on AC, 2026-09-25). Steady
+    // GPU ms/token over 100 decoded tokens after the prompt, serial brackets
+    // around the slice arms; every arm produced identical token ids and
+    // the route witness confirmed the kernel:
+    //
+    //   prompt   serial   2      4      serial   bracket
+    //   25       10.19   9.66   9.38   10.18    0.1%   VALID: 4 → +8.5%
+    //   357      13.89  11.38  10.07   13.94    0.4%   VALID: 4 → +37.9%
+    //   891      20.50  14.96  14.80   20.48    0.1%   VALID: 4 → +38.4%
+    //
+    // 4 slices is 4 x 256 = 1024 threads, KV-B1's ceiling at this
+    // head_dim, and wins at every measured depth. Eight query heads is
+    // eight threadgroups per layer, so the serial phase-3 walk is the
+    // whole cost even at short context — unlike Glimmer, where 32 heads
+    // already filled the device below ~1K.
+    MeasuredGeometry {
+        head_dim: 256,
+        num_q_heads: 8,
+        num_kv_heads: 4,
+        tiers: &[(0, 4)],
+    },
 ];
+
+/// SPLITK-1: the span split across `chunks` threadgroups per head, each
+/// `slices x head_dim` threads, then merged (`ops::kv_splitk`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SplitKGeometry {
+    pub chunks: usize,
+    pub slices: usize,
+}
+
+/// A measured split-K row: tiers `(span_floor, chunks, slices)`, ascending
+/// by floor, the largest floor not exceeding the span applying; `chunks
+/// == 0` means no split-K for that tier (the seqpar row decides).
+struct MeasuredSplitK {
+    head_dim: usize,
+    num_q_heads: usize,
+    num_kv_heads: usize,
+    tiers: &'static [(u32, usize, usize)],
+}
+
+const SPLITK_MEASURED: &[MeasuredSplitK] = &[
+    // Gemma 3 4B (`examples/bench_attention_splitk.rs`, M3 Max on battery,
+    // 2026-09-26; 34 cold caches per command buffer, seqpar(4) baseline
+    // bracketed — every row below within 1% drift). Speedup over the
+    // production seqpar(4) kernel, both passes included:
+    //
+    //   span   s2c4   s2c8   s2c16  s1c32   best
+    //   128    1.15   1.20   1.12   1.03    s2c8
+    //   256    1.27   1.39   1.33   1.24    s2c8
+    //   512    1.48   1.78   1.81   1.89    s1c32 ≈ s2c16
+    //   1024   1.79   2.40   2.67   2.80    s1c32 ≈ s2c16
+    //   2048   1.96   2.83   3.40   3.40    tie
+    //   4096   2.04   3.11   3.98   3.86    s2c16
+    //
+    // The optimum is interior (c64 loses at every span), so the sweep is
+    // not bound-limited. Below 128 the 32-span row drifted 8-20% in both
+    // runs: direction only → unlicensed, seqpar keeps it. Cause, from
+    // GQA-RE-READ (`bench_attention_gqa`): 8 threadgroups on 40 cores is
+    // per-threadgroup latency bound, not bytes.
+    MeasuredSplitK {
+        head_dim: 256,
+        num_q_heads: 8,
+        num_kv_heads: 4,
+        tiers: &[(0, 0, 0), (128, 8, 2), (512, 16, 2)],
+    },
+];
+
+/// Choose split-K for `q`, or `None` to leave it to
+/// [`choose_attention_geometry`].
+///
+/// Only an UNSET request consults the split-K rows: any explicit
+/// `LARQL_KV_SEQPAR` (off, auto, a slice count) is a request for the
+/// intra-threadgroup kernels and keeps them — which is also the A/B arm.
+/// The chunk count is raised to the kernel's floor
+/// (`kv_splitk::min_chunks`) and never exceeds the span or
+/// [`kv_splitk::SPLITK_MAX_CHUNKS`](super::kv_splitk::SPLITK_MAX_CHUNKS).
+pub fn choose_splitk(request: SeqparRequest, q: &AttentionGeometryQuery) -> Option<SplitKGeometry> {
+    use super::kv_splitk::{min_chunks, SPLITK_MAX_CHUNKS};
+    if request != SeqparRequest::Unset || q.head_dim == 0 {
+        return None;
+    }
+    let row = SPLITK_MEASURED.iter().find(|m| {
+        m.head_dim == q.head_dim
+            && m.num_q_heads == q.num_q_heads
+            && m.num_kv_heads == q.num_kv_heads
+    })?;
+    let (_, chunks, slices) = row
+        .tiers
+        .iter()
+        .take_while(|(floor, _, _)| *floor <= q.span)
+        .last()
+        .copied()?;
+    if chunks == 0 {
+        return None;
+    }
+    let chunks = chunks
+        .max(min_chunks(q.span))
+        .min(q.span.max(1) as usize)
+        .min(SPLITK_MAX_CHUNKS);
+    let slices = slices.clamp(1, SEQPAR_MAX_THREADS / q.head_dim);
+    (chunks > 1).then_some(SplitKGeometry { chunks, slices })
+}
 
 fn measured_row(q: &AttentionGeometryQuery) -> Option<&'static MeasuredGeometry> {
     MEASURED.iter().find(|m| {

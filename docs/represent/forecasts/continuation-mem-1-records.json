@@ -1,0 +1,3383 @@
+{
+ "generated_by": "scratch extract of crates/larql-kv/tests/continuation_mem_1 records; regenerate with the harness",
+ "subjects": [
+  {
+   "subject": "gemma3-4b-it",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "production-larql-compute",
+   "journey": {
+    "decode": 8,
+    "prefill": 1100,
+    "resume": 16
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.861818181818182,
+     "M7_contract_duplicate_fraction_canonical": 0.34942820838627703,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.835125448028674,
+     "M7_contract_duplicate_fraction_canonical": 0.3527180783817952,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.8220640569395017,
+     "M7_contract_duplicate_fraction_canonical": 0.35435056746532156,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {
+    "container": "/Users/christopherhay/chris-models/gemma3-4b-it.vindex3"
+   },
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 3342336,
+        "kv_allocated_bytes_headers_excluded": 306380800,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 306380800,
+        "kv_row_allocated_bytes": 306380800,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 37400,
+        "appends": 37400,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 6678144,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 306380800,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 3342336,
+        "kv_allocated_bytes_headers_excluded": 310837248,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 310837248,
+        "kv_row_allocated_bytes": 310837248,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 544,
+        "appends": 544,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 4456448,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 29,
+        "sample": {
+         "layer": 0,
+         "window": 1024,
+         "rows_held_at_end": 1116,
+         "last_rows_offered": 1115,
+         "last_selected": 1024,
+         "held_outside_range_fraction_at_end": 0.0824
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 3342336,
+        "kv_allocated_bytes_headers_excluded": 313065472,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 313065472,
+        "kv_row_allocated_bytes": 313065472,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 272,
+        "appends": 272,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 2228224,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 29,
+        "sample": {
+         "layer": 0,
+         "window": 1024,
+         "rows_held_at_end": 1124,
+         "last_rows_offered": 1123,
+         "last_selected": 1024,
+         "held_outside_range_fraction_at_end": 0.089
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 3342336,
+        "kv_allocated_bytes_headers_excluded": 876806144,
+        "kv_matrix_allocated_bytes": 570425344,
+        "kv_payload_bytes": 306380800,
+        "kv_row_allocated_bytes": 306380800,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 37400,
+        "duplicate_allocs": 74800,
+        "duplicate_bytes": 306380800,
+        "header_alloc_bytes": 6678144,
+        "incoming_rows_freed": 74800,
+        "matrix_first_alloc_bytes": 278528,
+        "matrix_grew_by_one": 37400,
+        "matrix_realloc_in_place": 317,
+        "matrix_realloc_moved": 431,
+        "matrix_realloc_moved_bytes": 284356608,
+        "moved_in_capacity_bytes": 306380800,
+        "row_sized_allocs": 74868,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 3342336,
+        "kv_allocated_bytes_headers_excluded": 881262592,
+        "kv_matrix_allocated_bytes": 570425344,
+        "kv_payload_bytes": 310837248,
+        "kv_row_allocated_bytes": 310837248,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 544,
+        "duplicate_allocs": 1088,
+        "duplicate_bytes": 4456448,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 1088,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 544,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 4456448,
+        "row_sized_allocs": 1088,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 29,
+        "sample": {
+         "layer": 0,
+         "window": 1024,
+         "rows_held_at_end": 1116,
+         "last_rows_offered": 1115,
+         "last_selected": 1024,
+         "held_outside_range_fraction_at_end": 0.0824
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 3342336,
+        "kv_allocated_bytes_headers_excluded": 883490816,
+        "kv_matrix_allocated_bytes": 570425344,
+        "kv_payload_bytes": 313065472,
+        "kv_row_allocated_bytes": 313065472,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 272,
+        "duplicate_allocs": 544,
+        "duplicate_bytes": 2228224,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 544,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 272,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 2228224,
+        "row_sized_allocs": 544,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 29,
+        "sample": {
+         "layer": 0,
+         "window": 1024,
+         "rows_held_at_end": 1124,
+         "last_rows_offered": 1123,
+         "last_selected": 1024,
+         "held_outside_range_fraction_at_end": 0.089
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    }
+   ],
+   "I2": {
+    "layers": 29,
+    "holds_both_directions_all": true,
+    "sample": {
+     "holds_both_directions": true,
+     "inside_changed": true,
+     "inside_row": 1115,
+     "layer": 0,
+     "outside_bit_identical": true,
+     "outside_row": 0,
+     "position": 1116,
+     "selected_range": [
+      93,
+      1116
+     ],
+     "window": 1024
+    }
+   },
+   "geometry_summary": {
+    "layers": 34,
+    "kv_dims": [
+     1024
+    ],
+    "windows": [
+     "1024",
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 0
+   }
+  },
+  {
+   "subject": "kimi-linear-48b-s7",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "production-larql-compute",
+   "journey": {
+    "decode": 4,
+    "prefill": 16,
+    "resume": 4
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": null,
+     "M7_contract_duplicate_fraction_canonical": null,
+     "M7_contract_duplicate_fraction_row": null,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": null,
+     "M7_contract_duplicate_fraction_canonical": null,
+     "M7_contract_duplicate_fraction_row": null,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": null,
+     "M7_contract_duplicate_fraction_canonical": null,
+     "M7_contract_duplicate_fraction_row": null,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {
+    "container": "/Users/christopherhay/chris-models/Kimi-Linear-48B-A3B-Instruct.s7.vindex3"
+   },
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 2483,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 258048,
+        "latent_payload_bytes": 258048,
+        "recurrent_allocated_bytes": 44892160,
+        "recurrent_payload_bytes": 44892160,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 20,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 20
+        },
+        "conv_history_buffer_bytes": [
+         "[49152, 49152, 49152]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 322560,
+        "latent_payload_bytes": 322560,
+        "recurrent_allocated_bytes": 44892160,
+        "recurrent_payload_bytes": 44892160,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 20,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 20
+        },
+        "conv_history_buffer_bytes": [
+         "[49152, 49152, 49152]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 387072,
+        "latent_payload_bytes": 387072,
+        "recurrent_allocated_bytes": 44892160,
+        "recurrent_payload_bytes": 44892160,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 80,
+        "integrity_clean": 80,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "0": 80
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[49152, 49152, 49152]"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 2436,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 258048,
+        "latent_payload_bytes": 258048,
+        "recurrent_allocated_bytes": 44892160,
+        "recurrent_payload_bytes": 44892160,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 20,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 20
+        },
+        "conv_history_buffer_bytes": [
+         "[49152, 49152, 49152]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 322560,
+        "latent_payload_bytes": 322560,
+        "recurrent_allocated_bytes": 44892160,
+        "recurrent_payload_bytes": 44892160,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 20,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 20
+        },
+        "conv_history_buffer_bytes": [
+         "[49152, 49152, 49152]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 387072,
+        "latent_payload_bytes": 387072,
+        "recurrent_allocated_bytes": 44892160,
+        "recurrent_payload_bytes": 44892160,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 80,
+        "integrity_clean": 80,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "0": 80
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[49152, 49152, 49152]"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 27,
+    "kv_dims": [],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [
+     576
+    ],
+    "recurrent_payload_bytes_total": 44892160
+   }
+  },
+  {
+   "subject": "mem1-dense",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "reference-f32",
+   "journey": {
+    "decode": 4,
+    "prefill": 8,
+    "resume": 4
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.0,
+     "M7_contract_duplicate_fraction_canonical": 0.5,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.3333333333333335,
+     "M7_contract_duplicate_fraction_canonical": 0.42857142857142855,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.0,
+     "M7_contract_duplicate_fraction_canonical": 0.5,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {},
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 2048,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 2048,
+        "kv_row_allocated_bytes": 2048,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 16,
+        "appends": 16,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 1152,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 2048,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 1536,
+        "kv_allocated_bytes_headers_excluded": 3072,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 3072,
+        "kv_row_allocated_bytes": 3072,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 8,
+        "appends": 8,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 1536,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1024,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 1536,
+        "kv_allocated_bytes_headers_excluded": 4096,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 4096,
+        "kv_row_allocated_bytes": 4096,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 8,
+        "appends": 8,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1024,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 4096,
+        "kv_matrix_allocated_bytes": 2048,
+        "kv_payload_bytes": 2048,
+        "kv_row_allocated_bytes": 2048,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 16,
+        "duplicate_allocs": 32,
+        "duplicate_bytes": 2048,
+        "header_alloc_bytes": 1152,
+        "incoming_rows_freed": 32,
+        "matrix_first_alloc_bytes": 256,
+        "matrix_grew_by_one": 16,
+        "matrix_realloc_in_place": 2,
+        "matrix_realloc_moved": 10,
+        "matrix_realloc_moved_bytes": 1536,
+        "moved_in_capacity_bytes": 2048,
+        "row_sized_allocs": 36,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 1536,
+        "kv_allocated_bytes_headers_excluded": 7168,
+        "kv_matrix_allocated_bytes": 4096,
+        "kv_payload_bytes": 3072,
+        "kv_row_allocated_bytes": 3072,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 8,
+        "duplicate_allocs": 16,
+        "duplicate_bytes": 1024,
+        "header_alloc_bytes": 1536,
+        "incoming_rows_freed": 16,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 8,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 4,
+        "matrix_realloc_moved_bytes": 2048,
+        "moved_in_capacity_bytes": 1024,
+        "row_sized_allocs": 16,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 1536,
+        "kv_allocated_bytes_headers_excluded": 8192,
+        "kv_matrix_allocated_bytes": 4096,
+        "kv_payload_bytes": 4096,
+        "kv_row_allocated_bytes": 4096,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 8,
+        "duplicate_allocs": 16,
+        "duplicate_bytes": 1024,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 16,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 8,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1024,
+        "row_sized_allocs": 16,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 2,
+    "kv_dims": [
+     16
+    ],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 0
+   }
+  },
+  {
+   "subject": "mem1-gated-delta",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "reference-f32",
+   "journey": {
+    "decode": 3,
+    "prefill": 6,
+    "resume": 3
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.3333333333333335,
+     "M7_contract_duplicate_fraction_canonical": 0.42857142857142855,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.7777777777777777,
+     "M7_contract_duplicate_fraction_canonical": 0.36,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.3333333333333335,
+     "M7_contract_duplicate_fraction_canonical": 0.42857142857142855,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {},
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 63,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 384,
+        "kv_allocated_bytes_headers_excluded": 768,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 768,
+        "kv_row_allocated_bytes": 768,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 6144,
+        "recurrent_payload_bytes": 6144,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 6,
+        "appends": 6,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 576,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 768,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 4,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "19": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[1024]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 1152,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 1152,
+        "kv_row_allocated_bytes": 1152,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 6144,
+        "recurrent_payload_bytes": 6144,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 3,
+        "appends": 3,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 768,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 384,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 4,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "10": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[1024]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 1536,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 1536,
+        "kv_row_allocated_bytes": 1536,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 6144,
+        "recurrent_payload_bytes": 6144,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 3,
+        "appends": 3,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 384,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 9,
+        "integrity_clean": 9,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "4": 9
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[1024]"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 63,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 384,
+        "kv_allocated_bytes_headers_excluded": 1792,
+        "kv_matrix_allocated_bytes": 1024,
+        "kv_payload_bytes": 768,
+        "kv_row_allocated_bytes": 768,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 6144,
+        "recurrent_payload_bytes": 6144,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 6,
+        "duplicate_allocs": 12,
+        "duplicate_bytes": 768,
+        "header_alloc_bytes": 576,
+        "incoming_rows_freed": 12,
+        "matrix_first_alloc_bytes": 128,
+        "matrix_grew_by_one": 6,
+        "matrix_realloc_in_place": 2,
+        "matrix_realloc_moved": 4,
+        "matrix_realloc_moved_bytes": 512,
+        "moved_in_capacity_bytes": 768,
+        "row_sized_allocs": 14,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 4,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "19": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[1024]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 3200,
+        "kv_matrix_allocated_bytes": 2048,
+        "kv_payload_bytes": 1152,
+        "kv_row_allocated_bytes": 1152,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 6144,
+        "recurrent_payload_bytes": 6144,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 3,
+        "duplicate_allocs": 6,
+        "duplicate_bytes": 384,
+        "header_alloc_bytes": 768,
+        "incoming_rows_freed": 6,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 3,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 2,
+        "matrix_realloc_moved_bytes": 1024,
+        "moved_in_capacity_bytes": 384,
+        "row_sized_allocs": 6,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 4,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "10": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[1024]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 3584,
+        "kv_matrix_allocated_bytes": 2048,
+        "kv_payload_bytes": 1536,
+        "kv_row_allocated_bytes": 1536,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 6144,
+        "recurrent_payload_bytes": 6144,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 3,
+        "duplicate_allocs": 6,
+        "duplicate_bytes": 384,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 6,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 3,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 384,
+        "row_sized_allocs": 6,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 9,
+        "integrity_clean": 9,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "4": 9
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[1024]"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 4,
+    "kv_dims": [
+     16
+    ],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 6144
+   }
+  },
+  {
+   "subject": "mem1-kda-mla",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "reference-f32",
+   "journey": {
+    "decode": 3,
+    "prefill": 6,
+    "resume": 3
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": null,
+     "M7_contract_duplicate_fraction_canonical": null,
+     "M7_contract_duplicate_fraction_row": null,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": null,
+     "M7_contract_duplicate_fraction_canonical": null,
+     "M7_contract_duplicate_fraction_row": null,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": null,
+     "M7_contract_duplicate_fraction_canonical": null,
+     "M7_contract_duplicate_fraction_row": null,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {
+    "I5_mla": {
+     "all_projection_shapes": [
+      {
+       "calls": 45,
+       "in": 16,
+       "out": 64
+      },
+      {
+       "calls": 9,
+       "in": 32,
+       "out": 20
+      },
+      {
+       "calls": 117,
+       "in": 32,
+       "out": 32
+      },
+      {
+       "calls": 9,
+       "in": 32,
+       "out": 48
+      }
+     ],
+     "kv_a_out_width": 20,
+     "kv_b_shape": [
+      16,
+      64
+     ],
+     "mla_layer": 3,
+     "phases": [
+      {
+       "forecast_n_n_plus_1_over_2": 21,
+       "kv_b_calls": 21,
+       "phase": "batched_prefill",
+       "positions": 6
+      },
+      {
+       "phase": "decode",
+       "steps": [
+        {
+         "forecast_h_plus_1": 7,
+         "h": 6,
+         "kv_b_calls": 7
+        },
+        {
+         "forecast_h_plus_1": 8,
+         "h": 7,
+         "kv_b_calls": 8
+        },
+        {
+         "forecast_h_plus_1": 9,
+         "h": 8,
+         "kv_b_calls": 9
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 54,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 480,
+        "latent_payload_bytes": 480,
+        "recurrent_allocated_bytes": 6528,
+        "recurrent_payload_bytes": 6528,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 3,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[384, 384, 384]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 720,
+        "latent_payload_bytes": 720,
+        "recurrent_allocated_bytes": 6528,
+        "recurrent_payload_bytes": 6528,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 3,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "1": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[384, 384, 384]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 960,
+        "latent_payload_bytes": 960,
+        "recurrent_allocated_bytes": 6528,
+        "recurrent_payload_bytes": 6528,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 9,
+        "integrity_clean": 9,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "0": 9
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[384, 384, 384]"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 54,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 480,
+        "latent_payload_bytes": 480,
+        "recurrent_allocated_bytes": 6528,
+        "recurrent_payload_bytes": 6528,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 3,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[384, 384, 384]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 720,
+        "latent_payload_bytes": 720,
+        "recurrent_allocated_bytes": 6528,
+        "recurrent_payload_bytes": 6528,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 3,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "1": 3
+        },
+        "conv_history_buffer_bytes": [
+         "[384, 384, 384]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 0,
+        "kv_allocated_bytes_headers_excluded": 0,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 0,
+        "kv_row_allocated_bytes": 0,
+        "latent_allocated_bytes": 960,
+        "latent_payload_bytes": 960,
+        "recurrent_allocated_bytes": 6528,
+        "recurrent_payload_bytes": 6528,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 0,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 0,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": {
+        "operator_windows": 9,
+        "integrity_clean": 9,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "0": 9
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[384, 384, 384]"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 4,
+    "kv_dims": [],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [
+     20
+    ],
+    "recurrent_payload_bytes_total": 6528
+   }
+  },
+  {
+   "subject": "mem1-sliding",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "reference-f32",
+   "journey": {
+    "decode": 4,
+    "prefill": 5,
+    "resume": 2
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.6,
+     "M7_contract_duplicate_fraction_canonical": 0.38461538461538464,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.142857142857143,
+     "M7_contract_duplicate_fraction_canonical": 0.4666666666666667,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.4545454545454546,
+     "M7_contract_duplicate_fraction_canonical": 0.4074074074074074,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {},
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 320,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 320,
+        "kv_row_allocated_bytes": 320,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 10,
+        "appends": 10,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 1152,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 320,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 448,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 448,
+        "kv_row_allocated_bytes": 448,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 4,
+        "appends": 4,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 128,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 1,
+        "sample": {
+         "layer": 0,
+         "window": 3,
+         "rows_held_at_end": 7,
+         "last_rows_offered": 6,
+         "last_selected": 3,
+         "held_outside_range_fraction_at_end": 0.5714
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 1536,
+        "kv_allocated_bytes_headers_excluded": 704,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 704,
+        "kv_row_allocated_bytes": 704,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 8,
+        "appends": 8,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 1536,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 256,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 1,
+        "sample": {
+         "layer": 0,
+         "window": 3,
+         "rows_held_at_end": 11,
+         "last_rows_offered": 10,
+         "last_selected": 3,
+         "held_outside_range_fraction_at_end": 0.7273
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 832,
+        "kv_matrix_allocated_bytes": 512,
+        "kv_payload_bytes": 320,
+        "kv_row_allocated_bytes": 320,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 10,
+        "duplicate_allocs": 20,
+        "duplicate_bytes": 320,
+        "header_alloc_bytes": 1152,
+        "incoming_rows_freed": 20,
+        "matrix_first_alloc_bytes": 64,
+        "matrix_grew_by_one": 10,
+        "matrix_realloc_in_place": 2,
+        "matrix_realloc_moved": 10,
+        "matrix_realloc_moved_bytes": 352,
+        "moved_in_capacity_bytes": 320,
+        "row_sized_allocs": 24,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 768,
+        "kv_allocated_bytes_headers_excluded": 960,
+        "kv_matrix_allocated_bytes": 512,
+        "kv_payload_bytes": 448,
+        "kv_row_allocated_bytes": 448,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 4,
+        "duplicate_allocs": 8,
+        "duplicate_bytes": 128,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 8,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 4,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 128,
+        "row_sized_allocs": 8,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 1,
+        "sample": {
+         "layer": 0,
+         "window": 3,
+         "rows_held_at_end": 7,
+         "last_rows_offered": 6,
+         "last_selected": 3,
+         "held_outside_range_fraction_at_end": 0.5714
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 1536,
+        "kv_allocated_bytes_headers_excluded": 1728,
+        "kv_matrix_allocated_bytes": 1024,
+        "kv_payload_bytes": 704,
+        "kv_row_allocated_bytes": 704,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 8,
+        "duplicate_allocs": 16,
+        "duplicate_bytes": 256,
+        "header_alloc_bytes": 1536,
+        "incoming_rows_freed": 16,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 8,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 4,
+        "matrix_realloc_moved_bytes": 512,
+        "moved_in_capacity_bytes": 256,
+        "row_sized_allocs": 16,
+        "unclassified_events": 0
+       },
+       "M3": {
+        "sliding_layers": 1,
+        "sample": {
+         "layer": 0,
+         "window": 3,
+         "rows_held_at_end": 11,
+         "last_rows_offered": 10,
+         "last_selected": 3,
+         "held_outside_range_fraction_at_end": 0.7273
+        },
+        "all_same": true
+       },
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    }
+   ],
+   "I2": {
+    "layers": 1,
+    "holds_both_directions_all": true,
+    "sample": {
+     "holds_both_directions": true,
+     "inside_changed": true,
+     "inside_row": 6,
+     "layer": 0,
+     "outside_bit_identical": true,
+     "outside_row": 0,
+     "position": 7,
+     "selected_range": [
+      5,
+      7
+     ],
+     "window": 3
+    }
+   },
+   "geometry_summary": {
+    "layers": 2,
+    "kv_dims": [
+     4
+    ],
+    "windows": [
+     "3",
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 0
+   }
+  },
+  {
+   "subject": "oute-mamba2attn-250m",
+   "git_sha": "a097c9c58918018cec719fbadae084c028b0585e",
+   "backend": "production-larql-compute",
+   "journey": {
+    "decode": 16,
+    "prefill": 64,
+    "resume": 16
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.0,
+     "M7_contract_duplicate_fraction_canonical": 0.5,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.6,
+     "M7_contract_duplicate_fraction_canonical": 0.38461538461538464,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.3333333333333335,
+     "M7_contract_duplicate_fraction_canonical": 0.42857142857142855,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {
+    "container": "/Users/christopherhay/chris-models/oute-mamba2attn-250m.vindex3"
+   },
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 10319,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 12288,
+        "kv_allocated_bytes_headers_excluded": 4194304,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 4194304,
+        "kv_row_allocated_bytes": 4194304,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 256,
+        "appends": 256,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 23808,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 4194304,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         0
+        ],
+        "max_h": 0
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 32
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 24576,
+        "kv_allocated_bytes_headers_excluded": 5242880,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 5242880,
+        "kv_row_allocated_bytes": 5242880,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 64,
+        "appends": 64,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 24576,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1048576,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 64
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 32
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 24576,
+        "kv_allocated_bytes_headers_excluded": 6291456,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 6291456,
+        "kv_row_allocated_bytes": 6291456,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 64,
+        "appends": 64,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1048576,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 64,
+        "frozen_window_equals_h": 64,
+        "union_equals_2h": 64,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 95
+       },
+       "M8_windows": {
+        "operator_windows": 512,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "1": 512
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 10176,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 12288,
+        "kv_allocated_bytes_headers_excluded": 8388608,
+        "kv_matrix_allocated_bytes": 4194304,
+        "kv_payload_bytes": 4194304,
+        "kv_row_allocated_bytes": 4194304,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 256,
+        "duplicate_allocs": 512,
+        "duplicate_bytes": 4194304,
+        "header_alloc_bytes": 23808,
+        "incoming_rows_freed": 512,
+        "matrix_first_alloc_bytes": 65536,
+        "matrix_grew_by_one": 256,
+        "matrix_realloc_in_place": 7,
+        "matrix_realloc_moved": 41,
+        "matrix_realloc_moved_bytes": 3244032,
+        "moved_in_capacity_bytes": 4194304,
+        "row_sized_allocs": 520,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         0
+        ],
+        "max_h": 0
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 32
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 24576,
+        "kv_allocated_bytes_headers_excluded": 13631488,
+        "kv_matrix_allocated_bytes": 8388608,
+        "kv_payload_bytes": 5242880,
+        "kv_row_allocated_bytes": 5242880,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 64,
+        "duplicate_allocs": 128,
+        "duplicate_bytes": 1048576,
+        "header_alloc_bytes": 24576,
+        "incoming_rows_freed": 128,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 64,
+        "matrix_realloc_in_place": 3,
+        "matrix_realloc_moved": 5,
+        "matrix_realloc_moved_bytes": 2621440,
+        "moved_in_capacity_bytes": 1048576,
+        "row_sized_allocs": 128,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 64
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 32
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 24576,
+        "kv_allocated_bytes_headers_excluded": 14680064,
+        "kv_matrix_allocated_bytes": 8388608,
+        "kv_payload_bytes": 6291456,
+        "kv_row_allocated_bytes": 6291456,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 64,
+        "duplicate_allocs": 128,
+        "duplicate_bytes": 1048576,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 128,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 64,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1048576,
+        "row_sized_allocs": 128,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 64,
+        "frozen_window_equals_h": 64,
+        "union_equals_2h": 64,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 95
+       },
+       "M8_windows": {
+        "operator_windows": 512,
+        "integrity_clean": 0,
+        "conv_history_sized_allocs_in_clean_windows": {},
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "1": 512
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 32,
+    "kv_dims": [
+     2048
+    ],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 30785536
+   }
+  },
+  {
+   "subject": "oute-mamba2attn-250m.reference",
+   "git_sha": "0924df88357a0896e100e54f3eebdd7ac141be57",
+   "backend": "reference-f32",
+   "journey": {
+    "decode": 4,
+    "prefill": 16,
+    "resume": 4
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.0,
+     "M7_contract_duplicate_fraction_canonical": 0.5,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.6,
+     "M7_contract_duplicate_fraction_canonical": 0.38461538461538464,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.3333333333333335,
+     "M7_contract_duplicate_fraction_canonical": 0.42857142857142855,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {
+    "container": "/Users/christopherhay/chris-models/oute-mamba2attn-250m.vindex3",
+    "purpose": "D6: integrity-clean recurrent windows"
+   },
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 660,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 3072,
+        "kv_allocated_bytes_headers_excluded": 1048576,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 1048576,
+        "kv_row_allocated_bytes": 1048576,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 64,
+        "appends": 64,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 5376,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 1048576,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         0
+        ],
+        "max_h": 0
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 5,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "1": 5
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 27
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 6144,
+        "kv_allocated_bytes_headers_excluded": 1310720,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 1310720,
+        "kv_row_allocated_bytes": 1310720,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 16,
+        "appends": 16,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 6144,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 262144,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 16
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 5,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "1": 5
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 27
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 6144,
+        "kv_allocated_bytes_headers_excluded": 1572864,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 1572864,
+        "kv_row_allocated_bytes": 1572864,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 16,
+        "appends": 16,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 262144,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 16,
+        "frozen_window_equals_h": 16,
+        "union_equals_2h": 16,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 23
+       },
+       "M8_windows": {
+        "operator_windows": 128,
+        "integrity_clean": 128,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "1": 128
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 560,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 3072,
+        "kv_allocated_bytes_headers_excluded": 2097152,
+        "kv_matrix_allocated_bytes": 1048576,
+        "kv_payload_bytes": 1048576,
+        "kv_row_allocated_bytes": 1048576,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 64,
+        "duplicate_allocs": 128,
+        "duplicate_bytes": 1048576,
+        "header_alloc_bytes": 5376,
+        "incoming_rows_freed": 128,
+        "matrix_first_alloc_bytes": 65536,
+        "matrix_grew_by_one": 64,
+        "matrix_realloc_in_place": 1,
+        "matrix_realloc_moved": 31,
+        "matrix_realloc_moved_bytes": 966656,
+        "moved_in_capacity_bytes": 1048576,
+        "row_sized_allocs": 136,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         0
+        ],
+        "max_h": 0
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 5,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "1": 5
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 27
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 6144,
+        "kv_allocated_bytes_headers_excluded": 3407872,
+        "kv_matrix_allocated_bytes": 2097152,
+        "kv_payload_bytes": 1310720,
+        "kv_row_allocated_bytes": 1310720,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 16,
+        "duplicate_allocs": 32,
+        "duplicate_bytes": 262144,
+        "header_alloc_bytes": 6144,
+        "incoming_rows_freed": 32,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 16,
+        "matrix_realloc_in_place": 2,
+        "matrix_realloc_moved": 6,
+        "matrix_realloc_moved_bytes": 786432,
+        "moved_in_capacity_bytes": 262144,
+        "row_sized_allocs": 32,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 4,
+        "frozen_window_equals_h": 4,
+        "union_equals_2h": 4,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 16
+       },
+       "M8_windows": {
+        "operator_windows": 33,
+        "integrity_clean": 5,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "1": 5
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {
+         "0": 1,
+         "1": 27
+        },
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 6144,
+        "kv_allocated_bytes_headers_excluded": 3670016,
+        "kv_matrix_allocated_bytes": 2097152,
+        "kv_payload_bytes": 1572864,
+        "kv_row_allocated_bytes": 1572864,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 30785536,
+        "recurrent_payload_bytes": 30785536,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 16,
+        "duplicate_allocs": 32,
+        "duplicate_bytes": 262144,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 32,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 16,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 262144,
+        "row_sized_allocs": 32,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": {
+        "conv_qkv_calls": 16,
+        "frozen_window_equals_h": 16,
+        "union_equals_2h": 16,
+        "union_other_allocs_per_call": [
+         2
+        ],
+        "max_h": 23
+       },
+       "M8_windows": {
+        "operator_windows": 128,
+        "integrity_clean": 128,
+        "conv_history_sized_allocs_in_clean_windows": {
+         "1": 128
+        },
+        "owner_thread_counts_in_foreign_windows_NOT_adjudicated": {},
+        "conv_history_buffer_bytes": [
+         "[36864]",
+         "[98304]"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 32,
+    "kv_dims": [
+     2048
+    ],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 30785536
+   }
+  },
+  {
+   "subject": "qwen3-0.6b",
+   "git_sha": "a097c9c58918018cec719fbadae084c028b0585e",
+   "backend": "production-larql-compute",
+   "journey": {
+    "decode": 16,
+    "prefill": 128,
+    "resume": 32
+   },
+   "parity_bit_identical": true,
+   "cross_provider": [
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.0,
+     "M7_contract_duplicate_fraction_canonical": 0.5,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "batched_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.6,
+     "M7_contract_duplicate_fraction_canonical": 0.38461538461538464,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "resumed_prefill"
+    },
+    {
+     "M1_allocated_ratio_canonical_over_row": 2.4545454545454546,
+     "M7_contract_duplicate_fraction_canonical": 0.4074074074074074,
+     "M7_contract_duplicate_fraction_row": 0.0,
+     "payload_identical": true,
+     "phase": "decode"
+    }
+   ],
+   "extra": {
+    "container": "/Users/christopherhay/chris-models/qwen3-0.6b.vindex3"
+   },
+   "runs": [
+    {
+     "provider": "row/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 172032,
+        "kv_allocated_bytes_headers_excluded": 29360128,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 29360128,
+        "kv_row_allocated_bytes": 29360128,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 3584,
+        "appends": 3584,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 338688,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 29360128,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 344064,
+        "kv_allocated_bytes_headers_excluded": 36700160,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 36700160,
+        "kv_row_allocated_bytes": 36700160,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 896,
+        "appends": 896,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 344064,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 7340032,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 344064,
+        "kv_allocated_bytes_headers_excluded": 40370176,
+        "kv_matrix_allocated_bytes": 0,
+        "kv_payload_bytes": 40370176,
+        "kv_row_allocated_bytes": 40370176,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 448,
+        "appends": 448,
+        "duplicate_allocs": 0,
+        "duplicate_bytes": 0,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 0,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 0,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 3670016,
+        "row_sized_allocs": 0,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    },
+    {
+     "provider": "canonical/v1",
+     "instrument": {
+      "events_dropped": false,
+      "foreign_allocs_in_provider_scopes": 0,
+      "foreign_allocs_in_windows": 0,
+      "live_table_overflowed": false,
+      "ok": true,
+      "unclassified_append_events": 0,
+      "unresolved_capacities": 0
+     },
+     "phases": [
+      {
+       "phase": "batched_prefill",
+       "storage": {
+        "header_bytes": 172032,
+        "kv_allocated_bytes_headers_excluded": 58720256,
+        "kv_matrix_allocated_bytes": 29360128,
+        "kv_payload_bytes": 29360128,
+        "kv_row_allocated_bytes": 29360128,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 3584,
+        "duplicate_allocs": 7168,
+        "duplicate_bytes": 29360128,
+        "header_alloc_bytes": 338688,
+        "incoming_rows_freed": 7168,
+        "matrix_first_alloc_bytes": 229376,
+        "matrix_grew_by_one": 3584,
+        "matrix_realloc_in_place": 53,
+        "matrix_realloc_moved": 339,
+        "matrix_realloc_moved_bytes": 20131840,
+        "moved_in_capacity_bytes": 29360128,
+        "row_sized_allocs": 7224,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "resumed_prefill",
+       "storage": {
+        "header_bytes": 344064,
+        "kv_allocated_bytes_headers_excluded": 95420416,
+        "kv_matrix_allocated_bytes": 58720256,
+        "kv_payload_bytes": 36700160,
+        "kv_row_allocated_bytes": 36700160,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 896,
+        "duplicate_allocs": 1792,
+        "duplicate_bytes": 7340032,
+        "header_alloc_bytes": 344064,
+        "incoming_rows_freed": 1792,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 896,
+        "matrix_realloc_in_place": 9,
+        "matrix_realloc_moved": 47,
+        "matrix_realloc_moved_bytes": 24641536,
+        "moved_in_capacity_bytes": 7340032,
+        "row_sized_allocs": 1792,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      },
+      {
+       "phase": "decode",
+       "storage": {
+        "header_bytes": 344064,
+        "kv_allocated_bytes_headers_excluded": 99090432,
+        "kv_matrix_allocated_bytes": 58720256,
+        "kv_payload_bytes": 40370176,
+        "kv_row_allocated_bytes": 40370176,
+        "latent_allocated_bytes": 0,
+        "latent_payload_bytes": 0,
+        "recurrent_allocated_bytes": 0,
+        "recurrent_payload_bytes": 0,
+        "unresolved_capacities": 0
+       },
+       "append_traffic": {
+        "adopted_appends": 0,
+        "appends": 448,
+        "duplicate_allocs": 896,
+        "duplicate_bytes": 3670016,
+        "header_alloc_bytes": 0,
+        "incoming_rows_freed": 896,
+        "matrix_first_alloc_bytes": 0,
+        "matrix_grew_by_one": 448,
+        "matrix_realloc_in_place": 0,
+        "matrix_realloc_moved": 0,
+        "matrix_realloc_moved_bytes": 0,
+        "moved_in_capacity_bytes": 3670016,
+        "row_sized_allocs": 896,
+        "unclassified_events": 0
+       },
+       "M3": null,
+       "M4": null,
+       "M8_windows": null
+      }
+     ]
+    }
+   ],
+   "geometry_summary": {
+    "layers": 28,
+    "kv_dims": [
+     1024
+    ],
+    "windows": [
+     "None"
+    ],
+    "latent_widths": [],
+    "recurrent_payload_bytes_total": 0
+   }
+  }
+ ],
+ "M6_handoff": [
+  {
+   "I6_backing_identical": true,
+   "M6_continuation_sized_alloc_bytes": [
+    64
+   ],
+   "M6_continuation_sized_allocs": 1,
+   "M6_held": false,
+   "backing_bytes": 4352,
+   "backing_kinds": [
+    "k_header",
+    "k_row",
+    "v_header",
+    "v_row"
+   ],
+   "backings": 48,
+   "position": 11,
+   "provider": "row/v1",
+   "resumed_position": 11,
+   "seal_scope": {
+    "alloc_bytes": 16351818,
+    "allocs": 7
+   },
+   "subject": "mem1-dense",
+   "transfer_scope": {
+    "alloc_bytes": 872,
+    "alloc_sizes": [
+     64,
+     10,
+     9,
+     684,
+     9,
+     96
+    ],
+    "allocs": 6,
+    "foreign": 0,
+    "frees": 3,
+    "realloc_moved": 0
+   },
+   "unresolved_backings": 0
+  },
+  {
+   "I6_backing_identical": true,
+   "M6_continuation_sized_alloc_bytes": [
+    64
+   ],
+   "M6_continuation_sized_allocs": 1,
+   "M6_held": false,
+   "backing_bytes": 8448,
+   "backing_kinds": [
+    "k_header",
+    "k_matrix",
+    "k_row",
+    "v_header",
+    "v_matrix",
+    "v_row"
+   ],
+   "backings": 52,
+   "position": 11,
+   "provider": "canonical/v1",
+   "resumed_position": 11,
+   "seal_scope": {
+    "alloc_bytes": 16351808,
+    "allocs": 5
+   },
+   "subject": "mem1-dense",
+   "transfer_scope": {
+    "alloc_bytes": 872,
+    "alloc_sizes": [
+     64,
+     10,
+     9,
+     684,
+     9,
+     96
+    ],
+    "allocs": 6,
+    "foreign": 0,
+    "frees": 3,
+    "realloc_moved": 0
+   },
+   "unresolved_backings": 0
+  },
+  {
+   "I6_backing_identical": true,
+   "M6_continuation_sized_alloc_bytes": [],
+   "M6_continuation_sized_allocs": 0,
+   "M6_held": true,
+   "backing_bytes": 1280,
+   "backing_kinds": [
+    "k_header",
+    "k_row",
+    "v_header",
+    "v_row"
+   ],
+   "backings": 36,
+   "position": 8,
+   "provider": "row/v1",
+   "resumed_position": 8,
+   "seal_scope": {
+    "alloc_bytes": 16351738,
+    "allocs": 5
+   },
+   "subject": "mem1-sliding",
+   "transfer_scope": {
+    "alloc_bytes": 872,
+    "alloc_sizes": [
+     64,
+     10,
+     9,
+     684,
+     9,
+     96
+    ],
+    "allocs": 6,
+    "foreign": 0,
+    "frees": 3,
+    "realloc_moved": 0
+   },
+   "unresolved_backings": 0
+  },
+  {
+   "I6_backing_identical": true,
+   "M6_continuation_sized_alloc_bytes": [],
+   "M6_continuation_sized_allocs": 0,
+   "M6_held": true,
+   "backing_bytes": 1792,
+   "backing_kinds": [
+    "k_header",
+    "k_matrix",
+    "k_row",
+    "v_header",
+    "v_matrix",
+    "v_row"
+   ],
+   "backings": 40,
+   "position": 8,
+   "provider": "canonical/v1",
+   "resumed_position": 8,
+   "seal_scope": {
+    "alloc_bytes": 16351808,
+    "allocs": 5
+   },
+   "subject": "mem1-sliding",
+   "transfer_scope": {
+    "alloc_bytes": 872,
+    "alloc_sizes": [
+     64,
+     10,
+     9,
+     684,
+     9,
+     96
+    ],
+    "allocs": 6,
+    "foreign": 0,
+    "frees": 3,
+    "realloc_moved": 0
+   },
+   "unresolved_backings": 0
+  },
+  {
+   "I6_backing_identical": true,
+   "M6_continuation_sized_alloc_bytes": [],
+   "M6_continuation_sized_allocs": 0,
+   "M6_held": true,
+   "backing_bytes": 7168,
+   "backing_kinds": [
+    "latent_row",
+    "recurrent"
+   ],
+   "backings": 20,
+   "position": 8,
+   "provider": "row/v1",
+   "resumed_position": 8,
+   "seal_scope": {
+    "alloc_bytes": 16351738,
+    "allocs": 5
+   },
+   "subject": "mem1-kda-mla",
+   "transfer_scope": {
+    "alloc_bytes": 872,
+    "alloc_sizes": [
+     64,
+     10,
+     9,
+     684,
+     9,
+     96
+    ],
+    "allocs": 6,
+    "foreign": 0,
+    "frees": 3,
+    "realloc_moved": 0
+   },
+   "unresolved_backings": 0
+  },
+  {
+   "I6_backing_identical": true,
+   "M6_continuation_sized_alloc_bytes": [],
+   "M6_continuation_sized_allocs": 0,
+   "M6_held": true,
+   "backing_bytes": 7168,
+   "backing_kinds": [
+    "latent_row",
+    "recurrent"
+   ],
+   "backings": 20,
+   "position": 8,
+   "provider": "canonical/v1",
+   "resumed_position": 8,
+   "seal_scope": {
+    "alloc_bytes": 16351808,
+    "allocs": 5
+   },
+   "subject": "mem1-kda-mla",
+   "transfer_scope": {
+    "alloc_bytes": 872,
+    "alloc_sizes": [
+     64,
+     10,
+     9,
+     684,
+     9,
+     96
+    ],
+    "allocs": 6,
+    "foreign": 0,
+    "frees": 3,
+    "realloc_moved": 0
+   },
+   "unresolved_backings": 0
+  }
+ ]
+}

@@ -144,7 +144,7 @@ impl LoweredSession<'_> {
 
     /// The embedding row for `token`, scaled and (if the plan judges it)
     /// weightlessly normalised — the one host computation a token needs.
-    fn embed(&self, token: u32) -> Result<Vec<f32>, VindexError> {
+    pub(super) fn embed(&self, token: u32) -> Result<Vec<f32>, VindexError> {
         let row = &self.embed_table[token as usize * self.hidden..][..self.hidden];
         let embedding = self
             .plan
@@ -336,6 +336,13 @@ impl LoweredSession<'_> {
                 branch_sum: &s[HYBRID_SCRATCH_BASE + 4],
                 zero: &s[HYBRID_SCRATCH_BASE + 6],
             }),
+            splitk: Some(larql_compute_metal::ops::kv_splitk::SplitKScratch {
+                o_part: &self.splitk[0],
+                ml_part: &self.splitk[1],
+                rows: 1,
+                max_q_heads: self.splitk_widths.0,
+                max_q_rows: self.splitk_widths.1,
+            }),
         };
 
         let layers: Vec<LayerLowering> = self
@@ -494,7 +501,7 @@ pub(super) fn host_argmax(logits: &[f32]) -> u32 {
 }
 
 /// Read the first `u32` of a shared device buffer.
-fn read_u32(buf: &DeviceBuffer) -> Result<u32, VindexError> {
+pub(super) fn read_u32(buf: &DeviceBuffer) -> Result<u32, VindexError> {
     let ptr = buf.contents() as *const u32;
     if ptr.is_null() || (buf.length() as usize) < std::mem::size_of::<u32>() {
         return Err(VindexError::Parse("argmax readback failed".into()));
@@ -505,7 +512,7 @@ fn read_u32(buf: &DeviceBuffer) -> Result<u32, VindexError> {
 }
 
 /// Write `values` into a shared device buffer's contents.
-fn write_f32(buf: &DeviceBuffer, values: &[f32]) -> Result<(), VindexError> {
+pub(super) fn write_f32(buf: &DeviceBuffer, values: &[f32]) -> Result<(), VindexError> {
     let ptr = buf.contents() as *mut f32;
     if ptr.is_null() || (buf.length() as usize) < std::mem::size_of_val(values) {
         return Err(VindexError::Parse("hidden upload failed".into()));

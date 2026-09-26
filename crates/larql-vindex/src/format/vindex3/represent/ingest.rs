@@ -73,6 +73,9 @@ mod tests;
 #[cfg(test)]
 mod loop_tests;
 
+#[cfg(test)]
+mod pareto_loop_tests;
+
 /// The persisted-artifact entry point. Decode failure cannot mutate a snapshot.
 pub fn ingest_bytes(
     snapshot: &mut super::state::snapshot::SearchSnapshot,

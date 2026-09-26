@@ -1,0 +1,48 @@
+{
+  "programme": "REPRESENT-PARETO-1",
+  "artifact_kind": "decision + amendment to the freeze. Recorded BEFORE the red P1 assertion is touched.",
+  "written": "2026-09-16",
+  "base": "`c35d2385` (branch `represent-pareto-1`)",
+  "amends": "docs/represent/forecasts/represent-pareto-1-fixture.json",
+  "follows": "docs/represent/forecasts/represent-pareto-1-p1-finding.json",
+
+  "ordering_matters_here": "This record is written before the assertion changes, so the criterion cannot be reverse-engineered from the branch that happened to be green. P1 ran against the populated bank by accident of construction, not by design; the decision below is made on grounds that would have selected it either way.",
+
+  "DECISION": "The PARETO-1 world table is pinned to the POPULATED bank family — `state::fixtures::authority_reading(kl_p99, route_flips)`, with `route_weight_mass_moved`, `top10_mass_displaced` and `top1_mass_displaced` all present. Candidates therefore classify `MoveClass::Priced` at tier 2.",
+
+  "RATIONALE_independent_of_the_observed_result": {
+    "primary": "PARETO-1 isolates VALUE-SENSITIVE PREFERENCE. It does not study missing-evidence behaviour. The nulled bank introduces three deliberately absent authority quantities and makes `Unscorable` an incidental property of the fixture rather than a fact about the move — an extra condition the claim does not need and did not ask for.",
+    "secondary": "A reviewer of a nulled-bank result can reasonably ask whether the preference change depends on the fixture being INCOMPLETE. There is no gain from carrying that ambiguity into a result whose whole point is that accepted values, and nothing else, moved the decision.",
+    "tertiary": "The populated bank is authority-SHAPED, so it is the evidence path the real numerical successor will use. The synthetic-to-real progression becomes: synthetic accepted values -> complete authority-shaped bank -> existing assessment -> same Priced tier -> proxy frontier -> preference changes. The nulled variant inserts an intentionally incomplete bank into that chain and would have to be unwound later.",
+    "what_is_preserved_either_way": "The populated bank still leaves EXACTLY the two intended diagnostic ordering dimensions free — `KlP99` and `RouteFlipRate` — to decide W1, W2 and C1. Completeness at authority scale does not add ordering dimensions at diagnostic scale, because `route_cal_1()` marks `RouteMixtureMassP99` and `Top10MassDisplacedP99` `Unusable` there and `Top1MassDisplaced` is unregistered.",
+    "counterfactual_test_of_the_criterion": "Had P1 observed `Unscorable/tier 1` under the populated bank and `Priced/tier 2` under the nulled one, this criterion would still have selected the populated bank. The criterion is 'minimise fixture-only missingness and resemble the successor's evidence path', not 'match the observation'."
+  },
+
+  "WHAT_IS_NOT_ERASED": {
+    "keep": "`c35d2385` stands as the scored falsification and is not rewritten.",
+    "the_record": "prediction `Unscorable/tier 1`; observed `Priced/tier 2`; cause: the prediction was reasoned from `Fixture::observed` while P1 was instantiated through `authority_reading`.",
+    "why": "The forecast was wrong for a real and transferable reason. Deleting it would delete the lesson that `MoveClass` is a property of the bank builder, not of the move."
+  },
+
+  "AMENDED_P1_EXPECTATION": {
+    "supersedes": "The P1 clause of the freeze and the `Unscorable`/tier-1 expectation in the P2 finding.",
+    "assertions": [
+      "both candidates: `gpu_ms_saved > 0.0`",
+      "both candidates: `class == MoveClass::Priced`",
+      "both candidates: `class.tier() == 2`",
+      "`gpu_ms_saved` EQUAL across the two candidates, pinned to exactly `2.0`"
+    ],
+    "why_2_0_is_preregistered_not_observed": "It is fully determined by the frozen facts. The cost observation gives beta = ((10.0 - 8.0)/10.0) / ((32768 - 24576)/32768) = 0.2/0.25 = 0.8. The parent ledger removes nothing, so its predicted cost is 10.0 * (1 - 0.8*0.0) = 10.0. Each child ledger removes 8,192 of 32,768 bytes, so fraction_removed = 0.25 and predicted cost is 10.0 * (1 - 0.8*0.25) = 8.0. gpu_ms_saved = 10.0 - 8.0 = 2.0 on both. Nothing is read off a run.",
+    "what_pinning_it_buys": "The physical inertness W1, W2 and C1 depend on stops being a stipulation and becomes a preregistered arithmetic fact. If a later edit to the ledgers or the cost observation breaks that equality, those three worlds silently stop being controlled — and this assertion fails first."
+  },
+
+  "EDITORIAL_CONSTRAINT_ON_HOW_THE_RESULT_IS_DESCRIBED": {
+    "rule": "PARETO-1 does NOT test `ranking_score` or `within`. The claim stays at the level of `decide_promotion`.",
+    "the_mechanism_as_claimed": "stage 1 admits BOTH candidates into the same tier; the ordinal proxy frontier decides W1 and W2; the frontier REFUSES C1; physical gain decides C2; exact indistinguishability refuses C3.",
+    "why_this_matters_now": "`decision.rs` records that `RankingScore.within` falls back to `gpu_ms_saved` for any non-`Priced` class. At `Priced` it does not. `within` can therefore change without any part of the claimed causal mechanism changing, because `decide_promotion` compares pairwise and never reads it. A narrative phrased in terms of `within` or `ranking_score` would be describing a quantity the claim does not rest on."
+  },
+
+  "WHAT_P1_ACTUALLY_ESTABLISHED": "Stronger than the mistaken class forecast: both candidates reach the same frontier with EQUAL physical gain. That is the precondition PARETO-1 needed — stage 1 cannot separate them, and stage 5 cannot separate them either, so in W1, W2 and C1 only the accepted quality values can.",
+
+  "next": "Amend the P1 assertion to the expectation above, rerun it, and instantiate the five worlds ONLY if it passes. `observed_with(kl, route_flips)` is retained regardless: it is how the worlds vary the two quality inputs without inventing a second bank constructor."
+}

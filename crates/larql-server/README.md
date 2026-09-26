@@ -1,5 +1,11 @@
 # larql-server
 
+VINDEX3 CPU dense FFN workers use `--ffn-only --layers START-END` and
+`/v1/vindex3/ffn`; the coordinator runs `larql run --v3-ffn-shards` with local
+attention and row KV. See the [distributed FFN guide](../../docs/ffn/distributed.md#dense-ffn-operation-provider)
+for binding checks, supported scope and failure recovery.
+
+
 **Class: CURRENT.** [Stack architecture](../../docs/architecture-stack.md) ·
 [manifest-derived dependencies and features](../../docs/generated/workspace-facts.md).
 

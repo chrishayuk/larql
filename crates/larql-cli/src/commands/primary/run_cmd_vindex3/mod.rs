@@ -121,6 +121,47 @@ pub(super) fn run_to(
     status: &mut dyn Write,
 ) -> Result<(), BoxErr> {
     refuse_inapplicable_flags(args)?;
+    let Some(path) = &args.v3_profile else {
+        return run_inner(container, args, input, out, status);
+    };
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let capture = larql_inference::vindex3::dense_ffn::profile::Capture::start()?;
+    let result = run_inner(container, args, input, out, status);
+    let rows = capture.finish();
+    let routed = rows
+        .iter()
+        .flat_map(|r| &r.provider_calls)
+        .any(|c| c["kind"] == "routed_ffn");
+    serde_json::to_writer(
+        &mut file,
+        &serde_json::json!({
+            "schema": "larql.v3.position-profile.v1",
+            "artifact": container,
+            "placement": if args.v3_ffn_shards.is_empty() { "local" } else if routed { "remote-routed-experts" } else { "remote-dense-ffn" },
+            "complete": result.is_ok(),
+            "ffn_wire": (!args.v3_ffn_shards.is_empty()).then_some(args.v3_ffn_wire.as_deref().unwrap_or("binary")),
+            "positions": rows.len(),
+            "units": "nanoseconds; body bytes exclude HTTP/TLS headers",
+        }),
+    )?;
+    writeln!(file)?;
+    for row in rows {
+        serde_json::to_writer(&mut file, &row)?;
+        writeln!(file)?;
+    }
+    result
+}
+
+fn run_inner(
+    container: &Path,
+    args: &RunArgs,
+    input: &mut dyn BufRead,
+    out: &mut dyn Write,
+    status: &mut dyn Write,
+) -> Result<(), BoxErr> {
     let backend = select_backend(args.metal)?;
     let tokenizer_path = container.join(TOKENIZER_JSON);
     if !tokenizer_path.is_file() {
@@ -165,6 +206,35 @@ pub(super) fn run_to(
 /// its own continuation state. Only explicitly integrated providers and
 /// input/distribution protocols are accepted; other engine flags refuse.
 fn refuse_inapplicable_flags(args: &RunArgs) -> Result<(), BoxErr> {
+    if args.v3_profile.is_some()
+        && (args.prompt.is_none()
+            || args.metal
+            || args.continuation.is_some()
+            || !args.v3_shards.is_empty()
+            || args.kv_cache != KvCacheKind::Standard
+            || args
+                .engine
+                .as_deref()
+                .is_some_and(|e| !matches!(e, "row" | "standard")))
+    {
+        return Err("--v3-profile requires a prompt and CPU row/standard KV; layer replay, Metal and explicit --continuation are not covered".into());
+    }
+
+    if args.v3_shard_token_env.is_some()
+        && args.v3_shards.is_empty()
+        && args.v3_ffn_shards.is_empty()
+    {
+        return Err("--v3-shard-token-env requires --v3-shards or --v3-ffn-shards".into());
+    }
+    if !args.v3_ffn_shards.is_empty()
+        && (args.metal
+            || args.engine.is_some()
+            || args.continuation.is_some()
+            || args.kv_cache != KvCacheKind::Standard
+            || !args.v3_shards.is_empty())
+    {
+        return Err("--v3-ffn-shards uses CPU with local row KV; do not combine with --metal, --engine, --continuation, --kv-cache or --v3-shards".into());
+    }
     if !args.v3_shards.is_empty()
         && (args.metal
             || args.engine.is_some()
@@ -264,16 +334,72 @@ impl BackendVisitor for Runner<'_> {
     fn visit<B: PlanBackend>(self, backend: &B) -> Result<(), BoxErr> {
         let loading = Instant::now();
         // The expensive, immutable half — once, for every prompt.
-        let ops = PreparedOperands::load(
-            &self.prepared.plan,
-            &self.prepared.store,
-            backend,
-            if self.args.v3_shards.is_empty() {
-                ExecutionSlice::Full
+        let routed = self
+            .prepared
+            .plan
+            .layers
+            .iter()
+            .any(|l| l.ffn.as_ref().and_then(|f| f.routed()).is_some());
+        let ops = if !self.args.v3_ffn_shards.is_empty() && routed {
+            if self
+                .args
+                .v3_ffn_wire
+                .as_deref()
+                .is_some_and(|w| w != "binary")
+            {
+                return Err("routed expert placement currently requires binary HTTP".into());
+            }
+            let token = self
+                .args
+                .v3_shard_token_env
+                .as_deref()
+                .map(std::env::var)
+                .transpose()?;
+            let transport = larql_router::vindex3_experts::HttpExpertShards::connect(
+                &self.args.v3_ffn_shards,
+                token.as_deref(),
+            )?;
+            larql_inference::vindex3::routed_experts::prepare_coordinator(
+                self.container,
+                &self.prepared.plan,
+                (&self.prepared.store).into(),
+                backend,
+                transport,
+            )?
+        } else if !self.args.v3_ffn_shards.is_empty() {
+            let token = self
+                .args
+                .v3_shard_token_env
+                .as_deref()
+                .map(std::env::var)
+                .transpose()?;
+            let connect = if self.args.v3_ffn_wire.as_deref() == Some("json") {
+                larql_router::vindex3_ffn::HttpFfnShards::connect
+            } else if self.args.v3_ffn_wire.as_deref() == Some("stream") {
+                larql_router::vindex3_ffn::HttpFfnShards::connect_stream
             } else {
-                ExecutionSlice::Endpoints
-            },
-        )?;
+                larql_router::vindex3_ffn::HttpFfnShards::connect_binary
+            };
+            let transport = connect(&self.args.v3_ffn_shards, token.as_deref())?;
+            larql_inference::vindex3::dense_ffn::prepare_coordinator(
+                self.container,
+                &self.prepared.plan,
+                (&self.prepared.store).into(),
+                backend,
+                transport,
+            )?
+        } else {
+            PreparedOperands::load(
+                &self.prepared.plan,
+                &self.prepared.store,
+                backend,
+                if self.args.v3_shards.is_empty() {
+                    ExecutionSlice::Full
+                } else {
+                    ExecutionSlice::Endpoints
+                },
+            )?
+        };
         let engine = format!("{ENGINE_PREFIX}-{}", backend.name());
         let identity = resolved_display_name(&self.prepared.model_name, self.container);
         if self.args.verbose {
@@ -337,7 +463,8 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         out: &mut dyn Write,
         status: &mut dyn Write,
     ) -> Result<(), BoxErr> {
-        if !self.args.v3_shards.is_empty()
+        if !self.args.v3_ffn_shards.is_empty()
+            || !self.args.v3_shards.is_empty()
             || self.args.engine.is_some()
             || self.args.continuation.is_some()
             || self.args.kv_cache == KvCacheKind::None

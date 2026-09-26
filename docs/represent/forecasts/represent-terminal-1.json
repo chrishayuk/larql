@@ -1,0 +1,63 @@
+{
+  "programme": "REPRESENT-TERMINAL-1",
+  "artifact_kind": "experimental freeze. Written BEFORE any stopping rule is implemented. The three rules below are HYPOTHESES, not recommendations.",
+  "written": "2026-09-17",
+  "base": "`b5858629` (branch `represent-pareto-1`)",
+  "follows": "docs/represent/forecasts/represent-depth-2-result.json",
+
+  "THE_PRIMARY_DISTINCTION": "Observed frontier != terminally resolved set.",
+  "definitions": {
+    "observed_frontier": "What the CURRENT readings say is non-dominated. REPRESENT has this concept today; `decide_promotion` computes it.",
+    "terminally_resolved_set": "The candidates for which the search has enough evidence to rule out a later reversal. REPRESENT does NOT have this concept, and this rung is about what it would take to."
+  },
+
+  "THE_CONTRACT": "A search may stop only when every candidate capable of changing the terminal preference has sufficient evidence. A unique preference among current observations is not itself sufficient evidence to terminate.",
+
+  "WHY_THIS_IS_THE_NEXT_RUNG_AND_NOT_REALIZATION_COST_1": "DEPTH-2 stopped the COMPARATOR letting measurement choices decide. A terminal condition that fires on a winner nobody priced lets the SEARCH do it instead — the same defect one layer out. Improving the accuracy of physical cost while the search can still stop on a policy-dependent answer would be improving the wrong thing first.",
+
+  "THE_HEADLINE_WITNESS_already_in_hand": {
+    "what": "The 210 replicates in the FRONTIER-SPEND-1 rerun that terminated on a cheaply-measured winner.",
+    "the_mechanism_concretely": "`frontier_spend_tests::truth()` builds 15 mutually non-dominated candidates and then appends ONE that dominates all of them — index c15, true kl 2.5e-3 and 1000 route flips. In the divergent replicates, coverage selected c15 with `dominated: [c00..c14]`, while uniform stopped on c00. Under its NOISY cheap reading the true dominator looked dominated, left uniform's observed frontier, and thereby escaped any stopping rule phrased over that frontier.",
+    "why_it_is_the_right_headline": "It is not a hypothetical. The mechanism was produced by a driver that was frozen before the defect was known, and the candidate that escaped is the one the generator planted as the answer."
+  },
+
+  "A_WARNING_RECORDED_SO_IT_CANNOT_BE_MISREAD": {
+    "the_number": "The DEPTH-2 rerun reported 0 H2 violations among the 534 replicates where BOTH searches priced their winner.",
+    "the_warning": "That is a CONDITIONED SUBSAMPLE and is NOT evidence that winner-only confirmation works. The condition selects for searches that ran longer before terminating — precisely the ones most likely to have stumbled onto the truth. As a STOPPING RULE the trajectory would differ, and a search that prices its apparent winner while every rival stays noisy can still stop on c00.",
+    "obligation": "No arm of this rung may cite 0/534 as a prior for rule 1. Rule 1 is tested as a stopping rule, from scratch."
+  },
+
+  "THE_THREE_RULES_as_hypotheses": {
+    "R1_winner_only": "Price the apparent winner, then re-decide. Stop if it still leads.",
+    "R2_observed_frontier": "Price every member of the current observed frontier, then re-decide.",
+    "R3_competitive_set": "Price every candidate not safely excludable under a known uncertainty bound.",
+    "stance": "None is recommended. The experiment determines the CHEAPEST rule that produces policy-independent terminal preference, and it may determine that none of the three does."
+  },
+
+  "THE_REQUIRED_NOISE_SWEEP": {
+    "why": "R3 needs a bound on how far a cheap reading can move, and the harness's bound is a constant INVENTED for FRONTIER-SPEND-1: +/- 1.0e-3 on kl and +/- 500 route flips. It is calibrated to nothing.",
+    "the_scale_of_it": "The planted front spans kl 3.0e-3 to 4.4e-3 — a spread of 1.4e-3 — so the kl noise is roughly 1.4x the ENTIRE spread it perturbs. That is very noisy, and nothing justifies it beyond its having been the first number chosen.",
+    "the_arm": "Sweep the noise magnitude across at least a decade below and a factor above the current constant, and report each rule's sufficiency and cost at each level.",
+    "what_it_decides": "If the RANKING of the rules is stable across noise levels, the conclusion transfers. If R2 suffices at low noise and fails at high, then the answer depends on a number somebody made up, and THAT dependency is the result."
+  },
+
+  "THE_LIKELY_SYSTEM_LEVEL_CONCLUSION_stated_in_advance": "In the synthetic harness, competitive-set stopping is testable because the generator supplies a known noise bound. In production REPRESENT no corresponding uncertainty bound exists: `TailSupport` establishes SUPPORT ADEQUACY — whether a percentile has enough observations behind it — not an INTERVAL on how far a cheap reading may move. TERMINAL-1 may therefore conclude that safe stopping requires a missing uncertainty-calibration capability rather than identify a deployable stopping policy. That is a good possible result, not a failed rung.",
+
+  "NO_ECONOMY_EXPECTATION": {
+    "rule": "The 4.3x saving from the DEPTH-2 rerun is NOT preregistered as something to preserve.",
+    "why": "It was measured under a stopping rule this rung exists to question. If safe stopping requires pricing nearly everything, the economy shrinks or vanishes — and that would be the more important result, because it would mean the ladder's saving was always partly an artifact of stopping too early.",
+    "what_is_measured_instead": "Whatever authority economy remains under the cheapest rule that actually yields policy-independent terminal preference."
+  },
+
+  "METRICS": [
+    "for each rule and each noise level: policy-independence of the TERMINAL preference (the primary outcome)",
+    "authority spend under each rule, in priced runs and position-equivalents",
+    "how often the terminal preference differs from the TRUE dominator the generator planted",
+    "how often a candidate that left the observed frontier under cheap evidence would have won under deep evidence — the c15 mechanism, counted",
+    "sensitivity of the rule RANKING to noise magnitude"
+  ],
+
+  "INHERITED": "DEPTH-2's contract holds throughout: heterogeneous measurement depth must not change the comparator's preference. FRONTIER-SCALE-1's falsifiers continue to apply wherever candidate sets are generated, and every decision comparison uses the PREFERENCE (candidate, dominated, deciding, decided_by_physical_gain) rather than the full record, since `readiness` and `unresolved` legitimately differ when depth does.",
+
+  "out_of_scope": "No change to `decide_promotion`. No uncertainty-calibration capability is built here — if one is needed, that is the finding. No realization-aware cost; REALIZATION-COST-1 follows this rung and not the other way round."
+}

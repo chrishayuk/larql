@@ -351,7 +351,7 @@
   ],
   [
     "larql-vindex/src/format/vindex3/opplan/exec/production.rs",
-    "ProductionBackend::routed_ffn",
+    "ProductionBackend::routed_ffn_impl",
     "record"
   ],
   [
@@ -367,6 +367,16 @@
   [
     "larql-vindex/src/format/vindex3/represent/ingest.rs",
     "ingest",
+    "record"
+  ],
+  [
+    "larql-vindex/src/format/vindex3/represent/measure/teacher_forced.rs",
+    "measure_teacher_forced",
+    "record"
+  ],
+  [
+    "larql-vindex/src/format/vindex3/represent/observation_stream/mod.rs",
+    "write_stream",
     "record"
   ],
   [

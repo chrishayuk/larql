@@ -152,6 +152,75 @@ fn compiled_bytes_equal_what_the_loader_would_have_quantised() {
     );
 }
 
+/// `OperandStore::load` decodes a compiled NVFP4 pack to the values the
+/// pack holds. NVFP4 declares three streams but stores them as ONE tensor;
+/// the decoder once took "several streams" to mean "several tensors" and
+/// looked for `<tensor>.group_scales` siblings that do not exist, so every
+/// f32 read of a pack (a packed embedding's row lookup, first) failed.
+#[test]
+fn a_compiled_nvfp4_pack_decodes_through_load() {
+    use crate::format::vindex3::opplan::exec::operands::RepresentationSource;
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, _) = compiled_pair(&tmp);
+    let src_inspection = inspect_container(&src, false).unwrap();
+    let src_store = OperandStore::open(&src, &src_inspection).unwrap();
+    let out_inspection = inspect_container(&out, false).unwrap();
+    let packed_store = OperandStore::open_for(
+        &out,
+        &out_inspection,
+        Some(DTYPE_NVFP4),
+        RepresentationSource::Stored,
+    )
+    .unwrap();
+    let mut checked = 0usize;
+    for entry in index_of(&out).representations.values() {
+        if entry.encoding != DTYPE_NVFP4 {
+            continue;
+        }
+        let (header, _) = read_segment_header(&out.join(&entry.segment)).unwrap();
+        for t in header.tensors.iter().filter(|t| t.dtype == DTYPE_NVFP4) {
+            let operand = OperandRef {
+                object: entry.object.clone(),
+                tensor: t.name.clone(),
+                dtype: t.dtype.clone(),
+                shape: t.shape.clone(),
+            };
+            let got = packed_store
+                .load(&operand)
+                .expect("a pack decodes through load");
+            let source = src_store
+                .load(&OperandRef {
+                    dtype: packed_store_source_dtype(&src_store, &operand),
+                    ..operand.clone()
+                })
+                .unwrap();
+            let want =
+                larql_models::quant::nvfp4::round_trip(&source, t.shape[0], t.shape[1]).unwrap();
+            assert_eq!(got.len(), want.len(), "{}", t.name);
+            assert!(
+                got.iter()
+                    .zip(&want)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "{}: load() of the pack differs from the NVFP4 round trip of its source",
+                t.name
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 0,
+        "the fixture compiled no NVFP4 tensors to check"
+    );
+}
+
+/// The dtype the canonical container stores `operand`'s tensor as.
+fn packed_store_source_dtype(store: &OperandStore, operand: &OperandRef) -> String {
+    store
+        .stored_dtype(operand)
+        .expect("the canonical container holds the tensor")
+        .to_string()
+}
+
 #[test]
 fn the_canonical_representation_survives_byte_for_byte() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1080,6 +1149,43 @@ fn a_protected_depth_range_is_carried_not_compiled() {
         header.tensors.iter().any(|t| t.dtype == DTYPE_NVFP4),
         "later layers still compile"
     );
+}
+
+#[test]
+fn a_protection_that_decides_nothing_is_refused_before_anything_is_written() {
+    // `v-proj` protects no tensor: before the map check this compiled
+    // every v_proj and recorded a map claiming they were held back.
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+
+    let typo = tmp.path().join("typo.vindex3");
+    let mut spec = RepresentSpec::nvfp4();
+    spec.protect = policy::Protections::default().projection("v-proj");
+    let err = compile_representation(&src, &typo, &spec)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("`v-proj -> source` matches no eligible tensor"),
+        "{err}"
+    );
+    assert!(
+        !typo.exists(),
+        "a refused map must not leave an output behind"
+    );
+
+    // A protection wholly inside an earlier one is dead, and says which.
+    let dead = tmp.path().join("dead.vindex3");
+    spec.protect = policy::Protections::default()
+        .projection("v_proj")
+        .projection_in("v_proj", 0, 0);
+    let err = compile_representation(&src, &dead, &spec)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("decided first by exception(s) [0]"), "{err}");
+    assert!(!dead.exists());
 }
 
 /// The precision map is authority, and both arms must run the SAME

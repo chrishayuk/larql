@@ -11,6 +11,7 @@ use super::{RepresentReport, RepresentSpec};
 use crate::error::VindexError;
 use crate::format::vindex3::encode::segment::{read_segment_header, write_segment, PlannedTensor};
 use crate::format::vindex3::inspect::inspect_container;
+use crate::format::vindex3::opplan::exec::continuation_registry::SelectedContinuation;
 use crate::format::vindex3::opplan::exec::operands::{
     OperandOverrides, OperandSource, OperandStore,
 };
@@ -38,6 +39,9 @@ pub struct GptqRequest {
     pub component: String,
     pub bank: CalibrationBank,
     pub sites: BTreeMap<TensorId, CalibrationInput>,
+    /// The continuation provider capture runs under, selected by the
+    /// caller; the recipe never chooses a built-in one itself.
+    pub continuation: SelectedContinuation,
 }
 
 pub fn compile_representation_recipe(
@@ -284,7 +288,11 @@ fn prepare(
                 let artifact = match input {
                     CalibrationInput::Existing(path) => CalibrationArtifact::read(path, &expected)?,
                     CalibrationInput::CaptureTo(path) => {
-                        let artifact = prepared.capture(&request.bank, StatisticKind::DenseGram)?;
+                        let artifact = prepared.capture(
+                            &request.bank,
+                            StatisticKind::DenseGram,
+                            &request.continuation,
+                        )?;
                         artifact.write(path)?;
                         drop(artifact);
                         CalibrationArtifact::read(path, &expected)?

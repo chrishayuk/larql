@@ -518,6 +518,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[LayerFixture]) -> Vec<Vec<f32
         ffn_down: &sc[12],
         ffn_post: &sc[1],
         hybrid: None,
+        splitk: None,
     };
     let caps: Vec<metal::Buffer> = (0..LAYERS).map(|_| gpu.lowering_scratch(HIDDEN)).collect();
     let cps: Vec<Checkpoint> = caps

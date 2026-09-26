@@ -266,6 +266,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 "endpoints-only operands require a distributed coordinator".into(),
             ));
         }
+        ops.get().ensure_stack_ready()?;
         ops.get().ensure_providers_in(ops.get().registry())?;
         ops.get().ensure_lowered_by(backend)?;
         // The FULL continuation geometry, KV and recurrent alike.
@@ -436,6 +437,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 self.backend.name()
             )));
         }
+        self.admit_ffn_down_input(observer)?;
         let run = self.run(
             Entry::Token(token),
             observer,
@@ -520,6 +522,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 self.backend.name()
             )));
         }
+        self.admit_ffn_down_input(observer)?;
         if !head_interventions.is_none() && !self.backend.serves_head_intervention() {
             return Err(VindexError::Parse(format!(
                 "per-head attention intervention is not served by the {} backend",
@@ -581,6 +584,36 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     }
 
     /// The one decode step. Every public and test entry above is this.
+    /// CAL-1.1: a down-input request the step cannot serve refuses
+    /// before the token executes, as the per-head request does — never
+    /// mid-step, after earlier layers have written KV and emitted
+    /// observations. Judged over exactly the layers the loop runs.
+    fn admit_ffn_down_input(&self, observer: &dyn StepObserver) -> Result<(), VindexError> {
+        let ops = self.ops.get();
+        let first = ops.first_layer();
+        for (offset, state) in ops.layers().iter().enumerate() {
+            let index = first + offset;
+            let (Some(ffn), Some(ffn_op)) = (&state.ffn, &self.plan.layers[index].ffn) else {
+                continue;
+            };
+            if !observer.wants_ffn_down_input(index) {
+                continue;
+            }
+            if !self.backend.serves_ffn_down_input() {
+                return Err(VindexError::Parse(format!(
+                    "FFN down-input capture is not served by the {} backend",
+                    self.backend.name()
+                )));
+            }
+            if !ffn.serves_down_input(ffn_op) {
+                return Err(VindexError::Parse(format!(
+                    "FFN down-input capture at layer {index} requires a dense FFN"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn run(
         &mut self,
         entry: Entry,
@@ -589,6 +622,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         interventions: &InterventionPlan,
         head_interventions: &HeadInterventionPlan,
     ) -> Result<StepRun, VindexError> {
+        let mut profile = super::profile::Token::start(
+            self.kv.state().position(),
+            match &entry {
+                Entry::Token(token) => Some(*token),
+                _ => None,
+            },
+        );
         let ops = self.ops.get();
         let mut firings: Vec<Firing> = Vec::new();
         let mut head_firings: Vec<HeadFiring> = Vec::new();
@@ -656,7 +696,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let first = ops.first_layer();
         for (offset, state) in ops.layers().iter().enumerate() {
             let index = first + offset;
+            profile.layer(index);
             let layer = &self.plan.layers[index];
+            profile.phase(super::profile::Phase::Attention);
             // ── Attention site ──
             //
             // On a bundle the site reduces first: the ordinary operator
@@ -938,6 +980,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 observer.event(StepEvent::HeadsUncovered { layer: index });
             }
             drop(_attention_stage);
+            profile.phase(super::profile::Phase::Reentry);
             observer.attention_output(index, position, &raw_attn);
             let mut attn_out = match &state.post_attention {
                 Some(norm) => norm.apply(self.backend, &raw_attn),
@@ -1026,6 +1069,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     _ => Cow::Borrowed(&ffn_site.branch_input),
                 };
                 let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
+                profile.phase(super::profile::Phase::Ffn);
                 let ffn_out = if observer.wants_ffn_down_input(index) {
                     ffn.apply_observed(ffn_op, self.backend, &normed, hidden, &mut |values| {
                         observer.ffn_down_input(index, values)
@@ -1033,6 +1077,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 } else {
                     ffn.apply_from_residual(ffn_op, self.backend, &residual, &normed, hidden)?
                 };
+                profile.phase(super::profile::Phase::Reentry);
                 drop(residual);
                 observer.operand_input(index, InputSite::FfnOutput, ffn_out.as_slice());
                 let mut ffn_out = match &state.post_ffn {
@@ -1083,6 +1128,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             observer.event(StepEvent::FfnDone { layer: index });
         }
 
+        profile.phase(super::profile::Phase::Other);
         // ── The exit ──
         //
         // A bundle leaves the stack through the head's OWN reduction
@@ -1183,6 +1229,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             });
         }
         self.kv.state_mut().set_position(position + 1);
+        profile.complete();
         Ok(StepRun {
             logits,
             firings,

@@ -1,0 +1,23 @@
+{
+  "topology": "local",
+  "model": "/Users/christopherhay/chris-models/gpt-oss-20b.vindex3",
+  "max_tokens": 32,
+  "revision": "8ddf800a1908c04325028da185ce5a3853b8d1c5",
+  "dirty": true,
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "binary_sha256": {
+    "larql": "cc82fd4286a290d8050a3d6fc18ef0bf17bbc3b7bfab1004a9e67ba839749b90",
+    "larql-server": "f491431acd1985f0573cdcdf835a78727f3746497f732587753cde25ab7b7abb"
+  },
+  "metadata_sha256": {
+    "index.json": "17523831d6f365cda8e52bafa9f437b2cf14b2d7efa3d0a8abd3e512902d4440",
+    "system_graph.json": "82db1eb1a4490e24ae1086fada201100b81ceddfcf71e51ba63572efe2a6ae78"
+  },
+  "purpose": "correctness only; no exclusive timing window or performance claim"
+}

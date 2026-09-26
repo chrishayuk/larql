@@ -396,6 +396,8 @@ let request = GptqRequest {
         ("target.decoder_stack".into(), "0.self_attn.q_proj.weight".into()),
         CalibrationInput::CaptureTo(calibration_path),
     )].into(),
+    // The caller's continuation selection, e.g. row/v1 from its registry.
+    continuation,
 };
 compile_representation_recipe(
     source_path, output_path, &RepresentSpec::nvfp4(), Nvfp4Recipe::Gptq(&request),

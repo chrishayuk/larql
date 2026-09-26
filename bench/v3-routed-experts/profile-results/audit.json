@@ -1,0 +1,136 @@
+{
+  "host": {
+    "cpu": "Apple M3 Max",
+    "memory_bytes": 137438953472,
+    "logical_cpus": 16,
+    "os": "macOS 15.7.4 (24G517)"
+  },
+  "generated_distinct_ids": 6,
+  "layouts": {
+    "one-20260925": {
+      "trials": 19,
+      "positions_per_trial": 55,
+      "all_ids_equal": true,
+      "raw_hashes_verified": true,
+      "all_metrics_recomputed": true,
+      "bracket_verdicts_recomputed": true,
+      "warmup_summaries": {
+        "block-0-local-before": {
+          "plateau": true,
+          "warm_total_ns": [
+            115961802.32727273,
+            115847246.16363636
+          ]
+        },
+        "block-0-one": {
+          "plateau": true,
+          "warm_total_ns": [
+            124988859.9090909,
+            123778987.0909091
+          ]
+        },
+        "block-0-local-after": {
+          "plateau": true,
+          "warm_total_ns": [
+            117515616.61818182,
+            116693558.30909091
+          ]
+        },
+        "block-1-local-before": {
+          "plateau": true,
+          "warm_total_ns": [
+            117359306.05454545,
+            117567489.47272727
+          ]
+        },
+        "block-1-one": {
+          "plateau": true,
+          "warm_total_ns": [
+            121191265.25454545,
+            120350529.58181818
+          ]
+        },
+        "block-1-local-after": {
+          "plateau": true,
+          "warm_total_ns": [
+            114125965.92727272,
+            116496888.65454546,
+            116593827.27272727
+          ]
+        }
+      },
+      "archive": "one-20260925-profiles.tar.gz",
+      "archive_sha256": "5391068e1d32e7ebe6860bc2d11a47ec89753b4e820b2da9636edfc6e5f09a3d",
+      "archive_bytes": 4023157,
+      "verification_sha256": "a543486f12bfe842247490e575d656717e8e30eeba56724c7fb6856d36bb6070",
+      "completed_utc": "2026-09-25T20:35:41.502423+00:00"
+    },
+    "experts-20260925": {
+      "trials": 22,
+      "positions_per_trial": 55,
+      "all_ids_equal": true,
+      "raw_hashes_verified": true,
+      "all_metrics_recomputed": true,
+      "bracket_verdicts_recomputed": true,
+      "warmup_summaries": {
+        "block-0-local-before": {
+          "plateau": true,
+          "warm_total_ns": [
+            115964500.72727273,
+            116160858.30909091
+          ]
+        },
+        "block-0-experts": {
+          "plateau": true,
+          "warm_total_ns": [
+            118810650.05454545,
+            117442914.41818182,
+            117416797.7090909
+          ]
+        },
+        "block-0-local-after": {
+          "plateau": true,
+          "warm_total_ns": [
+            116163704.45454545,
+            116322814.38181818
+          ]
+        },
+        "block-1-local-before": {
+          "plateau": true,
+          "warm_total_ns": [
+            116004265.23636363,
+            116661256.10909091
+          ]
+        },
+        "block-1-experts": {
+          "plateau": true,
+          "warm_total_ns": [
+            118845465.89090909,
+            117360046.21818182,
+            117547596.23636363
+          ]
+        },
+        "block-1-local-after": {
+          "plateau": false,
+          "warm_total_ns": [
+            128633473.45454545,
+            140250080.3090909,
+            137448351.43636364,
+            125088078.76363637
+          ]
+        }
+      },
+      "archive": "experts-20260925-profiles.tar.gz",
+      "archive_sha256": "1122f2824749ad1882749a0d23acfee2d11c2fa211e55201d699399c9e2e8cfc",
+      "archive_bytes": 7604789,
+      "verification_sha256": "09d15baca702ba8906afe42a6f0b060248118eeb44ee0e74360754b3916b68f8",
+      "completed_utc": "2026-09-25T20:59:07.767299+00:00"
+    }
+  },
+  "control_sha256": {
+    "control/ids.json": "27f6563b740abdcd96b9cfb41dd3b18bd5018d26b188726a4f62ca9f0759b6af",
+    "control/manifest.json": "d5e8b81094ac79796833e6663248a601ca2b116d0f97dbfdcbd64799e2c6949f",
+    "control/stderr.txt": "0c963aa2e981d958c51a36a71c271ef815215f957af90ef206a20e46a89e79b1",
+    "control/stdout.txt": "381b8c4129eb38a832f03069150e421fab5bfca5307ccf1e3157db62430ed4f4"
+  }
+}

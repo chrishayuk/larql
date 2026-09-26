@@ -1,0 +1,146 @@
+{
+  "programme": "CONTINUATION-VIEW-1",
+  "wave": "open the continuation read contract to a representation-neutral logical view",
+  "lane": "continuation",
+  "frozen": "2026-09-26, against main cf9c5309 (CONTINUATION-MEM-1 merged #549 and closed #551; CONTINUATION-PLUGIN-1 closed #550)",
+  "status": "FORECAST — frozen before implementation; the execution record goes in continuation-view-1-notes.json and this file is not edited",
+  "question": "Can the executor consume continuation state through a representation-neutral view such that providers may expose row-backed, contiguous and windowed storage without duplication, per-row allocation, or retention of unreachable rows, while preserving exact execution?",
+  "why": "CONTINUATION-MEM-1 measured three costs forced by the read contract `keys(layer) -> &[Vec<f32>]` from position 0 (class a): canonical/v1's mirror of every K/V row (313 MB on gemma3-4b at 1,124 positions, 1× payload, and canonical/v1 is the server's provider); rows below a sliding window that no provider may drop (24 MB there, ≈1.7 GB at 8,192); and one heap allocation per row. The inventory (`docs/continuation-view-1-inventory.md`) shows the dependency is shallow: kernels already read rows one at a time through `Fn(usize) -> &[f32]`; six index expressions and ConvQkv's two accessors are the whole indexing surface. VIEW-1 is scoped from those class (a) findings only.",
+  "baseline": {
+    "code": "main cf9c5309",
+    "inventory": "docs/continuation-view-1-inventory.md",
+    "measured_by": "CONTINUATION-MEM-1 (continuation-mem-1-notes.json, continuation-mem-1-records.json) and its harness crates/larql-kv/tests/continuation_mem_1",
+    "facts": {
+      "absolute_index_sites": "6 — reference.rs:570,577; production.rs:1002,1009; device.rs:610,617",
+      "window_floor_computations": "2 — production.rs:694-705 `source_start` (device reuses it) and a duplicate at reference.rs:356-362",
+      "implementors": "10 — RowKvState, CanonicalKvState, C5 HostileRows (also compiled into larql-continuation-fixture), 6 test doubles, and MEM-1's Measured<P> (the instrument VIEW-1 re-runs; migrates with the trait)",
+      "trait_methods": "9 (PLUGIN-1 F3)",
+      "plugin_abi_stamp": "larql-plugin/2",
+      "rebase_note": "the draft was read at 8c9cd195; between it and cf9c5309 only test files changed (the MEM-1 harness), which added the tenth implementor above"
+    }
+  },
+  "decisions_frozen": {
+    "retention_authority": {
+      "rule": "The execution plan declares the earliest logical position that can still be requested. A provider must retain everything from there onward, and is never required to retain anything earlier.",
+      "shape": "ONE plan-owned operation per layer — `required_range(position) -> Range<usize>` (or `required_history_start(position)`) on LayerKvGeometry or the nearest plan-owned type. Global attention and ConvQkv answer start 0; sliding attention answers the window floor.",
+      "consumers": "reference, production and device execution all obtain their source range from it; none recomputes the sliding floor. A provider may retain a superset.",
+      "not": "providers interpreting `window` themselves; `window` stays a geometry fact, not a retention permission"
+    },
+    "view": {
+      "shape": "a logical position range over a backing the executor does not see: `base()`, `end()`, `key(p)`, `value(p) -> &[f32]` for ABSOLUTE positions p, with a typed, named refusal for p outside [base, end).",
+      "general_not_windowed": "the view names no retention policy. row/v1 and a contiguous store answer base = 0; a retaining provider advances base. Nothing in the type says 'sliding window'.",
+      "checked_before_kernels": "before a step executes, the plan's required range for that layer is checked against the view's [base, end); a provider that dropped a required row is refused by name — never an index panic",
+      "constraints": "no allocation per `keys`/`values`-equivalent call; the concrete representation (trait object, enum or generic) is chosen in V2 and recorded in the notes before code, with its dispatch cost measured",
+      "invariants": [
+        "base <= end",
+        "end == the number of logical rows ever appended for that layer (end is logical, never a physical row count)",
+        "key(p) / value(p) succeed only for base <= p < end; any other p is the named refusal"
+      ]
+    }
+  },
+  "acceptance_proofs": {
+    "A_contiguous_authority": {
+      "claim": "canonical/v1 serves the view directly from its matrix; the mirrored Vec<Vec<f32>> is gone",
+      "proof": "STRUCTURAL, and the only thing A is adjudicated on: (1) zero mirrored Vec<Vec<f32>> allocations in canonical/v1 (per-append duplicate allocations = 0 on the MEM-1 harness, was exactly 2); (2) no K/V representation in canonical/v1 attributable to the old read contract (its K/V backings are the matrices alone); (3) logits bit-identical to row/v1",
+      "falsified_if": "any mirror or per-row allocation remains, a second K/V representation remains, or one logit bit differs",
+      "magnitude_forecast_secondary": "reported, NOT adjudicated as pass/fail for A: canonical K/V allocated = matrix capacity only, so canonical/row ∈ [1.0, 2.0] (was [2.0, 3.0]); gemma3-4b at 1,124 positions ≈883 MB → ≈570 MB. Allocator and growth-step details may move these; a miss is recorded as a magnitude deviation, not a failure of A."
+    },
+    "B_retained_range_authority": {
+      "claim": "a provider that retains exactly the plan's required range physically frees every row below it, and execution is unchanged",
+      "provider": "an EXACT-retention TEST provider in a test target (not WINDOW-1's shipped provider): after each append it advances base to the plan's required floor and drops the rows below",
+      "forecast": "after EVERY append, for every layer: base == required_range(position).start and end == position + 1; base is monotonically non-decreasing; the rows below base are deallocated (live-allocation table, MEM-1 harness); logits bit-identical to row/v1 on the sliding fixture and on gemma3-4b past its window; resident rows per sliding layer = the required range's length, not n; a seeded variant that drops ONE required row is refused by name before the kernel runs",
+      "falsified_if": "any append leaves base or end off those values, base ever decreases, a row below base is still allocated, a logit bit differs, or the seeded drop reaches a kernel or panics"
+    },
+    "C_simple_provider_unchanged": {
+      "claim": "row/v1 migrates to the view and stays the cheap path",
+      "forecast": "bit-identical to its MEM-1 baseline logits on every MEM-1 subject; still 0 row-sized allocations and adoption of the moved-in row on every append; 0 allocations inside the view's read calls",
+      "falsified_if": "a logit bit differs, or row/v1 gains any allocation or copy"
+    }
+  },
+  "structural_falsifiers": [
+    {
+      "id": "S1",
+      "claim": "no production absolute indexing into provider rows outside the view implementation",
+      "witness": "source scan: no `step.keys[` / `step.values[` (baseline 6) and no index into a provider row slice outside the view",
+      "falsified_if": "any remains"
+    },
+    {
+      "id": "S2",
+      "claim": "one SEMANTIC visibility authority",
+      "witness": "no reference, production or device backend computes a retention or source floor from `window` independently of the plan-owned required_range. Judged on authority, not source text: mechanical reuse or inlining of the plan's own helper is fine.",
+      "falsified_if": "a backend derives a floor from `window` (or any other geometry) itself (baseline: production `source_start`, reused by device, and a reference duplicate)"
+    },
+    {
+      "id": "S3",
+      "claim": "a retention bug is a refusal, not a panic",
+      "witness": "seeded provider whose base exceeds the required start → the named refusal, on every backend",
+      "falsified_if": "an index panic, or a silent read"
+    },
+    {
+      "id": "S4",
+      "claim": "the plugin boundary moves with the contract, and the new boundary is usable",
+      "witness": "(1) the ABI stamp is revised with the trait change (larql-plugin/2 → /3); (2) a /2 plugin is refused with the named revision mismatch; (3) the /3 C6 fixture loads through the real loader; (4) the C5 external journey passes in process; (5) the C6 CLI journey passes through the dylib — all bit-identical to canonical/v1 as before",
+      "falsified_if": "the trait changes under an unchanged stamp, /2 is not refused by name, or /3 cannot load or regresses C5/C6"
+    }
+  ],
+  "explicit_questions_not_acceptance": [
+    {
+      "id": "Q1",
+      "question": "Does the view let ConvQkv borrow its K/V rows beside `&mut` recurrent state (a split borrow over disjoint provider storage), removing MEM-1's 2·h-row copy per call?",
+      "rule": "NOT a success criterion. VIEW-1 must not introduce a lifetime or API shape that PRECLUDES a later split borrow. Re-measured with the MEM-1 harness on oute AFTER V2 (the borrow structure is set there) and again after V3. If the 2·h copy remains, that is clean evidence it is an operator issue, not a view-contract one, and ConvQkv gets its own perf rung."
+    },
+    {
+      "id": "Q2",
+      "question": "Should MLA's LatentKvRows (the same from-0 pattern) adopt the view?",
+      "rule": "permitted, not required: MEM-1 measured no class (a) cost there (allocated = payload)"
+    }
+  ],
+  "limits_stated": [
+    "Row-backed, contiguous, retained-range and paged backings fit [base, end) with absolute access.",
+    "Remote continuation is compatible only through materialised or cache-backed rows: `key(p) -> &[f32]` needs the bytes local for the borrow. Direct remote fetch may need a different access model; VIEW-1 does not claim it."
+  ],
+  "waves": [
+    {
+      "id": "V1",
+      "name": "one retention authority",
+      "scope": "the plan-owned required_range; reference, production and device use it; behaviour-neutral (bit-identical everywhere)",
+      "closes": "S2"
+    },
+    {
+      "id": "V2",
+      "name": "the view",
+      "scope": "the view type with checked refusal; AttentionStepCall carries a view; the 6 index sites and ConvQkv's accessors migrate; existing providers answer through a Vec-backed view; behaviour-neutral. The representation choice is recorded in the notes before code.",
+      "closes": "S1, S3; Q1 first re-measured"
+    },
+    {
+      "id": "V3",
+      "name": "providers",
+      "scope": "row/v1 (C), canonical/v1 drops its mirror (A), C5 HostileRows and the C6 fixture, the 6 test doubles; ABI stamp revision",
+      "closes": "S4, A, C"
+    },
+    {
+      "id": "V4",
+      "name": "proofs",
+      "scope": "the retained-range test provider (B); MEM-1 harness re-run on qwen3-0.6b, gemma3-4b and oute for A, C and Q1",
+      "closes": "B, A's secondary magnitude, Q1 final"
+    }
+  ],
+  "invariants": [
+    "One interpreter defines model meaning for every provider.",
+    "Geometry and the required range come from the plan; providers never consult ModelArchitecture.",
+    "row/v1 and canonical/v1 stay bit-identical to each other and to their MEM-1 baselines at every wave.",
+    "Continuation identity, registry and handoff authority (PLUGIN-1) are unchanged."
+  ],
+  "out_of_scope": [
+    "WINDOW-1's shipped retaining provider (V4's is a test provider)",
+    "MLA re-derivation (operator rung)",
+    "the conv-history copy per recurrent call (operator rung)",
+    "canonical/v1's matrix growth slack (provider work)",
+    "removing the ConvQkv copy as a requirement (Q1)",
+    "cross-process or remote continuation",
+    "serving continuation plugins from `larql serve`"
+  ],
+  "gates_before_each_push": "cargo fmt --all --check; clippy for every touched crate at its workflow's flags; tests for larql-vindex, larql-kv, larql-inference, larql-server, larql-cli, larql-lql; the C5 and C6 journeys; the MEM-1 harness controls; doc-integrity gates on staged files",
+  "next": "CONTINUATION-WINDOW-1: the first shipped provider that retains only the required range",
+  "immutability": "Frozen at its commit. Per-wave findings and design changes go in continuation-view-1-notes.json with the reason; this file is not edited."
+}

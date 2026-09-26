@@ -1,0 +1,51 @@
+{
+  "programme": "REPRESENT-UNCERTAINTY-1",
+  "artifact_kind": "RESULT. Closed at gate 1 with outcome 3. No estimator was built, and building one would have been unsound.",
+  "written": "2026-09-17",
+  "forecast": "docs/represent/forecasts/represent-uncertainty-1.json",
+
+  "VERDICT": "Outcome 3 — real heterogeneous measurements are required. The synthetic REPRESENT programme has reached its legitimate boundary for this question.",
+
+  "A_CORRECTION_TO_MY_OWN_DIAGNOSIS": {
+    "what_I_said_when_the_blocker_was_first_named": "The fixture corpus is `vec![0u8; positions * 64 * 4]`, so sub-sampling yields zero variance.",
+    "what_gate_1_actually_found": "True, and not the real blocker. **The synthetic path never derives a quality statistic from the corpus at all.** `state::fixtures::authority_reading(kl, flips)` hand-builds a `QualityBank` from two numbers. The corpus feeds the manifest hash, the declared position count and `VerifiedFacts` — bookkeeping the ingestion path verifies — and never reaches a quality computation.",
+    "why_the_correction_matters": "Fixing the corpus would have changed NOTHING. A heterogeneous corpus feeding a path that ignores it produces exactly the same hand-built banks. Had the rung proceeded on the original diagnosis, the obvious first move — build a varied corpus — would have been wasted work that appeared to progress."
+  },
+
+  "THE_SUBSTRATE_THAT_DOES_SAMPLE": {
+    "it_exists": "`represent::bank::BankBuilder` accumulates `kls: Vec<f64>` one position at a time via `observe(&PositionObservation)` and computes `kl_p99: Self::percentile(&self.kls, 0.99)` at `finish()`. Per-position accumulation is real and already implemented.",
+    "what_feeds_it": "`represent::measure::teacher_forced::observation(seq, pos, baseline, base_trace, candidate, cand_trace)` — built from both arms' FULL logit vectors and their execution traces. It requires actual model execution; there is no synthetic source.",
+    "how_it_is_gated": "On `SOURCE_ENV`, `CANDIDATE_ENV` and `BANK_ENV`. The existing precedent is `opplan/exec/tests/kda_q8_real.rs`, which skips with `eprintln!(\"skipped: set {SOURCE_ENV} and {BANK_ENV}\")` when they are unset.",
+    "conclusion": "Sampling exists in the codebase. It exists only on the real-model path. The synthetic fixtures do not sample, so they have no sampling distribution, and an uncertainty estimator calibrated against them would be calibrated against nothing."
+  },
+
+  "EVIDENCE_THAT_THE_REAL_PATH_HAS_THE_HETEROGENEITY_THE_RUNG_NEEDS": {
+    "the_comment_at_TOP_N": "'128 covered only 31 % of the baseline's mass at the worst position of the first run — a teacher-forced sequence's FIRST position has no context, so its distribution is close to flat over 163,840 ids and a short truncation sees almost none of it.'",
+    "why_it_matters_here": "That is position-level heterogeneity, observed and documented, from a real run. Position 0 is qualitatively unlike later positions. It is exactly the structure a sampling distribution needs and exactly what the fixtures lack.",
+    "and_it_suggests_the_misspecification_is_free": "Error that varies systematically with position is heteroscedasticity. The anti-circularity gate demands an error law the estimator does not assume; the real path appears to supply one WITHOUT anybody having to invent it. A synthetic generator would have had to be given that structure deliberately, which is the circularity the gate exists to prevent."
+  },
+
+  "WHAT_WAS_NOT_DONE_AND_WHY": {
+    "no_estimator": "Building one against hand-built banks would have produced coverage figures that were properties of `authority_reading`'s two arguments.",
+    "no_corpus_perturbation": "The freeze forbade manufacturing pseudo-variance to keep the ladder synthetic. Gate 1's finding makes that prohibition stronger than anticipated: perturbation would not even have reached the statistic.",
+    "the_amendment_held": "AMENDMENT_1 said outcome 3 must not be reported as 'uncertainty cannot be tested synthetically'. It is not reported that way. A misspecified synthetic generator could still falsify undercoverage under heavy tails, correlation breaking nominal coverage, and coverage improving with sample size. What it cannot do is connect any of that to model behaviour — and in THIS repository it cannot even be wired to the statistic without building a second, parallel measurement path, which would be a worse artifact than the one it replaced."
+  },
+
+  "THE_HANDOFF_specified_rather_than_aspirational": {
+    "the_minimal_first_real_experiment": "One real model, one fixed representation transition, independently sampled positions, estimates at 8 / 16 / 32 / ... / 500 positions across multiple independent draws.",
+    "statistics": "`RouteFlipRate` (a dense per-position rate) and `KlP99` (a tail). They probe different sampling regimes, which the PROXY-SPECIFIC falsifier requires, and the 500-position floor exists because of the tail one.",
+    "the_pairing_obligation": "`EvidenceBank::new` takes `positions_per_sample`, so bank id and `MeasurementKey` differ by depth. Cheap and deep readings of one state are DIFFERENT KEYS. The pairing layer must prove two observations share representation state, candidate and statistic and differ only in sampling depth — otherwise calibration could silently pair unrelated observations.",
+    "what_that_one_dataset_unlocks": [
+      "empirical cheap->deep error distributions",
+      "coverage testing for a real uncertainty estimator",
+      "whether 8 vs 500 is remotely the right ladder",
+      "terminal-set licensing against a non-oracle bound",
+      "the first genuinely numerical closed-loop REPRESENT evidence"
+    ],
+    "the_entry_point_already_exists": "`measure::teacher_forced::measure_teacher_forced`, gated on SOURCE_ENV / CANDIDATE_ENV / BANK_ENV, with `kda_q8_real.rs` as the structural precedent for an env-gated real-evidence test."
+  },
+
+  "THE_THREE_WAY_PROVENANCE_still_owed": "The output contract from the freeze — 'more samples may resolve this' / 'different measurement procedure required' / 'more authority cannot resolve this conflict' — is NOT delivered, because no estimator was built. The third arm already exists as `ConflictingOrderingProxies` and the second is partly `IncompletePricingAuthority`. The first needs the estimator, and therefore needs the real data.",
+
+  "WHAT_THE_SYNTHETIC_LADDER_ACCOMPLISHED": "It did not build an optimiser. It determined the contracts a real one must satisfy, and found four assumptions that were invisible from the architecture: measurement depth treated as merit (DEPTH-1/2), observed preference treated as sufficient to stop (TERMINAL-1), synthetic noise magnitude standing in for calibrated uncertainty (this rung), and byte reduction standing in for realization-specific runtime (still open, REALIZATION-COST-1). Each would have produced plausible-looking winners in an end-to-end demo."
+}

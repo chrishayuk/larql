@@ -1,8 +1,15 @@
 use super::*;
 use crate::format::vindex3::opplan::exec::{
     backend::{PlanBackend, ProjectCall, WeightSlice},
+    continuation::plan_continuation_geometry,
+    continuation_authority::ContinuationConfig,
+    continuation_identity::ContinuationIdentity,
+    continuation_registry::{
+        BoxedContinuation, ContinuationFactory, ContinuationRegion, ContinuationRegistry,
+        SelectedContinuation,
+    },
     decode::DecodeSession,
-    kv::RowKvState,
+    kv::{RowFactory, RowKvState},
     observe::{InputSite, StepEvent, StepObserver},
     operands::{OperandEdit, OperandOverrides, OperandSource, OperandStore},
     production::ProductionBackend,
@@ -10,6 +17,20 @@ use crate::format::vindex3::opplan::exec::{
 };
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
 use crate::format::vindex3::{encode::encode_system, fixtures, inspect::inspect_container};
+
+/// The built-in row provider, reached the way production reaches it:
+/// selected by identity from a registry for this plan's geometry.
+fn row(plan: &ComponentOpPlan) -> SelectedContinuation {
+    let mut registry = ContinuationRegistry::new();
+    registry.register(Box::new(RowFactory)).unwrap();
+    registry
+        .select(
+            &RowFactory.identity(),
+            &ContinuationConfig::empty(),
+            &plan_continuation_geometry(plan).unwrap(),
+        )
+        .unwrap()
+}
 
 fn tokenizer_bytes() -> Vec<u8> {
     let model = tokenizers::models::wordlevel::WordLevel::builder()
@@ -155,8 +176,12 @@ fn calibration_second_layer_falsifies_the_canonical_prefix_after_nvfp4_replaceme
     let bank = bank();
     let a = PreparedCalibration::prepare(&plan, &store, 1, Projection::Query).unwrap();
     let b = PreparedCalibration::prepare(&plan, candidate, 1, Projection::Query).unwrap();
-    let canonical = a.capture(&bank, StatisticKind::DenseGram).unwrap();
-    let captured = b.capture(&bank, StatisticKind::DenseGram).unwrap();
+    let canonical = a
+        .capture(&bank, StatisticKind::DenseGram, &row(&plan))
+        .unwrap();
+    let captured = b
+        .capture(&bank, StatisticKind::DenseGram, &row(&plan))
+        .unwrap();
     assert_eq!(
         canonical.manifest().key.source_image_sha256,
         captured.manifest().key.source_image_sha256
@@ -183,11 +208,11 @@ fn calibration_second_layer_falsifies_the_canonical_prefix_after_nvfp4_replaceme
     // The changed down projection cannot alter layer zero's entering Q input.
     let before_a = PreparedCalibration::prepare(&plan, &store, 0, Projection::Query)
         .unwrap()
-        .capture(&bank, StatisticKind::DenseGram)
+        .capture(&bank, StatisticKind::DenseGram, &row(&plan))
         .unwrap();
     let before_b = PreparedCalibration::prepare(&plan, candidate, 0, Projection::Query)
         .unwrap()
-        .capture(&bank, StatisticKind::DenseGram)
+        .capture(&bank, StatisticKind::DenseGram, &row(&plan))
         .unwrap();
     assert_eq!(before_a.values(), before_b.values());
 }
@@ -207,9 +232,11 @@ fn calibration_all_sites_match_actual_inputs_with_masks_resets_and_sliding_windo
         Projection::Down,
     ] {
         prepared.select_projection(projection).unwrap();
-        let dense = prepared.capture(&bank, StatisticKind::DenseGram).unwrap();
+        let dense = prepared
+            .capture(&bank, StatisticKind::DenseGram, &row(&plan))
+            .unwrap();
         let diagonal = prepared
-            .capture(&bank, StatisticKind::DiagonalSecondMoment)
+            .capture(&bank, StatisticKind::DiagonalSecondMoment, &row(&plan))
             .unwrap();
         let inputs = match projection {
             Projection::Query | Projection::Key | Projection::Value => &rows.attention,
@@ -228,7 +255,7 @@ fn calibration_all_sites_match_actual_inputs_with_masks_resets_and_sliding_windo
         assert_eq!(
             dense.values(),
             prepared
-                .capture(&bank, StatisticKind::DenseGram)
+                .capture(&bank, StatisticKind::DenseGram, &row(&plan))
                 .unwrap()
                 .values()
         );
@@ -328,7 +355,9 @@ fn calibration_artifact_roundtrip_binds_context_and_rejects_corruption() {
     let prepared = PreparedCalibration::prepare(&plan, &store, 1, Projection::Down).unwrap();
     let bank = bank();
     let key = prepared.key(&bank, StatisticKind::DenseGram).unwrap();
-    let artifact = prepared.capture(&bank, StatisticKind::DenseGram).unwrap();
+    let artifact = prepared
+        .capture(&bank, StatisticKind::DenseGram, &row(&plan))
+        .unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("capture");
     artifact.write(&root).unwrap();
@@ -429,7 +458,7 @@ fn calibration_reuses_sealed_token_banks_and_rejects_wrong_tokenizers() {
     .unwrap();
     let capture = PreparedCalibration::prepare(&plan, &store, 0, Projection::Query).unwrap();
     let artifact = capture
-        .capture(&bank, StatisticKind::DiagonalSecondMoment)
+        .capture(&bank, StatisticKind::DiagonalSecondMoment, &row(&plan))
         .unwrap();
     assert_eq!(
         artifact.manifest().key.token_bank_id.as_deref(),
@@ -439,7 +468,7 @@ fn calibration_reuses_sealed_token_banks_and_rejects_wrong_tokenizers() {
     let mut wrong = bank.clone();
     wrong.tokenizer_sha256 = "b".repeat(64);
     assert!(capture
-        .capture(&wrong, StatisticKind::DiagonalSecondMoment)
+        .capture(&wrong, StatisticKind::DiagonalSecondMoment, &row(&plan))
         .err()
         .unwrap()
         .to_string()
@@ -523,7 +552,7 @@ fn calibration_prefix_digest_includes_bias_contents_not_just_matrices() {
         let store = OperandStore::open(container.path(), &inspection).unwrap();
         PreparedCalibration::prepare(&plan, &store, 1, Projection::Query)
             .unwrap()
-            .capture(&bank(), StatisticKind::DiagonalSecondMoment)
+            .capture(&bank(), StatisticKind::DiagonalSecondMoment, &row(&plan))
             .unwrap()
     };
     let a = capture(None);
@@ -606,7 +635,7 @@ fn calibration_real_layer_inputs_match_independent_decode_observation() {
     ] {
         prepared.select_projection(projection).unwrap();
         let actual = prepared
-            .capture(&bank, StatisticKind::DiagonalSecondMoment)
+            .capture(&bank, StatisticKind::DiagonalSecondMoment, &row(&plan))
             .unwrap();
         let inputs = match projection {
             Projection::Query | Projection::Key | Projection::Value => &rows.attention,
@@ -624,4 +653,54 @@ fn calibration_real_layer_inputs_match_independent_decode_observation() {
             actual.manifest().key.candidate_prefix_sha256
         );
     }
+}
+
+/// Builds the row state under a non-built-in identity and counts builds,
+/// so a capture that ignored the caller's selection would be visible.
+struct CountingRow(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl ContinuationFactory for CountingRow {
+    fn identity(&self) -> ContinuationIdentity {
+        ContinuationIdentity::new("counting-row", 1)
+    }
+
+    fn regions(&self) -> &[ContinuationRegion] {
+        RowFactory.regions()
+    }
+
+    fn build(&self, config: &ContinuationConfig) -> BoxedContinuation {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        RowFactory.build(config)
+    }
+}
+
+#[test]
+fn calibration_builds_one_fresh_state_per_sequence_from_the_callers_selection() {
+    let (_dir, plan, store) = fixture(false);
+    let prepared = PreparedCalibration::prepare(&plan, &store, 1, Projection::Query).unwrap();
+    let bank = bank();
+    let built = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut registry = ContinuationRegistry::new();
+    registry
+        .register(Box::new(CountingRow(built.clone())))
+        .unwrap();
+    let counting = registry
+        .select(
+            &CountingRow(built.clone()).identity(),
+            &ContinuationConfig::empty(),
+            &plan_continuation_geometry(&plan).unwrap(),
+        )
+        .unwrap();
+    let selected = prepared
+        .capture(&bank, StatisticKind::DenseGram, &counting)
+        .unwrap();
+    assert_eq!(
+        built.load(std::sync::atomic::Ordering::SeqCst),
+        bank.sequences.len(),
+        "one fresh state per sequence, each from the caller's selection"
+    );
+    let reference = prepared
+        .capture(&bank, StatisticKind::DenseGram, &row(&plan))
+        .unwrap();
+    assert_eq!(selected.values(), reference.values());
 }
