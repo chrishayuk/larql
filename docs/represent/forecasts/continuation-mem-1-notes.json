@@ -1,7 +1,7 @@
 {
   "programme": "CONTINUATION-MEM-1",
   "forecast": "docs/represent/forecasts/continuation-mem-1.json (frozen at main ffbc1238; not edited)",
-  "status": "EXECUTED 2026-09-26 — seven of eight forecasts HELD; M8 FALSIFIED on one clause (KDA copies nothing). Ranking below scopes VIEW-1.",
+  "status": "CLOSED 2026-09-26 — see closure. Seven of eight forecasts HELD; M8 FALSIFIED on one clause (KDA copies nothing).",
   "execution_base": "main ffbc1238 (the freeze merge, #546)",
   "deviations_recorded_before_measurement": [
     {
@@ -204,5 +204,69 @@
       "conv-history to_vec → operator perf rung",
       "canonical matrix growth slack and realloc moves → provider work (or a server default decision: row/v1 already avoids the duplicate and the slack)"
     ]
+  },
+  "closure": {
+    "status": "CLOSED 2026-09-26. This record is final; nothing in it changes after this entry.",
+    "outcome": "7 of 8 forecasts HELD; M8 FALSIFIED on its per-call copy clause (KDA updates its conv buffers in place). Every run instrument-valid; row/v1 ≡ canonical/v1 bit-for-bit on all 9 subjects.",
+    "authority_chain": {
+      "freeze": {
+        "commits": [
+          "3fa5b509 (the freeze)",
+          "58386d23 (a coordinate the reference checker could not resolve, fixed before merge)"
+        ],
+        "pr": "#546",
+        "merge": "ffbc1238"
+      },
+      "execution": {
+        "commits": [
+          "86a29637 (deviations D1–D5, before any measurement)",
+          "a097c9c5 (the harness)",
+          "0924df88 (D6, before M8's copy clause was adjudicated)",
+          "6c5ad2ac (execution, adjudication, ranking, records)"
+        ],
+        "pr": "#549",
+        "merge": "289257a5"
+      },
+      "records": "continuation-mem-1-records.json at 6c5ad2ac; record SHAs a097c9c5 (qwen, oute production) and 0924df88 (all others)"
+    },
+    "deviations_preserved": {
+      "rule": "Listed as recorded above, unchanged. Each changed how something was measured, never what was forecast.",
+      "D1": "conv-QKV interval = union of the keys and values windows. Necessary: the frozen window alone saw exactly h on every call and would have read M4 FALSIFIED by instrument placement; both counts are in the record.",
+      "D2": "I2 perturbation = the largest cell × (1 + 2⁻⁴), K and V both.",
+      "D3": "canonical matrix capacity from the live-allocation table (ndarray exposes none).",
+      "D4": "append traffic classified by pointer identity (fixture row sizes collide with header sizes).",
+      "D5": "storage identity through the type-erased handoff via an inventory sink on the wrapper.",
+      "D6": "M8's copy clause adjudicated only from integrity-clean windows (serial reference backend); ProductionBackend's worker threads make its operator windows INVALID under the kept rule."
+    },
+    "corrections_preserved": {
+      "rule": "Mistakes of the executor, caught and corrected before the affected numbers were committed. They are recorded here because the committed record would otherwise look cleaner than the experiment was.",
+      "K1_D5_trigger": {
+        "what": "D5 first named `position()` as the inventory trigger; enumerating recurrent buffers needs `&mut self`, which `position(&self)` cannot give. Reworded to `set_position(p)`.",
+        "when": "before any measurement; the local commit 1a90f6e5 was amended to 86a29637 before it was pushed",
+        "effect": "none on any number"
+      },
+      "K2_M3_selected_range": {
+        "what": "the M3 metric first computed the kernel's selected range as min(h, w) and n at the end as the last h. `keys` is called BEFORE the position's own row is appended (the fixture step at position 7 is offered 7 rows), so the step covers h + 1 positions: corrected to min(h + 1, w) and n_end = last h + 1.",
+        "when": "found reading the first fixture records; corrected before the harness commit a097c9c5 and before any real subject ran",
+        "effect": "the held-outside fraction on the sliding fixture was 0.7 under the error and 0.727 corrected; I2's witness always used the correct range [position + 1 − w, position], so no I2 verdict changed"
+      },
+      "K3_M5_kimi_allocation": {
+        "what": "the derived Kimi MLA allocation first counted only kv_b_proj's 32 KiB output per re-derived row (229 KiB·(h+1) per token, ≈940 MB at h = 4,096). Each re-derived row also allocates a 2 KiB normalised latent and a 256 B rope-K copy: 34.25 KiB per row × 7 MLA layers = 240 KiB·(h+1), ≈1.0 GB at h = 4,096.",
+        "when": "found re-deriving every figure before the execution commit; corrected before 6c5ad2ac",
+        "effect": "M5's magnitude (derived, not adjudicated) up by ≈5%; no verdict changed"
+      }
+    },
+    "disclosures_preserved": [
+      "M6: the size-match operationalisation of 'continuation-sized' fired on the dense fixture (64 B rows) against the 64 B cache-bookkeeping allocation present on every subject; M6 adjudicated HELD on the invariant transfer profile and I6 identity.",
+      "Gated DeltaNet M8 copy clause not adjudicable (buffer and activation sizes collide at 1,024 B).",
+      "Realloc moved-vs-in-place varies run to run with heap layout; magnitudes are observed values.",
+      "The ~16 MB 'seal' scope is the wrapper's own record buffer, not the provider."
+    ],
+    "handed_forward": {
+      "CONTINUATION-VIEW-1": "scoped from class (a) only: canonical/v1's mirror (1× K/V payload), rows below the required range that no provider may drop, per-row allocation. ConvQkv's 2·h copy is borrow-caused (the operator reads by reference) and is VIEW-1's explicit non-acceptance question Q1.",
+      "operator rungs": "MLA re-derivation (derived ≈120 GMAC and ≈1.0 GB allocated per token at h = 4,096 on Kimi); the conv-history copy per Mamba2 / conv-QKV call",
+      "provider work": "canonical/v1's matrix growth slack (257 MB on gemma at 1,124 positions); the server's default provider choice",
+      "measurement": "the harness (crates/larql-kv/tests/continuation_mem_1, crates/larql-server/tests/continuation_mem_1_handoff) is the instrument VIEW-1's A/C/Q1 and B's deallocation proof re-run"
+    }
   }
 }
