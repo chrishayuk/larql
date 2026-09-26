@@ -27,12 +27,13 @@
 //! VINDEX3 model's continuation geometry (row width, sliding/full
 //! split). That closure is an explicit gate, not an incidental fact.
 //!
-//! Adapter shape: the cache's matrices are the **storage authority**.
-//! Today's `KvState` read contract serves `&[Vec<f32>]` rows (it
-//! mirrors `AttentionStepCall`, a recorded debt), so the adapter keeps
-//! per-layer row views — materialised *from* the matrices after every
-//! write, never alongside them, so the served bits are the stored
-//! bits by construction.
+//! Adapter shape: the cache's matrices are the **storage authority**, and
+//! they are also what the adapter lends: each layer's K and V matrices,
+//! row-major, through a contiguous
+//! [`KvView`](larql_vindex::format::vindex3::opplan::exec::kv_view::KvView)
+//! (CONTINUATION-VIEW-1). There is no second representation — the row
+//! mirror the old `&[Vec<f32>]` read contract forced is gone, so the served
+//! bits are the stored bits because they are the same bytes.
 
 use larql_vindex::format::vindex3::opplan::exec::continuation::{
     LatentKvRows, LayerContinuationGeometry, RecurrentState,
@@ -41,6 +42,7 @@ use larql_vindex::format::vindex3::opplan::exec::continuation_identity::Continua
 use larql_vindex::format::vindex3::opplan::exec::kv::{
     ContinuationError, KvState, LayerKvGeometry,
 };
+use larql_vindex::format::vindex3::opplan::exec::kv_view::KvView;
 use ndarray::Array2;
 
 use crate::cache::KvCache;
@@ -50,26 +52,6 @@ pub use registry::{shipped_continuations, CanonicalFactory};
 
 #[cfg(test)]
 mod tests;
-
-/// Per-layer row views, derived from the cache's matrices.
-#[derive(Default, Clone)]
-struct LayerRows {
-    keys: Vec<Vec<f32>>,
-    values: Vec<Vec<f32>>,
-}
-
-impl LayerRows {
-    /// Rebuild both views from one layer's matrices.
-    fn from_matrices(kv: Option<&(Array2<f32>, Array2<f32>)>) -> Self {
-        match kv {
-            Some((k, v)) => Self {
-                keys: k.rows().into_iter().map(|row| row.to_vec()).collect(),
-                values: v.rows().into_iter().map(|row| row.to_vec()).collect(),
-            },
-            None => Self::default(),
-        }
-    }
-}
 
 /// [`CanonicalKvState`]'s family ([`CanonicalKvState::identity`]): the
 /// canonical `larql-kv` cache. Revision 1 is the store as it serves rows
@@ -93,7 +75,6 @@ pub struct CanonicalKvState {
     /// filtering to a KV subset is exactly how a hybrid stack's layer 7
     /// would read layer 3's rows.
     geometry: Vec<Option<LayerKvGeometry>>,
-    rows: Vec<LayerRows>,
     /// SERVE-HYBRID: the recurrent layers' durable buffers, absolute
     /// index, allocated from the plan's declared geometry at
     /// [`prepare_continuation`](KvState::prepare_continuation). A
@@ -102,7 +83,7 @@ pub struct CanonicalKvState {
     /// The latent-cache layers' per-position rows, absolute index,
     /// allocated with the rest of the continuation. An MLA layer keeps
     /// one row per position of its own width — not a K/V pair — so it
-    /// cannot live in [`Self::rows`] without claiming a second row the
+    /// cannot live in the K/V matrices without claiming a second row the
     /// model never wrote.
     latent: Vec<Option<LatentKvRows>>,
 }
@@ -119,32 +100,35 @@ impl CanonicalKvState {
         Self {
             cache: KvCache::with_layers(0),
             geometry: Vec::new(),
-            rows: Vec::new(),
             recurrent: Vec::new(),
             latent: Vec::new(),
         }
     }
 
     /// Adopt an existing canonical cache (engine-held, injected,
-    /// transplanted) as V3 continuation state. Row views are rebuilt
-    /// from the cache's matrices — the matrices stay the authority —
-    /// and the next `prepare` validates the plan's geometry against
-    /// them. The cache must be unwindowed: a clipped cache has evicted
-    /// rows this contract requires (windowing is VI3-KV-2).
-    pub fn from_cache(cache: KvCache) -> Self {
+    /// transplanted) as V3 continuation state. The cache's matrices stay
+    /// the authority and are what [`rows`](KvState::rows) lends; a matrix
+    /// adopted in another memory order is made row-major here, once,
+    /// REPLACING the adopted copy (never kept beside it). The next
+    /// `prepare` validates the plan's geometry against them. The cache must
+    /// be unwindowed: a clipped cache has evicted rows this contract
+    /// requires (windowing is VI3-KV-2).
+    pub fn from_cache(mut cache: KvCache) -> Self {
         assert!(
             cache.max_window.is_none(),
             "canonical V3 continuation state requires an unwindowed cache"
         );
-        let rows = cache
-            .layers
-            .iter()
-            .map(|kv| LayerRows::from_matrices(kv.as_ref()))
-            .collect();
+        for (k, v) in cache.layers.iter_mut().flatten() {
+            if !k.is_standard_layout() {
+                *k = k.as_standard_layout().into_owned();
+            }
+            if !v.is_standard_layout() {
+                *v = v.as_standard_layout().into_owned();
+            }
+        }
         Self {
             cache,
             geometry: Vec::new(),
-            rows,
             recurrent: Vec::new(),
             latent: Vec::new(),
         }
@@ -182,7 +166,6 @@ impl KvState for CanonicalKvState {
         if self.geometry.is_empty() {
             if self.cache.layers.is_empty() {
                 self.cache = KvCache::with_layers(layers.len());
-                self.rows = vec![LayerRows::default(); layers.len()];
             } else {
                 // The from_cache path: the held state must be state
                 // for a program of this shape.
@@ -276,7 +259,6 @@ impl KvState for CanonicalKvState {
                  program with recurrent layers would claim state the cache never held"
             );
             self.cache = KvCache::with_layers(layers.len());
-            self.rows = vec![LayerRows::default(); layers.len()];
             self.geometry = kv_opt;
         } else {
             assert_eq!(
@@ -314,21 +296,22 @@ impl KvState for CanonicalKvState {
             .expect("row width asserted above");
         v.push_row(ndarray::ArrayView1::from(value.as_slice()))
             .expect("row width asserted above");
-
-        // …then materialise the served view from what the cache now
-        // holds, so the view provably carries the stored bits.
-        let (k, v) = self.cache.get_layer(layer).expect("layer was just written");
-        let last = k.shape()[0] - 1;
-        self.rows[layer].keys.push(k.row(last).to_vec());
-        self.rows[layer].values.push(v.row(last).to_vec());
     }
 
-    fn keys(&self, layer: usize) -> &[Vec<f32>] {
-        &self.rows[layer].keys
-    }
-
-    fn values(&self, layer: usize) -> &[Vec<f32>] {
-        &self.rows[layer].values
+    /// The layer's K and V matrices themselves, row-major, lent as they
+    /// are held: no second representation exists to lend instead.
+    fn rows(&self, layer: usize) -> KvView<'_> {
+        let Some((k, v)) = self.cache.get_layer(layer) else {
+            return KvView::empty();
+        };
+        let width = k.shape()[1];
+        let (Some(keys), Some(values)) = (k.as_slice(), v.as_slice()) else {
+            // push_row on axis 0 keeps these row-major; anything else is a
+            // cache this adapter did not build, and copying it would be the
+            // mirror CONTINUATION-VIEW-1 removed.
+            panic!("canonical K/V matrices at layer {layer} are not row-major");
+        };
+        KvView::contiguous(0, width, keys, values).expect("a matrix is whole rows from 0")
     }
 
     fn position(&self) -> usize {

@@ -95,8 +95,9 @@ pub(super) fn snapshot(
     };
     for (layer, g) in geometry.iter().enumerate() {
         if g.kv_side().is_some() {
-            snap.keys.push(state.keys(layer).to_vec());
-            snap.values.push(state.values(layer).to_vec());
+            snap.keys.push(state.rows(layer).to_owned_rows().0.to_vec());
+            snap.values
+                .push(state.rows(layer).to_owned_rows().1.to_vec());
         }
         if let Some(r) = g.recurrent() {
             let held = state.recurrent_state(layer).unwrap();
@@ -268,11 +269,11 @@ impl KvState for Perturbed {
         }
         self.inner.append(layer, key, value)
     }
-    fn keys(&self, layer: usize) -> &[Vec<f32>] {
-        self.inner.keys(layer)
-    }
-    fn values(&self, layer: usize) -> &[Vec<f32>] {
-        self.inner.values(layer)
+    fn rows(
+        &self,
+        layer: usize,
+    ) -> larql_vindex::format::vindex3::opplan::exec::kv_view::KvView<'_> {
+        self.inner.rows(layer)
     }
     fn position(&self) -> usize {
         self.inner.position()

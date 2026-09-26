@@ -144,7 +144,7 @@ pub fn rows_offered(
         let Some(kv) = g.kv_side() else { continue };
         let keys: Vec<&CallRecord> = calls
             .iter()
-            .filter(|c| c.phase == phase && c.method == Method::Keys && c.layer == Some(layer))
+            .filter(|c| c.phase == phase && c.method == Method::Rows && c.layer == Some(layer))
             .collect();
         let offered: Vec<usize> = keys.iter().filter_map(|c| c.rows_offered).collect();
         let positions: Vec<usize> = keys.iter().map(|c| c.position).collect();
@@ -175,36 +175,26 @@ pub fn rows_offered(
     Value::Array(layers)
 }
 
-/// M4: per conv-QKV call, target (row-sized) allocations in the frozen
-/// window (after `values`) and in the D1 union (after `keys` + after
-/// `values`), against h.
+/// M4: per conv-QKV call, row-sized allocations in the window after
+/// `rows` returned — where the executor copies every held K and V row
+/// (D1's union; one window since VIEW-1 V3 lends K and V together) —
+/// against h.
 pub fn conv_qkv_windows(intervals: &[IntervalRecord], phase: &str) -> Value {
-    let mut calls = Vec::new();
-    let windows: Vec<&IntervalRecord> = intervals
-        .iter()
-        .filter(|i| i.phase == phase && matches!(i.window, Window::Keys | Window::Values))
-        .collect();
-    for pair in windows.chunks(2) {
-        let [k, v] = pair else {
-            calls.push(json!({"unpaired_window": format!("{:?}", pair[0].window)}));
-            continue;
-        };
-        assert_eq!(k.window, Window::Keys, "windows alternate keys then values");
-        assert_eq!(
-            v.window,
-            Window::Values,
-            "windows alternate keys then values"
-        );
-        calls.push(json!({
-            "layer": k.layer,
-            "h": k.rows_held,
-            "row_sized_allocs_frozen_window": v.target_allocs,
-            "row_sized_allocs_union": k.target_allocs + v.target_allocs,
-            "all_allocs_union": k.delta.allocs + v.delta.allocs,
-            "alloc_bytes_union": k.delta.alloc_bytes + v.delta.alloc_bytes,
-        }));
-    }
-    Value::Array(calls)
+    Value::Array(
+        intervals
+            .iter()
+            .filter(|i| i.phase == phase && i.window == Window::Rows)
+            .map(|w| {
+                json!({
+                    "layer": w.layer,
+                    "h": w.rows_held,
+                    "row_sized_allocs_union": w.target_allocs,
+                    "all_allocs_union": w.delta.allocs,
+                    "alloc_bytes_union": w.delta.alloc_bytes,
+                })
+            })
+            .collect(),
+    )
 }
 
 /// M8: per recurrent call, allocations sized as a declared conv-history

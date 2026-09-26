@@ -19,15 +19,14 @@
 //! Contract notes:
 //!
 //! - Rows are stored exactly as the backend returned them (post-norm,
-//!   post-rope) and returned position-ordered from position 0. A
-//!   provider must hold **every** appended row — the span logic, not
-//!   the store, excludes positions a window masks out (the cache may
-//!   hold a position the span must exclude; dropping it is a policy
-//!   the executor has not been taught to coordinate with).
-//! - The `&[Vec<f32>]` row-slice shape mirrors
-//!   [`AttentionStepCall`](super::backend::AttentionStepCall) and
-//!   changes only with it; a flat or device-resident representation is
-//!   a later rung tied to that backend contract.
+//!   post-rope) and lent through a logical view
+//!   ([`KvView`](super::kv_view::KvView)) over absolute positions
+//!   `[base, end)`, in whatever representation the provider holds them
+//!   (CONTINUATION-VIEW-1). The plan's retention authority
+//!   ([`HistoryRange`]) says which positions a step may still read; a
+//!   provider must hold every one of those and may drop anything before.
+//!   A step lacking a required row is refused by name when it is built
+//!   ([`AttentionStepCall::new`](super::backend::AttentionStepCall::new)).
 
 use std::ops::Range;
 
@@ -175,11 +174,15 @@ pub trait ContinuationProvider {
     /// Append one position's K and V rows for `layer`.
     fn append(&mut self, layer: usize, key: Vec<f32>, value: Vec<f32>);
 
-    /// All K rows appended for `layer`, position-ordered from 0.
-    fn keys(&self, layer: usize) -> &[Vec<f32>];
-
-    /// All V rows appended for `layer`, position-ordered from 0.
-    fn values(&self, layer: usize) -> &[Vec<f32>];
+    /// The K and V rows `layer` holds, lent as a logical view over
+    /// ABSOLUTE positions `[base, end)`: `end` is every row ever appended
+    /// (never a physical count), `base` the first still held. A provider
+    /// lends its storage as it holds it — one allocation per row, a
+    /// contiguous matrix, or anything behind
+    /// [`KvRows`](super::kv_view::KvRows) — and may drop rows only before
+    /// the plan's required range
+    /// ([`HistoryRange`](HistoryRange)); a step lacking one is refused.
+    fn rows(&self, layer: usize) -> super::kv_view::KvView<'_>;
 
     /// The logical continuation position: the next position this state
     /// continues from. Owned explicitly by the provider — **never**
@@ -427,12 +430,9 @@ impl KvState for RowKvState {
         rows.values.push(value);
     }
 
-    fn keys(&self, layer: usize) -> &[Vec<f32>] {
-        &self.layers[layer].keys
-    }
-
-    fn values(&self, layer: usize) -> &[Vec<f32>] {
-        &self.layers[layer].values
+    fn rows(&self, layer: usize) -> super::kv_view::KvView<'_> {
+        let rows = &self.layers[layer];
+        super::kv_view::KvView::over_rows(&rows.keys, &rows.values)
     }
 
     fn position(&self) -> usize {

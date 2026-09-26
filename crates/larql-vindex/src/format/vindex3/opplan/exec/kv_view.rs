@@ -29,13 +29,30 @@ pub trait KvRows {
 enum Backing<'a> {
     /// `rows[i]` is position `base + i`.
     Rows(&'a [Vec<f32>]),
+    /// Row-major storage: position `base + i` is `data[i·width ..][..width]`.
+    Contiguous {
+        data: &'a [f32],
+        width: usize,
+    },
     Dyn(&'a (dyn KvRows + Sync)),
 }
 
 impl<'a> Backing<'a> {
+    fn address(self) -> usize {
+        match self {
+            Self::Rows(rows) => rows.as_ptr() as usize,
+            Self::Contiguous { data, .. } => data.as_ptr() as usize,
+            Self::Dyn(rows) => rows as *const (dyn KvRows + Sync) as *const () as usize,
+        }
+    }
+
     fn row(self, base: usize, position: usize) -> &'a [f32] {
         match self {
             Self::Rows(rows) => &rows[position - base],
+            Self::Contiguous { data, width } => {
+                let start = (position - base) * width;
+                &data[start..start + width]
+            }
             Self::Dyn(rows) => rows.row(position),
         }
     }
@@ -93,8 +110,35 @@ impl<'a> KvView<'a> {
         )
     }
 
-    /// Every row from position 0, as a provider's `keys` / `values` lend
-    /// them today.
+    /// Row-major K and V storage of `width`-wide rows, the first at `base`:
+    /// a matrix lent as it is held. Refuses slices that are not whole rows
+    /// or that hold different numbers of rows.
+    pub fn contiguous(
+        base: usize,
+        width: usize,
+        keys: &'a [f32],
+        values: &'a [f32],
+    ) -> Result<Self, ViewRefusal> {
+        assert!(width > 0, "a K/V row has a width");
+        assert!(
+            keys.len() % width == 0 && keys.len() == values.len(),
+            "contiguous K/V storage must be whole {width}-wide rows, equal in number: \
+             {} K and {} V values",
+            keys.len(),
+            values.len()
+        );
+        Self::checked(
+            base,
+            base + keys.len() / width,
+            Backing::Contiguous { data: keys, width },
+            Backing::Contiguous {
+                data: values,
+                width,
+            },
+        )
+    }
+
+    /// Every row from position 0, one allocation per position.
     pub fn over_rows(keys: &'a [Vec<f32>], values: &'a [Vec<f32>]) -> Self {
         Self::rows_from(0, keys, values).expect("base 0 never exceeds end")
     }
@@ -134,6 +178,24 @@ impl<'a> KvView<'a> {
     /// appended, not of rows physically held.
     pub fn end(&self) -> usize {
         self.end
+    }
+
+    /// Owned copies of every held K and V row, in position order — for a
+    /// caller that must release its borrow of the provider before mutating
+    /// it (conv-QKV's executor; CONTINUATION-VIEW-1 Q1).
+    pub fn to_owned_rows(&self) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        (self.base..self.end)
+            .map(|p| (self.key(p).to_vec(), self.value(p).to_vec()))
+            .unzip()
+    }
+
+    /// The addresses of the storage this view lends, K then V: the row
+    /// list of a row-backed view, the data of a contiguous one, the object
+    /// behind a `KvRows`. Identity only, never read through — for a check
+    /// that a handoff moved storage rather than copying it, and for
+    /// instruments attributing allocations to it.
+    pub fn backing_addresses(&self) -> [usize; 2] {
+        [self.keys.address(), self.values.address()]
     }
 
     /// Whether every position in `needed` is held.

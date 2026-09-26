@@ -19,6 +19,7 @@ use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
 use larql_vindex::format::vindex3::opplan::exec::kv::{
     ContinuationError, ContinuationProvider, LayerKvGeometry,
 };
+use larql_vindex::format::vindex3::opplan::exec::kv_view::KvView;
 
 /// The family no shipped source names. The genericity scan looks for it.
 pub const HOSTILE_FAMILY: &str = "hostile-test-provider";
@@ -77,12 +78,9 @@ impl ContinuationProvider for HostileRows {
         rows.values.push(value);
     }
 
-    fn keys(&self, layer: usize) -> &[Vec<f32>] {
-        &self.layers[layer].keys
-    }
-
-    fn values(&self, layer: usize) -> &[Vec<f32>] {
-        &self.layers[layer].values
+    fn rows(&self, layer: usize) -> KvView<'_> {
+        let rows = &self.layers[layer];
+        KvView::over_rows(&rows.keys, &rows.values)
     }
 
     fn position(&self) -> usize {

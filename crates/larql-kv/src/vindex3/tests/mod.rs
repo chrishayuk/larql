@@ -83,13 +83,13 @@ fn assert_state_equal(a: &dyn KvState, b: &dyn KvState, layers: usize, boundary:
     assert_eq!(a.position(), b.position(), "{boundary}: positions diverge");
     for layer in 0..layers {
         assert_eq!(
-            a.keys(layer),
-            b.keys(layer),
+            a.rows(layer).to_owned_rows().0,
+            b.rows(layer).to_owned_rows().0,
             "{boundary}: K rows diverge at layer {layer}"
         );
         assert_eq!(
-            a.values(layer),
-            b.values(layer),
+            a.rows(layer).to_owned_rows().1,
+            b.rows(layer).to_owned_rows().1,
             "{boundary}: V rows diverge at layer {layer}"
         );
     }
@@ -105,12 +105,12 @@ fn assert_cache_matrices_equal(cache: &KvCache, reference: &RowKvState, layers: 
         let v_rows: Vec<Vec<f32>> = v.rows().into_iter().map(|row| row.to_vec()).collect();
         assert_eq!(
             k_rows,
-            reference.keys(layer),
+            reference.rows(layer).to_owned_rows().0,
             "matrix K diverges at {layer}"
         );
         assert_eq!(
             v_rows,
-            reference.values(layer),
+            reference.rows(layer).to_owned_rows().1,
             "matrix V diverges at {layer}"
         );
     }
@@ -309,8 +309,8 @@ fn an_adopted_cache_with_unwritten_layers_prepares_cleanly() {
             history: HistoryRange::Full,
         },
     ]);
-    assert!(adopted.keys(0).is_empty());
-    assert!(adopted.values(1).is_empty());
+    assert!(adopted.rows(0).to_owned_rows().0.is_empty());
+    assert!(adopted.rows(1).to_owned_rows().1.is_empty());
 }
 
 #[test]
@@ -413,7 +413,7 @@ fn recurrent_layers_get_buffers_and_kv_layers_still_refuse() {
     ));
     // And it still takes rows, at its absolute index.
     provider.append(0, vec![1.0; 4], vec![2.0; 4]);
-    assert_eq!(provider.keys(0).len(), 1);
+    assert_eq!(provider.rows(0).to_owned_rows().0.len(), 1);
 
     // Resume: the same program keeps the mutated state.
     provider.prepare_continuation(&geometry).unwrap();
@@ -457,8 +457,14 @@ fn appends_reuse_matrix_capacity_and_preserve_every_stored_bit() {
         for j in 0..2 {
             assert_eq!(k[(i, j)].to_bits(), key[j].to_bits());
             assert_eq!(v[(i, j)].to_bits(), value[j].to_bits());
-            assert_eq!(state.keys(0)[i][j].to_bits(), key[j].to_bits());
-            assert_eq!(state.values(0)[i][j].to_bits(), value[j].to_bits());
+            assert_eq!(
+                state.rows(0).to_owned_rows().0[i][j].to_bits(),
+                key[j].to_bits()
+            );
+            assert_eq!(
+                state.rows(0).to_owned_rows().1[i][j].to_bits(),
+                value[j].to_bits()
+            );
         }
     }
 }
@@ -476,8 +482,14 @@ fn append_accepts_an_adopted_column_major_cache() {
         history: HistoryRange::Full,
     }]);
     state.append(0, vec![5., 6.], vec![7., 8.]);
-    assert_eq!(state.keys(0), &[vec![1., 2.], vec![3., 4.], vec![5., 6.]]);
-    assert_eq!(state.values(0), &[vec![1., 2.], vec![3., 4.], vec![7., 8.]]);
+    assert_eq!(
+        state.rows(0).to_owned_rows().0,
+        &[vec![1., 2.], vec![3., 4.], vec![5., 6.]]
+    );
+    assert_eq!(
+        state.rows(0).to_owned_rows().1,
+        &[vec![1., 2.], vec![3., 4.], vec![7., 8.]]
+    );
     assert_eq!(
         state.cache().get_layer(0).unwrap().0.row(2).to_vec(),
         vec![5., 6.]
@@ -516,7 +528,7 @@ fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
     let rows = state.latent_state(1).unwrap().rows();
     assert_eq!(rows, &[vec![1.0, -0.0, 3.0]]);
     assert_eq!(rows[0][1].to_bits(), (-0.0f32).to_bits());
-    assert_eq!(state.keys(0), &[vec![4.0, 5.0]]);
+    assert_eq!(state.rows(0).to_owned_rows().0, &[vec![4.0, 5.0]]);
     assert_eq!(state.position(), 1);
 }
 

@@ -104,11 +104,8 @@ fn a_kv_only_provider_refuses_a_recurrence_before_committing_output() {
         fn append(&mut self, layer: usize, key: Vec<f32>, value: Vec<f32>) {
             self.0.append(layer, key, value)
         }
-        fn keys(&self, layer: usize) -> &[Vec<f32>] {
-            self.0.keys(layer)
-        }
-        fn values(&self, layer: usize) -> &[Vec<f32>] {
-            self.0.values(layer)
+        fn rows(&self, layer: usize) -> crate::format::vindex3::opplan::exec::kv_view::KvView<'_> {
+            self.0.rows(layer)
         }
         fn position(&self) -> usize {
             self.0.position()
@@ -218,17 +215,18 @@ fn each_layer_updates_its_own_kind_of_state_and_no_other() {
                     "layer {index}: the convolution history never moved"
                 );
                 assert!(
-                    provider.keys(index).is_empty() && provider.values(index).is_empty(),
+                    provider.rows(index).to_owned_rows().0.is_empty()
+                        && provider.rows(index).to_owned_rows().1.is_empty(),
                     "layer {index} kept KV rows it has no keys or values for"
                 );
             }
             LayerAttention::Softmax(_) => {
                 assert_eq!(
-                    provider.keys(index).len(),
+                    provider.rows(index).to_owned_rows().0.len(),
                     5,
                     "layer {index}: one KV row per position"
                 );
-                assert_eq!(provider.values(index).len(), 5);
+                assert_eq!(provider.rows(index).to_owned_rows().1.len(), 5);
                 assert!(
                     provider.recurrent_state(index).is_err(),
                     "layer {index} allocated recurrent buffers for a softmax layer"

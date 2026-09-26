@@ -18,6 +18,7 @@ use larql_vindex::format::vindex3::opplan::exec::continuation::{
 use larql_vindex::format::vindex3::opplan::exec::kv::{
     ContinuationError, ContinuationProvider, LayerKvGeometry, RowKvState,
 };
+use larql_vindex::format::vindex3::opplan::exec::kv_view::KvView;
 
 use super::alloc::{self, Event, EventKind, Scope, ScopeDelta};
 
@@ -56,8 +57,8 @@ pub enum Method {
     Prepare,
     PrepareContinuation,
     Append,
-    Keys,
-    Values,
+    /// VIEW-1 V3: `rows(layer)` replaced `keys` and `values`.
+    Rows,
     Position,
     SetPosition,
     Recurrent,
@@ -99,10 +100,10 @@ pub struct CallRecord {
 /// Named for the provider call whose return opens the window; every
 /// window closes at the next provider entry.
 pub enum Window {
-    /// D1: after `keys` returned on a conv-QKV layer.
-    Keys,
-    /// The frozen window: after `values` returned on a conv-QKV layer.
-    Values,
+    /// After `rows` returned on a conv-QKV layer: the executor's copy of
+    /// every held K and V row runs here (D1's union, in one window since
+    /// VIEW-1 V3 lends K and V together).
+    Rows,
     /// M8: after `recurrent_state` returned (the operator runs in it).
     Recurrent,
 }
@@ -158,6 +159,9 @@ pub struct Measured<P> {
     /// Every allocation born inside an `append` scope (VIEW-1 V3's
     /// anti-cheat: what a provider keeps from its appends).
     append_born: Vec<usize>,
+    /// Capacity in bytes of each moved-in row the provider ADOPTED (kept
+    /// as its own storage), by address: a view hides Vec capacities.
+    adopted: std::collections::HashMap<usize, usize>,
     open: RefCell<Option<OpenWindow>>,
     geometry: Vec<LayerContinuationGeometry>,
     conv_qkv: Vec<bool>,
@@ -175,6 +179,7 @@ impl<P: Inspect> Measured<P> {
             calls: RefCell::new(Vec::with_capacity(1 << 16)),
             intervals: RefCell::new(Vec::with_capacity(1 << 12)),
             append_born: Vec::with_capacity(1 << 16),
+            adopted: std::collections::HashMap::new(),
             open: RefCell::new(None),
             geometry: Vec::new(),
             conv_qkv: Vec::new(),
@@ -224,8 +229,7 @@ impl<P: Inspect> Measured<P> {
     /// I2: overlay `layer`'s rows with a copy whose `row` is perturbed in
     /// its largest-magnitude cell by a factor (1 + 2⁻⁴), K and V both (D2).
     pub fn perturb(&mut self, layer: usize, row: usize) {
-        let mut keys = self.inner.keys(layer).to_vec();
-        let mut values = self.inner.values(layer).to_vec();
+        let (mut keys, mut values) = self.inner.rows(layer).to_owned_rows();
         scale_largest(&mut keys[row]);
         scale_largest(&mut values[row]);
         self.overlay = Some(Overlay {
@@ -247,7 +251,7 @@ impl<P: Inspect> Measured<P> {
     }
 
     pub fn inventory(&mut self) -> Vec<Backing> {
-        inventory_of(&mut self.inner, &self.geometry)
+        inventory_of(&mut self.inner, &self.geometry, &self.adopted)
     }
 
     fn record(&self, method: Method, layer: Option<usize>, rows: Option<usize>, delta: ScopeDelta) {
@@ -292,37 +296,51 @@ fn count_allocs_of(events: &[Event], bytes: &[usize]) -> u64 {
 pub fn inventory_of<P: Inspect + ?Sized>(
     inner: &mut P,
     geometry: &[LayerContinuationGeometry],
+    adopted: &std::collections::HashMap<usize, usize>,
 ) -> Vec<Backing> {
     let mut out = Vec::new();
     for (layer, g) in geometry.iter().enumerate() {
         if let Some(kv) = g.kv_side() {
             let row_payload = kv.kv_dim * F32_BYTES;
-            for (kind, rows) in [("k_row", inner.keys(layer)), ("v_row", inner.values(layer))] {
-                if !rows.is_empty() {
-                    out.push(Backing {
-                        kind: if kind == "k_row" {
-                            "k_header"
-                        } else {
-                            "v_header"
-                        },
-                        layer,
-                        index: 0,
-                        ptr: rows.as_ptr() as usize,
-                        bytes: alloc::live_size(rows.as_ptr() as usize),
-                        payload_bytes: 0,
-                    });
-                }
-                for (index, row) in rows.iter().enumerate() {
+            let view = inner.rows(layer);
+            // A row counts as row storage only if the provider adopted it
+            // (it is then its own allocation); a row lent from inside a
+            // matrix is inventoried once, as the matrix.
+            let adopted_rows = |kind: &'static str, row: fn(&KvView<'_>, usize) -> usize| {
+                (view.base()..view.end())
+                    .filter_map(|p| {
+                        let ptr = row(&view, p);
+                        adopted.get(&ptr).map(|&bytes| Backing {
+                            kind,
+                            layer,
+                            index: p,
+                            ptr,
+                            bytes: Some(bytes),
+                            payload_bytes: row_payload,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let k_rows = adopted_rows("k_row", |v, p| v.key(p).as_ptr() as usize);
+            let v_rows = adopted_rows("v_row", |v, p| v.value(p).as_ptr() as usize);
+            if !k_rows.is_empty() {
+                // The row list itself: a row-backed view's backing address.
+                for (kind, ptr) in [
+                    ("k_header", view.backing_addresses()[0]),
+                    ("v_header", view.backing_addresses()[1]),
+                ] {
                     out.push(Backing {
                         kind,
                         layer,
-                        index,
-                        ptr: row.as_ptr() as usize,
-                        bytes: Some(row.capacity() * F32_BYTES),
-                        payload_bytes: row_payload,
+                        index: 0,
+                        ptr,
+                        bytes: alloc::live_size(ptr),
+                        payload_bytes: 0,
                     });
                 }
             }
+            out.extend(k_rows);
+            out.extend(v_rows);
             if let (Some((k, v)), Some(rows)) = (inner.matrix_ptrs(layer), inner.matrix_rows(layer))
             {
                 for (kind, ptr) in [("k_matrix", k), ("v_matrix", v)] {
@@ -455,6 +473,8 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         };
         let key_ptr = key.as_ptr() as usize;
         let moved_in_bytes = ((key.capacity() + value.capacity()) * F32_BYTES) as u64;
+        let key_capacity_bytes = key.capacity() * F32_BYTES;
+        let value_capacity_bytes = value.capacity() * F32_BYTES;
         let incoming = [key_ptr, value.as_ptr() as usize];
         let rows_before = self.inner.matrix_rows(layer);
         let scope = alloc::enter();
@@ -474,12 +494,11 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         );
 
         let row_bytes = self.row_bytes(layer);
-        let stored_k = self.inner.keys(layer).last().map(|r| r.as_ptr() as usize);
-        let stored_v = self.inner.values(layer).last().map(|r| r.as_ptr() as usize);
-        let headers = [
-            self.inner.keys(layer).as_ptr() as usize,
-            self.inner.values(layer).as_ptr() as usize,
-        ];
+        let view = self.inner.rows(layer);
+        let last = view.end().checked_sub(1);
+        let stored_k = last.map(|p| view.key(p).as_ptr() as usize);
+        let stored_v = last.map(|p| view.value(p).as_ptr() as usize);
+        let headers = view.backing_addresses();
         let matrix = self.inner.matrix_ptrs(layer);
         let mut t = AppendTraffic {
             adopted: stored_k == Some(key_ptr),
@@ -525,6 +544,10 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
             o.keys.push(k);
             o.values.push(v);
         }
+        if t.adopted {
+            self.adopted.insert(incoming[0], key_capacity_bytes);
+            self.adopted.insert(incoming[1], value_capacity_bytes);
+        }
         self.record(Method::Append, Some(layer), None, delta);
         let mut calls = self.calls.borrow_mut();
         let last = calls.last_mut().expect("just recorded");
@@ -532,38 +555,19 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         last.moved_in_bytes = moved_in_bytes;
     }
 
-    fn keys(&self, layer: usize) -> &[Vec<f32>] {
+    fn rows(&self, layer: usize) -> KvView<'_> {
         self.close_window();
         let scope = alloc::enter();
-        let rows = self.inner.keys(layer);
+        let view = self.inner.rows(layer);
         let delta = scope.leave();
-        self.record(Method::Keys, Some(layer), Some(rows.len()), delta);
+        let held = view.end() - view.base();
+        self.record(Method::Rows, Some(layer), Some(held), delta);
         if self.conv_qkv.get(layer).copied().unwrap_or(false) {
-            self.open_window(Window::Keys, layer, rows.len(), vec![self.row_bytes(layer)]);
+            self.open_window(Window::Rows, layer, held, vec![self.row_bytes(layer)]);
         }
         match &self.overlay {
-            Some(o) if o.layer == layer => &o.keys,
-            _ => rows,
-        }
-    }
-
-    fn values(&self, layer: usize) -> &[Vec<f32>] {
-        self.close_window();
-        let scope = alloc::enter();
-        let rows = self.inner.values(layer);
-        let delta = scope.leave();
-        self.record(Method::Values, Some(layer), Some(rows.len()), delta);
-        if self.conv_qkv.get(layer).copied().unwrap_or(false) {
-            self.open_window(
-                Window::Values,
-                layer,
-                rows.len(),
-                vec![self.row_bytes(layer)],
-            );
-        }
-        match &self.overlay {
-            Some(o) if o.layer == layer => &o.values,
-            _ => rows,
+            Some(o) if o.layer == layer => KvView::over_rows(&o.keys, &o.values),
+            _ => view,
         }
     }
 
@@ -587,7 +591,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
             .as_ref()
             .is_some_and(|(trigger, _)| trigger.swap(false, Ordering::SeqCst));
         if triggered {
-            let inventory = inventory_of(&mut self.inner, &self.geometry);
+            let inventory = inventory_of(&mut self.inner, &self.geometry, &self.adopted);
             let (_, sink) = self.sink.as_ref().expect("checked");
             *sink.lock().expect("sink") = Some(inventory);
         }
@@ -601,7 +605,7 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         self.record(Method::Recurrent, Some(layer), None, delta);
         if ok && self.watch_recurrent {
             if let Some(Some(target)) = self.recurrent_target.get(layer) {
-                let held = self.inner.keys_len_or_zero(layer);
+                let held = self.inner.rows(layer).end();
                 self.open_window(Window::Recurrent, layer, held, target.clone());
             }
         }
@@ -615,18 +619,5 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         let delta = scope.leave();
         self.record(Method::Latent, Some(layer), held, delta);
         self.inner.latent_state(layer)
-    }
-}
-
-/// Rows held by a layer that may not keep KV rows at all.
-trait RowsHeld {
-    fn keys_len_or_zero(&self, layer: usize) -> usize;
-}
-
-impl<P: Inspect> RowsHeld for P {
-    fn keys_len_or_zero(&self, layer: usize) -> usize {
-        // `keys` on a pure-recurrent layer of a row store is an empty
-        // slice; on the canonical store its view list is empty too.
-        self.keys(layer).len()
     }
 }

@@ -468,11 +468,8 @@ fn a_provider_without_latent_rows_is_refused_at_announcement() {
         fn append(&mut self, layer: usize, key: Vec<f32>, value: Vec<f32>) {
             self.0.append(layer, key, value)
         }
-        fn keys(&self, layer: usize) -> &[Vec<f32>] {
-            self.0.keys(layer)
-        }
-        fn values(&self, layer: usize) -> &[Vec<f32>] {
-            self.0.values(layer)
+        fn rows(&self, layer: usize) -> crate::format::vindex3::opplan::exec::kv_view::KvView<'_> {
+            self.0.rows(layer)
         }
         fn position(&self) -> usize {
             self.0.position()

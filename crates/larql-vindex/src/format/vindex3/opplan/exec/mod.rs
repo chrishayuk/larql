@@ -1445,12 +1445,12 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             // executor is deliberately literal — speed is a later
             // rung's problem), the conv history is advanced by the
             // forward, and the batch's new rows are appended after.
-            let past_keys: Vec<Vec<f32>> = provider.keys(layer_index).to_vec();
-            let past_values: Vec<Vec<f32>> = provider.values(layer_index).to_vec();
             let base = provider.position();
-            let past = KvView::over_rows(&past_keys, &past_values);
+            let held = provider.rows(layer_index);
             // Conv-QKV reads its whole history (HistoryRange::Full).
-            past.covers(0..base)?;
+            held.covers(0..base)?;
+            let (past_keys, past_values) = held.to_owned_rows();
+            let past = KvView::over_rows(&past_keys, &past_values);
             let state = provider.recurrent_state(layer_index)?;
             let planes = conv_qkv::layer_forward_with(
                 &ops.op,
@@ -2337,7 +2337,7 @@ fn attention_into_kv<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     let mut outputs = Vec::with_capacity(inputs.len());
     for offset in 0..inputs.len() {
         let call = operands.call(op, &inputs[offset..=offset], qk_norm_eps, hidden);
-        let rows = KvView::over_rows(kv.keys(layer_index), kv.values(layer_index));
+        let rows = kv.rows(layer_index);
         let out = backend.attention_step(AttentionStepCall::new(call, base + offset, rows)?)?;
         kv.append(layer_index, out.key, out.value);
         outputs.push(out.output);

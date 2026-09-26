@@ -49,9 +49,11 @@ use super::represent::codec::{RepresentationCodec, RepresentationEncoder};
 /// The host/plugin compatibility stamp: contract revision, crate version,
 /// compiler, and source commit. NUL-terminated so the C-ABI export can
 /// hand it out as-is. The revision moves whenever [`PluginRegistrar`]'s
-/// layout does: 2 added continuation factories (CONTINUATION-PLUGIN-1 C6).
+/// layout does: 2 added continuation factories (CONTINUATION-PLUGIN-1 C6);
+/// 3 changed the continuation trait they build — keys/values became one
+/// `rows(layer) -> KvView` (CONTINUATION-VIEW-1 V3).
 pub const ABI: &str = concat!(
-    "larql-plugin/2 larql-vindex/",
+    "larql-plugin/3 larql-vindex/",
     env!("CARGO_PKG_VERSION"),
     " (",
     env!("LARQL_PLUGIN_RUSTC"),

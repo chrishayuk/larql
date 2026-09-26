@@ -389,9 +389,9 @@ fn every_build_is_a_fresh_provider() {
 
     let mut second = selected.clone().build();
     second.prepare_continuation(&plan).unwrap();
-    assert_eq!(first.keys(0).len(), 1);
+    assert_eq!(first.rows(0).to_owned_rows().0.len(), 1);
     assert!(
-        second.keys(0).is_empty(),
+        second.rows(0).to_owned_rows().0.is_empty(),
         "a build shared state with another"
     );
     assert_eq!(second.position(), 0);
