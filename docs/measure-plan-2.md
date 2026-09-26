@@ -117,6 +117,59 @@ The instrument is `metric: KL nats`, `truncation: None`, and `procedure: plan-v1
   producer's snapshot is accepted by `auto_rep::run` without hand edits. Its surface roles equal the
   container's plan roles.
 
+## Amendment A1 (2026-09-26, before any implementation landed)
+
+Recorded before the code it changes, on review of the frozen text. It adds two things; nothing above is
+withdrawn.
+
+### A1.1 Characterisation-only records
+
+`SearchConfig.gate` becomes `Option<Gate>`. A record without a gate:
+
+- **Can** ingest, store and replay readings, and carry accounting and cost.
+- **Cannot** adjudicate anything. `adjudicate` returns `None`, the frontier holds no adjudications, and
+  nothing is admitted or promoted.
+- **Is refused by AUTO-REP.** An `ExactNoGood` needs a refused reading, and no reading is refused without
+  a gate.
+
+A present gate serialises exactly as before, so every persisted Kimi record is unchanged. This lets
+slice 2 produce and fill a real plan-v1 record without inventing a slice-3 threshold. The test-only plan
+gate remains, only for proving the loop end to end (W6).
+
+### A1.2 Structured metric semantics and the gate binding
+
+`InstrumentSemantics` gains an optional structured `semantics: MetricSemantics { quantity, unit, support,
+direction }`:
+
+- `quantity`: `KlDivergence`;
+- `unit`: `Nats`;
+- `support`: `FullVocabulary` or `TopN(n)`;
+- `direction`: `ReferenceToCandidate`.
+
+Its rules:
+
+- **Digest.** The field enters the instrument digest only when present, so every existing Kimi instrument
+  id, and every measurement key built from one, is unchanged.
+- **Consistency.** When present, `support` must agree with `truncation`: `TopN(n)` with `Some(n)`, and
+  `FullVocabulary` with `None`. Otherwise it is refused.
+- **Plan instrument.** The plan-v1 instrument declares `KlDivergence`, `Nats`, `FullVocabulary`,
+  `ReferenceToCandidate`.
+
+**The gate binding.** A `PlanGate` also declares the `MetricSemantics` its limits are written in. Before
+evaluation, ingestion and request preparation refuse a gate whose kind differs from the reading's, or
+whose declared semantics differ from the instrument's. Kimi gates predate the field and bind by kind
+alone. Kimi instruments carry no semantics until a Kimi migration declares them.
+
+### Added witnesses
+
+- **W8, characterisation-only.** A gate-less plan record ingests a plan reading, reports it, and replays
+  it. It admits nothing, and `auto_rep::run` refuses it.
+- **W9, semantics bind.** A plan gate declaring `TopN(2048)` refuses a reading from the full-vocabulary
+  instrument. An instrument whose `semantics.support` disagrees with its `truncation` is refused. Every
+  existing Kimi instrument id is unchanged.
+
+These land in PR 1 (kinds and binding) and PR 2 (ingestion), with W8 and W9 committed RED first.
+
 ## Out of scope
 
 - **Any plan gate id or threshold** (slice 3), and whether any criterion earns authority.
