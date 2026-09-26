@@ -13,29 +13,17 @@ use super::actuate::executor::{ExecutorRegistry, ExperimentExecutor};
 use super::actuate::prepare::{PreparedExperiment, Ready};
 use super::actuate::request::MeasurementRequest;
 use super::actuate::{DeclaredArtifacts, PlanTeacherForcedExecutor};
-use super::auto_rep::{self, group_vocabulary, CampaignOutcome, CampaignSetup, RepresentCompiler};
-use super::compiler::read_source_identity;
+use super::auto_rep::{self, CampaignOutcome, CampaignSetup, RepresentCompiler};
 use super::ingest::artifact::MeasurementArtifact;
 use super::ingest::state_evidence::ArtifactStateEvidence;
 use super::ingest::{ingest, IngestionRefusal, IngestionSources};
-use super::map::PrecisionMap;
 use super::measure::outcome::VerifiedFacts;
-use super::measure::plan::PROCEDURE;
-use super::policy::classify_in;
+use super::produce::{produce, ProduceInputs, NO_DIAGNOSTICS, NO_PROMOTION};
 use super::reading::{test_plan_gate, Gate, Observation, ReadingKind, RunFacts};
-use super::state::instrument::{InstrumentSemantics, MetricSemantics};
-use super::state::protocol::MeasurementProtocol;
-use super::state::snapshot::{SearchSnapshot, SearchSpace};
-use super::state::{
-    fixtures, ActionVocabulary, EvidenceBank, LogicalBytes, PackLayoutAdmission,
-    RepresentationState, RepresentationStateGraph, ResolvedState, SurfaceTensor, TensorSurface,
-    TransitionPolicy,
-};
-use super::token_bank::{export, TOKENIZER_FILE, TOKEN_BANK_SCHEMA};
+use super::state::snapshot::SearchSnapshot;
+use super::token_bank::{export, TOKENIZER_FILE};
 use super::{compile_representation, RepresentSpec};
-use crate::format::vindex3::encode::segment::read_segment_header;
 use crate::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
-use crate::format::vindex3::index::Vindex3Index;
 use crate::format::vindex3::opplan::exec::continuation_registry::{
     ContinuationFactory, ContinuationRegistry,
 };
@@ -76,17 +64,6 @@ struct Fixture {
     spec: RepresentSpec,
 }
 
-fn plan_instrument() -> InstrumentSemantics {
-    InstrumentSemantics::new(
-        "kl(reference || candidate), nats",
-        "mean, p50, p99, max over positions",
-        "teacher-forced, every position",
-        PROCEDURE,
-    )
-    .with_semantics(MetricSemantics::PLAN_V1)
-    .unwrap()
-}
-
 fn fixture(gate: Option<Gate>) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let checkpoint = dir.path().join("checkpoint");
@@ -109,52 +86,20 @@ fn fixture(gate: Option<Gate>) -> Fixture {
     let bank = dir.path().join("bank");
     export(&prompts, &source.join(TOKENIZER_FILE), 10, &bank).unwrap();
 
-    let index: Vindex3Index =
-        serde_json::from_slice(&std::fs::read(source.join("index.json")).unwrap()).unwrap();
-    let mut entries = BTreeMap::new();
-    for rep in index.representations.values() {
-        let (header, _) = read_segment_header(&source.join(&rep.segment)).unwrap();
-        for tensor in header.tensors {
-            let role = classify_in(true, &rep.object, &tensor.name, &tensor.shape);
-            entries.insert(
-                (rep.object.clone(), tensor.name.clone()),
-                SurfaceTensor::new(&rep.object, &tensor.name, role, tensor.shape),
-            );
-        }
-    }
-    let surface = TensorSurface::new(entries.into_values()).unwrap();
     let spec = RepresentSpec::nvfp4();
-    let base_map =
-        PrecisionMap::from_policy(spec.map_name(), &spec.encoding, &spec.roles, &spec.protect);
-
-    let manifest = std::fs::read(bank.join("manifest.json")).unwrap();
-    let evidence = EvidenceBank::new(
-        TOKEN_BANK_SCHEMA,
-        super::compile::hash_bytes(&manifest),
-        (0..SAMPLES).map(|i| format!("seq-{i:03}")),
-        0,
-    );
-    let protocol = MeasurementProtocol::new(evidence, plan_instrument(), PROCEDURE);
-    let seed = fixtures::PricedRecord::new(&source)
-        .with_protocol(protocol)
-        .build();
-    let model = read_source_identity(&source).unwrap();
-    let root = RepresentationState::resolve(&model, &surface, &base_map, &PackLayoutAdmission);
-    let mut facts = seed.facts().clone();
-    facts.graph = RepresentationStateGraph::new(
-        TransitionPolicy::Unconstrained,
-        ResolvedState::new(root, LogicalBytes::new(0)),
-    );
-    let mut space = SearchSpace {
-        surface,
-        base_map,
-        vocabulary: ActionVocabulary::new([]).unwrap(),
-        applied: BTreeSet::new(),
-    };
-    space.vocabulary = group_vocabulary(&space).unwrap();
-    let mut config = seed.config().clone();
-    config.gate = gate;
-    let snapshot = SearchSnapshot::new(space, config, facts);
+    let mut snapshot = produce(&ProduceInputs {
+        source: &source,
+        spec: &spec,
+        bank: &bank,
+        sequences: SAMPLES,
+    })
+    .unwrap();
+    if let Some(gate) = gate {
+        // Installing a gate is slice 3's act; here the test-only one.
+        let mut config = snapshot.config().clone();
+        config.gate = Some(gate);
+        snapshot = SearchSnapshot::new(snapshot.space().clone(), config, snapshot.facts().clone());
+    }
     let workdir = dir.path().join("candidates");
     let runs = dir.path().join("runs");
     std::fs::create_dir(&workdir).unwrap();
@@ -475,4 +420,134 @@ fn w6_auto_rep_runs_end_to_end_through_the_plan_executor() {
             .and_then(Observation::as_plan)
             .map(|p| p.all.kl_p99)
     );
+}
+
+// ------------------------------------------------------------------ W7
+
+/// The producer's record: characterisation-only, no Kimi judgement, the
+/// compiler's roles, loadable, and refused by the loop until armed.
+#[test]
+fn w7_the_producer_builds_a_characterisation_only_record_the_loop_accepts_once_armed() {
+    let f = fixture(None);
+    let snapshot = &f.snapshot;
+    // No judgement is borrowed.
+    let config = snapshot.config();
+    assert!(config.gate.is_none());
+    assert_eq!(config.diagnostic_policy.id, NO_DIAGNOSTICS);
+    assert!(config.diagnostic_policy.observations.is_empty());
+    assert_eq!(config.semantics.promotion_rule, NO_PROMOTION);
+    assert!(config.tail_support.provenance.contains("not earned"));
+    let json = serde_json::to_string(config).unwrap().to_lowercase();
+    assert!(!json.contains("kimi"), "a Kimi value leaked into {json}");
+    assert_eq!(
+        snapshot.protocol().unwrap().procedure,
+        super::measure::plan::PROCEDURE
+    );
+
+    // The surface's roles are the compiler's: the plan's own bindings for
+    // primary-text objects.
+    let inspection = crate::format::vindex3::inspect::inspect_container(&f.source, false).unwrap();
+    let primary = super::primary_text_objects(&inspection);
+    let declared = super::plan_roles::plan_roles(&f.source, &inspection);
+    assert!(!declared.is_empty());
+    for ((object, tensor), role) in &declared {
+        if primary.contains(object) {
+            let entry = snapshot.space().surface.get(object, tensor).unwrap();
+            assert_eq!(&entry.role, role, "{object}/{tensor}");
+        }
+    }
+
+    // Loadable the way `optimizer-mcp --snapshot` loads it.
+    let bytes = serde_json::to_vec(snapshot).unwrap();
+    let loaded: SearchSnapshot = serde_json::from_slice(&bytes).unwrap();
+    loaded.check_schema().unwrap();
+    assert_eq!(&loaded, snapshot);
+
+    // Refused by the loop while gate-less, before anything compiles.
+    let executor = executor(&f);
+    let registry = ExecutorRegistry::new([&executor as &dyn ExperimentExecutor]).unwrap();
+    let compiler = RepresentCompiler { source: &f.source };
+    let setup = CampaignSetup {
+        source: &f.source,
+        corpus: &f.bank,
+        workdir: &f.workdir,
+        spec: &f.spec,
+        compiler: &compiler,
+        executors: &registry,
+        budget: 1,
+        node_limit: u64::MAX,
+        pins: BTreeMap::new(),
+    };
+    let mut bare = snapshot.clone();
+    assert!(auto_rep::run(&mut bare, &setup).is_err());
+    assert!(std::fs::read_dir(&f.workdir).unwrap().next().is_none());
+
+    // Armed with the test-only gate (slice 3's act), the loop accepts it.
+    let mut config = snapshot.config().clone();
+    config.gate = Some(Gate::Plan(test_plan_gate()));
+    let mut armed = SearchSnapshot::new(snapshot.space().clone(), config, snapshot.facts().clone());
+    let record = auto_rep::run(&mut armed, &setup).unwrap();
+    assert_eq!(record.measurements_spent, 1);
+    assert!(matches!(
+        record.outcome,
+        CampaignOutcome::Admitted { .. } | CampaignOutcome::BudgetSpent
+    ));
+}
+
+#[test]
+fn w7_the_producer_refuses_inputs_it_cannot_honour() {
+    let f = fixture(None);
+    let inputs = |spec, sequences| ProduceInputs {
+        source: &f.source,
+        spec,
+        bank: &f.bank,
+        sequences,
+    };
+    let mut protected = f.spec.clone();
+    protected.protect = protected.protect.projection("q_proj");
+    assert!(produce(&inputs(&protected, SAMPLES)).is_err());
+    assert!(produce(&inputs(&f.spec, 0)).is_err());
+    assert!(produce(&inputs(&f.spec, 99)).is_err());
+    // A bank exported with another tokenizer is not this model's.
+    std::fs::write(
+        f.source.join(TOKENIZER_FILE),
+        std::fs::read(f.source.join(TOKENIZER_FILE))
+            .unwrap()
+            .iter()
+            .chain(b" ")
+            .copied()
+            .collect::<Vec<u8>>(),
+    )
+    .unwrap();
+    assert!(produce(&inputs(&f.spec, SAMPLES)).is_err());
+}
+
+/// Where the plan's binding and the tensor's spelling disagree, the
+/// surface carries the plan's role — the one the compiler compiles by.
+/// The gated-delta projections classify `Unknown` by name.
+#[test]
+fn w7_the_surface_takes_the_plan_role_where_the_name_test_sees_nothing() {
+    use super::policy::{classify_in, Role};
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        crate::format::vindex3::fixtures::hybrid_lllf_f32_model,
+        checkpoint.path(),
+        container.path(),
+        "plan-roles",
+    );
+    let surface = super::produce::plan_surface(container.path()).unwrap();
+    let mut checked = 0;
+    for t in surface.entries() {
+        if t.tensor.ends_with("linear_attn.in_proj_qkv.weight") {
+            assert_eq!(
+                classify_in(true, &t.object, &t.tensor, &t.shape),
+                Role::Unknown,
+                "the name test must still be blind here for this witness to mean anything"
+            );
+            assert_eq!(t.role, Role::RecurrenceProjection, "{}", t.tensor);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
 }

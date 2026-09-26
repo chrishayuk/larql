@@ -20,7 +20,7 @@ These describe the source checkout, not the latest published binary. [Documentat
 
 ## larql vindex3 commands
 
-`consequence`, `encode`, `exec`, `inspect`, `measure`, `observe`, `ops`, `plan`, `references`, `represent`, `sensitivity`, `token-bank`, `verify`.
+`auto-rep`, `consequence`, `encode`, `exec`, `inspect`, `measure`, `observe`, `ops`, `plan`, `references`, `represent`, `sensitivity`, `token-bank`, `verify`.
 
 Inventories list explicit top-level subcommands; Clap's generated help command, flags and aliases are excluded. Binary unit tests compare these lists with the actual Clap command trees. Use each command's `--help` for arguments.
 
