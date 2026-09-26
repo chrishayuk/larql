@@ -8,11 +8,16 @@
 //! is not a multiple of any arm's rows-per-threadgroup (tail rows), and on
 //! a row-sliced NVFP4 matrix (the packed-attention layout). Widths 5..=8
 //! run the tiled simdgroup-matrix kernels, 1..=4 the multi-RHS arms; the
-//! f16 tiled kernel engages only at head width, checked on its own.
+//! f16 tiled kernel engages only at head width, checked on its own. Each
+//! entry of the multi-RHS arm table is also driven directly through
+//! `encode_nvfp4_matmul`, row by row against the GEMV.
 
 #![cfg(target_os = "macos")]
 
-use larql_compute_metal::lowering::{LoweredMatrix, MatmulRowsTarget, MatvecTarget};
+use larql_compute_metal::lowering::{
+    LoweredMatrix, MatmulRowsTarget, MatvecOperands, MatvecTarget,
+};
+use larql_compute_metal::shaders::nvfp4_matvec::MATMUL_ARMS;
 use larql_compute_metal::MetalBackend;
 use larql_models::quant::half::f32_to_f16;
 use larql_models::quant::nvfp4;
@@ -232,4 +237,72 @@ fn f16_head_width_rows_match_the_gemv_through_the_tiled_kernel() {
     let buf = gpu.lowering_weight(&bytes);
     let w = LoweredMatrix::F16 { bytes: &buf };
     check_widths_n(&gpu, &w, &w, F16_TILED_N);
+}
+
+#[test]
+fn every_nvfp4_multi_rhs_arm_matches_the_gemv_on_each_of_its_rows() {
+    // Fail, never skip: a shader that does not compile makes `new()`
+    // return None, and a skipped gate reads as a pass.
+    let gpu = MetalBackend::new().expect("Metal backend (shader library must compile)");
+    // Leaked: `lowering_weight` caches on the host allocation's (ptr,
+    // len), so these bytes must not be freed and their address reused.
+    let m: &'static nvfp4::Nvfp4Matrix = Box::leak(Box::new(
+        nvfp4::quantize(&values(17, N * K), N, K).expect("quantise"),
+    ));
+    let packed = gpu.lowering_weight(&m.packed);
+    let scales = gpu.lowering_weight(&m.scales);
+    let w = LoweredMatrix::Nvfp4 {
+        packed: &packed,
+        packed_offset: 0,
+        scales: &scales,
+        scales_offset: 0,
+        tensor_scale: m.tensor_scale,
+    };
+    // The arm table itself is what `encode_nvfp4_matmul` indexes: every
+    // entry, at its own width, one weight pass for all of its rows.
+    for (arm, &(name, width)) in MATMUL_ARMS.iter().enumerate() {
+        let x = values(19 + arm, width * K);
+        let xb = gpu.lowering_upload(&x).expect("x");
+        let out = gpu.lowering_scratch(width * N);
+        run(&gpu, |enc| {
+            gpu.encode_nvfp4_matmul(
+                enc,
+                &MatvecOperands {
+                    packed: &packed,
+                    scales: &scales,
+                    x: &xb,
+                    out: &out,
+                    out_offset: 0,
+                    n: N,
+                    k: K,
+                },
+                m.tensor_scale,
+                arm,
+            )
+        });
+        let got = gpu.lowering_readback(&out, width * N).expect("readback");
+        for r in 0..width {
+            let xr = gpu.lowering_upload(&x[r * K..(r + 1) * K]).expect("x row");
+            let reference = gpu.lowering_scratch(N);
+            run(&gpu, |enc| {
+                gpu.encode_matvec(
+                    enc,
+                    &w,
+                    &MatvecTarget {
+                        x: &xr,
+                        out: &reference,
+                        out_offset: 0,
+                        n: N,
+                        k: K,
+                    },
+                )
+            });
+            let reference = gpu.lowering_readback(&reference, N).expect("readback");
+            let err = rel_rms(&reference, &got[r * N..(r + 1) * N]);
+            assert!(
+                err <= REL_RMS_BOUND,
+                "arm {name} (width {width}), row {r}: rel_rms {err:.2e} against the GEMV"
+            );
+        }
+    }
 }

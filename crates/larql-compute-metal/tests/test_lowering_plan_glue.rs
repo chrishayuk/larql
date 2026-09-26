@@ -150,3 +150,68 @@ fn sigmoid_gate_matches_the_judged_semantics() {
         "sigmoid and tanh gating must be distinguishable"
     );
 }
+
+/// Wider than one `embed_gather` threadgroup by two strides plus a tail,
+/// so the per-thread loop both wraps and ends mid-stride.
+const GATHER_HIDDEN: usize = 2 * larql_compute_metal::kernels::DISPATCH_TG_MAX_THREADS as usize + 3;
+const GATHER_VOCAB: usize = 7;
+/// Deliberately not the last row, so an off-by-one id reads a real row.
+const GATHER_ID: u32 = 5;
+/// Gemma's embedding scale for a hidden width near this one (~sqrt(hidden)).
+const GATHER_SCALE: f32 = 22.6;
+
+/// `embed_gather` with the id in a device buffer, as a prior argmax
+/// leaves it.
+fn gather(
+    gpu: &larql_compute_metal::MetalBackend,
+    table: &metal::Buffer,
+    id: u32,
+    scale: f32,
+) -> Vec<f32> {
+    let idx = gpu.lowering_scratch(1);
+    // SAFETY: a live one-word shared buffer the GPU is not using yet.
+    unsafe { *(idx.contents() as *mut u32) = id };
+    let out = gpu.lowering_scratch(GATHER_HIDDEN);
+    let cmd = gpu.new_lowering_command_buffer();
+    let enc = cmd.new_compute_command_encoder();
+    gpu.encode_embed_gather(enc, table, &idx, &out, GATHER_HIDDEN, scale);
+    enc.end_encoding();
+    cmd.commit();
+    cmd.wait_until_completed();
+    gpu.lowering_readback(&out, GATHER_HIDDEN)
+        .expect("readback")
+}
+
+#[test]
+fn embed_gather_reads_the_device_id_and_applies_only_a_present_scale() {
+    // Fail, never skip: a shader that does not compile makes `new()`
+    // return None, and a skipped gate reads as a pass.
+    let gpu = larql_compute_metal::MetalBackend::new()
+        .expect("Metal backend (shader library must compile)");
+    let host = deterministic(GATHER_VOCAB * GATHER_HIDDEN, 23);
+    let table = gpu.lowering_upload(&host).expect("upload");
+    let row = |id: u32| {
+        let at = id as usize * GATHER_HIDDEN;
+        &host[at..at + GATHER_HIDDEN]
+    };
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+
+    // Scaled: one f32 multiply per element on both sides — bit-exact.
+    let got = gather(&gpu, &table, GATHER_ID, GATHER_SCALE);
+    let want: Vec<f32> = row(GATHER_ID).iter().map(|x| x * GATHER_SCALE).collect();
+    assert_eq!(bits(&got), bits(&want), "scaled gather of row {GATHER_ID}");
+
+    // 0.0 encodes an ABSENT multiplier: the row itself, not zeros.
+    let unscaled = gather(&gpu, &table, GATHER_ID, 0.0);
+    assert_eq!(
+        bits(&unscaled),
+        bits(row(GATHER_ID)),
+        "an absent scale must copy the row unchanged"
+    );
+
+    // Control: the id is read from the buffer — a neighbouring id gives
+    // a different row, so the equality above could not pass by accident.
+    let neighbour = gather(&gpu, &table, GATHER_ID - 1, 0.0);
+    assert_eq!(bits(&neighbour), bits(row(GATHER_ID - 1)));
+    assert_ne!(bits(&neighbour), bits(&unscaled));
+}
