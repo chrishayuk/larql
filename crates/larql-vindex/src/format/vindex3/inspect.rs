@@ -15,6 +15,7 @@ use super::encode::segment::read_segment_header;
 use super::graph::policy::AttentionSpan;
 use super::graph::{SystemGraph, GRAPH_SCHEMA};
 use super::index::Vindex3Index;
+use super::shape::ContainerShape;
 use crate::error::VindexError;
 use crate::format::filenames::INDEX_JSON;
 use crate::format::generation::{detect_generation, ContainerGeneration};
@@ -126,13 +127,12 @@ pub fn inspect_container(
     )
     .map_err(|e| VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
 
-    let graph_name = index.system_graph.as_deref().ok_or_else(|| {
-        VindexError::Parse(
-            "container records no system graph — nothing to reconstruct \
-             (a routed-MoE container opens via `larql show`, not here)"
-                .into(),
-        )
-    })?;
+    // A bank container is recognised and refused by name (ADR-0027), not
+    // reported as a graph with something missing.
+    let graph_name = match (index.shape()?, index.system_graph.as_deref()) {
+        (ContainerShape::Graph, Some(name)) => name,
+        _ => return Err(VindexError::LegacyBankContainer),
+    };
     let graph_text = std::fs::read_to_string(root.join(graph_name))
         .map_err(|e| VindexError::Parse(format!("read {graph_name}: {e}")))?;
     // Read the schema before the graph. A version field nothing checks is

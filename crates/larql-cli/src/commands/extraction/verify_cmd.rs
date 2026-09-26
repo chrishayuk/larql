@@ -83,7 +83,65 @@ pub fn run(args: VerifyArgs) -> Result<(), Box<dyn std::error::Error>> {
 /// Execution parity is deliberately excluded — it needs an input and a kernel,
 /// and folding it in would make routine verification cost a forward pass.
 fn verify_v3(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    eprintln!("Verifying: {} (VINDEX3, structural)", path.display());
+    use larql_vindex::format::vindex3::{ContainerShape, Vindex3Index, LEGACY_BANK_MIGRATION};
+    let raw = std::fs::read_to_string(path.join(larql_vindex::format::filenames::INDEX_JSON))?;
+    let index: Vindex3Index =
+        serde_json::from_str(&raw).map_err(|e| format!("parse VINDEX3 index.json: {e}"))?;
+    let shape = index.shape()?;
+    println!("  shape .............. {}", shape.describe());
+    match shape {
+        ContainerShape::Graph => verify_graph(path),
+        ContainerShape::LegacyBank => {
+            println!("  migrate ............ {LEGACY_BANK_MIGRATION}");
+            verify_legacy_bank(path)
+        }
+    }
+}
+
+/// A graph container: reconstruct the system from its graph and re-hash
+/// every segment. The bank reader below cannot open one — it has no
+/// routed-programme manifest — and must not be asked to.
+fn verify_graph(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!(
+        "Verifying: {} (VINDEX3 graph, payloads re-hashed)",
+        path.display()
+    );
+    let inspection = larql_vindex::format::vindex3::inspect::inspect_container(path, true)?;
+    println!(
+        "  index.json ......... OK (schema {})",
+        inspection.index.version
+    );
+    println!(
+        "  system graph ....... OK ({} component(s), {} object(s))",
+        inspection.components.len(),
+        inspection.graph.objects.len()
+    );
+    if inspection.is_coherent() {
+        println!("  structure .......... OK (coherent, payloads match)");
+        println!("\nAll checks passed.");
+        return Ok(());
+    }
+    println!(
+        "  structure .......... {} defect(s)",
+        inspection.defects.len()
+    );
+    for d in &inspection.defects {
+        println!("    - {d:?}");
+    }
+    Err(format!(
+        "{} defect(s); container is not coherent",
+        inspection.defects.len()
+    )
+    .into())
+}
+
+/// A legacy bank container: the routed-programme reader's structural
+/// checks, reported under the legacy label above.
+fn verify_legacy_bank(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!(
+        "Verifying: {} (VINDEX3 legacy bank, structural)",
+        path.display()
+    );
     // Verify reports what is wrong, which it cannot do with a manifest it
     // refused to load — the defects printed below are the output.
     let container = larql_vindex::format::vindex3::Vindex3Container::open_unchecked(path)?;
@@ -117,3 +175,7 @@ fn verify_v3(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     )
     .into())
 }
+
+#[cfg(test)]
+#[path = "verify_cmd_tests.rs"]
+mod tests;

@@ -80,6 +80,14 @@ fn show_v3(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Hidden:     {}", index.hidden_size);
     println!("Family:     {}", index.family);
     println!("Profiles:   {}", index.profile_names().join(", "));
+    let shape = index.shape()?;
+    println!("Shape:      {}", shape.describe());
+    if !shape.is_normative() {
+        println!(
+            "Migrate:    {}",
+            larql_vindex::format::vindex3::LEGACY_BANK_MIGRATION
+        );
+    }
 
     // Report the authorities this container carries; print no negative for the
     // ones it doesn't.

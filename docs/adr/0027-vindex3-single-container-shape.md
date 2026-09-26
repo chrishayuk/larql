@@ -170,6 +170,22 @@ recorded check:
    fixture A report it as a legacy bank-shape container, non-normative
    since 3.0, and name the migration path. A test pins the wording's
    fields.
+   *Executed.* `Vindex3Index::shape()` (`format/vindex3/shape.rs`) is the
+   one discriminator, read from which authorities `index.json` names;
+   an index naming neither is refused (§5.5). The graph-path surfaces
+   (`inspect_container`, and through it `vindex3 inspect`, `vindex3
+   verify`, exec, represent and compile) refuse a bank container with
+   the typed `VindexError::LegacyBankContainer`, which names the ADR and
+   `LEGACY_BANK_MIGRATION` (re-extract from source for now; see
+   criterion 3). `larql show` and `larql verify` print the shape, plus the
+   migration line for a bank container, and keep reading it. Recognising
+   the shape exposed the reverse gap: `larql verify` sent *every* V3
+   container to the bank reader, which refuses a graph container, so the
+   normative shape could not be verified through the top-level command.
+   It now dispatches on shape, and a graph container is verified through
+   `inspect_container` with payload re-hashing. Pinned by
+   `format/vindex3/shape_tests.rs` and
+   `larql-cli/src/commands/extraction/verify_cmd_tests.rs`.
 3. **Artifact inventory.** The bank-shape containers that exist outside
    tests are listed. For each one that must survive, a re-encode to the
    graph shape keeps every weight-region payload hash identical,
