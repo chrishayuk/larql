@@ -54,6 +54,10 @@ pub const STACK_PARITY: f64 = 1e-3;
 /// vanish under the post-experts RMS norm).
 pub const PER_EXPERT_PERTURB: f32 = 2.0;
 pub const LAYER_SCALE_PERTURB: f32 = 1.0;
+/// A pre-FFN norm epsilon distinct from the branch epsilon (`EPS`), large
+/// enough to move the dense branch: comparable to the mean square of a
+/// `HIDDEN_AMPLITUDE`-scaled residual (~1/12), not a rounding-level nudge.
+pub const DISTINCT_DENSE_NORM_EPS: f32 = 5e-2;
 pub const SEED_STRIDE: u32 = 1_000;
 pub const GU_ROWS: usize = 2 * MOE_INTER;
 pub const GU_PAYLOAD_PER_EXPERT: usize = GU_ROWS * (HIDDEN / MXFP4_GROUP_ELEMS) * MXFP4_GROUP_BYTES;
@@ -69,6 +73,8 @@ pub enum Tweak {
     PerExpertScale(usize),
     /// Replace the layer scale by `LAYER_SCALE_PERTURB`.
     LayerScale,
+    /// Give the dense pre-FFN norm `DISTINCT_DENSE_NORM_EPS`.
+    DenseNormEps,
 }
 
 pub struct LayerGeom {
@@ -131,6 +137,8 @@ pub struct StackLayer {
     pub post_experts_norm: Vec<f32>,
     pub post_ffn_norm: Vec<f32>,
     pub layer_scale: f32,
+    /// The dense pre-FFN norm's epsilon (`EPS` unless tweaked).
+    pub dense_norm_eps: f32,
 }
 
 pub fn build_layer(l: usize, tweak: Tweak) -> StackLayer {
@@ -206,6 +214,11 @@ pub fn build_layer(l: usize, tweak: Tweak) -> StackLayer {
         } else {
             LAYER_SCALES[l]
         },
+        dense_norm_eps: if tweak == Tweak::DenseNormEps {
+            DISTINCT_DENSE_NORM_EPS
+        } else {
+            EPS
+        },
         geom,
     }
 }
@@ -273,6 +286,7 @@ impl StackLayer {
             post_experts_norm: &self.post_experts_norm,
             post_ffn_norm: &self.post_ffn_norm,
             eps: EPS,
+            dense_eps: self.dense_norm_eps,
             post_eps: POST_EPS,
             offset: CENTRED_OFFSET,
             layer_scale: self.layer_scale,

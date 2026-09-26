@@ -9,6 +9,8 @@
 //! | K≡V binding | with the SAME matrix bound as `k` and `v`, V is the RAW K projection then v-normed — not the weighted-normed K, not the rotated K |
 //! | tanh-GELU FFN | `FfnActivation::GeluTanh` selects the tanh-GELU gate at parity with `larql_compute::ffn::gelu_tanh`; the SiLU arm is distinguishable |
 //! | hybrid stack | a two-layer hybrid (dense + routed MXFP4 experts) stack with a DIFFERENT head width and rope table per layer matches the CPU reference at every checkpoint; the per-expert scale and the layer scale are live |
+//! | distinct dense eps | a dense pre-FFN epsilon unequal to the branch epsilon takes the separate-norm arm, at parity, and the epsilon moves the output |
+//! | rows refusal | `encode_stack_rows` refuses a hybrid layer by name |
 //!
 //! Every parity claim carries a control that must dwarf the parity
 //! residual — agreement alone cannot show the lowering executed the op.
@@ -31,9 +33,9 @@ use larql_compute_metal::lowering::{LoweredMatrix, PostNorm};
 use larql_compute_metal::MetalBackend;
 use support::hybrid_stack::{
     build_layer, cpu_stack, upload_layer, LayerDevice, StackLayer, Tweak, ATTN_NORM,
-    CENTRED_OFFSET, DENSE_INTER, INV_FREQ, K_CACHE, K_NORM, LAYERS, PE_SCALE, POST_DENSE, POST_EPS,
-    POST_EXPERTS, POST_FFN, PRE_EXPERTS, PRE_FFN, Q_NORM, ROUTER_COND, STACK_PARITY, S_Q_ROWS,
-    V_CACHE,
+    CENTRED_OFFSET, DENSE_INTER, DISTINCT_DENSE_NORM_EPS, INV_FREQ, K_CACHE, K_NORM, LAYERS,
+    PE_SCALE, POST_DENSE, POST_EPS, POST_EXPERTS, POST_FFN, PRE_EXPERTS, PRE_FFN, Q_NORM,
+    ROUTER_COND, STACK_PARITY, S_Q_ROWS, V_CACHE,
 };
 use support::{
     cpu_attention, det, device, f16_matrix, gated_ffn_branch, hybrid_route, near_one, rel_rms,
@@ -430,6 +432,17 @@ fn gelu_tanh_ffn_lowers_at_parity_and_is_distinguishable_from_silu() {
 /// Encode the whole hybrid stack once, entered from `h_a`, checkpoint
 /// after every layer, and return the per-layer captures.
 fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[StackLayer]) -> Vec<Vec<f32>> {
+    encode_hybrid_stack(gpu, h0, fx, None).expect("the hybrid stack encodes")
+}
+
+/// [`gpu_stack`], or with `block_rows` the same layers through
+/// `encode_stack_rows` — which must refuse them, its error returned.
+fn encode_hybrid_stack(
+    gpu: &MetalBackend,
+    h0: &[f32],
+    fx: &[StackLayer],
+    block_rows: Option<usize>,
+) -> Result<Vec<Vec<f32>>, String> {
     let dev: Vec<LayerDevice> = fx
         .iter()
         .enumerate()
@@ -513,7 +526,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[StackLayer]) -> Vec<Vec<f32>>
                 dense_shape: FfnShape {
                     hidden: HIDDEN,
                     intermediate: DENSE_INTER,
-                    norm_eps: EPS,
+                    norm_eps: l.dense_norm_eps,
                     norm_weight_offset: CENTRED_OFFSET,
                     activation: FfnActivation::GeluTanh,
                     residual_scale: None,
@@ -545,6 +558,16 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[StackLayer]) -> Vec<Vec<f32>>
         })
         .collect();
 
+    if let Some(rows) = block_rows {
+        let mut refused = Ok(());
+        run_once(gpu, |enc| {
+            refused = gpu
+                .encode_stack_rows(&mut SingleEncoder(enc), &h_a, &layers, &scratch, rows)
+                .map(|_| ());
+        });
+        refused?;
+        return Ok(Vec::new());
+    }
     let mut final_buf: Option<&metal::Buffer> = None;
     run_once(gpu, |enc| {
         final_buf = Some(gpu.encode_stack(&mut SingleEncoder(enc), &h_a, &layers, &scratch, &cps));
@@ -553,9 +576,10 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[StackLayer]) -> Vec<Vec<f32>>
         std::ptr::eq(final_buf.unwrap(), &h_a),
         "stack entered from h_a must finish in h_a after {LAYERS} layers"
     );
-    caps.iter()
+    Ok(caps
+        .iter()
         .map(|b| gpu.lowering_readback(b, HIDDEN).unwrap())
-        .collect()
+        .collect())
 }
 
 /// A two-layer hybrid stack — weighted QK norm + V norm + per-layer rope
@@ -625,4 +649,61 @@ fn hybrid_stack_checkpoints_match_cpu_reference_and_scales_are_live() {
         &got_rescaled[0],
         STACK_PARITY,
     );
+}
+
+/// A hybrid layer whose dense pre-FFN norm epsilon differs from the
+/// branch epsilon cannot share one reduction across the three norms of
+/// the residual: the lowering must take its separate-norm arm, and that
+/// arm must compute the same program — at parity with the CPU reference
+/// honouring the distinct epsilon, and moved by it (the epsilon is read).
+#[test]
+fn hybrid_stack_with_a_distinct_dense_norm_eps_takes_separate_norms_at_parity() {
+    // Fail, never skip: a shader that does not compile makes `new()`
+    // return None, and a skipped gate reads as a pass.
+    let gpu = MetalBackend::new().expect("Metal backend (shader library must compile)");
+    let h0 = det(HIDDEN, 777, HIDDEN_AMPLITUDE);
+    let fx: Vec<StackLayer> = vec![
+        build_layer(0, Tweak::DenseNormEps),
+        build_layer(1, Tweak::DenseNormEps),
+    ];
+    assert_ne!(
+        DISTINCT_DENSE_NORM_EPS, EPS,
+        "the fixture must split the epsilons"
+    );
+    let want = cpu_stack(&h0, &fx);
+    let got = gpu_stack(&gpu, &h0, &fx);
+    let mut worst = 0.0f64;
+    for (l, (w, g)) in want.iter().zip(&got).enumerate() {
+        worst = worst.max(assert_parity(
+            &format!("distinct dense eps, checkpoint after layer {l}"),
+            w,
+            g,
+            STACK_PARITY,
+        ));
+    }
+    let shared: Vec<StackLayer> = (0..LAYERS).map(|l| build_layer(l, Tweak::None)).collect();
+    let got_shared = gpu_stack(&gpu, &h0, &shared);
+    for l in 0..LAYERS {
+        assert_control(
+            &format!("dense norm eps, checkpoint {l}"),
+            worst,
+            rel_rms(&got[l], &got_shared[l]),
+        );
+    }
+}
+
+/// The multi-position stack lowers dense FFN layers only: a hybrid layer
+/// groups positions by expert, which is a separate lowering, and the
+/// block refuses it by name rather than encoding one position's routing
+/// for all of them.
+#[test]
+fn stack_rows_refuses_a_hybrid_layer_by_name() {
+    let gpu = MetalBackend::new().expect("Metal backend (shader library must compile)");
+    let h0 = det(HIDDEN, 777, HIDDEN_AMPLITUDE);
+    let fx: Vec<StackLayer> = (0..LAYERS).map(|l| build_layer(l, Tweak::None)).collect();
+    // One row: the scratch holds a single position, and the attention
+    // half encodes before the FFN arm refuses.
+    let err = encode_hybrid_stack(&gpu, &h0, &fx, Some(1))
+        .expect_err("a hybrid layer has no multi-position lowering");
+    assert!(err.contains("dense FFN layers only"), "{err}");
 }

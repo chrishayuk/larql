@@ -295,6 +295,10 @@ pub struct HybridRef<'a> {
     pub post_experts_norm: &'a [f32],
     pub post_ffn_norm: &'a [f32],
     pub eps: f32,
+    /// The dense branch's pre-FFN norm epsilon. Equal to `eps` in the
+    /// served models; a distinct value takes the lowering's separate-norm
+    /// arm instead of the shared-reduction one.
+    pub dense_eps: f32,
     pub post_eps: f32,
     pub offset: f32,
     pub layer_scale: f32,
@@ -334,7 +338,7 @@ pub fn hybrid_ffn_reference(r: &[f32], h: &HybridRef<'_>) -> Vec<f32> {
             down: h.dense_down,
             hidden: h.hidden,
             inter: h.dense_inter,
-            eps: h.eps,
+            eps: h.dense_eps,
             offset: h.offset,
         },
         true,
