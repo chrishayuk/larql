@@ -318,3 +318,72 @@ fn w3_a_plan_gate_is_only_ever_a_plan_gate() {
     assert_eq!(back, gate, "a plan gate must not read back as a Kimi one");
     assert_eq!(back.kind(), ReadingKind::Plan);
 }
+
+// ------------------------------------------ the two kinds, every accessor
+
+/// A reading kind is named by its procedure and back: the procedure a run
+/// declares resolves to the kind whose Display is that procedure.
+#[test]
+fn a_reading_kind_round_trips_through_its_procedure_name() {
+    use super::super::measure::TEACHER_FORCED_TWO_ARM;
+    assert_eq!(
+        ReadingKind::of_procedure(TEACHER_FORCED_TWO_ARM),
+        Some(ReadingKind::Kimi)
+    );
+    assert_eq!(
+        ReadingKind::of_procedure(PLAN_PROCEDURE),
+        Some(ReadingKind::Plan)
+    );
+    assert_eq!(ReadingKind::of_procedure("an-unknown-procedure/v1"), None);
+    for kind in [ReadingKind::Kimi, ReadingKind::Plan] {
+        assert_eq!(ReadingKind::of_procedure(&kind.to_string()), Some(kind));
+    }
+}
+
+#[test]
+fn a_plan_observation_is_its_summary_over_its_sequences() {
+    let summary = super::super::measure::plan::metrics::Summary {
+        all: aggregate(96, 2e-4, Some(0.02)),
+        by_category: vec![("code".into(), aggregate(96, 2e-4, None))],
+        by_margin_band: vec![((0.1, 0.5), aggregate(96, 2e-4, None))],
+    };
+    let reading = PlanObservation::from_summary(&summary, 3);
+    assert_eq!(reading.sequences, 3);
+    assert_eq!(reading.positions, 96);
+    assert_eq!(reading.all, summary.all);
+    assert_eq!(reading.by_category, summary.by_category);
+    assert_eq!(reading.by_margin_band, summary.by_margin_band);
+}
+
+#[test]
+fn each_observation_kind_answers_only_as_itself() {
+    let mut plan = Observation::Plan(plan_reading(1e-4));
+    assert_eq!(plan.kind(), ReadingKind::Plan);
+    assert_eq!(plan.positions(), 128);
+    assert!(plan.as_plan().is_some());
+    assert!(plan.as_kimi().is_none());
+    assert!(plan.as_kimi_mut().is_none());
+
+    let bank = super::super::diagnostic::tests::guard_256();
+    let positions = bank.positions;
+    let mut kimi = Observation::Kimi(Box::new(bank));
+    assert_eq!(kimi.kind(), ReadingKind::Kimi);
+    assert_eq!(kimi.positions(), positions);
+    assert!(kimi.as_plan().is_none());
+    assert!(kimi.as_kimi().is_some());
+    kimi.as_kimi_mut()
+        .expect("a Kimi reading lends its bank")
+        .positions += 1;
+    assert_eq!(
+        kimi.positions(),
+        positions + 1,
+        "the mutable bank is the stored one"
+    );
+}
+
+#[test]
+fn a_plan_gate_is_not_a_kimi_gate() {
+    let gate = Gate::from(test_plan_gate());
+    assert_eq!(gate.kind(), ReadingKind::Plan);
+    assert!(gate.as_kimi().is_none());
+}

@@ -1018,3 +1018,71 @@ fn a_plan_reading_is_refused_by_a_kimi_gated_record() {
         "{refusal}"
     );
 }
+
+/// Integrity refusals the record must name: a bank manifest that cannot be
+/// read, and a source container whose declared seals are intact but whose
+/// payload bytes are not what they seal. Each refuses without changing a
+/// fact, and names the authority that failed.
+#[test]
+fn an_unreadable_bank_manifest_or_corrupted_source_payload_is_refused_by_name() {
+    let f = Fixture::new();
+    let a = f.artifact(0.01);
+    let mut snapshot = f.snapshot.clone();
+    std::fs::remove_file(
+        f.corpus
+            .join(super::super::actuate::artifacts::BANK_MANIFEST),
+    )
+    .unwrap();
+    let r = refused_without_change(&f, &mut snapshot, &a);
+    assert!(
+        matches!(&r, IngestionRefusal::Authority { what, .. } if what == "bank manifest"),
+        "{r:?}"
+    );
+
+    let f = Fixture::new();
+    let a = f.artifact(0.01);
+    let mut snapshot = f.snapshot.clone();
+    let index: Vindex3Index =
+        serde_json::from_slice(&std::fs::read(f.source.join("index.json")).unwrap()).unwrap();
+    let segment = f
+        .source
+        .join(&index.representations.values().next().unwrap().segment);
+    let mut bytes = std::fs::read(&segment).unwrap();
+    *bytes.last_mut().unwrap() ^= 0xff;
+    std::fs::write(&segment, bytes).unwrap();
+    let r = refused_without_change(&f, &mut snapshot, &a);
+    assert!(
+        matches!(&r, IngestionRefusal::Authority { what, .. } if what == "source container payloads"),
+        "{r:?}"
+    );
+}
+
+/// A run can report a complete, sealed set of facts that still disagree
+/// with the record: positions measured other than the bank's, or a gate
+/// evaluated other than the record's. The seal proves the report is the
+/// executor's; ingestion must still refuse facts that are not this
+/// record's, naming which.
+#[test]
+fn sealed_facts_that_disagree_with_the_record_are_refused_by_name() {
+    for (what, edit) in [("reported measured positions", 0u8), ("reported gate", 1u8)] {
+        let f = Fixture::new();
+        let mut observed = f.observed(0.01);
+        if edit == 0 {
+            observed.verified.positions += 1;
+        } else {
+            observed.verified.gate_evaluated = "a-gate-this-record-never-named/v1".into();
+        }
+        assert!(
+            observed.verified.complete(),
+            "{what}: the report is otherwise complete"
+        );
+        let artifact =
+            MeasurementArtifact::from_execution(&f.prepared, &observed, &f.evidence()).unwrap();
+        artifact.verify_seal().unwrap();
+        let r = refused_without_change(&f, &mut f.snapshot.clone(), &artifact);
+        assert!(
+            matches!(&r, IngestionRefusal::Authority { what: named, .. } if named == what),
+            "{what}: {r:?}"
+        );
+    }
+}
