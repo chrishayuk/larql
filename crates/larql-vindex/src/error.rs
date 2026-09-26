@@ -37,6 +37,15 @@ pub enum VindexError {
         required: &'static str,
     },
 
+    /// A legacy bank-shape container reached a surface that reads only the
+    /// normative graph shape (ADR-0027).
+    #[error(
+        "this is a legacy bank-shape VINDEX3 container (moe_manifest + LYRW segments, no \
+         system graph), not a VINDEX3 3.0 container (ADR-0027); {}",
+        crate::format::vindex3::LEGACY_BANK_MIGRATION
+    )]
+    LegacyBankContainer,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("model error: {0}")]

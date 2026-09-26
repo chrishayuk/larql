@@ -647,19 +647,17 @@ fn a_container_recording_no_system_graph_is_refused_by_inspection() {
     index["system_graph"] = serde_json::Value::Null;
     std::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
 
-    // A refusal, not an empty inspection: there is a real container shape
-    // that records no graph (a routed-MoE bank), and reporting it as "no
-    // defects" would say the container inspected clean when nothing was
-    // inspected at all.
+    // A refusal, not an empty inspection: reporting it as "no defects"
+    // would say the container inspected clean when nothing was inspected
+    // at all. With the graph gone and no routed-programme manifest, the
+    // index names no container shape; a legacy bank (manifest, no graph)
+    // is refused by name instead, in `shape_tests`.
     let err = match inspect_container(out.path(), false) {
         Err(e) => e.to_string(),
         Ok(_) => panic!("inspected a container with no graph to reconstruct"),
     };
-    assert!(err.contains("records no system graph"), "{err}");
-    assert!(
-        err.contains("larql show"),
-        "the refusal must point at the tool that does open such a container: {err}"
-    );
+    assert!(err.contains("neither a system graph"), "{err}");
+    assert!(err.contains("§5.5"), "{err}");
 }
 
 #[test]

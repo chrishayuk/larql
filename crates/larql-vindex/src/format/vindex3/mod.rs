@@ -65,6 +65,7 @@ pub mod read;
 pub mod remote;
 pub mod represent;
 pub mod representation_attestations;
+pub mod shape;
 /// Conformance fixture A, public so integration tests and future gate arms can
 /// build a real container without duplicating its frozen dimensions.
 pub mod test_support;
@@ -78,6 +79,7 @@ pub use import::{import_one_layer, write_segment_file, ExpertScaleStreams, MoeLa
 pub use index::{Vindex3Index, PROFILE_EXACT};
 pub use profile::{Profile, ProfileSelectionError, ResolvedProfile};
 pub use read::Vindex3Container;
+pub use shape::{ContainerShape, LEGACY_BANK_MIGRATION};
 pub use variants::{RegionSetVariants, StoredVariant, VariantCatalogue, VariantDefect};
 pub use verify::{validate_downloaded_container, ContainerDefect};
 pub use write::{segment_path, write_container, ContainerSpec, SegmentSource, MOE_MANIFEST_JSON};
