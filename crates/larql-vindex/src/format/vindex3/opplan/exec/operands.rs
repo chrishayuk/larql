@@ -964,13 +964,23 @@ impl OperandStore {
         // what its dependency MEANS, never where it lives.
         let auxiliaries =
             self.resolve_auxiliaries(operand, codec, extent, auxiliaries, visiting)?;
-        if apart.is_empty() {
-            // One stream: the codec binds the payload itself, deriving any
-            // internal split it declares.
-            let bound = codec.bind_packed(&first.bytes, &operand.shape, &operand.tensor)?;
-            let operands = attach_auxiliaries(CodecOperands::from_streams(bound), &auxiliaries);
-            codec.validate(&operands, &operand.shape, extent, &operand.tensor)?;
-            return Ok(codec.decode_all(&operands, &operand.shape, extent, &operand.tensor)?);
+        // Whether the streams share one stored tensor is the codec's fact,
+        // not a function of how many streams it declares: NVFP4 declares
+        // three (codes, group scales, tensor scale) and stores them as one
+        // row, so counting streams sent every NVFP4 pack down the
+        // stored-apart path looking for siblings that do not exist. Ask the
+        // codec to bind the payload; only a codec that answers "stored
+        // apart" takes the sibling path.
+        match codec.bind_packed(&first.bytes, &operand.shape, &operand.tensor) {
+            Ok(bound) => {
+                let operands = attach_auxiliaries(CodecOperands::from_streams(bound), &auxiliaries);
+                codec.validate(&operands, &operand.shape, extent, &operand.tensor)?;
+                return Ok(codec.decode_all(&operands, &operand.shape, extent, &operand.tensor)?);
+            }
+            Err(crate::format::vindex3::represent::codec::CodecError::StreamsStoredApart {
+                ..
+            }) if !apart.is_empty() => {}
+            Err(e) => return Err(e.into()),
         }
         // Streams stored apart. Only those the extent reads are opened —
         // a refinement stream the extent does not reach is never touched,

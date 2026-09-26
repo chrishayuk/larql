@@ -152,6 +152,75 @@ fn compiled_bytes_equal_what_the_loader_would_have_quantised() {
     );
 }
 
+/// `OperandStore::load` decodes a compiled NVFP4 pack to the values the
+/// pack holds. NVFP4 declares three streams but stores them as ONE tensor;
+/// the decoder once took "several streams" to mean "several tensors" and
+/// looked for `<tensor>.group_scales` siblings that do not exist, so every
+/// f32 read of a pack (a packed embedding's row lookup, first) failed.
+#[test]
+fn a_compiled_nvfp4_pack_decodes_through_load() {
+    use crate::format::vindex3::opplan::exec::operands::RepresentationSource;
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, out, _) = compiled_pair(&tmp);
+    let src_inspection = inspect_container(&src, false).unwrap();
+    let src_store = OperandStore::open(&src, &src_inspection).unwrap();
+    let out_inspection = inspect_container(&out, false).unwrap();
+    let packed_store = OperandStore::open_for(
+        &out,
+        &out_inspection,
+        Some(DTYPE_NVFP4),
+        RepresentationSource::Stored,
+    )
+    .unwrap();
+    let mut checked = 0usize;
+    for entry in index_of(&out).representations.values() {
+        if entry.encoding != DTYPE_NVFP4 {
+            continue;
+        }
+        let (header, _) = read_segment_header(&out.join(&entry.segment)).unwrap();
+        for t in header.tensors.iter().filter(|t| t.dtype == DTYPE_NVFP4) {
+            let operand = OperandRef {
+                object: entry.object.clone(),
+                tensor: t.name.clone(),
+                dtype: t.dtype.clone(),
+                shape: t.shape.clone(),
+            };
+            let got = packed_store
+                .load(&operand)
+                .expect("a pack decodes through load");
+            let source = src_store
+                .load(&OperandRef {
+                    dtype: packed_store_source_dtype(&src_store, &operand),
+                    ..operand.clone()
+                })
+                .unwrap();
+            let want =
+                larql_models::quant::nvfp4::round_trip(&source, t.shape[0], t.shape[1]).unwrap();
+            assert_eq!(got.len(), want.len(), "{}", t.name);
+            assert!(
+                got.iter()
+                    .zip(&want)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "{}: load() of the pack differs from the NVFP4 round trip of its source",
+                t.name
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 0,
+        "the fixture compiled no NVFP4 tensors to check"
+    );
+}
+
+/// The dtype the canonical container stores `operand`'s tensor as.
+fn packed_store_source_dtype(store: &OperandStore, operand: &OperandRef) -> String {
+    store
+        .stored_dtype(operand)
+        .expect("the canonical container holds the tensor")
+        .to_string()
+}
+
 #[test]
 fn the_canonical_representation_survives_byte_for_byte() {
     let tmp = tempfile::tempdir().unwrap();
