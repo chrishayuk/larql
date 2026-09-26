@@ -65,6 +65,7 @@ pub mod ingest;
 pub mod kda_candidate;
 pub mod kquant;
 pub mod map;
+pub mod map_check;
 pub mod measure;
 #[cfg(test)]
 mod measure_tests;
@@ -399,6 +400,24 @@ fn encode_with(
     Ok(Some(bytes))
 }
 
+/// The role a tensor compiles under. The plan first: it bound this tensor
+/// to the role its operator computes with, and that is the container's
+/// own judgement. The name heuristics answer only for what the plan does
+/// not cover — object-level roles, components with no plan.
+fn tensor_role(
+    declared_roles: &plan_roles::PlanRoles,
+    primary_text: &BTreeSet<String>,
+    object: &str,
+    t: &super::encode::segment::SegmentTensor,
+) -> Role {
+    let primary = primary_text.contains(object);
+    declared_roles
+        .get(&(object.to_string(), t.name.clone()))
+        .copied()
+        .filter(|_| primary)
+        .unwrap_or_else(|| classify_in(primary, object, &t.name, &t.shape))
+}
+
 pub fn compile_representation(
     src: &Path,
     out: &Path,
@@ -499,10 +518,30 @@ fn compile_inner(
     // Best-effort: a component whose plan does not build contributes
     // nothing here and its tensors fall back to name classification.
     let declared_roles = plan_roles::plan_roles(src, &inspection);
+    let map =
+        PrecisionMap::from_policy(spec.map_name(), &spec.encoding, &spec.roles, &spec.protect);
+    // Refuse a map with a dead rule before anything is encoded. The
+    // surface is every tensor of every object this spec wants, including
+    // objects a previous run already compiled: the map is recorded for
+    // the whole candidate, so a resumed run must not refuse a protection
+    // whose tensors happen to be done.
+    let mut surface: BTreeSet<(Role, String)> = BTreeSet::new();
+    for entry in index.representations.values() {
+        if !spec.wants(&entry.object) {
+            continue;
+        }
+        let (header, _) = read_segment_header(&src.join(&entry.segment))?;
+        for t in &header.tensors {
+            let role = tensor_role(&declared_roles, &primary_text, &entry.object, t);
+            surface.insert((role, t.name.clone()));
+        }
+    }
+    map.check_against(surface.iter().map(|(r, n)| (*r, n.as_str())))
+        .map_err(|refusal| VindexError::Parse(refusal.to_string()))?;
     let mut candidate = candidate_authority::producer::CompilationAuthority::new(
         src,
         &index,
-        PrecisionMap::from_policy(spec.map_name(), &spec.encoding, &spec.roles, &spec.protect),
+        map,
         &primary_text,
         &declared_roles,
     )?;
@@ -563,24 +602,9 @@ fn compile_inner(
             // Role first, shape second. A tensor the policy preserves is
             // carried whatever its shape; a tensor the policy admits is
             // still refused by the layout if its `k` cannot be grouped.
-            // The plan first: it bound this tensor to the role its
-            // operator computes with, and that is the container's own
-            // judgement. The name heuristics answer only for what the
-            // plan does not cover — object-level roles, components with
-            // no plan. A shape that cannot hold the encoding is still
-            // refused below, whatever the role says.
-            let role = declared_roles
-                .get(&(entry.object.clone(), t.name.clone()))
-                .copied()
-                .filter(|_| primary_text.contains(&entry.object))
-                .unwrap_or_else(|| {
-                    classify_in(
-                        primary_text.contains(&entry.object),
-                        &entry.object,
-                        &t.name,
-                        &t.shape,
-                    )
-                });
+            // A shape that cannot hold the encoding is still refused
+            // below, whatever the role says.
+            let role = tensor_role(&declared_roles, &primary_text, &entry.object, t);
             // Role says the encoding applies; protection says whether to
             // spend it here. A protected tensor is carried, and counted as
             // preserved under its own role so the report says what the map

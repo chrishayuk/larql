@@ -1082,6 +1082,43 @@ fn a_protected_depth_range_is_carried_not_compiled() {
     );
 }
 
+#[test]
+fn a_protection_that_decides_nothing_is_refused_before_anything_is_written() {
+    // `v-proj` protects no tensor: before the map check this compiled
+    // every v_proj and recorded a map claiming they were held back.
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+
+    let typo = tmp.path().join("typo.vindex3");
+    let mut spec = RepresentSpec::nvfp4();
+    spec.protect = policy::Protections::default().projection("v-proj");
+    let err = compile_representation(&src, &typo, &spec)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("`v-proj -> source` matches no eligible tensor"),
+        "{err}"
+    );
+    assert!(
+        !typo.exists(),
+        "a refused map must not leave an output behind"
+    );
+
+    // A protection wholly inside an earlier one is dead, and says which.
+    let dead = tmp.path().join("dead.vindex3");
+    spec.protect = policy::Protections::default()
+        .projection("v_proj")
+        .projection_in("v_proj", 0, 0);
+    let err = compile_representation(&src, &dead, &spec)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("decided first by exception(s) [0]"), "{err}");
+    assert!(!dead.exists());
+}
+
 /// The precision map is authority, and both arms must run the SAME
 /// program.
 ///

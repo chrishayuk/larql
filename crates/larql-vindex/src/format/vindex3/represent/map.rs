@@ -72,7 +72,7 @@ impl Exception {
     ///
     /// An exception with neither a projection nor a range matches
     /// everything, which is a legitimate way to write "compile nothing".
-    fn matches(&self, tensor: &str) -> bool {
+    pub(super) fn matches(&self, tensor: &str) -> bool {
         if let Some(p) = &self.projection {
             if projection_of(tensor) != Some(p.as_str()) {
                 return false;
@@ -88,7 +88,7 @@ impl Exception {
         true
     }
 
-    fn describe(&self) -> String {
+    pub(super) fn describe(&self) -> String {
         let mut s = self.projection.clone().unwrap_or_else(|| "*".into());
         if let Some((lo, hi)) = self.layers {
             s.push_str(&format!(" layers {lo}-{hi}"));
