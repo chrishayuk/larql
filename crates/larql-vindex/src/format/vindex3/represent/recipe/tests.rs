@@ -1,4 +1,6 @@
-use super::super::{candidate_authority::read_candidate_evidence, compiler::CandidateIndex};
+use super::super::{
+    candidate_authority::read_candidate_evidence, compiler::CandidateIndex, policy::Protections,
+};
 use super::*;
 use crate::format::vindex3::opplan::exec::{
     continuation::plan_continuation_geometry,
@@ -53,10 +55,13 @@ impl Fixture {
         }
     }
     fn bank(&self) -> CalibrationBank {
+        self.bank_for(Population::Calibration)
+    }
+    fn bank_for(&self, population: Population) -> CalibrationBank {
         CalibrationBank::new(
             "cal12-fixture".into(),
             self.store.tokenizer_sha256().unwrap(),
-            Population::Calibration,
+            population,
             vec![
                 CalibrationSequence {
                     tokens: vec![3, 17, 8, 0, 11],
@@ -475,4 +480,155 @@ fn cal12_existing_artifacts_require_exact_dense_calibration_key_before_site_enco
         Nvfp4Recipe::Gptq(&request)
     )
     .is_err());
+}
+
+fn q0(f: &Fixture) -> TensorId {
+    let q = &f.plan.layers[0].attention.softmax().unwrap().q;
+    (q.object.clone(), q.tensor.clone())
+}
+
+fn single_site(f: &Fixture, id: TensorId, input: CalibrationInput) -> GptqRequest {
+    GptqRequest {
+        component: "target".into(),
+        bank: f.bank(),
+        sites: BTreeMap::from([(id, input)]),
+        continuation: f.continuation(),
+    }
+}
+
+#[test]
+fn cal12_recipes_refuse_other_codecs_and_reused_output_directories() {
+    let f = Fixture::new();
+    let mut other = RepresentSpec::nvfp4();
+    other.encoding = "Q4_K".into();
+    let request = single_site(&f, q0(&f), CalibrationInput::CaptureTo(f.out("never")));
+    for recipe in [Nvfp4Recipe::Nearest, Nvfp4Recipe::Gptq(&request)] {
+        let out = f.out("other-codec");
+        let error = compile_representation_recipe(&f.src, &out, &other, recipe).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("NVFP4 recipes require the NVFP4 codec"),
+            "{error}"
+        );
+        assert!(!out.exists(), "a refused codec writes nothing");
+    }
+    // A calibrated compile never merges into an existing directory, even an empty one.
+    let existing = f.out("existing");
+    std::fs::create_dir(&existing).unwrap();
+    let error = compile_representation_recipe(
+        &f.src,
+        &existing,
+        &RepresentSpec::nvfp4(),
+        Nvfp4Recipe::Gptq(&request),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("calibrated output must be a fresh directory"),
+        "{error}"
+    );
+    assert_eq!(std::fs::read_dir(&existing).unwrap().count(), 0);
+    assert!(
+        !f.out("never").exists(),
+        "no capture ran for a refused output"
+    );
+}
+
+#[test]
+fn cal12_gptq_requests_refuse_empty_unknown_and_protected_sites_before_writing() {
+    let f = Fixture::new();
+    let spec = RepresentSpec::nvfp4();
+    let refusal = |spec: &RepresentSpec, request: &GptqRequest, name: &str| {
+        let out = f.out(name);
+        let error = compile_representation_recipe(&f.src, &out, spec, Nvfp4Recipe::Gptq(request))
+            .unwrap_err()
+            .to_string();
+        assert!(!out.exists(), "{name}: site validation precedes any write");
+        error
+    };
+    let mut empty = single_site(&f, q0(&f), CalibrationInput::CaptureTo(f.out("unused")));
+    empty.sites.clear();
+    assert!(refusal(&spec, &empty, "empty").contains("GPTQ request has no sites"));
+    let unknown = single_site(
+        &f,
+        ("no-such-object".into(), "0.self_attn.q_proj.weight".into()),
+        CalibrationInput::CaptureTo(f.out("unused")),
+    );
+    assert!(
+        refusal(&spec, &unknown, "unknown").contains("is unsupported, protected or not compiled")
+    );
+    // The same site is valid until the precision map protects it.
+    let mut protected = RepresentSpec::nvfp4();
+    protected.protect = Protections::default().projection("q_proj");
+    let request = single_site(&f, q0(&f), CalibrationInput::CaptureTo(f.out("unused")));
+    assert!(refusal(&protected, &request, "protected")
+        .contains("is unsupported, protected or not compiled"));
+}
+
+#[test]
+fn cal12_gptq_refuses_a_bank_outside_the_calibration_population() {
+    let f = Fixture::new();
+    let validation = f.bank_for(Population::ReconstructionValidation);
+    let mut request = single_site(&f, q0(&f), CalibrationInput::CaptureTo(f.out("capture")));
+    request.bank = validation;
+    let error = compile_representation_recipe(
+        &f.src,
+        &f.out("validation"),
+        &RepresentSpec::nvfp4(),
+        Nvfp4Recipe::Gptq(&request),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("GPTQ requires the calibration population"),
+        "{error}"
+    );
+    assert!(
+        !f.out("capture").exists(),
+        "validation statistics are never captured for training"
+    );
+}
+
+/// Protected tensors are skipped by the schedule (they keep source precision
+/// and carry no derivation), and an object whose every compiled tensor is
+/// GPTQ is labelled with the GPTQ recipe rather than the mixed one.
+#[test]
+fn cal12_protected_tensors_are_skipped_and_an_all_gptq_object_says_so() {
+    let f = Fixture::new();
+    let mut spec = RepresentSpec::nvfp4();
+    let mut protect = Protections::default();
+    for projection in [
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ] {
+        protect = protect.projection(projection);
+    }
+    // Every layer but 0 keeps its Q at source precision.
+    spec.protect = protect.projection_in("q_proj", 1, u32::MAX);
+    let request = single_site(&f, q0(&f), CalibrationInput::CaptureTo(f.out("capture")));
+    let out = f.out("only-q0");
+    compile_representation_recipe(&f.src, &out, &spec, Nvfp4Recipe::Gptq(&request)).unwrap();
+    let record = candidate(&out).derivation.unwrap();
+    let derived: Vec<_> = record
+        .tensors
+        .iter()
+        .map(|t| ((t.object.clone(), t.tensor.clone()), t.recipe.clone()))
+        .collect();
+    assert_eq!(derived, vec![(q0(&f), EncoderRecipe::gptq_v1())]);
+    let index: crate::format::vindex3::index::Vindex3Index =
+        serde_json::from_slice(&std::fs::read(out.join("index.json")).unwrap()).unwrap();
+    let encoders: Vec<_> = index
+        .representations
+        .values()
+        .filter(|e| e.object == q0(&f).0 && e.encoding == nvfp4_pack::DTYPE_NVFP4)
+        .map(|e| e.encoder.clone())
+        .collect();
+    assert_eq!(encoders, vec![Some(EncoderRecipe::gptq_v1())]);
 }
