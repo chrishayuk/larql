@@ -23,21 +23,23 @@ pub(super) fn generate<B: PlanBackend>(
         image_inputs(model, ids)?
     };
     if !model.args.v3_ffn_shards.is_empty() {
+        let continuation = select_in(
+            model.continuations,
+            model.plan,
+            &model.continuation_choice(),
+        )?;
+        let mode = format!(
+            "local-kv-remote-ffn over {}",
+            continuation.authority().identity
+        );
         let mut session = larql_inference::vindex3::dense_ffn::DenseFfnSession::new(
             model.plan,
             model.ops,
             model.backend,
+            &continuation,
         )?;
         let logits = session.extend_inputs(&inputs)?;
-        emit(
-            model,
-            &mut session,
-            logits,
-            ids,
-            out,
-            status,
-            "local-kv-remote-ffn",
-        )
+        emit(model, &mut session, logits, ids, out, status, &mode)
     } else if !model.args.v3_shards.is_empty() {
         use larql_inference::vindex3::distributed::{artifact_identity, DistributedSession};
         let token = model
