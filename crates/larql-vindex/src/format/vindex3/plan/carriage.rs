@@ -908,6 +908,16 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         probe: Some(probe_attention_bias),
     },
     CarriageRule {
+        leaf: "qkv_bias",
+        reaches: Carriage::Represented,
+        // The Q/K/V-only form (Qwen2). Closure holds it both ways: `true`
+        // requires the three Q/K/V bias operands and refuses an output
+        // bias; declaring it beside `attention_bias: true` is refused as a
+        // contradiction rather than resolved in favour of either.
+        site: "ExecutionSurface.attention.qkv_bias → AttentionOp.{q,k,v}_bias, no o_bias (closure-paired)",
+        probe: Some(probe_qkv_bias),
+    },
+    CarriageRule {
         leaf: "num_kv_shared_layers",
         reaches: Carriage::Represented,
         // Gemma 4 E2B/E4B: the last N layers read the KV state of the last
@@ -2278,6 +2288,12 @@ fn probe_attention_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Optio
             .attention
             .as_ref()?
             .attention_bias?
+    ))
+}
+
+fn probe_qkv_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(
+        component.execution.as_ref()?.attention.as_ref()?.qkv_bias?
     ))
 }
 

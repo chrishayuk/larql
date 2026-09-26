@@ -93,6 +93,9 @@ pub(super) fn build_arch_json(
     if let Some(v) = model_cfg.attention_bias {
         obj.insert("attention_bias".into(), v.into());
     }
+    if let Some(v) = model_cfg.qkv_bias {
+        obj.insert("qkv_bias".into(), v.into());
+    }
     if let Some(ref v) = model_cfg.hidden_act {
         obj.insert("hidden_act".into(), v.clone().into());
     }

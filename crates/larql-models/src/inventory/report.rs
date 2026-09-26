@@ -388,6 +388,12 @@ pub struct ResolvedExecution {
     /// written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attention_bias: Option<bool>,
+    /// Whether the Q/K/V projections, and not the output projection,
+    /// carry biases (`qkv_bias`, or the Qwen2 family default). Same
+    /// closure contract as `attention_bias` over three operands instead of
+    /// four. Defaults for inventories written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qkv_bias: Option<bool>,
     /// The routed-FFN facts when the family declares experts; `None` = a
     /// dense-FFN model. Defaults for inventories written before it was
     /// recorded.

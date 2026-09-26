@@ -971,6 +971,13 @@ pub trait ModelArchitecture: Send + Sync {
         self.config().attention_bias
     }
 
+    /// Whether the Q/K/V projections — not the output projection — carry
+    /// biases. `None` = neither the checkpoint nor the family says; bias
+    /// operands shipped under `None` fail operand closure.
+    fn qkv_bias(&self) -> Option<bool> {
+        self.config().qkv_bias
+    }
+
     /// Declared context bound (`max_position_embeddings`).
     fn max_position_embeddings(&self) -> Option<usize> {
         self.config().max_position_embeddings

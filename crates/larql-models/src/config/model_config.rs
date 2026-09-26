@@ -278,6 +278,12 @@ pub struct ModelConfig {
     /// Whether attention projections carry bias terms (`attention_bias`).
     /// `None` = the config is silent and the family default answers.
     pub attention_bias: Option<bool>,
+    /// Whether the Q/K/V projections — and not the output projection —
+    /// carry bias terms (`qkv_bias`, Qwen2's attention shape as
+    /// transformers 5 names it). A different fact from
+    /// [`attention_bias`](Self::attention_bias), which covers all four.
+    /// `None` = the config is silent and the family default answers.
+    pub qkv_bias: Option<bool>,
     /// Whether FFN/MLP projections carry bias terms (`mlp_bias`). Same
     /// contract as [`attention_bias`](Self::attention_bias): the boolean
     /// itself has no schema field downstream — operand closure over the

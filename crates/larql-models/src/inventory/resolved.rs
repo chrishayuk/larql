@@ -246,6 +246,7 @@ pub fn resolve_with_tensor_evidence(
         attention_output_gate: arch.attention_output_gate(),
         attention_sinks: arch.attention_sinks(),
         attention_bias: arch.attention_bias(),
+        qkv_bias: arch.qkv_bias(),
         moe: arch.is_moe().then(|| MoeExecution {
             branch_scale: cfg.routed_scaling_factor,
             dense_prefix_layers: cfg.first_k_dense_replace,

@@ -635,14 +635,15 @@ pub struct SinkCall<'a> {
     pub logits: &'a [f32],
 }
 
-/// The additive projection biases, all four present or none — closure
-/// guarantees the pairing with the surface's `attention_bias`. Each is
-/// one value per output row of its projection.
+/// The additive projection biases. Q/K/V are always present together;
+/// the output bias is present under `attention_bias` and absent under
+/// `qkv_bias` — closure guarantees each pairing with its declaration.
+/// Each is one value per output row of its projection.
 pub struct BiasCall<'a> {
     pub q: &'a [f32],
     pub k: &'a [f32],
     pub v: &'a [f32],
-    pub o: &'a [f32],
+    pub o: Option<&'a [f32]>,
 }
 
 /// One attention operation over a whole sequence, fully resolved.

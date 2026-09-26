@@ -29,8 +29,9 @@ pub enum OperandRole {
     /// Elementwise gate on attention output — the primitive the
     /// `self_attn.gate_proj` operand implies.
     AttnOutputGate,
-    /// Additive bias on the Q/K/V/O projections — present iff the surface
-    /// declares `attention_bias`, all four together (GPT-OSS).
+    /// Additive bias on the attention projections: all four iff the surface
+    /// declares `attention_bias` (GPT-OSS), Q/K/V alone iff it declares
+    /// `qkv_bias` (Qwen2, whose output projection is unbiased).
     AttnQBias,
     AttnKBias,
     AttnVBias,
@@ -563,6 +564,9 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("mlp.up_proj.weight", OperandRole::FfnUp),
     ("mlp.down_proj.weight", OperandRole::FfnDown),
     ("mlp.router.weight", OperandRole::MoeRouterWeight),
+    // The Qwen MoE lineage's router (`Qwen2MoeSparseMoeBlock.gate`,
+    // `[num_experts, hidden]`). Distinct from the dense `mlp.gate_proj`.
+    ("mlp.gate.weight", OperandRole::MoeRouterWeight),
     ("mlp.router.bias", OperandRole::MoeRouterBias),
     // Packed MXFP4 (GPT-OSS): blocks + scales + bias per projection.
     ("mlp.experts.gate_up_proj_blocks", OperandRole::ExpertGateUp),
@@ -872,21 +876,33 @@ struct IndexedExpertFamily {
 
 /// Every `ExpertFormat::PerExpert` family this build recognises.
 ///
-/// One entry today — Kimi Linear's `w1`/`w2`/`w3`, checked against
-/// `KimiBlockSparseMLP.forward` in the checkpoint's `modeling_kimi.py`
-/// (`w1`/`w3` feed the gated product, `w2` reads it — NOT alphabetic
-/// gate/up/down order). A second `PerExpert` family (Mixtral's
-/// `experts.{id}.w1/w2/w3` is the SAME leaf spelling under a different
-/// prefix; DeepSeek's `experts.{id}.gate_proj/up_proj/down_proj` is not)
-/// adds its own entry here, never a guess from this one.
-const INDEXED_EXPERT_FAMILIES: &[IndexedExpertFamily] = &[IndexedExpertFamily {
-    prefix: "block_sparse_moe.experts.",
-    leaves: &[
-        ("w1.weight", OperandRole::PerExpertGate),
-        ("w3.weight", OperandRole::PerExpertUp),
-        ("w2.weight", OperandRole::PerExpertDown),
-    ],
-}];
+/// Kimi Linear's `w1`/`w2`/`w3`, checked against `KimiBlockSparseMLP.forward`
+/// in the checkpoint's `modeling_kimi.py` (`w1`/`w3` feed the gated
+/// product, `w2` reads it — NOT alphabetic gate/up/down order), and the
+/// Qwen MoE lineage's `mlp.experts.{id}.gate_proj/up_proj/down_proj`,
+/// checked against `Qwen2MoeMLP.forward` (`down_proj(act(gate_proj(x)) *
+/// up_proj(x))`). Mixtral's `block_sparse_moe.experts.{id}.w1/w2/w3` is
+/// Kimi's leaf spelling under Kimi's prefix and is deliberately NOT
+/// judged here: it is the held-out architecture of E8, which must onboard
+/// through its own entry after the freeze, never a guess from this one.
+const INDEXED_EXPERT_FAMILIES: &[IndexedExpertFamily] = &[
+    IndexedExpertFamily {
+        prefix: "block_sparse_moe.experts.",
+        leaves: &[
+            ("w1.weight", OperandRole::PerExpertGate),
+            ("w3.weight", OperandRole::PerExpertUp),
+            ("w2.weight", OperandRole::PerExpertDown),
+        ],
+    },
+    IndexedExpertFamily {
+        prefix: "mlp.experts.",
+        leaves: &[
+            ("gate_proj.weight", OperandRole::PerExpertGate),
+            ("up_proj.weight", OperandRole::PerExpertUp),
+            ("down_proj.weight", OperandRole::PerExpertDown),
+        ],
+    },
+];
 
 /// Classify a layer-relative suffix as one `PerExpert`-format family's
 /// indexed operand, or `None` — never a guess: the prefix must match

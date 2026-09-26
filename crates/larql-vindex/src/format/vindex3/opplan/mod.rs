@@ -136,9 +136,10 @@ pub struct AttentionOp {
     pub o: OperandRef,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_gate: Option<GateOp>,
-    /// Additive projection biases; all four present iff the surface
-    /// declares `attention_bias`. Absent from the serialised op otherwise,
-    /// so a bias-free plan serialises exactly as before.
+    /// Additive projection biases: all four iff the surface declares
+    /// `attention_bias`, Q/K/V alone iff it declares `qkv_bias`. Absent
+    /// from the serialised op otherwise, so a bias-free plan serialises
+    /// exactly as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub q_bias: Option<OperandRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -894,6 +895,10 @@ pub enum ClosureDefect {
     /// is shaped against it — a width nobody can hold must not become a
     /// silently uniform plan.
     FfnWidthDeclaration { component: String, detail: String },
+    /// Two declared facts that cannot both hold. Refused rather than
+    /// resolved in favour of either: choosing one would execute a program
+    /// the checkpoint's other declaration contradicts.
+    ContradictoryDeclaration { component: String, detail: String },
     /// The structure requires a semantic fact nothing has established.
     ///
     /// Distinct from [`Self::MissingOperand`]: no tensor is absent, and
@@ -941,6 +946,9 @@ impl std::fmt::Display for ClosureDefect {
                 f,
                 "component {component}: per-layer FFN width declaration refused: {detail}"
             ),
+            Self::ContradictoryDeclaration { component, detail } => {
+                write!(f, "component {component}: contradictory declaration: {detail}")
+            }
             Self::MissingSurface { component } => {
                 write!(f, "component `{component}` has no complete execution surface")
             }

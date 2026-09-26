@@ -495,8 +495,8 @@ impl ReferenceBackend {
                 for (o, g) in out.iter_mut().zip(&gate_values) {
                     *o *= activate_gate(*g);
                 }
-                if let Some(bias) = &call.bias {
-                    add_in_place(&mut out, bias.o);
+                if let Some(o) = call.bias.as_ref().and_then(|bias| bias.o) {
+                    add_in_place(&mut out, o);
                 }
                 return Ok(out);
             }
@@ -534,8 +534,8 @@ impl ReferenceBackend {
         }
 
         let mut out = matvec(call.w_o.as_f32()?, call.hidden, q_rows, &concat);
-        if let Some(bias) = &call.bias {
-            add_in_place(&mut out, bias.o);
+        if let Some(o) = call.bias.as_ref().and_then(|bias| bias.o) {
+            add_in_place(&mut out, o);
         }
         Ok(out)
     }

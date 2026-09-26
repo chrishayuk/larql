@@ -102,6 +102,15 @@ pub struct AttentionSurface {
     /// rope (Q, K), before caching (V) and after the output projection (O).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attention_bias: Option<bool>,
+    /// Whether the Q/K/V projections carry biases and the output
+    /// projection does not (`qkv_bias`; Qwen2's shape). `Some(true)`
+    /// requires the three Q/K/V bias operands and refuses an output bias;
+    /// otherwise, under `attention_bias` alone, any bias operand fails
+    /// closure as above. Declaring it beside `attention_bias: true` is a
+    /// contradiction closure refuses. Additive: absent on every container
+    /// written before it, none of which could carry a Q/K/V-only bias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qkv_bias: Option<bool>,
 }
 
 /// What the FFN op reads.
@@ -725,6 +734,7 @@ pub fn surface_from_resolved(
             output_gate: execution.attention_output_gate,
             sinks: execution.attention_sinks,
             attention_bias: execution.attention_bias,
+            qkv_bias: execution.qkv_bias,
         }),
         ffn: has_ffn.then(|| FfnSurface {
             intermediate_size: dense_ffn_width,
@@ -1002,6 +1012,8 @@ pub fn surface_from_nested(
             // it declares anything (Gemma 4 vision: `false`); the loader's
             // tensor-presence check answers otherwise, as for text.
             attention_bias: nested.tower.attention_bias,
+            // Vision towers declare only the all-four form.
+            qkv_bias: None,
         }),
         ffn: Some(FfnSurface {
             // A perception tower's width is required above (its absence

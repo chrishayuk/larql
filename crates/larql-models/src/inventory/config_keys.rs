@@ -163,6 +163,7 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "output_multiplier",
     "post_norm_eps",
     "attention_bias",
+    "qkv_bias",
     "mlp_bias",
     // `rope_scaling` itself, distinct from the leaves inside it: the parser
     // calls `text_config.get("rope_scaling")` unconditionally (below,

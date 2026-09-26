@@ -385,6 +385,14 @@ pub fn plan_component_ops(
             f.moe
                 .is_none_or(|m| m.hybrid || m.dense_prefix_layers.unwrap_or(0) > 0)
         });
+    if attn.is_some_and(|a| a.attention_bias == Some(true) && a.qkv_bias == Some(true)) {
+        defects.push(ClosureDefect::ContradictoryDeclaration {
+            component: component.id.clone(),
+            detail: "`attention_bias` (Q/K/V and output biased) and `qkv_bias` (Q/K/V only, \
+                     output unbiased) are both declared true"
+                .to_string(),
+        });
+    }
     for (runs, present, fact) in [
         (attends, attn.is_some(), "attention surface"),
         (has_ffn_layer, ffn_surface.is_some(), "ffn surface"),
@@ -683,6 +691,7 @@ pub fn plan_component_ops(
                     Some(larql_models::config::GateSource::AttentionInput)
                 ),
                 attention_bias: attn.and_then(|a| a.attention_bias) == Some(true),
+                qkv_bias: attn.and_then(|a| a.qkv_bias) == Some(true),
                 sinks: attn.is_some_and(|a| a.sinks.is_some()),
                 // Both gates are DECLARED facts (K3-REP-GATE-1): the KDA
                 // gate's form and the MLA gate's presence come from the
@@ -1024,9 +1033,16 @@ pub fn plan_component_ops(
                  closure should have refused this before the plan was built"
             )
         });
+        // Q/K/V are biased under either declaration; the output only
+        // under `attention_bias` — `qkv_bias` is Qwen2's unbiased `o_proj`.
+        let all_four = attn.and_then(|a| a.attention_bias) == Some(true);
+        let qkv_only = attn.and_then(|a| a.qkv_bias) == Some(true);
         let bias = |role: OperandRole| {
-            (attn.and_then(|a| a.attention_bias) == Some(true))
-                .then(|| operand(&stack_id, get(role)))
+            let declared = match role {
+                OperandRole::AttnOBias => all_four,
+                _ => all_four || qkv_only,
+            };
+            declared.then(|| operand(&stack_id, get(role)))
         };
         let qk_norm = match (attn, slot.contains_key(&OperandRole::AttnQNorm)) {
             (Some(a), true) => Some(QkNormOp {
@@ -1749,6 +1765,8 @@ struct LayerOps {
     /// query operands the estate ships.
     mla_q_lora: bool,
     attention_bias: bool,
+    /// Q/K/V biased, output not (`qkv_bias`).
+    qkv_bias: bool,
     sinks: bool,
     /// This layer's FFN is routed (bank/router evidence under a MoE
     /// judgment); dense otherwise.
@@ -1972,13 +1990,15 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
     if ops.output_gate {
         roles.push(OperandRole::AttnOutputGate);
     }
-    if ops.attention_bias {
+    if ops.attention_bias || ops.qkv_bias {
         roles.extend([
             OperandRole::AttnQBias,
             OperandRole::AttnKBias,
             OperandRole::AttnVBias,
-            OperandRole::AttnOBias,
         ]);
+    }
+    if ops.attention_bias {
+        roles.push(OperandRole::AttnOBias);
     }
     if ops.sinks {
         roles.push(OperandRole::AttnSinks);
@@ -2156,13 +2176,13 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             Some(MLA_Q_LORA_UNDECLARED)
         }
         OperandRole::MlaQProj if ops.mla_q_lora => Some(MLA_Q_PROJ_UNDER_Q_LORA),
-        OperandRole::AttnQBias
-        | OperandRole::AttnKBias
-        | OperandRole::AttnVBias
-        | OperandRole::AttnOBias
-            if !ops.attention_bias =>
+        OperandRole::AttnQBias | OperandRole::AttnKBias | OperandRole::AttnVBias
+            if !ops.attention_bias && !ops.qkv_bias =>
         {
-            Some("attention projection bias (declared `attention_bias`)")
+            Some("attention projection bias (declared `attention_bias` or `qkv_bias`)")
+        }
+        OperandRole::AttnOBias if !ops.attention_bias => {
+            Some("attention output-projection bias (declared `attention_bias`; `qkv_bias` biases Q/K/V only)")
         }
         OperandRole::AttnSinks if !ops.sinks => Some("attention sinks (judged semantics)"),
         OperandRole::AttnV if ops.v_from_k => {
@@ -2785,6 +2805,7 @@ mod tests {
             mla_output_gate: false,
             mla_q_lora: false,
             attention_bias: false,
+            qkv_bias: false,
             sinks: false,
             routed: false,
             hybrid: false,

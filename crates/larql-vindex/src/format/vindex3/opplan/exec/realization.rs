@@ -415,6 +415,9 @@ pub enum SelectionReason {
     DeviceClassTable,
     /// An embedding table is decoded whole and gathered per token.
     EmbeddingGather,
+    /// A shared branch's scalar gate is one `[1, hidden]` row: decoded to
+    /// f32 and applied by the literal dot product, on every backend.
+    ScalarBranchGate,
     /// The reference backend takes the literal transcription, always.
     ReferenceOracle,
     /// An overlay edit stands on the operand; only decode can honour it.
@@ -441,6 +444,7 @@ impl SelectionReason {
             Self::BudgetPolicy => "re-selected to fit the residency budget",
             Self::DeviceClassTable => "device class table",
             Self::EmbeddingGather => "table decoded whole, gathered per token",
+            Self::ScalarBranchGate => "one-row branch gate decoded to f32, applied by a literal dot",
             Self::ReferenceOracle => "reference oracle",
             Self::OverlaidEdit => "an overlay edit stands on the operand; only decode honours it",
             Self::SourcePrecisionHeld => {
@@ -905,10 +909,21 @@ pub fn common_selection(
                 )),
             })
         }
-        // Nothing executes the scalar gate on a shared branch yet; a plan
-        // that carries one is refused by name rather than run unscaled.
+        // The scalar gate on a shared branch (Qwen MoE): one row, read
+        // whole as f32 glue and applied by the routed-FFN composer the
+        // same way on every backend, so there is one candidate.
         Operation::SharedExpertBranchGate => {
-            Some(Err(refuse(RefusalKind::MissingRealization, vec![])))
+            let id = RealizationId::cpu(RealizationForm::Decode(PhysicalProjectionPlan::ScalarF32));
+            Some(if facts.registered.is_some() {
+                Ok(Selection {
+                    realization: id,
+                    residency: ResidencyProfile::DECODED_F32,
+                    reason: SelectionReason::ScalarBranchGate,
+                    candidates: vec![id],
+                })
+            } else {
+                Err(refuse(RefusalKind::UnregisteredRepresentation, vec![]))
+            })
         }
         // A per-expert bank: the stored bytes are bound as a mapping and
         // executed in their stored form when the executor has a kernel

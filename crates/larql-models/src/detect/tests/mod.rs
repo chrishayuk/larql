@@ -15,6 +15,7 @@ mod norm_eps;
 mod olmo2_identity;
 mod qwen35_hybrid;
 mod qwen_moe_shared_expert;
+mod qwen_qkv_bias;
 mod real_configs;
 mod rope_scaling;
 mod routing;

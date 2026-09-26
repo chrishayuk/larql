@@ -2113,6 +2113,16 @@ pub fn set_multi_position_ffn(on: bool) {
 /// declared format. Owned by whichever traversal is running — the batch
 /// path loads them per forward, the decode session keeps them for its
 /// lifetime — so both paths resolve operands through exactly one place.
+/// An attention layer's projection biases. Q/K/V always travel together;
+/// the output bias is present under `attention_bias` and absent under
+/// `qkv_bias`, whose output projection is unbiased.
+pub(super) struct AttentionBiases {
+    q: Vec<f32>,
+    k: Vec<f32>,
+    v: Vec<f32>,
+    o: Option<Vec<f32>>,
+}
+
 pub(super) struct AttentionOperands {
     w_q: LoadedWeight,
     w_k: LoadedWeight,
@@ -2120,8 +2130,8 @@ pub(super) struct AttentionOperands {
     w_o: LoadedWeight,
     qk_weights: Option<(Vec<f32>, Vec<f32>)>,
     gate: Option<LoadedWeight>,
-    /// Q/K/V/O biases, f32 (elementwise glue, not matrix traffic).
-    biases: Option<[Vec<f32>; 4]>,
+    /// Projection biases, f32 (elementwise glue, not matrix traffic).
+    biases: Option<AttentionBiases>,
     /// Sink logits, f32.
     sinks: Option<Vec<f32>>,
 }
@@ -2168,19 +2178,20 @@ impl AttentionOperands {
                 _ => None,
             },
             biases: match (&op.q_bias, &op.k_bias, &op.v_bias, &op.o_bias) {
-                (Some(q), Some(k), Some(v), Some(o)) => Some([
-                    store.load(q)?,
-                    store.load(k)?,
-                    store.load(v)?,
-                    store.load(o)?,
-                ]),
+                // All four (`attention_bias`) or Q/K/V alone (`qkv_bias`).
+                (Some(q), Some(k), Some(v), o) => Some(AttentionBiases {
+                    q: store.load(q)?,
+                    k: store.load(k)?,
+                    v: store.load(v)?,
+                    o: o.as_ref().map(|o| store.load(o)).transpose()?,
+                }),
                 (None, None, None, None) => None,
-                // Closure emits all four or none; a partial set is a
-                // plan the closure never produced.
+                // Closure emits Q/K/V together, with or without O; any
+                // other set is a plan the closure never produced.
                 _ => {
                     return Err(VindexError::Parse(
-                        "attention op carries a partial Q/K/V/O bias set; operand closure \
-                         emits all four or none"
+                        "attention op carries a partial bias set; operand closure emits Q/K/V \
+                         together, with the output bias or without it"
                             .to_string(),
                     ))
                 }
@@ -2269,11 +2280,11 @@ impl AttentionOperands {
             }
             _ => None,
         };
-        let bias = self.biases.as_ref().map(|[q, k, v, o]| BiasCall {
-            q: q.as_slice(),
-            k: k.as_slice(),
-            v: v.as_slice(),
-            o: o.as_slice(),
+        let bias = self.biases.as_ref().map(|b| BiasCall {
+            q: b.q.as_slice(),
+            k: b.k.as_slice(),
+            v: b.v.as_slice(),
+            o: b.o.as_deref(),
         });
         let sinks = match (&op.sinks, &self.sinks) {
             (Some(op_sinks), Some(logits)) => Some(SinkCall {

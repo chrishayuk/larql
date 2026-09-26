@@ -3390,7 +3390,7 @@ impl PreparedOperands {
         let PreparedAttention::Softmax(ops) = &prepared.attention else {
             return Ok(None);
         };
-        Ok(ops.biases.as_ref().map(|b| b[3].as_slice()))
+        Ok(ops.biases.as_ref().and_then(|b| b.o.as_deref()))
     }
 
     /// The post-attention norm a layer applies to its attention output

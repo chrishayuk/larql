@@ -586,6 +586,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let output_multiplier = text_config["output_multiplier"].as_f64();
     let post_norm_eps = text_config["post_norm_eps"].as_f64();
     let attention_bias = text_config["attention_bias"].as_bool();
+    let qkv_bias = text_config["qkv_bias"].as_bool();
     let mlp_bias = text_config["mlp_bias"].as_bool();
     // Both HF spellings; verbatim — the Activation mapping (and its failure
     // on unrecognised names) lives on the architecture trait.
@@ -817,6 +818,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         output_multiplier,
         post_norm_eps,
         attention_bias,
+        qkv_bias,
         mlp_bias,
         hidden_act,
         activation_situ_beta,

@@ -509,8 +509,8 @@ pub(super) fn add_projection_biases(
 
 /// The output-projection bias, added after `w_o`.
 pub(super) fn add_output_bias(call: &AttentionCall<'_>, out: &mut [f32]) {
-    if let Some(bias) = &call.bias {
-        add_bias_in_place(out, bias.o);
+    if let Some(o) = call.bias.as_ref().and_then(|bias| bias.o) {
+        add_bias_in_place(out, o);
     }
 }
 

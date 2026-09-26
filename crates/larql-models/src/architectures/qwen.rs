@@ -36,6 +36,14 @@ fn stores_norm_weight_as_offset(model_type: &str) -> bool {
         .any(|family| model_type.starts_with(family))
 }
 
+/// Model types whose attention biases Q, K and V but not the output.
+///
+/// Read from the upstream classes: `Qwen2Attention` and
+/// `Qwen2MoeAttention` build `q_proj`/`k_proj`/`v_proj` with `bias=True`
+/// and `o_proj` with `bias=False`. Qwen3 replaced the biases with QK-norm,
+/// so no `qwen3*` type is here.
+const QKV_BIAS_FAMILIES: &[&str] = &["qwen2", "qwen2_moe"];
+
 /// Model types whose expert bank is ONE stacked tensor per projection
 /// rather than a tensor per expert.
 ///
@@ -285,5 +293,19 @@ impl ModelArchitecture for QwenArch {
 
     fn attn_v_bias_key(&self, layer: usize) -> Option<String> {
         attn_bias::v(&self.layer_prefix(layer))
+    }
+
+    /// A family fact when the checkpoint is silent. Checkpoints written
+    /// before transformers 5 carry neither `attention_bias` nor
+    /// `qkv_bias`, yet every Qwen2-lineage attention has Q/K/V biases and
+    /// no output bias; a declaration, where there is one, wins. Operand
+    /// closure holds the answer to the shipped tensors both ways, so a
+    /// wrong default fails as a named defect rather than executing.
+    fn qkv_bias(&self) -> Option<bool> {
+        self.config.qkv_bias.or_else(|| {
+            (self.config.attention_bias.is_none()
+                && QKV_BIAS_FAMILIES.contains(&self.config.model_type.as_str()))
+            .then_some(true)
+        })
     }
 }
