@@ -464,5 +464,42 @@
         "scope": "V4 changes test code only (the MEM-1 harness, which larql-server's handoff target includes) and these notes; no production crate changed"
       }
     }
-  }
+  },
+  "closure": {
+    "status": "CLOSED 2026-09-26. This record is final; nothing in it changes after this entry.",
+    "answer": "Yes. The executor now consumes continuation state through a representation-neutral logical view; providers expose row-backed, contiguous and retained-range storage without duplication, per-row allocation being forced, or retention of unreachable rows, and execution stays exact.",
+    "verdicts": {
+      "A_contiguous_authority": "HELD — canonical/v1 holds one K/V representation (append-born live bytes = matrix capacity exactly on 7 subjects; 0 duplicates); gemma3-4b K/V at 1,124 positions 883.5 → 570.4 MB; canonical/row 2.0–2.82 → 1.0–1.82 (V3)",
+      "B_bounded_retention": "HELD — a provider advances base with the plan's floor after every append and physically frees what falls below it: on gemma3-4b past its window 38,216 appends on the floor, 2,900 rows dropped, 5,800 allocations freed by pointer, sliding layers resident at 1,024 of 1,124, logits bit-identical (V4)",
+      "C_row_v1": "HELD — row/v1 exact against the pre-V3 baseline on 7 subjects and allocation-neutral (0 duplicates, 100% adoption, bytes unchanged) (V3)",
+      "S1": "CLOSED — no absolute indexing into provider rows outside the view (6 sites removed; compile-enforced by private step rows) (V2)",
+      "S2": "CLOSED — one semantic retention authority, HistoryRange, used by reference, production and device (V1)",
+      "S3": "CLOSED — a retention bug cannot become a step: refused by name at the step/prefill caller with no attention kernel run (V2 at the boundary, V4 end to end)",
+      "S4": "CLOSED — plugin ABI /2 → /3; /2 refused by name; C5 and C6 journeys pass through /3 (V3)",
+      "Q1_conv_qkv": "NEGATIVE — the borrow-induced 2·h copy per conv-QKV call is unchanged after V2, V3 and V4 (144/144). It is operator/executor work, handed to its own rung; VIEW-1 makes no further claim on it."
+    },
+    "authority_chain": {
+      "freeze": "#552 → 8b911f20",
+      "V1": "#556 → 9da04dc3",
+      "MEM-1 harness robustness": "#560 → bfc2ffcd",
+      "V2": "#567 → 3a99eade",
+      "V3": "#576 → e32e3024",
+      "V4": "#577 → a314d8c7"
+    },
+    "provenance": {
+      "rule": "stated as it happened; none of it changes a verdict, and none of it is smoothed over",
+      "V1": "merged at the maintainer's direction with larql-vindex coverage red that was pre-existing on main (same files, same figures) and a larql-kv harness flake later fixed by #560",
+      "V2": "merged at the maintainer's direction over the same pre-existing larql-vindex coverage-policy red (nine files, none VIEW-1's); all other checks green",
+      "V3": "merged at the maintainer's direction with CI still queued (no check had run); local gates recorded under V3",
+      "V4": "merged at the maintainer's direction with CI still queued (21 checks); test-only; local gates recorded under V4",
+      "instrument_corrections": "MEM-1 harness faults found and fixed BEFORE the affected adjudication: foreign-thread flake (#560); I-V3-1 address reuse by window scopes; I-V3-2 matrix-before-row classification; V4's proof-provider log pre-reserved rather than the check relaxed",
+      "design_departures": "V2: a Rows fast path (slices cannot coerce to dyn) and the per-read check made debug-only after it measured +2.7% of qwen decode — 'construction-time checked, read-time trusted'; V3: a Contiguous backing (orphan rule), backing_addresses gated to test-utils"
+    },
+    "handed_forward": {
+      "CONTINUATION-WINDOW-1": "freeze the PRODUCTION semantics V4's proof provider established (not a promotion of the test provider) and measure at long context, where row/v1's sliding-layer residency grows with n and a windowed provider's plateaus at w (MEM-1 projected ≈1.7 GB of dead sliding state on gemma3-4b at 8,192 positions). Acceptance: exactness and bounded residency; throughput, allocations and fragmentation secondary.",
+      "conv-QKV copy": "a small operator/executor rung (split borrow, or reading held rows after the recurrent update)",
+      "canonical matrix growth slack": "provider work (the residual canonical/row ratio above 1.0)"
+    }
+  },
+  "status": "CLOSED 2026-09-26 — see closure"
 }
