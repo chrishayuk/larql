@@ -253,3 +253,10 @@ library is missing, and it lands as its own PR.
   - **W7:** the surface carries the plan's role where name classification sees nothing (the gated-delta projections classify `Unknown` by name), the record loads through `optimizer-mcp`'s loader, and the loop refuses the record until the test-only gate arms it.
   - **Mutations:** five, each caught. A Kimi diagnostic leaked, name roles instead of plan roles, protections accepted, the tokenizer check skipped, and `init` overwriting.
   - The name-roles mutation first SURVIVED, because the dense fixture's plan roles and name classification coincide. The hybrid gated-delta witness was added to kill it.
+- **PR 3b**: `VerbPlanExecutor` in `vindex3_cmd/measure.rs`, the lowered executor of A2.3, built as the `vindex3 measure` verb's own arms made into an `ExperimentExecutor`.
+  - Its arms come from an `ExecBackend` through the verb's own `prepare` and `with_arms`: a lowered Metal backend becomes a `LoweredArm`, and any other backend an interpreter arm. Each arm is named by its backend (Finding 1).
+  - The candidate backend must read the stored pack in the request's encoding, or the run is refused before anything executes.
+  - `auto-rep run` now takes `--reference-backend` and `--candidate-backend`, the same choices as `vindex3 measure`.
+  - **Tests:** an interpreter run and a lowered run on this machine's Metal device each ingest a real plan-v1 reading into a produced gate-less record. The Metal test fails, and never skips, without a device. A candidate backend that would read canonical bytes is refused with nothing run.
+  - **Mutation:** removing that refusal is caught.
+  - **Not yet shown:** whether a lowered arm can execute a HETEROGENEOUS candidate, since lowered backends run fixed weight formats. A candidate holding groups at source may be refused by plan-v1's attribution proof (`UnexpectedPhysicalRead`) rather than measured. The first real campaign will show which.

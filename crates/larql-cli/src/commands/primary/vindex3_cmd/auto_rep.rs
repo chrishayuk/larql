@@ -3,21 +3,18 @@
 //!
 //! `init` produces a characterisation-only record from a container and a
 //! token bank. `run` advances a record through AUTO-REP-1b's loop with the
-//! interpreter plan-v1 executor. A record without a gate is refused by
+//! same arms `vindex3 measure` builds (lowered on Metal, interpreter
+//! otherwise). A record without a gate is refused by
 //! the loop itself: arming one is slice 3's pre-registration, not this
 //! verb's. The record format, the producer and the loop live in
 //! `larql_vindex::format::vindex3::represent`; this file names arguments.
 
 use std::path::{Path, PathBuf};
 
-use clap::{Args, Subcommand, ValueEnum};
-use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationFactory;
-use larql_vindex::format::vindex3::opplan::exec::kv::RowFactory;
-use larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity;
+use clap::{Args, Subcommand};
 use larql_vindex::format::vindex3::represent::actuate::executor::{
     ExecutorRegistry, ExperimentExecutor,
 };
-use larql_vindex::format::vindex3::represent::actuate::PlanTeacherForcedExecutor;
 use larql_vindex::format::vindex3::represent::auto_rep::{self, CampaignSetup, CandidateCompiler};
 use larql_vindex::format::vindex3::represent::codec::EncoderRegistry;
 use larql_vindex::format::vindex3::represent::produce::{produce, ProduceInputs};
@@ -25,7 +22,9 @@ use larql_vindex::format::vindex3::represent::state::snapshot::SearchSnapshot;
 use larql_vindex::format::vindex3::represent::{compile_representation_with, RepresentSpec};
 use larql_vindex::VindexError;
 
+use super::measure::VerbPlanExecutor;
 use super::plugins::{PluginArgs, Plugins};
+use super::ExecBackend;
 
 #[derive(Args)]
 pub struct AutoRepArgs {
@@ -58,24 +57,6 @@ pub struct InitArgs {
     /// The record to write. Refused if it exists.
     #[arg(long)]
     pub output: PathBuf,
-}
-
-/// An interpreter lowering the executor's arms may run on.
-#[derive(Clone, Copy, ValueEnum)]
-pub enum ArmLowering {
-    /// The naive f32 oracle.
-    Reference,
-    /// The production CPU executor.
-    Production,
-}
-
-impl ArmLowering {
-    fn identity(self) -> LoweringIdentity {
-        match self {
-            Self::Reference => LoweringIdentity::reference(),
-            Self::Production => LoweringIdentity::cpu_production(),
-        }
-    }
 }
 
 #[derive(Args)]
@@ -111,10 +92,14 @@ pub struct RunArgs {
     /// Component both arms execute.
     #[arg(long, default_value = "target")]
     pub component: String,
+    /// The reference arm's `vindex3 exec` backend, over the source's
+    /// canonical bytes. A lowered Metal backend is a lowered arm.
     #[arg(long, value_enum, default_value = "production")]
-    pub reference_lowering: ArmLowering,
-    #[arg(long, value_enum, default_value = "production")]
-    pub candidate_lowering: ArmLowering,
+    pub reference_backend: ExecBackend,
+    /// The candidate arm's backend. It must read the stored pack in the
+    /// record's encoding, or the run is refused before it starts.
+    #[arg(long, value_enum, default_value = "production-nvfp4")]
+    pub candidate_backend: ExecBackend,
     #[command(flatten)]
     pub plugins: PluginArgs,
 }
@@ -183,12 +168,11 @@ fn run_campaign(args: &RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     };
     std::fs::create_dir_all(&args.workdir)?;
     std::fs::create_dir_all(&args.runs)?;
-    let executor = PlanTeacherForcedExecutor {
+    let executor = VerbPlanExecutor {
+        reference_backend: args.reference_backend,
+        candidate_backend: args.candidate_backend,
         component: args.component.clone(),
-        reference: args.reference_lowering.identity(),
-        candidate: args.candidate_lowering.identity(),
-        continuations: plugins.continuations.clone(),
-        continuation: RowFactory.identity(),
+        plugins: args.plugins.plugins.clone(),
         output_root: args.runs.clone(),
     };
     let registry = ExecutorRegistry::new([&executor as &dyn ExperimentExecutor])?;
