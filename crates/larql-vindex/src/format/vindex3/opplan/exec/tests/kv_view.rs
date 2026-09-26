@@ -260,3 +260,98 @@ fn s1_scan_sees_a_seeded_index() {
     assert!(!absolute_indexing("            &past_keys[index]").is_empty());
     assert!(absolute_indexing("// was: step.keys[p].as_slice()").is_empty());
 }
+
+// ---- the rest of the view's surface, in this crate's own suite --------------
+// (Coverage counts only a crate's own tests; much of KvView was exercised
+// only from larql-kv, so its per-file floor read low. CONTINUATION-VIEW-1.)
+
+#[test]
+fn the_contiguous_backing_reads_row_major_storage_by_absolute_position() {
+    let (k, v) = (rows(6, 3, 0.0), rows(6, 3, 0.5));
+    let flat = |rows: &[Vec<f32>]| rows.iter().flatten().copied().collect::<Vec<f32>>();
+    let (fk, fv) = (flat(&k[2..]), flat(&v[2..]));
+    let view = KvView::contiguous(2, 3, &fk, &fv).unwrap();
+    assert_eq!((view.base(), view.end()), (2, 6));
+    for p in 2..6 {
+        assert_eq!(view.key(p), k[p].as_slice(), "position {p}");
+        assert_eq!(view.value(p), v[p].as_slice());
+    }
+}
+
+#[test]
+#[should_panic(expected = "whole 3-wide rows")]
+fn contiguous_storage_that_is_not_whole_rows_is_refused() {
+    let data = [0.0f32; 7];
+    let _ = KvView::contiguous(0, 3, &data, &data);
+}
+
+#[test]
+#[should_panic(expected = "equal in number")]
+fn contiguous_k_and_v_of_different_lengths_are_refused() {
+    let (k, v) = ([0.0f32; 6], [0.0f32; 3]);
+    let _ = KvView::contiguous(0, 3, &k, &v);
+}
+
+#[test]
+fn to_owned_rows_copies_every_held_row_in_position_order() {
+    let (k, v) = (rows(5, 2, 0.0), rows(5, 2, 0.5));
+    let view = KvView::rows_from(1, &k[1..], &v[1..]).unwrap();
+    let (ok, ov) = view.to_owned_rows();
+    assert_eq!(ok, k[1..].to_vec());
+    assert_eq!(ov, v[1..].to_vec());
+    assert!(KvView::empty().to_owned_rows().0.is_empty());
+}
+
+#[test]
+fn backing_addresses_name_the_lent_storage_for_every_backing() {
+    let (k, v) = (rows(3, 2, 0.0), rows(3, 2, 0.5));
+    let rows_view = KvView::over_rows(&k, &v);
+    assert_eq!(
+        rows_view.backing_addresses(),
+        [k.as_ptr() as usize, v.as_ptr() as usize]
+    );
+    let (fk, fv) = ([1.0f32; 4], [2.0f32; 4]);
+    let flat = KvView::contiguous(0, 2, &fk, &fv).unwrap();
+    assert_eq!(
+        flat.backing_addresses(),
+        [fk.as_ptr() as usize, fv.as_ptr() as usize]
+    );
+    let (ck, cv) = (contiguous(0, &k), contiguous(0, &v));
+    let dynamic = KvView::new(0, 3, &ck, &cv).unwrap();
+    assert_eq!(
+        dynamic.backing_addresses(),
+        [
+            &ck as *const Contiguous as usize,
+            &cv as *const Contiguous as usize
+        ]
+    );
+}
+
+#[test]
+fn an_empty_view_and_its_debug_form() {
+    let empty = KvView::empty();
+    assert_eq!((empty.base(), empty.end()), (0, 0));
+    assert!(empty.covers(0..0).is_ok());
+    assert_eq!(format!("{empty:?}"), "KvView[0..0)");
+    let (k, v) = (rows(4, 2, 0.0), rows(4, 2, 0.0));
+    assert_eq!(
+        format!("{:?}", KvView::rows_from(2, &k, &v).unwrap()),
+        "KvView[2..6)"
+    );
+}
+
+#[test]
+fn a_view_refusal_is_an_error_and_becomes_a_vindex_error() {
+    let refusal = ViewRefusal {
+        needed: 3..9,
+        base: 5,
+        end: 9,
+    };
+    let as_error: &dyn std::error::Error = &refusal;
+    assert!(as_error.to_string().contains("[5, 9)"));
+    let vindex: crate::error::VindexError = refusal.clone().into();
+    assert!(
+        vindex.to_string().contains("the plan requires [3, 9)"),
+        "{vindex}"
+    );
+}
