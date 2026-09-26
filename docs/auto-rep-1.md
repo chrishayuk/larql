@@ -282,3 +282,86 @@ no smaller than its fixed choices with every open variable at its lowest.
 Near-equal score sums explore rather than prune, because summation order
 differs. A 60-variable all-ties test settles within 100,000 nodes and
 fails under the cost-only bound. Brute-force agreement still holds.
+
+## AUTO-REP-1b — implementation contract (frozen 2026-09-26)
+
+AUTO-REP-1b closes the loop over the existing actuation and ingestion
+path: propose, compile, measure, ingest, cut, propose again. Its domain,
+objective and solver are 1a's, unchanged. It adds no gate, no measurement
+procedure and no authority.
+
+### Why this is mechanics only
+
+No gate exists yet that can judge a non-Kimi candidate. `gate_by_id`
+resolves only the `kimi-logit-*` gates, the Q-BANK-1 README sets no
+thresholds, and the plan-v1 measurement (`measure/plan::run`) returns a
+`Summary` with no `ExperimentExecutor` or ingestion behind it (MEASURE-PLAN
+slices 2 and 3). 1b therefore proves the loop end to end with a scripted
+executor on a fixture container, as `ingest/loop_tests.rs` does. The
+first real campaign (1c) waits for a plan-v1 executor and a pre-registered
+gate.
+
+### Seams it uses, unchanged
+
+- `compile_representation` with `RepresentSpec { encoding, roles, protect }`.
+- `ArtifactStateEvidence::establish`: reads the compiled candidate's state.
+- `MeasurementIntent::key_for`: the key a proposal's state is measured under.
+- `MeasurementRequest::of(snapshot, key, applied)`: the documented door for
+  a caller that chose its own experiment. It refuses unless the vocabulary's
+  map for `applied` presents the key's state.
+- `ExecutorRegistry::execute` with `DeclaredArtifacts`.
+- `MeasurementArtifact::from_execution`, then `ingest`: the only way a
+  reading enters the record.
+- `SearchSnapshot::adjudicate`: the gate's verdict on a stored reading, the
+  derivation `FrontierEntry::admitted` also uses.
+
+### Loop
+
+1. **Setup.**
+   - The snapshot's base map has no exceptions.
+   - Its vocabulary is one protection edit per 1a group (`protect:{projection}@{layer}`), built by `group_vocabulary`.
+   - The standing intent is at Authority scale. A Diagnostic reading prices nothing against the contract, so a cut drawn from one would be a failed measurement that never happened, and is refused.
+2. **Cuts from the record.** Every stored reading at Authority scale that the gate refuses becomes `Cut::ExactNoGood` for that state. Nothing else becomes a cut.
+3. **Propose.** Run 1a's branch-and-bound for rank 1 over the record's surface, base map, layout and footprint, with those cuts.
+4. **Reuse.**
+   - If the proposal's key already holds a reading and the gate admits it, the campaign ends `Admitted` without measuring.
+   - A refused reading cannot reach this step, because step 2 cut it.
+5. **Compile.**
+   - Build the proposal's `Protections` into `workdir/<state>`.
+   - An existing directory is reused only if it establishes to the proposal's state; otherwise it is refused.
+   - The compiled state must equal the proposal's state.
+6. **Measure.** Request through `MeasurementRequest::of` with the proposal's applied edits, execute through the registry, and ingest. A refusal at any step ends the campaign with that refusal; nothing is retried.
+7. **Judge.** `adjudicate(key)`. Admitted ends the campaign. Refused records the failed criteria, and step 2 turns it into an exact no-good on the next pass.
+
+### Termination
+
+- `Admitted { state }`: the first admitted proposal.
+- `Exhausted`: 1a proposes nothing, because every state is cut or none fits the ceiling.
+- `BudgetSpent`: the measurement budget is used up. Reused readings do not spend budget.
+
+A proposal from a node-limited search is still measured. Its entry records `NodeLimit` and its lower bound, so a cheaper admissible state is not ruled out.
+
+### Record
+
+`CampaignRecord` carries:
+
+- the campaign revision (`auto-rep-validate/v1`);
+- the outcome;
+- measurements spent;
+- one entry per proposal the loop acted on, in order, including every rejected one. Each entry has the 1a `ProposalRecord`, the measurement key, whether the reading was reused, the verdict, and the failed criteria.
+
+The rejection frontier is part of the evidence.
+
+### Gates
+
+1. **The loop closes.** A scripted executor admits exactly the states that protect a hidden group. The campaign ends `Admitted` at the cheapest such state, found by independent enumeration. Every earlier entry is refused, in non-decreasing bytes.
+2. **Exact cuts only.** Each refusal adds exactly one `ExactNoGood`, for that state. No proposal repeats a measured state.
+3. **Identity.** Every candidate is really compiled, establishes to its proposal's state, and passes ingestion. A compiler that writes a different state is refused before measurement.
+4. **Reuse and replay.** Rerunning on the finished record ends `Admitted` with zero new measurements. The same proposal yields the same key. A serialised and reopened record gives the same campaign.
+5. **Budget.** A budget below the needed count ends `BudgetSpent` with exactly that many measurements.
+6. **Exhaustion.** An executor that refuses everything, over a problem pinned down to a few states, ends `Exhausted` after measuring each state once.
+7. **Refusals.** A Diagnostic intent, a base map with exceptions, a vocabulary that is not the group vocabulary, and a spec whose encoding or roles disagree with the base map are each refused before anything is compiled.
+
+Not claimed by 1b: that any real model's candidate is admissible, that
+admission here is promotion (it is not; promotion stays a separate step),
+or that the loop's measurement count is small on a real model.
