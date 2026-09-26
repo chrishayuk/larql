@@ -17,9 +17,12 @@ use std::collections::BTreeSet;
 use crate::format::vindex3::fixtures::{
     dense_f32_model_with, encode_fixture_container, miniature_glimmer, HeadStorage,
 };
+use crate::format::vindex3::fixtures_routed::miniature_gpt_oss;
 use crate::format::vindex3::inspect::inspect_container;
+use crate::format::vindex3::opplan::exec::backend::PlanBackend;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::exec::requirements::required_objects;
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
@@ -58,8 +61,17 @@ fn subject(write: impl FnOnce(&std::path::Path)) -> Subject {
 
 /// Prepare `slice` and return what the store actually resolved.
 fn measure(subject: &Subject, slice: ExecutionSlice) -> BTreeSet<String> {
-    let backend = ReferenceBackend;
-    PreparedOperands::load(&subject.plan, &subject.store, &backend, slice)
+    measure_on(subject, slice, &ReferenceBackend)
+}
+
+/// [`measure`] on a chosen backend. An expert worker binds its banks in
+/// the production CPU format, so the reference backend refuses it.
+fn measure_on<B: PlanBackend>(
+    subject: &Subject,
+    slice: ExecutionSlice,
+    backend: &B,
+) -> BTreeSet<String> {
+    PreparedOperands::load(&subject.plan, &subject.store, backend, slice)
         .expect("preparation should succeed against its own container");
     subject.store.touched_objects()
 }
@@ -210,4 +222,62 @@ fn dense_ffn_placement_never_reads_or_maps_the_other_sides_tensors() {
         .collect();
     measure(&shard, ExecutionSlice::DenseFfns { start: 1, end: 2 });
     assert_eq!(shard.store.touched_operand_addresses(), owned);
+}
+
+/// The routed miniature with its expert weights stored once, as released.
+fn routed_subject() -> Subject {
+    subject(|dir| miniature_gpt_oss(dir, false))
+}
+
+/// Every layer and every expert: the slice one expert worker owns when
+/// nothing else is placed.
+fn all_experts(plan: &ComponentOpPlan) -> ExecutionSlice {
+    let experts = plan.layers[0]
+        .ffn
+        .as_ref()
+        .and_then(|f| f.routed())
+        .expect("routed fixture")
+        .experts;
+    ExecutionSlice::RoutedExperts {
+        start: 0,
+        end: plan.layers.len(),
+        expert_start: 0,
+        expert_end: experts,
+    }
+}
+
+#[test]
+fn routed_expert_placement_splits_the_whole_requirement_between_its_sides() {
+    // The routed counterpart of the dense placement gate: the coordinator
+    // keeps attention, router and endpoints, the worker keeps the banks,
+    // each side's prediction equals what its preparation resolved, and
+    // together they are exactly the whole model.
+    let coordinator = routed_subject();
+    let worker = routed_subject();
+    let local_slice = ExecutionSlice::RoutedExpertCoordinator;
+    let remote_slice = all_experts(&worker.plan);
+    let local = required_objects(&coordinator.plan, &local_slice).unwrap();
+    let remote = required_objects(&worker.plan, &remote_slice).unwrap();
+    assert!(!local.is_empty() && !remote.is_empty());
+    let backend = ProductionBackend::new();
+    assert_eq!(local, measure_on(&coordinator, local_slice, &backend));
+    assert_eq!(remote, measure_on(&worker, remote_slice, &backend));
+    let whole = required_objects(&coordinator.plan, &ExecutionSlice::Full).unwrap();
+    assert_eq!(whole, local.union(&remote).cloned().collect());
+}
+
+#[test]
+fn a_routed_expert_worker_requires_only_the_banks() {
+    // The worker is handed hidden rows and expert ids, never tokens: a
+    // requirement naming the embedding, the head or a router would be a
+    // worker hydrating the coordinator's half of the model.
+    let subject = routed_subject();
+    let banks = required_objects(&subject.plan, &all_experts(&subject.plan)).unwrap();
+    let coordinator =
+        required_objects(&subject.plan, &ExecutionSlice::RoutedExpertCoordinator).unwrap();
+    assert!(
+        banks.is_disjoint(&coordinator),
+        "worker {banks:?} and coordinator {coordinator:?} share an object"
+    );
+    assert!(banks.is_subset(&subject.objects));
 }
