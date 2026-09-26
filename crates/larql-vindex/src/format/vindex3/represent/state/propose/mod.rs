@@ -64,6 +64,24 @@ impl GroupKey {
     }
 }
 
+/// Every group the base map's eligible roles present on `surface`, in
+/// canonical order: the variables a [`ProposalProblem`] over the same
+/// inputs has, and the edits a validate loop's vocabulary must name.
+pub fn group_keys(surface: &TensorSurface, base: &PrecisionMap) -> Vec<GroupKey> {
+    let keys: BTreeSet<GroupKey> = surface
+        .entries()
+        .iter()
+        .filter(|t| base.roles.iter().any(|r| r == t.role.name()))
+        .filter_map(|t| {
+            Some(GroupKey::new(
+                projection_of(&t.tensor)?,
+                layer_of(&t.tensor)?,
+            ))
+        })
+        .collect();
+    keys.into_iter().collect()
+}
+
 /// A variable's domain in 1a: what `Protections` can express.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum GroupChoice {

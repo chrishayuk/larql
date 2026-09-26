@@ -365,3 +365,12 @@ The rejection frontier is part of the evidence.
 Not claimed by 1b: that any real model's candidate is admissible, that
 admission here is promotion (it is not; promotion stays a separate step),
 or that the loop's measurement count is small on a real model.
+
+## AUTO-REP-1b — implementation record
+
+The loop is `represent/auto_rep.rs`: `run`, `CampaignSetup`, `CampaignRecord`, `group_vocabulary`, `applied_for`, and the `CandidateCompiler` trait with `RepresentCompiler` over `compile_representation`. 1a gains `group_keys`, which the vocabulary check and the problem share. The setup also takes `pins`, which gate 6 uses to shrink the problem.
+
+- **Gates 1–7** run on a real compiled dense fixture container with a scripted executor. It admits exactly the candidates whose requested map protects a hidden group; compile, identity, request, registry, sealing, ingestion and adjudication are all production code.
+- **Gate 1 on tied costs.** The fixture's group costs tie heavily (four groups cost 3,516 bytes each), and ties are ordered by canonical assignment. Gate 1 therefore checks that the refused entries include exactly the protection sets strictly cheaper than the admitted one, counted by independent enumeration, and that none costs more than it.
+- **Loop mutations,** each caught by a failing test: cuts ignored, the identity check skipped, reuse ignored, the budget ignored, the scale check skipped, every verdict admitted, and the vocabulary check skipped.
+- **Termination.** A refused reading that is proposed again would mean the cuts disagree with the record. The loop returns an error rather than asserting, so it cannot spin.

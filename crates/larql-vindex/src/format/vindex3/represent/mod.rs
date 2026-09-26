@@ -47,6 +47,7 @@ pub mod activation;
 pub mod actuate;
 pub mod arena;
 pub mod assessment;
+pub mod auto_rep;
 pub mod bank;
 pub mod byte_ledger;
 pub mod calibration;
