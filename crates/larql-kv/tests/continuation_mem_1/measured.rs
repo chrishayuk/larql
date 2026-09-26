@@ -155,6 +155,9 @@ pub struct Measured<P> {
     phase: Cell<&'static str>,
     calls: RefCell<Vec<CallRecord>>,
     intervals: RefCell<Vec<IntervalRecord>>,
+    /// Every allocation born inside an `append` scope (VIEW-1 V3's
+    /// anti-cheat: what a provider keeps from its appends).
+    append_born: Vec<usize>,
     open: RefCell<Option<OpenWindow>>,
     geometry: Vec<LayerContinuationGeometry>,
     conv_qkv: Vec<bool>,
@@ -171,6 +174,7 @@ impl<P: Inspect> Measured<P> {
             phase: Cell::new("unset"),
             calls: RefCell::new(Vec::with_capacity(1 << 16)),
             intervals: RefCell::new(Vec::with_capacity(1 << 12)),
+            append_born: Vec::with_capacity(1 << 16),
             open: RefCell::new(None),
             geometry: Vec::new(),
             conv_qkv: Vec::new(),
@@ -232,6 +236,16 @@ impl<P: Inspect> Measured<P> {
     }
 
     /// Every backing allocation of continuation storage, with capacity.
+    /// Live bytes of every allocation born inside this provider's `append`
+    /// scopes and still alive: what it keeps from its appends, whatever it
+    /// calls it.
+    pub fn append_born_live_bytes(&self) -> usize {
+        let mut ptrs = self.append_born.clone();
+        ptrs.sort_unstable();
+        ptrs.dedup();
+        ptrs.iter().filter_map(|&p| alloc::live_size(p)).sum()
+    }
+
     pub fn inventory(&mut self) -> Vec<Backing> {
         inventory_of(&mut self.inner, &self.geometry)
     }
@@ -447,6 +461,17 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
         self.inner.append(layer, key, value);
         let delta = scope.leave();
         let events = alloc::events(&delta);
+        self.append_born.extend(
+            events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.kind,
+                        EventKind::Alloc | EventKind::ReallocMoved | EventKind::ReallocInPlace
+                    )
+                })
+                .map(|e| e.new_ptr),
+        );
 
         let row_bytes = self.row_bytes(layer);
         let stored_k = self.inner.keys(layer).last().map(|r| r.as_ptr() as usize);

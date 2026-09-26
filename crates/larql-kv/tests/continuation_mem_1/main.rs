@@ -221,8 +221,15 @@ fn measure<P: Inspect, B: PlanBackend>(
     for (phase, inventory) in &outcome.inventories {
         let s = metrics::Storage::of(inventory);
         storage.push((*phase, s));
+        let born = outcome
+            .append_born
+            .iter()
+            .find(|(p, _)| p == phase)
+            .map(|(_, b)| *b);
         phases.push(json!({
             "phase": phase,
+            "logits_digest": subjects::logits_digest(&outcome.logits, phase),
+            "append_born_live_bytes": born,
             "storage": s.json(),
             "append_traffic": metrics::appends(&calls, phase),
             "rows_offered": metrics::rows_offered(&calls, &subject.geometry, phase),
