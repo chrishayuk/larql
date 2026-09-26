@@ -72,6 +72,9 @@ impl DenseProjections for CountingProjections {
 pub struct Counting<B: 'static> {
     inner: &'static B,
     pub projections: CountingProjections,
+    /// Every attention kernel step this backend was asked to run (VIEW-1
+    /// V4's S3 witness: a refused step reaches no kernel).
+    pub attention_steps: std::sync::atomic::AtomicUsize,
 }
 
 impl<B: PlanBackend + 'static> Counting<B> {
@@ -85,6 +88,7 @@ impl<B: PlanBackend + 'static> Counting<B> {
                 inner: inner.dense_projector(),
                 shapes: Mutex::new(BTreeMap::new()),
             },
+            attention_steps: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -135,6 +139,8 @@ impl<B: PlanBackend + 'static> PlanBackend for Counting<B> {
     }
 
     fn attention_step(&self, call: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
+        self.attention_steps
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.inner.attention_step(call)
     }
 
@@ -147,6 +153,8 @@ impl<B: PlanBackend + 'static> PlanBackend for Counting<B> {
         call: AttentionStepCall<'_>,
         tap: &mut dyn FnMut(AttentionHeadRecord<'_>),
     ) -> Result<AttentionStepOut, VindexError> {
+        self.attention_steps
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.inner.attention_step_observed(call, tap)
     }
 
@@ -160,6 +168,8 @@ impl<B: PlanBackend + 'static> PlanBackend for Counting<B> {
         tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
         head_intervene: &mut HeadIntervene<'_>,
     ) -> Result<AttentionStepOut, VindexError> {
+        self.attention_steps
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.inner
             .attention_step_intervened(call, tap, head_intervene)
     }

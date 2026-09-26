@@ -16,6 +16,7 @@ mod alloc;
 mod counting;
 mod measured;
 mod metrics;
+mod retaining;
 mod subjects;
 
 use std::path::PathBuf;
@@ -763,4 +764,179 @@ fn real_recurrent_windows_oute_reference() {
     };
     let extra = json!({ "container": dir.to_string_lossy(), "purpose": "D6: integrity-clean recurrent windows" });
     measure_subject(&subject, &ReferenceBackend::new(), &journey, true, extra);
+}
+
+// ---- VIEW-1 V4: B (bounded retention) and S3 end to end --------------------
+
+/// B: an exact-retention provider over one journey, beside row/v1. All four
+/// conditions are asserted together: base == the plan's required start and
+/// end == position + 1 after every append; every dropped row's own K and V
+/// allocation freed, by pointer, inside the append that dropped it; logits
+/// bit-identical to row/v1 on every phase.
+fn retention_proof<B: PlanBackend>(subject: &Subject, backend: &B, journey: &Journey) -> Value {
+    use larql_vindex::format::vindex3::opplan::exec::kv::ContinuationProvider;
+    let ops = subject.prepare(backend);
+    let mut rows = Measured::new(RowKvState::default());
+    let reference = subjects::run(subject, &ops, backend, &mut rows, journey);
+    let mut kept = Measured::new(retaining::ExactRetention::default());
+    let retained = subjects::run(subject, &ops, backend, &mut kept, journey);
+    let (calls, _) = kept.take_records();
+
+    let checks = &kept.inner.checks;
+    let failures: Vec<_> = checks.iter().filter(|c| !c.holds()).collect();
+    let dropped: u64 = checks.iter().map(|c| c.dropped as u64).sum();
+    let traffic: Vec<_> = calls.iter().filter_map(|c| c.append).collect();
+    let evicted: u64 = traffic.iter().map(|t| t.evicted_frees).sum();
+    let unclassified: u64 = traffic.iter().map(|t| t.unclassified).sum();
+    let bits = |o: &subjects::Outcome| -> Vec<Vec<u32>> {
+        o.logits
+            .iter()
+            .map(|(_, l)| l.iter().map(|x| x.to_bits()).collect())
+            .collect()
+    };
+    let identical = bits(&reference) == bits(&retained);
+    let resident: Vec<Value> = subject
+        .geometry
+        .iter()
+        .enumerate()
+        .filter_map(|(layer, g)| {
+            let kv = g.kv_side()?;
+            Some(json!({
+                "layer": layer,
+                "window": kv.window,
+                "resident_rows": kept.inner.resident(layer),
+                "end": kept.inner.rows(layer).end(),
+            }))
+        })
+        .collect();
+    let record = json!({
+        "subject": subject.name,
+        "git_sha": git_sha(),
+        "appends": checks.len(),
+        "appends_off_the_plan_floor": failures.len(),
+        "rows_dropped": dropped,
+        "row_allocations_freed_by_pointer": evicted,
+        "unclassified_append_events": unclassified,
+        "logits_bit_identical_to_row_v1": identical,
+        "resident": resident,
+    });
+    let path = out_dir().join(format!("{}.retention.json", subject.name));
+    std::fs::write(&path, serde_json::to_string_pretty(&record).unwrap()).unwrap();
+    eprintln!("wrote {}", path.display());
+    assert!(
+        failures.is_empty(),
+        "base/end off the plan: {:?}",
+        &failures[..failures.len().min(3)]
+    );
+    assert!(
+        dropped > 0,
+        "the journey must cross a window, or B proves nothing"
+    );
+    assert_eq!(
+        evicted,
+        2 * dropped,
+        "every dropped K and V row must be freed, by pointer"
+    );
+    assert_eq!(unclassified, 0, "an append event nobody accounts for");
+    assert!(identical, "retention changed the logits");
+    record
+}
+
+#[test]
+fn b_exact_retention_on_the_sliding_fixture() {
+    let _serial = serial();
+    let subject = subjects::fixture(miniature_glimmer, "mem1-sliding");
+    let journey = Journey {
+        prefill: G_TOKENS.to_vec(),
+        resume: vec![5, 9],
+        decode: vec![1, 2, 3, 4],
+    };
+    let record = retention_proof(&subject, &ReferenceBackend::new(), &journey);
+    let sliding = &record["resident"][0];
+    assert_eq!(sliding["window"], G_WINDOW);
+    assert_eq!(
+        sliding["resident_rows"], G_WINDOW,
+        "a sliding layer holds its window"
+    );
+    assert_eq!(
+        record["resident"][1]["resident_rows"], record["resident"][1]["end"],
+        "a full layer holds everything"
+    );
+}
+
+/// S3 end to end: a provider that drops a row the plan still requires is
+/// refused by name at the caller of the step — and no attention kernel runs.
+#[test]
+fn s3_a_retention_bug_is_refused_before_any_kernel() {
+    use larql_vindex::format::vindex3::opplan::exec::prefill_prepared;
+    use std::sync::atomic::Ordering;
+    let _serial = serial();
+    let subject = subjects::fixture(miniature_glimmer, "mem1-sliding");
+    let backend = counting::Counting::new(ReferenceBackend::new());
+    let ops = subject.prepare(&backend);
+    let mut kv = retaining::ExactRetention::default();
+    prefill_prepared(&subject.plan, &ops, &G_TOKENS, &backend, &mut kv).unwrap();
+    // A healthy step, then the seeded bug on the next step's layer-0 append.
+    DecodeSession::over_prepared(&subject.plan, &ops, &backend, &mut kv)
+        .unwrap()
+        .step(1)
+        .unwrap();
+    kv.arm_violation();
+    DecodeSession::over_prepared(&subject.plan, &ops, &backend, &mut kv)
+        .unwrap()
+        .step(2)
+        .unwrap();
+    assert!(
+        kv.checks.iter().any(|c| !c.holds()),
+        "the seed must have dropped a required row"
+    );
+
+    // Decode: the refusal reaches the caller; no kernel ran.
+    let before = backend.attention_steps.load(Ordering::SeqCst);
+    let err = DecodeSession::over_prepared(&subject.plan, &ops, &backend, &mut kv)
+        .unwrap()
+        .step(3)
+        .err()
+        .expect("a step lacking a required row must be refused");
+    assert_eq!(
+        backend.attention_steps.load(Ordering::SeqCst),
+        before,
+        "no attention kernel may run"
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("the plan requires"),
+        "the refusal must be named: {message}"
+    );
+
+    // Resumed prefill takes the same door.
+    let before = backend.attention_steps.load(Ordering::SeqCst);
+    let err = prefill_prepared(&subject.plan, &ops, &[7, 8], &backend, &mut kv)
+        .err()
+        .expect("a resumed prefill lacking a required row must be refused");
+    assert_eq!(
+        backend.attention_steps.load(Ordering::SeqCst),
+        before,
+        "no attention kernel may run"
+    );
+    assert!(err.to_string().contains("the plan requires"));
+}
+
+#[test]
+#[ignore = "real container: LARQL_MEM1_GEMMA (B past the sliding window)"]
+fn real_retention_gemma3_4b() {
+    let _serial = serial();
+    let dir = std::env::var_os("LARQL_MEM1_GEMMA").expect("set LARQL_MEM1_GEMMA");
+    let subject = subjects::open(std::path::Path::new(&dir), "gemma3-4b-it");
+    let journey = Journey {
+        prefill: tokens(1000, 1100),
+        resume: tokens(3000, 16),
+        decode: tokens(4000, 8),
+    };
+    let record = retention_proof(&subject, &ProductionBackend::new(), &journey);
+    for layer in record["resident"].as_array().unwrap() {
+        if let Some(w) = layer["window"].as_u64() {
+            assert_eq!(layer["resident_rows"].as_u64(), Some(w), "{layer}");
+        }
+    }
 }
