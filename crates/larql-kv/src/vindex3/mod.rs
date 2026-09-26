@@ -48,7 +48,9 @@ use ndarray::Array2;
 use crate::cache::KvCache;
 
 mod registry;
+mod window;
 pub use registry::{shipped_continuations, CanonicalFactory};
+pub use window::{WindowFactory, WindowKvState};
 
 #[cfg(test)]
 mod tests;

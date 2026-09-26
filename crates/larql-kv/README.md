@@ -5,12 +5,15 @@
 
 Continuation-state implementations and engine selection. This crate contains
 both the `KvEngine` family used with model weights/V2 execution and the
-VINDEX3 `CanonicalKvState` provider. They are different integration surfaces.
+VINDEX3 providers `CanonicalKvState` (`canonical/v1`) and `WindowKvState`
+(`window/v1`, which holds only the rows the plan's attention horizon still
+needs — CONTINUATION-WINDOW-1). They are different integration surfaces.
 
 On `larql run` with a V3 container, `--engine standard` selects
-`CanonicalKvState`, `row` selects the interpreter's row provider, and
-`no-cache` selects exact history replay in `larql-inference`. Approximate V2
-engines are still refused. [Details](../../docs/vindex3/runtime-followups.md).
+`CanonicalKvState`, `row` selects the interpreter's row provider,
+`--continuation window/v1` selects `WindowKvState`, and `no-cache` selects
+exact history replay in `larql-inference`. Approximate V2 engines are still
+refused. [Details](../../docs/vindex3/runtime-followups.md).
 
 ## Two contracts
 

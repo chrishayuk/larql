@@ -15,10 +15,10 @@
 use std::path::{Path, PathBuf};
 
 /// The built-in providers' type names.
-const BUILT_INS: [&str; 2] = ["RowKvState", "CanonicalKvState"];
+const BUILT_INS: [&str; 3] = ["RowKvState", "CanonicalKvState", "WindowKvState"];
 
 /// Where a built-in may be named, and why.
-const PERMITTED: [(&str, &str); 4] = [
+const PERMITTED: [(&str, &str); 5] = [
     (
         "larql-vindex/src/format/vindex3/opplan/exec/kv.rs",
         "RowKvState's own module: its definition, identity and RowFactory",
@@ -26,6 +26,10 @@ const PERMITTED: [(&str, &str); 4] = [
     (
         "larql-kv/src/vindex3/mod.rs",
         "CanonicalKvState's own module: its definition and identity",
+    ),
+    (
+        "larql-kv/src/vindex3/window.rs",
+        "WindowKvState's own module (CONTINUATION-WINDOW-1): its definition, identity and WindowFactory",
     ),
     (
         "larql-kv/src/vindex3/registry.rs",
