@@ -567,3 +567,28 @@ fn a_bank_declaring_no_samples_cannot_instruct_a_run() {
     assert_eq!(procedure, TEACHER_FORCED_TWO_ARM);
     assert!(detail.contains("no samples"), "{detail}");
 }
+
+/// The Kimi procedure evaluates a gate as part of its run. A
+/// characterisation-only record (no gate) prepares, and every artifact it
+/// names is present, but it cannot be instructed as a Kimi run — refused
+/// by name, not run without the gate it would have to evaluate.
+#[test]
+fn a_record_without_a_gate_cannot_instruct_the_kimi_procedure() {
+    let dir = glimmer();
+    let (corpus_dir, bank) = corpus();
+    let gated = record(dir.path(), bank);
+    let mut config = gated.config().clone();
+    config.gate = None;
+    let snapshot = super::SearchSnapshot::new(gated.space().clone(), config, gated.facts().clone());
+    let request = ready(&snapshot).request;
+    assert!(request.gate().is_none(), "the record names no gate");
+    let (_overlay, artifacts) = everything(dir.path(), corpus_dir.path(), &request);
+    let ExecutionRefusal::NotInstructable { procedure, detail } = TeacherForcedExecutor
+        .instruct(&request, &artifacts)
+        .expect_err("a Kimi run needs the gate it evaluates")
+    else {
+        panic!("the missing gate is what cannot be instructed");
+    };
+    assert_eq!(procedure, TEACHER_FORCED_TWO_ARM);
+    assert!(detail.contains("characterisation-only"), "{detail}");
+}
