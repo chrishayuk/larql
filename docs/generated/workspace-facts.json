@@ -726,6 +726,10 @@
           "path": "examples/inference/observatory_record.rs"
         },
         {
+          "name": "gwcar1a_record",
+          "path": "examples/inference/gwcar1a_record.rs"
+        },
+        {
           "name": "attr1d_witness",
           "path": "examples/inference/attr1d_witness.rs"
         },
