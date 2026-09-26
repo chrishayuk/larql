@@ -128,8 +128,11 @@ kernel void rope_at_pos_batched(
 
 // VERIFY-N: rope_at_pos_batched over `rows` consecutive positions laid
 // out `[rows, num_heads, head_dim]`: head h rotates at position
-// pos0 + h / num_heads. Same per-pair arithmetic, so bit-identical to one
-// rope_at_pos_batched dispatch per position. Grid: (hdim, rows*num_heads).
+// pos0 + h / num_heads. Same per-pair arithmetic as rope_at_pos_batched,
+// but NOT bit-identical to it on every GPU: a uniform `pos` and a per-thread
+// `pos` may lower differently under fast math (the macos-14 runner's GPU
+// does). Lowered decode therefore dispatches this kernel with rows = 1, so
+// decode and a VERIFY-N block share one kernel. Grid: (hdim, rows*num_heads).
 kernel void rope_rows(
     device float*       x          [[buffer(0)]],
     constant uint&      head_dim   [[buffer(1)]],

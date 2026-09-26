@@ -4,6 +4,7 @@ use super::*;
 use larql_vindex::format::vindex3::opplan::exec::{
     head_replay::{replay_attention_heads, replay_attention_mixture},
     intervene::{vector_sha256, Address, Intervention, InterventionPlan, VectorProvenance},
+    intervene_heads::HeadInterventionPlan,
     observe::NoopObserver,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -235,7 +236,12 @@ fn tail_replacement(
     let mut kv = prefix.clone();
     let mut session = DecodeSession::over_prepared(plan, tail_ops, backend, &mut kv)?;
     let mut observer = TailCarrier::default();
-    let result = session.step_from_carrier_intervened(carrier, &mut observer, &intervention)?;
+    let result = session.step_from_carrier_intervened(
+        carrier,
+        &mut observer,
+        &intervention,
+        &HeadInterventionPlan::none(),
+    )?;
     if result.firings.len() != 1 {
         return Err("STATE-1 intervention did not fire exactly once".into());
     }
@@ -443,8 +449,12 @@ pub(super) fn run(args: &[String]) -> Result<()> {
             )?)?;
             let mut kv = prefix.clone();
             let mut session = DecodeSession::over_prepared(&plan, &ops, &backend, &mut kv)?;
-            let result =
-                session.step_intervened(tokens[target] as u32, &mut NoopObserver, &intervention)?;
+            let result = session.step_intervened(
+                tokens[target] as u32,
+                &mut NoopObserver,
+                &intervention,
+                &HeadInterventionPlan::none(),
+            )?;
             if result.firings.len() != 1 {
                 return Err("full exact STATE-1 control did not fire once".into());
             }
