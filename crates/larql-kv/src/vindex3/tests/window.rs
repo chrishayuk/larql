@@ -258,16 +258,14 @@ fn recurrent_and_latent_state_are_refused_by_name() {
     state.prepare(&two_layers());
     let recurrent = state
         .recurrent_state(0)
-        .err()
-        .expect("window/v1 holds no recurrent state");
+        .expect_err("window/v1 holds no recurrent state");
     assert!(
         recurrent.to_string().contains("WindowKvState"),
         "{recurrent}"
     );
     let latent = state
         .latent_state(1)
-        .err()
-        .expect("window/v1 holds no latent rows");
+        .expect_err("window/v1 holds no latent rows");
     assert!(latent.to_string().contains("WindowKvState"), "{latent}");
 }
 
