@@ -1,0 +1,42 @@
+{
+  "programme": "CONTINUATION-WINDOW-1",
+  "forecast": "continuation-window-1.json (frozen against main 6f60fc08, merged #580 → 91bf40d6; not edited)",
+  "rule": "The execution record. The forecast is not edited; a wave that finds the design must change writes the change and the reason here.",
+  "freeze_provenance": "#580 merged at the maintainer's direction: docs-only, doc integrity 13/13 locally on the staged file, CI queued at merge (13 checks)",
+  "waves": {
+    "W1": {
+      "name": "representation",
+      "status": "decided before code",
+      "base": "main 91bf40d6",
+      "rule_restated": "the representation cannot alter the frozen production semantics, acceptance criteria, length ladder or measurement definitions",
+      "candidates": {
+        "a_adopted_rows_draining_front": {
+          "what": "per layer a Vec of adopted K rows and one of V rows plus a base; after appending p, drain every row below HistoryRange.required_start(p)",
+          "view": "KvView::rows_from(base, …) — the static Rows backing (V2's fast path)",
+          "row_data_copied_per_append": "none: the backend's row is adopted, as row/v1 does",
+          "release": "each dropped row's own allocation freed as it is drained — witnessable on allocation identity (address + adoption generation)",
+          "cost": "a memmove of ≈ w row pointers (24 B each, ≈24 KB) per sliding layer per append",
+          "complexity": "smallest"
+        },
+        "b_adopted_rows_in_a_ring": {
+          "what": "VecDeque of adopted rows; pop_front is O(1)",
+          "view": "a VecDeque is not contiguous, and rows(&self) cannot make_contiguous; needs a Dyn KvRows wrapper (dynamic dispatch per row read)",
+          "row_data_copied_per_append": "none",
+          "complexity": "small, plus a KvRows impl"
+        },
+        "c_contiguous_ring_of_copied_rows": {
+          "what": "w rows × kv_dim preallocated per sliding layer; each appended row copied into its slot, the incoming Vec freed",
+          "view": "wraps around, so not linear from base: Dyn or a two-segment view",
+          "row_data_copied_per_append": "one row (the store traffic canonical/v1 pays)",
+          "complexity": "largest: wrap-around indexing, and full-span layers still need a growing store"
+        }
+      },
+      "decision": "(a) adopted rows with a draining front",
+      "reason": "the smallest representation that meets every frozen condition: exact base/end, physical release of each dropped row witnessable on its own allocation identity, no second authority, zero row-data copies, and the static Rows view backing. (b)'s O(1) removal saves a pointer memmove that is a secondary cost, at the price of dynamic dispatch on every row read; (c) adds a copy per append and wrap-around indexing. Their allocator and throughput differences are secondary observations and are not measured as a comparison here.",
+      "not_the_proof_provider": "(a) shares the SHAPE of VIEW-1 V4's ExactRetention, which was a test instrument; window/v1 is written fresh as production code in larql-kv (vindex3/window.rs), with its own identity, factory and documentation, and without the proof provider's check log or seeding hooks",
+      "identity_and_regions": "identity `window/v1`, registered in shipped_continuations beside row/v1 and canonical/v1; declares ONLY the Kv region, so a plan needing Recurrent or LatentKv is refused at selection (frozen scope)",
+      "fixed_representation_capacity_declared": "per layer, the two row-list (Vec<Vec<f32>>) buffers: on a sliding layer their length never exceeds w + 1 (the appended row before the drain), so after warm-up their capacity stops growing — the only provider-born storage; every row allocation is adopted. W3 checks post-window growth of sliding-layer live K/V bytes against exactly this.",
+      "full_span_layers": "HistoryRange::Full: base stays 0 and nothing is drained — identical storage behaviour to row/v1"
+    }
+  }
+}
