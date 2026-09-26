@@ -400,6 +400,12 @@ disjoint. Executing this rule (or retiring the bank writer in favour of
 graph-native LYRW representations) is a named gate for 3.0 Final (§21),
 not an assumption the candidate makes.
 
+**Decided 2026-09-26** ([ADR-0027](../../../docs/adr/0027-vindex3-single-container-shape.md)):
+the second branch. The graph container is the sole normative 3.0 shape, and
+the bank shape is legacy input that a conforming reader recognises and
+either opens or refuses by name. This section and §5.4–§5.5 are rewritten
+at the required/optional freeze (§21 gate 2).
+
 ### 5.7 Compatibility rules — what a conforming reader/writer must do
 
 For every datum, one of four fates — understood, ignored, refused,
@@ -1326,12 +1332,12 @@ the maturity flip — each a named gate, none of them drift:
 
 | # | Gate | Today |
 | - | ---- | ----- |
-| 1 | **Shape convergence executed** (§5.6): LYRW banks producible as a graph-container representation's segments, or the bank writer retired to importer-only status with its output re-encodable to the graph shape | two disjoint writers |
+| 1 | **Shape convergence executed** (§5.6): LYRW banks producible as a graph-container representation's segments, or the bank writer retired to importer-only status with its output re-encodable to the graph shape | **decided 2026-09-26** ([ADR-0027](../../../docs/adr/0027-vindex3-single-container-shape.md)): the graph container is the sole normative shape, the bank shape is legacy input, LYRW v2 is an import codec. Execution open against the ADR's five closure criteria |
 | 2 | **Required/optional freeze**: an RFC-2119 pass over §5–§9 separating normative requirements from extensions | this document's tables are the input |
 | 3 | **Independent reader**: `vindex-core` carved out so the reader stops linking the writer's tree; a minimal conformance harness over published fixtures | reader exists, boundary impure (§18.3) |
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
 | 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
-| 6 | **Bank-ABI pre-freeze rows**: the remaining V2-0..V2-4 experiment gates (profile-authority derivation, variant-selection refusal, fixtures B–D, WALK/DESCRIBE parity) | open |
+| 6 | **Pre-freeze rows, re-based on the graph shape** (ADR-0027): the V2-0..V2-1 properties that are shape-independent, certified over graph containers | **closed:** profile-authority derivation (shape-independent); graph execution seam parity (runtime vs direct harness over one encoded container, bit for bit, which is not an independent-oracle claim). **Re-home:** expert count / top-K. **Open on the graph shape:** variant-selection refusal (pinned only on the bank reader; graph containers carry no variant catalogue), fused vs decomposed, shared-bank container parity (an operator-level Kimi oracle exists but is env-gated and reads no container; no K3 dependency), WALK/DESCRIBE parity. **Leaves 3.0:** fixtures B–D, which become LYRW-importer fixtures |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,
 COMPILE and COMPACT are operations over V3 containers and do not add
