@@ -6,8 +6,8 @@ use super::{
 };
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::{
+    continuation_registry::SelectedContinuation,
     decode::DecodeSession,
-    kv::RowKvState,
     lowering::{LoweringIdentity, LoweringRegistry, SharedProvider},
     observe::{InputSite, StepEvent, StepObserver},
     operands::OperandSource,
@@ -113,12 +113,14 @@ impl PreparedCalibration {
         Ok(())
     }
 
-    /// Execute each sequence from a fresh KV state; masked rows still supply
-    /// context. Retain only a single site's sufficient statistics, not X.
+    /// Execute each sequence from a fresh continuation state, built from
+    /// the caller's selection; masked rows still supply context. Retain
+    /// only a single site's sufficient statistics, not X.
     pub fn capture(
         &self,
         bank: &CalibrationBank,
         statistic: StatisticKind,
+        continuation: &SelectedContinuation,
     ) -> Result<CalibrationArtifact, VindexError> {
         let key = self.key(bank, statistic)?;
         if ExecutionProvenance::of(&self.operands).fingerprint() != self.execution_sha256 {
@@ -134,9 +136,13 @@ impl PreparedCalibration {
             error: None,
         };
         for sequence in &bank.sequences {
-            let mut kv = RowKvState::default();
-            let mut session =
-                DecodeSession::over_prepared(&self.plan, &self.operands, &self.backend, &mut kv)?;
+            let mut state = continuation.build();
+            let mut session = DecodeSession::over_prepared(
+                &self.plan,
+                &self.operands,
+                &self.backend,
+                &mut *state,
+            )?;
             for (&token, &include) in sequence.tokens.iter().zip(&sequence.include) {
                 tap.include = include;
                 tap.seen = 0;
