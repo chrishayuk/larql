@@ -407,7 +407,7 @@
     },
     "V4": {
       "name": "proofs",
-      "status": "design recorded before code",
+      "status": "built and held",
       "base": "main e32e3024 (V3 merged #576 — at the maintainer's direction with CI still queued; its local gates are recorded under V3)",
       "scope": "B (a proof provider in a TEST target, not WINDOW-1's shipped provider), S3 end to end, the final Q1 record. Nothing in production changes.",
       "B": {
@@ -427,7 +427,42 @@
         "no_kernel_witness": "the step runs under MEM-1's Counting backend extended to count attention_step calls: the failing step's count is 0 (layer 0 is where it fails, before any attention runs)"
       },
       "Q1": "oute re-measured at V4's SHA; if still 2·h per call, VIEW-1 closes with the negative result 'representation openness did not remove the borrow-induced operator copy'",
-      "then": "VIEW-1 closes formally (A, B, C, S1–S4, Q1, and the provenance of V2/V3 merges over main's coverage red / queued CI) before WINDOW-1"
+      "then": "VIEW-1 closes formally (A, B, C, S1–S4, Q1, and the provenance of V2/V3 merges over main's coverage red / queued CI) before WINDOW-1",
+      "found_during_implementation": [
+        {
+          "what": "the proof provider's own RetentionCheck log grew inside append (a 192 → 384 → 768 → 1,536 B chain across both fixture layers) and the harness counted 4 unaccounted append events",
+          "fix": "the log is pre-reserved (1 << 17 checks) so the provider never allocates for bookkeeping inside an append; the harness's 'unclassified' check was kept strict, not relaxed"
+        },
+        {
+          "what": "the S3 seed must be armed between decode steps",
+          "why": "an over-drop during batched prefill heals before anything reads it (later appends move the floor past the missing row), so the seed over-drops on step q's layer-0 append and step q+1 must refuse"
+        },
+        {
+          "what": "the kernel counter counts attention_step, attention_step_observed and attention_step_intervened",
+          "why": "'no kernel executes' must cover every attention entry point, not the plain one only"
+        }
+      ],
+      "adjudication": {
+        "B": {
+          "verdict": "HELD",
+          "gemma3-4b-it": "1,100-position prefill + 16 resumed + 8 decode (1,124 positions; window 1,024), ProductionBackend, record SHA caa67198: all 38,216 appends had base == HistoryRange.required_start(p) and end == p + 1 (0 off the floor); 2,900 rows dropped (29 sliding layers × 100) and 5,800 row allocations freed by pointer inside the dropping appends — exactly K and V for each; 0 unclassified append events; logits bit-identical to row/v1 on every phase; resident rows 1,024 on each of the 29 sliding layers and 1,124 on each of the 5 full layers",
+          "fixture": "miniature_glimmer (window 3) through prefill, resume and decode: all four conditions asserted in `b_exact_retention_on_the_sliding_fixture`; the sliding layer holds 3 rows, the full layer every row"
+        },
+        "S3": {
+          "verdict": "CLOSED end to end",
+          "evidence": "`s3_a_retention_bug_is_refused_before_any_kernel`: after a seeded over-drop on layer 0, DecodeSession::step returns the named refusal ('… the plan requires …') to its caller, and so does a resumed prefill_prepared; the Counting backend records 0 attention kernel calls (plain, observed or intervened) across each refused call"
+        },
+        "Q1_final": {
+          "measured": "oute at caa67198: 144/144 conv-QKV calls (both providers) copy exactly 2·h rows",
+          "result": "NEGATIVE, recorded as such: representation openness (V2) and provider migration (V3) did not remove the borrow-induced operator copy. It is the executor releasing &self before &mut recurrent_state — a small operator/executor rung of its own, outside VIEW-1"
+        }
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "clippy -D warnings": "larql-kv (all-targets) and larql-server (lib, bins, tests) clean",
+        "tests": "larql-kv 1,319 passed, 0 failed (--no-fail-fast), the harness 11/11 with B and S3; larql-server continuation_mem_1_handoff passes",
+        "scope": "V4 changes test code only (the MEM-1 harness, which larql-server's handoff target includes) and these notes; no production crate changed"
+      }
     }
   }
 }
