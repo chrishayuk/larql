@@ -1,0 +1,81 @@
+{
+  "programme": "CONTINUATION-WINDOW-1",
+  "wave": "a production continuation provider whose sliding-layer state is bounded by the attention horizon",
+  "lane": "continuation",
+  "frozen": "2026-09-26, against main 6f60fc08 (CONTINUATION-VIEW-1 closed, #578)",
+  "status": "FORECAST — frozen before implementation; the execution record goes in continuation-window-1-notes.json and this file is not edited",
+  "question": "Can a production continuation provider retain exactly the plan-required K/V range, physically release unreachable history, remain bit-exact, and make sliding-layer residency asymptotically depend on the attention horizon rather than total sequence length?",
+  "why": "VIEW-1 (closed, #578) made retention expressible: the plan's HistoryRange is the single retention authority, providers lend a logical [base, end) view, and a step lacking a required row is refused before any kernel. Its V4 proof provider showed bounded retention is exact and physically frees rows on gemma3-4b at 1,124 positions. MEM-1 projected ≈1.7 GB of dead sliding-window K/V on gemma3-4b at 8,192 positions under the providers that exist today. WINDOW-1 is the first production provider to exploit the view, and the first rung of the lane that should show up as a scaling law.",
+  "baseline": {
+    "code": "main 6f60fc08 (VIEW-1 closed)",
+    "authority": "HistoryRange (exec/kv.rs) via LayerKvGeometry.history; KvView (exec/kv_view.rs); AttentionStepCall::new's required-range check",
+    "registry": "shipped_continuations() registers row/v1 and canonical/v1 (larql-kv vindex3/registry.rs); selection matches a factory's declared ContinuationRegion set against the plan (Kv, LatentKv, Recurrent)",
+    "defaults": "larql serve selects canonical/v1 by identity (larql-server vindex3.rs); larql run defaults to row/v1 (larql-cli continuation.rs)",
+    "instrument": "the MEM-1 harness (crates/larql-kv/tests/continuation_mem_1) with scope-tagged live-allocation accounting, eviction-by-pointer classification, logits digests, and a counting backend",
+    "proof_precedent": "VIEW-1 V4's ExactRetention (test only) — a proof of the semantics, NOT the production design"
+  },
+  "production_semantics_frozen": {
+    "identity": "a new shipped continuation provider with its own versioned identity (named in wave 1, e.g. window/v1), registered in shipped_continuations beside row/v1 and canonical/v1, selectable by --continuation and by the registry; it declares only the regions it actually holds",
+    "retention": "for every layer and after every append of position p: base == HistoryRange.required_start(p) and end == p + 1. Sliding layers hold exactly the plan-required range; full-span layers hold full history (HistoryRange::Full ⇒ base stays 0) — WINDOW-1 must not bound what the plan says is unbounded.",
+    "physical_release": "rows below base are released, not hidden: no row the plan can no longer read remains allocated anywhere the provider owns",
+    "exactness": "logits (and greedy tokens) bit-identical to row/v1 at every tested length and phase",
+    "contract": "lends through KvView; relies on AttentionStepCall::new's refusal; no new trait method; plugin ABI unchanged (a new shipped provider is not an ABI change)",
+    "handoff": "a sealed ContinuationHandoff carrying window state resumes under the same authority exactly as today's providers (PLUGIN-1 C4); a different authority refuses",
+    "defaults_unchanged": "WINDOW-1 does not change larql serve's or larql run's default provider; switching a default is a separate decision taken on WINDOW-1's evidence"
+  },
+  "representation": "UNDECIDED at freeze. Candidates — one allocation per row with a draining front (V4's proof shape), a ring buffer per layer, a contiguous matrix with a moving base (the Contiguous backing) — are chosen in wave W1, recorded in the notes before code with the reason, and kept as small as satisfies the semantics above. Performance advantages of one layout over another are secondary observations, never the reason the semantics hold.",
+  "acceptance": {
+    "exactness": "bit-identical logits digests to row/v1 on every rung of the length ladder and every phase (batched prefill, resumed prefill, decode), on gemma3-4b-it and on the sliding fixture",
+    "bounded_retention": "after every append on every layer: base == required_range(position).start, end == position + 1; physically held rows per sliding layer never exceed the required range's length (w); per full layer = n",
+    "real_deallocation": "operationalised for EITHER representation, on allocation IDENTITY, never on an address alone (address reuse fooled MEM-1's harness once — VIEW-1 I-V3-1). (1) Rows the provider adopted from the backend (born outside any measured scope, never in the live table): each adoption is recorded as (address, adoption generation); the drop is witnessed by a free event of THAT address while THAT adoption is still the live one, inside the append that drops it — a later reuse of the address is a new generation and cannot stand in for the original's free. (2) Storage the provider allocates itself (a ring or matrix): the scope-tagged live table totals exactly the declared retained capacity — no allocation born in the provider's appends outlives what its inventory declares.",
+    "scaling_law": {
+      "subject_of_adjudication": "the SLIDING-LAYER K/V SUBSET only. Total continuation memory is not the measure: full-span layers must keep growing with n, and allocator metadata, recurrent state and global attention would muddy the slope.",
+      "ladder": "gemma3-4b-it (window 1,024; 29 sliding + 5 full layers) at total positions 512, 1,024, ~1,124, 2,048, 4,096, 8,192",
+      "primary_forecast": "row/v1: sliding-layer retained rows and live K/V bytes grow linearly with n on every rung. WINDOW-1: sliding-layer retained rows plateau at EXACTLY w = 1,024 per layer for n ≥ w, and its sliding-layer live K/V bytes have zero post-window growth apart from any fixed representation capacity (declared in W1). Full-span layers: the same growth under both providers.",
+      "falsified_if": "any sliding-layer retained-row count other than min(n, w), any post-window growth in WINDOW-1's sliding-layer live K/V bytes beyond the declared fixed capacity, any full-layer growth differing between the providers, or any rung inexact",
+      "secondary_magnitude": "at 8,192 positions WINDOW-1's sliding-layer K/V ≈ 243 MB (29 × 1,024 × 8 KiB) vs row/v1's ≈ 1.95 GB (29 × 8,192 × 8 KiB) — the ≈1.70 GB MEM-1 projected as dead; reported, not adjudicated"
+    },
+    "global_layers_unchanged": "full-span layers' retained rows and resident K/V equal row/v1's at every rung"
+  },
+  "anti_cheat": "WINDOW-1 does not satisfy bounded residency by keeping dropped rows elsewhere, reconstructing them into a hidden cache, or retaining a second authority. Judged by live-allocation accounting (scope-tagged, eviction by pointer), never by the provider's own report of what it holds.",
+  "secondary_observations_not_acceptance": [
+    "tokens per second, prefill and decode",
+    "append/free churn per token",
+    "allocator fragmentation, RSS and peak memory",
+    "any advantage of one representation (ring, slab, contiguous) over another"
+  ],
+  "scope": {
+    "in": "exact retention of the plan-required K/V range on softmax attention layers; full-span layers held whole",
+    "out": [
+      "KV quantization or any lossy/compressed representation",
+      "checkpoints, replay, residual reconstruction",
+      "predictive or heuristic eviction (anything beyond the plan's HistoryRange)",
+      "remote or disk spill; cross-process persistence",
+      "the conv-QKV copy (its own rung, from VIEW-1 Q1)",
+      "canonical/v1's matrix growth slack",
+      "changing a default provider",
+      "recurrent or latent regions beyond declaring what the provider holds (a plan needing a region WINDOW-1 does not declare is refused at selection, as today)"
+    ]
+  },
+  "waves": [
+    {
+      "id": "W1",
+      "name": "representation",
+      "scope": "choose the smallest representation satisfying the frozen semantics; record the choice, its reason and any fixed capacity it holds in the notes before code. The representation decision cannot alter the frozen production semantics, acceptance criteria, length ladder, or measurement definitions."
+    },
+    {
+      "id": "W2",
+      "name": "provider",
+      "scope": "the provider, its factory and identity, registered in shipped_continuations; bounded retention and exactness on the fixtures; handoff/resume under its authority; S3 still refuses a retention bug"
+    },
+    {
+      "id": "W3",
+      "name": "measurement",
+      "scope": "the MEM-1 harness across the length ladder on gemma3-4b: exactness, bounded retention, real deallocation, slopes; secondary observations recorded"
+    }
+  ],
+  "operational_note": "the 8,192-position rungs are CPU prefills of a 4B model for two providers (and row/v1 at 8,192 holds ≈2.3 GB of K/V); expect tens of minutes per rung. Timing is secondary, so the ladder may run serially in the background.",
+  "gates_before_each_push": "cargo fmt --all --check; clippy for every touched crate at its workflow flags; tests --no-fail-fast for larql-vindex, larql-kv, larql-inference, larql-cli, larql-demos, larql-continuation-fixture and the server continuation targets; the MEM-1 harness controls; doc-integrity gates on staged files",
+  "next": "after WINDOW-1: compressed (codec) providers, checkpoint/boundary providers, residual-authoritative providers — each its own freeze on this runtime surface",
+  "immutability": "Frozen at its commit. Per-wave findings and design changes go in continuation-window-1-notes.json with the reason; this file is not edited."
+}
