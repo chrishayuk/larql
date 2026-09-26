@@ -1398,6 +1398,18 @@
           "optional": false,
           "default_features": true,
           "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
         }
       ],
       "examples": []
@@ -1773,6 +1785,18 @@
           "optional": false,
           "default_features": true,
           "features": []
+        },
+        {
+          "name": "larql-vindex",
+          "alias": "larql-vindex",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-vindex",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": [
+            "test-utils"
+          ]
         },
         {
           "name": "larql-compute-metal",
