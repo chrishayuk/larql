@@ -236,6 +236,33 @@ impl SurfaceFootprint {
         &self.surface
     }
 
+    /// **What one tensor presents under one decision**: its compiled
+    /// price where the layout admitted `encoding`, its source price
+    /// otherwise (`None` for source), and `None` for a tensor this table
+    /// does not price. The same rule [`Self::try_logical_bytes`] sums, so
+    /// a search pricing tensors one at a time agrees with the total.
+    pub fn presented(
+        &self,
+        object: &str,
+        tensor: &str,
+        encoding: Option<&str>,
+    ) -> Option<LogicalBytes> {
+        let prices = self.prices.get(&TensorIdentity::new(object, tensor))?;
+        Some(
+            encoding
+                .and_then(|e| prices.compiled.get(e).copied())
+                .unwrap_or(prices.source),
+        )
+    }
+
+    /// Whether the layout admitted `encoding` for this tensor, i.e.
+    /// whether compiling it would change what it presents.
+    pub fn admits(&self, object: &str, tensor: &str, encoding: &str) -> bool {
+        self.prices
+            .get(&TensorIdentity::new(object, tensor))
+            .is_some_and(|p| p.compiled.contains_key(encoding))
+    }
+
     /// **Sum the state's presented bytes**, or say why it cannot be
     /// summed.
     ///

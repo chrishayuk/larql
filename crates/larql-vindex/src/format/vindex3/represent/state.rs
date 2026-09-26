@@ -84,6 +84,7 @@ pub mod graph;
 pub mod identity;
 pub mod instrument;
 pub mod key;
+pub mod propose;
 pub mod protocol;
 pub mod realization;
 pub mod resolved;

@@ -2,7 +2,7 @@
 
 **Class: RECORD (roadmap note) with a frozen implementation contract for
 AUTO-REP-1a.** Date: 2026-09-26. Status: **AUTO-REP-1a (SEARCH mechanics)
-contract frozen below; not yet implemented.** Sequenced after REPRESENT-CAL-1
+implemented to the contract below; see its implementation record.** Sequenced after REPRESENT-CAL-1
 (CAL-1.1 #548 and CAL-1.2 #563 merged); CAL-1 keeps its allocation policy
 fixed.
 
@@ -250,3 +250,35 @@ It also produces the equivalent `Protections`.
 
 Not claimed by 1a: that any proposal is admissible, that a cheaper proposal
 is better, or that any prior predicts quality.
+
+## AUTO-REP-1a — implementation record
+
+The code is in `represent/state/propose/`: `solver.rs` holds the generic
+core, and `mod.rs` holds the REPRESENT adapter, cuts, prior, records and
+synthesis. `SurfaceFootprint` gains `presented`/`admits`, which price one
+tensor with the same rule `try_logical_bytes` sums.
+
+- **Gate 1:** the core equals exhaustive enumeration on 3,000 random
+  problems, with frequent cost and score ties, key collisions and
+  exclusions. A node-limited search's lower bound never exceeds the true
+  optimum on another 3,000.
+- **Gates 2–9:** covered on the glimmer container. Draft and target share
+  tensor names, so one `(projection, layer)` group spans both objects.
+- **Mutations:** each was run against the tests, and each was caught.
+  - Core: `>=` in the bound, no key replacement, a lost sibling bound, and
+    a dropped base cost.
+  - Adapter: ignored no-goods, a skipped map check, Compile priced as
+    Source, ignored structural cuts, no range merging, and fixed tensors
+    dropped from the total.
+
+**Deviation found by a mutation.** With Compile priced as Source, every
+group cost the same at both choices. The first bound compared cost only
+and explored every equal-cost subtree to settle tie-breaks, so the test
+ran for over an hour instead of failing. A real model with many equal-size
+groups can present the same shape. The bound now covers the whole ranking
+tuple: an equal-cost leaf scores at least the partial score plus each
+remaining variable's lowest score, and an equal-score leaf's assignment is
+no smaller than its fixed choices with every open variable at its lowest.
+Near-equal score sums explore rather than prune, because summation order
+differs. A 60-variable all-ties test settles within 100,000 nodes and
+fails under the cost-only bound. Brute-force agreement still holds.
