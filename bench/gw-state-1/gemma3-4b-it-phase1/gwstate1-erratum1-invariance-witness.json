@@ -1,0 +1,48 @@
+{
+  "adjudication_file_sha256": "sha256:8ef58db821f5b84ec102f4ef91f6aa8d1a89ecd252d9c9d147a711427d20f2e5",
+  "adjudication_sha256": "sha256:ce0498a74200bb43c317f6df65d78bf9afbfaa5916ef1b943842db142080a2a5",
+  "carrier_branch_selected": [
+    null,
+    128
+  ],
+  "context_ids": [
+    0,
+    127,
+    128,
+    255
+  ],
+  "heldout_replay_artifact_sha256": {
+    "proximal.f32": "sha256:9be1f244446fd4e920c335df32a7a5c912b01fc0f13166ada73fd54d0e7ea305",
+    "terminal.f32": "sha256:022648c9ac491bde4cfa54a1a03d0473782bec0ca76c74f36cc7a3fe8523f672"
+  },
+  "heldout_replay_file_sha256": "sha256:aa9f6b0b29591be220eecfff1ec4f0b3eb6dd7561157e56af26e832fb4c22070",
+  "historical_artifacts_unchanged": true,
+  "historical_verdict_reproduced": "carrier_plus_edge",
+  "ordered_branch_trace": {
+    "broad_context_fallback_reached": false,
+    "carrier_plus_edge_pass": true,
+    "edge_only_pass": false,
+    "exact_control_pass": true
+  },
+  "protocol_file_sha256": "sha256:1ce8f5247509f23f6dc9ff294aab6ad49b003961501a032bc943b76ff8b3c6f6",
+  "protocol_sha256": "sha256:b50965f4eec68a25b91d6707758d4c834468299a31e827dc4c8d7ed025c0ff6e",
+  "schema": "larql.gwstate1.erratum1.invariance-witness.v1",
+  "selection_file_sha256": "sha256:a674d524b5e2ad837d939be5c24afd6019a9601e3cd2c41889a73b70e3a58e71",
+  "selection_sha256": "sha256:6ceffb4839e3c8b085ace707d9080b16bb6f98487cdfcad73f22eac1f86da056",
+  "split_gates_recomputed_from_replay": {
+    "test": {
+      "context_0_edge_only_pass": false,
+      "context_127_donor_all_heads_pass": false,
+      "context_128_carrier_plus_edge_pass": true,
+      "context_255_all_natural_pass": true,
+      "exact_stable": true
+    },
+    "validation": {
+      "context_0_edge_only_pass": false,
+      "context_127_donor_all_heads_pass": false,
+      "context_128_carrier_plus_edge_pass": true,
+      "context_255_all_natural_pass": true,
+      "exact_stable": true
+    }
+  }
+}

@@ -1,0 +1,330 @@
+{
+  "analysis": {
+    "bootstrap_ddof": 1,
+    "bootstrap_quantile": "numpy linear",
+    "bootstrap_replicates": 10000,
+    "bootstrap_rng": "numpy.default_rng PCG64, reset seed 27022033 per split",
+    "bootstrap_unit": "sorted subject ID with nine executions and three factual relations",
+    "candidate0_must_clear": true,
+    "claim": "captured-carrier compactness only; no cheaper execution",
+    "denominator_refusal": "nonpositive point, any draw, or 2.5th percentile on raw or z",
+    "proximal_lower_min": 0.5,
+    "proximal_point_min": 0.8,
+    "reference_context": 255,
+    "simultaneous_family": "all 19 candidates x raw/z proximal retention and raw/z terminal effect",
+    "simultaneous_method": "one-sided 95% studentized max-t lower band",
+    "split_gates": [
+      "validation",
+      "test"
+    ],
+    "terminal_lower_strictly_positive": true,
+    "total_bytes_amortization_rows": 666
+  },
+  "authorities": {
+    "state1_adjudication": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwstate1-gemma3-4b-it-phase1-adjudication.json",
+      "sha256": "sha256:8ef58db821f5b84ec102f4ef91f6aa8d1a89ecd252d9c9d147a711427d20f2e5"
+    },
+    "state1_erratum_witness": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-state-1/gemma3-4b-it-phase1/gwstate1-erratum1-invariance-witness.json",
+      "sha256": "sha256:80ae13f5e499cff64b13ba78e69d75641835583efdbe9d90b553dfc362ff2497"
+    },
+    "state1_heldout_replay": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwstate1-gemma3-4b-it-phase1-heldout/replay.json",
+      "sha256": "sha256:aa9f6b0b29591be220eecfff1ec4f0b3eb6dd7561157e56af26e832fb4c22070"
+    },
+    "state1_protocol": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-state-1/gemma3-4b-it-phase1/gwstate1-protocol.json",
+      "sha256": "sha256:1ce8f5247509f23f6dc9ff294aab6ad49b003961501a032bc943b76ff8b3c6f6"
+    },
+    "state1_selection": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwstate1-gemma3-4b-it-phase1-selection.json",
+      "sha256": "sha256:a674d524b5e2ad837d939be5c24afd6019a9601e3cd2c41889a73b70e3a58e71"
+    },
+    "state1_train_replay": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwstate1-gemma3-4b-it-phase1-train/replay.json",
+      "sha256": "sha256:3d3feb110a96b1d0f5c86cf5009a380fa65c6c44064f8856c87a55021c219569"
+    },
+    "v2_capture": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwv2-gemma3-4b-it-phase1-capture/capture.json",
+      "sha256": "sha256:82a2b4292096b60297cbf974903b91339e02b2a3d594dece231807df0d84b89d"
+    },
+    "v2_execution": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-v2/gemma3-4b-it-phase1/execution.json",
+      "sha256": "sha256:0d266f8137aee2a79ce1710b26a34d0380f1ad3828081d71cc4f8d54a5c3efd5"
+    }
+  },
+  "candidate_grid": [
+    {
+      "family": "exact",
+      "id": 0,
+      "level": 32
+    },
+    {
+      "family": "donor",
+      "id": 1,
+      "level": 32
+    },
+    {
+      "family": "f16",
+      "id": 2,
+      "level": 16
+    },
+    {
+      "family": "symmetric_quant",
+      "id": 3,
+      "level": 8
+    },
+    {
+      "family": "symmetric_quant",
+      "id": 4,
+      "level": 4
+    },
+    {
+      "family": "symmetric_quant",
+      "id": 5,
+      "level": 2
+    },
+    {
+      "family": "sparse_top_abs",
+      "id": 6,
+      "level": 32
+    },
+    {
+      "family": "sparse_top_abs",
+      "id": 7,
+      "level": 64
+    },
+    {
+      "family": "sparse_top_abs",
+      "id": 8,
+      "level": 128
+    },
+    {
+      "family": "sparse_top_abs",
+      "id": 9,
+      "level": 256
+    },
+    {
+      "family": "sparse_top_abs",
+      "id": 10,
+      "level": 512
+    },
+    {
+      "family": "sparse_top_abs",
+      "id": 11,
+      "level": 1024
+    },
+    {
+      "family": "pca",
+      "id": 12,
+      "level": 8
+    },
+    {
+      "family": "pca",
+      "id": 13,
+      "level": 16
+    },
+    {
+      "family": "pca",
+      "id": 14,
+      "level": 32
+    },
+    {
+      "family": "pca",
+      "id": 15,
+      "level": 64
+    },
+    {
+      "family": "pca",
+      "id": 16,
+      "level": 128
+    },
+    {
+      "family": "pca",
+      "id": 17,
+      "level": 256
+    },
+    {
+      "family": "pca",
+      "id": 18,
+      "level": 384
+    }
+  ],
+  "car1a_outcomes_before_seal": 0,
+  "code": {
+    "gwcar1a_adjudicate.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwcar1a_adjudicate.py",
+      "sha256": "sha256:4d2d7edc7134fe8c2fb97134c6deacd0a3419760822b668a9bc46b4561c0dec4"
+    },
+    "gwcar1a_analysis.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwcar1a_analysis.py",
+      "sha256": "sha256:3b755b966cf067b89cb52b05f56fd55e31a72b12b3dc12e20a578efa95047816"
+    },
+    "gwcar1a_candidates.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwcar1a_candidates.py",
+      "sha256": "sha256:3012eb919aca3cb5f77052a7a2dd5535f0e0d21591f79e016ce77de027d317ca"
+    },
+    "gwcar1a_codecs.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwcar1a_codecs.py",
+      "sha256": "sha256:78b33d6695abd95d650d56153ddcbb556590ba23ff0dddfea0c9c18546d403ad"
+    },
+    "gwcar1a_preregister.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwcar1a_preregister.py",
+      "sha256": "sha256:763d80f46d9604d6eb431f02e4a7a298dcea38f3d4f9a9910678942cb0c26d94"
+    },
+    "gwkey1_preregister.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwkey1_preregister.py",
+      "sha256": "sha256:47dfdd3dc1d921944a04763ae9eefa3adf10308bb37e411a910dfeb756dcb574"
+    },
+    "gwstate1_analysis.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_analysis.py",
+      "sha256": "sha256:dff5e6ec6209a6f3c8081160fe1483910abffe91133bef043dfa7e1cc4c95354"
+    },
+    "gwstate1_preflight.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_preflight.py",
+      "sha256": "sha256:ff48407904dc4777c5db864d97094be1e6f3545aa80bc4181cbf469fa224dfba"
+    },
+    "gwstate1_preregister.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_preregister.py",
+      "sha256": "sha256:6896b8ca1c0b1adbcea57c973f0356f6f891ada7d02c506435b600551781ee76"
+    },
+    "gwstate1_select.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_select.py",
+      "sha256": "sha256:db56dfa73a7b0fdbbbddc7035e7b258a62e62b9e38eb11787243911fef9f912c"
+    },
+    "gwsup1_preregister.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwsup1_preregister.py",
+      "sha256": "sha256:a933c436fef0a68c0e0f4443b80a672bd34dcaf4e24170ac2a20adda4aca3cc8"
+    },
+    "gwv2_adjudicate.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_adjudicate.py",
+      "sha256": "sha256:8c8613d2b777092d96dabb3ed379d046051cd23dd9f7f12e77d589f9220de5c8"
+    },
+    "gwv2_amend.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_amend.py",
+      "sha256": "sha256:0ef1e4fd6f92cab554369c192291eb954e71a44acd9565c424b0baf5c7729496"
+    },
+    "gwv2_io.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_io.py",
+      "sha256": "sha256:c3278560e7dfbe9f2d6489ad36b470a2744a039d0bde0a95950b7a88e036a331"
+    },
+    "gwv2_population.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_population.py",
+      "sha256": "sha256:d49d75c4b6fa24bce93388b50528f11f0d3806e48fe67cc68c60f6152bfea546"
+    },
+    "gwv2_preflight.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_preflight.py",
+      "sha256": "sha256:875b5bf69bf1affbf70f742c2693f63ec3a1205083a978c32cb96b2b49dc4f95"
+    },
+    "gwv2_prepare.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_prepare.py",
+      "sha256": "sha256:bde2b35f46b697c6b6915f79b6d9583b176de9e7d6df9ca188d514490f32812e"
+    },
+    "gwv2_preregister.py": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_preregister.py",
+      "sha256": "sha256:1895566837d9425718993a287bc1d7443634eb249d949886986dc49e8cdbfa3b"
+    }
+  },
+  "cost": {
+    "report": [
+      "encoded bytes per row",
+      "shared model bytes",
+      "total bytes at 666 rows",
+      "source requires natural prefix",
+      "decode arithmetic ledger"
+    ],
+    "wall_time_claim": false
+  },
+  "execution_identity": "sha256:5b29da435b68ed6d83122bc342033f2c6a51353bad432617d8e435b0bc014935",
+  "human_spec": {
+    "path": "/Users/christopherhay/chris-source/larql/docs/gw-car-1.md",
+    "sha256": "sha256:e949a34ce81fd61216402d06cdf3d16a15ff178ca90d93a3fdf136d45778d5aa"
+  },
+  "inherited_context": 128,
+  "inherited_state1_adjudication_sha256": "sha256:ce0498a74200bb43c317f6df65d78bf9afbfaa5916ef1b943842db142080a2a5",
+  "inherited_state1_protocol_sha256": "sha256:b50965f4eec68a25b91d6707758d4c834468299a31e827dc4c8d7ed025c0ff6e",
+  "interface": {
+    "candidate_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "candidate_token_width": 142,
+    "carrier_width": 2560,
+    "controls": {
+      "0": "exact target-natural carrier; STATE-1 context 128 identity",
+      "1": "matched-donor carrier; STATE-1 context 0 identity"
+    },
+    "h1_arms": [
+      "donor",
+      "target_exact_natural"
+    ],
+    "head": 1,
+    "layer": 24,
+    "non_h1_heads": "seven frozen matched-donor values in both H1 arms",
+    "only_changed_input": "entering L24 attention carrier",
+    "target_prefix_kv_and_continuation": "natural target row"
+  },
+  "model_metadata": {
+    "index.json": "sha256:4d0287a4e15de26cc52e355497609d30f7764c42047179486aed2b6fd774c693",
+    "system_graph.json": "sha256:912298227396219423be39a1cb98ef3e18f062fb4f51f3fa58653c87ac9f2a57"
+  },
+  "model_segments": {
+    "segments/target.decoder_stack.bin": "sha256:df8f881261006201dac6e537d32b8253a68543f083bad7249ae3b0039d7e1528",
+    "segments/target.embedding.bin": "sha256:288a2b89524efb0050e0d340c8763864d0c95fc0f5e26b927d68b8302e24bd96",
+    "segments/target.final_norm.bin": "sha256:e406bfc1aaba5e92f1f4f31a0f5ce8a5bbd17513135068842ecf396414a254e3",
+    "segments/vision.perception_adapter.bin": "sha256:2f13d29923df75b7683867ed7f457a2d02efd5d540bd5f3dd6811535bd73f891",
+    "segments/vision.perception_tower.bin": "sha256:10e6082ea438224bb68d70ff3f7408ca5f597ae2ca4cb72f8ff29b1864be858d"
+  },
+  "numpy_version": "2.4.2",
+  "plan_sha256": "sha256:f8f24893c784750598660b2ff724d1fa103fefa788ca791e4f464a6f2a225ddf",
+  "population": {
+    "donor_map_sha256": "sha256:76ba2128552420f89aba6f6d447f10175302f8af8fe57e75362f3de91b9a0b67",
+    "rows": 666,
+    "test": 135,
+    "train": 396,
+    "validation": 135
+  },
+  "protocol_sha256": null,
+  "python_version": "3.12.2",
+  "runner": {
+    "cargo_manifest": {
+      "path": "/Users/christopherhay/chris-source/larql/crates/larql-demos/Cargo.toml",
+      "sha256": "sha256:f4c3162c6891b77f9fe281152478bcec26df849c1a563e94944bed343375f2ab"
+    },
+    "executable_sha256": null,
+    "heldout_stage": "heldout PROTOCOL CANDIDATES OUTPUT",
+    "source": {
+      "path": "/Users/christopherhay/chris-source/larql/crates/larql-demos/examples/inference/gwcar1a_record.rs",
+      "sha256": "sha256:8fdb3c0f2d8deb430ae4223f800faf74f658b78c560c89e8b100c2d2646240e5"
+    },
+    "train_stage": "train PROTOCOL CANDIDATES OUTPUT"
+  },
+  "schema": "larql.gwcar1a.protocol.v1",
+  "seal_order": [
+    "joint protocol/implementation review",
+    "protocol/executable seal",
+    "train-only PCA fit",
+    "complete train candidate replay",
+    "held-out candidate replay",
+    "adjudication"
+  ],
+  "status": "design_draft_no_car1a_outcomes"
+}

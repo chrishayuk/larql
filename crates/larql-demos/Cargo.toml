@@ -241,6 +241,10 @@ name = "observatory_record"
 path = "examples/inference/observatory_record.rs"
 
 [[example]]
+name = "gwcar1a_record"
+path = "examples/inference/gwcar1a_record.rs"
+
+[[example]]
 name = "attr1d_witness"
 path = "examples/inference/attr1d_witness.rs"
 

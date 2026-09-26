@@ -1,0 +1,542 @@
+{
+  "analysis_implementation": {
+    "adjudicator_source": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_adjudicate.py",
+      "sha256": "sha256:8f0e5ee983bb97b60e5b83e9d1e4ca53ffb1068e433cd8ba03f588c9a0ee637a"
+    },
+    "imported_code": {
+      "gwkey1_preregister.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwkey1_preregister.py",
+        "sha256": "sha256:47dfdd3dc1d921944a04763ae9eefa3adf10308bb37e411a910dfeb756dcb574"
+      },
+      "gwsup1_preregister.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwsup1_preregister.py",
+        "sha256": "sha256:a933c436fef0a68c0e0f4443b80a672bd34dcaf4e24170ac2a20adda4aca3cc8"
+      },
+      "gwv2_adjudicate.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_adjudicate.py",
+        "sha256": "sha256:8c8613d2b777092d96dabb3ed379d046051cd23dd9f7f12e77d589f9220de5c8"
+      },
+      "gwv2_amend.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_amend.py",
+        "sha256": "sha256:0ef1e4fd6f92cab554369c192291eb954e71a44acd9565c424b0baf5c7729496"
+      },
+      "gwv2_io.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_io.py",
+        "sha256": "sha256:c3278560e7dfbe9f2d6489ad36b470a2744a039d0bde0a95950b7a88e036a331"
+      },
+      "gwv2_population.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_population.py",
+        "sha256": "sha256:d49d75c4b6fa24bce93388b50528f11f0d3806e48fe67cc68c60f6152bfea546"
+      },
+      "gwv2_preflight.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_preflight.py",
+        "sha256": "sha256:875b5bf69bf1affbf70f742c2693f63ec3a1205083a978c32cb96b2b49dc4f95"
+      },
+      "gwv2_prepare.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_prepare.py",
+        "sha256": "sha256:bde2b35f46b697c6b6915f79b6d9583b176de9e7d6df9ca188d514490f32812e"
+      },
+      "gwv2_preregister.py": {
+        "path": "/Users/christopherhay/chris-source/larql/scripts/gwv2_preregister.py",
+        "sha256": "sha256:1895566837d9425718993a287bc1d7443634eb249d949886986dc49e8cdbfa3b"
+      }
+    },
+    "numpy_version": "2.4.2",
+    "preflight_source": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_preflight.py",
+      "sha256": "sha256:ff48407904dc4777c5db864d97094be1e6f3545aa80bc4181cbf469fa224dfba"
+    },
+    "python_version": "3.12.2",
+    "selection_source": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_select.py",
+      "sha256": "sha256:db56dfa73a7b0fdbbbddc7035e7b258a62e62b9e38eb11787243911fef9f912c"
+    },
+    "source": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_analysis.py",
+      "sha256": "sha256:dff5e6ec6209a6f3c8081160fe1483910abffe91133bef043dfa7e1cc4c95354"
+    },
+    "validator_source": {
+      "path": "/Users/christopherhay/chris-source/larql/scripts/gwstate1_preregister.py",
+      "sha256": "sha256:6896b8ca1c0b1adbcea57c973f0356f6f891ada7d02c506435b600551781ee76"
+    }
+  },
+  "authorities": {
+    "head_adjudication": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwhead1-gemma3-4b-it-phase1-heldout-full/adjudication.json",
+      "sha256": "sha256:520daa0726b6924ab2551650f84245d5271aad8a4860693a8f9cfeca5a8bf8b5"
+    },
+    "head_preregistration": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw0/gemma3-4b-it-phase1/gwhead1-preregistration.json",
+      "sha256": "sha256:737e7d01a3ce21426a2e1500940d359967beb2674d4ff0506a9d15cbc2b8ef0d"
+    },
+    "head_selection": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwhead1-gemma3-4b-it-phase1/selection.json",
+      "sha256": "sha256:98414482be94b67d83177d9cdde7bdf6570bf8edee297ed71eec0c4c7344cfc1"
+    },
+    "key_adjudication": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwkey1-gemma3-4b-it-phase1-heldout2/adjudication.json",
+      "sha256": "sha256:04b083c3e113b3f7d4b2efe2886f660d06b9b72b5d34c22e6291dc3ca6d35351"
+    },
+    "key_preregistration": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw0/gemma3-4b-it-phase1/gwkey1-preregistration.json",
+      "sha256": "sha256:372f6f56a87f5d579d4b47d8cb890d1f83477e7ed33b6c9efb28ea3842dee32a"
+    },
+    "key_selection": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwkey1-gemma3-4b-it-phase1-search/selection-v2.json",
+      "sha256": "sha256:6cae920c092180102ec2880a7c365e1a3c8217aadfe54b5fd4c357799cec64fe"
+    },
+    "v2_adjudication": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwv2-gemma3-4b-it-phase1-adjudication.json",
+      "sha256": "sha256:56579a3868855089312d127ce2b301a8d4699a9641cd94289ff4b725a4295538"
+    },
+    "v2_capture": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwv2-gemma3-4b-it-phase1-capture/capture.json",
+      "sha256": "sha256:82a2b4292096b60297cbf974903b91339e02b2a3d594dece231807df0d84b89d"
+    },
+    "v2_execution": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-v2/gemma3-4b-it-phase1/execution.json",
+      "sha256": "sha256:0d266f8137aee2a79ce1710b26a34d0380f1ad3828081d71cc4f8d54a5c3efd5"
+    },
+    "v2_population": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-v2/gemma3-4b-it-phase1/population-manifest.json",
+      "sha256": "sha256:92d9611ed22719c3a00cf72b3e545440c7e17ad3b2bc42d2129b6860503ee94a"
+    },
+    "v2_protocol": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-v2/gemma3-4b-it-phase1/gwv2-protocol.json",
+      "sha256": "sha256:da84a97940037221f2f260d58905154be138fe28a0f784c317e8a4f52f8ab360"
+    },
+    "v2_replay": {
+      "path": "/Users/christopherhay/chris-source/larql/output/gwv2-gemma3-4b-it-phase1-replay2/replay.json",
+      "sha256": "sha256:b9f89ee87c482f95307ee8c461d232345b902b42a38b9154b75db9b9b9294559"
+    },
+    "v2_rows": {
+      "path": "/Users/christopherhay/chris-source/larql/bench/gw-v2/gemma3-4b-it-phase1/input.jsonl",
+      "sha256": "sha256:6645a45f926e356230dee71be4fc406176030eccfa4fe0c7036a23ddb26b6c19"
+    }
+  },
+  "controls": {
+    "all_natural_context_target_h1_proximal_terminal_bit_exact": true,
+    "full_exact_identity_terminal_bit_exact": true,
+    "intervention_firings_per_replacement": 1,
+    "missing_nonfinite_or_cross_split_donor": "invalidate_run",
+    "natural_composition_carrier_bit_exact": true,
+    "natural_composition_raw_relative_l2_max": 1e-05,
+    "natural_noop_terminal_bit_exact": true,
+    "v2_natural_proximal_and_terminal_bit_exact": true
+  },
+  "execution_identity": "sha256:5b29da435b68ed6d83122bc342033f2c6a51353bad432617d8e435b0bc014935",
+  "heldout": {
+    "bootstrap_draw": "sample 15 subject indices with replacement per replicate",
+    "bootstrap_quantile": "numpy default linear interpolation",
+    "bootstrap_replicates": 10000,
+    "bootstrap_rng": "numpy.default_rng PCG64; reset with seed for each split",
+    "bootstrap_seed_reset_per_split": 27022033,
+    "bootstrap_standard_error": "draw standard deviation with ddof=1",
+    "bootstrap_subject_order": "sorted subject IDs within each split",
+    "bootstrap_unit": "subject country, carrying three relations and nine executions",
+    "exact_all_natural_retention": "deterministic one; exclude zero-SE identity from studentization",
+    "exact_denominator": "positive point and positive 2.5th-percentile bootstrap lower bound on both metrics; every bootstrap denominator positive",
+    "heldout_contexts_outside_selected_plus_sentinels": "forbidden",
+    "independent_split_gates": true,
+    "invalidity_precedes_verdict": "failed exact or mandatory controls gives no_stable_context",
+    "proximal_point_retention_min": 0.8,
+    "proximal_simultaneous_lower_min": 0.5,
+    "simultaneous_family": "distinct selected carrier-branch contexts plus all four fixed sentinels; raw/z proximal retention and raw/z terminal effect in one family per split",
+    "simultaneous_method": "one-sided 95% studentized max-t lower band",
+    "simultaneous_statistic": "maximum over (point estimate minus bootstrap draw) divided by bootstrap standard error",
+    "splits": [
+      "validation",
+      "test"
+    ],
+    "terminal_lower_strict": true,
+    "terminal_simultaneous_lower_min": 0.0,
+    "verdict_order_after_validity": [
+      "edge_only",
+      "carrier_plus_edge",
+      "local_head_circuit",
+      "broad_context"
+    ]
+  },
+  "human_spec": {
+    "path": "/Users/christopherhay/chris-source/larql/docs/gw-state-1.md",
+    "sha256": "sha256:be09bc159dd329224c2fb1bf22769286419b1d92987ba70f8cc9202c1faff72e"
+  },
+  "interface": {
+    "carrier_bit": {
+      "0": "matched donor entering L24 attention carrier",
+      "1": "target natural entering L24 attention carrier"
+    },
+    "component": "target",
+    "composition": "effective prepared W_O then declared post-attention norm, residual scale and write; intervene at L24 attention write; execute L24 FFN and all later layers",
+    "context_id": "carrier_bit_times_128_plus_seven_head_mask",
+    "h1_arm_order": [
+      "donor",
+      "target_exact_natural"
+    ],
+    "h1_baseline": "frozen matched donor exact pre-W_O weighted-V head value",
+    "h1_treatment": "target exact natural pre-W_O weighted-V head value",
+    "head": 1,
+    "head_bit": {
+      "0": "matched donor head",
+      "1": "target natural head"
+    },
+    "head_mask_order": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "head_numbering": "zero_based",
+    "heldout_context_ids": "sorted union of 0,127,128,255 and non-null frozen branch selections",
+    "layer": 24,
+    "position": "last_prompt_token",
+    "predictor_search": false,
+    "replay_output_shape": "[stage rows, sorted context IDs, donor/target H1, 142 candidate tokens]",
+    "source_prefix_and_kv": "target row's frozen natural prefix and KV state",
+    "train_context_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200,
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230,
+      231,
+      232,
+      233,
+      234,
+      235,
+      236,
+      237,
+      238,
+      239,
+      240,
+      241,
+      242,
+      243,
+      244,
+      245,
+      246,
+      247,
+      248,
+      249,
+      250,
+      251,
+      252,
+      253,
+      254,
+      255
+    ],
+    "zero_carrier_or_head_arms": "Zero-input arms are excluded because STATE-1 tests dependence on naturally realized carrier/head context under matched substitution, not ablation robustness."
+  },
+  "matched_control_donor_indices_sha256": "sha256:76ba2128552420f89aba6f6d447f10175302f8af8fe57e75362f3de91b9a0b67",
+  "model_metadata": {
+    "index.json": "sha256:4d0287a4e15de26cc52e355497609d30f7764c42047179486aed2b6fd774c693",
+    "system_graph.json": "sha256:912298227396219423be39a1cb98ef3e18f062fb4f51f3fa58653c87ac9f2a57"
+  },
+  "model_segments": {
+    "segments/target.decoder_stack.bin": "sha256:df8f881261006201dac6e537d32b8253a68543f083bad7249ae3b0039d7e1528",
+    "segments/target.embedding.bin": "sha256:288a2b89524efb0050e0d340c8763864d0c95fc0f5e26b927d68b8302e24bd96",
+    "segments/target.final_norm.bin": "sha256:e406bfc1aaba5e92f1f4f31a0f5ce8a5bbd17513135068842ecf396414a254e3",
+    "segments/vision.perception_adapter.bin": "sha256:2f13d29923df75b7683867ed7f457a2d02efd5d540bd5f3dd6811535bd73f891",
+    "segments/vision.perception_tower.bin": "sha256:10e6082ea438224bb68d70ff3f7408ca5f597ae2ca4cb72f8ff29b1864be858d"
+  },
+  "plan_sha256": "sha256:f8f24893c784750598660b2ff724d1fa103fefa788ca791e4f464a6f2a225ddf",
+  "population": {
+    "donor_cardinality": "one-to-one derangement within split, relation and prompt family",
+    "donor_source": "each frozen input row's same_relation_different_subject matched control",
+    "fit_sham_donor_map_role": "none",
+    "rows": 666,
+    "split_rows": {
+      "test": 135,
+      "train": 396,
+      "validation": 135
+    }
+  },
+  "protocol_sha256": "sha256:b50965f4eec68a25b91d6707758d4c834468299a31e827dc4c8d7ed025c0ff6e",
+  "runner": {
+    "entrypoint": {
+      "path": "/Users/christopherhay/chris-source/larql/crates/larql-demos/examples/inference/observatory_record.rs",
+      "sha256": "sha256:9ed6a934482f603a23b9bec471c6457c58aa928553ea94e348dceab07fb80835"
+    },
+    "executable_sha256": "sha256:4771b1d13f1ba96dd5016a37c53cf3d74c555b0a69875c249a6c1f1144a3a230",
+    "heldout_stage": "--gwstate1 heldout",
+    "source": {
+      "path": "/Users/christopherhay/chris-source/larql/crates/larql-demos/examples/inference/gwstate1.rs",
+      "sha256": "sha256:dfbdab62f8052ece0b645f9fdc782103e1a9b366234f1357ed3253fa4334261c"
+    },
+    "train_stage": "--gwstate1 train",
+    "validation_stage": "--gwstate1 validate"
+  },
+  "schema": "larql.gwstate1.protocol.v1",
+  "seal_order": [
+    "joint protocol and runner review",
+    "protocol/executable seal",
+    "train full-context replay",
+    "train-only selection seal",
+    "heldout sentinel-and-selected replay",
+    "adjudication"
+  ],
+  "state1_outcomes_before_seal": 0,
+  "status": "frozen_before_state1_outcomes",
+  "train_selection": {
+    "effect": "control-adjusted target-H1 minus donor-H1 same-fact JS change minus matched-control JS change",
+    "heldout_tuning": false,
+    "metrics": [
+      "raw",
+      "independently_row_zscored"
+    ],
+    "minimum_point_retention": 0.8,
+    "none_if_no_eligible_context": true,
+    "one_selection_per_carrier_branch": true,
+    "positive_proximal_and_terminal": true,
+    "reference_context": 255,
+    "retention": "proximal H1 contrast divided by context-255 proximal H1 contrast within metric and split",
+    "surfaces": [
+      "proximal",
+      "terminal"
+    ],
+    "tie_break": [
+      "fewest natural non-H1 heads",
+      "highest minimum raw/z proximal retention",
+      "lowest sum of selected heads' train-row mean natural effective-W_O contribution L2 norms",
+      "lexicographically ascending head IDs"
+    ],
+    "unit": "subject country; mean over capital, currency and language, each with three prompt families"
+  },
+  "v2_adjudication_identity": "sha256:710bdf8568aafea46591668a471bdd765a01a13e28ae457848e143215b42bc0d",
+  "v2_lineage": {
+    "amendment_sha256": "sha256:bb5ebb48e52768e50ff5a26954bf8873489c1ab01d0fec1272e2f52caa3b2d5b",
+    "donor_map_sha256": "sha256:3ed66fc2432fe2d967ab58243faea729d0dbd0ed19f211ae6b58d17d7afec45c",
+    "population_sha256": "sha256:d73e0783adc0c26777ed9f0e4b880133814c39d0283cd7d816cd72cd1d37c23c",
+    "protocol_sha256": "sha256:830c2ceb97fce4f2d03e74e207d04e54257cd5b38e830a93047a86b6bd4fd006"
+  }
+}
