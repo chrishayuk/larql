@@ -360,3 +360,133 @@ fn print_row(name: &str, a: &Aggregate) {
         a.top1_agreement * 100.0
     );
 }
+
+/// **The verb's arms as an optimiser executor** (MEASURE-PLAN-2 PR 3b).
+///
+/// Performs `teacher-forced-two-arm/plan-v1` for an authorised request
+/// exactly as `vindex3 measure` would: each arm is built from an
+/// `ExecBackend`, so a lowered Metal backend is a lowered arm and every
+/// other backend an interpreter arm, and each is named by its backend
+/// (never by its role). The reference reads the source's canonical bytes;
+/// the candidate must read the stored pack in the request's encoding, and
+/// a candidate backend that would not is refused before anything runs.
+pub(crate) struct VerbPlanExecutor {
+    pub reference_backend: ExecBackend,
+    pub candidate_backend: ExecBackend,
+    pub component: String,
+    pub plugins: Vec<PathBuf>,
+    /// Each run writes its report under `output_root/<request label>`.
+    pub output_root: PathBuf,
+}
+
+impl larql_vindex::format::vindex3::represent::actuate::executor::ExperimentExecutor
+    for VerbPlanExecutor
+{
+    fn procedure(&self) -> &str {
+        larql_vindex::format::vindex3::represent::measure::plan::PROCEDURE
+    }
+
+    fn execute(
+        &self,
+        request: &larql_vindex::format::vindex3::represent::actuate::request::MeasurementRequest,
+        artifacts: &dyn larql_vindex::format::vindex3::represent::actuate::executor::ArtifactLocator,
+    ) -> Result<
+        larql_vindex::format::vindex3::represent::actuate::executor::Observed,
+        larql_vindex::format::vindex3::represent::actuate::executor::ExecutionRefusal,
+    > {
+        use larql_vindex::format::vindex3::represent::actuate::executor::{
+            ExecutionRefusal, Observed,
+        };
+        use larql_vindex::format::vindex3::represent::reading::PlanObservation;
+        let refuse = |detail: String| ExecutionRefusal::NotInstructable {
+            procedure: self.procedure().into(),
+            detail,
+        };
+        let source = artifacts.container(request)?;
+        let candidate = artifacts.candidate(request)?;
+        let bank = artifacts.corpus(request)?;
+        let loaded = Plugins::load(&PluginArgs {
+            plugins: self.plugins.clone(),
+            lowering: None,
+            representation: None,
+        })
+        .map_err(|e| refuse(e.to_string()))?;
+        let reference = ArmSpec {
+            container: &source,
+            backend: self.reference_backend,
+            source: RepresentationSource::Auto,
+            plugins: loaded
+                .selecting(None, None)
+                .map_err(|e| refuse(e.to_string()))?,
+        };
+        let candidate_arm = ArmSpec {
+            container: &candidate,
+            backend: self.candidate_backend,
+            source: RepresentationSource::Stored,
+            plugins: loaded
+                .selecting(None, None)
+                .map_err(|e| refuse(e.to_string()))?,
+        };
+        let reference_opened = prepare(
+            reference.container,
+            &self.component,
+            reference.backend,
+            reference.source,
+            &reference.plugins,
+        )
+        .map_err(|e| refuse(format!("reference: {e}")))?;
+        let candidate_opened = prepare(
+            candidate_arm.container,
+            &self.component,
+            candidate_arm.backend,
+            candidate_arm.source,
+            &candidate_arm.plugins,
+        )
+        .map_err(|e| refuse(format!("candidate: {e}")))?;
+        let encoding = request.candidate_map().encoding.clone();
+        if candidate_opened.want.as_deref() != Some(encoding.as_str()) {
+            return Err(refuse(format!(
+                "candidate backend `{}` reads {:?}, not the request's {encoding} pack",
+                arm_name(&candidate_arm),
+                candidate_opened.want
+            )));
+        }
+        let sequences = request.sequences();
+        let instructed = PlanMeasureRequest {
+            bank,
+            sequences,
+            label: request.label(),
+            output: self.output_root.join(request.label()),
+            provenance: [
+                (
+                    VERSION_KEY.to_string(),
+                    env!("CARGO_PKG_VERSION").to_string(),
+                ),
+                (
+                    "measurement_key".to_string(),
+                    request.key().short().to_string(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let receipt = with_arms(
+            (&reference, &reference_opened),
+            (&candidate_arm, &candidate_opened),
+            &instructed,
+        )
+        .map_err(|e| refuse(e.to_string()))?
+        .map_err(ExecutionRefusal::Plan)?;
+        Ok(Observed {
+            key: request.key().clone(),
+            observation: PlanObservation::from_summary(&receipt.summary, sequences).into(),
+            verified: receipt.facts.into(),
+            execution_note: format!(
+                "vindex3 measure arms: reference {} on the source, candidate {} on the stored \
+                 {encoding} pack, {sequences} samples",
+                arm_name(&reference),
+                arm_name(&candidate_arm)
+            ),
+        })
+    }
+}
