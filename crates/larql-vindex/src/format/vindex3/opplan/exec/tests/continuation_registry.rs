@@ -24,7 +24,7 @@ use super::super::continuation_registry::{
     BoxedContinuation, ContinuationFactory, ContinuationRegion, ContinuationRegistry,
     ContinuationRegistryError,
 };
-use super::super::kv::{LayerKvGeometry, RowFactory, RowKvState};
+use super::super::kv::{HistoryRange, LayerKvGeometry, RowFactory, RowKvState};
 
 // ---- fixtures -------------------------------------------------------------
 
@@ -32,6 +32,7 @@ fn kv() -> LayerContinuationGeometry {
     LayerContinuationGeometry::Kv(LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     })
 }
 
@@ -56,6 +57,7 @@ fn conv_qkv() -> LayerContinuationGeometry {
         kv: LayerKvGeometry {
             kv_dim: 4,
             window: Some(2),
+            history: HistoryRange::Trailing(2),
         },
         recurrent: recurrence(),
     }

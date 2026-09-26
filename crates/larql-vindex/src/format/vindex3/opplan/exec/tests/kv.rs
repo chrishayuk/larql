@@ -17,7 +17,7 @@ use super::golden::{G_HEAD_DIM, G_KV_HEADS, G_LAYERS, G_TOKENS, G_WINDOW};
 use crate::format::vindex3::opplan::exec::backend::PlanBackend;
 use crate::format::vindex3::opplan::exec::decode::DecodeSession;
 use crate::format::vindex3::opplan::exec::kv::{
-    plan_kv_geometry, KvState, LayerKvGeometry, RowKvState,
+    plan_kv_geometry, HistoryRange, KvState, LayerKvGeometry, RowKvState,
 };
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -97,10 +97,12 @@ fn plan_geometry_names_row_width_and_window_per_layer() {
             LayerKvGeometry {
                 kv_dim: G_KV_HEADS * G_HEAD_DIM,
                 window: Some(G_WINDOW),
+                history: HistoryRange::Trailing(G_WINDOW),
             },
             LayerKvGeometry {
                 kv_dim: G_KV_HEADS * G_HEAD_DIM,
                 window: None,
+                history: HistoryRange::Full,
             },
         ],
         "the miniature's sliding+full split must be explicit in the geometry"
@@ -342,6 +344,7 @@ fn re_announcing_the_geometry_keeps_every_region_it_already_holds() {
         LayerContinuationGeometry::Kv(LayerKvGeometry {
             kv_dim: 2,
             window: None,
+            history: HistoryRange::Full,
         }),
         LayerContinuationGeometry::Recurrent(RecurrentGeometry::single(RecurrentBufferGeometry {
             shape: vec![2, 2],
@@ -388,6 +391,7 @@ fn re_announcing_the_geometry_keeps_every_region_it_already_holds() {
         &[LayerKvGeometry {
             kv_dim: 2,
             window: None,
+            history: HistoryRange::Full,
         }; 3],
     );
     assert_eq!(provider.keys(0).len(), 1, "still one row after re-prepare");

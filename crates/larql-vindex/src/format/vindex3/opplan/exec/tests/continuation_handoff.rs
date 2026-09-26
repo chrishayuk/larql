@@ -22,7 +22,7 @@ use super::super::continuation_registry::{
     BoxedContinuation, ContinuationFactory, ContinuationRegion, ContinuationRegistry,
     SelectedContinuation,
 };
-use super::super::kv::{LayerKvGeometry, RowKvState};
+use super::super::kv::{HistoryRange, LayerKvGeometry, RowKvState};
 
 // ---- fixtures -------------------------------------------------------------
 
@@ -35,6 +35,7 @@ fn geometry() -> Vec<LayerContinuationGeometry> {
         LayerContinuationGeometry::Kv(LayerKvGeometry {
             kv_dim: KV_DIM,
             window: None,
+            history: HistoryRange::Full,
         });
         LAYERS
     ]
@@ -109,6 +110,7 @@ fn prefilled(
         &[LayerKvGeometry {
             kv_dim: KV_DIM,
             window: None,
+            history: HistoryRange::Full,
         }; LAYERS],
     );
     for position in 0..POSITIONS {

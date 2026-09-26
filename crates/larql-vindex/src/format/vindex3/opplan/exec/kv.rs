@@ -29,11 +29,69 @@
 //!   changes only with it; a flat or device-resident representation is
 //!   a later rung tied to that backend contract.
 
-use super::super::ComponentOpPlan;
+use std::ops::Range;
+
+use super::super::super::graph::policy::AttentionSpan;
+use super::super::{AttentionOp, ComponentOpPlan};
 use super::continuation::{LatentKvRows, LayerContinuationGeometry, RecurrentState};
 use super::continuation_authority::ContinuationConfig;
 use super::continuation_identity::ContinuationIdentity;
 use super::continuation_registry::{BoxedContinuation, ContinuationFactory, ContinuationRegion};
+
+/// Which history a step may still read: the SINGLE retention authority
+/// (CONTINUATION-VIEW-1, V1).
+///
+/// The plan declares the earliest logical position a step can still
+/// request. A provider must retain everything from there on and is never
+/// required to retain anything earlier. Every backend takes its source
+/// floor from [`required_range`](Self::required_range); nothing else
+/// derives one from a span or a window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryRange {
+    /// Every position from 0 remains readable.
+    Full,
+    /// Only the trailing `w` positions (the current one included) remain
+    /// readable.
+    Trailing(usize),
+}
+
+impl HistoryRange {
+    /// The policy, written once. Exhaustive over the span vocabulary on
+    /// purpose: a `_` arm would let the next span kind mean "whole
+    /// prefix", or worse "these positions are dead", without anyone
+    /// deciding it.
+    pub fn of_span(span: AttentionSpan, window: Option<usize>) -> Self {
+        match (span, window) {
+            (AttentionSpan::Sliding, Some(window)) => Self::Trailing(window),
+            // A sliding layer with no declared window has no bound to apply.
+            (AttentionSpan::Sliding, None) | (AttentionSpan::Full, _) => Self::Full,
+            // A spatial window's extent is not a position count, so no
+            // position is dead because of it (see `AttentionSpan::Windowed`).
+            (AttentionSpan::Windowed, _) => Self::Full,
+        }
+    }
+
+    /// The first position a step at `position` may read.
+    pub fn required_start(self, position: usize) -> usize {
+        match self {
+            Self::Full => 0,
+            Self::Trailing(window) => (position + 1).saturating_sub(window),
+        }
+    }
+
+    /// The positions a step at `position` may read: everything a provider
+    /// must still hold for it, and nothing more.
+    pub fn required_range(self, position: usize) -> Range<usize> {
+        self.required_start(position)..position + 1
+    }
+}
+
+impl AttentionOp {
+    /// This layer's retention authority, from its declared span and window.
+    pub fn history(&self) -> HistoryRange {
+        HistoryRange::of_span(self.span, self.window)
+    }
+}
 
 /// One layer's continuation-state geometry, read from the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,9 +99,19 @@ pub struct LayerKvGeometry {
     /// Row width of one position's K (and V): `num_kv_heads * head_dim`.
     pub kv_dim: usize,
     /// The layer's attention window in positions; `None` = full span.
-    /// Informational for sizing/policy — see the module contract: the
-    /// store still holds every row.
+    /// A geometry fact, NOT a retention permission: it is copied from the
+    /// op whatever its span, so a full or spatially windowed layer may
+    /// carry one. Retention is [`history`](Self::history).
     pub window: Option<usize>,
+    /// Which history a step may still read — the retention authority.
+    pub history: HistoryRange,
+}
+
+impl LayerKvGeometry {
+    /// The positions a step at `position` may read on this layer.
+    pub fn required_range(&self, position: usize) -> Range<usize> {
+        self.history.required_range(position)
+    }
 }
 
 /// Every layer's [`LayerKvGeometry`], in layer order.

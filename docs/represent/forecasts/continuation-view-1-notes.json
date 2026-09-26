@@ -1,0 +1,44 @@
+{
+  "programme": "CONTINUATION-VIEW-1",
+  "forecast": "continuation-view-1.json (frozen at main 8b911f20, #552; not edited)",
+  "rule": "The execution record. The forecast is not edited; a wave that finds the design must change writes the change and the reason here.",
+  "waves": {
+    "V1": {
+      "name": "one retention authority",
+      "status": "built and held",
+      "base": "main 5d09737e (rebased from 8b911f20 over #553, #554 and the docs-only #555; no conflict)",
+      "design": {
+        "policy": "`HistoryRange { Full, Trailing(usize) }` in exec/kv.rs beside LayerKvGeometry, with `HistoryRange::of_span(span, window)` — ONE exhaustive match over AttentionSpan, the only place the policy is written — and `required_range(position) -> Range<usize>` (= required_start(position)..position + 1).",
+        "mapping": "Sliding + Some(w) → Trailing(w); Sliding + None → Full (no declared bound to apply); Full → Full; Windowed → Full (its extent is spatial, not a position count — the AttentionSpan::Windowed doc already forbids inferring dead positions from it). Exactly the two formulas it replaces.",
+        "plan_owned": "`AttentionOp::history()` = of_span(op.span, op.window). LayerKvGeometry gains `history: HistoryRange`, set from the plan op in plan_continuation_geometry (ConvQkv and any other KV side: Full), so the authority reaches providers (B needs it in V4). `window` stays a geometry fact, informational as before.",
+        "backends": "reference, production and device take their floor from `call.history().required_range(position).start`, where `AttentionCall::history()` = of_span(call.span, call.window) — the call's span and window are copied from the plan op at the one construction site (exec/mod.rs). production's `source_start` becomes a thin call to it (device reuses it); reference's local match is deleted.",
+        "why_a_field_on_geometry": "`LayerKvGeometry.window` is copied from op.window regardless of span (exec/continuation.rs:260). A provider that read `window` alone would drop rows on a Full or Windowed layer carrying Some(w). The span-aware authority must travel with the geometry.",
+        "not_changed": "larql-compute's `window_start` (V2 GQA) and the Metal lowering's window: different paths, outside VIEW-1's backends"
+      },
+      "what_landed": [
+        "exec/kv.rs: `HistoryRange { Full, Trailing(usize) }`, `of_span` (the one exhaustive policy match), `required_start` / `required_range`; `AttentionOp::history()`; `LayerKvGeometry.history` plus `LayerKvGeometry::required_range`; `window` re-documented as a geometry fact, not a retention permission",
+        "exec/continuation.rs: plan_continuation_geometry sets `history` from the op (softmax) and `Full` (conv-QKV)",
+        "exec/backend.rs: `AttentionCall::history()`",
+        "exec/production.rs: `source_start` reads the authority (device reuses it); exec/reference.rs: its local match deleted. Neither backend imports AttentionSpan any more.",
+        "28 test literals of LayerKvGeometry gain `history` (None → Full, Some(w) → Trailing(w), the sliding reading those tests intend)"
+      ],
+      "witnesses": {
+        "exec/tests/history_range.rs (6)": "the authority equals the replaced formula for 3 spans × 5 windows × 2,100 positions; only a bounded sliding span trails; plan geometry's history equals op.history() on the sliding fixture (exactly one Trailing(3)); S2 scan clean on reference/production/device; the scan sees a seeded derivation and ignores a comment; the two floor-computing backends read `.history()`",
+        "mutation_control": "re-inserting the old match into reference.rs turned both S2 tests red; reverted and re-verified green"
+      },
+      "falsifiers": {
+        "S2": "CLOSED — no backend derives a floor from span or window; one semantic authority",
+        "behaviour": "neutral — 9,598 tests across larql-vindex, -kv, -inference, -cli pass with --no-fail-fast, the MEM-1 harness's row/canonical bit-identical parity among them"
+      },
+      "findings": [
+        "During V1 the full gate exposed that #547 had turned main's C3 name ban red (DenseFfnSession built RowKvState by Default — a PLUGIN-1 F2 regression). A fix was prepared here but not pushed: #553 (another session) had already merged the same repair. Recorded because V1's first gate run was not clean for a reason outside V1.",
+        "An executor error in V1: a scripted edit of test literals truncated crates/larql-kv/src/vindex3/tests/mod.rs (550 → 33 lines); caught from the diff stat before any build, restored from HEAD, redone (+15/−1)."
+      ],
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "clippy (vindex all-targets; kv; inference; cli; server) -D warnings": "clean",
+        "tests": "9,598 passed, 0 failed (--no-fail-fast); server continuation targets pass"
+      }
+    }
+  }
+}
