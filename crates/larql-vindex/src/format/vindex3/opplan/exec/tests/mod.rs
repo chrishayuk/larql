@@ -44,6 +44,7 @@ mod fp8_carriage;
 mod gated_delta_parity;
 mod gated_delta_tiny;
 mod head_replay;
+mod history_range;
 mod hybrid_traversal;
 mod hyper_connection;
 mod intervene;

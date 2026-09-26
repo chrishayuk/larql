@@ -35,7 +35,6 @@ use larql_compute::residual::{
 use larql_compute::MoeGateRule;
 use larql_models::config::GateUpLayout;
 
-use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
     FfnManyCall, GateCall, NormCall, Nvfp4Activation, PlanBackend, ProjectCall, ProjectedQkv,
@@ -686,22 +685,12 @@ pub(super) fn add_expert_bias(x: &mut [f32], bias: Option<&[f32]>, expert: usize
 /// device backends (the device deliberately runs production glue so a
 /// divergence is attributable to device matmul arithmetic alone); the
 /// gate and output projections stay with each backend's own matmuls.
-/// The first source position a query at `position` may attend to under
-/// the call's span — ONE place, shared by the kernel and the head tap.
-/// Exhaustive over the span vocabulary on purpose: a `_` arm would let
-/// the next span kind mean "whole prefix" without anyone deciding that,
-/// which is the defect `layer_types` already suffered once.
+/// The first source position a query at `position` may attend to — the
+/// plan's retention authority ([`HistoryRange`](super::kv::HistoryRange)),
+/// shared by the kernel and the head tap. The policy is written there,
+/// once; this only reads it.
 pub(super) fn source_start(call: &AttentionCall<'_>, position: usize) -> usize {
-    match (call.span, call.window) {
-        (AttentionSpan::Sliding, Some(window)) => (position + 1).saturating_sub(window),
-        // A sliding layer with no declared window has no bound to apply.
-        (AttentionSpan::Sliding, None) | (AttentionSpan::Full, _) => 0,
-        // A spatial window's extent is not a position count, so no
-        // sequence bound follows from it. No generic op lowers a
-        // perception component today; when one does, it needs the
-        // component's own geometry here rather than this fallthrough.
-        (AttentionSpan::Windowed, _) => 0,
-    }
+    call.history().required_start(position)
 }
 
 pub(super) fn aggregate_heads<'k>(

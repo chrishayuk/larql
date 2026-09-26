@@ -700,6 +700,15 @@ pub struct AttentionCall<'a> {
     pub sinks: Option<SinkCall<'a>>,
 }
 
+impl AttentionCall<'_> {
+    /// The retention authority for this call: the span and window it
+    /// carries were copied from its plan op, and the policy that reads
+    /// them is [`HistoryRange::of_span`](super::kv::HistoryRange::of_span).
+    pub fn history(&self) -> super::kv::HistoryRange {
+        super::kv::HistoryRange::of_span(self.span, self.window)
+    }
+}
+
 /// One feed-forward operation over one vector, fully resolved.
 ///
 /// `gate` present means gated; absent means standard. Again the

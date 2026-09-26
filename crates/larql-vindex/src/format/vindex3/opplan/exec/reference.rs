@@ -16,7 +16,6 @@ use larql_models::config::{
     GateUpBranch, MoeRouterKind, QkNormScope,
 };
 
-use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
     GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
@@ -350,16 +349,9 @@ impl ReferenceBackend {
         let head_dim = call.head_dim;
         let q_rows = call.num_q_heads * head_dim;
         let group = call.num_q_heads / call.num_kv_heads;
-        // Span: which key positions this query may attend to. Exhaustive
-        // over the vocabulary so a new span kind forces a decision here
-        // instead of silently meaning "whole prefix".
-        let start = match (call.span, call.window) {
-            (AttentionSpan::Sliding, Some(window)) => (position + 1).saturating_sub(window),
-            (AttentionSpan::Sliding, None) | (AttentionSpan::Full, _) => 0,
-            // A spatial window bounds a region, not a position range; no
-            // generic op lowers a perception component today.
-            (AttentionSpan::Windowed, _) => 0,
-        };
+        // Span: which key positions this query may attend to — the plan's
+        // retention authority, never recomputed here.
+        let start = call.history().required_start(position);
         let mut concat = vec![0.0f32; q_rows];
         for q_head in 0..call.num_q_heads {
             let kv_head = q_head / group;

@@ -17,7 +17,7 @@ use super::super::continuation::{
     StateInitialization,
 };
 use super::super::kv::try_plan_kv_geometry;
-use super::super::kv::LayerKvGeometry;
+use super::super::kv::{HistoryRange, LayerKvGeometry};
 use crate::format::vindex3::opplan::{ComponentOpPlan, GatedDeltaOp, LayerAttention};
 use larql_models::inventory::report::RecurrentStateDtype;
 
@@ -399,6 +399,7 @@ fn two_region_geometry() -> LayerContinuationGeometry {
         kv: LayerKvGeometry {
             kv_dim: 4,
             window: None,
+            history: HistoryRange::Full,
         },
         recurrent: RecurrentGeometry::single(RecurrentBufferGeometry {
             shape: vec![16, 2],
@@ -424,6 +425,7 @@ fn a_two_region_layer_grows_on_one_side_only() {
     let kv = LayerContinuationGeometry::Kv(LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     });
     assert_eq!(kv.elements_at(10), 80);
     assert_eq!(LayerContinuationGeometry::Stateless.elements_at(10), 0);
@@ -460,6 +462,7 @@ fn the_kv_accessor_refuses_what_the_kv_side_accessor_serves() {
     let kv = LayerContinuationGeometry::Kv(LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     });
     assert_eq!(kv.kv().map(|k| k.kv_dim), Some(4));
     assert_eq!(kv.kv_side().map(|k| k.kv_dim), Some(4));
@@ -515,6 +518,7 @@ fn a_kv_only_provider_refuses_the_two_region_layer() {
         LayerContinuationGeometry::Kv(LayerKvGeometry {
             kv_dim: 4,
             window: None,
+            history: HistoryRange::Full,
         }),
         two_region_geometry(),
     ];
@@ -549,6 +553,7 @@ fn a_kv_only_provider_refuses_a_latent_layer_and_names_that_region() {
         LayerContinuationGeometry::Kv(LayerKvGeometry {
             kv_dim: 4,
             window: None,
+            history: HistoryRange::Full,
         }),
         LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 7 }),
     ];
@@ -718,6 +723,7 @@ fn every_continuation_species_names_itself() {
     let kv = LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     };
     let cases = [
         (LayerContinuationGeometry::Kv(kv), "KV rows"),

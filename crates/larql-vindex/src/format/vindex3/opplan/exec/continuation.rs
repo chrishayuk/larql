@@ -31,7 +31,7 @@
 use larql_models::inventory::report::RecurrentStateDtype;
 
 use super::super::{ComponentOpPlan, LayerAttention};
-use super::kv::LayerKvGeometry;
+use super::kv::{HistoryRange, LayerKvGeometry};
 
 /// How a recurrent state begins a sequence.
 ///
@@ -258,6 +258,7 @@ pub fn plan_continuation_geometry(
             LayerAttention::Softmax(op) => Ok(LayerContinuationGeometry::Kv(LayerKvGeometry {
                 kv_dim: op.num_kv_heads * op.head_dim,
                 window: op.window,
+                history: op.history(),
             })),
             // KDA's state geometry is known — one `Dk × Dv` matrix per
             // head — but the precision to hold it at is not: KDA declares
@@ -279,6 +280,8 @@ pub fn plan_continuation_geometry(
                 kv: LayerKvGeometry {
                     kv_dim: op.geometry.num_kv_heads * op.geometry.head_dim,
                     window: None,
+                    // Conv-QKV attention is fully causal over its history.
+                    history: HistoryRange::Full,
                 },
                 recurrent: super::conv_qkv::conv_history_geometry(op),
             }),

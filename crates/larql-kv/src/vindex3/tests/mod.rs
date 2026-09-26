@@ -29,7 +29,7 @@ use larql_vindex::format::vindex3::fixtures::{
 use larql_vindex::format::vindex3::inspect::inspect_container;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
 use larql_vindex::format::vindex3::opplan::exec::kv::{
-    plan_kv_geometry, KvState, LayerKvGeometry, RowKvState,
+    plan_kv_geometry, HistoryRange, KvState, LayerKvGeometry, RowKvState,
 };
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prefill_plan;
@@ -191,10 +191,12 @@ fn continuation_geometry_reaches_larql_kv_from_the_plan_alone() {
             LayerKvGeometry {
                 kv_dim: G_KV_HEADS * G_HEAD_DIM,
                 window: Some(G_WINDOW),
+                history: HistoryRange::Trailing(G_WINDOW),
             },
             LayerKvGeometry {
                 kv_dim: G_KV_HEADS * G_HEAD_DIM,
                 window: None,
+                history: HistoryRange::Full,
             },
         ],
         "the sliding/full split must arrive from the plan and be preserved"
@@ -268,6 +270,7 @@ fn a_misfit_row_width_is_refused() {
     canonical.prepare(&[LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     }]);
     canonical.append(0, vec![0.0; 3], vec![0.0; 3]);
 }
@@ -282,6 +285,7 @@ fn default_is_the_empty_provider() {
     provider.prepare(&[LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     }]);
     assert_eq!(provider.geometry().len(), 1);
     assert_eq!(provider.position(), 0);
@@ -297,10 +301,12 @@ fn an_adopted_cache_with_unwritten_layers_prepares_cleanly() {
         LayerKvGeometry {
             kv_dim: 4,
             window: None,
+            history: HistoryRange::Full,
         },
         LayerKvGeometry {
             kv_dim: 4,
             window: None,
+            history: HistoryRange::Full,
         },
     ]);
     assert!(adopted.keys(0).is_empty());
@@ -314,6 +320,7 @@ fn an_adopted_cache_for_a_different_layer_count_is_refused() {
     adopted.prepare(&[LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     }]);
 }
 
@@ -332,6 +339,7 @@ fn an_adopted_cache_with_misfit_rows_is_refused() {
     adopted.prepare(&[LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     }]);
 }
 
@@ -342,6 +350,7 @@ fn a_misfit_value_row_is_refused_even_when_the_key_fits() {
     canonical.prepare(&[LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     }]);
     canonical.append(0, vec![0.0; 4], vec![0.0; 3]);
 }
@@ -353,6 +362,7 @@ fn recurrent_state_is_explicitly_unsupported_not_absent() {
     provider.prepare(&[LayerKvGeometry {
         kv_dim: 4,
         window: None,
+        history: HistoryRange::Full,
     }]);
     match provider.recurrent_state(7) {
         Err(ContinuationError::RecurrentUnsupported { provider, layer }) => {
@@ -380,6 +390,7 @@ fn recurrent_layers_get_buffers_and_kv_layers_still_refuse() {
         LayerContinuationGeometry::Kv(LayerKvGeometry {
             kv_dim: 4,
             window: None,
+            history: HistoryRange::Full,
         }),
         LayerContinuationGeometry::Recurrent(RecurrentGeometry::single(RecurrentBufferGeometry {
             shape: vec![2, 3],
@@ -429,6 +440,7 @@ fn appends_reuse_matrix_capacity_and_preserve_every_stored_bit() {
     state.prepare(&[LayerKvGeometry {
         kv_dim: 2,
         window: Some(3),
+        history: HistoryRange::Trailing(3),
     }]);
     for i in 0..128 {
         let key = vec![i as f32, -0.0];
@@ -461,6 +473,7 @@ fn append_accepts_an_adopted_column_major_cache() {
     state.prepare(&[LayerKvGeometry {
         kv_dim: 2,
         window: None,
+        history: HistoryRange::Full,
     }]);
     state.append(0, vec![5., 6.], vec![7., 8.]);
     assert_eq!(state.keys(0), &[vec![1., 2.], vec![3., 4.], vec![5., 6.]]);
@@ -486,6 +499,7 @@ fn latent_rows_survive_resume_and_wrong_layer_kinds_refuse() {
         LayerContinuationGeometry::Kv(LayerKvGeometry {
             kv_dim: 2,
             window: None,
+            history: HistoryRange::Full,
         }),
         LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 3 }),
     ];
