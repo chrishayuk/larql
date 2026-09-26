@@ -15,7 +15,7 @@ use serde::Serialize;
 
 use super::super::diagnostic::DiagnosticPolicy;
 use super::super::measurement::TailSupportPolicy;
-use super::super::quality::QualityBank;
+use super::super::reading::Observation as Reading;
 use super::super::search_evidence::SearchCalibrationRegistry;
 use super::super::state::snapshot::SearchSnapshot;
 use super::super::state::{MeasurementKey, RepresentationStateId};
@@ -30,7 +30,7 @@ pub struct Observation {
     /// the same observation.
     pub key: MeasurementKey,
     /// The reading itself, whole.
-    pub bank: QualityBank,
+    pub bank: Reading,
     pub adjudication: AdjudicationView,
 }
 

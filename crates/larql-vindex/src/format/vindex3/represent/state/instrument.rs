@@ -62,6 +62,63 @@ impl std::fmt::Display for InstrumentSemanticsId {
     }
 }
 
+/// What a metric measures, stated as structure rather than prose
+/// (MEASURE-PLAN-2 A1.2), so two KLs over different supports cannot be
+/// mistaken for one quantity by a reader matching on a string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct MetricSemantics {
+    pub quantity: Quantity,
+    pub unit: Unit,
+    pub support: Support,
+    pub direction: Direction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Quantity {
+    KlDivergence,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Unit {
+    Nats,
+}
+
+/// Which part of the distribution the metric is taken over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Support {
+    FullVocabulary,
+    /// The reference's top `n` ids.
+    TopN(u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Direction {
+    /// KL(reference ‖ candidate).
+    ReferenceToCandidate,
+}
+
+impl MetricSemantics {
+    /// KL(reference ‖ candidate) in nats over the full vocabulary: what
+    /// `teacher-forced-two-arm/plan-v1` computes.
+    pub const PLAN_V1: Self = Self {
+        quantity: Quantity::KlDivergence,
+        unit: Unit::Nats,
+        support: Support::FullVocabulary,
+        direction: Direction::ReferenceToCandidate,
+    };
+
+    fn canonical(&self) -> String {
+        let support = match self.support {
+            Support::FullVocabulary => "full-vocabulary".to_string(),
+            Support::TopN(n) => format!("top-{n}"),
+        };
+        format!(
+            "{:?}{FIELD}{:?}{FIELD}{support}{FIELD}{:?}",
+            self.quantity, self.unit, self.direction
+        )
+    }
+}
+
 /// The measurement's meaning: every choice that changes what a reading
 /// is, and none that do not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +144,11 @@ pub struct InstrumentSemantics {
     /// nothing observable must not split a state's evidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub implementation_note: Option<String>,
+    /// The metric as structure. Optional so every instrument declared
+    /// before it existed keeps its id; when present it enters the digest
+    /// and must agree with `truncation`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantics: Option<MetricSemantics>,
 }
 
 impl InstrumentSemantics {
@@ -103,6 +165,35 @@ impl InstrumentSemantics {
             token_selection: token_selection.into(),
             procedure: procedure.into(),
             implementation_note: None,
+            semantics: None,
+        }
+    }
+
+    /// Declare the metric's structure. Refused when its support
+    /// disagrees with the declared truncation.
+    pub fn with_semantics(mut self, semantics: MetricSemantics) -> Result<Self, String> {
+        self.semantics = Some(semantics);
+        self.check()?;
+        Ok(self)
+    }
+
+    /// Whether the structured semantics, if any, agree with `truncation`.
+    pub fn check(&self) -> Result<(), String> {
+        let Some(semantics) = self.semantics else {
+            return Ok(());
+        };
+        let agrees = match (semantics.support, self.truncation) {
+            (Support::FullVocabulary, None) => true,
+            (Support::TopN(n), Some(t)) => n == t,
+            _ => false,
+        };
+        if agrees {
+            Ok(())
+        } else {
+            Err(format!(
+                "instrument declares support {:?} but truncation {:?}",
+                semantics.support, self.truncation
+            ))
         }
     }
 
@@ -129,6 +220,11 @@ impl InstrumentSemantics {
              {FIELD}aggregation={}{FIELD}tokens={}{FIELD}procedure={}",
             self.metric, self.aggregation, self.token_selection, self.procedure
         );
+        // Appended only when declared, so every earlier id is unchanged.
+        let input = match &self.semantics {
+            Some(s) => format!("{input}{FIELD}semantics={}", s.canonical()),
+            None => input,
+        };
         InstrumentSemanticsId(hash_bytes(input.as_bytes()))
     }
 }

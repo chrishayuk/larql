@@ -60,7 +60,7 @@ use std::collections::BTreeSet;
 use super::super::compiler::SourceIdentity;
 use super::super::map::PrecisionMap;
 use super::super::measurement::EvidenceScale;
-use super::super::quality::{gate_by_id, QualityGate};
+use super::super::reading::{check_binding, gate_of_any_kind, Gate, ReadingKind};
 use super::super::state::evidence_bank::EvidenceBank;
 use super::super::state::identity::{RepresentationState, RepresentationStateId};
 use super::super::state::instrument::InstrumentSemantics;
@@ -106,6 +106,8 @@ pub enum RequestRefusal {
     /// gate. A run judged under it would carry a verdict drawn against
     /// thresholds nobody in this record agreed to.
     GateRedefined { named: String },
+    /// The gate may not judge readings from this run's instrument.
+    GateBinding { detail: String },
 }
 
 impl std::fmt::Display for RequestRefusal {
@@ -135,6 +137,9 @@ impl std::fmt::Display for RequestRefusal {
                 "the record is judged by gate `{named}`, which this build cannot resolve: \
                  {detail}"
             ),
+            Self::GateBinding { detail } => {
+                write!(f, "the record's gate cannot judge this run: {detail}")
+            }
             Self::GateRedefined { named } => write!(
                 f,
                 "this build's `{named}` is not the gate this record carries — the thresholds \
@@ -168,7 +173,7 @@ pub struct MeasurementRequest {
     bank: EvidenceBank,
     instrument: InstrumentSemantics,
     scale: EvidenceScale,
-    gate: String,
+    gate: Option<String>,
     procedure: String,
 }
 
@@ -215,15 +220,30 @@ impl MeasurementRequest {
             });
         }
 
-        let gate = snapshot.gate();
-        let implemented = gate_by_id(&gate.id).map_err(|e| RequestRefusal::UnresolvableGate {
-            named: gate.id.clone(),
-            detail: e.to_string(),
-        })?;
-        if &implemented != gate {
-            return Err(RequestRefusal::GateRedefined {
-                named: gate.id.clone(),
-            });
+        // A characterisation-only record carries no gate, and its runs
+        // are judged by nothing. A gate that is present must be this
+        // build's, and must be bound to the instrument the run reads.
+        if let Some(gate) = snapshot.gate() {
+            let implemented =
+                gate_of_any_kind(gate.id()).map_err(|e| RequestRefusal::UnresolvableGate {
+                    named: gate.id().to_string(),
+                    detail: e.to_string(),
+                })?;
+            if &implemented != gate {
+                return Err(RequestRefusal::GateRedefined {
+                    named: gate.id().to_string(),
+                });
+            }
+            // A procedure this build does not know is the executor
+            // registry's to refuse, and ingestion's; its reading kind is
+            // unknown here, so there is nothing to bind yet.
+            if let Some(kind) = ReadingKind::of_procedure(&protocol.procedure) {
+                check_binding(gate, kind, &protocol.instrument).map_err(|e| {
+                    RequestRefusal::GateBinding {
+                        detail: e.to_string(),
+                    }
+                })?;
+            }
         }
 
         Ok(Self {
@@ -235,7 +255,7 @@ impl MeasurementRequest {
             bank: protocol.bank.clone(),
             instrument: protocol.instrument.clone(),
             scale: key.scale(),
-            gate: gate.id.clone(),
+            gate: snapshot.gate().map(|g| g.id().to_string()),
             procedure: protocol.procedure.clone(),
         })
     }
@@ -280,8 +300,10 @@ impl MeasurementRequest {
 
     /// The gate the verdict is drawn under, by id, from the record —
     /// never a literal, and never an adapter's default.
-    pub fn gate(&self) -> &str {
-        &self.gate
+    /// The gate the run will be judged by; `None` for a
+    /// characterisation-only record.
+    pub fn gate(&self) -> Option<&str> {
+        self.gate.as_deref()
     }
 
     /// The procedure that must perform this, by name. Resolved by the
@@ -334,9 +356,10 @@ impl MeasurementRequest {
         ))
     }
 
-    /// The gate this request is judged under, resolved.
-    pub fn resolve_gate(&self) -> Result<QualityGate, VindexError> {
-        gate_by_id(&self.gate)
+    /// The gate this request is judged under, resolved; `None` for a
+    /// characterisation-only record.
+    pub fn resolve_gate(&self) -> Result<Option<Gate>, VindexError> {
+        self.gate.as_deref().map(gate_of_any_kind).transpose()
     }
 }
 

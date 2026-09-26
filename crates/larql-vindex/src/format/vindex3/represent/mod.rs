@@ -82,6 +82,7 @@ mod plan_roles_tests;
 pub mod policy;
 pub mod promotion;
 pub mod quality;
+pub mod reading;
 pub mod recipe;
 pub use recipe::{compile_representation_recipe, Nvfp4Recipe};
 #[cfg(feature = "reference-encoder")]

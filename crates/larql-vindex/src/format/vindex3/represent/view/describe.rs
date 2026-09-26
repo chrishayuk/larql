@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::super::compiler::SourceIdentity;
 use super::super::measurement::TailSupportPolicy;
-use super::super::quality::QualityGate;
+use super::super::reading::Gate;
 use super::super::state::action_space::ActionVocabulary;
 use super::super::state::graph::TransitionPolicy;
 use super::super::state::semantics::SearchSemantics;
@@ -31,7 +31,7 @@ pub struct Describe {
     /// The FROZEN behavioural contract. Changing a threshold means a
     /// new gate id, so this pins what every verdict in this snapshot
     /// means.
-    pub contract: QualityGate,
+    pub contract: Option<Gate>,
     /// When a percentile is thin enough to stop being one.
     pub tail_support: TailSupportPolicy,
     pub transition_policy: TransitionPolicy,
@@ -64,7 +64,7 @@ impl Describe {
             surface_identity: graph.surface_identity().to_string(),
             surface_tensors: snapshot.space().surface.len(),
             objective: snapshot.objective(),
-            contract: snapshot.gate().clone(),
+            contract: snapshot.gate().cloned(),
             tail_support: snapshot.tail_support().clone(),
             transition_policy: graph.policy(),
             guarantees_acyclic: graph.policy().guarantees_acyclic(),

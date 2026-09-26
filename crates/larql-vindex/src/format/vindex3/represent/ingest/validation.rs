@@ -9,7 +9,8 @@ use super::super::{
     compile::hash_bytes,
     compiler::read_source_identity,
     measure::{outcome::VerifiedFacts, MeasurementProcedure},
-    quality::{gate_by_id, QualityBank},
+    quality::QualityBank,
+    reading::{check_binding, gate_of_any_kind, Gate, Observation, ReadingKind},
     state::{
         key::{MeasurementConflict, MeasurementKey},
         snapshot::SearchSnapshot,
@@ -57,7 +58,7 @@ pub enum IngestionRefusal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AcceptedMeasurement {
     key: MeasurementKey,
-    observation: QualityBank,
+    observation: Observation,
     candidate: EstablishedState,
     source_semantic_digest: String,
     bank_manifest_sha256: String,
@@ -68,7 +69,7 @@ impl AcceptedMeasurement {
     pub fn key(&self) -> &MeasurementKey {
         &self.key
     }
-    pub fn observation(&self) -> &QualityBank {
+    pub fn observation(&self) -> &Observation {
         &self.observation
     }
     pub fn candidate(&self) -> &EstablishedState {
@@ -172,9 +173,36 @@ pub fn validate(
         artifact.procedure(),
     )?;
     MeasurementProcedure::by_name(&protocol.procedure).map_err(invalid)?;
-    let gate = gate_by_id(&snapshot.gate().id).map_err(invalid)?;
-    agrees("gate declaration", &gate, snapshot.gate())?;
-    agrees("request gate", &snapshot.gate().id, request.gate())?;
+    // A present gate must be this build's, and bound to the instrument
+    // that took the reading, before anything reads the reading's values.
+    let gate = match snapshot.gate() {
+        Some(declared) => {
+            let implemented = gate_of_any_kind(declared.id()).map_err(invalid)?;
+            agrees("gate declaration", &implemented, declared)?;
+            Some(implemented)
+        }
+        None => None,
+    };
+    agrees(
+        "request gate",
+        snapshot.gate().map(Gate::id),
+        request.gate(),
+    )?;
+    let kind = artifact.observation().kind();
+    agrees(
+        "reading kind of the procedure",
+        ReadingKind::of_procedure(&protocol.procedure),
+        Some(kind),
+    )?;
+    if let Some(gate) = &gate {
+        check_binding(gate, kind, &protocol.instrument).map_err(|e| {
+            IngestionRefusal::Authority {
+                what: "gate binding".into(),
+                expected: gate.id().to_string(),
+                observed: e.to_string(),
+            }
+        })?;
+    }
 
     let expected_source = snapshot.graph().model().semantic_digest();
     agrees(
@@ -264,16 +292,25 @@ pub fn validate(
         &established_bank.id(),
     )?;
 
-    validate_observation(artifact.observation(), bank.positions())?;
+    let Observation::Kimi(reading) = artifact.observation() else {
+        return Err(invalid(
+            "plan-v1 readings enter the record through the plan procedure's own facts \
+             (MEASURE-PLAN-2 PR 2)",
+        ));
+    };
+    validate_observation(reading, bank.positions())?;
     agrees(
         "reported measured positions",
         bank.positions(),
         artifact.verified().positions,
     )?;
+    // The Kimi procedure evaluates a gate as part of its run, so its
+    // facts name one; a record without a gate cannot have produced them.
+    let gate = gate.ok_or_else(|| invalid("Kimi facts name a gate and this record has none"))?;
     agrees(
         "reported gate",
-        &gate.id,
-        &artifact.verified().gate_evaluated,
+        gate.id(),
+        artifact.verified().gate_evaluated.as_str(),
     )?;
     Ok(AcceptedMeasurement {
         key: request.key().clone(),

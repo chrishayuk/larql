@@ -161,6 +161,12 @@ pub struct CampaignRecord {
 
 /// Refuse a record or setup the loop cannot honestly run.
 fn check(snapshot: &SearchSnapshot, setup: &CampaignSetup<'_>) -> Result<(), VindexError> {
+    if snapshot.gate().is_none() {
+        return Err(refused(
+            "the record is characterisation-only (no gate): no reading can be refused, so no \
+             cut can be earned and nothing can be admitted",
+        ));
+    }
     if snapshot.standing_intent().scale != EvidenceScale::Authority {
         return Err(refused(
             "the standing intent is not at Authority scale; a refusal there is not a failed \

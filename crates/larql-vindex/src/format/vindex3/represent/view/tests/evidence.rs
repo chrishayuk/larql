@@ -37,15 +37,16 @@ fn the_recorded_arms_survive_the_render() {
     let kls: Vec<f64> = report
         .observations
         .iter()
-        .map(|o| o.bank.logits.kl_p99)
+        .map(|o| o.bank.as_kimi().unwrap().logits.kl_p99)
         .collect();
     assert!(kls.contains(&3.3532e-3));
     assert!(kls.contains(&3.6480e-3));
     assert!(kls.contains(&4.0563e-3));
 
     for observation in &report.observations {
-        assert_eq!(observation.bank.positions, 8192);
-        assert_eq!(observation.bank.min_covered_mass, Some(0.6315));
+        let bank = observation.bank.as_kimi().unwrap();
+        assert_eq!(bank.positions, 8192);
+        assert_eq!(bank.min_covered_mass, Some(0.6315));
     }
 }
 

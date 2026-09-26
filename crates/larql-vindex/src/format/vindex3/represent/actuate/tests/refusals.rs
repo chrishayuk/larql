@@ -66,6 +66,9 @@ fn request_refusals() -> Vec<RequestRefusal> {
         RequestRefusal::GateRedefined {
             named: "kimi-logit-balanced-v1".into(),
         },
+        RequestRefusal::GateBinding {
+            detail: "gate judges plan readings".into(),
+        },
     ]
 }
 
@@ -89,6 +92,7 @@ fn must_say(refusal: &RequestRefusal) -> Vec<String> {
             vec![named.clone(), detail.clone()]
         }
         RequestRefusal::GateRedefined { named } => vec![named.clone()],
+        RequestRefusal::GateBinding { detail } => vec![detail.clone()],
     }
 }
 

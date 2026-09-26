@@ -172,7 +172,15 @@ fn the_same_experiment_on_the_same_state_is_reused() {
         r.contains(&again),
         "already measured — do not spend it again"
     );
-    assert_eq!(r.get(&again).expect("held").logits.kl_p99, 2.5262e-3);
+    assert_eq!(
+        r.get(&again)
+            .expect("held")
+            .as_kimi()
+            .unwrap()
+            .logits
+            .kl_p99,
+        2.5262e-3
+    );
 }
 
 #[test]
@@ -385,7 +393,7 @@ fn re_recording_a_reproduced_reading_is_a_no_op_and_a_contradiction_is_refused()
         .expect_err("two readings, one key");
     assert!(format!("{err}").contains("not reproducible"), "{err}");
     assert_eq!(
-        r.get(&k).expect("held").logits.kl_p99,
+        r.get(&k).expect("held").as_kimi().unwrap().logits.kl_p99,
         2.5262e-3,
         "the held reading is unchanged"
     );

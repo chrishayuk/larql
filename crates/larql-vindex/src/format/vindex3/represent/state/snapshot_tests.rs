@@ -315,8 +315,8 @@ fn a_snapshot_written_under_another_schema_is_refused() {
 fn a_snapshot_names_the_configuration_its_conclusions_depend_on() {
     let snap = reloaded();
     assert_eq!(snap.objective(), Objective::MinimiseLogicalBytes);
-    assert_eq!(snap.gate().id, "kimi-logit-balanced-v1");
-    assert_eq!(snap.gate().kl_p99_max, 3.5e-3);
+    assert_eq!(snap.gate().unwrap().id(), "kimi-logit-balanced-v1");
+    assert_eq!(snap.gate().unwrap().as_kimi().unwrap().kl_p99_max, 3.5e-3);
     assert_eq!(
         snap.tail_support().min_tail_observations,
         TailSupportPolicy::route_cal_1().min_tail_observations

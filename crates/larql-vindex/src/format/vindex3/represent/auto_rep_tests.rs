@@ -168,7 +168,7 @@ impl ExperimentExecutor for Truth {
         observation.top1_mass_displaced = None;
         Ok(Observed {
             key: request.key().clone(),
-            observation,
+            observation: observation.into(),
             verified: VerifiedFacts {
                 compiled_layers: vec![0],
                 compiled_projections: vec!["q_proj".into()],
@@ -176,7 +176,7 @@ impl ExperimentExecutor for Truth {
                 seal_checked_operands: 1,
                 invariant_neighbour_layer: Some(1),
                 positions: POSITIONS,
-                gate_evaluated: request.gate().to_string(),
+                gate_evaluated: request.gate().unwrap().to_string(),
             },
             execution_note: "scripted AUTO-REP-1b truth".into(),
         })
@@ -541,4 +541,31 @@ fn records_and_setups_the_loop_cannot_honestly_run_are_refused() {
     other.encoding = "Q4_K".into();
     assert!(refuse(&f.snapshot, &other).contains("disagree"));
     assert!(truth.runs.borrow().is_empty());
+}
+
+/// MEASURE-PLAN-2 W8: a characterisation-only record earns no cuts and
+/// admits nothing, so the loop refuses it before compiling anything.
+#[test]
+fn a_characterisation_only_record_is_refused() {
+    let f = fixture();
+    let truth = Truth::new(&f, []);
+    let mut config = f.snapshot.config().clone();
+    config.gate = None;
+    let mut bare = SearchSnapshot::new(
+        f.snapshot.space().clone(),
+        config,
+        f.snapshot.facts().clone(),
+    );
+    let err = run_with(
+        &f,
+        &mut bare,
+        &truth,
+        &RepresentCompiler { source: &f.source },
+        10,
+        BTreeMap::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("characterisation-only"), "{err}");
+    assert!(std::fs::read_dir(&f.workdir).unwrap().next().is_none());
 }

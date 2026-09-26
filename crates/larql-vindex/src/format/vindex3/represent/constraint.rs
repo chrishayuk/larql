@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use super::measurement::{MeasurementStatus, TailSupport, TailSupportPolicy};
 use super::quality::{Criterion, QualityBank, QualityGate, Statistic};
+use super::reading::{Gate, GateMismatch, Observation, PlanGate, PlanObservation};
 
 /// Whether a limit is a ceiling the candidate spends against, or a
 /// floor the measurement itself has to clear.
@@ -280,6 +281,73 @@ impl ConstraintVector {
             });
         }
 
+        Self {
+            gate_id: gate.id.clone(),
+            margins,
+        }
+    }
+
+    /// **Judge a reading by a gate of its own instrument**, or refuse.
+    ///
+    /// The Kimi arm is exactly [`Self::of`]. A plan gate reads plan
+    /// statistics only, so a plan margin can never be read as a Kimi one.
+    pub fn judge(gate: &Gate, reading: &Observation) -> Result<Self, GateMismatch> {
+        GateMismatch::check(gate, reading.kind())?;
+        Ok(match (gate, reading) {
+            (Gate::Kimi(gate), Observation::Kimi(bank)) => Self::of(gate, bank),
+            (Gate::Plan(gate), Observation::Plan(plan)) => Self::of_plan(gate, plan),
+            _ => unreachable!("kinds were checked to agree"),
+        })
+    }
+
+    /// The standing of a plan-v1 reading against a plan gate.
+    pub fn of_plan(gate: &PlanGate, plan: &PlanObservation) -> Self {
+        let mut margins = Vec::new();
+        for (criterion, what, limit) in [
+            (
+                Criterion::PlanKlP99,
+                Statistic::PlanKlP99,
+                Some(gate.kl_p99_max),
+            ),
+            (
+                Criterion::PlanKlMean,
+                Statistic::PlanKlMean,
+                gate.kl_mean_max,
+            ),
+            (
+                Criterion::PlanTop1Disagreement,
+                Statistic::PlanTop1Disagreement,
+                gate.top1_disagreement_max,
+            ),
+            (
+                Criterion::PlanDeltaNllMean,
+                Statistic::PlanDeltaNllMean,
+                gate.delta_nll_mean_max,
+            ),
+        ] {
+            let Some(limit) = limit else { continue };
+            let (observed, tail_support) = what.observe_plan(plan);
+            margins.push(Margin {
+                criterion,
+                what,
+                kind: LimitKind::Ceiling,
+                limit,
+                // A limit on a statistic the run could not produce (no
+                // next token anywhere) is unmet, never vacuously met.
+                observed,
+                vacuous: false,
+                tail_support,
+            });
+        }
+        margins.push(Margin {
+            criterion: Criterion::Positions,
+            what: Statistic::Positions,
+            kind: LimitKind::Floor,
+            limit: gate.positions_min as f64,
+            observed: Some(plan.positions as f64),
+            vacuous: false,
+            tail_support: None,
+        });
         Self {
             gate_id: gate.id.clone(),
             margins,

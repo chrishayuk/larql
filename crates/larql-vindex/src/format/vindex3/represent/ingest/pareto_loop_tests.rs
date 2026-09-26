@@ -93,7 +93,7 @@ fn pareto_observed(f: &Fixture, kl: f64, route_flips: u64) -> Observed {
     // Follow the fixture's declared corpus depth. The behavioural
     // distributions stay POPULATED.
     bank.positions = f.positions;
-    observed.observation = bank;
+    observed.observation = bank.into();
     observed.execution_note = "PARETO-1 populated authority-shaped fixture".into();
     observed
 }
