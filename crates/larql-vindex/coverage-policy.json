@@ -42,7 +42,7 @@
     "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/stationary.rs": 71.0,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/kv.rs": 87.2,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/mod.rs": 86.5,
-    "crates/larql-vindex/src/format/vindex3/opplan/exec/prepared.rs": 86.6,
+    "crates/larql-vindex/src/format/vindex3/opplan/exec/prepared.rs": 87.6,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/weights/mod.rs": 84.0,
     "crates/larql-vindex/src/format/vindex3/represent/kda_candidate.rs": 75.2,
     "crates/larql-vindex/src/format/vindex3/represent/kda_candidate_real.rs": 4.4,
