@@ -39,6 +39,7 @@ use crate::format::vindex3::opplan::exec::backend::{
     RoutedFfnCall, WeightFormat, WeightSlice,
 };
 use crate::format::vindex3::opplan::exec::experts::FfnOperands;
+use crate::format::vindex3::opplan::exec::kv_view::KvView;
 use crate::format::vindex3::opplan::exec::production::{
     aggregate_heads, condition_qk_in_place, qk_norm_in_place, select_experts, ProductionBackend,
 };
@@ -570,12 +571,7 @@ fn a_decode_step_fails_closed_on_a_non_f32_output_projection() {
     let mut op = plain_attention(&inputs, &identity);
     op.w_o = WeightSlice::F16(&[]);
     let err = ProductionBackend::new()
-        .attention_step(AttentionStepCall {
-            op,
-            position: 0,
-            keys: &[],
-            values: &[],
-        })
+        .attention_step(AttentionStepCall::new(op, 0, KvView::empty()).unwrap())
         .err()
         .expect("a non-f32 output projection must refuse")
         .to_string();

@@ -988,14 +988,14 @@ impl ProductionBackend {
                 if p == step.position {
                     k.as_slice()
                 } else {
-                    step.keys[p].as_slice()
+                    step.rows().key(p)
                 }
             },
             |p| {
                 if p == step.position {
                     v.as_slice()
                 } else {
-                    step.values[p].as_slice()
+                    step.rows().value(p)
                 }
             },
             pre,

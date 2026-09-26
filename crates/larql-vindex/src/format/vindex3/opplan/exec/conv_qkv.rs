@@ -83,8 +83,10 @@ pub struct ConvQkvPlanes {
 }
 
 /// The whole operator: hidden states in, layer output out, conv history
-/// advanced. `past_keys`/`past_values` are the rows already persisted
-/// for this layer (empty at sequence start); `base` is the absolute
+/// advanced. `held` is the K/V rows already persisted for this layer, read by
+/// absolute position through the continuation view (empty at sequence
+/// start; the caller has checked it holds every earlier position, as this
+/// operator's history is full); `base` is the absolute
 /// position of `hidden[0]` — the rotary angle is a function of absolute
 /// position, so a decode step at position 40 must not rotate like a
 /// prefill at position 0.
@@ -107,8 +109,7 @@ pub fn layer_forward_with(
     w: &ConvQkvWeights<'_>,
     hidden: &[Vec<f32>],
     state: &mut RecurrentState,
-    past_keys: &[Vec<f32>],
-    past_values: &[Vec<f32>],
+    held: super::kv_view::KvView<'_>,
     base: usize,
     proj: &dyn DenseProjections,
 ) -> ConvQkvPlanes {
@@ -211,21 +212,21 @@ pub fn layer_forward_with(
     let attention = timed(OpClass::DeltaRecurrence);
     let scale = 1.0 / (head_dim as f32).sqrt();
     let key_at = |index: usize| -> &[f32] {
-        if index < past_keys.len() {
-            &past_keys[index]
+        if index < held.end() {
+            held.key(index)
         } else {
-            &planes.keys[index - past_keys.len()]
+            &planes.keys[index - held.end()]
         }
     };
     let value_at = |index: usize| -> &[f32] {
-        if index < past_values.len() {
-            &past_values[index]
+        if index < held.end() {
+            held.value(index)
         } else {
-            &planes.values[index - past_values.len()]
+            &planes.values[index - held.end()]
         }
     };
     for t in 0..t_len {
-        let visible = past_keys.len() + t + 1;
+        let visible = held.end() + t + 1;
         let q = &queries[t];
         let mut out = vec![0.0f32; q_width];
         for h in 0..heads {

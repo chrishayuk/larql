@@ -832,10 +832,40 @@ pub struct AttentionStepCall<'a> {
     pub op: AttentionCall<'a>,
     /// Absolute position of the row in `op.inputs`.
     pub position: usize,
-    /// Cached K rows for positions `0..position`.
-    pub keys: &'a [Vec<f32>],
-    /// Cached V rows for positions `0..position`.
-    pub values: &'a [Vec<f32>],
+    /// Earlier positions' K and V rows. Private: a step is built only by
+    /// [`new`](Self::new), which checks the plan's required range against
+    /// it, so no backend receives a step whose provider dropped a row the
+    /// step needs.
+    rows: super::kv_view::KvView<'a>,
+}
+
+impl<'a> AttentionStepCall<'a> {
+    /// A step at `position` reading `rows`. Refused, by name, unless the
+    /// view ends at `position` and holds every earlier position the plan's
+    /// retention authority says this step may read.
+    pub fn new(
+        op: AttentionCall<'a>,
+        position: usize,
+        rows: super::kv_view::KvView<'a>,
+    ) -> Result<Self, super::kv_view::ViewRefusal> {
+        let required = op.history().required_range(position);
+        // The step's own row is fresh, not held: it needs [start, position).
+        let history = required.start..position;
+        if rows.end() != position {
+            return Err(super::kv_view::ViewRefusal {
+                needed: history,
+                base: rows.base(),
+                end: rows.end(),
+            });
+        }
+        rows.covers(history)?;
+        Ok(Self { op, position, rows })
+    }
+
+    /// Earlier positions' K and V rows, already checked against the plan.
+    pub fn rows(&self) -> super::kv_view::KvView<'a> {
+        self.rows
+    }
 }
 
 /// One position's projected, conditioned (Q, K, V) — the intermediate

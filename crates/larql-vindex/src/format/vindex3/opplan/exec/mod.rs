@@ -52,6 +52,7 @@ pub mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod kimi_source;
 pub mod kv;
+pub mod kv_view;
 pub mod lowering;
 pub mod mamba2;
 pub mod mla;
@@ -99,6 +100,7 @@ use backend::{
 };
 use hyper_connection::{Bundle, Mutation, SinkhornSplit, SiteReduction};
 use kv::KvState;
+use kv_view::KvView;
 use observe::HcSite;
 use operands::OperandSource;
 use prepared::{
@@ -1446,14 +1448,16 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             let past_keys: Vec<Vec<f32>> = provider.keys(layer_index).to_vec();
             let past_values: Vec<Vec<f32>> = provider.values(layer_index).to_vec();
             let base = provider.position();
+            let past = KvView::over_rows(&past_keys, &past_values);
+            // Conv-QKV reads its whole history (HistoryRange::Full).
+            past.covers(0..base)?;
             let state = provider.recurrent_state(layer_index)?;
             let planes = conv_qkv::layer_forward_with(
                 &ops.op,
                 &ops.weights()?,
                 &inputs,
                 state,
-                &past_keys,
-                &past_values,
+                past,
                 base,
                 backend.dense_projector(),
             );
@@ -2333,12 +2337,8 @@ fn attention_into_kv<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     let mut outputs = Vec::with_capacity(inputs.len());
     for offset in 0..inputs.len() {
         let call = operands.call(op, &inputs[offset..=offset], qk_norm_eps, hidden);
-        let out = backend.attention_step(AttentionStepCall {
-            op: call,
-            position: base + offset,
-            keys: kv.keys(layer_index),
-            values: kv.values(layer_index),
-        })?;
+        let rows = KvView::over_rows(kv.keys(layer_index), kv.values(layer_index));
+        let out = backend.attention_step(AttentionStepCall::new(call, base + offset, rows)?)?;
         kv.append(layer_index, out.key, out.value);
         outputs.push(out.output);
     }

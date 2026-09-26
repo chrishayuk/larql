@@ -39,6 +39,102 @@
         "clippy (vindex all-targets; kv; inference; cli; server) -D warnings": "clean",
         "tests": "9,598 passed, 0 failed (--no-fail-fast); server continuation targets pass"
       }
+    },
+    "V2": {
+      "name": "the view",
+      "status": "built and held",
+      "base": "main 22c9aab9 (built on a010739c — V1 merged #556, frozen code facts re-verified: 6 absolute index sites, 10 implementors, #563 touched no attention/KV surface — and rebased over the docs-only #565)",
+      "representation": {
+        "choice": "a trait object behind a Copy struct: `KvView<'a> { base, end, keys: &'a (dyn KvRows + Sync), values: &'a (dyn KvRows + Sync) }` over the one-method trait `KvRows { fn row(&self, position: usize) -> &[f32] }`, where `position` is ABSOLUTE. New module exec/kv_view.rs.",
+        "why_not_an_enum": "a closed enum (Rows | Contiguous | …) would make every future backing — paged, codec-backed, an external plugin's own layout — a change to core's enum. The freeze asks for a general view, not one shaped by today's two providers. The trait object keeps it open.",
+        "why_not_generic": "a generic parameter on AttentionStepCall would propagate through PlanBackend (object-safe today, held as &dyn and Arc<dyn>); a trait object keeps the backend trait object-safe.",
+        "cost_and_its_measurement": "one virtual call per row fetch, in the same place the kernels already call `key_of(p)`/`value_of(p)` closures per position. Measured, not assumed: decode ms/token on qwen3-0.6b (ProductionBackend, 512-token prefill, 64 decode steps), main vs V2, alternating, 3 repeats each; recorded here before V2 merges.",
+        "Sync": "the kernels' closures may be called from worker threads, so the rows are `dyn KvRows + Sync`"
+      },
+      "refusal": {
+        "type": "`ViewRefusal { needed: Range<usize>, base, end }` — names the positions the plan requires and what the view holds; converts to VindexError",
+        "unbypassable": "AttentionStepCall's view becomes PRIVATE; the only constructor, `AttentionStepCall::new(op, position, rows)`, checks `op.history().required_range(position)` (its history part, start..position) against [base, end) and that end == position. A step whose view drops a required row cannot be built, so no backend ever receives one (S3 on every backend by construction). The view's own key(p)/value(p) assert base <= p < end with a named message; after the constructor's check that is unreachable, and it is an executor bug, not a retention one, if ever hit.",
+        "conv_qkv": "its history requirement is Full; the executor checks covers(0..base) before the operator, the same refusal"
+      },
+      "migration": {
+        "index_sites": "the 6 `step.keys[p]` / `step.values[p]` (reference, production, device) become `rows.key(p)` / `rows.value(p)`; `p == position` still returns the fresh row",
+        "conv_qkv": "`layer_forward_with(past: KvView, base, …)`; `key_at` / `value_at` / `visible` read past.end() instead of past_keys.len()",
+        "providers_unchanged": "the trait keeps keys()/values() in V2; the executor wraps them with `KvView::over_rows` (base 0). The provider trait and ABI change in V3.",
+        "conv_qkv_copy_kept": "the executor still copies ConvQkv's rows before taking &mut recurrent_state (behaviour-neutral); Q1 re-measures after V2 and again after V3",
+        "construction_sites": "2 production (exec/mod.rs attention_into_kv, exec/decode.rs) and 4 test sites move to AttentionStepCall::new"
+      },
+      "split_borrow_not_precluded": "KvView borrows `&'a dyn KvRows`; a later provider method returning (KvView<'_>, &mut RecurrentState) from disjoint fields is expressible — nothing in V2 ties the view's borrow to the whole provider",
+      "departures_from_the_recorded_design": [
+        {
+          "what": "the view holds an internal `Backing` (a `Rows` fast path over a borrowed `&[Vec<f32>]` plus base, and `Dyn(&dyn KvRows + Sync)`) instead of two trait-object references",
+          "why": "a provider lends `&[Vec<f32>]`, and `[T]` is unsized: it cannot coerce to `&dyn KvRows`. The fast path reads today's row-backed providers with no dispatch; every other layout still goes through KvRows, so the view stays open to new backings without a core change — the recorded reason for the trait object holds.",
+          "found": "at first compile, before any measurement"
+        },
+        {
+          "what": "the named per-read range check in `key(p)` / `value(p)` is `debug_assert!`, not `assert!`",
+          "why": "measured: with the assert V2 decoded qwen3-0.6b +2.7% median slower than main (8 alternating pairs, slower in 7; one 58 ms outlier), which is the per-row check on the hottest call in decode. As debug_assert: +0.77% median, slower in 3 of 6 pairs — within run-to-run noise (main's own sd 0.9–4.2 ms). The refusal the freeze requires (a provider that dropped a required row) is AttentionStepCall::new's, checked once per step, unchanged. A read past that check is an executor bug; in release it still panics on the backing's own bounds check, without the name.",
+          "found": "by the cost measurement the recorded design required"
+        }
+      ],
+      "cost_measurement": {
+        "method": "crates/larql-vindex/tests/view_decode_cost.rs, ignored, LARQL_VIEW1_QWEN = qwen3-0.6b.vindex3, ProductionBackend: 512-position prefill, 4 warm-up steps, 64 timed decode steps; main's binary (built at b402faf3's parent code) and V2's run alternately. Every run's logits checksum = 9.847980e6: both builds computed the same thing.",
+        "with_assert": {
+          "main_ms_per_token": {
+            "n": 8,
+            "median": 48.51,
+            "mean": 48.84
+          },
+          "v2_ms_per_token": {
+            "n": 8,
+            "median": 49.81,
+            "mean": 50.81
+          },
+          "delta_median": "+2.68%",
+          "v2_slower_pairs": "7/8"
+        },
+        "with_debug_assert": {
+          "main_ms_per_token": {
+            "n": 6,
+            "median": 45.86,
+            "mean": 47.78
+          },
+          "v2_ms_per_token": {
+            "n": 6,
+            "median": 46.21,
+            "mean": 46.48
+          },
+          "delta_median": "+0.77%",
+          "v2_slower_pairs": "3/6"
+        },
+        "reading": "the view's dispatch (a match on Backing per read) costs nothing measurable; the per-read assert did"
+      },
+      "what_landed": [
+        "exec/kv_view.rs: KvRows (one method, absolute position), KvView (Copy; base/end; rows_from, over_rows, new over KvRows, empty; covers; key/value), ViewRefusal (Display, Error, into VindexError)",
+        "exec/backend.rs: AttentionStepCall's rows are private; AttentionStepCall::new checks end == position and covers(required_start..position) from op.history(); rows() accessor",
+        "the 6 index sites (reference, production, device) read step.rows().key(p) / value(p)",
+        "exec/conv_qkv.rs: layer_forward_with takes `held: KvView`; key_at / value_at / visible read held.end(); the executor (mod.rs, decode.rs) checks held.covers(0..base) — conv-QKV's history is Full — and keeps its copy (Q1)",
+        "the 2 production and 4 test construction sites use AttentionStepCall::new"
+      ],
+      "witnesses": {
+        "exec/tests/kv_view.rs (8)": "base > end refused; Rows, Dyn-contiguous, retained Rows (base 5) and retained Dyn read identical rows by absolute position; covers names the missing range (and accepts an empty requirement); a read below base panics with the named message (debug); S3: on the fixture's sliding layer (w = 3) at position 7 a view holding exactly [5, 7) or everything builds, a view from 6 is refused naming needed 5..7 and base 6, a view ending before position is refused; on the full-span layer a view from 1 is refused naming 0..7; S1 scan over reference/production/device/conv_qkv/mod/decode, with a seeded control",
+        "mutation_control": "removing the covers check from AttentionStepCall::new turned both S3 tests red; restored, green",
+        "compile_enforced": "AttentionStepCall has no public row fields: no code outside backend.rs can construct a step without the check"
+      },
+      "falsifiers": {
+        "S1": "CLOSED — 0 absolute indexing into provider rows outside the view (baseline 6), and compile-enforced",
+        "S3": "CLOSED at the step boundary — a step lacking a required row cannot be built, so no backend receives one; B's seeded retaining provider re-proves it end to end in V4"
+      },
+      "release_invariant": "CONSTRUCTION-TIME CHECKED, READ-TIME TRUSTED. AttentionStepCall::new proves, once per step, that the view holds every position the plan lets the step read; key(p) / value(p) then trust it (debug_assert only). Re-promoting the per-read check to assert! re-proves an established invariant at ≈2.7% of decode — the reason it was removed. The same phrase is on KvView::check in the code.",
+      "Q1_after_V2": {
+        "measured": "MEM-1 harness, oute-mamba2attn-250m.vindex3, ProductionBackend, record SHA 3c4dfebf: every conv-QKV call still makes exactly 2·h row-sized copies — 72/72 calls per provider (4 resumed-prefill, 64 decode; 190 rows = 1.56 MB at h = 95); row/v1 ≡ canonical/v1 bit-identical",
+        "reading": "as expected, and useful: the view alone does not resolve the borrow conflict. The copy remains the executor releasing the &self borrow of keys/values before taking &mut recurrent_state. Re-measured after V3 (provider migration); if it remains then, it is cleanly an operator/executor rung, not a view-contract one."
+      },
+      "gates": {
+        "cargo fmt --all --check": "clean",
+        "clippy (vindex all-targets; kv; inference; cli; server) -D warnings": "clean",
+        "tests": "9,692 passed, 0 failed (--no-fail-fast; vindex, kv, inference, cli); server continuation targets pass"
+      },
+      "milestone": "execution no longer depends on the physical K/V representation; provider storage semantics are unchanged (V3 changes them)"
     }
   }
 }
