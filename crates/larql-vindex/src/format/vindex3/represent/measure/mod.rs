@@ -91,6 +91,9 @@ pub enum MeasurementProcedure {
     /// Two arms through the real stack over a teacher-forced corpus:
     /// baseline from the source container, candidate from an overlay.
     TeacherForcedTwoArm,
+    /// `teacher-forced-two-arm/plan-v1`: any container the plan
+    /// executes, over a token bank (MEASURE-PLAN-1).
+    PlanV1,
 }
 
 /// The name `MeasurementProcedure::TeacherForcedTwoArm` answers to.
@@ -100,6 +103,7 @@ impl MeasurementProcedure {
     pub fn name(&self) -> &'static str {
         match self {
             Self::TeacherForcedTwoArm => TEACHER_FORCED_TWO_ARM,
+            Self::PlanV1 => plan::PROCEDURE,
         }
     }
 
@@ -110,6 +114,7 @@ impl MeasurementProcedure {
     pub fn by_name(name: &str) -> Result<Self, VindexError> {
         match name {
             TEACHER_FORCED_TWO_ARM => Ok(Self::TeacherForcedTwoArm),
+            plan::PROCEDURE => Ok(Self::PlanV1),
             other => Err(VindexError::Parse(format!(
                 "no measurement procedure named `{other}` is implemented by this build — a \
                  run under another procedure would produce a reading nobody asked for"

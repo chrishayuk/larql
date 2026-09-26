@@ -33,7 +33,7 @@ fn observed_of(key: MeasurementKey, kl_p99: f64) -> Observed {
     Observed {
         key,
         observation: fixtures::authority_reading(kl_p99, 3).into(),
-        verified: VerifiedFacts::default(),
+        verified: VerifiedFacts::default().into(),
         execution_note: "ran 8 sequences on cpu".to_string(),
     }
 }

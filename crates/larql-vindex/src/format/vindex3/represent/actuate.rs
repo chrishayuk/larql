@@ -83,6 +83,7 @@
 
 pub mod artifacts;
 pub mod executor;
+pub mod plan;
 pub mod prepare;
 pub mod request;
 pub mod teacher_forced;
@@ -92,6 +93,7 @@ pub use executor::{
     verify_container, ArtifactLocator, ExecutionRefusal, ExecutorRegistry, ExperimentExecutor,
     LocatorRefusal, Misdirected, Observed,
 };
+pub use plan::PlanTeacherForcedExecutor;
 pub use prepare::{PreparedExperiment, Ready};
 pub use request::{MeasurementRequest, RequestRefusal};
 pub use teacher_forced::TeacherForcedExecutor;

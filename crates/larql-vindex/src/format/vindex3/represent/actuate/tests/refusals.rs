@@ -178,6 +178,14 @@ fn execution_refusals() -> Vec<ExecutionRefusal> {
             requested: key(),
             observed: other_key(),
         })),
+        ExecutionRefusal::Plan(
+            super::super::super::measure::plan::PlanRefusal::Inadmissible(
+                super::super::super::measure::plan::PlanInadmissible::NullArmNotZero {
+                    sample: 0,
+                    position: 3,
+                },
+            ),
+        ),
     ]
 }
 
@@ -198,6 +206,8 @@ fn execution_must_say(refusal: &ExecutionRefusal) -> Vec<String> {
             vec![procedure.clone(), detail.clone()]
         }
         ExecutionRefusal::Measurement(r) => vec![r.to_string()],
+        // Forwarded whole: the plan refusal's own variant survives.
+        ExecutionRefusal::Plan(r) => vec![format!("{r:?}")],
         // BOTH experiments, for the same reason as StateMismatch.
         ExecutionRefusal::ObservedAnotherExperiment(m) => {
             vec![m.requested.short().into(), m.observed.short().into()]

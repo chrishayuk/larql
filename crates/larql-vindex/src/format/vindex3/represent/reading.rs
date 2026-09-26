@@ -20,8 +20,9 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use super::measure::outcome::VerifiedFacts;
 use super::measure::plan::metrics::{Aggregate, Summary};
-use super::measure::plan::PROCEDURE as PLAN_PROCEDURE;
+use super::measure::plan::{PlanVerifiedFacts, PROCEDURE as PLAN_PROCEDURE};
 use super::quality::{gate_by_id, QualityBank, QualityGate};
 use super::state::instrument::{InstrumentSemantics, MetricSemantics};
 use crate::error::VindexError;
@@ -169,6 +170,58 @@ impl From<QualityBank> for Observation {
 impl From<PlanObservation> for Observation {
     fn from(plan: PlanObservation) -> Self {
         Self::Plan(plan)
+    }
+}
+
+/// **What a run checked**, of whichever procedure ran it. Untagged, plan
+/// form first: Kimi facts serialise exactly as the bare struct always
+/// has, and plan facts require fields the Kimi form does not carry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RunFacts {
+    Plan(PlanVerifiedFacts),
+    Kimi(VerifiedFacts),
+}
+
+impl RunFacts {
+    pub fn kind(&self) -> ReadingKind {
+        match self {
+            Self::Kimi(_) => ReadingKind::Kimi,
+            Self::Plan(_) => ReadingKind::Plan,
+        }
+    }
+
+    pub fn as_kimi(&self) -> Option<&VerifiedFacts> {
+        match self {
+            Self::Kimi(facts) => Some(facts),
+            Self::Plan(_) => None,
+        }
+    }
+
+    pub fn as_kimi_mut(&mut self) -> Option<&mut VerifiedFacts> {
+        match self {
+            Self::Kimi(facts) => Some(facts),
+            Self::Plan(_) => None,
+        }
+    }
+
+    pub fn as_plan(&self) -> Option<&PlanVerifiedFacts> {
+        match self {
+            Self::Plan(facts) => Some(facts),
+            Self::Kimi(_) => None,
+        }
+    }
+}
+
+impl From<VerifiedFacts> for RunFacts {
+    fn from(facts: VerifiedFacts) -> Self {
+        Self::Kimi(facts)
+    }
+}
+
+impl From<PlanVerifiedFacts> for RunFacts {
+    fn from(facts: PlanVerifiedFacts) -> Self {
+        Self::Plan(facts)
     }
 }
 

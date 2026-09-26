@@ -143,7 +143,11 @@ fn dispatch(
     let mut response = pareto_observed(f, quality.0, quality.1);
     response.key = request.key().clone();
     if incomplete {
-        response.verified.invariant_neighbour_layer = None;
+        response
+            .verified
+            .as_kimi_mut()
+            .unwrap()
+            .invariant_neighbour_layer = None;
     }
     let executor = FixtureExecutor {
         procedure: request.procedure(),

@@ -34,6 +34,7 @@ pub mod artifact;
 pub mod state_evidence;
 
 mod bank_evidence;
+mod token_bank_evidence;
 mod validation;
 pub use validation::{validate, AcceptedMeasurement, IngestionRefusal, IngestionSources};
 
