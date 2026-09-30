@@ -26,10 +26,11 @@ use crate::cpu::ops::KernelShapeError;
 ///
 /// SAFETY: `quants` must point to ≥128 readable bytes, `act` to ≥256, and
 /// `scales` to an 8-element i32 array. Requires the `dotprod` extension (SDOT),
-/// baseline on `aarch64-apple-darwin` — same assumption as `sdot_acc`.
+/// which the caller must establish before entering this function.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline]
 #[doc(hidden)] // pub for the C12 decomposition microbench (benches/q4k_q8k_matvec.rs)
+#[target_feature(enable = "dotprod")]
 pub unsafe fn q4k_sb_sum1_asm(quants: *const u8, act: *const i8, scales: *const i32) -> i32 {
     let sum1: i32;
     // One group of the unrolled body, parameterised by the two scale lanes
@@ -119,6 +120,22 @@ pub fn q4k_q8k_matvec_asm(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if !std::arch::is_aarch64_feature_detected!("dotprod") {
+        return super::q4k_neon::q4k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
+    }
+    // SAFETY: dotprod was detected and the operands were validated above.
+    unsafe { q4k_q8k_matvec_asm_dotprod(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_matvec_asm_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
     if rows == 0 || cols == 0 {
         out.fill(0.0);
         return Ok(());
@@ -210,6 +227,7 @@ static Q4K_UNPACK_IDX: [u8; 80] = [
 /// multiplication tree matches the scalar reference's expression order.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline]
+#[target_feature(enable = "dotprod")]
 unsafe fn q4k_sb_contrib_asm(
     header: *const u8,
     quants: *const u8,
@@ -343,6 +361,22 @@ pub fn q4k_q8k_matvec_asm_v2(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if !std::arch::is_aarch64_feature_detected!("dotprod") {
+        return super::q4k_neon::q4k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
+    }
+    // SAFETY: dotprod was detected and the operands were validated above.
+    unsafe { q4k_q8k_matvec_asm_v2_dotprod(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_matvec_asm_v2_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
     if rows == 0 || cols == 0 {
         out.fill(0.0);
         return Ok(());
@@ -386,6 +420,7 @@ pub fn q4k_q8k_matvec_asm_v2(
 /// `fadd` of per-block contributions), so it stays bit-exact.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline]
+#[target_feature(enable = "dotprod")]
 unsafe fn q4k_row_dot_asm(
     row: *const u8,
     act: *const i8,
@@ -526,6 +561,22 @@ pub fn q4k_q8k_matvec_asm_v3(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if !std::arch::is_aarch64_feature_detected!("dotprod") {
+        return super::q4k_neon::q4k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
+    }
+    // SAFETY: dotprod was detected and the operands were validated above.
+    unsafe { q4k_q8k_matvec_asm_v3_dotprod(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_matvec_asm_v3_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
     if rows == 0 || cols == 0 {
         out.fill(0.0);
         return Ok(());
@@ -555,5 +606,5 @@ pub fn q4k_q8k_matvec_asm_v3(
 /// caching live in [`crate::options::q4k_asm_enabled`].
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub(super) fn use_asm_kernel() -> bool {
-    crate::options::q4k_asm_enabled()
+    std::arch::is_aarch64_feature_detected!("dotprod") && crate::options::q4k_asm_enabled()
 }

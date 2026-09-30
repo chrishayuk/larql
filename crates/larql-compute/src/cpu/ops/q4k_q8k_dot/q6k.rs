@@ -4,7 +4,7 @@ use super::common::ELEMS_PER_BLOCK;
 // dispatcher can offer the `LARQL_Q4K_ASM=1` opt-in again. The NEON
 // intrinsic form is already planar and is what the dispatcher uses.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use super::q4k_neon::sdot_acc;
+use super::q4k_neon::dot_acc;
 use super::q8k_activation::Q8KActivation;
 use crate::cpu::ops::q4_common::f16_to_f32;
 use crate::cpu::ops::KernelShapeError;
@@ -117,8 +117,6 @@ pub fn q6k_q8k_matvec_neon(
     rows: usize,
     cols: usize,
 ) -> Result<(), KernelShapeError> {
-    use std::arch::aarch64::*;
-
     KernelShapeError::check(
         "q6k_q8k_matvec_neon",
         out.len(),
@@ -129,6 +127,39 @@ pub fn q6k_q8k_matvec_neon(
         ELEMS_PER_BLOCK,
         Q6K_BLOCK_BYTES,
     )?;
+    if std::arch::is_aarch64_feature_detected!("dotprod") {
+        // SAFETY: the CPU supports every instruction in this specialization.
+        unsafe { q6k_q8k_matvec_neon_dotprod(out, q8k_x, w, rows, cols) }
+    } else {
+        // SAFETY: the baseline specialization uses only NEON instructions.
+        unsafe { q6k_q8k_matvec_neon_impl::<false>(out, q8k_x, w, rows, cols) }
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q6k_q8k_matvec_neon_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    // SAFETY: the caller validated the operands and this function enables dotprod.
+    unsafe { q6k_q8k_matvec_neon_impl::<true>(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+unsafe fn q6k_q8k_matvec_neon_impl<const DOTPROD: bool>(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    use std::arch::aarch64::*;
+
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * Q6K_BLOCK_BYTES;
     out.fill(0.0);
@@ -197,7 +228,7 @@ pub fn q6k_q8k_matvec_neon(
 
                 // ── SDOT: 16 × (q6_raw[i] * q8k[i]) → 4 partial i32 sums ──
                 let q8_v = unsafe { vld1q_s8(q8_g) };
-                let dot_v = unsafe { sdot_acc(vdupq_n_s32(0), q6_raw, q8_v) };
+                let dot_v = unsafe { dot_acc::<DOTPROD>(vdupq_n_s32(0), q6_raw, q8_v) };
                 let dot = unsafe { vaddvq_s32(dot_v) };
 
                 sum1 += scale * dot;
@@ -237,6 +268,7 @@ static Q6K_SHIFT_RIGHT: [i8; 16] = [0, -2, -4, -6, 0, -2, -4, -6, 0, -2, -4, -6,
 /// result is bit-exact with the neon/scalar forms.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline]
+#[target_feature(enable = "dotprod")]
 unsafe fn q6k_sb_sum1_asm(ql: *const u8, qh: *const u8, act: *const i8, scales: *const i32) -> i32 {
     let sum1: i32;
     // One 16-element group: `$qh` = the loaded qh vector for this group's
@@ -348,6 +380,22 @@ pub fn q6k_q8k_matvec_asm(
         ELEMS_PER_BLOCK,
         Q6K_BLOCK_BYTES,
     )?;
+    if !std::arch::is_aarch64_feature_detected!("dotprod") {
+        return q6k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
+    }
+    // SAFETY: dotprod was detected and the operands were validated above.
+    unsafe { q6k_q8k_matvec_asm_dotprod(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q6k_q8k_matvec_asm_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * Q6K_BLOCK_BYTES;
     out.fill(0.0);
@@ -406,3 +454,7 @@ pub fn q6k_q8k_matvec_into(
     #[allow(unreachable_code)]
     q6k_q8k_matvec_scalar(out, q8k_x, w, rows, cols)
 }
+
+#[cfg(all(test, target_arch = "aarch64", target_feature = "neon"))]
+#[path = "tests/baseline_q6k.rs"]
+mod baseline_tests;

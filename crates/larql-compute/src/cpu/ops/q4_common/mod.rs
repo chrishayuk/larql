@@ -16,8 +16,19 @@ mod neon_tests;
 mod tests;
 
 extern "C" {
-    /// C kernel: Q4_0 × Q8_0 matrix-vector multiply with ARM vdotq_s32.
+    /// C kernel: baseline Q4_0 × Q8_0 matrix-vector multiply.
     pub fn q4_0_matvec_c(
+        q4_data: *const u8,
+        q8_x: *const i8,
+        q8_scales: *const f32,
+        scores: *mut f32,
+        num_rows: usize,
+        hidden: usize,
+    );
+
+    /// Native SDOT specialization. Caller must detect dotprod support.
+    #[cfg(target_arch = "aarch64")]
+    pub fn q4_0_matvec_dotprod_c(
         q4_data: *const u8,
         q8_x: *const i8,
         q8_scales: *const f32,

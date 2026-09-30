@@ -26,8 +26,9 @@
 //! ```
 //!
 //! Inner kernel uses NEON `sdot` (ARMv8.2-A SDOT instruction, available on
-//! Apple M1+ and most modern aarch64 chips) when compiled for `aarch64`;
-//! falls back to a scalar reference otherwise.  Both paths share the
+//! Apple M1+ and most modern aarch64 chips) when detected at runtime;
+//! aarch64 CPUs without dotprod use baseline NEON widening multiplies.
+//! Other architectures use AVX2 when available or a scalar reference. All paths share the
 //! Q8_K activation quantiser and the per-super-block aggregation math —
 //! only the inner i8×i8 → i32 dot differs.
 

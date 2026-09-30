@@ -8,34 +8,52 @@ use super::q8k_activation::Q8KActivation;
 use crate::cpu::ops::q4_common::f16_to_f32;
 use crate::cpu::ops::KernelShapeError;
 
-/// SDOT (signed 8-bit dot-product, accumulate-into-i32x4) wrapper.
-///
-/// Computes `acc + Σ_{lane=0..16} a[lane] * b[lane]`, returning an `int32x4_t`
-/// where each i32 lane holds the sum of 4 i8 × i8 products.  One ARMv8.2-A
-/// `SDOT` instruction; M1+ supports it natively (the `dotprod` target
-/// feature is enabled by default for `aarch64-apple-darwin`).
-///
-/// Implemented via inline asm because `core::arch::aarch64::vdotq_s32` is
-/// still gated behind the unstable `stdarch_neon_dotprod` feature on Rust
-/// 1.91 (issue rust-lang/rust#117224).  The asm form is stable today.
+/// Dot product in four groups of four signed bytes. The specialization is
+/// selected once per matvec, so no feature check occurs inside the row loop.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline(always)]
-pub(super) unsafe fn sdot_acc(
+pub(super) unsafe fn dot_acc<const DOTPROD: bool>(
     acc: std::arch::aarch64::int32x4_t,
     a: std::arch::aarch64::int8x16_t,
     b: std::arch::aarch64::int8x16_t,
 ) -> std::arch::aarch64::int32x4_t {
-    let result: std::arch::aarch64::int32x4_t;
-    unsafe {
-        core::arch::asm!(
-            "sdot {0:v}.4s, {1:v}.16b, {2:v}.16b",
-            inlateout(vreg) acc => result,
-            in(vreg) a,
-            in(vreg) b,
-            options(pure, nomem, nostack, preserves_flags),
-        );
+    if DOTPROD {
+        // SAFETY: only the dotprod-enabled matvec specialization selects true.
+        unsafe { sdot_acc(acc, a, b) }
+    } else {
+        // SAFETY: NEON is available and these operands are fixed-size vectors.
+        unsafe { dot_acc_neon(acc, a, b) }
     }
-    result
+}
+
+/// Baseline NEON definition of SDOT, including its four-lane grouping.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+pub(super) unsafe fn dot_acc_neon(
+    acc: std::arch::aarch64::int32x4_t,
+    a: std::arch::aarch64::int8x16_t,
+    b: std::arch::aarch64::int8x16_t,
+) -> std::arch::aarch64::int32x4_t {
+    use std::arch::aarch64::*;
+    // SAFETY: this module requires NEON; all operands are fixed-size vectors.
+    unsafe {
+        let lo = vpaddlq_s16(vmull_s8(vget_low_s8(a), vget_low_s8(b)));
+        let hi = vpaddlq_s16(vmull_s8(vget_high_s8(a), vget_high_s8(b)));
+        vaddq_s32(acc, vpaddq_s32(lo, hi))
+    }
+}
+
+/// Native SDOT; callers must establish dotprod support. The intrinsic is
+/// stable on the workspace's pinned Rust 1.98 toolchain.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+#[inline]
+unsafe fn sdot_acc(
+    acc: std::arch::aarch64::int32x4_t,
+    a: std::arch::aarch64::int8x16_t,
+    b: std::arch::aarch64::int8x16_t,
+) -> std::arch::aarch64::int32x4_t {
+    std::arch::aarch64::vdotq_s32(acc, a, b)
 }
 
 /// Software prefetch hint — bring the cache line containing `ptr` into
@@ -74,8 +92,6 @@ pub fn q4k_q8k_matvec_neon(
     rows: usize,
     cols: usize,
 ) -> Result<(), KernelShapeError> {
-    use std::arch::aarch64::*;
-
     KernelShapeError::check(
         "q4k_q8k_matvec_neon",
         out.len(),
@@ -86,6 +102,39 @@ pub fn q4k_q8k_matvec_neon(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if std::arch::is_aarch64_feature_detected!("dotprod") {
+        // SAFETY: the CPU supports every instruction in this specialization.
+        unsafe { q4k_q8k_matvec_neon_dotprod(out, q8k_x, w, rows, cols) }
+    } else {
+        // SAFETY: the baseline specialization uses only NEON instructions.
+        unsafe { q4k_q8k_matvec_neon_impl::<false>(out, q8k_x, w, rows, cols) }
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_matvec_neon_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    // SAFETY: the caller validated the operands and this function enables dotprod.
+    unsafe { q4k_q8k_matvec_neon_impl::<true>(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+unsafe fn q4k_q8k_matvec_neon_impl<const DOTPROD: bool>(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    use std::arch::aarch64::*;
+
     if rows == 0 || cols == 0 {
         out.fill(0.0);
         return Ok(());
@@ -169,10 +218,10 @@ pub fn q4k_q8k_matvec_neon(
                 // Independent SDOT pairs: 4 SDOTs into 4 destination
                 // registers (no inter-SDOT data dependency), then sum
                 // pairs with vaddq.
-                let dlo0 = unsafe { sdot_acc(zero_v, lo0, y_lo0) };
-                let dlo1 = unsafe { sdot_acc(zero_v, lo1, y_lo1) };
-                let dhi0 = unsafe { sdot_acc(zero_v, hi0, y_hi0) };
-                let dhi1 = unsafe { sdot_acc(zero_v, hi1, y_hi1) };
+                let dlo0 = unsafe { dot_acc::<DOTPROD>(zero_v, lo0, y_lo0) };
+                let dlo1 = unsafe { dot_acc::<DOTPROD>(zero_v, lo1, y_lo1) };
+                let dhi0 = unsafe { dot_acc::<DOTPROD>(zero_v, hi0, y_hi0) };
+                let dhi1 = unsafe { dot_acc::<DOTPROD>(zero_v, hi1, y_hi1) };
                 let dlo_acc = unsafe { vaddq_s32(dlo0, dlo1) };
                 let dhi_acc = unsafe { vaddq_s32(dhi0, dhi1) };
 
@@ -223,8 +272,6 @@ pub fn q4k_q8k_matvec_neon_2row(
     rows: usize,
     cols: usize,
 ) -> Result<(), KernelShapeError> {
-    use std::arch::aarch64::*;
-
     KernelShapeError::check(
         "q4k_q8k_matvec_neon_2row",
         out.len(),
@@ -235,6 +282,39 @@ pub fn q4k_q8k_matvec_neon_2row(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if std::arch::is_aarch64_feature_detected!("dotprod") {
+        // SAFETY: the CPU supports every instruction in this specialization.
+        unsafe { q4k_q8k_matvec_neon_2row_dotprod(out, q8k_x, w, rows, cols) }
+    } else {
+        // SAFETY: the baseline specialization uses only NEON instructions.
+        unsafe { q4k_q8k_matvec_neon_2row_impl::<false>(out, q8k_x, w, rows, cols) }
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_matvec_neon_2row_dotprod(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    // SAFETY: the caller validated the operands and this function enables dotprod.
+    unsafe { q4k_q8k_matvec_neon_2row_impl::<true>(out, q8k_x, w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+unsafe fn q4k_q8k_matvec_neon_2row_impl<const DOTPROD: bool>(
+    out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    use std::arch::aarch64::*;
+
     if rows == 0 || cols == 0 {
         out.fill(0.0);
         return Ok(());
@@ -306,20 +386,20 @@ pub fn q4k_q8k_matvec_neon_2row(
                 // is stalled on a load.
                 let zero = unsafe { vdupq_n_s32(0) };
                 let dlo_0 = unsafe {
-                    let a = sdot_acc(zero, lo0a, y_lo0);
-                    sdot_acc(a, lo0b, y_lo1)
+                    let a = dot_acc::<DOTPROD>(zero, lo0a, y_lo0);
+                    dot_acc::<DOTPROD>(a, lo0b, y_lo1)
                 };
                 let dlo_1 = unsafe {
-                    let a = sdot_acc(zero, lo1a, y_lo0);
-                    sdot_acc(a, lo1b, y_lo1)
+                    let a = dot_acc::<DOTPROD>(zero, lo1a, y_lo0);
+                    dot_acc::<DOTPROD>(a, lo1b, y_lo1)
                 };
                 let dhi_0 = unsafe {
-                    let a = sdot_acc(zero, hi0a, y_hi0);
-                    sdot_acc(a, hi0b, y_hi1)
+                    let a = dot_acc::<DOTPROD>(zero, hi0a, y_hi0);
+                    dot_acc::<DOTPROD>(a, hi0b, y_hi1)
                 };
                 let dhi_1 = unsafe {
-                    let a = sdot_acc(zero, hi1a, y_hi0);
-                    sdot_acc(a, hi1b, y_hi1)
+                    let a = dot_acc::<DOTPROD>(zero, hi1a, y_hi0);
+                    dot_acc::<DOTPROD>(a, hi1b, y_hi1)
                 };
                 let dot_lo_0 = unsafe { vaddvq_s32(dlo_0) };
                 let dot_hi_0 = unsafe { vaddvq_s32(dhi_0) };
@@ -345,8 +425,13 @@ pub fn q4k_q8k_matvec_neon_2row(
         let r = rows - 1;
         let mut tail_out = [0.0f32; 1];
         let row_w = &w[r * row_bytes..(r + 1) * row_bytes];
-        q4k_q8k_matvec_neon(&mut tail_out, q8k_x, row_w, 1, cols)?;
+        // SAFETY: the validated final row retains the caller's specialization.
+        unsafe { q4k_q8k_matvec_neon_impl::<DOTPROD>(&mut tail_out, q8k_x, row_w, 1, cols) }?;
         out[r] = tail_out[0];
     }
     Ok(())
 }
+
+#[cfg(all(test, target_arch = "aarch64", target_feature = "neon"))]
+#[path = "tests/baseline_q4k.rs"]
+mod baseline_tests;
