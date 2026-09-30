@@ -57,6 +57,21 @@ permissions:
   contents: read
 
 jobs:
+  tls-dependencies:
+    name: portable TLS dependency graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: TLS gate controls
+        run: python3 -m unittest discover -s scripts -p test_tls_dependencies.py
+      - name: Shipped target dependencies use Rustls
+        run: python3 scripts/check_tls_dependencies.py
+
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest

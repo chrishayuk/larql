@@ -12,7 +12,7 @@ categories = ["data-structures", "encoding"]
 [dependencies]
 larql-models = { path = "../larql-models" }
 larql-vindex-spec = { path = "../larql-vindex-spec" }
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"

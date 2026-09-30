@@ -15,7 +15,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 # HTTP provider — optional so pure graph usage has zero network deps
-reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
+reqwest = { workspace = true, features = ["blocking", "json"], optional = true }
 
 # Binary serialization via MessagePack
 rmp-serde = { version = "1", optional = true }
