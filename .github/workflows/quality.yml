@@ -63,7 +63,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Activate the pinned Rust toolchain
+        run: rustup show active-toolchain
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
