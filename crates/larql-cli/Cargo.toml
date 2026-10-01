@@ -25,7 +25,7 @@ larql-vindex-spec = { path = "../larql-vindex-spec" }
 larql-factory = { path = "../larql-factory" }
 clap = { version = "4", features = ["derive", "env"] }
 indicatif = "0.17"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 base64 = "0.22"
 tokenizers = "0.21"
 safetensors = "0.7"

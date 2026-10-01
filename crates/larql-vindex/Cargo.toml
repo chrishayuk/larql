@@ -59,7 +59,7 @@ bytes = "1"
 
 # HuggingFace Hub integration
 hf-hub = { version = "0.5", default-features = false, features = ["ureq"] }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 
 # OS-level mmap hints (madvise)
 [target.'cfg(unix)'.dependencies]

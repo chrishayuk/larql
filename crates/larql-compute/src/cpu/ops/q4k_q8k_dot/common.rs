@@ -33,8 +33,10 @@ pub(super) const SUBBLOCK_SIZE: usize = 32;
 pub fn kernel_class_summary() -> String {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
-        let variant = if use_asm_kernel() { "neon-asm" } else { "neon" };
-        format!("q4k_matvec={variant} q6k_matvec={variant} q4k_gate_up={variant}")
+        aarch64_kernel_class_summary(
+            std::arch::is_aarch64_feature_detected!("dotprod"),
+            use_asm_kernel(),
+        )
     }
     #[cfg(target_arch = "x86_64")]
     {
@@ -54,6 +56,40 @@ pub fn kernel_class_summary() -> String {
     )))]
     {
         "q4k_matvec=scalar q6k_matvec=scalar q4k_gate_up=scalar".to_string()
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+fn aarch64_kernel_class_summary(dotprod: bool, asm: bool) -> String {
+    if !dotprod {
+        return "q4k_matvec=neon-baseline q6k_matvec=neon-baseline q4k_gate_up=neon-baseline"
+            .to_string();
+    }
+    let variant = if asm { "neon-asm" } else { "neon" };
+    // Q6_K's legacy assembly layout remains disabled; it uses NEON.
+    format!("q4k_matvec={variant} q6k_matvec=neon q4k_gate_up={variant}")
+}
+
+#[cfg(all(test, target_arch = "aarch64", target_feature = "neon"))]
+mod tests {
+    use super::aarch64_kernel_class_summary;
+
+    #[test]
+    fn summary_never_advertises_dotprod_without_cpu_support() {
+        for asm in [false, true] {
+            assert_eq!(
+                aarch64_kernel_class_summary(false, asm),
+                "q4k_matvec=neon-baseline q6k_matvec=neon-baseline q4k_gate_up=neon-baseline"
+            );
+        }
+        assert_eq!(
+            aarch64_kernel_class_summary(true, false),
+            "q4k_matvec=neon q6k_matvec=neon q4k_gate_up=neon"
+        );
+        assert_eq!(
+            aarch64_kernel_class_summary(true, true),
+            "q4k_matvec=neon-asm q6k_matvec=neon q4k_gate_up=neon-asm"
+        );
     }
 }
 

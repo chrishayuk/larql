@@ -70,6 +70,50 @@ async fn post_experts(app: axum::Router) -> axum::http::Response<Body> {
     .unwrap()
 }
 
+/// Keep the primary pending and make the secondary fail while parsing an
+/// actual TCP response. Neither a connection-refused delay nor a fixed
+/// primary-response window determines the winner. Dropping the JoinSet
+/// cleans up both listeners, including on an assertion failure.
+async fn spawn_pending_primary_and_dead_secondary(
+) -> (SocketAddr, SocketAddr, tokio::task::JoinSet<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let primary = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let secondary = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let primary_addr = primary.local_addr().unwrap();
+    let secondary_addr = secondary.local_addr().unwrap();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let started_tx = Arc::new(Mutex::new(Some(started_tx)));
+    let app = axum::Router::new().route(
+        "/v1/walk-ffn",
+        post(move || {
+            let started_tx = started_tx.clone();
+            async move {
+                if let Some(tx) = started_tx.lock().await.take() {
+                    let _ = tx.send(());
+                }
+                std::future::pending::<Json<Value>>().await
+            }
+        }),
+    );
+    let mut servers = tokio::task::JoinSet::new();
+    servers.spawn(async move { axum::serve(primary, app).await.unwrap() });
+    servers.spawn(async move {
+        let (mut stream, _) = secondary.accept().await.unwrap();
+        let mut request = [0; 4096];
+        assert!(stream.read(&mut request).await.unwrap() > 0);
+        started_rx.await.expect("the primary received its request");
+        // Force an HTTP transport/parser error, rather than an application
+        // status whose JSON body might be accepted as a successful result.
+        stream
+            .write_all(b"invalid HTTP response\r\n\r\n")
+            .await
+            .unwrap();
+        stream.shutdown().await.unwrap();
+    });
+    (primary_addr, secondary_addr, servers)
+}
+
 #[tokio::test]
 async fn moe_hedge_to_the_secondary_replica_wins_and_is_counted() {
     let (slow, _slow_calls) = spawn_slow_shard(SLOW_PRIMARY).await;
@@ -111,13 +155,18 @@ async fn moe_hedge_without_a_second_replica_stays_on_the_primary() {
 /// still counted as fired and won (the secondary finished first).
 #[tokio::test]
 async fn moe_hedge_that_lands_on_a_dead_secondary_is_a_502_and_counted() {
-    let (slow, _slow_calls) = spawn_slow_shard(SLOW_PRIMARY).await;
+    let (slow, dead, _servers) = spawn_pending_primary_and_dead_secondary().await;
     let mut grid = GridState::default();
     grid.register(moe_entry("slow", format!("http://{slow}"), 0));
-    grid.register(moe_entry("dead", "http://127.0.0.1:1".into(), BUSY));
+    grid.register(moe_entry("dead", format!("http://{dead}"), BUSY));
     let metrics = RouterMetrics::new();
 
-    let resp = post_experts(moe_router(grid, Some(HEDGE_AFTER), &metrics)).await;
+    let resp = tokio::time::timeout(
+        Duration::from_secs(10),
+        post_experts(moe_router(grid, Some(HEDGE_AFTER), &metrics)),
+    )
+    .await
+    .expect("the failing hedge must complete");
     assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
     assert_eq!(metrics.route_hedge_fires_total.get(), 1);
     assert_eq!(metrics.route_hedge_wins_total.get(), 1);

@@ -63,7 +63,7 @@ minijinja = { version = "2", features = ["loader"] }
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 
 # Remote FFN backend (RemoteWalkBackend → POST /v1/walk-ffn)
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 half = "2"
 
 # gRPC expert client (RemoteMoeBackend → ExpertService via tonic)

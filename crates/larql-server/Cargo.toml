@@ -33,7 +33,7 @@ larql-compute = { path = "../larql-compute" }
 axum = { version = "0.8", features = ["ws"] }
 half = "2"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { workspace = true, features = ["json"] }
 sha2 = "0.10"
 getrandom = "0.3"
 # Constant-time byte equality for API-key comparison (auth middleware).
@@ -75,10 +75,10 @@ larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 [dev-dependencies]
 # CONTINUATION-MEM-1's harness reads KvView::backing_addresses (test-utils only).
 larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
-tungstenite = "0.29"
+tungstenite = { workspace = true }
 # RESIDUAL-BUS-0's transport-floor example drives the expert wire's
 # blocking client configuration (`examples/bus0_transport_floor.rs`).
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { workspace = true, features = ["blocking"] }
 tempfile = "3"
 # Integration test wires a real GridServiceImpl alongside the server. Dev-only.
 larql-router = { path = "../larql-router" }

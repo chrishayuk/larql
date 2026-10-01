@@ -5,7 +5,7 @@ use super::common::{
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::q4k_asm::use_asm_kernel;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use super::q4k_neon::sdot_acc;
+use super::q4k_neon::dot_acc;
 use super::q4k_scalar::q4k_q8k_matvec_scalar;
 use super::q8k_activation::Q8KActivation;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -65,8 +65,6 @@ pub fn q4k_q8k_gate_up_neon(
     rows: usize,
     cols: usize,
 ) -> Result<(), KernelShapeError> {
-    use std::arch::aarch64::*;
-
     KernelShapeError::check(
         "q4k_q8k_gate_up_neon (gate)",
         gate_out.len(),
@@ -87,6 +85,45 @@ pub fn q4k_q8k_gate_up_neon(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if std::arch::is_aarch64_feature_detected!("dotprod") {
+        // SAFETY: the CPU supports every instruction in this specialization.
+        unsafe { q4k_q8k_gate_up_neon_dotprod(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols) }
+    } else {
+        // SAFETY: the baseline specialization uses only NEON instructions.
+        unsafe {
+            q4k_q8k_gate_up_neon_impl::<false>(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols)
+        }
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_gate_up_neon_dotprod(
+    gate_out: &mut [f32],
+    up_out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    gate_w: &[u8],
+    up_w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    // SAFETY: the caller validated the operands and this function enables dotprod.
+    unsafe { q4k_q8k_gate_up_neon_impl::<true>(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+unsafe fn q4k_q8k_gate_up_neon_impl<const DOTPROD: bool>(
+    gate_out: &mut [f32],
+    up_out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    gate_w: &[u8],
+    up_w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
+    use std::arch::aarch64::*;
+
     if rows == 0 || cols == 0 {
         gate_out.fill(0.0);
         up_out.fill(0.0);
@@ -150,20 +187,20 @@ pub fn q4k_q8k_gate_up_neon(
                 // OoO engine can dispatch them on different ports.
                 let zero = unsafe { vdupq_n_s32(0) };
                 let g_dlo = unsafe {
-                    let a = sdot_acc(zero, glo0, y_lo0);
-                    sdot_acc(a, glo1, y_lo1)
+                    let a = dot_acc::<DOTPROD>(zero, glo0, y_lo0);
+                    dot_acc::<DOTPROD>(a, glo1, y_lo1)
                 };
                 let u_dlo = unsafe {
-                    let a = sdot_acc(zero, ulo0, y_lo0);
-                    sdot_acc(a, ulo1, y_lo1)
+                    let a = dot_acc::<DOTPROD>(zero, ulo0, y_lo0);
+                    dot_acc::<DOTPROD>(a, ulo1, y_lo1)
                 };
                 let g_dhi = unsafe {
-                    let a = sdot_acc(zero, ghi0, y_hi0);
-                    sdot_acc(a, ghi1, y_hi1)
+                    let a = dot_acc::<DOTPROD>(zero, ghi0, y_hi0);
+                    dot_acc::<DOTPROD>(a, ghi1, y_hi1)
                 };
                 let u_dhi = unsafe {
-                    let a = sdot_acc(zero, uhi0, y_hi0);
-                    sdot_acc(a, uhi1, y_hi1)
+                    let a = dot_acc::<DOTPROD>(zero, uhi0, y_hi0);
+                    dot_acc::<DOTPROD>(a, uhi1, y_hi1)
                 };
 
                 let g_dot_lo = unsafe { vaddvq_s32(g_dlo) };
@@ -203,6 +240,7 @@ pub fn q4k_q8k_gate_up_neon(
 /// associative), so the tree-sum is bit-exact with the scalar reference.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline]
+#[target_feature(enable = "dotprod")]
 unsafe fn q4k_gate_up_sb_sum1_asm(
     g_quants: *const u8,
     u_quants: *const u8,
@@ -340,6 +378,24 @@ pub fn q4k_q8k_gate_up_asm(
         ELEMS_PER_BLOCK,
         BLOCK_BYTES,
     )?;
+    if !std::arch::is_aarch64_feature_detected!("dotprod") {
+        return q4k_q8k_gate_up_neon(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols);
+    }
+    // SAFETY: dotprod was detected and the operands were validated above.
+    unsafe { q4k_q8k_gate_up_asm_dotprod(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols) }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn q4k_q8k_gate_up_asm_dotprod(
+    gate_out: &mut [f32],
+    up_out: &mut [f32],
+    q8k_x: &Q8KActivation,
+    gate_w: &[u8],
+    up_w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
     if rows == 0 || cols == 0 {
         gate_out.fill(0.0);
         up_out.fill(0.0);
@@ -418,3 +474,7 @@ pub fn q4k_q8k_gate_up_asm(
     }
     Ok(())
 }
+
+#[cfg(all(test, target_arch = "aarch64", target_feature = "neon"))]
+#[path = "tests/baseline_gate_up.rs"]
+mod baseline_tests;
