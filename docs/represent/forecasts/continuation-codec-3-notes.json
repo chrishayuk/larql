@@ -9,7 +9,7 @@
   },
   "waves": {
     "W1": {
-      "status": "built; awaiting review and merge",
+      "status": "merged #657 → 2536bb79",
       "built": [
         "codec_3_freeze.rs: the freeze file as the authority — acceptance.rule_binding read at run time (refuses a missing role, an undeclared arm, a symbol the inherited rule does not name, duplicate roles); bank 3 loaded against the digest the freeze names; the compressed-arm table; adjudicate_bound applies CODEC-2's unchanged adjudicate() to every bound arm and takes the verdict from the primary's alone",
         "codec_3_freeze_arms.rs: per rung R → NULL → C (scores and logits under distinct names) → CH, CH-recent256, CH-recent128, each traced; residency (CODEC-1's equation for CH, the reconnaissance's mixed residency for the CH-recent arms) and the trace = CH's are stop guards; the record",
@@ -34,7 +34,90 @@
       "no_model_arm": "no arm has run on bank 3",
       "review_fix": "maintainer review of #657: on resume a present checkpoint skipped the trace and residency guards, and record() copied stored fields without re-checking them — a checkpoint's existence stood in for its guards. revalidate() now re-checks every stored compressed arm (residency recomputed from its recorded fields; each CH-recent trace against CH's stored trace) on resume and before the record. Removing either call site turns the new control red",
       "ci_fault": "CI coverage (ubuntu) failed four mechanism_subjects_fixtures tests with 'instrument invalid': W1's controls did not take the harness serial() lock, so their allocations (above all the 10,000-replicate bootstraps of the isolation control) landed inside the mechanism tests' process-global allocator scopes. Reproduced locally on the pre-fix code by running the mechanism tests beside the isolation control on two threads: instrument invalid in 5/5 runs; with every W1 test serialised (and the reconnaissance's one unserialised test, the same class), 5/5 pass. No W1 statistic or verdict path changed"
+    },
+    "W2": {
+      "status": "run complete; record copied unedited",
+      "run": "from merged W1 2536bb79 (detached worktree, release binary; provenance in continuation-codec-3-w2-provenance.json). One invocation, 37,605 s wall, under contention from AUTO-REP-LANDSCAPE-1's cube for most of it (wall time only; every gate deterministic)",
+      "guards": "every guard held: NULL bit-identical to R at all three rungs; guard A passed (R↔C top-1 0.826, KL mean 0.121); bindings; residency live = declared for CH and both CH-recent arms at every rung end; each CH-recent trace = CH's at every rung; every stored checkpoint revalidated before the record",
+      "record_sha256": "20045bb85989682cf3139d5a78bdd6ce9ed69dd25496542cb4e4afb0428655a0"
     }
   },
-  "status": "OPEN — W1 built"
+  "status": "W2 COMPLETE — verdict ACCEPTABLE (CH-recent256); closure pending maintainer review",
+  "closure": {
+    "status": "verdict recorded 2026-10-02; the reading below is the maintainer's to accept",
+    "verdict": "ACCEPTABLE — CH-recent256 (acceptance.rule_binding.primary), pooled over the three rungs, every guard passed",
+    "answer": "Yes, by CODEC-2's frozen margins: on bank 3, keeping the newest 256 K rows of every layer exact while storing older K and all V at 4 bits does not materially worsen the shipped Q4_K execution's agreement with the full-precision reference",
+    "primary_pooled": {
+      "B1_lower": -0.011873838720178876,
+      "B1_b_c": [
+        47,
+        66
+      ],
+      "B2_upper": 0.005926689433665048,
+      "B2_epsilon": 0.03017401685886785,
+      "B3_upper": 0.1872544961059447,
+      "B3_bound": 0.22117880485717137,
+      "B4_lower": 0.0,
+      "B4_n_conf": 480,
+      "outcomes": [
+        "Holds",
+        "Holds",
+        "Holds",
+        "Holds"
+      ]
+    },
+    "per_rung_findings": "recorded, not smoothed (forecast rule.subject): B3 FAILS at rung 2,048 (0.289 vs 0.231) and rung 8,192 (0.218 vs 0.197) on each rung's own thresholds and HOLDS at 4,096 (0.178 vs 0.202); B1 and B2 hold at every rung; B4 lacks per-rung support (n_conf < 350 at each rung) so every per-rung verdict is UNINFORMATIVE or NOT ACCEPTABLE. The pooled B3 holds with margin 0.187 vs 0.221. The tail result is a pooled one; per rung it is borderline at two of three",
+    "secondary_report_only": {
+      "arm": "CH-recent128",
+      "verdict": "NOT ACCEPTABLE (report-only; changes nothing)",
+      "rules": {
+        "B1_lower": -0.014274583049103371,
+        "B1_b_c": [
+          46,
+          72
+        ],
+        "B2_upper": 0.007852744911626281,
+        "B2_epsilon": 0.03017401685886785,
+        "B3_upper": 0.23351458650183532,
+        "B3_bound": 0.22117880485717137,
+        "B4_lower": 0.0,
+        "B4_n_conf": 480,
+        "outcomes": [
+          "Holds",
+          "Holds",
+          "Fails",
+          "Holds"
+        ]
+      },
+      "reading": "fails B3 pooled (0.234 vs 0.221) and at every rung; B1, B2, B4 hold. The reconnaissance's near-miss for 128 recurs on held-out text: the window boundary sits between 128 and 256 on this model"
+    },
+    "control_report_only": {
+      "arm": "CH",
+      "verdict": "NOT ACCEPTABLE",
+      "rules": {
+        "B1_lower": -0.02906778089349442,
+        "B1_b_c": [
+          68,
+          134
+        ],
+        "B2_upper": 0.026495068204888683,
+        "B2_epsilon": 0.03017401685886785,
+        "B3_upper": 0.46272275364449905,
+        "B3_bound": 0.22117880485717137,
+        "B4_lower": -0.005506636810737133,
+        "B4_n_conf": 480,
+        "outcomes": [
+          "Holds",
+          "Holds",
+          "Fails",
+          "Holds"
+        ]
+      },
+      "reading": "CODEC-2's failure recurs on bank 3: B3 0.463 vs 0.221 (CODEC-2 bank 2: 0.617 vs 0.290); B1 barely holds pooled (−0.0291) and fails at every rung; B2 fails at 2,048 and 4,096. Recent-K protection is what moves B3 from 2.1× its bound to inside it"
+    },
+    "end_to_end_reported": "R↔arm pooled: C KL mean 0.121 / p99 0.885 / top-1 0.826; CH 0.144 / 0.968 / 0.804; CH-recent256 0.125 / 0.840 / 0.820; CH-recent128 0.126 / 0.851 / 0.817",
+    "residency_reported": "resident bytes at rung end (MB, × CH): 2,048: CH 43.8, recent256 76.3 (1.74×), recent128 60.5 (1.38×); 4,096: 54.9, 87.6 (1.60×), 71.8 (1.31×); 8,192: 77.0, 110.2 (1.43×), 94.5 (1.23×). The window is a fixed cost, so its overhead falls with length",
+    "scope": "gemma3-4b-it; one held-out text (New Grub Street, bank 80d188d3…); codec-recent/v1 4-bit, w = 256; rungs 2,048 / 4,096 / 8,192 × 1,024 scored positions. Not other models (the map is a Gemma finding until other architectures are measured), windows, bit widths, texts, or decode cost",
+    "next": "per the forecast: the decode-cost/materialisation rung for codec-recent/v1, the exact window's precision as a representation question, and the cross-architecture localisation rung (Granite, Qwen 3.x; Kimi/hybrid as the expected different regime)"
+  }
 }
