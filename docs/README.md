@@ -52,6 +52,11 @@ distributed).
 | [gw-key-1.md](gw-key-1.md) | GW-KEY-1 — frozen source-role K/V causality protocol through immutable L24H1 |
 | [gw-read-1-results.md](gw-read-1-results.md) | GW-READ-1 — cached Q/K pass, while V construction, composition and economical execution fail |
 | [gw-v2-results.md](gw-v2-results.md) | GW-V2 — sealed 35-cell causal payload surface with no registered early frontier |
+| [gw-state-1-results.md](gw-state-1-results.md) | GW-STATE-1 — carrier-plus-edge result, with the historical fallback erratum recorded separately |
+| [gw-car-1a-results.md](gw-car-1a-results.md) | GW-CAR-1A — captured-carrier compactness: sparse top-32 clears at 192 bytes; no cheap-construction claim |
+| [gw-car-1b.md](gw-car-1b.md) | GW-CAR-1B — original source-design draft and rationale; executable protocol and closed result follow below |
+| [gw-car-1b-execution.md](gw-car-1b-execution.md) | GW-CAR-1B — executable capital-cohort protocol: 67 fresh subjects, 20 sources/controls, and a 104-readout simultaneous family |
+| [gw-car-1b-results.md](gw-car-1b-results.md) | GW-CAR-1B — 0/10 registered sources clear; the zero control clears and the top-32 oracle fails on fresh capitals |
 | [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
 | [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |

@@ -1,0 +1,41 @@
+{
+  "absolute_passing_ids_by_split": {
+    "test": [
+      0,
+      16
+    ],
+    "validation": [
+      0,
+      16
+    ]
+  },
+  "adjudication_file_sha256": "sha256:8c3c0731a346dd15a0be0d3db5bc4f0ce7cdc809dc39c83a9a70bf67e328de64",
+  "adjudication_sha256": "sha256:e4a8d1af5b1f30145c5ec1647e71195f8625e2d1ae5b83bfe0a66260d79a714d",
+  "all_absolute_and_difference_gate_flags_reproduced": true,
+  "audit_sha256": "sha256:690d231c579d84c4bbbbfc16967c983531dd6782bb94e326f6fb35ae90695bea",
+  "candidate_interventions": 8040,
+  "capture_rows": 597,
+  "clearing_sources": [],
+  "eligible_source_ids": [
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "executable_sha256": "sha256:24e9f5a437015c7741ce248b983f2df7e3035a1ae78be401c8cfe70f07b07110",
+  "identity_bit_mismatches": 0,
+  "new_model_runs": 0,
+  "new_statistical_gates": false,
+  "post_adjudication": true,
+  "protocol_sha256": "sha256:c35202a20adc6d8e02be49764fc05973ebfdded7e4d680681ec8c7e16b08a9b0",
+  "reference_interventions": 1206,
+  "schema": "larql.gwcar1b.postrun-audit.v1",
+  "zero_candidate_id": 16,
+  "zero_payload_nonzero_values": 0
+}
