@@ -203,3 +203,94 @@ fn unit(v: &[f32]) -> Vec<f32> {
     let n = norm(v).max(1e-12);
     v.iter().map(|x| x / n).collect()
 }
+
+// ── DIAGNOSTIC ONLY (branch diag/lql-fixed-point-repro, never merged) ──
+fn diag_installed() -> (tempfile::TempDir, Session) {
+    let (c, mut session) = v3_session();
+    run(
+        &mut session,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "[5]") AT LAYER 1 MODE COMPOSE;"#,
+    );
+    run(
+        &mut session,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("c", "b", "[6]") AT LAYER 1 MODE COMPOSE;"#,
+    );
+    (c, session)
+}
+
+fn diag_up(session: &Session, l: usize, f: usize) -> Vec<f32> {
+    let Backend::Vindex3 { overlay, .. } = &session.backend else {
+        panic!("V3 session")
+    };
+    overlay.up_override_at(l, f).unwrap().to_vec()
+}
+
+fn diag_max_ulp(a: &[f32], b: &[f32]) -> (u32, usize) {
+    let mut worst = 0u32;
+    let mut n = 0usize;
+    for (x, y) in a.iter().zip(b) {
+        let d = (x.to_bits() as i64 - y.to_bits() as i64).unsigned_abs() as u32;
+        if d != 0 {
+            n += 1;
+        }
+        worst = worst.max(d);
+    }
+    (worst, n)
+}
+
+fn diag_rerefine(g: f32, u: f32, label: &str) {
+    let (_c, mut session) = diag_installed();
+    let slots = composed_slots(&session);
+    let before: Vec<Vec<f32>> = slots.iter().map(|&(l, f)| overlay_gate(&session, l, f)).collect();
+    let before_up: Vec<Vec<f32>> = slots.iter().map(|&(l, f)| diag_up(&session, l, f)).collect();
+    session.refine_layer_from_raw_v3(1, g, u);
+    for (i, &(l, f)) in slots.iter().enumerate() {
+        let (wg, ng) = diag_max_ulp(&overlay_gate(&session, l, f), &before[i]);
+        let (wu, nu) = diag_max_ulp(&diag_up(&session, l, f), &before_up[i]);
+        eprintln!(
+            "DIAG {label} slot ({l},{f}): gate max_ulp={wg} elems_differing={ng}/{}; up max_ulp={wu} elems_differing={nu}/{}",
+            before[i].len(),
+            before_up[i].len()
+        );
+    }
+}
+
+#[test]
+fn diag_fixed_point_factor_provenance() {
+    let (_c, session) = diag_installed();
+    let slots = composed_slots(&session);
+    let (g_prod, u_prod, _d) = {
+        let Backend::Vindex3 { runtime, .. } = &session.backend else {
+            panic!("V3 session")
+        };
+        super::layer_median_norms(runtime, 1).unwrap()
+    };
+    let scale = crate::executor::tuning::GATE_SCALE;
+    eprintln!("DIAG g_prod={g_prod:e} bits={:#010x}  u_prod={u_prod:e} bits={:#010x}", g_prod.to_bits(), u_prod.to_bits());
+    for &(l, f) in &slots {
+        let g = overlay_gate(&session, l, f);
+        let up = diag_up(&session, l, f);
+        let g_rec = norm(&g) / scale;
+        let u_rec = norm(&up);
+        eprintln!(
+            "DIAG slot ({l},{f}): g_rec={g_rec:e} bits={:#010x} (ulp vs prod {}); u_rec={u_rec:e} bits={:#010x} (ulp vs prod {})",
+            g_rec.to_bits(),
+            (g_rec.to_bits() as i64 - g_prod.to_bits() as i64).abs(),
+            u_rec.to_bits(),
+            (u_rec.to_bits() as i64 - u_prod.to_bits() as i64).abs()
+        );
+    }
+    // Arm P: re-refine with the factors production actually used.
+    diag_rerefine(g_prod, u_prod, "arm=production-factors");
+    // Arm R: re-refine with the factors the current test reconstructs.
+    let (g_rec, u_rec) = {
+        let (l, f) = slots[0];
+        (norm(&overlay_gate(&session, l, f)) / scale, norm(&diag_up(&session, l, f)))
+    };
+    diag_rerefine(g_rec, u_rec, "arm=reconstructed-factors");
+    // Raw-capture fingerprint, to compare hosts.
+    for (&(l, f), r) in session.raw_install_residuals.iter() {
+        let h = r.iter().fold(0u64, |h, x| h.rotate_left(5) ^ x.to_bits() as u64);
+        eprintln!("DIAG raw ({l},{f}) len={} fingerprint={h:#018x} first={:e}", r.len(), r[0]);
+    }
+}

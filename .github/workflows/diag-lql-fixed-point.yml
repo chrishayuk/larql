@@ -1,0 +1,52 @@
+# DIAGNOSTIC ONLY — lives on branch diag/lql-fixed-point-repro, never merged.
+# Reproduces compose_v3 re_refining_from_the_same_raws_is_a_fixed_point on
+# ubuntu-latest (26.04, OpenBLAS 0.3.32 amd64v3) with ubuntu-24.04 as control.
+name: diag-lql-fixed-point
+
+on:
+  push:
+    branches: [diag/lql-fixed-point-repro]
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: diag · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install OpenBLAS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev pkg-config
+
+      - name: Host facts
+        run: |
+          echo "== os-release"; grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release
+          echo "== image"; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          echo "== cpu"; lscpu | grep -E 'Model name|^CPU\(s\)|Flags' | sed -E 's/(Flags:).*/\1 (selected)/'
+          for f in avx2 fma avx512f avx512_bf16 avx512vl; do printf '%s=%s ' $f $(grep -qw $f /proc/cpuinfo && echo y || echo n); done; echo
+          echo "== openblas packages"; dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' 'libopenblas*' 2>/dev/null
+          echo "== openblas library"; ls -l /usr/lib/x86_64-linux-gnu/libopenblas* 2>/dev/null | head -5
+          echo "== rustc"; rustc -Vv | grep -E 'release|host'
+
+      - name: Diagnostic (factor provenance, both re-refine arms)
+        env:
+          OPENBLAS_VERBOSE: "2"
+        run: cargo test -p larql-lql --lib diag_fixed_point_factor_provenance -- --nocapture 2>&1 | tee diag.log
+
+      - name: The original test, unchanged
+        if: always()
+        env:
+          OPENBLAS_VERBOSE: "2"
+        run: cargo test -p larql-lql --lib re_refining_from_the_same_raws_is_a_fixed_point -- --nocapture
