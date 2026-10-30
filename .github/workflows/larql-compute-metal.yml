@@ -2,8 +2,8 @@
 #
 # Metal GPU backend for larql-compute.  Extracted from `larql-compute`
 # per ADR-019 so non-Mac CI hosts (Linux, Windows) don't have to build
-# or check Metal-specific code.  All jobs run on macos-14 (the latest
-# Apple-silicon GitHub-hosted runner with Metal available).
+# or check Metal-specific code.  All jobs run on macos-15 (Apple
+# silicon, M1, with Metal available; macos-14 was retired 2026-11-02).
 
 name: larql-compute-metal
 
@@ -47,8 +47,8 @@ concurrency:
 
 jobs:
   test:
-    name: test · macos-14
-    runs-on: macos-14
+    name: test · macos-15
+    runs-on: macos-15
     # 45 was below this job's own runtime. Observed durations across
     # 2026-08-26/27: 41, 44, 44, 48, 51 and 64 minutes — so the limit sat
     # in the middle of the distribution and cancelled runs at random,
