@@ -43,6 +43,25 @@ ignore = [
     # rustls-pemfile <- axum-server 0.7. Superseded by rustls-pki-types, which
     # axum-server has not migrated to.
     { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is pulled by axum-server 0.7; upstream has not migrated to rustls-pki-types" },
+    # unsafe-libyaml <- serde_yaml 0.9 (deprecated) <- larql-factory. Archived
+    # upstream; an unmaintained notice, not a known vulnerability. TEMPORARY:
+    # removed by the serde_yaml replacement tracked in #663.
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml via serde_yaml in larql-factory; temporary, replacement tracked in #663" },
+
+    # --- vulnerabilities, TEMPORARY and judged unreachable --------------------
+    # zip < 9 (2.4.2 direct in larql-kv/larql-inference; 3.0.0 as a build-dep
+    # of utoipa-swagger-ui). All three advisories are in ZipArchive::extract /
+    # ZipStreamReader::extract, which nothing in the workspace calls: larql-kv
+    # only reads entries (new/by_index/by_name/read_to_end), larql-inference
+    # does not use zip at all, and utoipa-swagger-ui's build.rs runs its own
+    # extractor over the pinned swagger-ui release. That extractor does apply
+    # each entry's unix mode itself, which is outside these advisories and
+    # untouched by any zip upgrade. These ignores do NOT fix anything; the zip
+    # 9 migration that removes them is tracked in #662. The same three IDs are
+    # ignored for `cargo audit` in .cargo/audit.toml.
+    { id = "RUSTSEC-2026-0367", reason = "zip < 9: extract() SUID/SGID preservation; extract APIs unreachable in this workspace; temporary, migration tracked in #662" },
+    { id = "RUSTSEC-2026-0368", reason = "zip < 9: extract() symlink targets outside destination; extract APIs unreachable in this workspace; temporary, migration tracked in #662" },
+    { id = "RUSTSEC-2026-0369", reason = "zip < 9: extract() applies permissions through symlinks; extract APIs unreachable in this workspace; temporary, migration tracked in #662" },
 
     # NOTE: RUSTSEC-2026-0205 (scc 2.4.0, unsound `Array::insert`) is *not*
     # listed here. cargo-deny's dependency graph does not reach it, so an

@@ -1,0 +1,13 @@
+# cargo-audit configuration. The policy and the reasoning for every entry
+# live in deny.toml; this file only mirrors the vulnerability ignores, because
+# `cargo audit` fails on vulnerabilities and reads its ignores from here.
+# Unmaintained/unsound notices are warnings for cargo-audit and need no entry.
+
+[advisories]
+ignore = [
+    # zip < 9: all three are in ZipArchive::extract / ZipStreamReader::extract,
+    # which nothing in the workspace calls. TEMPORARY; see deny.toml and #662.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]
