@@ -57,6 +57,7 @@ distributed).
 | [gw-car-1b.md](gw-car-1b.md) | GW-CAR-1B — original source-design draft and rationale; executable protocol and closed result follow below |
 | [gw-car-1b-execution.md](gw-car-1b-execution.md) | GW-CAR-1B — executable capital-cohort protocol: 67 fresh subjects, 20 sources/controls, and a 104-readout simultaneous family |
 | [gw-car-1b-results.md](gw-car-1b-results.md) | GW-CAR-1B — 0/10 registered sources clear; the zero control clears and the top-32 oracle fails on fresh capitals |
+| [gw-car-1b-evidence-archive.md](gw-car-1b-evidence-archive.md) | GW-CAR-1B — where the 57 raw output files are archived (registry run, R2 object, SHA-256 manifest) and how to retrieve and verify them |
 | [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
 | [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |
