@@ -29,7 +29,10 @@ Before a protocol can be frozen, three things have to be known:
 - **Three instruments this programme was going to lean on are not on main.**
   - PREFETCH-2's mechanism and notes are on a branch.
   - The BW10 movement ledger is on a branch.
-  - MODALITY-RESIDENCY-1a has no record in the repository at all.
+  - MODALITY-RESIDENCY-1a was **previously reported** (in project notes, on
+    a 45.68 GB expert bank), but its **source artifact was not recovered**.
+    Absence from the searched refs does not show the work never happened;
+    it shows the evidence is not available to cite.
   (§1.)
 - **Nothing in LARQL enforces a physical residency budget at run time.**
   `ResidencyBudget` plans and refuses before I/O. `reconcile` compares declared
@@ -78,7 +81,7 @@ history found nothing.
 | `expectations` / `reconcile` | `prepared/residency.rs`, `accounting/reconcile.rs`; on main | Residency-into-K3 plans | declared bytes against **bound objects** | that bound objects are resident | does not read mincore |
 | BW10 movement ledger (semantic / physical / useful bytes; DRAM/NVMe/network tiers; `Regime` gate) | `larql-compute/src/movement_ledger/`; **branch `feat/bw10-ledger-and-exec-policy-seam` only** | BW-A gate on gpt-oss-20b, recorded in project notes only, not in the repo | instrumented byte classes for **MoE experts only**; refuses a verdict line without a declared regime | totals for the other weight surfaces | attention, dense FFN, LM head, KV, embeddings and norms are uninstrumented, so physical totals are floors |
 | PREFETCH-2 additions (`Coalesced`, `Gated`, `probed_resident`, `--witness-residency`, `scripts/evict-bank.sh`, `contention.sh`) | **branches `k3-prefetch-2` (`aae20ae3`) and `wip/k3-prefetch-2-2026-09-23` only** | PREFETCH-2 preliminary round (§2) | as described in its notes | — | measurement PAUSED since 2026-09-06; `--witness-residency` costs ~70 ms per token (PF-N4), about one warm token; `contention.sh` unrun |
-| MODALITY-RESIDENCY-1a (vision pages untouched by text execution) | **not found** | none | — | — | cannot be used as evidence until re-run and recorded |
+| MODALITY-RESIDENCY-1a (vision pages untouched by text execution) | **source artifact not recovered**: no file, branch or history entry in the searched refs (`origin/main`, remote branches, `git log --all -S`, local worktrees' `docs/`) | **previously reported** in project notes (2026-08-23, Gemma 4 26B-A4B container, 45.68 GB expert bank); not citable as repository evidence | — | — | an evidence gap, not a negative result; re-run and record it, or drop it as a premise (§7, Q8) |
 
 **No runtime expert cache exists.** `MADV_DONTNEED` appears only in the
 server's `release_mmap_after_request` and in the probe's `evict()`.
@@ -137,10 +140,20 @@ This identification is an **inference**; the freeze must pin it by digest.
 
 - **Requested versus paged.** PREFETCH-2's coalesced arm requested
   **2.948 GB**, which is what 8 experts × 26 layers = 208 experts would occupy
-  at BF16. Every arm of both rounds paged a resident delta of only
-  **1.206 GB**. Over-requesting, a quantised `.s6` payload smaller than the
-  ranges advised, and pages already resident are all consistent with this.
-  None was checked here.
+  at BF16. Every arm of both rounds showed a resident delta of only
+  **1.206 GB**. That is not automatically an error. Four quantities are
+  defined differently and cannot stand in for one another:
+
+  | Quantity | Source | What it counts |
+  |---|---|---|
+  | **Requested bytes** | `PrefetchReport.requested_bytes` (branch) | ranges the plan asked the OS to bring in |
+  | **Resident delta** | mincore before against after, over bound regions | pages of those regions that became resident |
+  | **Fault activity** | getrusage major faults × page size | page-ins through the fault path, process-wide |
+  | **Device reads** | not measured by any instrument here | bytes the SSD actually delivered |
+
+  Over-requesting, a quantised `.s6` payload smaller than the advised ranges,
+  pages already resident, and readahead outside the bound regions are all
+  consistent with the gap. None was checked here.
 - **The simulator's constant.** `K3_ROUTED_EXPERT_BYTES = 17,547,264` is not
   this model's figure. At BF16, one Kimi-Linear expert's three matrices are
   2304 × 1024 × 3 × 2 = 14,155,776 bytes.
@@ -339,3 +352,33 @@ which would be brought from the PREFETCH-2 branch with their provenance.
 9. **Bytes per token.** Before any prediction is scored, reconcile §2's
    2.948 GB requested against 1.206 GB paged from the container's region
    table.
+
+## 8. Review outcome (maintainer, 2026-10-31)
+
+**Accepted as the reconnaissance record. It is not a protocol, and MEM-001 is
+not frozen.** The PR stays in draft until the document has been checked
+against the implementation and source evidence by a review independent of the
+agent that wrote it.
+
+**Readings carried forward:**
+- PREFETCH-1's 1253 → 598 ms is a **historical observation, not a baseline
+  benefit**.
+- The §2 byte gap is a **definitions-and-coverage problem** before it is an
+  error.
+- The model identity must be **pinned** (exact model, container bytes, tensor
+  layout, digest) before any scored run.
+
+**Next: two small investigations, before any freeze.** Neither builds a cache
+or a runtime budget, and neither needs a cross-runtime comparison yet.
+
+- **MEM-001A — PREFETCH reproducibility.** Re-establish the actual cold-start
+  conditions, and isolate contention, eviction effects and OS caching, with
+  the existing PREFETCH instruments and recorded uncertainty. The aim is to
+  explain why the two rounds disagreed, not to produce a new headline.
+- **MEM-001B — Working-set accounting.** Pin model and container identity,
+  reconcile per-expert region sizes against routing traces, and define which
+  quantity is requested bytes, resident pages, fault activity and storage
+  movement. The simulator's expert-size constant is not a measurement.
+
+MEM-001 is frozen only once the reproducibility, accounting and identity
+problems are resolved or explicitly bounded.
