@@ -182,11 +182,14 @@ state:
   warm pages after a passing binding witness and during the timed prompt,
   which the witness cannot see. Its residual risk is device-internal
   caching of shared extents, which mincore cannot see.
-  - **Unresolved hypothesis, not a finding:** round 3, whose displacement
-    re-read extents shared with the subject, had the lowest demand cost per
-    fault (8.2 µs). Shared-extent effects are one candidate explanation
-    [R §2.4 (ii)]. Rounds 1 and 3 used the same displacement script, and the
-    record does not isolate this explanation.
+  - **Unresolved hypothesis, not a finding:** round 3 had the lowest demand
+    cost per fault (8.2 µs). If `.s6` was then the clone of the subject it
+    was later recorded as, its displacement re-read extents shared with the
+    subject, and shared-extent effects are one candidate explanation
+    [R §2.4 (ii)]. Round 1 also displaced with `.s6`, though the script it
+    ran was a session file whose equality with the committed one is
+    asserted, not shown [R §1.2]. The record does not isolate this
+    explanation.
 - **Neither has been measured as a disturbance.** No record compares the
   same arm across cold methods.
 
@@ -284,8 +287,9 @@ For F, the unobservable device-internal cache means the claim stays
   historical lift2, whose system graph differed [R §2.2].
 - **An explicit failure outcome.** If neither D nor F can establish a
   defensible cold condition for the unit the protocol names, that is
-  recorded as the result: "cold decode is not establishable with existing
-  instruments on this machine", with the missing instrument named (§1.1).
+  recorded as the result: "the named cold unit (for example cold decode) is
+  not establishable with existing instruments on this machine", with the
+  missing instrument or control named (§1.1).
   It is not an invitation to keep modifying the apparatus until a gate
   passes. A fallback to a weaker unit (cold prefill, or a one-position
   prompt) is a separate, pre-declared condition, reported under its own
@@ -337,7 +341,8 @@ For F, the unobservable device-internal cache means the claim stays
 - `e2e0392f:docs/represent/forecasts/k3-prefetch-2-notes.json`: "post-boot
   indexing (mediaanalysisd ~80%, mds_stores ~33%)".
 - `which purge` gives `/usr/sbin/purge`. `vm_stat`, `iostat` and `fs_usage` are present in `/usr/bin` and `/usr/sbin`; none was run.
-- `mdutil -s /` gives "Indexing enabled".
+- `mdutil -s /` and `mdutil -s /System/Volumes/Data` both give "Indexing
+  enabled".
 - There is no `~/chris-models/.metadata_never_index`.
 - `hw.pagesize` is 16384.
 - Everything else is cited to the merged reconnaissance.
