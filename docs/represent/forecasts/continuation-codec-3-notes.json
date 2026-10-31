@@ -42,9 +42,9 @@
       "record_sha256": "20045bb85989682cf3139d5a78bdd6ce9ed69dd25496542cb4e4afb0428655a0"
     }
   },
-  "status": "W2 COMPLETE — verdict ACCEPTABLE (CH-recent256); closure pending maintainer review",
+  "status": "CLOSED — qualified pooled acceptance (CH-recent256); maintainer reading accepted 2026-10-31",
   "closure": {
-    "status": "verdict recorded 2026-10-02; the reading below is the maintainer's to accept",
+    "status": "verdict recorded 2026-10-02; maintainer reading accepted 2026-10-31 with the qualification in maintainer_reading, which governs how the answer above is cited",
     "verdict": "ACCEPTABLE — CH-recent256 (acceptance.rule_binding.primary), pooled over the three rungs, every guard passed",
     "answer": "Yes, by CODEC-2's frozen margins: on bank 3, keeping the newest 256 K rows of every layer exact while storing older K and all V at 4 bits does not materially worsen the shipped Q4_K execution's agreement with the full-precision reference",
     "primary_pooled": {
@@ -118,6 +118,17 @@
     "end_to_end_reported": "R↔arm pooled: C KL mean 0.121 / p99 0.885 / top-1 0.826; CH 0.144 / 0.968 / 0.804; CH-recent256 0.125 / 0.840 / 0.820; CH-recent128 0.126 / 0.851 / 0.817",
     "residency_reported": "resident bytes at rung end (MB, × CH): 2,048: CH 43.8, recent256 76.3 (1.74×), recent128 60.5 (1.38×); 4,096: 54.9, 87.6 (1.60×), 71.8 (1.31×); 8,192: 77.0, 110.2 (1.43×), 94.5 (1.23×). The window is a fixed cost, so its overhead falls with length",
     "scope": "gemma3-4b-it; one held-out text (New Grub Street, bank 80d188d3…); codec-recent/v1 4-bit, w = 256; rungs 2,048 / 4,096 / 8,192 × 1,024 scored positions. Not other models (the map is a Gemma finding until other architectures are measured), windows, bit widths, texts, or decode cost",
-    "next": "per the forecast: the decode-cost/materialisation rung for codec-recent/v1, the exact window's precision as a representation question, and the cross-architecture localisation rung (Granite, Qwen 3.x; Kimi/hybrid as the expected different regime)"
+    "next": "per the forecast: the decode-cost/materialisation rung for codec-recent/v1, the exact window's precision as a representation question, and the cross-architecture localisation rung (Granite, Qwen 3.x; Kimi/hybrid as the expected different regime)",
+    "maintainer_reading": {
+      "accepted": "2026-10-31",
+      "conclusion": "CH-recent256 meets the prespecified pooled ACCEPTABLE criterion, but does not establish rung-wise acceptability or consistent performance across the evaluated context lengths (2,048 / 4,096 / 8,192 on gemma3-4b-it). The result is length-sensitive or potentially heterogeneous, and B4 remains inconclusive because every rung lacks per-rung support. CODEC-3 is closed with a qualified pooled acceptance, not a general recommendation to deploy CH-recent256 at every context length",
+      "how_to_cite": "cite the answer only together with this conclusion: pooled ACCEPTABLE; per rung B3 fails at 2,048 and 8,192 and holds at 4,096; B4 Unsupported at every rung. Not a default for codec-recent/v1",
+      "conditions_checked": [
+        "the pooled rule was frozen before scoring: the freeze #656 (bc05186e) is an ancestor of the run's implementation 2536bb79, and continuation-codec-3.json is unchanged between bc05186e and this record",
+        "the record is the as-run store's codec3-gemma3-4b.json unedited: sha256 20045bb8… matches, and every file in the sealed store matches store.sha256",
+        "the record encodes the reported verdicts: pooled primary Acceptable (B3 0.187 vs 0.221); per rung NotAcceptable / Uninformative / NotAcceptable; secondary and control NotAcceptable"
+      ],
+      "verification": "B1 recomputed from the sealed store's per-position top1_agree for all nine arm × rung cells; every (b, c) equals the record. The primary's identical B1 at 4,096 and 8,192 (b = 12, c = 23) is a coincidence of counts: the discordant positions are disjoint (3225… vs 7243…) and the totals differ (arm/C top-1 820/831 vs 849/860)"
+    }
   }
 }
