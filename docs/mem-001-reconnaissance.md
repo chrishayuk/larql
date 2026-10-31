@@ -25,9 +25,9 @@ copied from an audit's suggested wording. Findings are cited as **[A1 #n]**
 (MoE) model need to sustain a given decode rate? And does that relationship
 survive once the model's bytes exceed what the machine can hold?
 
-LARQL has **already shown, for one layer of one model**, that the pages a
-bound expert selection touches can be predicted from the plan (§2.1). So the
-open questions are:
+LARQL has **already shown, on a synthetic layer and then on one real layer of
+one model**, that the pages a bound expert selection touches can be predicted
+from the plan (§2.1, §2.6). So the open questions are:
 
 - whether that prediction generalises across models, layouts, access paths
   and runtimes;
@@ -77,11 +77,15 @@ open questions are:
   records it as an APFS clone of `.s6`, matching in segment size and
   spot-checked content but not by digest. `.s6` and `.s7` share a recorded
   bank digest. No lift2 digest exists (§2.2).
-- **A recorded locality result bears directly on caching** [A2 P1-67]. On
+- **Recorded locality results bear directly on caching** [A2 P1-67]. On
   Gemma 4 26B-A4B (legacy path, one ~72-token prompt), the union of selected
   experts reached 124.4 of 128 per layer. The diagnosis concludes there is no
   small cacheable hot subset (§2.5). That challenges a static hot-expert
   cache. It does not rule out short-window temporal locality or prefetching.
+  A second record, freq-mass on the DEC-0 routed capture pool (8 of 128
+  experts), finds a static set of 6.25 % of experts covering 42 % of routing
+  events, 35 % of the bank needed for 90 %, and a session-adaptive cache
+  buying 1.03× (§2.6).
 - **LARQL has runtime expert caches, but none bounds VINDEX3 mapped-page
   residency** [A1 #21] (§1.3).
 - **Some instruments that a protocol might need are missing** (§1.4):
@@ -104,7 +108,8 @@ search was by physical and implementation terms, not only by programme name:
 - every finding of A1 and A2, re-read against its cited source.
 
 A separate frozen source inventory bounds the completeness check for the
-next audit (§8). Numbers quoted from notes files are copied, and the
+next audit (§8). Its CORE records that revision 3's first commit did not
+cover are added in §2.6. Numbers quoted from notes files are copied, and the
 arithmetic is shown where the document derives anything.
 
 ## 1. Instrument inventory
@@ -135,7 +140,7 @@ Columns:
 | Instrument | Where | What it does | Limits |
 |---|---|---|---|
 | GLM per-layer residency probe | `examples/glm_moe_residency.rs`, `glm_moe_residency/probe.rs` (on main); `evict()` at `probe.rs:116-128` | maps one routed layer's bank with `MADV_RANDOM`. Runs demand / advise / touch / `pread` / `pread`×8 arms. Byte-for-byte output invariant across arms. A cold check on the selected regions skips an arm it cannot make cold | the results were produced by the single-file probe at `6874285f`. Main's split version (`b3097a3a`) has the same logic, per audit 2's line comparison, which this revision did not repeat. Eviction: see "Eviction methods" below |
-| `vindex3_residency_probe` | `examples/vindex3_residency_probe.rs` | "Does the bound plan predict the pages execution actually touches?" On a synthetic layer, it splits pages into router / selected / unselected | synthetic subject |
+| `vindex3_residency_probe` | `examples/vindex3_residency_probe.rs` (added in `f13bf385`) | "Does the bound plan predict the pages execution actually touches?" On a synthetic layer, it splits pages into router / selected / unselected. Recorded result: 200 pages predicted, 200 resident, zero overshoot (§2.6) | synthetic subject |
 | GLM reuse trace and simulator | `scripts/glm_expert_trace.py`, `scripts/glm_expert_reuse.py` | the §12 pipeline: a prefill trace of selected experts over a prompt, then LRU and Bélády hit rates by budget, from an `expert_bytes` field | the trace JSON is not committed, and §12 does not record the prompt (§2.0) [A2 O-2] |
 | Per-volume cold-fault rate | `examples/readrate.rs` | serial cold-fault rate per volume: the §13 disk table (USB 30.0 µs, internal 26.5 µs per fault) | serial, one fault in flight [A2 O-2] |
 | Cold-read probe | `examples/mmap_cold_read_probe.rs`; `docs/diagnoses/v3-disk-resident-mmap.md` | `F_NOCACHE` `pread` cold reads. Records 100 µs p50 / 140 µs p99 per scattered 16 KB page (153 MB/s), and 18 µs p50 for sequential mmap with `MADV_RANDOM`, with 1,048,576 major faults over 1,048,576 pages | different model and file (`bench/aim-validation/v3_granite-30b.json`). It records "macOS can't easily cap mmap residency", and that only the first eviction of a fresh file is reliable [A1 #25, A2 O-1] |
@@ -168,7 +173,7 @@ Columns:
 
 | Mechanism | Where | Bounds | Does it bound VINDEX3 mapped pages? |
 |---|---|---|---|
-| Dequantised-expert LRU | `larql-compute/src/cpu/ops/moe/cache.rs` (`LARQL_MOE_CACHE_ENTRIES`, default 256) | dequantised f32 copies of experts on the legacy CPU MoE path, keyed by mmap pointer | no; the mapped source pages stay with the OS |
+| Dequantised-expert LRU | `larql-compute/src/cpu/ops/moe/cache.rs` (`LARQL_MOE_CACHE_ENTRIES`, default 256) | dequantised f32 copies of experts on the legacy CPU MoE path, keyed by mmap pointer. Raising the cap 64 → 256 removed eviction-driven p99 outliers (11.62 → 2.42 ms) at +2 GB RSS per shard on Gemma 4 26B-A4B (`larql-inference/ROADMAP.md` M-CPU-3). The 2026-07-23 expert-serving review records it bypassed on the default Q4K-direct path | no; the mapped source pages stay with the OS |
 | Metal expert-buffer cache warmup | `larql-server/src/routes/expert/warmup.rs:85-94` | the server's Metal expert buffers | no |
 | `ResidencyManager` / `auto_pin()` | `larql-vindex/src/index/storage/residency.rs` | pinned legacy-index layers within a memory budget | no; it covers the legacy index, not VINDEX3 expert banks |
 | `ResidencyBudget` | §1.1 | declared bytes, at planning | no; it plans and refuses, and does not enforce |
@@ -565,6 +570,30 @@ load-balanced, and a less regularised MoE "could concentrate more".
   reuse over three positions, are other observations on different models,
   windows and paths. They are not combined with it here.
 
+### 2.6 Other recorded results found by the source inventory
+
+These came from the frozen source inventory (§8). Each figure below was read
+at its source. All are BACKGROUND ONLY under §2.0's standard; none names a
+committed raw trace that was checked here.
+
+| Record | Subject | What it records | Bearing on MEM-001 |
+|---|---|---|---|
+| `ROADMAP.md` (VINDEX3 reference MoE, `f13bf385`, 2026-08-02); `ROADMAP_STATUS.md` | synthetic layer (`vindex3_residency_probe`) | "the bound plan predicts its resident page set **exactly** (200 predicted, 200 resident, zero overshoot, 1.63% of a 192 MiB layer per token)" | the first residency-prediction result, on a synthetic subject; GLM §11 is the first on real weights |
+| `docs/dec-funnel.md`, freq-mass (`larql k3-ledger freq-mass`, 2026-08-01) | the banked DEC-0 routed capture pool, 8 of 128 experts, 64-prompt domain mixture | a static 6.25 % resident set covers 42 % of routing events, and 90 % needs 35 % of the bank. A session-adaptive cache buys 1.03× on the miss stream at C=8, against an oracle bound of 1.41×. 620 of 3,840 layer-expert pairs (16.1 %) went unobserved. Unobserved experts per layer range 3 to 68 of 128 | **contrary evidence for a small static hot set, and for an adaptive cache**, on a different model and capture from §2.5. Moderate skew, not none. The doc itself flags the per-layer heterogeneity as "least likely to survive to K3" |
+| `ROADMAP_STATUS.md` RSL-RP (registry `rsl-rp`, closed 2026-08-04); `ROADMAP.md` §P1 CR1 | a **dense-layer** estate: 12 candidate FFN layers × 150 MiB = 1.76 GiB | storage side: preloading the whole pool is correct, and speculative storage prefetch is not justified on this estate ("closed negative and narrowly scoped"). Hot side, all weights resident: replay latency scales with distinct layers touched (2.11× from 1 to 3 layers), and grouping by physical owner adds 1.80× where reuse exists | not MoE expert residency. A prefetch-negative result where the whole pool fits; it names K3 as the first estate where the storage question is askable |
+| `docs/v3-obs-1-carrier-observation.md` | Kimi-Linear, VINDEX3 | 87.75 GiB mapped, 0 resident after preparation; 10.56 GiB resident after the witnesses, "the experts the routed tokens touched"; peak RSS 16.9 GB | recorded "as evidence and not as acceptance"; an incidental residency figure, not a cold-run measurement |
+| `docs/audits/expert-serving-review-2026-07-23.md` | legacy expert-serving path | "there is no cold-cache mode for expert weights (`packed_mmaps` never madvised) — replay measures warm page cache" | a legacy-path instrument limit; not VINDEX3 |
+
+**Identified by the inventory, not summarised here.** These are pre-registered
+or design records with no result read for this revision: `docs/vindex3-experiments.md`
+E2 and E6, and `docs/lyrw-v2.md` (unrun physical-layout and locality
+experiments); `docs/k3-funnel.md` §4.13 and its coverage-curve gate (unrun);
+`docs/glm5-flash-funnel.md` §8.2.2–§8.2.3; `docs/diagnoses/remote-moe-bottlenecks.md`
+(a multi-layer expert prefetch recommendation);
+`crates/larql-vindex/docs/vindex3-format-spec.md` (group extent as the
+prefetch unit); `scripts/k3_batch_union.py`. A protocol drawing on any of them
+reads it first.
+
 ## 3. Imposing a memory budget
 
 | Regime | Claim it can support | Available |
@@ -660,8 +689,9 @@ Silicon [A2 P1-60].
 thresholds, picks no winner and runs nothing. If it is accepted, it enters a
 freeze with the §7 answers before any arm runs.
 
-Residency prediction has been **demonstrated once**: GLM, one layer,
-readahead off, coverage 1.0003 (§2.1). V3 also tabled predicted against
+Residency prediction has been **demonstrated twice**: on a synthetic layer
+(200 predicted, 200 resident; §2.6), and on GLM, one real layer, readahead
+off, coverage 1.0003 (§2.1). V3 also tabled predicted against
 observed residency on Kimi, at the whole-token level and against a disjoint
 bound (§2.2). A candidate MEM-001 therefore **replicates or extends those
 results**, and does not present them as new. Every input it would build on
@@ -697,8 +727,9 @@ is BACKGROUND ONLY (§2.0). Candidate directions, smallest first:
    - **Prerequisites:** a VINDEX3-routing exporter (§1.4), real region sizes
      (§1.5) passed with `--expert-bytes` if the retention simulator is used,
      and a recorded prompt.
-   - **Question:** does the Gemma finding (no small hot subset) hold on Kimi
-     and GLM, and how much short-window reuse is there?
+   - **Question:** do the Gemma and freq-mass findings (no small hot subset;
+     a static 6.25 % set covering 42 % of events) hold on Kimi and GLM, and
+     how much short-window reuse is there?
 
 Each direction keeps three categories separate: direct observations (pages,
 faults, wall time), inferred explanations, and causal claims. A causal claim
