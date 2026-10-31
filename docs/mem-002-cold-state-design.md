@@ -32,12 +32,35 @@ Even "cold by measurement" is a statement about the unified buffer cache's
 pages for **that file**. It says nothing about the SSD's internal caches,
 or about physical extents shared with another file (§2, F).
 
-**Which step is cold.** At binding, the whole bank can be witnessed at
-0.000 GB. The first generated token is not cold: the three-position prompt
-leaves 59–67 % of its selection resident [R §2.4]. A protocol must say
-whether its cold unit is the first prompt position, the whole prompt, or
-the first generated token after a cold prompt. The historical "cold token"
-was the last of these.
+### 1.1 The cold unit
+
+Three units are different experimental conditions. A cold binding witness
+does not establish cold decode.
+
+| Unit | Meaning | Witness on main (`--residency-curve`) |
+|---|---|---|
+| **Cold binding** | expert pages witnessed non-resident after binding, before any prompt runs | **yes**: the binding line reads mincore over every bound region |
+| **Cold prefill** | expert pages witnessed non-resident immediately before prompt processing, in that pass | **yes, mapping-wide.** Each pass reads `mapped_residency()` just before the prompt timer starts (`residency_curve.rs:229`, `:278-292`). The value printed is the post-prompt residency and its delta, so the pre-prompt figure is their difference. The whole prompt is timed as one step, so the per-position residency is not recorded |
+| **Cold decode** | the pages **a particular decode step will select** are non-resident immediately before that step | **no.** The pre-step reading is mapping-wide, and after a prompt it is far from zero. Which experts a step selects is known only once its routing runs. A pre-step witness of the selected pages would need the selection in advance, for example from an identical earlier pass, plus a per-selection mincore read. The branch-only `--witness-residency` reads the selected pages inside the timed token, at ~70 ms per token [R §2.3]. Neither exists on main as a pre-step witness |
+
+What the instruments do give for a decode step is its **own major-fault
+count and resident delta**, after the fact. That is the variable a
+latency-against-faults relationship needs. It is an outcome measurement,
+though, not a pre-execution witness of coldness.
+
+**Consequences:**
+
+- **The historical "cold token" was not cold decode.** It was the first
+  generated token after a cold-prefill prompt that left 59–67 % of its
+  selection resident [R §2.4].
+- **The nearest witnessable decode-shaped unit is a one-position prompt.**
+  It is one forward step from cold prefill, at position 0, with an empty
+  KV state. It is cold by measurement, but at position 0 only, so a later
+  position's routing and attention state are not represented.
+- **Witnessing cold decode at position t > 0 needs instrumentation that
+  does not exist on main.** It would be a pre-step, outside-the-timer
+  witness of the selected pages, which is implementation and outside this
+  note.
 
 ## 2. Methods compared
 
@@ -112,29 +135,108 @@ is not authorised by this note. The check would be:
 - the binding witness and the positive control recorded on every arm;
 - the latency and fault distributions compared.
 
-## 5. Questions for the feasibility protocol
+## 5. Classifying cold runs against manufacturing them
+
+A method that **reproducibly causes** non-residency is a different claim
+from a witness that **independently shows** it.
+
+- **Manufacture.** A method that reliably makes the unit cold (D, perhaps
+  F). The cold state is then an intervention, and its side effects belong
+  to the condition (§6).
+- **Classification.** Run every attempt, witness residency before the
+  timed region, and admit an attempt as cold only if the witness passes. A
+  reliable witness can classify runs even when cold starts cannot be
+  manufactured reliably.
+
+Classification is defensible only under rules frozen **before any latency
+is seen**:
+
+- the gate is evaluated from the pre-execution witness alone, never from
+  the outcome;
+- every attempt is reported, including how many failed the gate and why;
+- the machine state of admitted and rejected attempts is compared, because
+  a gate that admits mostly quiet or mostly loaded runs selects on a
+  confound even though it never reads latency;
+- the number of attempts, or the stopping rule, is fixed in advance.
+
+The binding witness and the pre-prefill witness can gate cold binding and
+cold prefill today. Nothing on main can gate cold decode (§1.1).
+
+## 6. Separating the intervention from its side effects
+
+A method can make target pages non-resident and also disturb the machine.
+Any such disturbance is either **observed** or **folded into the claim**.
+
+| Side effect | Observable with existing system tools (not run here) | Most at risk |
+|---|---|---|
+| Memory pressure, compression, swapping | `vm_stat` (pageins, pageouts, compressions, swapins) before the method, after it and before the arm | D, E, J |
+| Device traffic | `iostat` on the internal disk across the settling interval | D, E, H |
+| Spotlight and indexing | CPU of `mds_stores` and `mds`, and the volume's indexing state | D, F, H |
+| File-cache churn for other processes | `vm_stat` file-backed page counts | D, E |
+| Device-internal caching of shared extents | **not observable** | F |
+
+Two admissible claim forms follow:
+
+- **Side effects observed and settled.** A settling interval ends when the
+  observed counters return to a baseline taken before the method, and the
+  quiet gate passes. The claim is about latency from a cold unit.
+- **Side effects not separable.** The claim is restricted to "latency under
+  the complete displacement procedure" (or under the clone procedure),
+  never "latency from cold storage".
+
+For F, the unobservable device-internal cache means the claim stays
+"cold in the page cache for this file", whatever is observed.
+
+## 7. Model bytes, identity and the failure outcome
+
+- **Preserve the model bytes.** D only reads. F creates a clone with
+  `cp -c` and never writes the source. Neither modifies `.s7`. Clones are
+  deleted after use.
+- **Verify `.s7` once, before any cold method.** Hash its payload against
+  the declared expert-bank `payload_sha256` (`3f12d102…`) [R §2.2]. Reading
+  it to hash it makes it warm, so the cold method follows the check.
+- **A clone is byte-identical to its source by APFS clone semantics**, and
+  carries `.s7`'s own system graph. Its execution definition is `.s7`'s.
+  Neither the clone nor `.s7` is claimed to be execution-equivalent to the
+  historical lift2, whose system graph differed [R §2.2].
+- **An explicit failure outcome.** If neither D nor F can establish a
+  defensible cold condition for the unit the protocol names, that is
+  recorded as the result: "cold decode is not establishable with existing
+  instruments on this machine", with the missing instrument named (§1.1).
+  It is not an invitation to keep modifying the apparatus until a gate
+  passes. A fallback to a weaker unit (cold prefill, or a one-position
+  prompt) is a separate, pre-declared condition, reported under its own
+  name.
+
+## 8. Questions for the feasibility protocol
 
 1. **Cold method.** F, with D as a comparison arm, or D alone? Is the
    branch's `evict-bank.sh` merged, or rewritten?
-2. **Cold unit.** The first prompt position, the whole prompt, or the first
-   generated token after a cold prompt (§1)?
-3. **Witness threshold** and the positive-control rule (§3).
-4. **Subject identity.** `.s7` payload verified against its declared digest,
+2. **Cold unit.** Cold binding, cold prefill, a one-position prompt, or cold
+   decode, which needs instrumentation main lacks (§1.1)? Is a fallback unit
+   declared in advance (§7)?
+3. **Manufacture or classify** (§5)? If classify: the gate, the attempt count
+   or stopping rule, and the report of rejected attempts.
+4. **Side effects** (§6): which observers, which baseline, and which claim
+   form.
+5. **Witness threshold** and the positive-control rule (§3).
+6. **Subject identity.** `.s7` payload verified against its declared digest,
    and `.s7`'s own system graph treated as the execution definition, not as
-   equivalent to lift2's. For F, how the clone inherits that check (§3).
-5. **Spotlight and indexing.** Exclude the subject and clone directories
+   equivalent to lift2's. For F, how the clone inherits that check (§3, §7).
+7. **Spotlight and indexing.** Exclude the subject and clone directories
    before any arm?
-6. **Settling interval** after any method that reads, and how the quiet
+8. **Settling interval** after any method that reads, and how the quiet
    gate is applied after it.
-7. **Clean-up.** Delete clones after each arm. They share extents, so the
+9. **Clean-up.** Delete clones after each arm. They share extents, so the
    free space is not consumed, but they accumulate as metadata.
 
-## 6. Sources checked
+## 9. Sources checked
 
 - `aae20ae3:scripts/evict-bank.sh`: the `DISPLACERS` order (HF directory,
   then `.s6`), the 0.1 GB threshold, and the comment "There is no supported
   way to drop macOS's unified page cache for one file".
-- `which purge` gives `/usr/sbin/purge`.
+- `crates/larql-cli/src/commands/primary/vindex3_cmd/generate/residency_curve.rs`: the pre-prompt `mapped_residency()` read (line 229), the prompt timed as one step (lines 278-292), and the per-step mapping-wide witness inside `observe`.
+- `which purge` gives `/usr/sbin/purge`. `vm_stat`, `iostat` and `fs_usage` are present in `/usr/bin` and `/usr/sbin`; none was run.
 - `mdutil -s /` gives "Indexing enabled".
 - There is no `~/chris-models/.metadata_never_index`.
 - `hw.pagesize` is 16384.
