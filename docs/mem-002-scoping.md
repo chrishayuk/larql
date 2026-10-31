@@ -26,6 +26,16 @@ Its evidence base is the merged MEM-001 reconnaissance
 H1 is tested first. A speedup without a validated predictor would not show
 that the predictor chose the better policy.
 
+**Four separate validation gates.** Each opens only when the one before it
+has succeeded:
+
+| Stage | Question | Scope |
+|---|---|---|
+| Feasibility | Can stable cold-state and timing measurements be established? | the existing VINDEX3 runtime on Kimi `.s7`; instrumentation and controls only, **not** an H1 result |
+| H1 | Does a frozen model predict held-out latency and movement? | a model and conditions fixed in advance |
+| H2 | Can its predictions select a policy that beats a baseline? | only after H1 succeeds |
+| Oversized execution | Does the approach generalise when the bank exceeds RAM? | a separate, later validation |
+
 **Headline.**
 
 1. **The GLM-5.3-Flash expert bank is not a usable subject today.**
@@ -43,17 +53,32 @@ that the predictor chose the better policy.
    unreliable on an idle machine, and no memory balloon exists [R §1.3,
    §1.4, §3].
 4. **Under mmap, the kernel, not LARQL, decides what stays resident.** A
-   bytes-moved prediction would then have to model an unspecified macOS
-   replacement policy. Under an explicit fetch path, LARQL decides, and the
-   prediction becomes checkable. That path exists only in the GLM per-layer
-   probe, not in VINDEX3 [R §2.1, §6.3].
-5. **H1's time prediction meets the variance MEM-001 left unexplained.**
-   Four cold observations of one Kimi token give 8.2–21.7 µs per demand
-   fault [R §2.4]. A bound fixed in advance cannot be credible until that
-   spread is characterised.
+   prediction of residency over many tokens would then have to model an
+   unspecified macOS replacement policy. An explicit fetch path would give
+   LARQL control over **the requests it issues**, not necessarily over
+   physical I/O. Four quantities stay distinct under any fetch path:
+   - bytes LARQL requests;
+   - logical reads the filesystem serves;
+   - physical device traffic, which filesystem caching, readahead,
+     controller caching and request coalescing can make differ from the
+     requests;
+   - resident-page changes.
+
+   Such a path exists only in the GLM per-layer probe, not in VINDEX3 [R §2.1,
+   §2.4, §6.3].
+5. **The historical cold-run range is not evidence that prediction is
+   impossible.** Four cold observations of one Kimi token gave 8.2–21.7 µs
+   per demand fault [R §2.4]. They were taken under different initial
+   residency, machine state, eviction method and instrumentation, so they
+   are **observations under differing conditions, not a controlled variance
+   distribution**. The open question, and the central objective of the
+   first investigation, is whether **controlling** those conditions gives a
+   stable relationship between page movement and latency.
 
 So the experiment cannot be frozen on GLM, and it cannot be run in regime A
-on this machine at all. §5 sets out the subject choices that remain.
+on this machine at all. The first candidate is a controlled cold-token
+timing-feasibility study on Kimi `.s7`, using the existing VINDEX3
+execution path (§5).
 
 ## 1. Candidate subjects
 
@@ -83,9 +108,9 @@ bytes prediction. A single-token page prediction would replicate GLM §11.
 
 | Need | Instrument on main | Gap |
 |---|---|---|
-| Routing trace, frozen | VINDEX3 `routing_trace` capture plus fingerprint [R §1.1] | **in memory only; no exporter** [R §1.4]. "Given a frozen routing trace" needs one |
+| Routing trace | VINDEX3 `routing_trace` capture: every routed layer's selected experts for the characterised step, in process. `--residency-curve` reports its fingerprint, the routed-layer count and the first layer's experts per pass (`residency_curve.rs:305-337`) [R §1.1] | in memory only; no exporter [R §1.4]. **Sufficient for feasibility**, where routing identity across passes in one process is what matters. An exporter becomes necessary for reproducibility across processes, or for feeding an independent simulator |
 | Expert layout, bytes per expert | region table; `index.json` [R §1.5] | expert adjacency under the writer's name ordering is **unchecked** [R §1.5] |
-| Bytes moved | mincore resident deltas; `ru_majflt` [R §1.1] | faults stop being a byte proxy once the fetch path changes; summed mincore double-counts boundary pages; **no device-read counter** [R §1.1, §1.4] |
+| Bytes moved | per-step mincore resident deltas and `ru_majflt` deltas, both printed by `--residency-curve` [R §1.1] | faults track 16 KiB pages one to one on every fault-path arm on record, and stop being a byte proxy once the fetch path changes; summed mincore double-counts boundary pages; **no device-read counter** [R §1.1, §1.4]. Sufficient for a latency-against-faults study; not for a physical-I/O claim |
 | Storage characteristics | `examples/readrate.rs` (serial per-fault rate); `scripts/dec8_2_fio_sweep.py` (no result on main) [R §1.2] | queue-depth and request-size curves for the internal SSD are not recorded |
 | Reuse simulation | `glm_expert_reuse.py`; retention simulator (`--expert-bytes`); `larql moe-locality` [R §1.2] | none reads a VINDEX3 trace [R §1.4] |
 | A memory limit | none in VINDEX3 [R §1.3] | **missing**: a runtime cap, an explicit fetch path, a balloon or another machine |
@@ -93,6 +118,19 @@ bytes prediction. A single-token page prediction would replicate GLM §11.
 | Output identity | routing fingerprint, generated ids, logits bit-identity [R §2.3] | — |
 | Latency | per-step wall time; the residency witness costs ~70 ms per token [R §2.3] | an unwitnessed arm is required; one was never recorded for round 2 [R §1.4] |
 | Machine state | the quiet gate refuses unqualified warm arms [R §2.3] | **no device-I/O or contention record**; `contention.sh` was never committed [R §1.4] |
+
+### 3.1 Prerequisites, by the claim they support
+
+| Prerequisite | Latency/fault feasibility (existing runtime) | Defensible physical-I/O prediction |
+|---|---|---|
+| A cold-state method, witnessed per arm | **required.** Eviction is unreliable on an idle machine; displacement is branch-only and may re-read a clone of the subject [R §1.2, §5.2] | required |
+| Machine-state record, including device I/O or contention | **required** at least for CPU load, power and background processes; a device-I/O record is needed to test a contention explanation [R §1.4] | required, including device I/O |
+| Unwitnessed timing arms | **required** [R §5.4] | required |
+| Routing fingerprint per pass | **required**; exists in process | required |
+| Routing exporter | not required (in-process capture suffices) | required for cross-process reproducibility or an independent simulator |
+| Device-read counter | not required (latency is tested against measured faults) | **required**: without it, requests, logical reads and physical traffic cannot be separated |
+| Explicit fetch path | not required | one candidate route, not necessarily required (§5) |
+| Memory limit | not required | required only for the oversized gate |
 
 ## 4. Environmental controls the protocol would need
 
@@ -119,6 +157,18 @@ Each is drawn from a recorded failure [R §5]:
 
 None of these is authorised. Each is listed with what it would require.
 
+0. **Controlled cold-token timing feasibility on Kimi `.s7` (first
+   candidate).** Use the existing VINDEX3 execution path and
+   `--residency-curve`, with no change to weight loading. Cold-token arms
+   are repeated under one witnessed cold-state method, a recorded machine
+   state, unwitnessed timing and a routing fingerprint per pass. The
+   question is whether, once those conditions are controlled, cold-token
+   latency against measured major faults and resident deltas is stable
+   enough to model. This is the feasibility gate of §0, not H1. If it fails,
+   the failure names which measurement or control is missing before any new
+   execution path is considered. It overlaps MEM-001A's question [R §6.2]
+   and the prerequisites in §3.1.
+
 1. **Mount `model-drive` and make GLM the regime-A subject.** It would
    require:
    - digesting the checkpoint;
@@ -132,34 +182,37 @@ None of these is authorised. Each is listed with what it would require.
    Metal headroom and every process's file cache [R §3], or by a
    smaller-RAM machine (a separate result).
 3. **Explicit fetch path in VINDEX3, under a LARQL-managed byte budget.**
-   Movement becomes LARQL's decision, so bytes-moved prediction is exact by
-   construction, and the time model is what is tested. It extends GLM §14
-   [R §6.3]. It needs a new realisation in VINDEX3, which is
-   implementation.
-4. **H1 timing without memory pressure first.** On `.s7`, predict the cold
-   whole-token latency from the trace, the layout and measured per-fault or
-   per-read costs, and test the prediction against repeated cold runs. That
-   needs an exporter and an eviction method, but no limit. It overlaps the
-   unexplained cold-run variance [R §2.4], and so subsumes MEM-001A's
-   question.
+   LARQL then controls and can account for the bytes it **requests** and
+   what it keeps resident in its own buffers. Logical reads, physical device
+   traffic and page-cache residency remain separately measurable, and can
+   still differ from the requests. It extends GLM §14 [R §6.3]. It needs a
+   new realisation in VINDEX3, which is implementation. It is **one
+   candidate** for a controlled memory limit, conditional on the
+   feasibility and H1 evidence, not an inevitable second phase.
+4. **H1 timing prediction without memory pressure.** On `.s7`, after the
+   feasibility gate succeeds: freeze a model of cold whole-token latency from
+   routing, layout and measured fault or read costs, and test it on held-out
+   cold runs. No memory limit is needed. An exporter is needed only if the
+   held-out runs are in other processes or an independent simulator scores
+   them.
 
-**Recommendation for the freeze discussion.** Option 4 first, then option
-3:
+**Recommendation for the freeze discussion.** Option 0 first, then option 4
+if it succeeds:
 
-- Option 4 tests the time half of H1 on a subject that executes today. It
-  also decides whether any fixed error bound is attainable, given the
-  8.2–21.7 µs per-fault spread.
-- Option 3 is the cleanest route to a memory limit LARQL controls. Its
-  movement is predictable by construction, unlike the kernel's replacement
-  policy.
-- GLM stays the regime-A goal, but it is gated on implementation, not on
-  measurement.
+- Option 0 establishes whether stable cold-state and timing measurements
+  exist on a subject that executes today, with existing instruments. Only
+  then is an error bound for H1 meaningful.
+- If option 0 fails, its failure decides what to build next. An explicit
+  fetch path (option 3) is one candidate among the §3.1 gaps, not the
+  default.
+- GLM stays the regime-A goal for the oversized gate, but it is gated on
+  implementation, not on measurement.
 
 ## 6. Candidate outcome measures (no thresholds)
 
 | Measure | Basis | Notes |
 |---|---|---|
-| Predicted against observed bytes moved per token | mincore deltas, deduplicated per page; faults on fault-path arms; read accounting on fetch arms | per token and cumulative over a decode window |
+| Predicted against observed bytes moved per token | kept as four quantities: bytes requested, logical reads, physical device traffic (needs a counter), resident-page changes (mincore, deduplicated per page); faults on fault-path arms | per token and cumulative over a decode window |
 | Predicted against observed token latency | unwitnessed wall time, p50 and p95 over repeats | error bound fixed before any arm |
 | Hit rate in execution against simulated | the same trace in both | tests the reuse model, not the policy |
 | Policy speedup (H2) | unwitnessed latency against the declared baseline policy | each policy arm with its own baseline |
@@ -167,10 +220,13 @@ None of these is authorised. Each is listed with what it would require.
 
 ## 7. Questions the protocol freeze must answer
 
-1. Which subject and memory regime: option 1, 2, 3 or 4 of §5?
-2. What implementation, if any, is authorised before the freeze (exporter,
-   eviction method, fetch path, balloon)? It is reviewed separately from the
-   measurement.
+1. Is option 0, the feasibility study on `.s7`, the first investigation?
+   Which later option follows it, if any?
+2. What implementation, if any, is authorised before the freeze? For option
+   0 the likely candidates are a committed cold-state method and a
+   machine-state record; an exporter, device-read counter, fetch path or
+   balloon is needed only for later gates (§3.1). Any of them is reviewed
+   separately from the measurement.
 3. Whether `.s7`'s payload is re-hashed against its declared digest, and
    whether its system graph is accepted as the subject's definition
    [R §7 Q1].
