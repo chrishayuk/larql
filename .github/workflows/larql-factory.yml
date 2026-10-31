@@ -69,7 +69,7 @@ jobs:
       # so the generic cross-platform record is kept on main rather than
       # paid for on every pull request.
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-14"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-15"]') }}
 
     steps:
       - uses: actions/checkout@v7

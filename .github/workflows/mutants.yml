@@ -59,7 +59,7 @@ jobs:
       # larql-compute-metal "compiles to an empty crate on non-macOS
       # hosts" (its own doc comment) — every line inside its
       # `#[cfg(target_os = "macos")]` modules is structurally invisible to
-      # a ubuntu runner, for every PR, forever. The macos-14 leg, scoped
+      # a ubuntu runner, for every PR, forever. The macos-15 leg, scoped
       # to `-p larql-compute-metal`, is the only way this workspace's
       # mutation testing ever sees that code at all.
       matrix:
@@ -69,7 +69,7 @@ jobs:
             package_args: ""
             diff_paths: "."
             openblas: true
-          - os: macos-14
+          - os: macos-15
             label: " · larql-compute-metal"
             package_args: "-p larql-compute-metal"
             diff_paths: "crates/larql-compute-metal"
