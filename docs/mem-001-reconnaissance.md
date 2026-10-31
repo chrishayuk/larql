@@ -365,7 +365,7 @@ of different strength:
 
 | Link | Evidence | Strength |
 |---|---|---|
-| lift2, `.s6`, `.s7`: `index.json` | `v3-obs-1-carrier-observation.md:481-489`: "Kimi container identities (SHA-256 of `index.json` / `system_graph.json`), recorded before `.lift2` was deleted on 2026-09-20". All three `index.json` hashes are `ddd9cad3e4603d12…`. On disk today, `.s6`'s and `.s7`'s `index.json` still hash to `ddd9cad3e4603d12dfbc…` | **recorded hash, identical across all three** [A3 P1-1] |
+| lift2, `.s6`, `.s7`: `index.json` | `v3-obs-1-carrier-observation.md:481-489`: "Kimi container identities (SHA-256 of `index.json` / `system_graph.json`), recorded before `.lift2` was deleted on 2026-09-20". All three `index.json` hashes are `ddd9cad3e4603d12…` (the record gives a 16-hex-digit prefix, so the match is on that prefix). On disk today, `.s6`'s and `.s7`'s `index.json` still hash to `ddd9cad3e4603d12dfbc…` | **recorded hash, identical across all three** [A3 P1-1] |
 | Declared expert bank | that `index.json` declares the expert bank `payload_sha256` `3f12d102…` and `segment_sha256` `e43600cd…` | **declared bank identity established.** The payload bytes were not re-hashed against the declaration here |
 | `system_graph.json` | the same record: lift2 `1b4c0fc41da8e83d…`, `.s6` `a33b81a92da58237…`, `.s7` `1fe02abad2f3bcdc…`. lift2 lacks `kda_gate_form` and was "refused at first step (gate form absent)"; `.s6` lacks the latent-norm epsilon; `.s7` is "the container of record" | **the declarations differ**, so complete container identity and execution equivalence are not established |
 | lift2 ≈ `.s6` segments | `represent-real-evidence-1-notes.json:30` (2026-09-18): "byte-identical in size and spot-checked content … (APFS clones; only `system_graph.json` differs by 33 bytes)" | consistent with the above |
@@ -377,7 +377,8 @@ in the eviction script and is now "the declared latent-norm refusal fixture"
 So `.s7` carries lift2's declared bank. If `.s7` becomes the subject of a
 reproducibility experiment, its system graph differs from the one the
 historical runs used, and that difference is part of the subject's
-definition.
+definition. (This assumes lift2's system graph did not change between the
+runs of 2026-09-05/06 and the 2026-09-20 record.)
 
 **V3 rung 7: the first cold measurement of this token** [A2 P1-47]
 (`k3-residency-vertical-notes.json`,
@@ -528,8 +529,9 @@ and V3 the highest. **The existing evidence cannot isolate the cause.**
   with default readahead, GLM's probe with `MADV_RANDOM`, and both share the
   same `WILLNEED` code (§1.1) [A2 P1-50]. V3 records "no readahead
   clustering visible" on the demand path.
-- **(iv) Prior residency differs.** V3 found about 67 % of the token's
-  selection resident from the prompt, and PREFETCH 59.1 %.
+- **(iv) Prior residency differs.** V3-N3 derives about 67 % of the token's
+  selection resident from the prompt (not witnessed), and PREFETCH witnessed
+  59.1 %.
 
 **GLM's idle result is consistent with a contention reading, but it does not
 show that contention caused the PREFETCH differences.** Model, layout, mapping
