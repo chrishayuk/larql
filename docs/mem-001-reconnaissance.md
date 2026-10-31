@@ -5,13 +5,20 @@ is not sealed and not experimental: no arm has run for this document, no
 threshold is chosen here, and no cache, policy or runtime is recommended. §7
 lists the questions a later freeze must answer.
 
-**Revision 3 (correction).** Each earlier revision failed an independent
-source audit, and every revision and audit stays readable:
+**Revision 4 (narrow correction).** Each earlier revision failed an
+independent source audit, and every revision and audit stays readable:
 
 | Revision | Commit | Audit | Result |
 |---|---|---|---|
 | 1 | `43388264` | [`…-audit-1.md`](mem-001-reconnaissance-audit-1.md) | 56 findings, 7 BLOCKING |
 | 2 | `b82d70b3` | [`…-audit-2-phase1.md`](mem-001-reconnaissance-audit-2-phase1.md), [`…-audit-2-phase2.md`](mem-001-reconnaissance-audit-2-phase2.md) | 67 findings, 3 new BLOCKING; audit 1's #31 and #34 partly resolved |
+| 3 | `95fd5764` | [`…-audit-3-phase1.md`](mem-001-reconnaissance-audit-3-phase1.md), [`…-audit-3-phase2.md`](mem-001-reconnaissance-audit-3-phase2.md), bounded by the frozen [source inventory](mem-001-reconnaissance-source-inventory.md) | 22 findings, 2 BLOCKING; REJECT |
+
+Revision 4 corrects only audit 3's two BLOCKING findings, its ten
+non-blocking findings (P1-3 to P1-12) and the writer-ordering claim, each
+re-checked at its primary source. Audit-3 findings are cited as
+**[A3 P1-n]**. Nothing else was reopened. What follows from here describes
+revision 3's construction, which still holds:
 
 This revision adds three prior results that revision 2 omitted: a fourth cold
 Kimi run (V3), the lift2 clone record, and a Gemma routing-locality result. It
@@ -69,35 +76,46 @@ from the plan (§2.1, §2.6). So the open questions are:
   - within PREFETCH, 59.1 % of the 2.948 GB selection was resident from the
     prompt before the measured token, and 2.948 × 0.409 = 1.206 GB, the
     observed paged bytes;
-  - V3, on the same token and prompt, paged 0.976 GB, with about 67 %
-    resident from the prompt. No source explains the difference, and V3
-    recorded no routing fingerprint.
-- **Subject identity** [A2 P1-37, A1 #34]. The subject,
-  `Kimi-Linear-48B-A3B-Instruct.lift2.vindex3`, is no longer on disk. Main
-  records it as an APFS clone of `.s6`, matching in segment size and
-  spot-checked content but not by digest. `.s6` and `.s7` share a recorded
-  bank digest. No lift2 digest exists (§2.2).
-- **Recorded locality results bear directly on caching** [A2 P1-67]. On
-  Gemma 4 26B-A4B (legacy path, one ~72-token prompt), the union of selected
-  experts reached 124.4 of 128 per layer. The diagnosis concludes there is no
-  small cacheable hot subset (§2.5). That challenges a static hot-expert
-  cache. It does not rule out short-window temporal locality or prefetching.
-  A second record, freq-mass on the DEC-0 routed capture pool (8 of 128
-  experts), finds a static set of 6.25 % of experts covering 42 % of routing
-  events, 35 % of the bank needed for 90 %, and a session-adaptive cache
-  buying 1.03× (§2.6).
+  - V3, on the same token and prompt, paged 0.976 GB. V3-N3 derives about
+    67 % resident from the prompt (1 − 0.976 / 2.944, not witnessed). No
+    source explains the difference, and V3 recorded no routing fingerprint
+    [A3 P1-9].
+- **Subject identity** [A3 P1-1, A2 P1-37, A1 #34]. The subject,
+  `Kimi-Linear-48B-A3B-Instruct.lift2.vindex3`, is no longer on disk. Before
+  its deletion, main recorded its `index.json` SHA-256, and it matches `.s6`'s
+  and `.s7`'s (`ddd9cad3…`, `v3-obs-1-carrier-observation.md:481-489`). That
+  file declares the expert-bank digest, so **declared bank identity is
+  established**. Complete container identity and execution equivalence are
+  not: the three `system_graph.json` files differ, and lift2's lacks
+  `kda_gate_form` (§2.2).
+- **Recorded locality results bear directly on caching** [A2 P1-67, A3
+  P1-2]. Two records on **the same model**, Gemma 4 26B-A4B, with different
+  captures:
+  - one ~72-token prompt (legacy path): the union of selected experts reached
+    124.4 of 128 per layer, and the diagnosis concludes there is no small
+    cacheable hot subset (§2.5);
+  - freq-mass on the DEC-0 routed pool (64-prompt mixture): a static set of
+    6.25 % of experts covers 42 % of routing events, 90 % needs 35 % of the
+    bank, and a session-adaptive cache buys 1.03× (§2.6).
+
+  They are complementary evidence about one load-balanced router, **not a
+  cross-model replication**, and hold only for the observed router,
+  workloads and sequence lengths. They challenge a static hot-expert cache
+  on that model. A third record, on GPT-OSS 20B, measures real but modest
+  short-window locality (§2.6). None rules out prefetching.
 - **LARQL has runtime expert caches, but none bounds VINDEX3 mapped-page
   residency** [A1 #21] (§1.3).
 - **Some instruments that a protocol might need are missing** (§1.4):
   - a VINDEX3-routing → retention-simulator path [A1 #11];
   - the contention script, which is in no git ref [A1 #18];
-  - a working eviction method on an idle machine. Main records advice-based
-    eviction never working on Darwin, and invalidation stopping when the
-    machine was idle [A1 #9].
+  - a working eviction method on an idle machine. Main's records on advice
+    conflict, and none makes it usable; invalidation stopped when the
+    machine was idle [A1 #9, A3 P1-5].
 - **Oversized execution and constrained residency are separate regimes**
   (§3). A genuinely oversized subject is *recorded*: GLM-5.3-Flash has a
   283.5 GiB expert estate on an external volume. That volume was not mounted
-  on 2026-10-31, and only one layer has ever been probed.
+  on 2026-10-31, and only single-layer probes have run (layer 3, and in §14
+  one arm per virgin layer) [A3 P1-4].
 
 **How the sources were found.** Paths and line numbers are at `51579782`. The
 search was by physical and implementation terms, not only by programme name:
@@ -146,7 +164,7 @@ Columns:
 | Cold-read probe | `examples/mmap_cold_read_probe.rs`; `docs/diagnoses/v3-disk-resident-mmap.md` | `F_NOCACHE` `pread` cold reads. Records 100 µs p50 / 140 µs p99 per scattered 16 KB page (153 MB/s), and 18 µs p50 for sequential mmap with `MADV_RANDOM`, with 1,048,576 major faults over 1,048,576 pages | different model and file (`bench/aim-validation/v3_granite-30b.json`). It records "macOS can't easily cap mmap residency", and that only the first eviction of a fresh file is reliable [A1 #25, A2 O-1] |
 | `larql moe-locality` | `crates/larql-cli/src/commands/diagnostics/moe_locality/`; `docs/cli.md:1761-1786` (research builds) | over a JSONL route trace: the union of experts across `K`-token blocks, and an **LRU hit-rate curve for a resident expert subset**, each against a uniform baseline and a skew-preserving shuffle | reads `LARQL_MOE_ROUTE_TRACE`, which VINDEX3 execution does not write (row below). No recorded result from this tool was found; §2.5's result came from an earlier capture path [A2 P1-67] |
 | Routing-locality analysis | `bench/aim-validation/moe-routing/analyze.py`, artefact `v3moe_locality.json` | per-position, per-layer selections from `MOE_DEBUG=1 larql run` (legacy vindex), then reuse and working-set statistics | the source of §2.5 |
-| `evict-bank.sh` (displacement eviction) | **not on main**: branch `k3-prefetch-2` (`aae20ae3`) and its WIP descendant `e2e0392f` | streams other large files (`DISPLACERS`: the Kimi-Linear HF directory and `…s6.vindex3`) through the page cache. Rounds 1 and 3 name it as their cold-state method | round 1 used a session scratch file of that name. The committed `aae20ae3` script reconstructs it, and their equality is asserted, not shown [A2 P1-17]. It reads ~183 GiB (~196.5 GB) just before a cold arm [A2 P1-18]. The notes attribute Spotlight's indexing to that read [A1 #39, #41]. `.s6` is recorded as a clone of the subject, so displacement re-read the subject's own extents through a different file (§5.2) [A2 O-7] |
+| `evict-bank.sh` (displacement eviction) | **not on main**: branch `k3-prefetch-2` (`aae20ae3`) and its WIP descendant `e2e0392f` | streams other large files (`DISPLACERS`: the Kimi-Linear HF directory and `…s6.vindex3`) through the page cache. Rounds 1 and 3 name it as their cold-state method | round 1 used a session scratch file of that name. The committed `aae20ae3` script reconstructs it, and their equality is asserted, not shown [A2 P1-17]. It reads about 184 GB by the records ("≈184 GB … 92 GB each", whose "GB" is evidently GiB); today's disk sizes give 183.0 GiB (196.5 GB) [A2 P1-18, A3 P1-11]. The notes attribute Spotlight's indexing to that read [A1 #39, #41]. `.s6` is recorded as a clone of the subject on 2026-09-18, after the rounds; that it was a clone during them is assumed, not recorded. If so, displacement re-read the subject's own extents through a different file (§5.2) [A2 O-7, A3 P1-12] |
 | PREFETCH-2 mechanism: `Coalesced`, `Gated`, `probed_resident` (`GATE_PROBE_PAGES = 4`), `--witness-residency` | `aae20ae3` (`prefetch.rs:138`, `vindex3_cmd/mod.rs:247`). **Notes only on `wip/k3-prefetch-2-2026-09-23` (`e2e0392f`)**, a parked work-in-progress commit. A third branch, `wip/k3-prefetch-2026-09-23` (`4a3823e2`), carries `Coalesced`, the witness and the amended PREFETCH-1 notes [A1 #19] | as named | measurement PAUSED since 2026-09-06. `--witness-residency` costs ~70 ms per token (PF-N4) |
 | Retention simulator (DEC-9A): Min / Lru / Lfu / Random / StaticOracle, compulsory floor | `larql-cli/.../k3_ledger/retention.rs` | the hit rate a policy would get on a **dec-bench capture pool** (`retention_report.rs:25`, `routing.bin`) | expert size defaults to `K3_ROUTED_EXPERT_BYTES = 17,547,264` (one K3 routed expert, MXFP4), **overridable with `--expert-bytes`** (`args.rs:124`, `retention_report.rs:27`). The simulator assumes one uniform size per expert [A2 P1-20]. Kimi-Linear's BF16 expert is 14,155,776 B [A1 #13]. No recorded DEC-9A result in `docs/` |
 | JSONL route trace `LARQL_MOE_ROUTE_TRACE` → `{layer, seq, experts}` | `larql-compute/src/moe_route_observe.rs`; call sites in CPU MoE, Metal decode and `kquant_forward` | the experts selected per layer; `seq` is a **per-layer call index**, not a position id [A1 #10] | **not called by VINDEX3 opplan execution** [A1 #11]. Evidence: BW11-1 window union (`docs/bw11-weight-traffic.md`) |
@@ -158,8 +176,12 @@ Columns:
 
 **Eviction methods, as recorded** [A2 P1-14, P1-63]:
 
-- **Advice never evicted on Darwin.** `MADV_DONTNEED` did not evict, and
-  `MADV_FREE_REUSABLE` returned `EPERM` (frontier §11).
+- **Advice: the records conflict, and none makes it usable** [A3 P1-5].
+  In the GLM run, `MADV_DONTNEED` did not evict and `MADV_FREE_REUSABLE`
+  returned `EPERM` (frontier §11). `vindex3_residency_probe` records
+  `MADV_DONTNEED` leaving a fresh file fully resident. The KU5 cold-read
+  probe records it as lazy, with only the first eviction on a fresh file
+  reliable (`v3-disk-resident-mmap.md`).
 - **Invalidation stopped working on an idle machine.** `msync(MS_INVALIDATE)`
   evicted in the first runs, and stopped reclaiming once nothing competed for
   memory (frontier §14).
@@ -225,7 +247,7 @@ recovered, as a **proposed prerequisite**. None is proposed for building here.
   **4,718,592 B** each (2304 × 1024 × 2, BF16; 26 MoE layers × 256 experts ×
   3 = 19,968). That is one matrix; an expert is three, 14,155,776 B.
   19,968 × 4,718,592 = 94,220,845,056 B, the bank payload in `.s6`'s and
-  `.s7`'s `index.json` (lift2's own is unavailable).
+  `.s7`'s `index.json`, whose recorded hash lift2's matched (§2.2).
 - **PREFETCH's requests are consistent with page-rounded contiguous runs**
   [A2 P1-31]:
   - (624 × 288 + 202) × 16,384 = 2,947,710,976 B, which rounds to the 2.948
@@ -234,8 +256,15 @@ recovered, as a **proposed prerequisite**. None is proposed for building here.
 
   The data are given to three decimals (±0.5 MB, about ±30 pages), so the
   "+202" extra pages is assumed from the request count, not resolved by the
-  data. This fits each expert's three matrices being one run. No writer-side
-  ordering guarantee was found.
+  data. This fits each expert's three matrices being one run.
+
+  **Writer ordering** [A3, outside the inventory]. The VINDEX3 writer orders
+  each segment's payload by sorting tensors on their object-relative name
+  (`encode/segment.rs:93-97`, `sort_into_payload_order`, since `c554266d`,
+  2026-08-12). That is a guarantee about **name order** only. Whether it
+  places an expert's three matrices physically adjacent depends on the
+  actual tensor names and the region table, which were **not checked**
+  here.
 - **GGUF.** #27149 contradicts itself on layout [A2 P1-32]. The original post
   says "Each expert is a contiguous byte slice". The update says GGUF "stores
   all 128 experts interleaved in one tensor", that one expert through mmap
@@ -258,13 +287,14 @@ recording commit and a named procedure. The classification is from audit 2
 | GLM §14 `pread` 2.36× | `6874285f` | as above; which virgin layers, and the serial sample count, are not recorded |
 | GLM §12 reuse table | `6874285f`; scripts unchanged on main | the trace is not committed, and the prompt is not recorded. The script's default prompt is one paragraph repeated three times (`glm_expert_trace.py:86-93`). If the default was used, the 128-token prefill may contain repeated text, which would inflate reuse. That is an inference |
 | GLM 283.5 GiB estate | frontier §12 (header plan) | a structural fact from headers; reproducible once the checkpoint is mounted and digested |
-| Kimi V3 rung 7 | `68abfd70` (2026-09-06, on main) | subject absent; no lift2 digest; **no routing fingerprint** (added in V4); eviction method and machine state not recorded; one run |
+| Kimi V3 rung 7 | `68abfd70` (2026-09-06, on main) | subject absent (declared bank identity recorded, §2.2); **no routing fingerprint** (added in V4); eviction method and machine state not recorded; one run |
 | Kimi PREFETCH round 1 | `63bc7c12` (mechanism, on main); notes on main | subject absent; the eviction script was a session file, committed later as a reconstruction; machine UNQUALIFIED; one sample per arm; raw logs not committed |
-| Kimi PREFETCH round 2 | `e2e0392f` (parked WIP, not on main) | the exact code that ran is not recoverable (built uncommitted, ported forward later); machine state not recorded; the witness is inside every latency figure; the promised unwitnessed record is absent. **The weakest of the set** |
+| Kimi PREFETCH round 2 | `e2e0392f` (parked WIP, not on main) | the exact code that ran is not established: it was built uncommitted and ported forward later, and a candidate copy of the old worktree's state is parked at `4a3823e2` (2026-09-23, 17 days after the run), with equality unestablished [A3 P1-8]; machine state not recorded; the witness is inside every latency figure; the promised unwitnessed record is absent. **The weakest of the set** |
 | Kimi PREFETCH round 3 | `e2e0392f` notes; mechanism at `aae20ae3` | whether the run used exactly `aae20ae3` is not stated; machine UNQUALIFIED; one retained sample per arm, and one discarded |
 | Gemma 4 locality | `docs/diagnoses/moe-routing-locality.md` (2026-05-31), artefact on main | the container (`output/gemma4-26b-a4b-q4k.vindex`) is not in the repository; the passage is described but not given verbatim; one prompt |
 
-For Kimi, "same subject across runs" rests on the clone record (§2.2), and,
+For Kimi, "same subject across runs" rests on the recorded identity chain
+(declared bank identity; §2.2), and,
 for the PREFETCH rounds only, on routing fingerprint `ebe045dc40cce5b1` and
 the generated ids [A1 #40].
 
@@ -335,13 +365,19 @@ of different strength:
 
 | Link | Evidence | Strength |
 |---|---|---|
-| lift2 ≈ `.s6` | `represent-real-evidence-1-notes.json:30`: lift2's "five segments are byte-identical in size and spot-checked content to the historical `s6` container (APFS clones; only `system_graph.json` differs by 33 bytes)" | size and spot-check; **no digest** |
-| `.s6` = `.s7` | both `index.json` files are byte-identical on disk: expert bank `payload_sha256` `3f12d102…`, `segment_sha256` `e43600cd…`; segment sizes equal | **recorded digest** |
-| lift2's own digest | not found on main, on any searched branch, or on disk | **absent** |
+| lift2, `.s6`, `.s7`: `index.json` | `v3-obs-1-carrier-observation.md:481-489`: "Kimi container identities (SHA-256 of `index.json` / `system_graph.json`), recorded before `.lift2` was deleted on 2026-09-20". All three `index.json` hashes are `ddd9cad3e4603d12…`. On disk today, `.s6`'s and `.s7`'s `index.json` still hash to `ddd9cad3e4603d12dfbc…` | **recorded hash, identical across all three** [A3 P1-1] |
+| Declared expert bank | that `index.json` declares the expert bank `payload_sha256` `3f12d102…` and `segment_sha256` `e43600cd…` | **declared bank identity established.** The payload bytes were not re-hashed against the declaration here |
+| `system_graph.json` | the same record: lift2 `1b4c0fc41da8e83d…`, `.s6` `a33b81a92da58237…`, `.s7` `1fe02abad2f3bcdc…`. lift2 lacks `kda_gate_form` and was "refused at first step (gate form absent)"; `.s6` lacks the latent-norm epsilon; `.s7` is "the container of record" | **the declarations differ**, so complete container identity and execution equivalence are not established |
+| lift2 ≈ `.s6` segments | `represent-real-evidence-1-notes.json:30` (2026-09-18): "byte-identical in size and spot-checked content … (APFS clones; only `system_graph.json` differs by 33 bytes)" | consistent with the above |
 
 `lift2.vindex3` is not in `~/chris-models` now. `.s6.vindex3` was a displacer
 in the eviction script and is now "the declared latent-norm refusal fixture"
 (`continuation-mem-1.json:31`).
+
+So `.s7` carries lift2's declared bank. If `.s7` becomes the subject of a
+reproducibility experiment, its system graph differs from the one the
+historical runs used, and that difference is part of the subject's
+definition.
 
 **V3 rung 7: the first cold measurement of this token** [A2 P1-47]
 (`k3-residency-vertical-notes.json`,
@@ -359,7 +395,9 @@ V3-N3 to V3-N5):
   resident from the three-token prompt"; 1 − 0.976 / 2.944 = 66.8 %. V3-N3
   gives "≈22 µs per fault".
 - **Warm token:** 140–430 ms across two runs, with 0 major faults in both.
-  V3-N5 calls the spread unexplained and "not a throughput claim".
+  V3-N5 calls the spread unexplained and "not a throughput claim". Main's
+  later V4-N1 attributes both readings to "the machine, not the model", and
+  the branch's V4-N5 closes it as such (qualified warm 75.4 ms) [A3 P1-3].
 - **Second run** (23:40Z, after other processes had read the bank): 10.485
   GB already page-cache resident at binding, and 470,846 **minor** faults on
   the prompt at about 0.8 µs each. V3-N4 calls this a third residency state:
@@ -464,8 +502,9 @@ it changes no ordering. For example, (1253 − 76) / 73,516 = 16.0 µs and
 (602 − 74) / 73,518 = 7.2 µs.
 
 PREFETCH-2's addendum (PF2-N1) describes the demand arm moving "from 16.4 us
-per fault to 8.2". That 16.4 is round 2's witnessed p50 (1205 / 73,520). It
-is the same arithmetic basis as 8.2, not a different one [A2 P1-46].
+per fault to 8.2". That 16.4 **matches** round 2's witnessed p50
+(1205 / 73,520 = 16.39), not round 1's 17.0. The source does not say which
+figure it used; the match is arithmetic [A2 P1-46, A3 P1-10].
 
 **The GLM row is not on this basis** [A2 P1-45]. GLM §13's 17.1 µs is a
 one-layer routed-stage time at about 1.8 faults in flight, and its serial
@@ -481,8 +520,9 @@ and V3 the highest. **The existing evidence cannot isolate the cause.**
   arm, which shows only that CPU load and fast demand coincided once
   [A2 P1-49]. Round 2's machine state is unrecorded.
 - **(ii) Round 3's demand ran with more faults in flight**, or against a
-  different device or cache state. Displacing with `.s6`, an APFS clone of
-  the subject, re-reads the subject's own extents (§5.2).
+  different device or cache state. If `.s6` was then the APFS clone it was
+  recorded as on 2026-09-18, displacing with it re-read the subject's own
+  extents (§5.2).
 - **(iii) The madvise path helps on the Kimi container but not on GLM**
   because of readahead, the drive or the layout. VINDEX3 maps its segments
   with default readahead, GLM's probe with `MADV_RANDOM`, and both share the
@@ -511,7 +551,7 @@ advice and drive all differ.
   | Token major faults | 59,670 | 73,516 |
   | Prompt paged | 7.545 GB | 7.72 GB |
   | Prompt + token | 8.52 GB | 8.92 GB |
-  | Resident from the prompt | ~67 % of 2.944 GB (disjoint bound) | 59.1 % of 2.948 GB (round 2, page-rounded request) |
+  | Resident from the prompt | ~67 % of 2.944 GB, **derived** (V3-N3), not witnessed | 59.1 % of 2.948 GB, **witnessed** (round 2, page-rounded request) |
   | Routing fingerprint | **not recorded** | `ebe045dc40cce5b1` |
 
   The ~0.4 GB difference in the touched set is **unexplained by any
@@ -579,16 +619,22 @@ committed raw trace that was checked here.
 | Record | Subject | What it records | Bearing on MEM-001 |
 |---|---|---|---|
 | `ROADMAP.md` (VINDEX3 reference MoE, `f13bf385`, 2026-08-02); `ROADMAP_STATUS.md` | synthetic layer (`vindex3_residency_probe`) | "the bound plan predicts its resident page set **exactly** (200 predicted, 200 resident, zero overshoot, 1.63% of a 192 MiB layer per token)" | the first residency-prediction result, on a synthetic subject; GLM §11 is the first on real weights |
-| `docs/dec-funnel.md`, freq-mass (`larql k3-ledger freq-mass`, 2026-08-01) | the banked DEC-0 routed capture pool, 8 of 128 experts, 64-prompt domain mixture | a static 6.25 % resident set covers 42 % of routing events, and 90 % needs 35 % of the bank. A session-adaptive cache buys 1.03× on the miss stream at C=8, against an oracle bound of 1.41×. 620 of 3,840 layer-expert pairs (16.1 %) went unobserved. Unobserved experts per layer range 3 to 68 of 128 | **contrary evidence for a small static hot set, and for an adaptive cache**, on a different model and capture from §2.5. Moderate skew, not none. The doc itself flags the per-layer heterogeneity as "least likely to survive to K3" |
+| `docs/dec-funnel.md`, freq-mass (`larql k3-ledger freq-mass`, 2026-08-01) | the banked DEC-0 routed capture pool, 8 of 128 experts, 64-prompt domain mixture | a static 6.25 % resident set covers 42 % of routing events, and 90 % needs 35 % of the bank. A session-adaptive cache buys 1.03× on the miss stream at C=8, against an oracle bound of 1.41×. 620 of 3,840 layer-expert pairs (16.1 %) went unobserved. Unobserved experts per layer range 3 to 68 of 128 | **contrary evidence for a small static hot set, and for an adaptive cache**, on the **same model** as §2.5 (the pool is `bench/dec0/residuals-gemma4-26b-a4b-q4k-routed`, `docs/cli.md:492`; 3,840 = 30 layers × 128 experts), from a different capture [A3 P1-2]. Complementary to §2.5, not a cross-model replication. Moderate skew, not none. The doc itself flags the per-layer heterogeneity as "least likely to survive to K3" |
 | `ROADMAP_STATUS.md` RSL-RP (registry `rsl-rp`, closed 2026-08-04); `ROADMAP.md` §P1 CR1 | a **dense-layer** estate: 12 candidate FFN layers × 150 MiB = 1.76 GiB | storage side: preloading the whole pool is correct, and speculative storage prefetch is not justified on this estate ("closed negative and narrowly scoped"). Hot side, all weights resident: replay latency scales with distinct layers touched (2.11× from 1 to 3 layers), and grouping by physical owner adds 1.80× where reuse exists | not MoE expert residency. A prefetch-negative result where the whole pool fits; it names K3 as the first estate where the storage question is askable |
+| `docs/bw11-weight-traffic.md` §3.5, BW11-1 (closed 2026-08-20, `larql dec-bench window-union`) | GPT-OSS 20B, 4 of 32 experts, 24 routed layers; 5 short prompts, prefill plus 8 decode positions | the union of experts over a same-sequence window gives 1.28× / 1.72× / 2.40× amortisation at K = 2 / 4 / 8, and the measured union is 6.2–10.5 % below a shuffled-marginal control: "real, controlled, modest" | a short-window temporal-locality result on a third model [A3 P1-7]. Modest, and on a small corpus |
 | `docs/v3-obs-1-carrier-observation.md` | Kimi-Linear, VINDEX3 | 87.75 GiB mapped, 0 resident after preparation; 10.56 GiB resident after the witnesses, "the experts the routed tokens touched"; peak RSS 16.9 GB | recorded "as evidence and not as acceptance"; an incidental residency figure, not a cold-run measurement |
 | `docs/audits/expert-serving-review-2026-07-23.md` | legacy expert-serving path | "there is no cold-cache mode for expert weights (`packed_mmaps` never madvised) — replay measures warm page cache" | a legacy-path instrument limit; not VINDEX3 |
 
-**Identified by the inventory, not summarised here.** These are pre-registered
-or design records with no result read for this revision: `docs/vindex3-experiments.md`
-E2 and E6, and `docs/lyrw-v2.md` (unrun physical-layout and locality
-experiments); `docs/k3-funnel.md` §4.13 and its coverage-curve gate (unrun);
-`docs/glm5-flash-funnel.md` §8.2.2–§8.2.3; `docs/diagnoses/remote-moe-bottlenecks.md`
+**Identified by the inventory, not summarised here** [A3 P1-6]:
+- pre-registered, unrun: `docs/vindex3-experiments.md` E2 and E6, and
+  `docs/lyrw-v2.md` (physical-layout and locality experiments);
+- `docs/k3-funnel.md` §4.13: the V3 pre-registration and its result summary,
+  covered here through the V3 notes file (§2.2);
+- `docs/glm5-flash-funnel.md` §8.2.2l and §8.2.2n: **measured**
+  cross-perturbation routing-union results (1.15× mean, 1.50× worst fetch
+  amplification across eight arms, flat with depth). They concern union
+  across arms, not temporal residency. §8.2.3 is arithmetic from GLM §12;
+- design or recommendation records: `docs/diagnoses/remote-moe-bottlenecks.md`
 (a multi-layer expert prefetch recommendation);
 `crates/larql-vindex/docs/vindex3-format-spec.md` (group extent as the
 prefetch unit); `scripts/k3_batch_union.py`. A protocol drawing on any of them
@@ -653,10 +699,12 @@ Silicon [A2 P1-60].
    inherit residency. V3-N4 records three states: on disk (major fault,
    ~22 µs), in the page cache but not mapped (minor fault, ~0.8 µs), and
    mapped.
-2. **Eviction state.** Advice never evicted, and invalidation stopped on an
-   idle machine (§1.2). Displacement reads ~183 GiB just before the arm, and
-   one displacer, `.s6`, is a clone of the subject, so it re-reads the
-   subject's own extents through a different file. Virgin layers avoid both,
+2. **Eviction state.** Advice is not a usable eviction method on the
+   records, which conflict, and invalidation stopped on an idle machine
+   (§1.2). Displacement reads about 184 GB (records) just before the arm,
+   and one displacer, `.s6`, is recorded (on 2026-09-18) as a clone of the
+   subject, so it likely re-read the subject's own extents through a
+   different file. Virgin layers avoid both,
    but only where the geometry repeats.
 3. **Device contention and machine state.** No run recorded device I/O.
    Round 3 ran under heavy CPU load with demand fastest, and round 2's state
@@ -675,7 +723,7 @@ Silicon [A2 P1-60].
 7. **Decode cost unrelated to memory.** At about 54 % hit with deep fetch,
    GLM's arithmetic puts the bottleneck flipping to expert compute (frontier
    §14). Warm is the ceiling, and it has to be measured. V3's warm token
-   ranged 140–430 ms unexplained.
+   ranged 140–430 ms, which V4-N1 attributes to machine state [A3 P1-3].
 8. **Routing identity across runs and runtimes.** It needs recording before
    any working-set comparison. V3 lacked it.
 9. **One run is not a distribution.** V3 and rounds 1 and 3 are single
@@ -737,11 +785,12 @@ needs an intervention arm with its own baseline.
 
 ## 7. Questions for the freeze
 
-1. **Subject identity.** lift2 is gone. Is the recorded chain enough to pin
-   `.s7` as the subject: lift2 ≈ `.s6` by segment size and spot-checked
-   content (no digest), and `.s6` = `.s7` by `payload_sha256`? Or is a digest
-   of the subject required, which would mean a new subject pinned by digest?
-   Either way: which model, container bytes, tensor layout and digest?
+1. **Subject identity.** lift2 is gone. Its recorded `index.json` hash
+   matches `.s7`'s, so `.s7` carries lift2's declared bank, but the two
+   `system_graph.json` declarations differ (§2.2). Is declared bank identity
+   plus a recorded declaration difference enough to pin `.s7` as the
+   subject? Must `.s7`'s payload be re-hashed against its declared digest
+   first? Either way: which model, container bytes, tensor layout and digest?
 2. **Regime A.** Is GLM-5.3-Flash on `model-drive` the regime-A subject? Is
    whole-model execution of it in scope, or only per-layer probing? Its
    checkpoint would need a weight digest first.
@@ -801,6 +850,28 @@ the witness-cost presentation refuted in three places. Preserved in
   Discoveries outside the inventory are reported separately, not silently
   added to scope.
 - Acceptance of this record is not permission to run MEM-001A or MEM-001B.
+
+**Independent audit 3 (`95fd5764`), bounded by the frozen source inventory.**
+Phase 1: 22 findings, 2 BLOCKING (a recorded lift2 `index.json` hash that
+every earlier revision and audit missed; the freq-mass pool is the same
+Gemma 4 26B-A4B model as §2.5). Phase 2: of the ten named BLOCKING findings
+from audits 1 and 2, eight resolved and two (A1 #34, A2 P1-37) partly
+resolved, with P1-1 as their residue. Recommendation: REJECT on those two
+text errors. Preserved in `mem-001-reconnaissance-audit-3-phase{1,2}.md`.
+
+**Maintainer direction after audit 3 (2026-10-31):**
+- Revision 4 approved, scoped to audit 3's two BLOCKING findings, its ten
+  non-blocking findings and the writer-ordering claim. Nothing else
+  reopened. Lift2 is described as **declared bank identity established**,
+  not complete container identity or execution equivalence.
+- No full audit 4. An independent reviewer checks only the
+  revision-3-to-revision-4 diff against primary sources, plus a consistency
+  search of the whole document for the corrected phrases.
+- If that check finds no unresolved blocking error, #667 may leave draft and
+  merge through normal CI and review. A remaining blocking discrepancy is
+  reported specifically, without widening the review.
+- Merging does not authorise MEM-001A, MEM-001B, implementation or scored
+  measurements. After the merge, MEM-001 reconnaissance is finished.
 
 MEM-001 is frozen only once the reproducibility, accounting and identity
 problems are resolved or explicitly bounded.
