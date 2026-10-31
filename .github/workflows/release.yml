@@ -36,7 +36,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             features: "--no-default-features --features larql-cli/gpu"
           # Pinned to 22.04, NOT ubuntu-latest: the runner's glibc sets the
