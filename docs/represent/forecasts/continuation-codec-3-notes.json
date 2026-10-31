@@ -121,14 +121,15 @@
     "next": "per the forecast: the decode-cost/materialisation rung for codec-recent/v1, the exact window's precision as a representation question, and the cross-architecture localisation rung (Granite, Qwen 3.x; Kimi/hybrid as the expected different regime)",
     "maintainer_reading": {
       "accepted": "2026-10-31",
-      "conclusion": "CH-recent256 meets the prespecified pooled ACCEPTABLE criterion, but does not establish rung-wise acceptability or consistent performance across the evaluated context lengths (2,048 / 4,096 / 8,192 on gemma3-4b-it). The result is length-sensitive or potentially heterogeneous, and B4 remains inconclusive because every rung lacks per-rung support. CODEC-3 is closed with a qualified pooled acceptance, not a general recommendation to deploy CH-recent256 at every context length",
+      "conclusion": "CH-recent256 meets the prespecified pooled ACCEPTABLE criterion on gemma3-4b-it, but does not establish consistent performance across the evaluated context lengths. B3 passes at 4,096 tokens but fails at 2,048 and 8,192 tokens. B4 remains inconclusive due to insufficient data. CODEC-3 closes with qualified pooled acceptance, not a general recommendation across context lengths",
       "how_to_cite": "cite the answer only together with this conclusion: pooled ACCEPTABLE; per rung B3 fails at 2,048 and 8,192 and holds at 4,096; B4 Unsupported at every rung. Not a default for codec-recent/v1",
       "conditions_checked": [
         "the pooled rule was frozen before scoring: the freeze #656 (bc05186e) is an ancestor of the run's implementation 2536bb79, and continuation-codec-3.json is unchanged between bc05186e and this record",
         "the record is the as-run store's codec3-gemma3-4b.json unedited: sha256 20045bb8… matches, and every file in the sealed store matches store.sha256",
         "the record encodes the reported verdicts: pooled primary Acceptable (B3 0.187 vs 0.221); per rung NotAcceptable / Uninformative / NotAcceptable; secondary and control NotAcceptable"
       ],
-      "verification": "B1 recomputed from the sealed store's per-position top1_agree for all nine arm × rung cells; every (b, c) equals the record. The primary's identical B1 at 4,096 and 8,192 (b = 12, c = 23) is a coincidence of counts: the discordant positions are disjoint (3225… vs 7243…) and the totals differ (arm/C top-1 820/831 vs 849/860)"
+      "verification": "B1 recomputed from the sealed store's per-position top1_agree for all nine arm × rung cells; every (b, c) equals the record. The primary's identical B1 at 4,096 and 8,192 (b = 12, c = 23) is a coincidence of counts: the discordant positions are disjoint (3225… vs 7243…) and the totals differ (arm/C top-1 820/831 vs 849/860)",
+      "not_a_trend": "the per-rung pattern is not monotonic (B3 upper 0.289 / 0.178 / 0.218 against bounds 0.231 / 0.202 / 0.197; fail / pass / fail), so the 4,096 result establishes nothing about shorter or longer contexts, and the record is not evidence for a simple degradation with length. It is also confounded: each rung scores a different span of the one held-out text (positions 1024–2047, 3072–4095, 7168–8191), so context length and text content are not separated. Context-dependent behaviour of the recent-K window is an open question for future work, not a finding of CODEC-3"
     }
   }
 }
