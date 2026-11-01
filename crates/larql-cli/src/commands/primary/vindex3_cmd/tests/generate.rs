@@ -64,6 +64,7 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         repeat: 1,
         warmup: 0,
         unquiet_ok: true,
+        residency_regions: None,
         expert_access: "demand".to_string(),
         logit_dump: None,
         bank: None,
@@ -104,6 +105,7 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         repeat: 3,
         warmup: 1,
         unquiet_ok: true,
+        residency_regions: None,
         expert_access: "touch".to_string(),
         logit_dump: None,
         bank: None,
@@ -113,6 +115,57 @@ fn the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image() {
         plugin: Default::default(),
     }))
     .expect("the residency curve must complete both passes");
+}
+
+/// A SMOKE test only: `--residency-regions` writes a binding and an
+/// after-run observation. This dense fixture maps no region, so the
+/// records carry headers and no region lines — what the records say about
+/// mapped and failed regions is pinned in `residency_record.rs`, on
+/// observations built by hand.
+#[test]
+fn the_residency_curve_writes_a_binding_and_an_after_run_record() {
+    let dir = fixture_dir(true);
+    let out = dir.path().join("container");
+    run(Vindex3Command::Encode(EncodeArgs {
+        capability: None,
+        artifacts: vec![dir.path().to_path_buf()],
+        output: out.clone(),
+    }))
+    .unwrap();
+    let record = dir.path().join("regions.jsonl");
+    run(Vindex3Command::Exec(ExecArgs {
+        container: out,
+        component: "target".to_string(),
+        tokens: "1,2".to_string(),
+        dump_layers: None,
+        resume: false,
+        backend: ExecBackend::Production,
+        representation_source: "auto".to_string(),
+        generate: Some(1),
+        speculate: None,
+        stop_at_eos: false,
+        residency_curve: true,
+        repeat: 1,
+        warmup: 0,
+        unquiet_ok: true,
+        residency_regions: Some(record.clone()),
+        expert_access: "demand".to_string(),
+        logit_dump: None,
+        bank: None,
+        dump_dir: None,
+        draft_depth: None,
+        profile: false,
+        plugin: Default::default(),
+    }))
+    .expect("the residency curve must complete");
+    let text = std::fs::read_to_string(&record).expect("the record is written");
+    let phases: Vec<String> = text
+        .lines()
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+        .filter(|v| v["record"] == "observation")
+        .map(|v| v["phase"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(phases, ["binding", "after_run"]);
 }
 
 /// A warmup that leaves no counted pass is refused by name, before any
@@ -142,6 +195,7 @@ fn a_warmup_that_leaves_nothing_counted_is_refused() {
         repeat: 2,
         warmup: 2,
         unquiet_ok: true,
+        residency_regions: None,
         expert_access: "demand".to_string(),
         logit_dump: None,
         bank: None,
@@ -182,6 +236,7 @@ fn an_unknown_expert_access_is_refused_by_name() {
         repeat: 1,
         warmup: 0,
         unquiet_ok: true,
+        residency_regions: None,
         expert_access: "prescient".to_string(),
         logit_dump: None,
         bank: None,

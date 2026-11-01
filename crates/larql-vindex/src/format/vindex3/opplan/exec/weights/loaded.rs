@@ -33,7 +33,9 @@ impl LoadedWeight {
             LoadedWeight::Bf16(b) | LoadedWeight::F16(b) => b.as_slice().len(),
             // The committed half of a mapping: its pages resident now.
             // Address space is `mapped_bytes`, and the two are never
-            // summed into one figure.
+            // summed into one figure. A failed read counts 0 here, so this
+            // is a FOOTPRINT figure and never a residency witness: a
+            // witness reads `mapped_region()` and keeps the outcome.
             LoadedWeight::Mapped { region, .. } => region.resident_bytes().unwrap_or(0) as usize,
             LoadedWeight::Mxfp4 { packed, scales } => {
                 packed.as_slice().len() + scales.as_slice().len()
@@ -99,6 +101,16 @@ impl LoadedWeight {
                 of(scales.as_ptr().cast::<u8>(), scales.len() * 4),
             ],
             LoadedWeight::CodecOwned { bytes, .. } => vec![of(bytes.as_ptr(), bytes.len())],
+        }
+    }
+
+    /// The mapped region behind this weight, for a mapping; `None` for
+    /// every owned form. A residency witness reads through this so the
+    /// outcome of each read survives.
+    pub fn mapped_region(&self) -> Option<&WeightRegion> {
+        match self {
+            LoadedWeight::Mapped { region, .. } => Some(region),
+            _ => None,
         }
     }
 

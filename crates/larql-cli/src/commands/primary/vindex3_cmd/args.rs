@@ -275,6 +275,13 @@ pub struct ExecArgs {
     /// machine is refused before any weight is bound.
     #[arg(long, requires = "residency_curve")]
     pub unquiet_ok: bool,
+    /// With `--residency-curve`: write every mapped region's residency to
+    /// this file as JSON Lines (`larql.residency-observation/1`) — one
+    /// observation at binding, before any pass runs, and one after the
+    /// run. A region whose residency could not be read is recorded as
+    /// failed, with the reason, never as zero.
+    #[arg(long, requires = "residency_curve")]
+    pub residency_regions: Option<PathBuf>,
     /// How a mapped expert bank's selected experts are brought in per
     /// token: `demand` (the loop faults each page), `advise` (the kernel
     /// is told ahead), `touch` (pages are faulted concurrently ahead of
