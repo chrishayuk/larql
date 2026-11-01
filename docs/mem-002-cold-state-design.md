@@ -137,6 +137,13 @@ execution. Three caveats decide whether a 0.000 GB reading means cold:
      exclude a failure on individual regions.
    - On fault-path arms, cross-check major faults × 16 KiB against the
      resident delta [R §1.1].
+   - **These controls corroborate; they do not make a zero distinguishable
+     from a failed read** (maintainer, 2026-11-01). **Freeze blocker:** no
+     protocol may use zero residency as an admission criterion until the
+     residency checks behind the gate report success or failure explicitly,
+     per region, so that a failed observation cannot admit a run as cold.
+     On main the binding line does not; making it do so is instrumentation,
+     reviewed separately.
 2. **The sum double-counts boundary pages** [R §1.1]. This doesn't matter at
    ~0, but a threshold above 0 must say what it counts.
 3. **A threshold is a protocol choice.** The branch script uses 0.1 GB, about
@@ -152,7 +159,11 @@ state:
   well before any cold arm, and never immediately before one.
 - **Verify that `cp -c` cloned rather than copied**, on every arm. A copy
   would consume the bank's size in free space (`df` before and after), and
-  would be a different physical subject.
+  would be a different physical subject. **`df` is corroboration only, not
+  proof that shared extents were created** (maintainer, 2026-11-01): free
+  space moves for other reasons. The feasibility protocol must specify an
+  independently checkable clone-identity test before the clone method is
+  used. This note does not name one.
 - **Hash each clone's small `index.json` and `system_graph.json`.** That is
   cheap identity evidence that does not warm the bank.
 - The clone's payload then rests on APFS clone semantics, which hold at the
