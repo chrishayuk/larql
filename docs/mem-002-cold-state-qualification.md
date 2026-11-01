@@ -88,7 +88,7 @@ control has a pass condition fixed at the freeze.
 | Control | What it shows | Procedure | Needs |
 |---|---|---|---|
 | **PC1, cross-process visibility** (**required**, foundational) | mincore in a fresh process sees pages another process cached but this one never mapped [D §3] | another process reads a known set of `.s7` files; a fresh process then binds. The binding witness must report them resident. V3's second run is the historical analogue (10.485 GB at binding) [R §2.2] | I1 |
-| **PC2, region-level correctness** (**required**, foundational) | the per-region report attributes residency to the right regions. An aggregate can look right while individual regions are wrong, and the historical `None → 0` behaviour makes that a live risk | another process reads a **known byte range** of the expert-bank segment. The fresh process's per-region report must show residency in exactly the regions covering that range, and none elsewhere beyond boundary pages | I1, I3 |
+| **PC2, region-level correctness** (**required**, foundational) | the per-region report attributes residency to the right regions. An aggregate can look right while individual regions are wrong, and the `None → 0` behaviour still present on main makes that a live risk | **a matched sham-against-treatment comparison** (I1+I3 proposal, #671 §5). Both conditions run: observation A in a fresh process, the intervention, then observation B in a second fresh process. Treatment reads a **known byte range** of a segment file; the sham reads nothing. Target regions are fixed in advance by stable region key. Already-resident targets are excluded, and readahead and boundary regions are reported separately. **Pass:** the targets' per-region change under treatment exceeds the same regions' change under sham, and other regions show no treatment-against-sham difference, under criteria fixed at the freeze. Exact zero change elsewhere is not required. **If the observer's own run warms the targets so that no contrast can be shown, PC2 is declared infeasible with this procedure, and its criteria are not loosened** | I1, I3 |
 | **PC3, within-run consistency** (**diagnostic only**) | whether faults and resident changes are broadly consistent | on each admitted attempt, record the prompt's major faults × 16 KiB beside its resident delta [R §1.1]. **Not an equality gate**: the relationship depends on page geometry, fault accounting, residency before the run and concurrent activity. A large discrepancy is reported and investigated, but does not by itself reject an attempt | existing |
 | **PC4, clone isolation** (F only) | a clone's cache state is independent of its source's | with `.s7` warm (after phase A), create a clone. Its fresh binding must witness ~0 while `.s7` is still resident. That is the direct test of the indirect evidence in [D §2] | I1, I4 |
 
@@ -290,6 +290,10 @@ if:**
 
 - PC1 or PC2 fails: the witness cannot support any cold claim on this
   machine;
+- PC2 is infeasible with the sham procedure, because the observer's own run
+  destroys the contrast: the freeze waits. A separate bind-only observation
+  capability may be proposed, with its own implementation review. PC2 stays
+  required, and is not relaxed;
 - neither method qualifies under the frozen criteria. The result is "cold
   binding is not qualified with these methods and instruments on this
   machine", with the failing criterion named. The apparatus is not modified
@@ -325,6 +329,7 @@ if:**
 |---|---|
 | Cold prefill | deferred; cold binding is qualified first |
 | PC1, PC2 | required, as the foundational controls on the residency instrument |
+| PC2 design | a matched sham-against-treatment comparison on stable region keys; no bind-only mode added; declared infeasible rather than relaxed if the observer's run destroys the contrast |
 | PC3 | diagnostic only, not an equality gate |
 | PC4 | retained, as the specific test of method F |
 | I3 | required for PC2, kept minimal |
