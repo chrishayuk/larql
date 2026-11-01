@@ -167,7 +167,7 @@ fn every_record_carries_the_schema_and_a_header_precedes_the_regions() {
         ok["segment_path"], SEGMENT_PATH,
         "the absolute path, diagnostic"
     );
-    assert_eq!(ok["region_key_portable"], true);
+    assert_eq!(ok["segment_declared"], true);
     assert_eq!(ok["file_offset"], 0);
     assert!(ok.get("error").is_none());
 
@@ -250,7 +250,8 @@ fn a_run_identity_names_this_process_and_hashes_the_index() {
 
 /// NB6 in the record: `segment` is the declared container-relative path,
 /// which is the same for a clone at another path; a store no container
-/// declared has `segment: null` and is marked not portable.
+/// declared has `segment: null` and `segment_declared: false`. Pairing
+/// itself still needs equal container digests, which no key replaces.
 #[test]
 fn the_record_keys_regions_by_declared_segment_and_flags_undeclared_ones() {
     let a = observation(vec![region(0, Ok(1))], Some(16_384));
@@ -265,7 +266,7 @@ fn the_record_keys_regions_by_declared_segment_and_flags_undeclared_ones() {
         "segment",
         "file_offset",
         "len",
-        "region_key_portable",
+        "segment_declared",
     ] {
         assert_eq!(ra[field], rb[field], "{field} must not move with the clone");
     }
@@ -276,7 +277,7 @@ fn the_record_keys_regions_by_declared_segment_and_flags_undeclared_ones() {
     let r = &observation_records(&run(), 0, "binding", &undeclared)[1];
     assert_eq!(r["segment"], Value::Null);
     assert_eq!(r["segment_path"], SEGMENT_PATH);
-    assert_eq!(r["region_key_portable"], false);
+    assert_eq!(r["segment_declared"], false);
 }
 
 /// `binary.commit` is recorded only when the build declared it, and an

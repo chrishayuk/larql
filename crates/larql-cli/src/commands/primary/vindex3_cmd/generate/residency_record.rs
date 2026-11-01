@@ -20,9 +20,15 @@ use super::GB;
 ///
 /// `/2`: a region's `segment` is the container-relative path the
 /// container declared (it was the absolute path in `/1`), the absolute
-/// path moved to `segment_path`, `region_key_portable` says whether the
-/// region's key pairs across clones, and the header carries
+/// path moved to `segment_path`, `segment_declared` says whether the
+/// container declared the segment (so the region's key survives cloning),
+/// and the header carries
 /// `binary.commit` and `consistent`.
+///
+/// A key that survives cloning is not permission to compare. Region
+/// records from two observations are comparable only when both headers
+/// carry equal, non-null `container.index_json_sha256`; the procedure
+/// that pairs them must check it, and a null digest refuses pairing.
 pub(in super::super) const SCHEMA: &str = "larql.residency-observation/2";
 
 /// The build-time variable a measured build records its commit in. Set it
@@ -176,7 +182,7 @@ pub(in super::super) fn observation_records(
             "store_id": store.id,
             "segment": store.declared_segment,
             "segment_path": store.source_path.as_ref().map(|p| p.display().to_string()),
-            "region_key_portable": store.segment_identity().is_portable(),
+            "segment_declared": store.segment_identity().is_portable(),
             "file_offset": region.file_offset,
             "len": region.len,
         });

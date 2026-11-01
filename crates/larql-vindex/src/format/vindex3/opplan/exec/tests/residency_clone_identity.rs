@@ -1,7 +1,13 @@
 //! NB6 on a real container: the same encoded container at two paths — the
 //! shape of the cold-state method's fresh clone per arm — gives every
-//! mapped region the same key, so the two observations pair region for
-//! region, although every segment file sits at a different absolute path.
+//! mapped region the same key, although every segment file sits at a
+//! different absolute path.
+//!
+//! The key alone does not license the comparison. The test first
+//! establishes, as its stated precondition, that both copies carry the
+//! same container identity (equal `index.json` digests) — the check any
+//! procedure pairing records across clones must make — and only then
+//! pairs the regions.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -9,6 +15,7 @@ use std::path::Path;
 use super::super::prepared::{ExecutionSlice, PreparedOperands, ResidencyDelta};
 use super::super::production::ProductionBackend;
 use super::kimi_per_expert_prepared::{open_container, Subject};
+use crate::format::checksums::sha256_file;
 use crate::format::vindex3::fixtures_kimi::kimi_per_expert_moe_f32_model;
 
 /// A byte copy of the directory tree at `from` into `to`.
@@ -31,6 +38,14 @@ fn a_copy_of_a_container_at_another_path_pairs_every_region() {
     let elsewhere = tempfile::tempdir().unwrap();
     let clone = elsewhere.path().join("moved.vindex3");
     copy_tree(subject.container(), &clone);
+
+    // Precondition, checked rather than assumed: one container, two paths.
+    let digest = |dir: &Path| sha256_file(&dir.join("index.json")).expect("index digest");
+    assert_eq!(
+        digest(subject.container()),
+        digest(&clone),
+        "pairing across clones requires equal container identity"
+    );
 
     let backend = ProductionBackend::new();
     let observe = |dir: &Path| {

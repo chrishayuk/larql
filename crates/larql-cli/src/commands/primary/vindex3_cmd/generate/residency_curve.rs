@@ -77,7 +77,9 @@ pub(in super::super) fn process_resources() -> ProcessResources {
 
 /// One measured step: its value, its wall time, and the process's
 /// counters read immediately before and immediately after it — the same
-/// window the timer covers, and nothing else.
+/// window the timer covers. The counters are PROCESS-wide: any thread
+/// active in the window is counted too, so a count bounds this window's
+/// faults rather than attributing them to the step's weights.
 pub(in super::super) struct Bracketed<T> {
     pub(in super::super) value: T,
     pub(in super::super) elapsed_seconds: f64,
@@ -99,10 +101,11 @@ impl<T> Bracketed<T> {
     }
 }
 
-/// Run `step` with the fault counters and the timer around it and
-/// nothing else. Whatever the observer does — residency scans, deltas,
-/// printing — happens outside this window, so its own allocations are
-/// never charged to the model's step, this one or the next.
+/// Run `step` with the fault counters and the timer around it. Whatever
+/// the observer does — residency scans, deltas, printing — happens outside
+/// this window, so its own work is never charged to the model's step,
+/// this one or the next. Other threads of the process are not excluded:
+/// see [`Bracketed`].
 pub(in super::super) fn bracket<T>(step: impl FnOnce() -> T) -> Bracketed<T> {
     let before = process_resources();
     let started = Instant::now();

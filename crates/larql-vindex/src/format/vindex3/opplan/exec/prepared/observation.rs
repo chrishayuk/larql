@@ -78,9 +78,14 @@ pub struct ResidencyObservation {
 /// Which segment a region lives in, as far as its identity is concerned.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SegmentIdentity {
-    /// The container-relative path the container's index declares. The
-    /// same in every clone or copy of one container, so regions keyed by
-    /// it pair across processes that opened different clones.
+    /// The container-relative path the container's index declares. It
+    /// does not change when the container is cloned or moved, so the key
+    /// SURVIVES cloning. That is not a licence to compare: two different
+    /// containers with one layout give the same keys, and a segment
+    /// rewritten in place keeps them. Regions from different processes may
+    /// be compared only when both records carry equal, non-null container
+    /// identity (`index_json_sha256`), checked by the procedure that pairs
+    /// them; the key never authorises the comparison on its own.
     Declared(String),
     /// A mapped file no container declared, keyed by its absolute path:
     /// it pairs only with observations of that same path.
@@ -90,7 +95,9 @@ pub enum SegmentIdentity {
 }
 
 impl SegmentIdentity {
-    /// Whether this identity is the same for every clone of a container.
+    /// Whether this identity is the same for every clone of a container —
+    /// a fact about the key, never on its own a reason to pair two
+    /// containers' records (see [`Self::Declared`]).
     pub fn is_portable(&self) -> bool {
         matches!(self, Self::Declared(_))
     }
@@ -203,6 +210,13 @@ impl ResidencyObservation {
 
 /// The change between two observations, over the regions read
 /// successfully in BOTH.
+///
+/// Both observations are assumed to be of ONE container: this matches
+/// regions by key and checks no container identity. The curve calls it
+/// on two observations of one prepared image in one process. A caller
+/// comparing observations from different processes or clones must first
+/// establish that both name the same container (equal, non-null
+/// `index_json_sha256`); a matching key is not that evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResidencyDelta {
     /// Regions present and read in both observations.
