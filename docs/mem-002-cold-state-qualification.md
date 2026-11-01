@@ -95,6 +95,50 @@ control has a pass condition fixed at the freeze.
 If PC1, PC2 or PC4 fails, the corresponding claim cannot be made, and §10
 applies.
 
+### 4.1 PC2 pair procedure: carry-over and baseline
+
+A treatment read leaves its targets resident, and nothing evicts them
+between conditions. Repeated pairs must therefore not reuse resident
+targets, and the comparison must not be biased by what each arm happens to
+exclude.
+
+- **Fresh, predeclared targets per pair.** Each sham-and-treatment pair has
+  its own target byte range. All ranges are declared before the first pair
+  runs. Each is disjoint from every earlier pair's range and from that
+  range's readahead window.
+  - **Alternative: an independently verified residency reset** between
+    pairs. It is admissible only if the reset's effect on the next pair's
+    targets is witnessed before that pair, by the eligibility observation
+    below. A reset that is merely performed does not count.
+- **Joint eligibility, decided before either arm.**
+  - Before a pair runs, one eligibility observation (a fresh process, using
+    its after-run record) classifies that pair's targets. A target near
+    fully resident is ineligible.
+  - **Both arms of the pair then use the same eligible set.** If a target
+    becomes near fully resident in either arm's baseline, it is excluded
+    from **both** arms, never from one.
+  - Exclusions are counted per pair. A pair with fewer eligible targets than
+    a count fixed at the freeze is void, and is reported as void.
+- **Baseline is the after-run record.** In each arm:
+  - **the baseline** is observation A's `after_run` record, taken after A's
+    own run, so the observer's run is already in it;
+  - **the measurement** is observation B's `binding` record, taken before
+    B's own run;
+  - **Δ** is B(binding) − A(after_run), per region (#671 §3.2). Neither
+    observer run falls inside it.
+  - The time from A's after-run record to B's binding record is recorded,
+    and matched between arms within a tolerance fixed at the freeze.
+- **Order and carry-over.**
+  - Within a pair, the arm order is counterbalanced across pairs, for
+    example sham first in half of the pairs in a declared pattern, so that a
+    sham does not always follow a treatment.
+  - Each pair's eligibility observation also records the residency of
+    **earlier** pairs' targets. That measures carry-over directly, as a
+    diagnostic.
+- **Non-target criterion.** The non-target test concerns **increases**. A
+  read can also evict other pages, so decreases in non-target regions are
+  reported separately, and are not by themselves a PC2 failure.
+
 ## 5. Cold methods compared
 
 | | Method | Procedure per attempt | Main disturbance risk |
