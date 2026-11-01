@@ -27,8 +27,24 @@ use crate::format::vindex3::represent::physical::{ResidencyReadError, WeightRegi
 pub struct ObservedStore {
     /// The store's id: the operand OBJECT name, not a file.
     pub id: String,
-    /// The file the store maps, when it maps one.
+    /// The file the store maps, when it maps one. Diagnostic only: it
+    /// changes when the container is cloned or moved, so it is never a
+    /// region's identity when a declared segment is available.
     pub source_path: Option<PathBuf>,
+    /// The segment path relative to its container, as the container's
+    /// index declared it.
+    pub declared_segment: Option<String>,
+}
+
+impl ObservedStore {
+    /// The segment half of a region key for regions in this store.
+    pub fn segment_identity(&self) -> SegmentIdentity {
+        match (&self.declared_segment, &self.source_path) {
+            (Some(declared), _) => SegmentIdentity::Declared(declared.clone()),
+            (None, Some(path)) => SegmentIdentity::Undeclared(path.clone()),
+            (None, None) => SegmentIdentity::Owned,
+        }
+    }
 }
 
 /// One mapped region's reading within an observation.
@@ -59,9 +75,38 @@ pub struct ResidencyObservation {
     pub regions: Vec<RegionResidency>,
 }
 
-/// A region's identity across observations: the file it lives in (or
-/// the store's id, for owned bytes), its file offset and its length.
-pub type RegionKey = (String, u64, u64);
+/// Which segment a region lives in, as far as its identity is concerned.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SegmentIdentity {
+    /// The container-relative path the container's index declares. The
+    /// same in every clone or copy of one container, so regions keyed by
+    /// it pair across processes that opened different clones.
+    Declared(String),
+    /// A mapped file no container declared, keyed by its absolute path:
+    /// it pairs only with observations of that same path.
+    Undeclared(PathBuf),
+    /// Owned bytes: no file at all.
+    Owned,
+}
+
+impl SegmentIdentity {
+    /// Whether this identity is the same for every clone of a container.
+    pub fn is_portable(&self) -> bool {
+        matches!(self, Self::Declared(_))
+    }
+}
+
+/// A region's identity across observations: the operand object whose
+/// store holds it, the segment that store is, the region's file offset
+/// and its length. The container itself is identified once per record,
+/// by its index digest, not per region.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RegionKey {
+    pub object: String,
+    pub segment: SegmentIdentity,
+    pub file_offset: u64,
+    pub len: u64,
+}
 
 /// The monotonic origin every observation in this process measures from.
 fn mono_origin() -> Instant {
@@ -82,17 +127,20 @@ impl ResidencyObservation {
         let started_mono_ns = mono_ns_now();
         let page_size = crate::format::vindex3::represent::physical::page_size();
         let mut stores: Vec<ObservedStore> = Vec::new();
-        let mut index_of: BTreeMap<(String, Option<PathBuf>), usize> = BTreeMap::new();
+        let mut index_of: BTreeMap<(String, Option<PathBuf>, Option<String>), usize> =
+            BTreeMap::new();
         let mut out = Vec::new();
         for (scan_index, region) in regions.into_iter().enumerate() {
             let key = (
                 region.store_id().to_string(),
                 region.source_path().map(|p| p.to_path_buf()),
+                region.declared_segment().map(str::to_string),
             );
             let store = *index_of.entry(key.clone()).or_insert_with(|| {
                 stores.push(ObservedStore {
                     id: key.0,
                     source_path: key.1,
+                    declared_segment: key.2,
                 });
                 stores.len() - 1
             });
@@ -139,14 +187,17 @@ impl ResidencyObservation {
             .find_map(|r| r.resident.err().map(|e| (r, e)))
     }
 
-    /// A region's identity across observations.
+    /// A region's identity across observations: built from the declared
+    /// segment wherever the container declared one, never from where the
+    /// container happens to sit on disk.
     pub fn key_of(&self, region: &RegionResidency) -> RegionKey {
         let store = &self.stores[region.store];
-        let name = match &store.source_path {
-            Some(path) => path.display().to_string(),
-            None => store.id.clone(),
-        };
-        (name, region.file_offset, region.len)
+        RegionKey {
+            object: store.id.clone(),
+            segment: store.segment_identity(),
+            file_offset: region.file_offset,
+            len: region.len,
+        }
     }
 }
 

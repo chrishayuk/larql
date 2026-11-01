@@ -80,6 +80,11 @@ pub struct PhysicalStore {
     /// operand OBJECT; this names the physical file, which is what a byte
     /// range read by another process is addressed in.
     source_path: Option<PathBuf>,
+    /// The segment's path RELATIVE TO ITS CONTAINER, as the container's
+    /// index declares it. Unlike `source_path` it survives the container
+    /// being cloned or moved, so it is what a region's identity across
+    /// processes is built from. `None` for a store no container declared.
+    declared_segment: Option<String>,
     /// Tensor name → (offset from the payload start, length).
     tensors: BTreeMap<String, (u64, u64)>,
     payload_start: u64,
@@ -105,6 +110,7 @@ impl PhysicalStore {
             id: id.into(),
             backing: Backing::Mapped(mmap),
             source_path: Some(path.to_path_buf()),
+            declared_segment: None,
             tensors: header
                 .tensors
                 .into_iter()
@@ -126,6 +132,7 @@ impl PhysicalStore {
             id: id.into(),
             backing: Backing::Owned(bytes),
             source_path: None,
+            declared_segment: None,
             tensors,
             payload_start: 0,
         }
@@ -146,6 +153,7 @@ impl PhysicalStore {
             id: id.into(),
             backing: Backing::Mapped(mmap),
             source_path: Some(path.to_path_buf()),
+            declared_segment: None,
             tensors: ledger
                 .sealed
                 .values()
@@ -162,6 +170,19 @@ impl PhysicalStore {
     /// The file this store maps, or `None` for owned bytes.
     pub fn source_path(&self) -> Option<&Path> {
         self.source_path.as_deref()
+    }
+
+    /// This store, recorded as the segment its container declares at
+    /// `segment` (a path relative to the container root).
+    pub fn declared_as(mut self, segment: impl Into<String>) -> Self {
+        self.declared_segment = Some(segment.into());
+        self
+    }
+
+    /// The container-relative segment path the container declared for
+    /// this store, or `None` when no container declared one.
+    pub fn declared_segment(&self) -> Option<&str> {
+        self.declared_segment.as_deref()
     }
 
     fn all(&self) -> &[u8] {
@@ -293,6 +314,12 @@ impl WeightRegion {
     /// The file this region's store maps, or `None` for owned bytes.
     pub fn source_path(&self) -> Option<&Path> {
         self.store.source_path()
+    }
+
+    /// The container-relative segment path of this region's store, when
+    /// a container declared one.
+    pub fn declared_segment(&self) -> Option<&str> {
+        self.store.declared_segment()
     }
 
     /// Byte offset of these bytes within their store's backing

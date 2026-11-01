@@ -31,6 +31,9 @@ const DTYPE_F16: &str = "F16";
 /// One object's segment: file path, payload origin, and tensor table.
 struct SegmentMap {
     path: PathBuf,
+    /// The segment path as the container's index declares it, relative
+    /// to the container root.
+    declared: String,
     payload_start: u64,
     tensors: BTreeMap<String, SegmentTensor>,
 }
@@ -279,10 +282,10 @@ impl OperandStore {
             match mapped.get(&operand.object) {
                 Some(store) => store.clone(),
                 None => {
-                    let store = Arc::new(PhysicalStore::map_segment(
-                        operand.object.clone(),
-                        &segment.path,
-                    )?);
+                    let store = Arc::new(
+                        PhysicalStore::map_segment(operand.object.clone(), &segment.path)?
+                            .declared_as(segment.declared.clone()),
+                    );
                     mapped.insert(operand.object.clone(), store.clone());
                     store
                 }

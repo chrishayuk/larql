@@ -110,3 +110,33 @@ fn without_a_residency_report_every_region_is_unsupported_even_an_empty_one() {
         assert_eq!(region.resident_bytes(), None);
     }
 }
+
+/// A store carries a container-relative segment only when a container
+/// declared one; mapping a file alone never invents it.
+#[test]
+fn a_declared_segment_is_carried_only_when_a_container_declared_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bank.bin");
+    std::fs::write(
+        &path,
+        (0..(LEADING + OPERAND_LEN) as u8).collect::<Vec<u8>>(),
+    )
+    .unwrap();
+    let undeclared = Arc::new(PhysicalStore::map_compiled(STORE_ID, &path, &ledger()).unwrap());
+    assert_eq!(undeclared.declared_segment(), None);
+    assert_eq!(undeclared.whole(TENSOR).unwrap().declared_segment(), None);
+
+    let declared = Arc::new(
+        PhysicalStore::map_compiled(STORE_ID, &path, &ledger())
+            .unwrap()
+            .declared_as("segments/bank.bin"),
+    );
+    assert_eq!(declared.declared_segment(), Some("segments/bank.bin"));
+    let region = declared.whole(TENSOR).unwrap();
+    assert_eq!(region.declared_segment(), Some("segments/bank.bin"));
+    assert_eq!(
+        region.source_path(),
+        Some(path.as_path()),
+        "the path is kept beside it"
+    );
+}

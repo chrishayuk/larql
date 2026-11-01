@@ -157,6 +157,7 @@ mod requirements;
 mod residency;
 mod residency_budget;
 mod residency_census;
+mod residency_clone_identity;
 mod residency_observation;
 mod routed;
 mod seam;
