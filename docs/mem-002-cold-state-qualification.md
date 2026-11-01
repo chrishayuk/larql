@@ -88,7 +88,7 @@ control has a pass condition fixed at the freeze.
 | Control | What it shows | Procedure | Needs |
 |---|---|---|---|
 | **PC1, cross-process visibility** (**required**, foundational) | mincore in a fresh process sees pages another process cached but this one never mapped [D §3] | another process reads a known set of `.s7` files; a fresh process then binds. The binding witness must report them resident. V3's second run is the historical analogue (10.485 GB at binding) [R §2.2] | I1 |
-| **PC2, region-level correctness** (**required**, foundational) | the per-region report attributes residency to the right regions. An aggregate can look right while individual regions are wrong, and the `None → 0` behaviour still present on main makes that a live risk | **a matched sham-against-treatment comparison** (I1+I3 proposal, #671 §5). Both conditions run: observation A in a fresh process, the intervention, then observation B in a second fresh process. Treatment reads a **known byte range** of a segment file; the sham reads nothing. Target regions are fixed in advance by stable region key. Already-resident targets are excluded, and readahead and boundary regions are reported separately. **Pass:** the targets' per-region change under treatment exceeds the same regions' change under sham, and other regions show no treatment-against-sham difference, under criteria fixed at the freeze. Exact zero change elsewhere is not required. **If the observer's own run warms the targets so that no contrast can be shown, PC2 is declared infeasible with this procedure, and its criteria are not loosened** | I1, I3 |
+| **PC2, region-level correctness** (**required**, foundational) | the per-region report attributes residency to the right regions. An aggregate can look right while individual regions are wrong, and the `None → 0` behaviour still present on main makes that a live risk | **a matched sham-against-treatment comparison** (I1+I3 proposal, #671 §5). Both conditions run: observation A in a fresh process, the intervention, then observation B in a second fresh process. Treatment reads a **known byte range** of a segment file; the sham reads nothing. Target regions are fixed in advance by stable region key. Already-resident targets are excluded, and readahead and boundary regions are reported separately. **Pass:** the targets' per-region change under treatment exceeds the same regions' change under sham, and other regions show no treatment-against-sham **increase** (decreases are reported separately), under criteria fixed at the freeze. The pair procedure is §4.1, which refines #671 §5. Exact zero change elsewhere is not required. **If the observer's own run warms the targets so that no contrast can be shown, PC2 is declared infeasible with this procedure, and its criteria are not loosened** | I1, I3 |
 | **PC3, within-run consistency** (**diagnostic only**) | whether faults and resident changes are broadly consistent | on each admitted attempt, record the prompt's major faults × 16 KiB beside its resident delta [R §1.1]. **Not an equality gate**: the relationship depends on page geometry, fault accounting, residency before the run and concurrent activity. A large discrepancy is reported and investigated, but does not by itself reject an attempt | existing |
 | **PC4, clone isolation** (F only) | a clone's cache state is independent of its source's | with `.s7` warm (after phase A), create a clone. Its fresh binding must witness ~0 while `.s7` is still resident. That is the direct test of the indirect evidence in [D §2] | I1, I4 |
 
@@ -104,8 +104,11 @@ exclude.
 
 - **Fresh, predeclared targets per pair.** Each sham-and-treatment pair has
   its own target byte range. All ranges are declared before the first pair
-  runs. Each is disjoint from every earlier pair's range and from that
-  range's readahead window.
+  runs.
+  - **Disjointness is over regions, not bytes.** Two disjoint byte ranges can
+    fall in one region. So each pair's target regions (by stable region key,
+    #671 §3.3), together with their readahead and boundary neighbours, are
+    disjoint from every earlier pair's.
   - **Alternative: an independently verified residency reset** between
     pairs. It is admissible only if the reset's effect on the next pair's
     targets is witnessed before that pair, by the eligibility observation
@@ -125,19 +128,35 @@ exclude.
   - **the measurement** is observation B's `binding` record, taken before
     B's own run;
   - **Δ** is B(binding) − A(after_run), per region (#671 §3.2). Neither
-    observer run falls inside it.
+    observer's decode run falls inside it. B's process setup before its
+    binding scan does, but it is the same in both arms, so it cancels in the
+    comparison.
   - The time from A's after-run record to B's binding record is recorded,
-    and matched between arms within a tolerance fixed at the freeze.
+    and matched between arms within a tolerance fixed at the freeze. A pair
+    outside the tolerance is void, and reported as void.
 - **Order and carry-over.**
-  - Within a pair, the arm order is counterbalanced across pairs, for
-    example sham first in half of the pairs in a declared pattern, so that a
-    sham does not always follow a treatment.
-  - Each pair's eligibility observation also records the residency of
-    **earlier** pairs' targets. That measures carry-over directly, as a
+  - **Within a pair, the sham arm always runs first.** Both arms share one
+    target set, and a treatment read leaves its targets resident. A sham run
+    after the treatment would therefore see warm targets, and the joint
+    exclusion would void the pair by construction. Counterbalancing the
+    order inside a pair is not possible on shared targets without a
+    witnessed reset.
+  - **The fixed order is a declared residual.** Any drift between the first
+    and second arm is confounded with the condition. It is bounded by the
+    matched A→B timing above, and stated with every PC2 result.
+  - **Between pairs**, carry-over is prevented by the fresh, region-disjoint
+    targets. Each pair's eligibility observation also records the residency
+    of **earlier** pairs' targets, which measures carry-over directly as a
     diagnostic.
-- **Non-target criterion.** The non-target test concerns **increases**. A
-  read can also evict other pages, so decreases in non-target regions are
-  reported separately, and are not by themselves a PC2 failure.
+- **Increase criteria, defined per region.**
+  - **Targets:** the treatment-arm increase Δ⁺ against the same region's
+    sham-arm Δ⁺, not an absolute Δ > 0.
+  - **Non-targets:** the test concerns increases only, again treatment Δ⁺
+    against sham Δ⁺ per region. A read can also evict other pages, so
+    decreases in non-target regions are reported separately, and are not by
+    themselves a PC2 failure.
+  - This refines #671 §5 step 5's "no treatment-against-sham difference",
+    and governs where the two differ.
 
 ## 5. Cold methods compared
 
