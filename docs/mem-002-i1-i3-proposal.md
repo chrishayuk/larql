@@ -15,6 +15,13 @@ blocks the freeze and I3 is required for PC2 [Q §4, §9].
 - Their tests, and the operational procedure for the positive controls PC1
   and PC2.
 
+**Revised 2026-11-01** after maintainer review (APPROVE WITH CHANGES):
+
+- one captured observation per scan, with both views derived from it (§3.2);
+- PC1 and PC2 corrected (§5);
+- a versioned JSON Lines schema (§3.4);
+- an admission-quality total that excludes any failed region (§3.2).
+
 **Out of scope:**
 
 - the admission decision and its recording (I2);
@@ -93,28 +100,58 @@ The change is in `represent/physical.rs`.
   existing caller is unchanged.
 - An empty region stays `Ok(0)`.
 
-### 3.2 One traversal, two views
+### 3.2 One observation, two views
 
 The change is in `prepared/residency.rs`.
 
-- Factor the traversal inside `mapped_residency()` into one private
-  iterator over **mapped weights**, used by both views below. There is one
-  definition of "the image's mapped regions", so the aggregate and the
-  per-region report cannot disagree about membership.
-- **`MappedResidency` gains `failed_regions: usize`.** `resident_bytes`
-  becomes the sum over **successfully read** regions only.
-  - `regions` keeps counting every mapped region.
-  - `regions = read + failed`.
-  - A failure is never summed as 0.
-- **I3: `PreparedOperands::region_residency() -> Vec<RegionResidency>`**,
-  where each entry has:
-  - `store_id` (`WeightRegion::store_id()`);
-  - `store_offset` (`store_offset()`);
-  - `len`;
-  - `resident: Result<u64, ResidencyReadError>`.
+**One traversal is not enough.** If the aggregate and the per-region report
+each called `mincore` separately, residency could change between the calls,
+and the two views could disagree. So each observation is captured once, and
+both views derive from it.
 
-  It is computed on request only. Nothing calls it on a timed path.
-- **`DecodeSession`** gets the matching `region_residency()` delegate.
+- **One private iterator over mapped weights** defines the image's mapped
+  regions, in a fixed order.
+- **One snapshot per observation.**
+
+  ```
+  ResidencyObservation {
+      started: (wall clock, monotonic),
+      ended:   (wall clock, monotonic),
+      page_size,
+      regions: Vec<RegionResidency>,  // in scan order
+  }
+  RegionResidency {
+      scan_index, store_id, store_offset, len,
+      resident: Result<u64, ResidencyReadError>,
+  }
+  ```
+
+  - `PreparedOperands::observe_residency() -> ResidencyObservation` reads
+    every mapped region exactly once, in iterator order, recording
+    `scan_index`.
+  - `started` and `ended` bracket the scan. **A scan over many regions is
+    not atomic**: regions read later in the scan can reflect later state.
+    The record says so, and keeps the order.
+- **The aggregate is derived from the snapshot.**
+  `ResidencyObservation::summary() -> MappedResidency`.
+  - `MappedResidency` gains `failed_regions: usize`.
+  - `resident_bytes` is the sum over **successfully read** regions only.
+    `regions = read + failed`, and a failure is never summed as 0.
+  - `MappedResidency::complete_resident_bytes() -> Option<u64>` returns
+    `Some` only when `failed_regions == 0`.
+  - **Any admission-quality use must go through `complete_resident_bytes()`**,
+    so a failed region can never be silently absorbed into an
+    admission-quality total. The admission decision itself remains I2.
+- **The existing `mapped_residency()` stays**, as
+  `self.observe_residency().summary()`, so its callers keep compiling.
+- **`DecodeSession`** gets the matching `observe_residency()` delegate.
+
+**Deltas between two observations** (the per-step resident delta) are
+computed only over regions read successfully in **both** observations.
+
+- Each step reports how many regions failed in either observation.
+- A region that failed in either is excluded from the delta, and counted.
+- That way the delta never mixes a successful reading with a failed one.
 
 ### 3.3 Reading a mapped weight's region
 
@@ -129,18 +166,40 @@ The change is in `weights/loaded.rs`.
 
 The change is in `residency_curve.rs`.
 
-- **Binding line:**
+- **Binding line**, from the binding observation:
   `mapped … GB address space over N regions (R read, F failed), Y GB resident in read regions`.
   When `F > 0`, a second line follows:
   `WITNESS INCOMPLETE: F regions could not be read (first: <store_id>@<offset>: <error>)`.
-- **Per-step lines** add the failed count in a new column, so a failure in
-  the middle of a run is visible.
-- **I3 flag:** `--residency-regions <path>` writes the per-region report at
-  binding, and once more after the run, as JSON Lines. Each line carries
-  `phase`, `store_id`, `store_offset`, `len`, and `resident` or `error`.
-  - The binding report is written before the first pass starts, so it adds
-    no time to any timed region.
+- **Per-step lines** add a column for regions excluded from the delta,
+  because they failed in either observation (§3.2). A failure in the middle
+  of a run is then visible, and never mixed into a delta.
+- **I3 flag:** `--residency-regions <path>` writes observations as JSON
+  Lines, at binding and once more after the run.
+  - The binding observation is written before the first pass starts, so it
+    adds no time to any timed region.
   - It is output only.
+
+**JSON Lines schema, versioned.** Each observation is one header line
+followed by one line per region:
+
+```
+{"schema":"larql.residency-observation/1","record":"observation",
+ "observation_id":…,"phase":"binding"|"after_run",
+ "started_wall":…,"started_mono_ns":…,"ended_wall":…,"ended_mono_ns":…,
+ "page_size":…,"regions":N,"failed":F}
+{"schema":"larql.residency-observation/1","record":"region",
+ "observation_id":…,"scan_index":…,
+ "store_id":…,"store_offset":…,"len":…,
+ "status":"ok","resident_bytes":…}
+{"schema":"larql.residency-observation/1","record":"region",
+ "observation_id":…,"scan_index":…,
+ "store_id":…,"store_offset":…,"len":…,
+ "status":"failed",
+ "error":{"kind":"mincore"|"page_size_unavailable"|"unsupported","errno":…}}
+```
+
+- A change to any field's meaning increments the schema version.
+- A reader refuses an unknown version.
 - **Nothing here admits or rejects.** The gate, and recording it before the
   timer, is I2 [Q §7].
 
@@ -151,10 +210,12 @@ The new and changed files are held to the per-file coverage floor.
 
 | Test | What it pins | Where |
 |---|---|---|
-| Aggregation with failures | given region outcomes `[Ok(a), Err(_), Ok(b)]`: `resident_bytes = a + b`, `failed_regions = 1`, `regions = 3`; a failure never contributes 0 to the sum as if read | a pure summariser shared by `mapped_residency()`, tested directly |
+| Aggregation with failures | for an observation with regions `[Ok(a), Err(_), Ok(b)]`: `resident_bytes = a + b`, `failed_regions = 1`, `regions = 3`, `complete_resident_bytes() = None`; with no failures, `complete_resident_bytes() = Some(total)` | `ResidencyObservation::summary()`, built from constructed observations, tested directly |
+| Delta excludes failures | for two constructed observations where a region failed in one of them, the delta sums only regions read in both, and reports the excluded count | the delta function, tested directly |
 | Empty region | `residency()` is `Ok(0)`, `resident_bytes()` is `Some(0)` | `represent/tests/physical_store.rs` (extends the existing test) |
 | Warm read | a region over a file just written and read is `Ok(n)` with `n > 0` and `n <= len` | `represent/tests` |
-| One traversal | `region_residency()` returns exactly `regions` entries. The sum of its `Ok` values equals `mapped_residency().resident_bytes`, and its error count equals `failed_regions` | a prepared fixture already used by the residency tests (for example `kimi_per_expert_prepared.rs`) |
+| One observation | for **one** `observe_residency()` snapshot on a prepared fixture: the region count equals `summary().regions`, the sum of `Ok` values equals `summary().resident_bytes`, the error count equals `failed_regions`, and the `scan_index` values run 0..N in order. Both views are compared **from the same snapshot**, never across two calls | a prepared fixture already used by the residency tests (for example `kimi_per_expert_prepared.rs`) |
+| Schema | every JSON line carries `schema` = `larql.residency-observation/1` and its record type; a failed region carries `status: "failed"` and an error kind | the CLI test below |
 | Compatibility | `resident_bytes()` equals `residency().ok()` | `represent/tests` |
 | CLI output | the binding line names read and failed counts, `--residency-regions` writes one JSON line per mapped region, and a fixture with no failures prints no `WITNESS INCOMPLETE` line | extends `vindex3_cmd/tests/generate.rs:79` (`the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image`) |
 
@@ -174,38 +235,76 @@ These are operational procedures for phase B of the qualification [Q §8].
 They are **not** CI tests, and **not authorised to run** until the protocol
 is frozen.
 
-- **PC1, cross-process visibility.**
-  1. Another process reads selected `.s7` segment files (`cat … > /dev/null`).
-  2. A fresh process binds `.s7` with `--residency-curve`.
-  3. **Pass:** zero failed regions, and the regions belonging to those files
-     report resident bytes of the files' size, within the boundary-page
-     convention.
-- **PC2, region-level correctness, by difference.** This needs no cold
-  baseline, so PC2 does not depend on either cold method.
-  1. A fresh process binds and writes `--residency-regions` (report A).
-  2. Another process reads a **known byte range** of the expert-bank
-     segment (`dd` with a 16 KiB block size, a known skip and a known
-     count).
-  3. A second fresh process binds and writes report B.
-  4. **Pass:**
-     - the per-region difference B − A is non-zero exactly in the regions
-       whose `[store_offset, store_offset + len)` overlaps the read range;
-     - it is zero elsewhere, apart from boundary pages shared with those
-       regions;
-     - neither report has a failed region.
+Two general rules:
 
-  The range, block size and tolerance are fixed at the freeze.
+- **Neither control assumes that pages stay resident.** The OS may reclaim
+  pages between the read and the witness. Each control therefore uses a
+  documented observation window, the time from read completion to the
+  binding observation's `started`, and reports it.
+- **Every read in a control is checked for success:** exit status, and
+  bytes read equal to bytes requested. A control whose read failed is void,
+  not failed.
+
+- **PC1, cross-process visibility, on controlled known ranges.**
+  1. Another process reads a set of **known byte ranges** of `.s7` segment
+     files (`dd` with a stated block size, skip and count), and its read
+     success is recorded.
+  2. Within the stated observation window, a fresh process binds `.s7` and
+     writes `--residency-regions`.
+  3. **Pass:**
+     - zero failed regions;
+     - **positive detection**: the regions overlapping the read ranges report
+       resident bytes, at no less than a fraction fixed at the freeze;
+     - **correct attribution**: the detection falls in those regions.
+
+     PC1 does **not** require resident bytes to equal the bytes read, nor a
+     whole file to remain resident.
+- **PC2, region-level attribution, by difference against controls.** This
+  needs no cold baseline, so PC2 does not depend on either cold method.
+  1. A fresh process binds and writes `--residency-regions` (report A).
+  2. Another process reads a **known byte range**. Its read success is
+     recorded.
+  3. Within the stated window, a second fresh process binds and writes
+     report B.
+  4. The regions are classified **before** B is examined, from report A and
+     the range alone:
+
+     | Class | Definition | Expectation |
+     |---|---|---|
+     | **known-positive** | overlaps the read range, and was not already near fully resident in A | residency increases |
+     | **already-resident** | overlaps the range, but was near fully resident in A | cannot show an increase; reported, and excluded from the attribution test |
+     | **readahead window** | does not overlap the range, but lies within a stated distance after the range's end in file order | may increase through readahead; reported separately, and neither a pass nor a fail |
+     | **boundary** | shares a boundary page with a known-positive region | may increase by up to the shared pages; reported separately |
+     | **unobserved** | everything else | change compared with the null control below |
+
+  5. **Null control (sham):** the same procedure with **no read** in step 2.
+     The distribution of per-region change across unobserved regions under
+     the sham is the background, from concurrent cache activity and
+     reclamation.
+  6. **Pass:**
+     - neither report has a failed region;
+     - the known-positive regions increase, at no less than a fraction fixed
+       at the freeze;
+     - the unobserved regions' change is not distinguishable from the sham
+       background, under a criterion fixed at the freeze.
+
+     Exact zero change outside the range is **not** required.
+
+  The ranges, block size, window, readahead distance, the "near fully
+  resident" cut and the criteria are fixed at the freeze, with an
+  independent justification [Q §7].
 
 ## 6. Review checklist
 
-1. Is the errno-carrying `Result` the right granularity, or is a plain
-   failed/succeeded flag enough for admission?
-2. Is one shared traversal acceptable for the aggregate and the per-region
-   report (§3.2)?
-3. Is JSON Lines acceptable for the I3 report, and should it carry a schema
-   version?
-4. Should the §2.3 `None → 0` sites be made explicit in a follow-up?
-5. Are the CI limits in §4 acceptable, given that PC1 and PC2 cover the
+Resolved in the 2026-11-01 review: the errno-carrying `Result` (kept),
+JSON Lines with a schema version (kept, §3.4), and leaving the §2.3 sites
+unchanged for this scope (accepted). Open for the implementation review:
+
+1. Is one snapshot per observation enough, or should a re-scan be
+   available to bound how much state changes within a scan?
+2. Is `complete_resident_bytes()` the right guard, or should the summary
+   type make an incomplete total impossible to read as admission quality?
+3. Are the CI limits in §4 acceptable, given that PC1 and PC2 cover the
    real-subject cases?
 
 ## Sources checked
