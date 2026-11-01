@@ -417,6 +417,59 @@ fn the_mapping_reports_its_address_space_apart_from_its_resident_pages() {
     assert_eq!(ops.mapped_residency(), Default::default());
 }
 
+/// One observation of a prepared image with a real mapped bank: every
+/// mapped region read once, in scan order, its file named, and the
+/// aggregate derived from that same capture — compared from ONE snapshot,
+/// never across two scans that the page cache could separate.
+#[test]
+fn one_observation_reads_every_mapped_region_once_and_its_summary_agrees() {
+    let subject = Subject::build(kimi_per_expert_moe_f32_model);
+    let (plan, store) = subject.open();
+    let backend = ProductionBackend::new();
+    let ops = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full).unwrap();
+    let observation = ops.observe_residency();
+    let summary = observation.summary();
+
+    assert_eq!(observation.regions.len(), store.mapped_regions());
+    assert_eq!(summary.regions, observation.regions.len());
+    for (i, region) in observation.regions.iter().enumerate() {
+        assert_eq!(region.scan_index, i, "regions are kept in scan order");
+    }
+    let read: u64 = observation
+        .regions
+        .iter()
+        .filter_map(|r| r.resident.ok())
+        .sum();
+    let failed = observation
+        .regions
+        .iter()
+        .filter(|r| r.resident.is_err())
+        .count();
+    assert_eq!(summary.resident_bytes, read);
+    assert_eq!(summary.failed_regions, failed);
+    assert_eq!(
+        summary.mapped_bytes,
+        observation.regions.iter().map(|r| r.len).sum::<u64>()
+    );
+    assert!(observation.started_mono_ns <= observation.ended_mono_ns);
+    #[cfg(unix)]
+    {
+        assert_eq!(failed, 0, "a fixture's mapped bank is readable");
+        assert_eq!(summary.complete_resident_bytes(), Some(read));
+    }
+    // The bank is a mapped segment: every store it came from names its file.
+    assert!(!observation.stores.is_empty());
+    for s in &observation.stores {
+        let path = s
+            .source_path
+            .as_ref()
+            .expect("a mapped store names its file");
+        assert!(path.is_file(), "{} is the segment file", path.display());
+    }
+    // The aggregate view is the same capture's summary.
+    assert_eq!(ops.mapped_residency().regions, summary.regions);
+}
+
 /// A routed call over `experts` per-expert matrices, at hand-checkable
 /// sizes, with whatever bias the test wants to put on it.
 fn separate_call<'a>(

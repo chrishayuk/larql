@@ -30,6 +30,7 @@ use super::decode::{greedy_decode, DecodeReport, Flow};
 
 mod residency_curve;
 pub(super) use residency_curve::*;
+pub(super) mod residency_record;
 
 /// Greedy decode with the exec verb's report. Returns the generated ids
 /// (the prompt excluded), so a caller has them as data and not only as

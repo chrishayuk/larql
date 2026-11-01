@@ -4,10 +4,14 @@ use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::cpu::{self};
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
+use larql_vindex::format::vindex3::opplan::exec::prepared::{ResidencyDelta, ResidencyObservation};
 use larql_vindex::format::vindex3::opplan::exec::stages;
 use larql_vindex::format::vindex3::opplan::exec::timing;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
+use std::path::Path;
 use std::time::Instant;
+
+use super::residency_record::{self, RunIdentity};
 
 #[allow(unused_imports)]
 use super::*;
@@ -93,6 +97,8 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     warmup: usize,
     unquiet_ok: bool,
     expert_access: &str,
+    container: &Path,
+    regions_out: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::accounting::{
         expectations, BlockGeometry, ResourceLedger,
@@ -184,19 +190,29 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
 
     // OBSERVED, at binding.
     let census = ops.residency_census();
-    let mapped = ops.mapped_residency();
+    let binding = ops.observe_residency();
+    let mapped = binding.summary();
     let base = process_resources();
+    // The per-region record, written before any pass runs so it adds no
+    // time to a timed region.
+    let run = RunIdentity::for_container(container);
+    let mut regions_file = match regions_out {
+        Some(path) => {
+            let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
+            residency_record::write_observation(&mut file, &run, 0, "binding", &binding)?;
+            Some(file)
+        }
+        None => None,
+    };
     println!("observed, after binding:");
     println!(
         "  committed             {:>10.2} GB",
         census.total() as f64 / GB
     );
-    println!(
-        "  mapped                {:>10.2} GB address space over {} regions, {:.3} GB resident",
-        mapped.mapped_bytes as f64 / GB,
-        mapped.regions,
-        mapped.resident_bytes as f64 / GB
-    );
+    println!("{}", residency_record::binding_line(&mapped));
+    if let Some(line) = residency_record::incomplete_line(&binding) {
+        println!("{line}");
+    }
     println!(
         "  peak rss              {:>10.2} GB   faults minor {} major {}",
         base.max_rss as f64 / GB,
@@ -223,18 +239,18 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             cpu::Environment::read().describe()
         );
         println!(
-            "  {:<8} {:>9} {:>12} {:>12} {:>10} {:>10} {:>9}  stages (ms)",
-            "step", "ms", "mapped res", "Δ res (GB)", "minor Δ", "major Δ", "rss GB"
+            "  {:<8} {:>9} {:>12} {:>12} {:>9} {:>10} {:>10} {:>9}  stages (ms)",
+            "step", "ms", "read res", "Δ res (GB)", "excluded", "minor Δ", "major Δ", "rss GB"
         );
-        let mut before_res = session.mapped_residency();
+        let mut before_res = session.observe_residency();
         let mut before_proc = process_resources();
         let observe = |name: String,
                        elapsed: f64,
                        session: &DecodeSession<'_, B>,
-                       before_res: &mut larql_vindex::format::vindex3::opplan::exec::prepared::MappedResidency,
+                       before_res: &mut ResidencyObservation,
                        before_proc: &mut ProcessResources|
          -> StepObservation {
-            let now_res = session.mapped_residency();
+            let now_res = session.observe_residency();
             let now_proc = process_resources();
             let stage_ledger = stages::ledger();
             let by_stage: Vec<String> = stage_ledger
@@ -252,19 +268,23 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                 .collect();
             let obs = StepObservation {
                 elapsed_ms: elapsed * 1e3,
-                resident_delta: now_res.resident_bytes.saturating_sub(before_res.resident_bytes),
-                minor_faults: now_proc.minor_faults.saturating_sub(before_proc.minor_faults),
-                major_faults: now_proc.major_faults.saturating_sub(before_proc.major_faults),
-                stage_ms: stages::Stage::ALL
-                    .map(|st| stage_ledger.get(st).nanos as f64 / 1e6),
+                resident_delta: ResidencyDelta::between(before_res, &now_res),
+                minor_faults: now_proc
+                    .minor_faults
+                    .saturating_sub(before_proc.minor_faults),
+                major_faults: now_proc
+                    .major_faults
+                    .saturating_sub(before_proc.major_faults),
+                stage_ms: stages::Stage::ALL.map(|st| stage_ledger.get(st).nanos as f64 / 1e6),
                 stages_nested: stage_ledger.nested(),
             };
             println!(
-                "  {:<8} {:>9.0} {:>9.3} GB {:>12.3} {:>10} {:>10} {:>9.2}  {}  [leaves {}]",
+                "  {:<8} {:>9.0} {:>9.3} GB {:>12} {:>9} {:>10} {:>10} {:>9.2}  {}  [leaves {}]",
                 name,
                 obs.elapsed_ms,
-                now_res.resident_bytes as f64 / GB,
-                obs.resident_delta as f64 / GB,
+                now_res.summary().resident_bytes as f64 / GB,
+                residency_record::delta_cell(&obs.resident_delta),
+                obs.resident_delta.excluded,
                 obs.minor_faults,
                 obs.major_faults,
                 now_proc.max_rss as f64 / GB,
@@ -360,6 +380,11 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             }
         }
     }
+    if let Some(file) = regions_file.as_mut() {
+        let after = ops.observe_residency();
+        residency_record::write_observation(file, &run, 1, "after_run", &after)?;
+        std::io::Write::flush(file)?;
+    }
     summarise_passes(&samples, repeat.max(1), warmup, &qualification);
     Ok(())
 }
@@ -368,7 +393,8 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
 #[derive(Debug, Clone, Copy)]
 pub(super) struct StepObservation {
     pub(super) elapsed_ms: f64,
-    pub(super) resident_delta: u64,
+    /// Per-region change over the regions read in both observations.
+    pub(super) resident_delta: ResidencyDelta,
     pub(super) minor_faults: u64,
     pub(super) major_faults: u64,
     /// Milliseconds per [`stages::Stage::ALL`] entry, in that order.
@@ -459,10 +485,24 @@ pub(super) fn summarise_passes(
         .map(|s| s.observation.minor_faults)
         .max()
         .unwrap_or(0);
-    let resident: u64 = samples.iter().map(|s| s.observation.resident_delta).sum();
+    let measured: Vec<i64> = samples
+        .iter()
+        .filter_map(|s| s.observation.resident_delta.signed_total())
+        .collect();
+    let unmeasured = samples.len() - measured.len();
+    let resident = if measured.is_empty() {
+        "n/a".to_string()
+    } else {
+        format!("{:.3}", measured.iter().sum::<i64>() as f64 / GB)
+    };
     println!(
-        "  faults: major {major} total, minor ≤ {minor_max} per pass; resident-page delta {} GB total",
-        resident as f64 / GB
+        "  faults: major {major} total, minor ≤ {minor_max} per pass; resident-page delta {resident} GB total over {} pass(es){}",
+        measured.len(),
+        if unmeasured > 0 {
+            format!(", {unmeasured} with no comparable region")
+        } else {
+            String::new()
+        }
     );
     println!(
         "  {:<16} {:>9} {:>9} {:>9} {:>9} {:>8}",

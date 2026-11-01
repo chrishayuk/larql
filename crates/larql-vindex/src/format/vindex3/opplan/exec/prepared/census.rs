@@ -47,11 +47,38 @@ impl AllocationCensus {
 /// A prepared image's mappings at one moment: their address space and the
 /// pages of it physically resident — the two figures a mapping must never
 /// be reported as one of.
+///
+/// `resident_bytes` covers only the regions whose residency was READ;
+/// `failed_regions` counts the rest, which are never summed as zero. Use
+/// [`Self::complete_resident_bytes`] wherever the total must stand for
+/// the whole image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MappedResidency {
+    /// Every mapped region, read or not.
     pub regions: usize,
+    /// Address space over every mapped region.
     pub mapped_bytes: u64,
+    /// Resident bytes over the regions read successfully.
     pub resident_bytes: u64,
+    /// Regions whose residency could not be read.
+    pub failed_regions: usize,
+    /// Address space over the regions read successfully.
+    pub mapped_bytes_read: u64,
+}
+
+impl MappedResidency {
+    /// Regions read successfully.
+    pub fn read_regions(&self) -> usize {
+        self.regions - self.failed_regions
+    }
+
+    /// The resident total as a figure for the WHOLE image: `Some` only
+    /// when at least one region was observed and none failed. An
+    /// observation of nothing witnesses nothing, and one with a failed
+    /// region is a partial sum.
+    pub fn complete_resident_bytes(&self) -> Option<u64> {
+        (self.regions > 0 && self.failed_regions == 0).then_some(self.resident_bytes)
+    }
 }
 
 /// One site's bytes, split by whether the loader widened — and, apart

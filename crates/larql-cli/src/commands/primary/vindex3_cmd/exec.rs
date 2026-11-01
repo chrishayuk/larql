@@ -259,6 +259,8 @@ fn run_on<B: PlanBackend>(
                     args.warmup,
                     args.unquiet_ok,
                     &args.expert_access,
+                    &args.container,
+                    args.residency_regions.as_deref(),
                 );
             }
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)
