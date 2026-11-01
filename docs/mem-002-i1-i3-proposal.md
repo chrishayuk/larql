@@ -3,7 +3,10 @@
 **Class: IMPLEMENTATION PROPOSAL, for review before any code.** Dated
 2026-11-01 at main `b1e6a524`. Nothing is implemented here. It serves the
 cold-state qualification candidate (#670, cited **[Q §n]**), where I1
-blocks the freeze and I3 is required for PC2 [Q §4, §9].
+blocks the freeze and I3 is required for PC2 [Q §4, §9]. **[D §n]** is the
+merged cold-state design note (`docs/mem-002-cold-state-design.md`, #669),
+and **[R §n]** is the merged MEM-001 reconnaissance
+(`docs/mem-001-reconnaissance.md`, #667).
 
 ## 1. Scope
 
@@ -21,6 +24,21 @@ blocks the freeze and I3 is required for PC2 [Q §4, §9].
 - PC1 and PC2 corrected (§5);
 - a versioned JSON Lines schema (§3.4);
 - an admission-quality total that excludes any failed region (§3.2).
+
+**Revised again 2026-11-01**, after the targeted review of `11376af6`
+(preserved in `docs/audits/mem-002-i1-i3-proposal/targeted-review-11376af6.md`):
+
+- the formatting, schema and failure tests move to constructed observations
+  (§4, F1);
+- PC2 becomes a matched sham-against-treatment comparison, with an explicit
+  infeasibility outcome (§5, F3);
+- the delta is defined (§3.2, F5);
+- region identity is separated from segment-file identity (§3.3, F4);
+- the schema is completed (§3.4, F6);
+- the empty and default semantics are fixed (§3.1, §3.2, F7);
+- the `None → 0` inventory is completed (§2.3).
+
+**No bind-only execution mode is added** (maintainer decision).
 
 **Out of scope:**
 
@@ -58,7 +76,7 @@ is kept.
 - `LoadedWeight::resident_bytes() -> usize` maps a mapped region's `None` to
   0 (`opplan/exec/weights/loaded.rs:37`).
 - `PreparedOperands::mapped_residency()`
-  (`opplan/exec/prepared/residency.rs:417-…`) sums that over every weight
+  (`opplan/exec/prepared/residency.rs:417-456`) sums that over every weight
   with `mapped_bytes > 0`. It returns
   `MappedResidency { regions, mapped_bytes, resident_bytes }`
   (`prepared/census.rs:51-55`).
@@ -75,8 +93,15 @@ figure.**
 
 | Site | Use | Why not changed here |
 |---|---|---|
-| `accounting/budgets.rs:417` | `Observed.resident_bytes`, feeding `reconcile`'s `mapped_resident` | reported only, never reconciled [R §1.1], and not used by admission |
-| `examples/inference/gwv2.rs:257` (`larql-demos`) | a demo's printout | not a witness |
+| `accounting/budgets.rs:417` | `Observed.resident_bytes`, through `LoadedWeight::resident_bytes()`, feeding `reconcile`'s `mapped_resident` | reported only, never reconciled [R §1.1], and not used by admission |
+| `vindex3_cmd/realizations.rs:111` | prints `reconciled.mapped_resident` to the user | the reported end of the row above; a user-visible figure, not a witness |
+| `larql-demos/examples/inference/gwv2.rs:257` | reads the aggregate through `mapped_residency()` and prints it | an aggregate consumer, not a direct caller; not a witness |
+| `opplan/exec/tests/carrier_write_real.rs:166-173` | a test that prints `mapped.resident_bytes` as run evidence | a test print, not a witness |
+
+`loaded.rs:37` is the only production caller of `WeightRegion::resident_bytes()`.
+After this change, the aggregate consumers above read a sum over **read**
+regions and still ignore `failed_regions`: they stay blind to failures, but
+no longer add a failure as 0.
 
 The review should decide whether these become explicit too, in a later and
 separate change. **The admission gate must never read them.**
@@ -98,6 +123,12 @@ The change is in `represent/physical.rs`.
   - `ResidencyReadError::Unsupported`, for non-unix targets.
 - Reimplement `resident_bytes()` as `self.residency().ok()`, so every
   existing caller is unchanged.
+- **Empty and non-unix semantics are preserved exactly as today:**
+  - on unix, an empty region is `Ok(0)`;
+  - on non-unix, **every** region, empty or not, is
+    `Err(Unsupported)`, matching today's `None`.
+- **errno is captured at the `mincore` call site** (`errno` read
+  immediately after a non-zero return), and only for `Mincore`.
 - An empty region stays `Ok(0)`.
 
 ### 3.2 One observation, two views
@@ -138,7 +169,9 @@ both views derive from it.
   - `resident_bytes` is the sum over **successfully read** regions only.
     `regions = read + failed`, and a failure is never summed as 0.
   - `MappedResidency::complete_resident_bytes() -> Option<u64>` returns
-    `Some` only when `failed_regions == 0`.
+    `Some` only when `regions > 0` **and** `failed_regions == 0`. An
+    observation of no regions, including `MappedResidency::default()`,
+    witnesses nothing and returns `None`.
   - **Any admission-quality use must go through `complete_resident_bytes()`**,
     so a failed region can never be silently absorbed into an
     admission-quality total. The admission decision itself remains I2.
@@ -146,19 +179,56 @@ both views derive from it.
   `self.observe_residency().summary()`, so its callers keep compiling.
 - **`DecodeSession`** gets the matching `observe_residency()` delegate.
 
-**Deltas between two observations** (the per-step resident delta) are
-computed only over regions read successfully in **both** observations.
+**Deltas between two observations** replace today's
+`now.resident_bytes.saturating_sub(before.resident_bytes)` on two aggregates
+(`residency_curve.rs:255`).
 
-- Each step reports how many regions failed in either observation.
-- A region that failed in either is excluded from the delta, and counted.
-- That way the delta never mixes a successful reading with a failed one.
+- **Matching key:** the stable region identity of §3.3 (container identity,
+  segment file, file offset, length), not `store_id` alone and not
+  `scan_index`.
+- **Comparable regions:** those present in both observations and read
+  successfully in both.
+- **Arithmetic:** signed, per region. Δᵢ = residentᵢ(after) − residentᵢ(before),
+  as `i64`, with no saturation.
+- **Reported quantities:**
+  - the comparable-region count;
+  - the sum of positive Δᵢ (increase) and the sum of negative Δᵢ (decrease),
+    separately;
+  - their signed total;
+  - the number of regions excluded because they failed in either
+    observation, or were present in only one.
+- **No comparable regions:** the delta is reported as `n/a`, **never** `0`.
+- **The curve's pre-step reading** (`before_res`, `residency_curve.rs:229`
+  and inside `observe`) becomes a full `ResidencyObservation`, not a summary,
+  so the next delta can be computed per region.
 
 ### 3.3 Reading a mapped weight's region
 
 The change is in `weights/loaded.rs`.
 
 - Add `LoadedWeight::mapped_region() -> Option<&WeightRegion>`, returning
-  `Some` only for `Mapped`. The traversal reads residency through it.
+  `Some` only for `Mapped`, which is constructed only at
+  `experts/routed.rs:347`. The traversal reads residency through it.
+
+**Region identity is not `store_id`.** `WeightRegion::store_id()` is the
+store's id, which is the operand **object** name given at
+`opplan/exec/operands.rs:282` (`PhysicalStore::map_segment(id, path)`), not
+the segment file. `PhysicalStore` keeps no path today
+(`represent/physical.rs:73-79`).
+
+- I3 records the segment path at `map_segment`, so
+  `PhysicalStore::source_path() -> Option<&Path>` returns `Some` only for
+  mapped segments.
+- `store_offset()` is an offset into the whole mapping, header included:
+  `bytes()` slices `store.all()[offset..offset + len]` (`physical.rs:245-247`).
+  So it is a **file offset** within that segment file. The proposal relies on
+  this, and the implementation review confirms it.
+- **The stable region key** is (container identity, segment path relative to
+  the container, file offset, length). That is what maps a `dd` byte range
+  of a segment file onto regions (§5).
+- To avoid an owned `String` per region per step, each observation keeps a
+  store table, and regions refer to it by index. The key is rebuilt from the
+  table when needed.
 - `LoadedWeight::resident_bytes()` keeps its current meaning for the
   footprint paths in §2.3, with a comment that it is **not** a witness.
 
@@ -184,22 +254,40 @@ followed by one line per region:
 
 ```
 {"schema":"larql.residency-observation/1","record":"observation",
- "observation_id":…,"phase":"binding"|"after_run",
+ "run_id":…,"observation_id":…,"phase":"binding"|"after_run",
+ "pid":…,"binary":{"version":…,"commit":…},
+ "container":{"path":…,"index_json_sha256":…},
  "started_wall":…,"started_mono_ns":…,"ended_wall":…,"ended_mono_ns":…,
- "page_size":…,"regions":N,"failed":F}
+ "page_size":… | null,
+ "regions":N,"read":R,"failed":F,
+ "mapped_bytes_all":…,"mapped_bytes_read":…,"resident_bytes_read":…}
 {"schema":"larql.residency-observation/1","record":"region",
- "observation_id":…,"scan_index":…,
- "store_id":…,"store_offset":…,"len":…,
+ "run_id":…,"observation_id":…,"scan_index":…,
+ "store_id":…,"segment":…,"file_offset":…,"len":…,
  "status":"ok","resident_bytes":…}
 {"schema":"larql.residency-observation/1","record":"region",
- "observation_id":…,"scan_index":…,
- "store_id":…,"store_offset":…,"len":…,
+ "run_id":…,"observation_id":…,"scan_index":…,
+ "store_id":…,"segment":…,"file_offset":…,"len":…,
  "status":"failed",
- "error":{"kind":"mincore"|"page_size_unavailable"|"unsupported","errno":…}}
+ "error":{"kind":"mincore","errno":…}}
 ```
 
-- A change to any field's meaning increments the schema version.
-- A reader refuses an unknown version.
+- **Identity scope:**
+  - `run_id` is unique per process run;
+  - `observation_id` is unique within a run;
+  - pid, binary and container identity let reports from separate processes
+    (A, B and the sham in PC2) be paired and checked against one container.
+- **Failure encoding:**
+  - `error.kind` is one of `mincore`, `page_size_unavailable` or
+    `unsupported`;
+  - `errno` is present **only** for `mincore`;
+  - `page_size` is `null` when unavailable.
+- **Totals:**
+  - `mapped_bytes_all` covers every region;
+  - `mapped_bytes_read` and `resident_bytes_read` cover read regions only,
+    so a resident fraction is computed over read regions.
+- **Versioning:** a change to any field's meaning increments the schema
+  version, and a reader refuses an unknown version.
 - **Nothing here admits or rejects.** The gate, and recording it before the
   timer, is I2 [Q §7].
 
@@ -208,26 +296,35 @@ followed by one line per region:
 These go in the crates' `tests/` folders, following repository practice.
 The new and changed files are held to the per-file coverage floor.
 
+**Formatting, schema and failure reporting are tested on constructed
+observations**, not through a whole-model run. The constructed
+`ResidencyObservation` values contain mapped regions with successful,
+failed, empty and mixed outcomes, so the tests see what the CI fixture
+cannot produce.
+
 | Test | What it pins | Where |
 |---|---|---|
-| Aggregation with failures | for an observation with regions `[Ok(a), Err(_), Ok(b)]`: `resident_bytes = a + b`, `failed_regions = 1`, `regions = 3`, `complete_resident_bytes() = None`; with no failures, `complete_resident_bytes() = Some(total)` | `ResidencyObservation::summary()`, built from constructed observations, tested directly |
-| Delta excludes failures | for two constructed observations where a region failed in one of them, the delta sums only regions read in both, and reports the excluded count | the delta function, tested directly |
-| Empty region | `residency()` is `Ok(0)`, `resident_bytes()` is `Some(0)` | `represent/tests/physical_store.rs` (extends the existing test) |
-| Warm read | a region over a file just written and read is `Ok(n)` with `n > 0` and `n <= len` | `represent/tests` |
-| One observation | for **one** `observe_residency()` snapshot on a prepared fixture: the region count equals `summary().regions`, the sum of `Ok` values equals `summary().resident_bytes`, the error count equals `failed_regions`, and the `scan_index` values run 0..N in order. Both views are compared **from the same snapshot**, never across two calls | a prepared fixture already used by the residency tests (for example `kimi_per_expert_prepared.rs`) |
-| Schema | every JSON line carries `schema` = `larql.residency-observation/1` and its record type; a failed region carries `status: "failed"` and an error kind | the CLI test below |
-| Compatibility | `resident_bytes()` equals `residency().ok()` | `represent/tests` |
-| CLI output | the binding line names read and failed counts, `--residency-regions` writes one JSON line per mapped region, and a fixture with no failures prints no `WITNESS INCOMPLETE` line | extends `vindex3_cmd/tests/generate.rs:79` (`the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image`) |
+| Summary with failures | regions `[Ok(a), Err(Mincore), Ok(b)]` give `resident_bytes = a + b`, `failed_regions = 1`, `regions = 3` | `ResidencyObservation::summary()`, on constructed observations |
+| **Incomplete never admission quality** | any observation with a failed region, or with no regions (including `MappedResidency::default()`), gives `complete_resident_bytes() = None`; only a non-empty, failure-free observation gives `Some(total)` | the same |
+| Delta | for constructed pairs: signed per-region arithmetic; separate increase and decrease sums; the comparable count; exclusion of regions failed in either side or present in one only; `n/a` when no region is comparable | the delta function |
+| JSON Lines writer | header and region records for successful, failed, empty and mixed observations. Every line carries the schema version and record type, a failed region carries `status: "failed"` and its error kind, `errno` appears only for `mincore`, and an unavailable page size is `null` | the writer, on constructed observations |
+| Line formatter | the binding line names read and failed counts; `WITNESS INCOMPLETE` appears exactly when `failed > 0`, naming the first failure; the per-step column shows excluded regions and prints `n/a` for a delta with no comparable regions | the formatter, on constructed observations |
+| Empty region (unix) | `residency()` is `Ok(0)` | `represent/tests/physical_store.rs` (extends the existing test) |
+| Warm read | a region over a file just written and read is `Ok(n)`, with `0 < n <= len` | `represent/tests` |
+| Preserved public contract | `resident_bytes()` keeps its **pre-change** values on the cases that exist today: `Some(0)` for an empty region on unix, `Some(n)` for the warm read. This replaces a tautological `resident_bytes() == residency().ok()` check | `represent/tests` |
+| One observation, real regions | for one `observe_residency()` snapshot on a fixture **with mapped regions** (a mapped per-expert bank, as in `kimi_per_expert_prepared.rs`): the region count equals `summary().regions`, the `Ok` values sum to `summary().resident_bytes`, and the `scan_index` values run 0..N. Both views come from the same snapshot | a prepared fixture with mapped regions |
+| Segment identity | a mapped store reports its `source_path()`, and regions' file offsets fall within that file | `represent/tests` |
+| CLI smoke test | the existing `the_residency_curve_runs_cold_and_warm_passes_over_one_bound_image` (`vindex3_cmd/tests/generate.rs:79`) still completes, with and without `--residency-regions` | **smoke test only.** Its dense fixture has no mapped regions, and the test only calls `run()`, so it is **not** credited with validating residency, failure reporting or output format |
 
 **Honest limits of CI testing:**
 
 - **A real `mincore` failure is not induced** in CI. Forcing one would need
   an invalid address range, which the safe `WeightRegion` API cannot
-  produce. The failure path is pinned at the summariser seam, and the errno
-  mapping by review.
+  produce. The failure path is pinned on constructed observations, and the
+  errno capture by review.
 - **A cold region cannot be manufactured in CI.** A file written by the test
   is already in the page cache. So "non-target regions read zero" is not a
-  CI test. It is what PC2 checks on the real subject (§5).
+  CI test. PC1 and PC2 cover it on the real subject (§5).
 
 ## 5. The positive controls these instruments enable
 
@@ -259,40 +356,46 @@ Two general rules:
 
      PC1 does **not** require resident bytes to equal the bytes read, nor a
      whole file to remain resident.
-- **PC2, region-level attribution, by difference against controls.** This
-  needs no cold baseline, so PC2 does not depend on either cold method.
-  1. A fresh process binds and writes `--residency-regions` (report A).
-  2. Another process reads a **known byte range**. Its read success is
-     recorded.
-  3. Within the stated window, a second fresh process binds and writes
-     report B.
-  4. The regions are classified **before** B is examined, from report A and
-     the range alone:
-
-     | Class | Definition | Expectation |
-     |---|---|---|
-     | **known-positive** | overlaps the read range, and was not already near fully resident in A | residency increases |
-     | **already-resident** | overlaps the range, but was near fully resident in A | cannot show an increase; reported, and excluded from the attribution test |
-     | **readahead window** | does not overlap the range, but lies within a stated distance after the range's end in file order | may increase through readahead; reported separately, and neither a pass nor a fail |
-     | **boundary** | shares a boundary page with a known-positive region | may increase by up to the shared pages; reported separately |
-     | **unobserved** | everything else | change compared with the null control below |
-
-  5. **Null control (sham):** the same procedure with **no read** in step 2.
-     The distribution of per-region change across unobserved regions under
-     the sham is the background, from concurrent cache activity and
-     reclamation.
-  6. **Pass:**
-     - neither report has a failed region;
-     - the known-positive regions increase, at no less than a fraction fixed
-       at the freeze;
-     - the unobserved regions' change is not distinguishable from the sham
-       background, under a criterion fixed at the freeze.
-
-     Exact zero change outside the range is **not** required.
+- **PC2, region-level attribution: a matched sham-against-treatment
+  comparison.** No bind-only mode is added. The observer's own run is part
+  of both conditions, and the contrast between them is what is tested.
+  1. **Matched procedure.** Both conditions use the same container, the same
+     binary and flags, the same observation window and the same prompt, and
+     alternate in a declared order. Each condition is:
+     - observation A, a fresh process with `--residency-regions`;
+     - the intervention;
+     - observation B, a second fresh process.
+     - **Treatment:** the intervention is another process reading a known
+       byte range of a segment file (`dd`), with read success recorded.
+     - **Sham:** the intervention is the same process invocation with a zero
+       count, so nothing is read.
+  2. **Target regions, fixed before any B is examined.** They are the
+     regions whose stable key (§3.3) overlaps the treatment range. Regions in
+     a stated readahead distance after the range, and regions sharing a
+     boundary page with a target, are classified and reported separately.
+  3. **Already-resident targets.** A target near fully resident in A cannot
+     show an increase. It is excluded and counted. If too few targets remain,
+     by a count fixed at the freeze, the repetition is void.
+  4. **The comparison** is, for the **same target regions**, the per-region
+     Δ (B − A, §3.2) under treatment against under sham. It is replicated
+     over a number of matched pairs fixed at the freeze. Background changes,
+     and warming caused by the observer's own run, appear in both
+     conditions. Only the read appears in the treatment alone.
+  5. **Pass** (all under criteria fixed at the freeze):
+     - no report has a failed region;
+     - the targets' treatment Δ exceeds their sham Δ;
+     - non-target, non-readahead, non-boundary regions show no treatment-
+       against-sham difference.
+  6. **Infeasible, not relaxed.** If the observer's own run warms the target
+     regions in A, or in the sham, so that no contrast can be shown, PC2 is
+     **declared infeasible with this procedure**. The acceptance criteria are
+     not loosened until it passes. A separate bind-only observation
+     capability is then reconsidered, with its own implementation review
+     [Q §10].
 
   The ranges, block size, window, readahead distance, the "near fully
-  resident" cut and the criteria are fixed at the freeze, with an
-  independent justification [Q §7].
+  resident" cut, the replicate count and the criteria are fixed at the
+  freeze, with an independent justification [Q §7].
 
 ## 6. Review checklist
 
@@ -312,7 +415,13 @@ unchanged for this scope (accepted). Open for the implementation review:
 - `represent/physical.rs:244-321` (`WeightRegion`: `bytes`, `store_id`,
   `len`, `resident_bytes`, `store_offset`)
 - `weights/loaded.rs:37`
-- `prepared/residency.rs:412-440`
+- `prepared/residency.rs:417-456`
+- `represent/physical.rs:73-79,90-111,245-247` (`PhysicalStore` fields and
+  `map_segment`; `bytes()` slicing the whole backing)
+- `opplan/exec/operands.rs:282` (store id is the object name)
+- `opplan/exec/experts/routed.rs:347` (the only `LoadedWeight::Mapped`
+  construction)
+- `vindex3_cmd/realizations.rs:111`; `opplan/exec/tests/carrier_write_real.rs:166-173`
 - `prepared/census.rs:51-55,70-80`
 - `decode/steps.rs:121-123`
 - `accounting/budgets.rs:410-419`
