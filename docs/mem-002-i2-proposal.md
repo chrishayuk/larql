@@ -50,9 +50,9 @@ observes the bound image, so no decision can precede the timing of the
 binding itself.
 - I2 therefore places the decision **before every timed region after
   binding**: all passes, prompt and decode.
-- **Bind time is sealed latency.** It is recorded and printed as today,
-  carries the same sealing as every other latency [Q §7], and plays no part
-  in admission.
+- **Bind time is sealed latency.** Today it is only printed. I2a writes it
+  to the sealed-latency record (§3.5a) with every other latency [Q §7], and
+  it plays no part in admission.
 - The protocol's unit is cold *binding* as witnessed at binding [Q §1], not
   bind time. Analysing bind time needs its own later freeze [Q §11].
 - Review question 1 asks whether the console print of bind time should be
@@ -153,6 +153,30 @@ After the binding observation, and after I2b's pre-pass identity check
 - `run_id`, `binary.commit` and `commit_source`, and the container block,
   as in the observation header.
 
+### 3.5a Sealed latency
+
+#675 assigns "latency sealed — sealing in the record" to I2 [RC §2.4].
+Today no latency reaches any record; it is only printed.
+
+- **A new flag, `--sealed-latency <path>`, writes a separate JSON Lines
+  file**, never the residency stream. It holds the bind time and every
+  pass's prompt and step timings, keyed by `run_id`, with the same clock
+  block.
+- **It is a separate file so that sealing is a matter of access, not of
+  discipline.** The evaluator's qualification inputs are the residency
+  stream and the harness records. The sealed file is excluded from them,
+  and its access rules are fixed at stage 1 [Q §12.7].
+- **It is created with `O_EXCL`.** The admission record carries its path.
+  After the run, its SHA-256 is computed and written into the `after_run`
+  observation header, so the file can be shown untouched when it is
+  unsealed.
+- **Rejected attempts' timings go to the same file** [Q §7].
+- **With `--admission-threshold-bytes`, the curve refuses to run without
+  `--sealed-latency`,** so a scored attempt cannot leave its latency
+  unsealed.
+- Whether the console still prints timings when sealing is on is review
+  question 1.
+
 ### 3.6 Schema
 
 Adding a record type and a header block changes what a reader must
@@ -210,8 +234,9 @@ and payload re-verification after it, both owned by the manifest producer
 - On macOS, the volume UUID comes from `fgetattrlist` (`ATTR_VOL_UUID`) on
   the same descriptor. The reviewer confirmed it works on a regular-file
   descriptor here, although the man page says it should return `EINVAL`.
-  The implementation pins this with a test, and falls back to the volume's
-  UUID by path lookup, recording which source was used.
+  The implementation pins this with a test. As a fallback it takes the
+  volume's mount path from `fstatfs` on the same descriptor and reads that
+  volume's UUID, recording which source was used.
 
 The header check `OperandStore::open` makes before mapping stays as a
 structural check. **Identity is taken only from the mapped descriptor.**
@@ -242,6 +267,18 @@ any scored or paired use [M].
 
 The `after_run` record repeats the per-segment identity from the kept
 descriptors, so a change during the run is visible.
+
+### 4.2a Operands read by copy
+
+`OperandStore::load_raw` reopens segment files by path, and reads the
+operands that are copied rather than mapped (`operands/load.rs`). Those
+reads fall outside the mapped descriptors' identity.
+
+- I2b routes them through the store's kept descriptor where the segment is
+  already open.
+- Otherwise, it records each by-path read's `fstat` identity in the same
+  per-segment list.
+- Any copied read that is neither is a stated limit, named in the record.
 
 ### 4.3 Writable mappings
 
@@ -309,8 +346,8 @@ Only payload verification addresses content.
 
 ## 5. Review checklist
 
-1. Should the console print of bind time be suppressed under latency
-   sealing, or kept as today?
+1. Should the console print of timings be suppressed when
+   `--sealed-latency` is given, or kept as today?
 2. Is `witness_only` the right outcome when no threshold is declared, rather
    than refusing to run?
 3. Is a schema bump to `/3` acceptable for both a new record type and a new
