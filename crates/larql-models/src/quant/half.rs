@@ -39,7 +39,10 @@ pub fn bf16_to_f32(bits: u16) -> f32 {
     f32::from_bits((bits as u32) << 16)
 }
 
-/// Convert f32 to f16 bits.
+/// Convert f32 to f16 bits by truncating the mantissa and flushing every value
+/// below the f16 normal range to signed zero.
+///
+/// This is not IEEE conversion. New encoders should use [`f32_to_f16_nearest`].
 pub fn f32_to_f16(value: f32) -> u16 {
     let bits = value.to_bits();
     let sign = ((bits >> 16) & 0x8000) as u16;
@@ -57,6 +60,47 @@ pub fn f32_to_f16(value: f32) -> u16 {
         return sign;
     }
     sign | ((exp16 as u16) << 10) | ((mant >> 13) as u16)
+}
+
+/// Convert f32 to f16 bits as IEEE 754 does: round to nearest, ties to even,
+/// keeping f16 subnormals. Values too large for f16 become infinity, and every
+/// NaN becomes the canonical quiet NaN with its sign kept.
+///
+/// This agrees with ggml's `GGML_FP32_TO_FP16` on every f32 bit pattern.
+pub fn f32_to_f16_nearest(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = ((bits >> 23) & 0xFF) as i32;
+    let mant = bits & 0x007F_FFFF;
+
+    if exp == 255 {
+        return sign | if mant == 0 { 0x7C00 } else { 0x7E00 };
+    }
+    let exp16 = exp - 127 + 15;
+    if exp16 >= 31 {
+        return sign | 0x7C00;
+    }
+    // The significand and how far it must shift to land on the f16 unit in the
+    // last place. f32 subnormals are far below half the smallest f16 subnormal.
+    let (significand, shift) = if exp16 >= 1 {
+        (mant, 13)
+    } else if exp == 0 || exp16 < -10 {
+        return sign;
+    } else {
+        (mant | 0x0080_0000, (14 - exp16) as u32)
+    };
+    let mut magnitude = significand >> shift;
+    let remainder = significand & ((1 << shift) - 1);
+    let half = 1 << (shift - 1);
+    if remainder > half || (remainder == half && magnitude & 1 == 1) {
+        // A carry out of the mantissa correctly raises the exponent, and past
+        // the largest normal it correctly gives infinity.
+        magnitude += 1;
+    }
+    if exp16 >= 1 {
+        magnitude += (exp16 as u32) << 10;
+    }
+    sign | magnitude as u16
 }
 
 /// Convert f32 to bf16 bits.
@@ -109,6 +153,57 @@ mod tests {
                 (v - back).abs() < 0.01 * v.abs().max(0.001),
                 "{v} → {bits} → {back}"
             );
+        }
+    }
+
+    #[test]
+    fn nearest_rounds_ties_to_even_and_keeps_subnormals() {
+        let min_normal = 2f32.powi(-14);
+        let min_subnormal = 2f32.powi(-24);
+        for (value, want) in [
+            (0.0, 0x0000),
+            (-0.0, 0x8000),
+            (1.0, 0x3C00),
+            (-2.0, 0xC000),
+            (min_normal, 0x0400),
+            (min_subnormal, 0x0001),
+            (-min_subnormal, 0x8001),
+            (1023.0 * min_subnormal, 0x03FF),
+            // Ties: to the even neighbour, in each direction.
+            (1.0 + 2f32.powi(-11), 0x3C00),
+            (1.0 + 3.0 * 2f32.powi(-11), 0x3C02),
+            (1022.5 * min_subnormal, 0x03FE),
+            (1023.5 * min_subnormal, 0x0400),
+            (0.5 * min_subnormal, 0x0000),
+            (1.5 * min_subnormal, 0x0002),
+            // Above a tie rounds up, even from an even neighbour.
+            (f32::from_bits((0.5 * min_subnormal).to_bits() + 1), 0x0001),
+            // Below the range.
+            (0.25 * min_subnormal, 0x0000),
+            (1e-30, 0x0000),
+            (f32::from_bits(1), 0x0000),
+            // A carry into the exponent, and out of the top into infinity.
+            (2.0 - 2f32.powi(-12), 0x4000),
+            (65504.0, 0x7BFF),
+            (65519.996, 0x7BFF),
+            (65520.0, 0x7C00),
+            (1e30, 0x7C00),
+            (f32::INFINITY, 0x7C00),
+            (f32::NEG_INFINITY, 0xFC00),
+        ] {
+            assert_eq!(f32_to_f16_nearest(value), want, "{value:e}");
+        }
+        assert_eq!(f32_to_f16_nearest(f32::from_bits(0x7F80_0001)), 0x7E00);
+        assert_eq!(f32_to_f16_nearest(f32::from_bits(0xFFFF_FFFF)), 0xFE00);
+    }
+
+    #[test]
+    fn nearest_round_trips_every_f16_value() {
+        for bits in 0..=u16::MAX {
+            let is_nan = (bits & 0x7C00) == 0x7C00 && (bits & 0x03FF) != 0;
+            if !is_nan {
+                assert_eq!(f32_to_f16_nearest(f16_to_f32(bits)), bits);
+            }
         }
     }
 
