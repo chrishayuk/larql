@@ -62,11 +62,22 @@ pub(in super::super) fn declared_commit(declared: Option<&str>) -> Option<String
         .map(str::to_string)
 }
 
+/// 64 bits with no relation to the clock. A run id made from the time
+/// would date the attempt's start, before binding, and so give away the
+/// bind time that `--sealed-latency` seals. The standard library seeds its
+/// hasher keys randomly per process.
+fn unpredictable_id() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish()
+}
+
 /// Who wrote a record: enough to pair records from separate processes
 /// and check they observed one container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in super::super) struct RunIdentity {
-    /// Unique per process run.
+    /// Unique per process run, and carrying no timestamp.
     pub(in super::super) run_id: String,
     pub(in super::super) pid: u32,
     pub(in super::super) binary_version: String,
@@ -82,12 +93,8 @@ impl RunIdentity {
     /// This process, observing the container at `container`.
     pub(in super::super) fn for_container(container: &Path) -> Self {
         let pid = std::process::id();
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
         Self {
-            run_id: format!("{pid}-{nanos}"),
+            run_id: format!("{pid}-{:016x}", unpredictable_id()),
             pid,
             binary_version: env!("CARGO_PKG_VERSION").to_string(),
             binary_commit: declared_commit(BUILD_COMMIT),

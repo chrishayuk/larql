@@ -8,6 +8,14 @@
 //! attempts' timings go to it like any other, and its SHA-256 is written
 //! into the residency stream's `after_run` header so it can be shown
 //! untouched when unsealed.
+//!
+//! **What the seal does not cover.** It seals per-step, per-stage and bind
+//! values. The residency stream still carries clock readings at admission
+//! and after the run, so a reader can compute the whole attempt's
+//! admission-to-after-run duration, which on a one-pass cold arm is close
+//! to the pass's latency. The evidence files' own timestamps give the same
+//! figure. Keeping that aggregate out of a decision is a matter of the
+//! protocol's access rules; nothing here enforces it.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -69,7 +77,10 @@ impl SealedLatency {
         fields.insert("run_id".into(), json!(self.run_id));
         fields.insert("clock".into(), point_clock());
         serde_json::to_writer(&mut self.out, &record)?;
-        self.out.write_all(b"\n")
+        self.out.write_all(b"\n")?;
+        // Every record reaches the file as it is written (never inside a
+        // timed window), so a killed process keeps what it measured.
+        self.out.flush()
     }
 
     /// The bind time: sealed like every other latency, and no input to
@@ -78,22 +89,41 @@ impl SealedLatency {
         self.write(json!({ "record": "bind", "seconds": seconds }))
     }
 
-    /// One timed step of one pass, with its stage breakdown.
+    /// One timed step of one pass, with its breakdowns.
     pub(in super::super) fn step(
         &mut self,
         pass: usize,
         label: &str,
         step: &str,
         elapsed_ms: f64,
-        stages_ms: Value,
+        breakdown: Value,
     ) -> std::io::Result<()> {
         self.write(json!({
             "record": "step",
             "pass": pass,
             "label": label,
             "step": step,
+            "status": "ok",
             "elapsed_ms": elapsed_ms,
-            "stages_ms": stages_ms,
+            "breakdown": breakdown,
+        }))
+    }
+
+    /// A step that returned an error: its time is latency too.
+    pub(in super::super) fn failed_step(
+        &mut self,
+        pass: usize,
+        label: &str,
+        step: &str,
+        elapsed_ms: f64,
+    ) -> std::io::Result<()> {
+        self.write(json!({
+            "record": "step",
+            "pass": pass,
+            "label": label,
+            "step": step,
+            "status": "error",
+            "elapsed_ms": elapsed_ms,
         }))
     }
 

@@ -17,8 +17,8 @@ use serde_json::{json, Value};
 
 use super::super::generate::admission::{
     admission_line, commit_admission, create_evidence_file, decide, plan_evidence,
-    AdmissionCommitted, AdmissionOutcome, AdmissionThreshold, EvidenceRequest, EvidenceSink,
-    RunMode, COUNTING,
+    refuse_evidence_outside_the_curve, AdmissionOutcome, AdmissionThreshold, EvidenceRequest,
+    EvidenceSink, RunMode, COUNTING,
 };
 use super::super::generate::residency_record::{
     admission_record, attempt_end_record, observation_records, point_clock, sealed_header_fields,
@@ -146,6 +146,29 @@ fn zero_regions_witness_nothing_and_are_refused() {
         assert_eq!(decision.regions, 0);
         assert_eq!(decision.resident_bytes, None);
     }
+}
+
+/// Regions of zero length are read successfully and hold nothing: that
+/// witnesses no image at all, and must not be admitted as a cold one.
+#[test]
+fn an_image_of_empty_regions_witnesses_nothing() {
+    let empty = MappedResidency {
+        regions: 2,
+        ..MappedResidency::default()
+    };
+    let decision = decide(&empty, Some(&threshold(THRESHOLD)));
+    assert_eq!(decision.outcome, AdmissionOutcome::WitnessFailed);
+    assert_eq!(decision.resident_bytes, None);
+    let partly_read = MappedResidency {
+        regions: 2,
+        mapped_bytes: 2,
+        mapped_bytes_read: 1,
+        ..MappedResidency::default()
+    };
+    assert_eq!(
+        decide(&partly_read, None).outcome,
+        AdmissionOutcome::WitnessFailed
+    );
 }
 
 #[test]
@@ -377,7 +400,7 @@ fn the_admission_commit_writes_one_line_and_syncs_it() {
         Some(&mut sink),
         &json!({"record": "admission"}),
     );
-    assert_eq!(committed, Ok(AdmissionCommitted::Recorded));
+    assert!(committed.unwrap().recorded());
     assert_eq!(sink.bytes, b"{\"record\":\"admission\"}\n");
     assert_eq!(
         sink.synced_bytes,
@@ -410,10 +433,9 @@ fn a_record_that_cannot_be_written_stops_the_attempt_before_execution() {
 #[test]
 fn only_diagnostic_execution_may_go_unrecorded() {
     let record = json!({});
-    assert_eq!(
-        commit_admission(RunMode::Diagnostic, None, &record),
-        Ok(AdmissionCommitted::NotRecorded)
-    );
+    assert!(!commit_admission(RunMode::Diagnostic, None, &record)
+        .unwrap()
+        .recorded());
     let err = commit_admission(RunMode::Campaign, None, &record).unwrap_err();
     assert!(err.contains("no residency stream"), "{err}");
 }
@@ -580,8 +602,15 @@ fn the_sealed_file_holds_the_latency_and_its_digest_is_of_what_reached_the_disk(
     assert_eq!(sealed.path(), path);
     sealed.bind(1.5).unwrap();
     sealed
-        .step(1, "cold", "token 1", 12.5, json!({"attention": 3.0}))
+        .step(
+            1,
+            "cold",
+            "token 1",
+            12.5,
+            json!({"stages_ms": {"attention": 3.0}}),
+        )
         .unwrap();
+    sealed.failed_step(1, "cold", "token 2", 7.5).unwrap();
     let digest = sealed.finish().unwrap();
     assert_eq!(digest.path, path);
     assert_eq!(
@@ -603,7 +632,10 @@ fn the_sealed_file_holds_the_latency_and_its_digest_is_of_what_reached_the_disk(
     assert_eq!(lines[2]["label"], "cold");
     assert_eq!(lines[2]["step"], "token 1");
     assert_eq!(lines[2]["elapsed_ms"], 12.5);
-    assert_eq!(lines[2]["stages_ms"]["attention"], 3.0);
+    assert_eq!(lines[2]["status"], "ok");
+    assert_eq!(lines[2]["breakdown"]["stages_ms"]["attention"], 3.0);
+    assert_eq!(lines[3]["status"], "error");
+    assert_eq!(lines[3]["elapsed_ms"], 7.5);
 }
 
 #[test]
@@ -643,6 +675,7 @@ fn sample(pass: usize, elapsed_ms: f64) -> PassSample {
             major_faults: 2,
             stage_ms: [1.25; larql_vindex::format::vindex3::opplan::exec::stages::Stage::ALL.len()],
             stages_nested: 0,
+            leaf_ms: [0.5; 3],
         },
         routing_fingerprint: 0xabc,
         routed_layers: 4,
@@ -839,9 +872,30 @@ fn a_refused_campaign_attempt_runs_and_is_recorded_before_and_after_the_passes()
     assert_eq!(latency[3]["step"], "token 1");
     assert!(latency[3]["elapsed_ms"].is_f64());
 
-    // No latency in the stream an evaluator reads.
+    let breakdown = &latency[3]["breakdown"];
+    assert!(breakdown["stages_ms"].is_object());
+    assert!(breakdown["leaves_ms"].is_object());
+    assert_eq!(breakdown["stages_nested"], 0);
+
+    // On record before any timed step: the sealed file's first step is
+    // stamped after the stream's admission, on the one system-wide clock.
+    if cfg!(unix) {
+        let decided = admission["clock"]["system_mono_ns"].as_u64().unwrap();
+        let first_step = latency[2]["clock"]["system_mono_ns"].as_u64().unwrap();
+        assert!(decided <= first_step, "{decided} > {first_step}");
+    }
+
+    // No latency FIELD in the stream an evaluator reads. This checks key
+    // names only: clock readings remain, and their difference gives the
+    // attempt's whole duration (see `sealed_latency`'s module docs).
     let text = std::fs::read_to_string(&regions).unwrap();
-    for key in ["elapsed_ms", "stages_ms", "\"seconds\"", "load_seconds"] {
+    for key in [
+        "elapsed_ms",
+        "stages_ms",
+        "leaves_ms",
+        "\"seconds\"",
+        "load_seconds",
+    ] {
         assert!(
             !text.contains(key),
             "{key} leaked into the residency stream"
@@ -877,6 +931,12 @@ fn an_attempt_whose_passes_fail_records_how_it_ended() {
     );
     assert_eq!(stream[3]["status"], "error");
     assert_eq!(stream[3]["error"], err.to_string().as_str());
+    // The failing step's time is latency too, and it is sealed.
+    let latency = read_lines(&sealed);
+    let last = latency.last().unwrap();
+    assert_eq!(last["record"], "step");
+    assert_eq!(last["status"], "error");
+    assert!(last["elapsed_ms"].is_f64());
     assert_eq!(
         stream[2]["sealed_latency"]["sha256"],
         larql_vindex::format::checksums::sha256_file(&sealed)
@@ -956,7 +1016,7 @@ fn diagnostic_runs_keep_working_with_and_without_sealing() {
     assert_eq!(stream[1]["mode"], "diagnostic");
     assert!(sealed.exists());
 
-    // Sealing alone needs no stream, and leaves nothing unsealed behind.
+    // Sealing alone needs no stream.
     let only_sealed = dir.path().join("only-sealed.jsonl");
     run_curve(
         &container,
@@ -1011,6 +1071,199 @@ fn an_existing_stream_refuses_the_run_and_survives_it() {
         "earlier evidence"
     );
     assert!(!sealed.exists(), "the stream is created first");
+}
+
+/// The refused attempt the review found unclosed: the stream exists by the
+/// time the sealed file is refused, so the stream must say why.
+#[test]
+fn an_existing_sealed_file_refuses_the_attempt_on_the_record() {
+    let (dir, container) = encoded();
+    let regions = dir.path().join("regions.jsonl");
+    let sealed = dir.path().join("sealed.jsonl");
+    std::fs::write(&sealed, "sealed earlier").unwrap();
+    let err = run_curve(
+        &container,
+        Curve {
+            regions: Some(regions.clone()),
+            sealed: Some(sealed.clone()),
+            campaign: true,
+            ..Curve::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("already exists"), "{err}");
+    assert_eq!(std::fs::read_to_string(&sealed).unwrap(), "sealed earlier");
+    let stream = read_lines(&regions);
+    assert_eq!(stream.len(), 1, "{stream:?}");
+    assert_eq!(stream[0]["record"], "attempt_end");
+    assert_eq!(stream[0]["status"], "error");
+    assert_eq!(stream[0]["error"], err.as_str());
+}
+
+/// A complete campaign request, which the refusal table below varies.
+fn evidence_args(container: &Path, regions: &Path, sealed: &Path) -> ExecArgs {
+    ExecArgs {
+        container: container.to_path_buf(),
+        component: "target".to_string(),
+        tokens: "1,2".to_string(),
+        dump_layers: None,
+        resume: false,
+        backend: ExecBackend::Production,
+        representation_source: "auto".to_string(),
+        generate: Some(2),
+        speculate: None,
+        stop_at_eos: false,
+        residency_curve: true,
+        repeat: 1,
+        warmup: 0,
+        unquiet_ok: true,
+        residency_regions: Some(regions.to_path_buf()),
+        sealed_latency: Some(sealed.to_path_buf()),
+        residency_campaign: true,
+        admission_threshold_bytes: None,
+        admission_basis: None,
+        expert_access: "demand".to_string(),
+        logit_dump: None,
+        bank: None,
+        dump_dir: None,
+        draft_depth: None,
+        profile: false,
+        plugin: Default::default(),
+    }
+}
+
+/// A path that never reaches the curve would print its timings and record
+/// nothing, then exit 0: every one is refused with nothing created.
+#[test]
+fn evidence_flags_are_refused_on_every_path_that_bypasses_the_curve() {
+    let (dir, container) = encoded();
+    let regions = dir.path().join("regions.jsonl");
+    let sealed = dir.path().join("sealed.jsonl");
+    let args = || evidence_args(&container, &regions, &sealed);
+    let cases: Vec<(ExecArgs, &str)> = vec![
+        (
+            ExecArgs {
+                residency_curve: false,
+                ..args()
+            },
+            "without --residency-curve",
+        ),
+        (
+            ExecArgs {
+                generate: None,
+                ..args()
+            },
+            "without --generate",
+        ),
+        (
+            ExecArgs {
+                bank: Some(dir.path().join("bank.jsonl")),
+                ..args()
+            },
+            "with --bank",
+        ),
+        (
+            ExecArgs {
+                logit_dump: Some(dir.path().join("logits")),
+                ..args()
+            },
+            "with --logit-dump",
+        ),
+        (
+            ExecArgs {
+                dump_layers: Some(dir.path().join("layers")),
+                ..args()
+            },
+            "with --dump-layers",
+        ),
+        (
+            ExecArgs {
+                draft_depth: Some(1),
+                ..args()
+            },
+            "--draft-depth",
+        ),
+        (
+            ExecArgs {
+                speculate: Some(2),
+                ..args()
+            },
+            "--speculate",
+        ),
+        (
+            ExecArgs {
+                stop_at_eos: true,
+                ..args()
+            },
+            "--stop-at-eos",
+        ),
+    ];
+    for (case, expected) in cases {
+        let err = run(Vindex3Command::Exec(case)).unwrap_err().to_string();
+        assert!(err.contains(expected), "{err} should name {expected}");
+    }
+    let err = refuse_evidence_outside_the_curve(&args(), true).unwrap_err();
+    assert!(err.contains("on a lowered backend"), "{err}");
+    assert!(!regions.exists() && !sealed.exists(), "nothing was created");
+
+    // Each evidence flag is enough on its own.
+    let sealed_only = ExecArgs {
+        residency_regions: None,
+        residency_campaign: false,
+        ..args()
+    };
+    assert!(refuse_evidence_outside_the_curve(&sealed_only, true).is_err());
+    let regions_only = ExecArgs {
+        sealed_latency: None,
+        residency_campaign: false,
+        ..args()
+    };
+    assert!(refuse_evidence_outside_the_curve(&regions_only, true).is_err());
+
+    // A diagnostic curve run may keep flags the curve ignores, as it did,
+    // and a run with no evidence flag is none of this check's business.
+    let diagnostic = ExecArgs {
+        residency_campaign: false,
+        stop_at_eos: true,
+        ..args()
+    };
+    assert!(refuse_evidence_outside_the_curve(&diagnostic, false).is_ok());
+    let plain = ExecArgs {
+        residency_regions: None,
+        sealed_latency: None,
+        residency_campaign: false,
+        bank: Some(dir.path().join("bank.jsonl")),
+        ..args()
+    };
+    assert!(refuse_evidence_outside_the_curve(&plain, true).is_ok());
+}
+
+/// A run id made from the clock dated the attempt's start before binding,
+/// which gave away the sealed bind time.
+#[test]
+fn a_run_id_carries_no_timestamp_and_differs_between_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = RunIdentity::for_container(dir.path());
+    let second = RunIdentity::for_container(dir.path());
+    assert_ne!(first.run_id, second.run_id);
+    let (pid, random) = first.run_id.split_once('-').unwrap();
+    assert_eq!(pid, first.pid.to_string());
+    assert_eq!(random.len(), 16, "{random}");
+    assert!(u64::from_str_radix(random, 16).is_ok(), "{random}");
+}
+
+/// `--repeat 0` runs one pass, so one is what the record says.
+#[test]
+fn the_record_says_how_many_passes_ran() {
+    let (dir, container) = encoded();
+    let regions = dir.path().join("regions.jsonl");
+    let args = ExecArgs {
+        repeat: 0,
+        ..evidence_args(&container, &regions, &dir.path().join("sealed.jsonl"))
+    };
+    run(Vindex3Command::Exec(args)).unwrap();
+    assert_eq!(read_lines(&regions)[1]["repeat"], 1);
 }
 
 #[test]

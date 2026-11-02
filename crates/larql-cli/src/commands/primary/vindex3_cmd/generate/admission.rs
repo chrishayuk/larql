@@ -152,6 +152,51 @@ pub(in super::super) struct EvidencePlan {
     pub(in super::super) sealed_latency: Option<PathBuf>,
 }
 
+/// Refuse evidence flags on a run that would never reach the residency
+/// curve. Those paths create no evidence file and print their timings, so
+/// a run marked as a campaign attempt would be unsealed and unrecorded and
+/// still exit 0. A campaign attempt also refuses the flags the curve
+/// ignores, because its record would not say they were given.
+pub(in super::super) fn refuse_evidence_outside_the_curve(
+    args: &super::super::ExecArgs,
+    lowered: bool,
+) -> Result<(), String> {
+    let asks_for_evidence = args.residency_campaign
+        || args.sealed_latency.is_some()
+        || args.residency_regions.is_some();
+    if !asks_for_evidence {
+        return Ok(());
+    }
+    let elsewhere = [
+        (!args.residency_curve, "without --residency-curve"),
+        (args.generate.is_none(), "without --generate"),
+        (args.bank.is_some(), "with --bank"),
+        (args.logit_dump.is_some(), "with --logit-dump"),
+        (args.dump_layers.is_some(), "with --dump-layers"),
+        (lowered, "on a lowered backend"),
+    ];
+    if let Some((_, how)) = elsewhere.iter().find(|(applies, _)| *applies) {
+        return Err(format!(
+            "--residency-regions, --sealed-latency and --residency-campaign record the \
+             residency curve, and a run {how} never reaches it: nothing would be recorded or sealed"
+        ));
+    }
+    if args.residency_campaign {
+        let ignored = [
+            (args.draft_depth.is_some(), "--draft-depth"),
+            (args.speculate.is_some(), "--speculate"),
+            (args.stop_at_eos, "--stop-at-eos"),
+        ];
+        if let Some((_, flag)) = ignored.iter().find(|(applies, _)| *applies) {
+            return Err(format!(
+                "the residency curve ignores {flag} and its record would not say so; \
+                 a --residency-campaign attempt refuses it"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Check a request before anything is bound. A campaign attempt needs
 /// both evidence files; a threshold needs a campaign and its basis; two
 /// evidence files may never be one file.
@@ -248,12 +293,19 @@ pub(in super::super) fn create_evidence_file(path: &Path, what: &str) -> Result<
 
 /// Proof that the admission decision is on record. The passes take one,
 /// so no timed region can run before the record is written.
+///
+/// Its field is private: only [`commit_admission`] can make one.
 #[derive(Debug, PartialEq, Eq)]
-pub(in super::super) enum AdmissionCommitted {
-    /// Written and flushed to the residency stream.
-    Recorded,
-    /// Diagnostic execution with no stream: decided and printed only.
-    NotRecorded,
+pub(in super::super) struct AdmissionCommitted {
+    recorded: bool,
+}
+
+impl AdmissionCommitted {
+    /// Whether the decision reached a residency stream. `false` only for
+    /// diagnostic execution with no stream: decided and printed only.
+    pub(in super::super) fn recorded(&self) -> bool {
+        self.recorded
+    }
 }
 
 /// The residency stream and the file under it, so a commit can reach
@@ -280,7 +332,7 @@ pub(in super::super) fn commit_admission(
 ) -> Result<AdmissionCommitted, String> {
     let Some(out) = stream else {
         return match mode {
-            RunMode::Diagnostic => Ok(AdmissionCommitted::NotRecorded),
+            RunMode::Diagnostic => Ok(AdmissionCommitted { recorded: false }),
             RunMode::Campaign => {
                 Err("a campaign attempt has no residency stream to record its admission".into())
             }
@@ -291,6 +343,6 @@ pub(in super::super) fn commit_admission(
         .and_then(|()| out.write_all(b"\n"))
         .and_then(|()| out.sync());
     written
-        .map(|()| AdmissionCommitted::Recorded)
+        .map(|()| AdmissionCommitted { recorded: true })
         .map_err(|e| format!("the admission record could not be written before the passes: {e}"))
 }

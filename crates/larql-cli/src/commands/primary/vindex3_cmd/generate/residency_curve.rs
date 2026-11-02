@@ -186,7 +186,8 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         .sealed_latency
         .as_deref()
         .map(|path| SealedLatency::create(path, &run))
-        .transpose()?;
+        .transpose()
+        .map_err(|e| end_before_passes(&mut regions_file, &run, e))?;
     let sealing = sealed.is_some();
     // Scheduling, declared before anything is timed: the pool the
     // production backend joins inside every step, and the machine the
@@ -276,9 +277,17 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let binding = ops.observe_residency();
     let mapped = binding.summary();
     let base = process_resources();
-    if let Some(file) = regions_file.as_mut() {
-        residency_record::write_observation(file, &run, BINDING_OBSERVATION, "binding", &binding)?;
-    }
+    let written = match regions_file.as_mut() {
+        Some(file) => residency_record::write_observation(
+            file,
+            &run,
+            BINDING_OBSERVATION,
+            "binding",
+            &binding,
+        ),
+        None => Ok(()),
+    };
+    written.map_err(|e| end_before_passes(&mut regions_file, &run, e.to_string()))?;
     println!("observed, after binding:");
     println!(
         "  committed             {:>10.2} GB",
@@ -298,23 +307,30 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     // ADMISSION, from the binding observation alone, on record before any
     // pass. It never stops the run: a refused attempt is executed too.
     let decision = decide(&mapped, evidence.threshold.as_ref());
-    println!("{}", admission_line(&decision));
     let facts = AttemptFacts {
         mode: evidence.mode,
         warmup,
-        repeat,
+        repeat: repeat.max(1),
         qualification: qualification.clone(),
         disqualifiers,
         unquiet_ok,
         expert_access: access.name().to_string(),
-        sealed_latency: sealed.as_ref().map(|s| s.path().display().to_string()),
+        sealed_latency: sealed.as_ref().map(|s| {
+            std::path::absolute(s.path())
+                .unwrap_or_else(|_| s.path().to_path_buf())
+                .display()
+                .to_string()
+        }),
     };
     let record = residency_record::admission_record(&run, BINDING_OBSERVATION, &decision, &facts);
     let committed = commit_admission(
         evidence.mode,
         regions_file.as_mut().map(|f| f as &mut dyn EvidenceSink),
         &record,
-    )?;
+    )
+    .map_err(|e| end_before_passes(&mut regions_file, &run, e))?;
+    // Printed only now, so the console cannot announce an unrecorded decision.
+    println!("{}", admission_line(&decision));
 
     let passes = run_passes(
         committed,
@@ -331,35 +347,58 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     );
 
     // Close the attempt whatever the passes returned: the sealed file's
-    // digest, the after-run observation, and the attempt's end.
+    // digest, the after-run observation, and the attempt's end. The first
+    // failure is the attempt's error; a later one never replaces it.
     let sealed = sealed.map(SealedLatency::finish).transpose();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = &passes {
+        failures.push(e.to_string());
+    }
+    if let Err(e) = &sealed {
+        failures.push(e.clone());
+    }
     if let Some(file) = regions_file.as_mut() {
         let after = ops.observe_residency();
         let fields = match &sealed {
             Ok(Some(digest)) => residency_record::sealed_header_fields(digest),
             _ => serde_json::Map::new(),
         };
-        residency_record::write_observation_with(
+        let observed = residency_record::write_observation_with(
             file,
             &run,
             AFTER_RUN_OBSERVATION,
             "after_run",
             &after,
             fields,
-        )?;
-        let error = match (&passes, &sealed) {
-            (Err(e), _) => Some(e.to_string()),
-            (Ok(_), Err(e)) => Some(e.clone()),
-            (Ok(_), Ok(_)) => None,
-        };
-        residency_record::write_record(
+        )
+        .and_then(|()| file.sync());
+        if let Err(e) = observed {
+            failures.push(format!("the after-run observation was not written: {e}"));
+        }
+        let error = (!failures.is_empty()).then(|| failures.join("; "));
+        let ended = residency_record::write_record(
             file,
             &residency_record::attempt_end_record(&run, error.as_deref()),
-        )?;
-        file.sync()?;
+        )
+        .and_then(|()| file.sync());
+        if let Err(e) = ended {
+            failures.push(format!("the attempt's end was not written: {e}"));
+        }
+    }
+    if !failures.is_empty() {
+        return Err(failures.join("; ").into());
     }
     let samples = passes?;
     let sealed = sealed?;
+    // With no stream to carry it, the digest goes to the console: a digest
+    // is not a latency.
+    if let (Some(digest), None) = (&sealed, &regions_file) {
+        println!(
+            "sealed latency: {} sha256 {}",
+            digest.path.display(),
+            digest.sha256
+        );
+    }
     for line in summary_lines(
         &samples,
         repeat.max(1),
@@ -430,6 +469,13 @@ pub(in super::super) fn timing_tail(
     }
 }
 
+/// The leaf timing classes the curve's table names.
+const LEAF_CLASSES: [timing::OpClass; 3] = [
+    timing::OpClass::Projection,
+    timing::OpClass::Norm,
+    timing::OpClass::Logits,
+];
+
 /// What every pass needs, apart from the proof of admission.
 struct PassInputs<'a, B: PlanBackend> {
     backend: &'a B,
@@ -444,12 +490,11 @@ struct PassInputs<'a, B: PlanBackend> {
 /// The passes. The `AdmissionCommitted` argument is the only way in: no
 /// timed region can run before the decision is on record.
 fn run_passes<B: PlanBackend>(
-    _committed: AdmissionCommitted,
+    committed: AdmissionCommitted,
     inputs: PassInputs<'_, B>,
     mut sealed: Option<&mut SealedLatency>,
 ) -> Result<Vec<PassSample>, Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::routing_trace;
-    use larql_vindex::format::vindex3::opplan::exec::timing::OpClass;
 
     let PassInputs {
         backend,
@@ -460,6 +505,9 @@ fn run_passes<B: PlanBackend>(
         repeat,
         warmup,
     } = inputs;
+    if !committed.recorded() {
+        println!("admission: decided, not recorded (diagnostic run with no --residency-regions)");
+    }
     let sealing = sealed.is_some();
     let counted_from = warmup + 1;
     let mut samples: Vec<PassSample> = Vec::new();
@@ -511,7 +559,7 @@ fn run_passes<B: PlanBackend>(
                 .map(|(st, t)| format!("{}={:.1}", st.name(), t.nanos as f64 / 1e6))
                 .collect();
             let leaves = timing::ledger();
-            let leaf_note: Vec<String> = [OpClass::Projection, OpClass::Norm, OpClass::Logits]
+            let leaf_note: Vec<String> = LEAF_CLASSES
                 .iter()
                 .map(|c| (c, leaves.get(*c)))
                 .filter(|(_, t)| t.calls > 0)
@@ -524,6 +572,7 @@ fn run_passes<B: PlanBackend>(
                 major_faults: faults.1,
                 stage_ms: stages::Stage::ALL.map(|st| stage_ledger.get(st).nanos as f64 / 1e6),
                 stages_nested: stage_ledger.nested(),
+                leaf_ms: LEAF_CLASSES.map(|c| leaves.get(c).nanos as f64 / 1e6),
             };
             println!(
                 "  {:<8} {:>9} {:>9.3} GB {:>12} {:>9} {:>10} {:>10} {:>9.2}{}",
@@ -552,8 +601,11 @@ fn run_passes<B: PlanBackend>(
         });
         let faults = (prompted.minor_faults(), prompted.major_faults());
         let (elapsed, rss_after) = (prompted.elapsed_seconds, prompted.after.max_rss);
-        let logits = prompted.value?;
         let name = format!("prompt×{}", prompt.len());
+        if prompted.value.is_err() {
+            seal_failed_step(&mut sealed, pass, label, &name, elapsed)?;
+        }
+        let logits = prompted.value?;
         let obs = observe(&name, elapsed, faults, rss_after, &session, &mut before_res);
         seal_step(&mut sealed, pass, label, &name, &obs)?;
         let mut logits = logits.ok_or("plan carries no output head — cannot generate")?;
@@ -573,11 +625,14 @@ fn run_passes<B: PlanBackend>(
             let routing = routing_trace::take_capture();
             let faults = (stepped.minor_faults(), stepped.major_faults());
             let (elapsed, rss_after) = (stepped.elapsed_seconds, stepped.after.max_rss);
+            let name = format!("token {}", step + 1);
+            if stepped.value.is_err() {
+                seal_failed_step(&mut sealed, pass, label, &name, elapsed)?;
+            }
             logits = stepped
                 .value?
                 .logits
                 .ok_or("plan carries no output head — cannot generate")?;
-            let name = format!("token {}", step + 1);
             let obs = observe(&name, elapsed, faults, rss_after, &session, &mut before_res);
             seal_step(&mut sealed, pass, label, &name, &obs)?;
             if step == 0 {
@@ -627,7 +682,7 @@ fn run_passes<B: PlanBackend>(
 }
 
 /// One step's latency into the sealed file, when sealing: its time and
-/// its stage breakdown, outside the step's timed window.
+/// its breakdowns, outside the step's timed window.
 fn seal_step(
     sealed: &mut Option<&mut SealedLatency>,
     pass: usize,
@@ -643,7 +698,31 @@ fn seal_step(
         .zip(obs.stage_ms)
         .map(|(st, ms)| (st.name().to_string(), serde_json::json!(ms)))
         .collect();
-    sealed.step(pass, label, step, obs.elapsed_ms, stages_ms.into())
+    let leaves_ms: serde_json::Map<String, serde_json::Value> = LEAF_CLASSES
+        .iter()
+        .zip(obs.leaf_ms)
+        .map(|(c, ms)| (c.name().to_string(), serde_json::json!(ms)))
+        .collect();
+    let breakdown = serde_json::json!({
+        "stages_ms": stages_ms,
+        "stages_nested": obs.stages_nested,
+        "leaves_ms": leaves_ms,
+    });
+    sealed.step(pass, label, step, obs.elapsed_ms, breakdown)
+}
+
+/// A step that returned an error, its time into the sealed file.
+fn seal_failed_step(
+    sealed: &mut Option<&mut SealedLatency>,
+    pass: usize,
+    label: &str,
+    step: &str,
+    elapsed_seconds: f64,
+) -> std::io::Result<()> {
+    match sealed.as_deref_mut() {
+        Some(sealed) => sealed.failed_step(pass, label, step, elapsed_seconds * 1e3),
+        None => Ok(()),
+    }
 }
 
 /// One step's observation, as the curve reads it between tokens.
@@ -657,6 +736,8 @@ pub(in super::super) struct StepObservation {
     /// Milliseconds per [`stages::Stage::ALL`] entry, in that order.
     pub(in super::super) stage_ms: [f64; stages::Stage::ALL.len()],
     pub(in super::super) stages_nested: u64,
+    /// Milliseconds per [`LEAF_CLASSES`] entry, in that order.
+    pub(in super::super) leaf_ms: [f64; 3],
 }
 
 /// The characterised token of one counted pass.
