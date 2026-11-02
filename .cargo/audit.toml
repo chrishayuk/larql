@@ -10,4 +10,7 @@ ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    # zip < 9: declared-size abort in the same extract APIs, also uncalled.
+    # TEMPORARY risk acceptance, not remediation; see deny.toml and #662.
+    "RUSTSEC-2026-0429",
 ]
