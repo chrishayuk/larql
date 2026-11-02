@@ -825,6 +825,46 @@ levels on the same observation seam.
 > See §11. The wire format and capture machinery already exist in
 > `larql-inference`; the LQL surface for them has not landed.
 
+### 3.9 Verification Statements
+
+```sql
+VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST "<source>";
+
+-- Measure one container against a numerical contract, using an independent
+-- verifier, and report the result, the offending tensors and the evidence.
+-- <container> and <source> are directories. <source> is the checkpoint the
+-- container's weights are measured against.
+
+VERIFY REPRESENTATION "qwen3-0.6b-q8_0.vindex3"
+  USING CONTRACT "Q8_0_T2"
+  AGAINST "snapshots/c1899de2";
+```
+
+**LQL does not evaluate the contract.** A check written in LARQL would be LARQL marking its
+own work, so the measurement belongs to a separate program, named by `LARQL_VERIFIER`.
+Without one the statement refuses; it never passes by default. Which contracts exist is the
+verifier's business, not the grammar's.
+
+The statement is read-only and needs no bound backend. It takes paths, not names, because a
+result is about the exact bytes of one container: two containers of the same model can differ.
+
+| Verifier's answer | Statement |
+|---|---|
+| `satisfied` | returns the report |
+| `violated` | returns the report, naming the offending tensors. A violation is an answer, not a failure |
+| `could_not_evaluate` | error, with the verifier's reasons |
+| the verifier fails, or its answer is malformed, contradicts itself or is about a different question | error |
+
+**A result is a numerical measurement of one container**, not a formal proof, and not a claim
+about the encoder that produced it. The output says so, and an answer claiming any other kind
+of evidence is refused.
+
+The protocol, `larql-verify-contract/1`, is documented in `src/executor/verify.rs`.
+
+**Don't gate on `larql lql`'s exit status.** It exits 0 for every statement today, including a
+parse error, a refusal and `could_not_evaluate`, because `run_batch` returns statement errors as
+output. A `violated` result also exits 0. Read the first line of the output instead.
+
 ### 3.8 Comparison Operators
 
 ```

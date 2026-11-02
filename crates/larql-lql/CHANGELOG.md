@@ -6,6 +6,14 @@ The format follows the conventions of [Keep a Changelog](https://keepachangelog.
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## [2026-11-02] — `VERIFY REPRESENTATION`
+
+`VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST "<source>"` reports an
+independent verifier's measurement of one container against a numerical contract. LQL runs the
+verifier named by `LARQL_VERIFIER` and validates and renders its answer; it never evaluates the
+contract itself, and with no verifier the statement refuses. Read-only. Refused under
+`PUBLIC_EXPLORER` and on a remote backend. See spec §3.9.
+
 ## [2026-06-05/06] — Coverage session 2: 89.21% → 93.91% total
 
 ~230 targeted tests added across

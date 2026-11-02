@@ -16,6 +16,7 @@ mod relation_resolver;
 mod remote;
 mod trace;
 pub(crate) mod tuning;
+mod verify;
 mod vindex3;
 
 #[cfg(test)]
@@ -80,6 +81,8 @@ pub struct Session {
     pub(crate) mutations_since_minor: usize,
     /// Mutations since last major compaction (L1 → L2).
     pub(crate) mutations_since_major: usize,
+    /// The external verifier for `VERIFY REPRESENTATION`, if set explicitly.
+    pub(crate) verifier: Option<std::path::PathBuf>,
 }
 
 impl Default for Session {
@@ -102,6 +105,7 @@ impl Session {
             epoch: 0,
             mutations_since_minor: 0,
             mutations_since_major: 0,
+            verifier: None,
         }
     }
 
@@ -117,6 +121,12 @@ impl Session {
         });
         self.auto_patch = true;
         vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
+    }
+
+    /// The external verifier `VERIFY REPRESENTATION` runs. Without this it
+    /// reads `LARQL_VERIFIER`; with neither, the statement refuses.
+    pub fn set_verifier(&mut self, verifier: impl Into<std::path::PathBuf>) {
+        self.verifier = Some(verifier.into());
     }
 
     /// Constrain every subsequent `execute` to `profile`. Judged at
@@ -151,6 +161,11 @@ impl Session {
             }
             Statement::Use { target } => self.exec_use(target),
             Statement::Stats { vindex } => self.exec_stats(vindex.as_deref()),
+            Statement::VerifyRepresentation {
+                container,
+                contract,
+                source,
+            } => self.exec_verify_representation(container, contract, source),
             Statement::Walk {
                 prompt,
                 top,
