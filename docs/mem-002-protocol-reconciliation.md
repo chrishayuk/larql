@@ -100,7 +100,7 @@ found (§3) and proposes freezing in two stages (§4).
 | Unobservable residuals stated with every result | **PROTOCOL** | [Q §6]: device-internal caching, SSD thermal state, GPU contention, refill after settling. |
 | One admission threshold for both methods, never tuned per method | **PROTOCOL** | [Q §7]. |
 | Every attempt reported, admitted or rejected, with gate decision, settle outcome and snapshots | **I2** + **I5** + **EVAL** | [Q §7]. |
-| PC2 rejects an incomplete observation in any of its records, and voids a pair whose intervention read failed | **EVAL** + **G2** | [Q §4.1], #671 §5 ("a control whose read failed is void, not failed"). |
+| PC2 rejects an incomplete observation in any of its records, and voids a pair whose intervention read failed | **EVAL** + **G2** | #671 §5 step 5 (no report has a failed region) and #671 §5's general rule ("a control whose read failed is void, not failed"). |
 
 ### 2.5 #674 follow-ups
 
@@ -181,17 +181,24 @@ on a cold instance just before binding without destroying the cold state.
     verify output. Nothing writes this today, so it needs an owner (below);
   - **at each run:** the same fields read with `fstat` on the files the
     run **actually maps**, not `stat` by path, so a file replaced by
-    rename is caught. They are compared before binding and after the run;
+    rename is caught. They are compared before binding and after the run.
+    **The current code cannot provide this:** `PhysicalStore::map_segment`
+    drops the `File` right after mapping (`represent/physical.rs`), so no
+    descriptor is left to `fstat`. It needs a larql-vindex change, for
+    example `fstat` at map time, kept on the store. That is wider than the
+    I2 record;
   - ctime cannot be set programmatically (`setattrlist(2)`: change time
-    "cannot be set"), so a write after verification is detectable without
-    changing the system clock, which needs root;
+    "cannot be set programmatically"), so a write after verification can
+    escape detection only by changing the system clock, which needs root;
   - a mismatch voids the attempt.
   - **Writable mappings:** a write through a shared writable mapping may
     update ctime late, so the protocol forbids any writable mapper of the
     subject during the campaign.
   - **Expected false voids, to be named:** an extended-attribute change
     bumps ctime, and `st_dev` can change across a reboot. That is why the
-    volume is identified by its UUID rather than `st_dev`.
+    volume is identified by its UUID rather than `st_dev`. `fstat` does not
+    return the UUID; it needs `getattrlist` (`ATTR_VOL_UUID`) or an
+    equivalent.
 - **For method F, every clone segment is bound the same way.** #670's
   extent check samples offsets, so it cannot by itself show that the whole
   clone still matches the source.
@@ -270,7 +277,9 @@ revision applies them.
    the targets. They do **not** absorb drift in machine state between the
    sham slot and the treatment slot, which stays a stated residual with
    every PC2 result. (The wording traces to the 2026-11-01 re-check of the
-   PC2 amendment; the labels N-a, N-b and N-c are this document's.)
+   PC2 amendment, which was **not preserved in the repo**, so it cannot be
+   independently verified. The labels N-a, N-b and N-c are this
+   document's.)
 3. **N-b.** Rename the joint-eligibility heading: "eligible set decided
    before either arm; narrowed only jointly, from either arm's baseline".
 4. **N-c** (point 5 of the PC2 amendment audit,
@@ -284,8 +293,9 @@ revision applies them.
 7. **Amend [Q §10]'s freeze conditions for two stages.** §10 requires I1–I6
    merged, clone semantics confirmed in I4's review, and calibration done,
    all before "the" freeze. Under §4:
-   - stage 1 requires I1–I3, the G2 harness and the evaluator's
-     specification;
+   - stage 1 requires I1–I3 and the G2 harness **merged after their own
+     reviews**, the G4 map-time metadata change if adopted, and the
+     evaluator's specification;
    - stage 2 requires I4–I6 merged after review, clone semantics confirmed,
      and calibration complete with enough stable observations for every
      number.
@@ -301,7 +311,11 @@ revision applies them.
    admission decision recorded before the timer, from
    `complete_resident_bytes()` (#674 F6), plus G4's instance metadata and
    G5's clock if decided so.
-3. Stage 1 of the freeze, with the §5 corrections.
+3. **The I2 implementation**, merged after its own code review and CI.
+4. **The G2 intervention harness**, and G4's map-time metadata change if
+   adopted: each proposed, reviewed, implemented and merged separately.
+5. Stage 1 of the freeze, with the §5 corrections. It requires steps 3
+   and 4 (§5 item 7).
 
 **Not authorised:** I4–I6 (held until PC2 feasibility is shown [M]), the
 PC2 feasibility pilot, calibration, qualification attempts, and any latency
