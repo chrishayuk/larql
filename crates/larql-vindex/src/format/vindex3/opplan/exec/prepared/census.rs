@@ -84,12 +84,17 @@ impl MappedResidency {
     }
 
     /// The resident total as a figure for the WHOLE image: `Some` only
-    /// when at least one region was observed, none failed, and the counts
-    /// are consistent. An observation of nothing witnesses nothing, one
-    /// with a failed region is a partial sum, and an inconsistent one
-    /// witnesses nothing reliable.
+    /// when at least one region was observed, none failed, the counts are
+    /// consistent, and some address space was actually read and all of it
+    /// was. An observation of nothing witnesses nothing — regions of zero
+    /// length included — one with a failed region is a partial sum, and an
+    /// inconsistent one witnesses nothing reliable.
     pub fn complete_resident_bytes(&self) -> Option<u64> {
-        (self.is_consistent() && self.regions > 0 && self.failed_regions == 0)
+        (self.is_consistent()
+            && self.regions > 0
+            && self.failed_regions == 0
+            && self.mapped_bytes > 0
+            && self.mapped_bytes_read == self.mapped_bytes)
             .then_some(self.resident_bytes)
     }
 }

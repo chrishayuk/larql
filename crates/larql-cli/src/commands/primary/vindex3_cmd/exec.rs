@@ -78,6 +78,11 @@ pub(super) struct ResumeSidecar {
 }
 
 pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
+    let lowered = super::prepare::lowered_formats(args.backend).is_some();
+    #[cfg(not(all(feature = "gpu", target_os = "macos")))]
+    let lowered = false;
+    super::generate::admission::refuse_evidence_outside_the_curve(&args, lowered)?;
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
     let plugins = Plugins::load(&args.plugin)?;
@@ -260,7 +265,13 @@ fn run_on<B: PlanBackend>(
                     args.unquiet_ok,
                     &args.expert_access,
                     &args.container,
-                    args.residency_regions.as_deref(),
+                    super::generate::admission::EvidenceRequest {
+                        campaign: args.residency_campaign,
+                        regions: args.residency_regions.as_deref(),
+                        sealed_latency: args.sealed_latency.as_deref(),
+                        threshold_bytes: args.admission_threshold_bytes,
+                        basis: args.admission_basis.as_deref(),
+                    },
                 );
             }
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)

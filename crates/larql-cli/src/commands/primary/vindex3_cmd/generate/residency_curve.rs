@@ -8,10 +8,16 @@ use larql_vindex::format::vindex3::opplan::exec::prepared::{ResidencyDelta, Resi
 use larql_vindex::format::vindex3::opplan::exec::stages;
 use larql_vindex::format::vindex3::opplan::exec::timing;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
+use std::io::BufWriter;
 use std::path::Path;
 use std::time::Instant;
 
-use super::residency_record::{self, RunIdentity};
+use super::admission::{
+    admission_line, commit_admission, create_evidence_file, decide, plan_evidence,
+    AdmissionCommitted, EvidenceRequest, EvidenceSink,
+};
+use super::residency_record::{self, AttemptFacts, RunIdentity};
+use super::sealed_latency::SealedLatency;
 
 #[allow(unused_imports)]
 use super::*;
@@ -130,6 +136,13 @@ pub(super) const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 /// against the pages of it resident, page faults, peak RSS, and where the
 /// token's time went by timing class. The first pass is cold; the later
 /// passes are what the page cache kept.
+///
+/// MEM-002 I2a: after the binding observation and before any pass, one
+/// admission decision is made from that observation alone, written and
+/// flushed to the residency stream; the passes cannot start without it on
+/// record. Every evidence file is created exclusively before any weight
+/// is bound, and while `--sealed-latency` is active no timing reaches the
+/// console.
 #[allow(clippy::too_many_arguments)]
 pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     backend: &B,
@@ -143,14 +156,12 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     unquiet_ok: bool,
     expert_access: &str,
     container: &Path,
-    regions_out: Option<&Path>,
+    evidence: EvidenceRequest<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::accounting::{
         expectations, BlockGeometry, ResourceLedger,
     };
     use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
-    use larql_vindex::format::vindex3::opplan::exec::routing_trace;
-    use larql_vindex::format::vindex3::opplan::exec::timing::OpClass;
 
     if prompt.is_empty() {
         return Err("prompt holds no tokens — nothing to condition on".into());
@@ -161,6 +172,23 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     if warmup >= repeat.max(1) {
         return Err(format!("warmup {warmup} leaves no counted pass out of {repeat}").into());
     }
+    let evidence = plan_evidence(evidence)?;
+    // The evidence files, created exclusively before the quiet gate and
+    // before any weight is bound: an existing file is refused, never
+    // truncated, and from here on every way out leaves a record.
+    let run = RunIdentity::for_container(container);
+    let mut regions_file = evidence
+        .regions
+        .as_deref()
+        .map(|path| create_evidence_file(path, "--residency-regions").map(BufWriter::new))
+        .transpose()?;
+    let mut sealed = evidence
+        .sealed_latency
+        .as_deref()
+        .map(|path| SealedLatency::create(path, &run))
+        .transpose()
+        .map_err(|e| end_before_passes(&mut regions_file, &run, e))?;
+    let sealing = sealed.is_some();
     // Scheduling, declared before anything is timed: the pool the
     // production backend joins inside every step, and the machine the
     // probe sees. The boundary is the step's return — the CPU backend
@@ -171,33 +199,44 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
     );
     let environment = cpu::Environment::read();
-    let disqualifiers = environment.disqualifiers(cpu::environment::Phase::BeforeWork);
+    let disqualifiers: Vec<String> = environment
+        .disqualifiers(cpu::environment::Phase::BeforeWork)
+        .iter()
+        .map(|d| d.to_string())
+        .collect();
     println!("machine: {}", environment.describe());
     let qualification = if disqualifiers.is_empty() {
         "QUALIFIED".to_string()
     } else {
-        let reasons: Vec<String> = disqualifiers.iter().map(|d| d.to_string()).collect();
         if !unquiet_ok {
-            return Err(format!(
+            let refusal = format!(
                 "this machine is not quiet — {} — so the curve would calibrate against whatever \
                  else is running; pass --unquiet-ok to run anyway, labelled",
-                reasons.join("; ")
-            )
-            .into());
+                disqualifiers.join("; ")
+            );
+            return Err(end_before_passes(&mut regions_file, &run, refusal).into());
         }
-        format!("UNQUALIFIED ({})", reasons.join("; "))
+        format!("UNQUALIFIED ({})", disqualifiers.join("; "))
     };
     println!("qualification: {qualification}");
+    println!("mode: {}", evidence.mode.name());
+
     let loading = Instant::now();
     let budget =
         larql_vindex::format::vindex3::opplan::exec::accounting::ResidencyBudget::UNBOUNDED
             .with_expert_access(access);
-    let ops = PreparedOperands::load_within(plan, store, backend, ExecutionSlice::Full, &budget)?;
+    let ops = PreparedOperands::load_within(plan, store, backend, ExecutionSlice::Full, &budget)
+        .map_err(|e| end_before_passes(&mut regions_file, &run, e.to_string()))?;
     let load_seconds = loading.elapsed().as_secs_f64();
+    if let Some(sealed) = sealed.as_mut() {
+        sealed
+            .bind(load_seconds)
+            .map_err(|e| end_before_passes(&mut regions_file, &run, e.to_string()))?;
+    }
     println!("engine: {engine}");
     println!(
-        "weights bound in {load_seconds:.1} s (once, for {repeat} pass(es)); expert access: {}",
-        access.name()
+        "{}",
+        bind_line(load_seconds, repeat, access.name(), sealing)
     );
 
     // PREDICTED, from the pins and the tensor tables.
@@ -238,17 +277,17 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let binding = ops.observe_residency();
     let mapped = binding.summary();
     let base = process_resources();
-    // The per-region record, written before any pass runs so it adds no
-    // time to a timed region.
-    let run = RunIdentity::for_container(container);
-    let mut regions_file = match regions_out {
-        Some(path) => {
-            let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
-            residency_record::write_observation(&mut file, &run, 0, "binding", &binding)?;
-            Some(file)
-        }
-        None => None,
+    let written = match regions_file.as_mut() {
+        Some(file) => residency_record::write_observation(
+            file,
+            &run,
+            BINDING_OBSERVATION,
+            "binding",
+            &binding,
+        ),
+        None => Ok(()),
     };
+    written.map_err(|e| end_before_passes(&mut regions_file, &run, e.to_string()))?;
     println!("observed, after binding:");
     println!(
         "  committed             {:>10.2} GB",
@@ -265,13 +304,231 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         base.major_faults
     );
 
+    // ADMISSION, from the binding observation alone, on record before any
+    // pass. It never stops the run: a refused attempt is executed too.
+    let decision = decide(&mapped, evidence.threshold.as_ref());
+    let facts = AttemptFacts {
+        mode: evidence.mode,
+        warmup,
+        repeat: repeat.max(1),
+        qualification: qualification.clone(),
+        disqualifiers,
+        unquiet_ok,
+        expert_access: access.name().to_string(),
+        sealed_latency: sealed.as_ref().map(|s| {
+            std::path::absolute(s.path())
+                .unwrap_or_else(|_| s.path().to_path_buf())
+                .display()
+                .to_string()
+        }),
+    };
+    let record = residency_record::admission_record(&run, BINDING_OBSERVATION, &decision, &facts);
+    let committed = commit_admission(
+        evidence.mode,
+        regions_file.as_mut().map(|f| f as &mut dyn EvidenceSink),
+        &record,
+    )
+    .map_err(|e| end_before_passes(&mut regions_file, &run, e))?;
+    if let Some(sealed) = sealed.as_mut() {
+        sealed
+            .sync()
+            .map_err(|e| end_before_passes(&mut regions_file, &run, e.to_string()))?;
+    }
+    // Printed only now, so the console cannot announce an unrecorded decision.
+    println!("{}", admission_line(&decision));
+
+    let passes = run_passes(
+        committed,
+        PassInputs {
+            backend,
+            plan,
+            ops: &ops,
+            prompt,
+            new_tokens,
+            repeat,
+            warmup,
+        },
+        sealed.as_mut(),
+    );
+
+    // Close the attempt whatever the passes returned: the sealed file's
+    // digest, the after-run observation, and the attempt's end. The first
+    // failure is the attempt's error; a later one never replaces it.
+    let sealed = sealed.map(SealedLatency::finish).transpose();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = &passes {
+        failures.push(e.to_string());
+    }
+    if let Err(e) = &sealed {
+        failures.push(e.clone());
+    }
+    if let Some(file) = regions_file.as_mut() {
+        let after = ops.observe_residency();
+        let fields = match &sealed {
+            Ok(Some(digest)) => residency_record::sealed_header_fields(digest),
+            _ => serde_json::Map::new(),
+        };
+        let observed = residency_record::write_observation_with(
+            file,
+            &run,
+            AFTER_RUN_OBSERVATION,
+            "after_run",
+            &after,
+            fields,
+        )
+        .and_then(|()| file.sync());
+        if let Err(e) = observed {
+            failures.push(format!("the after-run observation was not written: {e}"));
+        }
+        let error = (!failures.is_empty()).then(|| failures.join("; "));
+        let ended = residency_record::write_record(
+            file,
+            &residency_record::attempt_end_record(&run, error.as_deref()),
+        )
+        .and_then(|()| file.sync());
+        if let Err(e) = ended {
+            failures.push(format!(
+                "the attempt's end may not have reached the disk, whatever its status says: {e}"
+            ));
+        }
+    }
+    // With no stream, or a failed one, the digest goes to the console: a
+    // digest is not a latency, and nothing else could later show the file
+    // untouched.
+    if let Ok(Some(digest)) = &sealed {
+        if regions_file.is_none() || !failures.is_empty() {
+            println!(
+                "sealed latency: {} sha256 {}",
+                digest.path.display(),
+                digest.sha256
+            );
+        }
+    }
+    if !failures.is_empty() {
+        return Err(failures.join("; ").into());
+    }
+    let samples = passes?;
+    let sealed = sealed?;
+    for line in summary_lines(
+        &samples,
+        repeat.max(1),
+        warmup,
+        &qualification,
+        sealed.as_ref().map(|d| d.path.as_path()),
+    ) {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// Close an attempt that ended before it could be admitted, returning
+/// its reason. The record is best effort: the attempt has already failed,
+/// and a stream that cannot take this record must not hide the reason. It
+/// says so on stderr, since the stream then has no closing record.
+pub(in super::super) fn end_before_passes<S: EvidenceSink>(
+    stream: &mut Option<S>,
+    run: &RunIdentity,
+    reason: String,
+) -> String {
+    if let Some(out) = stream.as_mut() {
+        let record = residency_record::attempt_end_record(run, Some(&reason));
+        if let Err(e) = residency_record::write_record(out, &record).and_then(|()| out.sync()) {
+            eprintln!("the attempt's closing record was not written: {e}");
+        }
+    }
+    reason
+}
+
+/// The binding observation's id in the residency stream.
+const BINDING_OBSERVATION: u64 = 0;
+/// The after-run observation's id.
+const AFTER_RUN_OBSERVATION: u64 = 1;
+
+/// The console line for the binding: its time, unless sealed.
+pub(in super::super) fn bind_line(
+    seconds: f64,
+    repeat: usize,
+    access: &str,
+    sealing: bool,
+) -> String {
+    let time = if sealing {
+        "(bind time sealed)".to_string()
+    } else {
+        format!("in {seconds:.1} s")
+    };
+    format!("weights bound {time} (once, for {repeat} pass(es)); expert access: {access}")
+}
+
+/// A step's time in the curve's table — or `sealed`, never a number,
+/// while sealing is active.
+pub(in super::super) fn timing_cell(elapsed_ms: f64, sealing: bool) -> String {
+    if sealing {
+        "sealed".to_string()
+    } else {
+        format!("{elapsed_ms:.0}")
+    }
+}
+
+/// The table's per-stage and per-leaf times, or nothing while sealed.
+pub(in super::super) fn timing_tail(
+    by_stage: &[String],
+    leaves: &[String],
+    sealing: bool,
+) -> String {
+    if sealing {
+        String::new()
+    } else {
+        format!("  {}  [leaves {}]", by_stage.join(" "), leaves.join(" "))
+    }
+}
+
+/// The leaf timing classes the curve's table names.
+const LEAF_CLASSES: [timing::OpClass; 3] = [
+    timing::OpClass::Projection,
+    timing::OpClass::Norm,
+    timing::OpClass::Logits,
+];
+
+/// What every pass needs, apart from the proof of admission.
+struct PassInputs<'a, B: PlanBackend> {
+    backend: &'a B,
+    plan: &'a ComponentOpPlan,
+    ops: &'a larql_vindex::format::vindex3::opplan::exec::prepared::PreparedOperands,
+    prompt: &'a [u32],
+    new_tokens: usize,
+    repeat: usize,
+    warmup: usize,
+}
+
+/// The passes. The `AdmissionCommitted` argument is the only way in: no
+/// timed region can run before the decision is on record.
+fn run_passes<B: PlanBackend>(
+    committed: AdmissionCommitted,
+    inputs: PassInputs<'_, B>,
+    mut sealed: Option<&mut SealedLatency>,
+) -> Result<Vec<PassSample>, Box<dyn std::error::Error>> {
+    use larql_vindex::format::vindex3::opplan::exec::routing_trace;
+
+    let PassInputs {
+        backend,
+        plan,
+        ops,
+        prompt,
+        new_tokens,
+        repeat,
+        warmup,
+    } = inputs;
+    if !committed.recorded() {
+        println!("admission: decided, not recorded (diagnostic run with no --residency-regions)");
+    }
+    let sealing = sealed.is_some();
     let counted_from = warmup + 1;
     let mut samples: Vec<PassSample> = Vec::new();
     let mut first_logits: Option<Vec<f32>> = None;
     let mut first_generated: Option<Vec<u32>> = None;
     for pass in 1..=repeat.max(1) {
         let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
-        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
+        let mut session = DecodeSession::over_prepared(plan, ops, backend, &mut *kv)?;
         let label = if pass < counted_from {
             "warmup"
         } else if pass == 1 {
@@ -284,14 +541,22 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             cpu::Environment::read().describe()
         );
         println!(
-            "  {:<8} {:>9} {:>12} {:>12} {:>9} {:>10} {:>10} {:>9}  stages (ms)",
-            "step", "ms", "read res", "Δ res (GB)", "excluded", "minor Δ", "major Δ", "rss GB"
+            "  {:<8} {:>9} {:>12} {:>12} {:>9} {:>10} {:>10} {:>9}{}",
+            "step",
+            "ms",
+            "read res",
+            "Δ res (GB)",
+            "excluded",
+            "minor Δ",
+            "major Δ",
+            "rss GB",
+            if sealing { "" } else { "  stages (ms)" }
         );
         let mut before_res = session.observe_residency();
         // The fault counts come from the step's own bracket: this
         // observer never reads the counters, so nothing it allocates is
         // charged to a step.
-        let observe = |name: String,
+        let observe = |name: &str,
                        elapsed: f64,
                        faults: (u64, u64),
                        rss_after: u64,
@@ -307,7 +572,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                 .map(|(st, t)| format!("{}={:.1}", st.name(), t.nanos as f64 / 1e6))
                 .collect();
             let leaves = timing::ledger();
-            let leaf_note: Vec<String> = [OpClass::Projection, OpClass::Norm, OpClass::Logits]
+            let leaf_note: Vec<String> = LEAF_CLASSES
                 .iter()
                 .map(|c| (c, leaves.get(*c)))
                 .filter(|(_, t)| t.calls > 0)
@@ -320,19 +585,19 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                 major_faults: faults.1,
                 stage_ms: stages::Stage::ALL.map(|st| stage_ledger.get(st).nanos as f64 / 1e6),
                 stages_nested: stage_ledger.nested(),
+                leaf_ms: LEAF_CLASSES.map(|c| leaves.get(c).nanos as f64 / 1e6),
             };
             println!(
-                "  {:<8} {:>9.0} {:>9.3} GB {:>12} {:>9} {:>10} {:>10} {:>9.2}  {}  [leaves {}]",
+                "  {:<8} {:>9} {:>9.3} GB {:>12} {:>9} {:>10} {:>10} {:>9.2}{}",
                 name,
-                obs.elapsed_ms,
+                timing_cell(obs.elapsed_ms, sealing),
                 now_res.summary().resident_bytes as f64 / GB,
                 residency_record::delta_cell(&obs.resident_delta),
                 obs.resident_delta.excluded,
                 obs.minor_faults,
                 obs.major_faults,
                 rss_after as f64 / GB,
-                by_stage.join(" "),
-                leaf_note.join(" ")
+                timing_tail(&by_stage, &leaf_note, sealing)
             );
             *before_res = now_res;
             obs
@@ -349,15 +614,11 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         });
         let faults = (prompted.minor_faults(), prompted.major_faults());
         let (elapsed, rss_after) = (prompted.elapsed_seconds, prompted.after.max_rss);
+        let name = format!("prompt×{}", prompt.len());
+        seal_if_failed(&mut sealed, pass, label, &name, elapsed, &prompted.value)?;
         let logits = prompted.value?;
-        observe(
-            format!("prompt×{}", prompt.len()),
-            elapsed,
-            faults,
-            rss_after,
-            &session,
-            &mut before_res,
-        );
+        let obs = observe(&name, elapsed, faults, rss_after, &session, &mut before_res);
+        seal_step(&mut sealed, pass, label, &name, &obs)?;
         let mut logits = logits.ok_or("plan carries no output head — cannot generate")?;
         let mut generated = Vec::with_capacity(new_tokens);
         let mut token_sample: Option<PassSample> = None;
@@ -375,18 +636,14 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             let routing = routing_trace::take_capture();
             let faults = (stepped.minor_faults(), stepped.major_faults());
             let (elapsed, rss_after) = (stepped.elapsed_seconds, stepped.after.max_rss);
+            let name = format!("token {}", step + 1);
+            seal_if_failed(&mut sealed, pass, label, &name, elapsed, &stepped.value)?;
             logits = stepped
                 .value?
                 .logits
                 .ok_or("plan carries no output head — cannot generate")?;
-            let obs = observe(
-                format!("token {}", step + 1),
-                elapsed,
-                faults,
-                rss_after,
-                &session,
-                &mut before_res,
-            );
+            let obs = observe(&name, elapsed, faults, rss_after, &session, &mut before_res);
+            seal_step(&mut sealed, pass, label, &name, &obs)?;
             if step == 0 {
                 // The characterised token: the first generated one, whose
                 // state is the prompt's and therefore the same in every pass.
@@ -430,37 +687,81 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             }
         }
     }
-    if let Some(file) = regions_file.as_mut() {
-        let after = ops.observe_residency();
-        residency_record::write_observation(file, &run, 1, "after_run", &after)?;
-        std::io::Write::flush(file)?;
-    }
-    summarise_passes(&samples, repeat.max(1), warmup, &qualification);
-    Ok(())
+    Ok(samples)
+}
+
+/// One step's latency into the sealed file, when sealing: its time and
+/// its breakdowns, outside the step's timed window.
+fn seal_step(
+    sealed: &mut Option<&mut SealedLatency>,
+    pass: usize,
+    label: &str,
+    step: &str,
+    obs: &StepObservation,
+) -> std::io::Result<()> {
+    let Some(sealed) = sealed.as_deref_mut() else {
+        return Ok(());
+    };
+    let stages_ms: serde_json::Map<String, serde_json::Value> = stages::Stage::ALL
+        .iter()
+        .zip(obs.stage_ms)
+        .map(|(st, ms)| (st.name().to_string(), serde_json::json!(ms)))
+        .collect();
+    let leaves_ms: serde_json::Map<String, serde_json::Value> = LEAF_CLASSES
+        .iter()
+        .zip(obs.leaf_ms)
+        .map(|(c, ms)| (c.name().to_string(), serde_json::json!(ms)))
+        .collect();
+    let breakdown = serde_json::json!({
+        "stages_ms": stages_ms,
+        "stages_nested": obs.stages_nested,
+        "leaves_ms": leaves_ms,
+    });
+    sealed.step(pass, label, step, obs.elapsed_ms, breakdown)
+}
+
+/// A step that returned an error: its time into the sealed file. If that
+/// fails too, both errors are reported, the step's first.
+fn seal_if_failed<T, E: std::fmt::Display>(
+    sealed: &mut Option<&mut SealedLatency>,
+    pass: usize,
+    label: &str,
+    step: &str,
+    elapsed_seconds: f64,
+    outcome: &Result<T, E>,
+) -> Result<(), String> {
+    let (Err(error), Some(sealed)) = (outcome, sealed.as_deref_mut()) else {
+        return Ok(());
+    };
+    sealed
+        .failed_step(pass, label, step, elapsed_seconds * 1e3)
+        .map_err(|e| format!("{error}; and its time was not sealed: {e}"))
 }
 
 /// One step's observation, as the curve reads it between tokens.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct StepObservation {
-    pub(super) elapsed_ms: f64,
+pub(in super::super) struct StepObservation {
+    pub(in super::super) elapsed_ms: f64,
     /// Per-region change over the regions read in both observations.
-    pub(super) resident_delta: ResidencyDelta,
-    pub(super) minor_faults: u64,
-    pub(super) major_faults: u64,
+    pub(in super::super) resident_delta: ResidencyDelta,
+    pub(in super::super) minor_faults: u64,
+    pub(in super::super) major_faults: u64,
     /// Milliseconds per [`stages::Stage::ALL`] entry, in that order.
-    pub(super) stage_ms: [f64; stages::Stage::ALL.len()],
-    pub(super) stages_nested: u64,
+    pub(in super::super) stage_ms: [f64; stages::Stage::ALL.len()],
+    pub(in super::super) stages_nested: u64,
+    /// Milliseconds per [`LEAF_CLASSES`] entry, in that order.
+    pub(in super::super) leaf_ms: [f64; 3],
 }
 
 /// The characterised token of one counted pass.
 #[derive(Debug, Clone)]
-pub(super) struct PassSample {
-    pub(super) pass: usize,
-    pub(super) observation: StepObservation,
-    pub(super) routing_fingerprint: u64,
-    pub(super) routed_layers: usize,
-    pub(super) first_layer_experts: Vec<usize>,
-    pub(super) logits_delta: f32,
+pub(in super::super) struct PassSample {
+    pub(in super::super) pass: usize,
+    pub(in super::super) observation: StepObservation,
+    pub(in super::super) routing_fingerprint: u64,
+    pub(in super::super) routed_layers: usize,
+    pub(in super::super) first_layer_experts: Vec<usize>,
+    pub(in super::super) logits_delta: f32,
 }
 
 /// Nearest-rank percentile of a sorted sample.
@@ -486,49 +787,60 @@ pub(super) fn stats(values: impl Iterator<Item = f64>) -> (f64, f64, f64, f64) {
 /// The counted passes, reduced: percentiles of the token and of every
 /// stage, and the determinism witnesses — every counted pass routed the
 /// same experts, or the statistics are over different work and say so.
-pub(super) fn summarise_passes(
+///
+/// While sealing is active (`sealed` names the file) the lines carry no
+/// timing: routing, logits and faults only.
+pub(in super::super) fn summary_lines(
     samples: &[PassSample],
     repeat: usize,
     warmup: usize,
     qualification: &str,
-) {
+    sealed: Option<&Path>,
+) -> Vec<String> {
     use larql_vindex::format::vindex3::opplan::exec::stages::Stage;
-    println!(
+    let mut lines = vec![format!(
         "\ncharacterised token over {} counted pass(es) ({} warmup of {}), machine {}:",
         samples.len(),
         warmup,
         repeat,
         qualification
-    );
+    )];
     if samples.is_empty() {
-        println!("  nothing counted");
-        return;
+        lines.push("  nothing counted".to_string());
+        return lines;
     }
     let fingerprints: std::collections::BTreeSet<u64> =
         samples.iter().map(|s| s.routing_fingerprint).collect();
     if fingerprints.len() == 1 {
-        println!(
+        lines.push(format!(
             "  routing: IDENTICAL in every counted pass ({:016x}, {} routed layers)",
             samples[0].routing_fingerprint, samples[0].routed_layers
-        );
+        ));
     } else {
-        println!(
+        lines.push(format!(
             "  routing: DIFFERS across passes — {} distinct selections; the statistics below are over different work",
             fingerprints.len()
-        );
+        ));
         for s in samples {
-            println!("    pass {} {:016x}", s.pass, s.routing_fingerprint);
+            lines.push(format!(
+                "    pass {} {:016x}",
+                s.pass, s.routing_fingerprint
+            ));
         }
     }
     let nested: u64 = samples.iter().map(|s| s.observation.stages_nested).sum();
     if nested > 0 {
-        println!("  REFUSING TO RECONCILE STAGES: {nested} nested stage timers across the counted passes");
+        lines.push(format!(
+            "  REFUSING TO RECONCILE STAGES: {nested} nested stage timers across the counted passes"
+        ));
     }
     let worst_logits = samples
         .iter()
         .map(|s| s.logits_delta)
         .fold(0.0f32, f32::max);
-    println!("  logits max|Δ| vs pass 1 across counted passes: {worst_logits:.2e}");
+    lines.push(format!(
+        "  logits max|Δ| vs pass 1 across counted passes: {worst_logits:.2e}"
+    ));
     let major: u64 = samples.iter().map(|s| s.observation.major_faults).sum();
     let minor_max = samples
         .iter()
@@ -545,7 +857,7 @@ pub(super) fn summarise_passes(
     } else {
         format!("{:.3}", measured.iter().sum::<i64>() as f64 / GB)
     };
-    println!(
+    lines.push(format!(
         "  faults: major {major} total, minor ≤ {minor_max} per pass; resident-page delta {resident} GB total over {} pass(es){}",
         measured.len(),
         if unmeasured > 0 {
@@ -553,13 +865,20 @@ pub(super) fn summarise_passes(
         } else {
             String::new()
         }
-    );
-    println!(
+    ));
+    if let Some(path) = sealed {
+        lines.push(format!(
+            "  timings: SEALED in {} — no latency is printed while sealing is active",
+            path.display()
+        ));
+        return lines;
+    }
+    lines.push(format!(
         "  {:<16} {:>9} {:>9} {:>9} {:>9} {:>8}",
         "ms", "p50", "p95", "min", "max", "p95/p50"
-    );
+    ));
     let (p50, p95, min, max) = stats(samples.iter().map(|s| s.observation.elapsed_ms));
-    println!(
+    lines.push(format!(
         "  {:<16} {:>9.1} {:>9.1} {:>9.1} {:>9.1} {:>8.2}",
         "token",
         p50,
@@ -567,13 +886,13 @@ pub(super) fn summarise_passes(
         min,
         max,
         p95 / p50
-    );
+    ));
     let token_p50 = p50;
     let mut staged = 0.0;
     for (i, st) in Stage::ALL.iter().enumerate() {
         let (p50, p95, min, max) = stats(samples.iter().map(|s| s.observation.stage_ms[i]));
         staged += p50;
-        println!(
+        lines.push(format!(
             "  {:<16} {:>9.1} {:>9.1} {:>9.1} {:>9.1} {:>8.2}   {:>5.1}% of token p50",
             st.name(),
             p50,
@@ -582,14 +901,15 @@ pub(super) fn summarise_passes(
             max,
             p95 / p50,
             p50 / token_p50 * 100.0
-        );
+        ));
     }
-    println!(
+    lines.push(format!(
         "  {:<16} {:>9.1}   ({:.1}% of token p50: norms, residual, embedding, head, glue)",
         "other",
         token_p50 - staged,
         (token_p50 - staged) / token_p50 * 100.0
-    );
+    ));
+    lines
 }
 
 pub(super) fn argmax(v: &[f32]) -> Option<(usize, f32)> {

@@ -64,10 +64,18 @@ pub struct RegionResidency {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResidencyObservation {
     pub started_wall: SystemTime,
-    /// Monotonic nanoseconds since this process's first observation.
+    /// Monotonic nanoseconds since this process's first observation:
+    /// process-relative, so NEVER comparable across processes. Use the
+    /// system-wide bounds for that.
     pub started_mono_ns: u64,
     pub ended_wall: SystemTime,
     pub ended_mono_ns: u64,
+    /// The scan's bounds on the system-wide clock ([`super::system_mono_ns`]),
+    /// read at the same points as the process-relative ones: comparable
+    /// across processes within one boot session, `None` where the target
+    /// has no such clock — never 0.
+    pub started_system_mono_ns: Option<u64>,
+    pub ended_system_mono_ns: Option<u64>,
     /// The page size the reads used, when the OS reported one.
     pub page_size: Option<u64>,
     pub stores: Vec<ObservedStore>,
@@ -132,6 +140,7 @@ impl ResidencyObservation {
         let _ = mono_origin();
         let started_wall = SystemTime::now();
         let started_mono_ns = mono_ns_now();
+        let started_system_mono_ns = super::system_mono_ns();
         let page_size = crate::format::vindex3::represent::physical::page_size();
         let mut stores: Vec<ObservedStore> = Vec::new();
         let mut index_of: BTreeMap<(String, Option<PathBuf>, Option<String>), usize> =
@@ -159,11 +168,16 @@ impl ResidencyObservation {
                 resident: region.residency(),
             });
         }
+        let ended_wall = SystemTime::now();
+        let ended_mono_ns = mono_ns_now();
+        let ended_system_mono_ns = super::system_mono_ns();
         Self {
             started_wall,
             started_mono_ns,
-            ended_wall: SystemTime::now(),
-            ended_mono_ns: mono_ns_now(),
+            ended_wall,
+            ended_mono_ns,
+            started_system_mono_ns,
+            ended_system_mono_ns,
             page_size,
             stores,
             regions: out,
