@@ -38,8 +38,9 @@ evaluator's [RC §3 G3].
 - `--out <record path>`. It is created with `O_EXCL` **as the first
   action**, so an existing file is refused and records are immutable [M].
   Every later outcome, including a refusal or an unexpected exception, is
-  written to it: an invocation that got past creating `--out` always leaves
-  a record.
+  written to it: an invocation that got past creating `--out` leaves a
+  record, unless the process is killed outright (for example by SIGKILL).
+  An empty or unparseable `--out` is a **void** attempt, never a success.
 - **The kind must match the length:** `sham` requires `--length 0`, and
   `read` requires a length above zero. A mismatch is a `refused` record.
 - `--pair-id`, `--arm` (`sham` | `treatment` | `pc1`) and `--label`. These
@@ -126,6 +127,8 @@ solution [M].
   - `sudo -n` never prompts. Without cached or configured privilege it fails
     at once, and that is recorded.
   - Each entry has a fixed timeout. A timeout is recorded as such.
+  - Its record is schema `larql.pc-intervention/1` with `"kind": "reset"`,
+    created with `O_EXCL` like the others.
   - The harness runs the entry once, and records its argv, exit status,
     stderr (truncated, with its length), and start and end times on the same
     clock.
@@ -151,6 +154,9 @@ solution [M].
   - Ranges are declared before any pair runs. Their rule is fixed at stage 1
     and their values at stage 2 [RC §2.3].
   - They are never chosen from latency or treatment outcomes [M].
+  - Each pair's targets are region-disjoint from every earlier pair's, or
+    follow a reset whose effect the eligibility observation witnessed
+    [Q §4.1, M]. The evaluator checks both.
   - The harness only reads what it is told.
 - It does not run `--residency-curve`, or sequence a pair. The PC2 runbook
   sequences: eligibility observation, sham A, sham intervention, sham B,
