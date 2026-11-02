@@ -1,7 +1,8 @@
 # MEM-002 PC1/PC2 intervention harness — proposal
 
 **Class: DRAFT PROPOSAL — NOT AUTHORISED FOR IMPLEMENTATION.** Dated
-2026-11-02 at main `bbf27efe`. Nothing is built or run here.
+2026-11-02 at main `bbf27efe`. Nothing is built or run here. Revised after an
+independent review the same day.
 
 It answers gap G2 of the reconciliation
 ([`mem-002-protocol-reconciliation.md`](mem-002-protocol-reconciliation.md),
@@ -34,24 +35,31 @@ evaluator's [RC §3 G3].
   `index.json` declares it, relative to the container root.
 - `--offset <bytes>`, `--length <bytes>` (0 for `sham`) and `--block-size
   <bytes>`.
-- `--out <record path>`, refused if the file exists. Records are immutable
-  [M].
+- `--out <record path>`. It is created with `O_EXCL` **as the first
+  action**, so an existing file is refused and records are immutable [M].
+  Every later outcome, including a refusal or an unexpected exception, is
+  written to it: an invocation that got past creating `--out` always leaves
+  a record.
+- **The kind must match the length:** `sham` requires `--length 0`, and
+  `read` requires a length above zero. A mismatch is a `refused` record.
 - `--pair-id`, `--arm` (`sham` | `treatment` | `pc1`) and `--label`. These
   are copied into the record and never interpreted.
 
 ### 2.2 What it does
 
-1. Hash the container's `index.json`, and refuse if the declared segment is
-   not in it.
+1. Create `--out` (above). Hash the container's `index.json`, and refuse
+   (a `refused` record, with the reason) if the declared segment is not in
+   it.
 2. Open the segment file read-only.
 3. `fstat` the open descriptor, recording dev, inode, size, mtime_ns and
    ctime_ns, plus the volume UUID on macOS, read as in I2b.
-4. Refuse if the range exceeds the file size.
+4. Refuse (a `refused` record) if the range exceeds the file size.
 5. Record the start time, read the range by `os.pread` in `block-size`
    chunks, and record the end time.
    - Plain buffered reads go through the page cache. That is the purpose:
      a treatment must warm its target.
-   - No `F_NOCACHE`, no `posix_fadvise`, no `mmap`.
+   - No `F_NOCACHE` and no `mmap`. (`posix_fadvise` does not exist on
+     macOS.)
 6. `fstat` again, record it, close.
 
 ### 2.3 The record (`larql.pc-intervention/1`)
@@ -65,10 +73,10 @@ evaluator's [RC §3 G3].
                   "after":{…}},
  "requested":{"offset":…,"length":…,"block_size":…},
  "returned_bytes":…,
- "status":"ok"|"short_read"|"error",
+ "status":"ok"|"short_read"|"error"|"refused",
  "error":{"kind":…,"errno":…,"message":…}|null,
  "clock":{"basis":"CLOCK_MONOTONIC_RAW","boot_session":…,
-          "start_system_mono_ns":…,"end_system_mono_ns":…},
+          "start_system_mono_ns":…,"end_system_mono_ns":…},   // field names shared with I2a
  "wall":{"start":…,"end":…},
  "pid":…,"harness":{"path":…,"sha256":…,"commit":…|null}}
 ```
@@ -83,7 +91,8 @@ evaluator's [RC §3 G3].
 - **Status:**
   - `ok` only when `returned_bytes == requested.length`;
   - a short read is `short_read`;
-  - any exception is `error`, with the errno when there is one.
+  - any exception is `error`, with the errno when there is one;
+  - a precondition failure is `refused`, with its reason.
   - **A failed or short read voids the control; it never fails it**
     (#671 §5). The harness records the status; the evaluator applies the
     rule.
@@ -91,8 +100,9 @@ evaluator's [RC §3 G3].
   completion" of the separately recorded window, read completion → B
   binding [RC §5 N-c]. For a sham, it is the end of the zero-length
   invocation.
-- **The clock** is the same basis I2a records
-  (`time.clock_gettime(time.CLOCK_MONOTONIC_RAW)`, with the boot session
+- **The clock** is the same basis and field names I2a records
+  (`time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)`; the review confirmed
+  Python and Rust read the same clock id here, with the boot session
   from `sysctl kern.bootsessionuuid`). So intervention and observation
   records can be ordered on one basis within one boot. Ordering is not
   causality.
@@ -107,31 +117,41 @@ The maintainer approved a separately witnessed reset as **unqualified
 setup for PC2, not a cold method**. `purge` is a candidate, not an accepted
 solution [M].
 
-- Input: `--reset-command <argv>`, recorded verbatim; for example `["sudo",
-  "purge"]`.
-  - The harness runs it once.
-  - It records exit status, stderr (truncated, with its length), and start
-    and end times on the same clock.
+- **Input: `--reset <name>`, from a fixed allow-list in the script.** Today
+  the list has one entry: `purge`, which runs `["sudo", "-n",
+  "/usr/sbin/purge"]`. It is the candidate the maintainer named, not an
+  accepted method.
+  - **No arbitrary command is accepted.** Adding a candidate is a reviewed
+    change to the script.
+  - `sudo -n` never prompts. Without cached or configured privilege it fails
+    at once, and that is recorded.
+  - Each entry has a fixed timeout. A timeout is recorded as such.
+  - The harness runs the entry once, and records its argv, exit status,
+    stderr (truncated, with its length), and start and end times on the same
+    clock.
   - It needs no container.
 - **The harness does not decide whether the reset worked.**
-  - That is established only by a following complete residency observation
-    (the eligibility observation: a fresh `--residency-curve` process with
-    `--residency-regions`).
-  - The evaluator then judges target eligibility from that observation [Q
-    §4.1].
+  - That is established only by the **eligibility observation**: the
+    `after_run` record of a fresh `--residency-curve` process with
+    `--residency-regions` [Q §4.1].
+  - The evaluator checks that observation is complete, and judges target
+    eligibility from it.
 - **Every attempt is recorded**, including failed ones and ones whose
   eligibility observation shows the targets still resident [M].
   - The PC2 runbook (stage 1) must keep all reset records.
   - If the reset does not reliably make targets non-resident, **PC2 fails
     feasibility**; the criterion is not changed [M].
-- **Root.** `purge` needs root. The harness never elevates on its own: the
-  operator supplies the full command, and the record shows it.
+- **Root.** `purge` needs root. The harness never prompts for it. The
+  operator provides the privilege out of band, and the record shows the
+  argv that ran.
 
 ## 4. What the harness does not do
 
-- It does not select targets or ranges. Ranges are declared in advance
-  (stage 1) and never chosen from latency or treatment outcomes [M]. The
-  harness only reads what it is told.
+- It does not select targets or ranges.
+  - Ranges are declared before any pair runs. Their rule is fixed at stage 1
+    and their values at stage 2 [RC §2.3].
+  - They are never chosen from latency or treatment outcomes [M].
+  - The harness only reads what it is told.
 - It does not run `--residency-curve`, or sequence a pair. The PC2 runbook
   sequences: eligibility observation, sham A, sham intervention, sham B,
   treatment A, treatment intervention, treatment B [Q §4.1].
@@ -144,7 +164,10 @@ solution [M].
 
 On temporary files:
 - `read` returns exactly the requested bytes, `status ok`;
-- a range past EOF is refused before reading;
+- a range past EOF gives a `refused` record, with no read;
+- `sham` with a non-zero length, or `read` with zero, gives `refused`;
+- an unexpected exception after `--out` is created still leaves an `error`
+  record;
 - a forced short read (a file truncated between `fstat` and read, or a
   mocked `pread`) gives `short_read`;
 - an I/O error gives `error` with errno;
@@ -157,8 +180,10 @@ On temporary files:
 - a file rewritten between the two `fstat` calls shows differing identity;
 - `reset` records a failing command's exit status, and never reports
   success for it;
-- the harness never opens a file for writing (asserted by a mock on
-  `open`).
+- the harness opens no file for writing other than `--out` (asserted by a
+  mock on `open`), and opens the segment read-only;
+- `--reset` refuses a name not on the allow-list, uses `sudo -n`, and
+  records a timeout.
 
 A test cannot show that pages became resident; that is PC1 and PC2's job
 on the real subject.
@@ -169,7 +194,8 @@ on the real subject.
    tools), or a Rust example beside the CLI?
 2. Is `os.pread` in `block-size` chunks the right read, or should the block
    size be a stage-2 number with a single read?
-3. Should `reset` live in this harness, or in a separate script?
+3. Should the allow-listed `reset` live in this harness, or in a separate
+   script?
 4. Is `harness.sha256` plus an optional commit enough provenance for the
    script?
 
