@@ -16,7 +16,7 @@ maintainer approved a proposal for a minimal harness on 2026-11-02 (cited
 
 ## 1. What it is
 
-One committed script, `scripts/mem002_intervene.py`. It performs **one**
+One committed script, `scripts/mem002_intervene.py` (new). It performs **one**
 declared intervention per invocation and writes **one** JSON record of it.
 It decides nothing, admits nothing and pairs nothing. Those are the
 evaluator's [RC §3 G3].
@@ -160,7 +160,7 @@ solution [M].
 - It does not write to any model file. It opens read-only, and the review
   checks this.
 
-## 5. Tests (`scripts/test_mem002_intervene.py`)
+## 5. Tests (`scripts/test_mem002_intervene.py` (new))
 
 On temporary files:
 - `read` returns exactly the requested bytes, `status ok`;
