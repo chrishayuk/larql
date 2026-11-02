@@ -10,10 +10,13 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use larql_vindex::format::vindex3::opplan::exec::prepared::{
-    MappedResidency, ResidencyDelta, ResidencyObservation,
+    boot_session, system_mono_basis, system_mono_ns, MappedResidency, ResidencyDelta,
+    ResidencyObservation,
 };
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
+use super::admission::{AdmissionDecision, RunMode, COUNTING};
+use super::sealed_latency::SealedDigest;
 use super::GB;
 
 /// The record's schema. A change to any field's meaning increments it.
@@ -25,11 +28,21 @@ use super::GB;
 /// and the header carries
 /// `binary.commit` and `consistent`.
 ///
+/// `/3` (MEM-002 I2a): a new `admission` record, written and flushed
+/// after the binding observation and before any pass; a closing
+/// `attempt_end` record; a `clock` block on every record, on the
+/// system-wide basis it names (`start_system_mono_ns`/`end_system_mono_ns`
+/// on an observation, `system_mono_ns` on a point record); and, on the
+/// `after_run` header of a sealed run, the sealed-latency file's digest.
+/// `started_mono_ns`/`ended_mono_ns` stay, process-relative and never
+/// comparable across processes. A reader refuses a version it does not
+/// know.
+///
 /// A key that survives cloning is not permission to compare. Region
 /// records from two observations are comparable only when both headers
 /// carry equal, non-null `container.index_json_sha256`; the procedure
 /// that pairs them must check it, and a null digest refuses pairing.
-pub(in super::super) const SCHEMA: &str = "larql.residency-observation/2";
+pub(in super::super) const SCHEMA: &str = "larql.residency-observation/3";
 
 /// The build-time variable a measured build records its commit in. Set it
 /// when building a binary whose records are evidence, e.g.
@@ -127,6 +140,131 @@ pub(in super::super) fn delta_cell(delta: &ResidencyDelta) -> String {
     }
 }
 
+/// The clock block of a record read at one instant: the basis, the boot
+/// session, and one reading. Fields the target cannot supply are `null`.
+pub(in super::super) fn point_clock() -> Value {
+    json!({
+        "basis": system_mono_basis(),
+        "boot_session": boot_session(),
+        "system_mono_ns": system_mono_ns(),
+    })
+}
+
+/// The clock block of an observation: its scan's system-wide bounds.
+fn observation_clock(observation: &ResidencyObservation) -> Value {
+    json!({
+        "basis": system_mono_basis(),
+        "boot_session": boot_session(),
+        "start_system_mono_ns": observation.started_system_mono_ns,
+        "end_system_mono_ns": observation.ended_system_mono_ns,
+    })
+}
+
+fn binary_block(run: &RunIdentity) -> Value {
+    json!({
+        "version": run.binary_version,
+        "commit": run.binary_commit,
+        "commit_source": if run.binary_commit.is_some() { BUILD_COMMIT_VAR } else { "unavailable" },
+    })
+}
+
+fn container_block(run: &RunIdentity) -> Value {
+    json!({
+        "path": run.container_path,
+        "index_json_sha256": run.index_json_sha256,
+    })
+}
+
+/// The run's attempt facts the admission record carries beside the
+/// decision. None of them is an input to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in super::super) struct AttemptFacts {
+    pub(in super::super) mode: RunMode,
+    pub(in super::super) warmup: usize,
+    pub(in super::super) repeat: usize,
+    /// `QUALIFIED`, or `UNQUALIFIED (…)`.
+    pub(in super::super) qualification: String,
+    pub(in super::super) disqualifiers: Vec<String>,
+    pub(in super::super) unquiet_ok: bool,
+    pub(in super::super) expert_access: String,
+    pub(in super::super) sealed_latency: Option<String>,
+}
+
+/// The admission record: the decision, the facts it was made from, and
+/// the attempt's facts — written before any timed region after binding.
+/// The resident total is `null` unless the witness was complete.
+pub(in super::super) fn admission_record(
+    run: &RunIdentity,
+    binding_observation_id: u64,
+    decision: &AdmissionDecision,
+    facts: &AttemptFacts,
+) -> Value {
+    json!({
+        "schema": SCHEMA,
+        "record": "admission",
+        "run_id": run.run_id,
+        "pid": run.pid,
+        "binary": binary_block(run),
+        "container": container_block(run),
+        "mode": facts.mode.name(),
+        "binding_observation_id": binding_observation_id,
+        "outcome": decision.outcome.name(),
+        "complete": decision.complete,
+        "consistent": decision.consistent,
+        "regions": decision.regions,
+        "failed": decision.failed,
+        "resident_bytes": decision.resident_bytes,
+        "counting": COUNTING,
+        "threshold": decision.threshold.as_ref().map(|t| json!({
+            "bytes": t.bytes,
+            "basis": t.basis,
+        })),
+        "warmup": facts.warmup,
+        "repeat": facts.repeat,
+        "expert_access": facts.expert_access,
+        "quiet": {
+            "qualification": facts.qualification,
+            "disqualifiers": facts.disqualifiers,
+            "unquiet_ok": facts.unquiet_ok,
+        },
+        "sealed_latency": facts.sealed_latency.as_ref().map(|path| json!({ "path": path })),
+        // MEM-002 I2b records the identity of every mapped file; until it
+        // lands, nothing here says the container instance was verified.
+        "instance_identity": { "status": "not_recorded" },
+        "clock": point_clock(),
+        "wall": wall_seconds(SystemTime::now()),
+    })
+}
+
+/// The attempt's last record: whether the passes completed, and the error
+/// if they did not. An admission record with no `attempt_end` after it is
+/// an attempt that did not finish.
+pub(in super::super) fn attempt_end_record(run: &RunIdentity, error: Option<&str>) -> Value {
+    json!({
+        "schema": SCHEMA,
+        "record": "attempt_end",
+        "run_id": run.run_id,
+        "status": if error.is_some() { "error" } else { "completed" },
+        "error": error,
+        "clock": point_clock(),
+        "wall": wall_seconds(SystemTime::now()),
+    })
+}
+
+/// What a sealed run's `after_run` header adds: the sealed file's path
+/// and digest.
+pub(in super::super) fn sealed_header_fields(sealed: &SealedDigest) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert(
+        "sealed_latency".into(),
+        json!({
+            "path": sealed.path.display().to_string(),
+            "sha256": sealed.sha256,
+        }),
+    );
+    fields
+}
+
 fn wall_seconds(t: SystemTime) -> f64 {
     t.duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -149,15 +287,8 @@ pub(in super::super) fn observation_records(
         "observation_id": observation_id,
         "phase": phase,
         "pid": run.pid,
-        "binary": {
-            "version": run.binary_version,
-            "commit": run.binary_commit,
-            "commit_source": if run.binary_commit.is_some() { BUILD_COMMIT_VAR } else { "unavailable" },
-        },
-        "container": {
-            "path": run.container_path,
-            "index_json_sha256": run.index_json_sha256,
-        },
+        "binary": binary_block(run),
+        "container": container_block(run),
         "started_wall": wall_seconds(observation.started_wall),
         "started_mono_ns": observation.started_mono_ns,
         "ended_wall": wall_seconds(observation.ended_wall),
@@ -170,6 +301,7 @@ pub(in super::super) fn observation_records(
         "mapped_bytes_read": summary.mapped_bytes_read,
         "resident_bytes_read": summary.resident_bytes,
         "consistent": summary.is_consistent(),
+        "clock": observation_clock(observation),
     })];
     for region in &observation.regions {
         let store = &observation.stores[region.store];
@@ -208,15 +340,39 @@ pub(in super::super) fn observation_records(
 
 /// Write [`observation_records`] to `out`, one JSON value per line.
 pub(in super::super) fn write_observation(
-    out: &mut impl Write,
+    out: &mut (impl Write + ?Sized),
     run: &RunIdentity,
     observation_id: u64,
     phase: &str,
     observation: &ResidencyObservation,
 ) -> std::io::Result<()> {
-    for record in observation_records(run, observation_id, phase, observation) {
-        serde_json::to_writer(&mut *out, &record)?;
-        out.write_all(b"\n")?;
+    write_observation_with(out, run, observation_id, phase, observation, Map::new())
+}
+
+/// [`write_observation`], with `header_fields` added to the header.
+pub(in super::super) fn write_observation_with(
+    out: &mut (impl Write + ?Sized),
+    run: &RunIdentity,
+    observation_id: u64,
+    phase: &str,
+    observation: &ResidencyObservation,
+    header_fields: Map<String, Value>,
+) -> std::io::Result<()> {
+    let mut records = observation_records(run, observation_id, phase, observation);
+    if let Some(header) = records.first_mut().and_then(Value::as_object_mut) {
+        header.extend(header_fields);
+    }
+    for record in records {
+        write_record(out, &record)?;
     }
     Ok(())
+}
+
+/// One record as one line.
+pub(in super::super) fn write_record(
+    out: &mut (impl Write + ?Sized),
+    record: &Value,
+) -> std::io::Result<()> {
+    serde_json::to_writer(&mut *out, record)?;
+    out.write_all(b"\n")
 }

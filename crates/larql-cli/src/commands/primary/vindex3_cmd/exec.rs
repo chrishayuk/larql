@@ -260,7 +260,13 @@ fn run_on<B: PlanBackend>(
                     args.unquiet_ok,
                     &args.expert_access,
                     &args.container,
-                    args.residency_regions.as_deref(),
+                    super::generate::admission::EvidenceRequest {
+                        campaign: args.residency_campaign,
+                        regions: args.residency_regions.as_deref(),
+                        sealed_latency: args.sealed_latency.as_deref(),
+                        threshold_bytes: args.admission_threshold_bytes,
+                        basis: args.admission_basis.as_deref(),
+                    },
                 );
             }
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)

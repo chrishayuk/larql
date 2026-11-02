@@ -40,6 +40,8 @@ fn observation(regions: Vec<RegionResidency>, page_size: Option<u64>) -> Residen
         started_mono_ns: 5,
         ended_wall: SystemTime::UNIX_EPOCH + Duration::from_secs(11),
         ended_mono_ns: 9,
+        started_system_mono_ns: Some(1_000),
+        ended_system_mono_ns: Some(2_000),
         page_size,
         stores: vec![ObservedStore {
             id: "target.expert_bank".to_string(),

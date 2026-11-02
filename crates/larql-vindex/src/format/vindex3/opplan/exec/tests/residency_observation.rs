@@ -47,6 +47,8 @@ fn observation(regions: Vec<RegionResidency>) -> ResidencyObservation {
         started_mono_ns: 0,
         ended_wall: SystemTime::UNIX_EPOCH,
         ended_mono_ns: 1,
+        started_system_mono_ns: None,
+        ended_system_mono_ns: None,
         page_size: Some(16_384),
         stores: vec![ObservedStore {
             id: "target.expert_bank".to_string(),

@@ -276,12 +276,36 @@ pub struct ExecArgs {
     #[arg(long, requires = "residency_curve")]
     pub unquiet_ok: bool,
     /// With `--residency-curve`: write every mapped region's residency to
-    /// this file as JSON Lines (`larql.residency-observation/1`) — one
-    /// observation at binding, before any pass runs, and one after the
-    /// run. A region whose residency could not be read is recorded as
-    /// failed, with the reason, never as zero.
+    /// this file as JSON Lines (`larql.residency-observation/3`) — one
+    /// observation at binding, the admission decision, written and flushed
+    /// before any pass runs, one observation after the run, and the
+    /// attempt's end. A region whose residency could not be read is
+    /// recorded as failed, with the reason, never as zero. The file is
+    /// created exclusively: an existing one is refused, never truncated.
     #[arg(long, requires = "residency_curve")]
     pub residency_regions: Option<PathBuf>,
+    /// With `--residency-curve`: write every latency the run measures to
+    /// this separate file (`larql.sealed-latency/1`), created exclusively,
+    /// and print no timing to the console. The file's SHA-256 goes into the
+    /// residency stream's `after_run` header.
+    #[arg(long, requires = "residency_curve")]
+    pub sealed_latency: Option<PathBuf>,
+    /// Mark this run a MEM-002 campaign attempt, calibration and rejected
+    /// attempts included: `--residency-regions` and `--sealed-latency`
+    /// become mandatory. Without it the curve is ordinary diagnostic
+    /// execution.
+    #[arg(long, requires_all = ["residency_curve", "residency_regions", "sealed_latency"])]
+    pub residency_campaign: bool,
+    /// The most resident bytes a binding may hold and still be admitted,
+    /// from a frozen protocol — never a default. Needs
+    /// `--residency-campaign` and `--admission-basis`. Without it, a
+    /// complete witness is recorded as `witness_only`, never `admitted`.
+    #[arg(long, requires_all = ["residency_campaign", "admission_basis"])]
+    pub admission_threshold_bytes: Option<u64>,
+    /// Where `--admission-threshold-bytes` came from: the frozen protocol's
+    /// section and commit. Recorded verbatim.
+    #[arg(long, requires = "admission_threshold_bytes")]
+    pub admission_basis: Option<String>,
     /// How a mapped expert bank's selected experts are brought in per
     /// token: `demand` (the loop faults each page), `advise` (the kernel
     /// is told ahead), `touch` (pages are faulted concurrently ahead of

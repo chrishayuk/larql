@@ -166,6 +166,7 @@ mod shared_projection;
 mod sinks_bias;
 mod smoke;
 mod streaming;
+mod system_clock;
 mod timing;
 
 // The fixture writers and geometry moved to the public
