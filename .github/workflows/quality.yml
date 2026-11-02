@@ -213,7 +213,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -228,7 +228,7 @@ jobs:
       - name: Export checkout facts with provenance
         run: python3 scripts/current_facts.py --export /tmp/vindex3-facts.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vindex3-facts
           path: /tmp/vindex3-facts.json
