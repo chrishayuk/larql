@@ -83,6 +83,13 @@ impl SealedLatency {
         self.out.flush()
     }
 
+    /// Flush and sync what has been written, so the header and bind time
+    /// are as durable as the admission record before any pass runs.
+    pub(in super::super) fn sync(&mut self) -> std::io::Result<()> {
+        self.out.flush()?;
+        self.out.get_ref().sync_data()
+    }
+
     /// The bind time: sealed like every other latency, and no input to
     /// admission.
     pub(in super::super) fn bind(&mut self, seconds: f64) -> std::io::Result<()> {

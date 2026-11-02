@@ -329,6 +329,11 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         &record,
     )
     .map_err(|e| end_before_passes(&mut regions_file, &run, e))?;
+    if let Some(sealed) = sealed.as_mut() {
+        sealed
+            .sync()
+            .map_err(|e| end_before_passes(&mut regions_file, &run, e.to_string()))?;
+    }
     // Printed only now, so the console cannot announce an unrecorded decision.
     println!("{}", admission_line(&decision));
 
@@ -382,7 +387,21 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         )
         .and_then(|()| file.sync());
         if let Err(e) = ended {
-            failures.push(format!("the attempt's end was not written: {e}"));
+            failures.push(format!(
+                "the attempt's end may not have reached the disk, whatever its status says: {e}"
+            ));
+        }
+    }
+    // With no stream, or a failed one, the digest goes to the console: a
+    // digest is not a latency, and nothing else could later show the file
+    // untouched.
+    if let Ok(Some(digest)) = &sealed {
+        if regions_file.is_none() || !failures.is_empty() {
+            println!(
+                "sealed latency: {} sha256 {}",
+                digest.path.display(),
+                digest.sha256
+            );
         }
     }
     if !failures.is_empty() {
@@ -390,15 +409,6 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     }
     let samples = passes?;
     let sealed = sealed?;
-    // With no stream to carry it, the digest goes to the console: a digest
-    // is not a latency.
-    if let (Some(digest), None) = (&sealed, &regions_file) {
-        println!(
-            "sealed latency: {} sha256 {}",
-            digest.path.display(),
-            digest.sha256
-        );
-    }
     for line in summary_lines(
         &samples,
         repeat.max(1),
@@ -413,7 +423,8 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
 
 /// Close an attempt that ended before it could be admitted, returning
 /// its reason. The record is best effort: the attempt has already failed,
-/// and a stream that cannot take this record must not hide the reason.
+/// and a stream that cannot take this record must not hide the reason. It
+/// says so on stderr, since the stream then has no closing record.
 pub(in super::super) fn end_before_passes<S: EvidenceSink>(
     stream: &mut Option<S>,
     run: &RunIdentity,
@@ -421,7 +432,9 @@ pub(in super::super) fn end_before_passes<S: EvidenceSink>(
 ) -> String {
     if let Some(out) = stream.as_mut() {
         let record = residency_record::attempt_end_record(run, Some(&reason));
-        let _ = residency_record::write_record(out, &record).and_then(|()| out.sync());
+        if let Err(e) = residency_record::write_record(out, &record).and_then(|()| out.sync()) {
+            eprintln!("the attempt's closing record was not written: {e}");
+        }
     }
     reason
 }
@@ -602,9 +615,7 @@ fn run_passes<B: PlanBackend>(
         let faults = (prompted.minor_faults(), prompted.major_faults());
         let (elapsed, rss_after) = (prompted.elapsed_seconds, prompted.after.max_rss);
         let name = format!("prompt×{}", prompt.len());
-        if prompted.value.is_err() {
-            seal_failed_step(&mut sealed, pass, label, &name, elapsed)?;
-        }
+        seal_if_failed(&mut sealed, pass, label, &name, elapsed, &prompted.value)?;
         let logits = prompted.value?;
         let obs = observe(&name, elapsed, faults, rss_after, &session, &mut before_res);
         seal_step(&mut sealed, pass, label, &name, &obs)?;
@@ -626,9 +637,7 @@ fn run_passes<B: PlanBackend>(
             let faults = (stepped.minor_faults(), stepped.major_faults());
             let (elapsed, rss_after) = (stepped.elapsed_seconds, stepped.after.max_rss);
             let name = format!("token {}", step + 1);
-            if stepped.value.is_err() {
-                seal_failed_step(&mut sealed, pass, label, &name, elapsed)?;
-            }
+            seal_if_failed(&mut sealed, pass, label, &name, elapsed, &stepped.value)?;
             logits = stepped
                 .value?
                 .logits
@@ -711,18 +720,22 @@ fn seal_step(
     sealed.step(pass, label, step, obs.elapsed_ms, breakdown)
 }
 
-/// A step that returned an error, its time into the sealed file.
-fn seal_failed_step(
+/// A step that returned an error: its time into the sealed file. If that
+/// fails too, both errors are reported, the step's first.
+fn seal_if_failed<T, E: std::fmt::Display>(
     sealed: &mut Option<&mut SealedLatency>,
     pass: usize,
     label: &str,
     step: &str,
     elapsed_seconds: f64,
-) -> std::io::Result<()> {
-    match sealed.as_deref_mut() {
-        Some(sealed) => sealed.failed_step(pass, label, step, elapsed_seconds * 1e3),
-        None => Ok(()),
-    }
+    outcome: &Result<T, E>,
+) -> Result<(), String> {
+    let (Err(error), Some(sealed)) = (outcome, sealed.as_deref_mut()) else {
+        return Ok(());
+    };
+    sealed
+        .failed_step(pass, label, step, elapsed_seconds * 1e3)
+        .map_err(|e| format!("{error}; and its time was not sealed: {e}"))
 }
 
 /// One step's observation, as the curve reads it between tokens.

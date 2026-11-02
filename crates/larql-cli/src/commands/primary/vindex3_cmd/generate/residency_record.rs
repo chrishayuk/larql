@@ -65,7 +65,9 @@ pub(in super::super) fn declared_commit(declared: Option<&str>) -> Option<String
 /// 64 bits with no relation to the clock. A run id made from the time
 /// would date the attempt's start, before binding, and so give away the
 /// bind time that `--sealed-latency` seals. The standard library seeds its
-/// hasher keys randomly per process.
+/// hasher keys from OS randomness and varies them per instance. That is
+/// from its behaviour, not a documented guarantee, which is enough for an
+/// id that is compared for equality and never trusted as a secret.
 fn unpredictable_id() -> u64 {
     use std::hash::{BuildHasher, Hasher};
     std::collections::hash_map::RandomState::new()

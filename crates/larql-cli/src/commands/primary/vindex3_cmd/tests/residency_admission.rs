@@ -601,6 +601,8 @@ fn the_sealed_file_holds_the_latency_and_its_digest_is_of_what_reached_the_disk(
     let mut sealed = SealedLatency::create(&path, &identity()).unwrap();
     assert_eq!(sealed.path(), path);
     sealed.bind(1.5).unwrap();
+    sealed.sync().unwrap();
+    assert!(std::fs::read_to_string(&path).unwrap().contains("\"bind\""));
     sealed
         .step(
             1,
