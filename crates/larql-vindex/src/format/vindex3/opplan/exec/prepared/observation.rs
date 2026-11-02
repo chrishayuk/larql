@@ -27,8 +27,24 @@ use crate::format::vindex3::represent::physical::{ResidencyReadError, WeightRegi
 pub struct ObservedStore {
     /// The store's id: the operand OBJECT name, not a file.
     pub id: String,
-    /// The file the store maps, when it maps one.
+    /// The file the store maps, when it maps one. Diagnostic only: it
+    /// changes when the container is cloned or moved, so it is never a
+    /// region's identity when a declared segment is available.
     pub source_path: Option<PathBuf>,
+    /// The segment path relative to its container, as the container's
+    /// index declared it.
+    pub declared_segment: Option<String>,
+}
+
+impl ObservedStore {
+    /// The segment half of a region key for regions in this store.
+    pub fn segment_identity(&self) -> SegmentIdentity {
+        match (&self.declared_segment, &self.source_path) {
+            (Some(declared), _) => SegmentIdentity::Declared(declared.clone()),
+            (None, Some(path)) => SegmentIdentity::Undeclared(path.clone()),
+            (None, None) => SegmentIdentity::Owned,
+        }
+    }
 }
 
 /// One mapped region's reading within an observation.
@@ -59,9 +75,45 @@ pub struct ResidencyObservation {
     pub regions: Vec<RegionResidency>,
 }
 
-/// A region's identity across observations: the file it lives in (or
-/// the store's id, for owned bytes), its file offset and its length.
-pub type RegionKey = (String, u64, u64);
+/// Which segment a region lives in, as far as its identity is concerned.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SegmentIdentity {
+    /// The container-relative path the container's index declares. It
+    /// does not change when the container is cloned or moved, so the key
+    /// SURVIVES cloning. That is not a licence to compare: two different
+    /// containers with one layout give the same keys, and a segment
+    /// rewritten in place keeps them. Regions from different processes may
+    /// be compared only when both records carry equal, non-null container
+    /// identity (`index_json_sha256`), checked by the procedure that pairs
+    /// them; the key never authorises the comparison on its own.
+    Declared(String),
+    /// A mapped file no container declared, keyed by its absolute path:
+    /// it pairs only with observations of that same path.
+    Undeclared(PathBuf),
+    /// Owned bytes: no file at all.
+    Owned,
+}
+
+impl SegmentIdentity {
+    /// Whether this identity is the same for every clone of a container —
+    /// a fact about the key, never on its own a reason to pair two
+    /// containers' records (see [`Self::Declared`]).
+    pub fn is_portable(&self) -> bool {
+        matches!(self, Self::Declared(_))
+    }
+}
+
+/// A region's identity across observations: the operand object whose
+/// store holds it, the segment that store is, the region's file offset
+/// and its length. The container itself is identified once per record,
+/// by its index digest, not per region.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RegionKey {
+    pub object: String,
+    pub segment: SegmentIdentity,
+    pub file_offset: u64,
+    pub len: u64,
+}
 
 /// The monotonic origin every observation in this process measures from.
 fn mono_origin() -> Instant {
@@ -82,17 +134,20 @@ impl ResidencyObservation {
         let started_mono_ns = mono_ns_now();
         let page_size = crate::format::vindex3::represent::physical::page_size();
         let mut stores: Vec<ObservedStore> = Vec::new();
-        let mut index_of: BTreeMap<(String, Option<PathBuf>), usize> = BTreeMap::new();
+        let mut index_of: BTreeMap<(String, Option<PathBuf>, Option<String>), usize> =
+            BTreeMap::new();
         let mut out = Vec::new();
         for (scan_index, region) in regions.into_iter().enumerate() {
             let key = (
                 region.store_id().to_string(),
                 region.source_path().map(|p| p.to_path_buf()),
+                region.declared_segment().map(str::to_string),
             );
             let store = *index_of.entry(key.clone()).or_insert_with(|| {
                 stores.push(ObservedStore {
                     id: key.0,
                     source_path: key.1,
+                    declared_segment: key.2,
                 });
                 stores.len() - 1
             });
@@ -139,19 +194,29 @@ impl ResidencyObservation {
             .find_map(|r| r.resident.err().map(|e| (r, e)))
     }
 
-    /// A region's identity across observations.
+    /// A region's identity across observations: built from the declared
+    /// segment wherever the container declared one, never from where the
+    /// container happens to sit on disk.
     pub fn key_of(&self, region: &RegionResidency) -> RegionKey {
         let store = &self.stores[region.store];
-        let name = match &store.source_path {
-            Some(path) => path.display().to_string(),
-            None => store.id.clone(),
-        };
-        (name, region.file_offset, region.len)
+        RegionKey {
+            object: store.id.clone(),
+            segment: store.segment_identity(),
+            file_offset: region.file_offset,
+            len: region.len,
+        }
     }
 }
 
 /// The change between two observations, over the regions read
 /// successfully in BOTH.
+///
+/// Both observations are assumed to be of ONE container: this matches
+/// regions by key and checks no container identity. The curve calls it
+/// on two observations of one prepared image in one process. A caller
+/// comparing observations from different processes or clones must first
+/// establish that both name the same container (equal, non-null
+/// `index_json_sha256`); a matching key is not that evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResidencyDelta {
     /// Regions present and read in both observations.

@@ -17,7 +17,37 @@ use serde_json::{json, Value};
 use super::GB;
 
 /// The record's schema. A change to any field's meaning increments it.
-pub(in super::super) const SCHEMA: &str = "larql.residency-observation/1";
+///
+/// `/2`: a region's `segment` is the container-relative path the
+/// container declared (it was the absolute path in `/1`), the absolute
+/// path moved to `segment_path`, `segment_declared` says whether the
+/// container declared the segment (so the region's key survives cloning),
+/// and the header carries
+/// `binary.commit` and `consistent`.
+///
+/// A key that survives cloning is not permission to compare. Region
+/// records from two observations are comparable only when both headers
+/// carry equal, non-null `container.index_json_sha256`; the procedure
+/// that pairs them must check it, and a null digest refuses pairing.
+pub(in super::super) const SCHEMA: &str = "larql.residency-observation/2";
+
+/// The build-time variable a measured build records its commit in. Set it
+/// when building a binary whose records are evidence, e.g.
+/// `LARQL_BUILD_COMMIT=$(git rev-parse HEAD) cargo build --release`.
+pub(in super::super) const BUILD_COMMIT_VAR: &str = "LARQL_BUILD_COMMIT";
+
+/// The commit this binary was built from, when the build declared one.
+/// Never derived from the working tree at run time: a commit is recorded
+/// only if the build said so.
+const BUILD_COMMIT: Option<&str> = option_env!("LARQL_BUILD_COMMIT");
+
+/// The build's declared commit, with a blank declaration read as none.
+pub(in super::super) fn declared_commit(declared: Option<&str>) -> Option<String> {
+    declared
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(str::to_string)
+}
 
 /// Who wrote a record: enough to pair records from separate processes
 /// and check they observed one container.
@@ -27,6 +57,9 @@ pub(in super::super) struct RunIdentity {
     pub(in super::super) run_id: String,
     pub(in super::super) pid: u32,
     pub(in super::super) binary_version: String,
+    /// The commit the build declared through [`BUILD_COMMIT_VAR`], or
+    /// `None` — recorded as unavailable, never guessed.
+    pub(in super::super) binary_commit: Option<String>,
     pub(in super::super) container_path: String,
     /// SHA-256 of the container's `index.json`, when it could be read.
     pub(in super::super) index_json_sha256: Option<String>,
@@ -44,6 +77,7 @@ impl RunIdentity {
             run_id: format!("{pid}-{nanos}"),
             pid,
             binary_version: env!("CARGO_PKG_VERSION").to_string(),
+            binary_commit: declared_commit(BUILD_COMMIT),
             container_path: container.display().to_string(),
             index_json_sha256: larql_vindex::format::checksums::sha256_file(
                 &container.join("index.json"),
@@ -56,14 +90,19 @@ impl RunIdentity {
 /// The binding line: address space, how many regions were read and how
 /// many failed, and the resident bytes of the read regions only.
 pub(in super::super) fn binding_line(summary: &MappedResidency) -> String {
-    format!(
+    let line = format!(
         "  mapped                {:>10.2} GB address space over {} regions ({} read, {} failed), {:.3} GB resident in read regions",
         summary.mapped_bytes as f64 / GB,
         summary.regions,
         summary.read_regions(),
         summary.failed_regions,
         summary.resident_bytes as f64 / GB
-    )
+    );
+    if summary.is_consistent() {
+        line
+    } else {
+        format!("{line} — INCONSISTENT COUNTS, not a witness")
+    }
 }
 
 /// The line that must follow whenever any region failed: how many, and
@@ -110,7 +149,11 @@ pub(in super::super) fn observation_records(
         "observation_id": observation_id,
         "phase": phase,
         "pid": run.pid,
-        "binary": { "version": run.binary_version },
+        "binary": {
+            "version": run.binary_version,
+            "commit": run.binary_commit,
+            "commit_source": if run.binary_commit.is_some() { BUILD_COMMIT_VAR } else { "unavailable" },
+        },
         "container": {
             "path": run.container_path,
             "index_json_sha256": run.index_json_sha256,
@@ -126,6 +169,7 @@ pub(in super::super) fn observation_records(
         "mapped_bytes_all": summary.mapped_bytes,
         "mapped_bytes_read": summary.mapped_bytes_read,
         "resident_bytes_read": summary.resident_bytes,
+        "consistent": summary.is_consistent(),
     })];
     for region in &observation.regions {
         let store = &observation.stores[region.store];
@@ -136,7 +180,9 @@ pub(in super::super) fn observation_records(
             "observation_id": observation_id,
             "scan_index": region.scan_index,
             "store_id": store.id,
-            "segment": store.source_path.as_ref().map(|p| p.display().to_string()),
+            "segment": store.declared_segment,
+            "segment_path": store.source_path.as_ref().map(|p| p.display().to_string()),
+            "segment_declared": store.segment_identity().is_portable(),
             "file_offset": region.file_offset,
             "len": region.len,
         });

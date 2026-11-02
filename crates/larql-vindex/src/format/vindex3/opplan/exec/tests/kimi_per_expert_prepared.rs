@@ -58,14 +58,24 @@ impl Subject {
     }
 
     pub(super) fn open(&self) -> (ComponentOpPlan, OperandStore) {
-        let inspection = inspect_container(self.container.path(), false).unwrap();
-        let plan = plan_component_ops(&inspection, self.container.path(), "target")
-            .unwrap()
-            .plan
-            .expect("the per-expert miniature plans");
-        let store = OperandStore::open(self.container.path(), &inspection).unwrap();
-        (plan, store)
+        open_container(self.container.path())
     }
+
+    /// Where the encoded container sits.
+    pub(super) fn container(&self) -> &Path {
+        self.container.path()
+    }
+}
+
+/// Plan and open the container at `dir`.
+pub(super) fn open_container(dir: &Path) -> (ComponentOpPlan, OperandStore) {
+    let inspection = inspect_container(dir, false).unwrap();
+    let plan = plan_component_ops(&inspection, dir, "target")
+        .unwrap()
+        .plan
+        .expect("the per-expert miniature plans");
+    let store = OperandStore::open(dir, &inspection).unwrap();
+    (plan, store)
 }
 
 fn twin_with_expert_one_as_zero(dir: &Path) {

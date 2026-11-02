@@ -8,12 +8,24 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use super::super::prepared::{
-    MappedResidency, ObservedStore, RegionResidency, ResidencyDelta, ResidencyObservation,
+    MappedResidency, ObservedStore, RegionKey, RegionResidency, ResidencyDelta,
+    ResidencyObservation, SegmentIdentity,
 };
 use crate::format::vindex3::represent::physical::ResidencyReadError;
 
 const LEN: u64 = 1 << 20;
 const MINCORE_FAILED: ResidencyReadError = ResidencyReadError::Mincore { errno: 12 };
+const SEGMENT: &str = "segments/target.expert_bank.bin";
+const OBJECT: &str = "target.expert_bank";
+
+fn key(segment: SegmentIdentity, file_offset: u64) -> RegionKey {
+    RegionKey {
+        object: OBJECT.to_string(),
+        segment,
+        file_offset,
+        len: LEN,
+    }
+}
 
 fn region(
     scan_index: usize,
@@ -38,7 +50,10 @@ fn observation(regions: Vec<RegionResidency>) -> ResidencyObservation {
         page_size: Some(16_384),
         stores: vec![ObservedStore {
             id: "target.expert_bank".to_string(),
-            source_path: Some(PathBuf::from("segments/target.expert_bank.bin")),
+            source_path: Some(PathBuf::from(
+                "/clones/a/c.vindex3/segments/target.expert_bank.bin",
+            )),
+            declared_segment: Some(SEGMENT.to_string()),
         }],
         regions,
     }
@@ -158,7 +173,7 @@ fn a_region_is_matched_by_its_file_offset_and_length_not_its_scan_position() {
     assert_eq!(d.decrease, 0);
     assert_eq!(
         before.key_of(&before.regions[1]),
-        ("segments/target.expert_bank.bin".to_string(), LEN, LEN)
+        key(SegmentIdentity::Declared(SEGMENT.to_string()), LEN)
     );
 }
 
@@ -166,8 +181,98 @@ fn a_region_is_matched_by_its_file_offset_and_length_not_its_scan_position() {
 fn an_owned_store_is_keyed_by_its_id() {
     let mut obs = observation(vec![region(0, 8, Ok(0))]);
     obs.stores[0].source_path = None;
+    obs.stores[0].declared_segment = None;
+    assert_eq!(obs.key_of(&obs.regions[0]), key(SegmentIdentity::Owned, 8));
+    assert!(!SegmentIdentity::Owned.is_portable());
+}
+
+/// NB6: the cold-state method gives each arm a fresh clone of the
+/// container at another path. A region's key must not see the path.
+#[test]
+fn a_declared_region_keeps_its_key_across_clones_at_different_paths() {
+    let a = observation(vec![region(0, 0, Ok(10)), region(1, LEN, Ok(0))]);
+    let mut b = observation(vec![region(0, 0, Ok(40)), region(1, LEN, Ok(0))]);
+    b.stores[0].source_path = Some(PathBuf::from(
+        "/clones/b/elsewhere.vindex3/segments/target.expert_bank.bin",
+    ));
+    for (ra, rb) in a.regions.iter().zip(&b.regions) {
+        assert_eq!(a.key_of(ra), b.key_of(rb));
+        assert!(a.key_of(ra).segment.is_portable());
+    }
+    let d = ResidencyDelta::between(&a, &b);
+    assert_eq!(d.comparable, 2, "both regions pair across the clones");
+    assert_eq!(d.excluded, 0);
+    assert_eq!(d.signed_total(), Some(30));
+}
+
+/// ...while still telling different segments, and different objects, apart.
+#[test]
+fn a_key_distinguishes_segments_and_objects_at_the_same_offset_and_length() {
+    let a = observation(vec![region(0, 0, Ok(10))]);
+    let mut other_segment = a.clone();
+    other_segment.stores[0].declared_segment = Some("segments/target.decoder_stack.bin".into());
+    let mut other_object = a.clone();
+    other_object.stores[0].id = "target.decoder_stack".to_string();
+    for b in [&other_segment, &other_object] {
+        assert_ne!(a.key_of(&a.regions[0]), b.key_of(&b.regions[0]));
+        let d = ResidencyDelta::between(&a, b);
+        assert_eq!(d.comparable, 0, "never paired");
+        assert_eq!(d.excluded, 2);
+    }
+}
+
+/// A mapped file no container declared pairs only at its own path, and
+/// says it is not portable — the absolute path is all it has.
+#[test]
+fn an_undeclared_mapped_store_is_keyed_by_its_path_and_is_not_portable() {
+    let mut a = observation(vec![region(0, 0, Ok(1))]);
+    a.stores[0].declared_segment = None;
+    let path = a.stores[0].source_path.clone().unwrap();
     assert_eq!(
-        obs.key_of(&obs.regions[0]),
-        ("target.expert_bank".to_string(), 8, LEN)
+        a.key_of(&a.regions[0]),
+        key(SegmentIdentity::Undeclared(path), 0)
     );
+    assert!(!a.key_of(&a.regions[0]).segment.is_portable());
+    let mut moved = a.clone();
+    moved.stores[0].source_path = Some(PathBuf::from("/clones/b/x.bin"));
+    assert_eq!(ResidencyDelta::between(&a, &moved).comparable, 0);
+    assert_eq!(ResidencyDelta::between(&a, &a).comparable, 1);
+}
+
+/// NB4: the counts are public, so a hand-built summary can claim more
+/// failed regions than regions. The arithmetic must not underflow, and
+/// the value must not pass as a witness.
+#[test]
+fn an_inconsistent_summary_neither_underflows_nor_counts_as_a_witness() {
+    let more_failed_than_regions = MappedResidency {
+        regions: 1,
+        failed_regions: 3,
+        ..MappedResidency::default()
+    };
+    assert_eq!(more_failed_than_regions.read_regions(), 0);
+    assert!(!more_failed_than_regions.is_consistent());
+
+    let more_read_than_mapped = MappedResidency {
+        regions: 2,
+        mapped_bytes: LEN,
+        mapped_bytes_read: 2 * LEN,
+        resident_bytes: 5,
+        failed_regions: 0,
+    };
+    assert!(!more_read_than_mapped.is_consistent());
+    assert_eq!(
+        more_read_than_mapped.complete_resident_bytes(),
+        None,
+        "no failures and regions > 0, but inconsistent: not a whole-image total"
+    );
+
+    let derived = observation(vec![
+        region(0, 0, Ok(5)),
+        region(1, LEN, Err(MINCORE_FAILED)),
+    ]);
+    assert!(
+        derived.summary().is_consistent(),
+        "a derived summary always is"
+    );
+    assert!(MappedResidency::default().is_consistent());
 }

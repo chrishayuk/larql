@@ -43,13 +43,13 @@ pub(super) fn join_ids(ids: &[u32]) -> String {
 /// and page faults. Deltas between two readings are what one token
 /// cost; the absolute peak is a fact about the whole run.
 #[derive(Debug, Clone, Copy, Default)]
-pub(super) struct ProcessResources {
-    pub(super) max_rss: u64,
-    pub(super) minor_faults: u64,
-    pub(super) major_faults: u64,
+pub(in super::super) struct ProcessResources {
+    pub(in super::super) max_rss: u64,
+    pub(in super::super) minor_faults: u64,
+    pub(in super::super) major_faults: u64,
 }
 
-pub(super) fn process_resources() -> ProcessResources {
+pub(in super::super) fn process_resources() -> ProcessResources {
     #[cfg(unix)]
     {
         // SAFETY: `usage` is read only after `getrusage` returns 0, which
@@ -72,6 +72,51 @@ pub(super) fn process_resources() -> ProcessResources {
     #[cfg(not(unix))]
     {
         ProcessResources::default()
+    }
+}
+
+/// One measured step: its value, its wall time, and the process's
+/// counters read immediately before and immediately after it — the same
+/// window the timer covers. The counters are PROCESS-wide: any thread
+/// active in the window is counted too, so a count bounds this window's
+/// faults rather than attributing them to the step's weights.
+pub(in super::super) struct Bracketed<T> {
+    pub(in super::super) value: T,
+    pub(in super::super) elapsed_seconds: f64,
+    pub(in super::super) before: ProcessResources,
+    pub(in super::super) after: ProcessResources,
+}
+
+impl<T> Bracketed<T> {
+    pub(in super::super) fn minor_faults(&self) -> u64 {
+        self.after
+            .minor_faults
+            .saturating_sub(self.before.minor_faults)
+    }
+
+    pub(in super::super) fn major_faults(&self) -> u64 {
+        self.after
+            .major_faults
+            .saturating_sub(self.before.major_faults)
+    }
+}
+
+/// Run `step` with the fault counters and the timer around it. Whatever
+/// the observer does — residency scans, deltas, printing — happens outside
+/// this window, so its own work is never charged to the model's step,
+/// this one or the next. Other threads of the process are not excluded:
+/// see [`Bracketed`].
+pub(in super::super) fn bracket<T>(step: impl FnOnce() -> T) -> Bracketed<T> {
+    let before = process_resources();
+    let started = Instant::now();
+    let value = step();
+    let elapsed_seconds = started.elapsed().as_secs_f64();
+    let after = process_resources();
+    Bracketed {
+        value,
+        elapsed_seconds,
+        before,
+        after,
     }
 }
 
@@ -243,15 +288,17 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             "step", "ms", "read res", "Δ res (GB)", "excluded", "minor Δ", "major Δ", "rss GB"
         );
         let mut before_res = session.observe_residency();
-        let mut before_proc = process_resources();
+        // The fault counts come from the step's own bracket: this
+        // observer never reads the counters, so nothing it allocates is
+        // charged to a step.
         let observe = |name: String,
                        elapsed: f64,
+                       faults: (u64, u64),
+                       rss_after: u64,
                        session: &DecodeSession<'_, B>,
-                       before_res: &mut ResidencyObservation,
-                       before_proc: &mut ProcessResources|
+                       before_res: &mut ResidencyObservation|
          -> StepObservation {
             let now_res = session.observe_residency();
-            let now_proc = process_resources();
             let stage_ledger = stages::ledger();
             let by_stage: Vec<String> = stage_ledger
                 .all()
@@ -269,12 +316,8 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             let obs = StepObservation {
                 elapsed_ms: elapsed * 1e3,
                 resident_delta: ResidencyDelta::between(before_res, &now_res),
-                minor_faults: now_proc
-                    .minor_faults
-                    .saturating_sub(before_proc.minor_faults),
-                major_faults: now_proc
-                    .major_faults
-                    .saturating_sub(before_proc.major_faults),
+                minor_faults: faults.0,
+                major_faults: faults.1,
                 stage_ms: stages::Stage::ALL.map(|st| stage_ledger.get(st).nanos as f64 / 1e6),
                 stages_nested: stage_ledger.nested(),
             };
@@ -287,28 +330,33 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                 obs.resident_delta.excluded,
                 obs.minor_faults,
                 obs.major_faults,
-                now_proc.max_rss as f64 / GB,
+                rss_after as f64 / GB,
                 by_stage.join(" "),
                 leaf_note.join(" ")
             );
             *before_res = now_res;
-            *before_proc = now_proc;
             obs
         };
         // Prompt: every position through the stack, timed as one step.
         timing::ledger().reset();
         stages::ledger().reset();
-        let started = Instant::now();
-        let mut logits = None;
-        for &token in prompt {
-            logits = session.step(token)?.logits;
-        }
+        let prompted = bracket(|| -> Result<_, larql_vindex::error::VindexError> {
+            let mut logits = None;
+            for &token in prompt {
+                logits = session.step(token)?.logits;
+            }
+            Ok(logits)
+        });
+        let faults = (prompted.minor_faults(), prompted.major_faults());
+        let (elapsed, rss_after) = (prompted.elapsed_seconds, prompted.after.max_rss);
+        let logits = prompted.value?;
         observe(
             format!("prompt×{}", prompt.len()),
-            started.elapsed().as_secs_f64(),
+            elapsed,
+            faults,
+            rss_after,
             &session,
             &mut before_res,
-            &mut before_proc,
         );
         let mut logits = logits.ok_or("plan carries no output head — cannot generate")?;
         let mut generated = Vec::with_capacity(new_tokens);
@@ -323,19 +371,21 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
             timing::ledger().reset();
             stages::ledger().reset();
             routing_trace::start_capture();
-            let started = Instant::now();
-            logits = session
-                .step(id)?
+            let stepped = bracket(|| session.step(id));
+            let routing = routing_trace::take_capture();
+            let faults = (stepped.minor_faults(), stepped.major_faults());
+            let (elapsed, rss_after) = (stepped.elapsed_seconds, stepped.after.max_rss);
+            logits = stepped
+                .value?
                 .logits
                 .ok_or("plan carries no output head — cannot generate")?;
-            let elapsed = started.elapsed().as_secs_f64();
-            let routing = routing_trace::take_capture();
             let obs = observe(
                 format!("token {}", step + 1),
                 elapsed,
+                faults,
+                rss_after,
                 &session,
                 &mut before_res,
-                &mut before_proc,
             );
             if step == 0 {
                 // The characterised token: the first generated one, whose

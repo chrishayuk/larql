@@ -198,6 +198,7 @@ impl OperandStore {
                 object.id.clone(),
                 SegmentMap {
                     path,
+                    declared: entry.segment.clone(),
                     payload_start,
                     tensors: header
                         .tensors

@@ -12,14 +12,17 @@ use larql_vindex::format::vindex3::opplan::exec::prepared::{
 use larql_vindex::format::vindex3::represent::physical::ResidencyReadError;
 use serde_json::Value;
 
+use larql_vindex::format::vindex3::opplan::exec::prepared::MappedResidency;
+
 use super::super::generate::residency_record::{
-    binding_line, delta_cell, incomplete_line, observation_records, write_observation, RunIdentity,
-    SCHEMA,
+    binding_line, declared_commit, delta_cell, incomplete_line, observation_records,
+    write_observation, RunIdentity, BUILD_COMMIT_VAR, SCHEMA,
 };
 
 const LEN: u64 = 1 << 20;
 const MINCORE_FAILED: ResidencyReadError = ResidencyReadError::Mincore { errno: 22 };
 const SEGMENT: &str = "segments/target.expert_bank.bin";
+const SEGMENT_PATH: &str = "/models/c.vindex3/segments/target.expert_bank.bin";
 
 fn region(scan_index: usize, resident: Result<u64, ResidencyReadError>) -> RegionResidency {
     RegionResidency {
@@ -40,7 +43,8 @@ fn observation(regions: Vec<RegionResidency>, page_size: Option<u64>) -> Residen
         page_size,
         stores: vec![ObservedStore {
             id: "target.expert_bank".to_string(),
-            source_path: Some(PathBuf::from(SEGMENT)),
+            source_path: Some(PathBuf::from(SEGMENT_PATH)),
+            declared_segment: Some(SEGMENT.to_string()),
         }],
         regions,
     }
@@ -51,6 +55,7 @@ fn run() -> RunIdentity {
         run_id: "run-1".to_string(),
         pid: 42,
         binary_version: "0.0.0".to_string(),
+        binary_commit: Some("abc123".to_string()),
         container_path: "/models/c.vindex3".to_string(),
         index_json_sha256: Some("ddd9".to_string()),
     }
@@ -149,12 +154,20 @@ fn every_record_carries_the_schema_and_a_header_precedes_the_regions() {
     assert_eq!(header["resident_bytes_read"], 4096);
     assert_eq!(header["started_mono_ns"], 5);
     assert_eq!(header["started_wall"], 10.0);
+    assert_eq!(header["binary"]["commit"], "abc123");
+    assert_eq!(header["binary"]["commit_source"], BUILD_COMMIT_VAR);
+    assert_eq!(header["consistent"], true);
 
     let ok = &records[1];
     assert_eq!(ok["record"], "region");
     assert_eq!(ok["status"], "ok");
     assert_eq!(ok["resident_bytes"], 4096);
-    assert_eq!(ok["segment"], SEGMENT);
+    assert_eq!(ok["segment"], SEGMENT, "the container-relative path");
+    assert_eq!(
+        ok["segment_path"], SEGMENT_PATH,
+        "the absolute path, diagnostic"
+    );
+    assert_eq!(ok["segment_declared"], true);
     assert_eq!(ok["file_offset"], 0);
     assert!(ok.get("error").is_none());
 
@@ -233,4 +246,70 @@ fn a_run_identity_names_this_process_and_hashes_the_index() {
         missing.index_json_sha256, None,
         "no index, no hash — never a placeholder"
     );
+}
+
+/// NB6 in the record: `segment` is the declared container-relative path,
+/// which is the same for a clone at another path; a store no container
+/// declared has `segment: null` and `segment_declared: false`. Pairing
+/// itself still needs equal container digests, which no key replaces.
+#[test]
+fn the_record_keys_regions_by_declared_segment_and_flags_undeclared_ones() {
+    let a = observation(vec![region(0, Ok(1))], Some(16_384));
+    let mut clone = a.clone();
+    clone.stores[0].source_path = Some(PathBuf::from("/elsewhere/x.vindex3/segments/b.bin"));
+    let (ra, rb) = (
+        &observation_records(&run(), 0, "binding", &a)[1],
+        &observation_records(&run(), 0, "binding", &clone)[1],
+    );
+    for field in [
+        "store_id",
+        "segment",
+        "file_offset",
+        "len",
+        "segment_declared",
+    ] {
+        assert_eq!(ra[field], rb[field], "{field} must not move with the clone");
+    }
+    assert_ne!(ra["segment_path"], rb["segment_path"]);
+
+    let mut undeclared = a.clone();
+    undeclared.stores[0].declared_segment = None;
+    let r = &observation_records(&run(), 0, "binding", &undeclared)[1];
+    assert_eq!(r["segment"], Value::Null);
+    assert_eq!(r["segment_path"], SEGMENT_PATH);
+    assert_eq!(r["segment_declared"], false);
+}
+
+/// `binary.commit` is recorded only when the build declared it, and an
+/// absent one says so instead of carrying a placeholder.
+#[test]
+fn an_undeclared_build_commit_is_recorded_as_unavailable() {
+    let mut unknown = run();
+    unknown.binary_commit = None;
+    let header = &observation_records(&unknown, 0, "binding", &observation(Vec::new(), None))[0];
+    assert_eq!(header["binary"]["commit"], Value::Null);
+    assert_eq!(header["binary"]["commit_source"], "unavailable");
+
+    assert_eq!(declared_commit(None), None);
+    assert_eq!(declared_commit(Some("  ")), None, "blank is not a commit");
+    assert_eq!(
+        declared_commit(Some(" 58d75477\n")).as_deref(),
+        Some("58d75477")
+    );
+}
+
+/// NB4 at the console: an inconsistent summary prints its counts without
+/// underflow and says it is not a witness.
+#[test]
+fn an_inconsistent_summary_is_labelled_on_the_binding_line() {
+    let bad = MappedResidency {
+        regions: 1,
+        failed_regions: 2,
+        ..MappedResidency::default()
+    };
+    let line = binding_line(&bad);
+    assert!(line.contains("(0 read, 2 failed)"), "{line}");
+    assert!(line.contains("INCONSISTENT COUNTS"), "{line}");
+    let fine = observation(vec![region(0, Ok(1))], Some(16_384));
+    assert!(!binding_line(&fine.summary()).contains("INCONSISTENT"));
 }

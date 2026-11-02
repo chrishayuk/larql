@@ -67,17 +67,30 @@ pub struct MappedResidency {
 }
 
 impl MappedResidency {
-    /// Regions read successfully.
+    /// Regions read successfully. Saturates so an inconsistent value
+    /// cannot underflow; it does NOT make one valid — see
+    /// [`Self::is_consistent`], which every reader of a total must ask.
     pub fn read_regions(&self) -> usize {
-        self.regions - self.failed_regions
+        self.regions.saturating_sub(self.failed_regions)
+    }
+
+    /// Whether the counts can describe one observation: no more failed
+    /// regions than regions, and no more address space read than mapped.
+    /// A summary derived by [`super::ResidencyObservation::summary`] is
+    /// consistent by construction; the fields are public, so a value
+    /// built any other way may not be.
+    pub fn is_consistent(&self) -> bool {
+        self.failed_regions <= self.regions && self.mapped_bytes_read <= self.mapped_bytes
     }
 
     /// The resident total as a figure for the WHOLE image: `Some` only
-    /// when at least one region was observed and none failed. An
-    /// observation of nothing witnesses nothing, and one with a failed
-    /// region is a partial sum.
+    /// when at least one region was observed, none failed, and the counts
+    /// are consistent. An observation of nothing witnesses nothing, one
+    /// with a failed region is a partial sum, and an inconsistent one
+    /// witnesses nothing reliable.
     pub fn complete_resident_bytes(&self) -> Option<u64> {
-        (self.regions > 0 && self.failed_regions == 0).then_some(self.resident_bytes)
+        (self.is_consistent() && self.regions > 0 && self.failed_regions == 0)
+            .then_some(self.resident_bytes)
     }
 }
 

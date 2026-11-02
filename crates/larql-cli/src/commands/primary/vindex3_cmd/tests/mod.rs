@@ -10,6 +10,7 @@ mod lowerings;
 mod measure;
 mod observe;
 mod realizations;
+mod residency_faults;
 mod residency_record;
 mod sizes;
 mod token_bank;
