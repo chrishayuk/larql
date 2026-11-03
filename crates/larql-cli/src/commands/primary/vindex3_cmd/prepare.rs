@@ -50,10 +50,7 @@ pub(crate) fn prepare(
     plugins: &Plugins,
 ) -> Result<OpenedComponent, BoxErr> {
     let policy = OpenPolicy {
-        want: plugins
-            .want
-            .clone()
-            .or_else(|| wanted_representation(backend).map(str::to_string)),
+        want: wanted_encoding(backend, plugins.want.as_deref()),
         source,
     };
     Ok(open_component_in(
@@ -77,6 +74,56 @@ pub(crate) fn parse_representation_source(spec: &str) -> Result<RepresentationSo
             "unknown --representation-source `{other}`; expected auto, stored or transient"
         )
         .into()),
+    }
+}
+
+/// The encoding execution asks the store for: `--representation`'s, or else
+/// the backend's.
+pub(crate) fn wanted_encoding(
+    backend: ExecBackend,
+    representation: Option<&str>,
+) -> Option<String> {
+    representation
+        .or_else(|| wanted_representation(backend))
+        .map(str::to_string)
+}
+
+/// `--backend`, as the flag spells it.
+pub(crate) fn backend_flag_name(backend: ExecBackend) -> String {
+    use clap::ValueEnum;
+    backend.to_possible_value().map_or_else(
+        || format!("{backend:?}"),
+        |value| value.get_name().to_string(),
+    )
+}
+
+/// Whether a campaign attempt may run on this backend: whether its execution
+/// identity has been shown end to end. Exhaustive so a new backend is a compile
+/// error until someone states this. The device arms aren't shown yet, and CI
+/// doesn't run them through this path.
+pub(crate) fn campaign_supports_backend(backend: ExecBackend) -> bool {
+    match backend {
+        ExecBackend::Reference
+        | ExecBackend::Production
+        | ExecBackend::ProductionNvfp4
+        | ExecBackend::ProductionQ8
+        | ExecBackend::ProductionQ6k
+        | ExecBackend::ProductionQ4k
+        | ExecBackend::ProductionQ4kQ8k
+        | ExecBackend::ProductionNvfp4Q8 => true,
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
+        ExecBackend::Metal
+        | ExecBackend::MetalMxfp4
+        | ExecBackend::MetalMxfp4All
+        | ExecBackend::MetalNvfp4
+        | ExecBackend::MetalNvfp4NoHead
+        | ExecBackend::MetalNvfp4Ffn
+        | ExecBackend::MetalLowered
+        | ExecBackend::MetalLoweredFfn
+        | ExecBackend::MetalLoweredNoHead
+        | ExecBackend::MetalLoweredMxfp4
+        | ExecBackend::MetalLoweredMxfp4Ffn
+        | ExecBackend::MetalLoweredF16 => false,
     }
 }
 

@@ -16,6 +16,7 @@ use larql_vindex::format::vindex3::opplan::exec::prepared::{
 use serde_json::{json, Map, Value};
 
 use super::admission::{AdmissionDecision, RunMode, COUNTING};
+use super::instance_evidence::{EvidenceClass, BINDING_IMPLEMENTATION};
 use super::sealed_latency::SealedDigest;
 use super::GB;
 
@@ -27,6 +28,21 @@ use super::GB;
 /// container declared the segment (so the region's key survives cloning),
 /// and the header carries
 /// `binary.commit` and `consistent`.
+///
+/// `/4` (MEM-002 I2b): `instance_identity` on the admission record is now
+/// the facts (it said `not_recorded`), with an `evidence_class` beside it
+/// and on `attempt_end`; a new `instance_identity` record before binding (it
+/// carries no clock, so the stream cannot date the bind) and after the run;
+/// `representation_source` and `binding_implementation` on the admission
+/// record, because a bind time from a binary before I2b is a different
+/// implementation's. `attempt_end` carries a finished sealed file's digest.
+///
+/// On `attempt_end`, `status` says whether the attempt completed and
+/// `evidence_class` is its identity's last reading; both must allow an
+/// attempt's use. `invalid` means its identity failed, or that it ended
+/// before any was judged. An attempt that ended with `status: error` is not
+/// usable whatever its class. `above_threshold` is neither: it is an
+/// ordinary rejection of usable evidence.
 ///
 /// `/3` (MEM-002 I2a): a new `admission` record, written and flushed
 /// after the binding observation and before any pass; a closing
@@ -42,7 +58,7 @@ use super::GB;
 /// records from two observations are comparable only when both headers
 /// carry equal, non-null `container.index_json_sha256`; the procedure
 /// that pairs them must check it, and a null digest refuses pairing.
-pub(in super::super) const SCHEMA: &str = "larql.residency-observation/3";
+pub(in super::super) const SCHEMA: &str = "larql.residency-observation/4";
 
 /// The build-time variable a measured build records its commit in. Set it
 /// when building a binary whose records are evidence, e.g.
@@ -196,7 +212,15 @@ pub(in super::super) struct AttemptFacts {
     pub(in super::super) disqualifiers: Vec<String>,
     pub(in super::super) unquiet_ok: bool,
     pub(in super::super) expert_access: String,
+    /// `auto`, `stored`: a campaign refuses `transient`.
+    pub(in super::super) representation_source: String,
     pub(in super::super) sealed_latency: Option<String>,
+    /// The `instance_identity` block, at this moment.
+    pub(in super::super) instance: Value,
+    /// The `execution_identity` block: what was asked for, and what the
+    /// store selected and the image pinned.
+    pub(in super::super) execution: Value,
+    pub(in super::super) evidence_class: EvidenceClass,
 }
 
 /// The admission record: the decision, the facts it was made from, and
@@ -231,15 +255,17 @@ pub(in super::super) fn admission_record(
         "warmup": facts.warmup,
         "repeat": facts.repeat,
         "expert_access": facts.expert_access,
+        "representation_source": facts.representation_source,
         "quiet": {
             "qualification": facts.qualification,
             "disqualifiers": facts.disqualifiers,
             "unquiet_ok": facts.unquiet_ok,
         },
         "sealed_latency": facts.sealed_latency.as_ref().map(|path| json!({ "path": path })),
-        // MEM-002 I2b records the identity of every mapped file; until it
-        // lands, nothing here says the container instance was verified.
-        "instance_identity": { "status": "not_recorded" },
+        "binding_implementation": BINDING_IMPLEMENTATION,
+        "evidence_class": facts.evidence_class.name(),
+        "instance_identity": facts.instance,
+        "execution_identity": facts.execution,
         "clock": point_clock(),
         "wall": wall_seconds(SystemTime::now()),
     })
@@ -248,13 +274,26 @@ pub(in super::super) fn admission_record(
 /// The attempt's last record: whether the passes completed, and the error
 /// if they did not. An admission record with no `attempt_end` after it is
 /// an attempt that did not finish.
-pub(in super::super) fn attempt_end_record(run: &RunIdentity, error: Option<&str>) -> Value {
+pub(in super::super) fn attempt_end_record(
+    run: &RunIdentity,
+    error: Option<&str>,
+    class: EvidenceClass,
+    sealed: Option<&SealedDigest>,
+) -> Value {
     json!({
         "schema": SCHEMA,
         "record": "attempt_end",
         "run_id": run.run_id,
         "status": if error.is_some() { "error" } else { "completed" },
         "error": error,
+        "evidence_class": class.name(),
+        "sealed_latency": sealed.map(|d| json!({
+            "path": std::path::absolute(&d.path)
+                .unwrap_or_else(|_| d.path.clone())
+                .display()
+                .to_string(),
+            "sha256": d.sha256,
+        })),
         "clock": point_clock(),
         "wall": wall_seconds(SystemTime::now()),
     })
@@ -274,7 +313,7 @@ pub(in super::super) fn sealed_header_fields(sealed: &SealedDigest) -> Map<Strin
     fields
 }
 
-fn wall_seconds(t: SystemTime) -> f64 {
+pub(in super::super) fn wall_seconds(t: SystemTime) -> f64 {
     t.duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0)

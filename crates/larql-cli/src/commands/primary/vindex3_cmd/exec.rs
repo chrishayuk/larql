@@ -269,8 +269,20 @@ fn run_on<B: PlanBackend>(
                         campaign: args.residency_campaign,
                         regions: args.residency_regions.as_deref(),
                         sealed_latency: args.sealed_latency.as_deref(),
+                        manifest: args.verification_manifest.as_deref(),
                         threshold_bytes: args.admission_threshold_bytes,
                         basis: args.admission_basis.as_deref(),
+                        execution: super::generate::execution_evidence::ExecutionRequest {
+                            component: args.component.clone(),
+                            backend: super::prepare::backend_flag_name(args.backend),
+                            wanted_encoding: super::prepare::wanted_encoding(
+                                args.backend,
+                                args.plugin.representation.as_deref(),
+                            ),
+                            plugins: args.plugin.plugins.clone(),
+                            lowering: args.plugin.lowering.clone(),
+                            representation: args.plugin.representation.clone(),
+                        },
                     },
                 );
             }
