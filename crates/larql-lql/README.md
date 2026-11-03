@@ -40,3 +40,4 @@ cargo test -p larql-lql
 
 Parser and executor coverage must both change when adding a statement. Runtime
 sessions and backend arithmetic remain in their owning crates.
+<!-- gate exercise -->
