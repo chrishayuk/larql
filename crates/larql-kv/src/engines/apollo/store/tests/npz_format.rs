@@ -73,6 +73,27 @@ fn comment_planting_an_end_signature_loads() {
     ));
 }
 
+/// A last end record that fails its checks mustn't fall back to an earlier one:
+/// `zipfile` commits to the last signature, so the two readers would see two archives.
+#[test]
+fn inconsistent_last_end_record_does_not_select_an_earlier_archive() {
+    const DISK_AT: usize = 4;
+    let earlier = raw_archive(&[member()]);
+    let mut archive = [earlier, raw_archive(&[member()])].concat();
+    let last_end_at = archive.len() - END_RECORD_LEN;
+    archive[last_end_at + DISK_AT] = 1;
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// The same with a signature after a complete archive and outside its comment.
+#[test]
+fn end_signature_past_the_comment_is_refused() {
+    let mut archive = raw_archive(&[member()]);
+    archive.extend_from_slice(END_RECORD_SIGNATURE);
+    archive.extend_from_slice(&[0xAB; END_RECORD_LEN]);
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
 #[test]
 fn bytes_after_the_comment_load() {
     let mut archive = raw_archive(&[member()]);
@@ -627,6 +648,17 @@ fn unicode_path_naming_a_member_differently_is_refused() {
         .with_leading_extra(&unicode_path_extra(OTHER_NAME));
     assert_ambiguous(
         &entries_archive_err(&raw_archive(&[entries_renamed_away])),
+        ENTRIES_MEMBER,
+    );
+}
+
+/// A plain name with a non-ASCII path differs under `zip` and `zipfile` too.
+#[test]
+fn unicode_path_non_ascii_on_a_plain_name_is_refused() {
+    let renamed = RawMember::stored(ENTRIES_MEMBER, entries_with_token(1))
+        .with_leading_extra(&unicode_path_extra("entriés.npy"));
+    assert_ambiguous(
+        &entries_archive_err(&raw_archive(&[renamed])),
         ENTRIES_MEMBER,
     );
 }
