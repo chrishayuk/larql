@@ -155,10 +155,51 @@ pub fn run_statement(input: &str) -> Result<Vec<String>, Box<dyn std::error::Err
     Ok(session.execute(&stmt)?)
 }
 
-/// Run a batch of LQL statements from a file or string.
+/// Every statement completed, and every verification contract was satisfied.
+pub const EXIT_OK: i32 = 0;
+/// A statement failed to parse, was refused or failed to execute. A contract
+/// that could not be evaluated is one of these, never a success.
+pub const EXIT_ERROR: i32 = 1;
+/// Every statement completed, and a contract was evaluated and violated.
+pub const EXIT_CONTRACT_VIOLATED: i32 = 2;
+
+/// What a batch did. Its `lines` are the same whatever happened: each
+/// statement's output, or `Error: ...` where a statement failed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BatchOutcome {
+    pub lines: Vec<String>,
+    /// Statements that failed to parse, were refused or failed to execute.
+    pub errors: usize,
+    /// `VERIFY REPRESENTATION` statements that reported `violated`.
+    pub contract_violations: usize,
+}
+
+impl BatchOutcome {
+    /// The command-level result. An error outranks a violation, because a
+    /// statement that failed may have been a contract that never ran.
+    pub fn exit_code(&self) -> i32 {
+        if self.errors > 0 {
+            EXIT_ERROR
+        } else if self.contract_violations > 0 {
+            EXIT_CONTRACT_VIOLATED
+        } else {
+            EXIT_OK
+        }
+    }
+}
+
+/// Run a batch of LQL statements from a file or string, returning only the
+/// output. A statement's failure is in that output and nowhere else; use
+/// [`run_batch_outcome`] to act on it.
 pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    Ok(run_batch_outcome(input).lines)
+}
+
+/// Run a batch of LQL statements, continuing after a failed statement, and
+/// report what happened.
+pub fn run_batch_outcome(input: &str) -> BatchOutcome {
     let mut session = Session::new();
-    let mut all_output = Vec::new();
+    let mut outcome = BatchOutcome::default();
 
     // Split on semicolons, handling strings
     for stmt_text in split_statements(input) {
@@ -174,14 +215,21 @@ pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>>
         }
         match parser::parse(trimmed) {
             Ok(stmt) => match session.execute(&stmt) {
-                Ok(lines) => all_output.extend(lines),
-                Err(e) => all_output.push(format!("Error: {e}")),
+                Ok(lines) => outcome.lines.extend(lines),
+                Err(e) => {
+                    outcome.lines.push(format!("Error: {e}"));
+                    outcome.errors += 1;
+                }
             },
-            Err(e) => all_output.push(format!("Error: {e}")),
+            Err(e) => {
+                outcome.lines.push(format!("Error: {e}"));
+                outcome.errors += 1;
+            }
         }
     }
 
-    Ok(all_output)
+    outcome.contract_violations = session.contract_violations();
+    outcome
 }
 
 fn is_complete_statement(s: &str) -> bool {

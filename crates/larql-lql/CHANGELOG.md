@@ -6,6 +6,15 @@ The format follows the conventions of [Keep a Changelog](https://keepachangelog.
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## [2026-11-03] — `larql lql` exit status
+
+**Behaviour change.** `larql lql` used to exit 0 whatever happened, reporting failures only in its
+output. It now exits 1 if any statement failed to parse, was refused or failed to execute, and 2 if
+every statement completed and a verification contract was violated. An error outranks a violation.
+Statements still all run and print the same output. Usage errors in `larql lql` itself now exit 1
+rather than clap's 2, so that 2 means one thing. `run_batch` is unchanged;
+`run_batch_outcome` also reports what happened. See spec §3.9.
+
 ## [2026-11-02] — `VERIFY REPRESENTATION`
 
 `VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST "<source>"` reports an
