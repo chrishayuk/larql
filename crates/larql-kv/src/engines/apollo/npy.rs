@@ -52,6 +52,41 @@ pub enum NpyError {
     },
     #[error("fortran-order arrays are not supported")]
     FortranOrder,
+    #[error("shape {shape:?} × {stride} bytes overflows the address space")]
+    ShapeOverflow { shape: Vec<usize>, stride: usize },
+}
+
+/// Bytes per element of both `<f4` and `<u4`.
+const ELEMENT_STRIDE: usize = 4;
+
+/// Byte length a `shape` of `stride`-byte rows occupies, or
+/// [`NpyError::ShapeOverflow`] if it does not fit in `usize`.
+///
+/// Unchecked, this product wraps in release builds: `2^62 × 4` becomes 0, which
+/// matches an empty data section and lets the shape reach the allocator.
+pub fn checked_data_len(shape: &[usize], stride: usize) -> Result<usize, NpyError> {
+    shape
+        .iter()
+        .try_fold(stride, |len, dim| len.checked_mul(*dim))
+        .ok_or_else(|| NpyError::ShapeOverflow {
+            shape: shape.to_vec(),
+            stride,
+        })
+}
+
+/// `data`, once it is exactly as long as `shape` says. Every allocation sized
+/// from a shape happens after this, so it is bounded by bytes actually present.
+fn checked_data<'a>(data: &'a [u8], shape: &[usize], stride: usize) -> Result<&'a [u8], NpyError> {
+    let expected = checked_data_len(shape, stride)?;
+    if data.len() != expected {
+        return Err(NpyError::DataLength {
+            got: data.len(),
+            expected,
+            shape: shape.to_vec(),
+            stride,
+        });
+    }
+    Ok(data)
 }
 
 /// Parse the `.npy` header. Returns `(header, data_offset)` where `data_offset`
@@ -113,17 +148,8 @@ pub fn read_f32_1d(bytes: &[u8]) -> Result<Vec<f32>, NpyError> {
             snippet: format!("expected 1D, got {:?}", header.shape),
         });
     }
-    let n = header.shape[0];
-    let data = &bytes[data_off..];
-    let expected = n * 4;
-    if data.len() != expected {
-        return Err(NpyError::DataLength {
-            got: data.len(),
-            expected,
-            shape: header.shape.clone(),
-            stride: 4,
-        });
-    }
+    let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
+    let n = data.len() / ELEMENT_STRIDE;
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let o = i * 4;
@@ -141,17 +167,8 @@ pub fn read_f32_1d(bytes: &[u8]) -> Result<Vec<f32>, NpyError> {
 pub fn read_f32_flat(bytes: &[u8]) -> Result<(Vec<f32>, Vec<usize>), NpyError> {
     let (header, data_off) = parse_header(bytes)?;
     check_dtype(&header.descr, "<f4")?;
-    let n: usize = header.shape.iter().product();
-    let data = &bytes[data_off..];
-    let expected = n * 4;
-    if data.len() != expected {
-        return Err(NpyError::DataLength {
-            got: data.len(),
-            expected,
-            shape: header.shape.clone(),
-            stride: 4,
-        });
-    }
+    let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
+    let n = data.len() / ELEMENT_STRIDE;
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let o = i * 4;
@@ -175,17 +192,8 @@ pub fn read_u32_1d(bytes: &[u8]) -> Result<Vec<u32>, NpyError> {
             snippet: format!("expected 1D, got {:?}", header.shape),
         });
     }
-    let n = header.shape[0];
-    let data = &bytes[data_off..];
-    let expected = n * 4;
-    if data.len() != expected {
-        return Err(NpyError::DataLength {
-            got: data.len(),
-            expected,
-            shape: header.shape.clone(),
-            stride: 4,
-        });
-    }
+    let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
+    let n = data.len() / ELEMENT_STRIDE;
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let o = i * 4;

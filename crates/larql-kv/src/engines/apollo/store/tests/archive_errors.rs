@@ -4,14 +4,14 @@
 
 use super::*;
 
-const WINDOW_TOKENS_NPZ: &str = "window_token_lists.npz";
-const ENTRIES_NPZ: &str = "entries.npz";
+pub(super) const WINDOW_TOKENS_NPZ: &str = "window_token_lists.npz";
+pub(super) const ENTRIES_NPZ: &str = "entries.npz";
 /// Zip local-file-header signature (`PK\x03\x04`).
 const LOCAL_HEADER_SIGNATURE: &[u8] = b"PK\x03\x04";
 /// `.npy` magic prefix, used to find a stored member's payload in the archive.
 const NPY_MAGIC: &[u8] = b"\x93NUMPY";
 
-fn one_entry() -> Vec<VecInjectEntry> {
+pub(super) fn one_entry() -> Vec<VecInjectEntry> {
     vec![VecInjectEntry {
         token_id: 7,
         coefficient: 1.0,
@@ -22,7 +22,7 @@ fn one_entry() -> Vec<VecInjectEntry> {
 }
 
 /// A one-window store whose `file` archive is then replaced by `bytes`.
-fn store_with_archive(file: &str, bytes: &[u8]) -> TempDir {
+pub(super) fn store_with_archive(file: &str, bytes: &[u8]) -> TempDir {
     let dir = TempDir::new().unwrap();
     write_minimal_store(dir.path(), 1, 4, 3, &one_entry());
     std::fs::write(dir.path().join(file), bytes).unwrap();
@@ -64,7 +64,7 @@ fn local_header_corrupted_npz(name: &str, payload: Vec<u8>) -> Vec<u8> {
     zip
 }
 
-fn load_err(dir: &TempDir) -> StoreLoadError {
+pub(super) fn load_err(dir: &TempDir) -> StoreLoadError {
     ApolloStore::load(dir.path()).unwrap_err()
 }
 

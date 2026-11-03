@@ -663,3 +663,12 @@ fn structured_npy_bad_magic_errors() {
 }
 
 mod archive_errors;
+mod raw_archive;
+// `shape` and `num_windows` values past 2^32 do not parse on a 32-bit target,
+// so these cases would be refused earlier there, with a different variant.
+#[cfg(target_pointer_width = "64")]
+mod hostile_archive_sizes;
+#[cfg(target_pointer_width = "64")]
+mod hostile_manifest;
+#[cfg(target_pointer_width = "64")]
+mod hostile_npy_shapes;

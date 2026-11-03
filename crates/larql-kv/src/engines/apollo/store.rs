@@ -17,7 +17,14 @@
 //! Loading uses a handwritten `.npy` parser (see `npy.rs`) + the `zip` crate
 //! for the `.npz` containers. No `ndarray-npy` dependency because its
 //! current release (0.10) pins ndarray 0.17 and our workspace is on 0.16.
+//!
+//! Every size in a store is file-declared and untrusted. The loader allocates
+//! only from what was checked against bytes present on disk: see
+//! `ArchiveBudget` for `.npz` members and `npy::checked_data_len` for shapes.
+//! `manifest.num_windows` sizes nothing, because the vector grows per file read.
+//! Allocations inside `zip::ZipArchive::new` are outside this module's control.
 
+use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
@@ -57,6 +64,33 @@ pub enum StoreLoadError {
     StructuredDtype { path: String, reason: String },
     #[error("window_token_lists archive invalid: {0}")]
     WindowArchive(String),
+    /// A member's two declared sizes disagree. See `ArchiveBudget`.
+    #[error(
+        "{path}: member declares {declared} uncompressed bytes but occupies {stored} bytes; \
+         only stored (uncompressed) .npz members are supported"
+    )]
+    MemberSizeInconsistent {
+        path: String,
+        declared: u64,
+        stored: u64,
+    },
+    /// The archive's members claim more bytes than the file holds.
+    /// See `ArchiveBudget`.
+    #[error(
+        "{path}: members claim {claimed} bytes in total but the archive is {archive_len} bytes"
+    )]
+    MemberExceedsArchive {
+        path: String,
+        claimed: u64,
+        archive_len: u64,
+    },
+    /// A member read back a different length from the one it declared.
+    #[error("{path}: member declares {declared} bytes but read back {read}")]
+    MemberLengthMismatch {
+        path: String,
+        declared: u64,
+        read: u64,
+    },
 }
 
 /// Contents of `manifest.json`.
@@ -186,7 +220,9 @@ fn load_manifest(path: &Path) -> Result<StoreManifest, StoreLoadError> {
 
 fn load_boundaries(path: &Path, num_windows: usize) -> Result<Vec<Vec<f32>>, StoreLoadError> {
     let dir = path.join("boundaries");
-    let mut out = Vec::with_capacity(num_windows);
+    // Grown per file: `num_windows` is unvalidated, and a missing file ends the
+    // loop, so a huge claim costs one failed open rather than a huge reservation.
+    let mut out = Vec::new();
     for i in 0..num_windows {
         let p = dir.join(format!("window_{:03}.npy", i));
         let bytes = read_file(&p)?;
@@ -209,17 +245,128 @@ fn load_boundary_residual(path: &Path) -> Result<Vec<f32>, StoreLoadError> {
     Ok(flat)
 }
 
+/// Tracks what an archive's members claim against the file's real length.
+///
+/// The rule, for each member, before anything is allocated for it:
+///
+/// 1. Its declared uncompressed size must equal the size it occupies. This crate
+///    enables no `zip` compression feature, so only stored members can be decoded
+///    and for those the two are the same number. `numpy.savez` writes stored
+///    members; `numpy.savez_compressed` output already fails with
+///    `ZipError::UnsupportedArchive`.
+/// 2. The bytes occupied, summed over the members read so far, must fit in the
+///    file. Members of a real archive are disjoint regions of it, so this holds
+///    for any honest writer. It also refuses directory records that share one
+///    payload, which would otherwise decode to many times the file's length.
+///
+/// The file's length comes from the open handle, not from the archive, so
+/// together these limit all member data to bytes that exist. There is no
+/// tunable constant: a real store of any size passes.
+///
+/// Rule 1 also fails closed if a downstream build unifies in a `zip` compression
+/// feature: compressed members are refused rather than admitted without a bound.
+/// Accepting them would need its own limit, such as DEFLATE's 1032:1 ceiling.
+#[derive(Debug)]
+struct ArchiveBudget {
+    archive_len: u64,
+    claimed: u64,
+}
+
+impl ArchiveBudget {
+    fn admit(&mut self, path: &str, declared: u64, stored: u64) -> Result<(), StoreLoadError> {
+        if declared != stored {
+            return Err(StoreLoadError::MemberSizeInconsistent {
+                path: path.to_string(),
+                declared,
+                stored,
+            });
+        }
+        let claimed = self.claimed.saturating_add(stored);
+        if claimed > self.archive_len {
+            return Err(StoreLoadError::MemberExceedsArchive {
+                path: path.to_string(),
+                claimed,
+                archive_len: self.archive_len,
+            });
+        }
+        self.claimed = claimed;
+        Ok(())
+    }
+}
+
+/// One byte past the declared size, read so that a member decoding longer than
+/// it declared is detected rather than silently cut to length.
+const READ_OVERRUN_PROBE_BYTES: u64 = 1;
+
+fn open_archive(path: &Path) -> Result<(zip::ZipArchive<File>, ArchiveBudget), StoreLoadError> {
+    let io_err = |source| StoreLoadError::Io {
+        path: path.display().to_string(),
+        source,
+    };
+    let file = File::open(path).map_err(io_err)?;
+    let archive_len = file.metadata().map_err(io_err)?.len();
+    let archive = zip::ZipArchive::new(file).map_err(|source| StoreLoadError::Zip {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let budget = ArchiveBudget {
+        archive_len,
+        claimed: 0,
+    };
+    Ok((archive, budget))
+}
+
+/// Read one member, sized by what arrives and never by what it declares. Growth
+/// inside `read_to_end` is fallible, so a refused allocation is an `Io` error
+/// rather than an abort.
+fn read_member(
+    archive: &mut zip::ZipArchive<File>,
+    budget: &mut ArchiveBudget,
+    archive_path: &Path,
+    name: &str,
+) -> Result<Vec<u8>, StoreLoadError> {
+    let member_path = format!("{}::{}", archive_path.display(), name);
+    let entry = archive
+        .by_name(name)
+        .map_err(|source| StoreLoadError::Zip {
+            path: member_path.clone(),
+            source,
+        })?;
+    let declared = entry.size();
+    budget.admit(&member_path, declared, entry.compressed_size())?;
+
+    let mut buf = Vec::new();
+    entry
+        .take(declared.saturating_add(READ_OVERRUN_PROBE_BYTES))
+        .read_to_end(&mut buf)
+        .map_err(|source| StoreLoadError::Io {
+            path: member_path.clone(),
+            source,
+        })?;
+    check_member_read_len(&member_path, declared, buf.len())?;
+    Ok(buf)
+}
+
+/// With rule 1 of [`ArchiveBudget`] holding, a stored member comes up short only
+/// if its data runs off the end of the file and a forged CRC still matches.
+fn check_member_read_len(path: &str, declared: u64, read: usize) -> Result<(), StoreLoadError> {
+    let read = read as u64; // Widening: usize is at most 64 bits on supported targets.
+    if read != declared {
+        return Err(StoreLoadError::MemberLengthMismatch {
+            path: path.to_string(),
+            declared,
+            read,
+        });
+    }
+    Ok(())
+}
+
 fn load_window_tokens(path: &Path) -> Result<Vec<Vec<u32>>, StoreLoadError> {
     let p = path.join("window_token_lists.npz");
-    let file = std::fs::File::open(&p).map_err(|source| StoreLoadError::Io {
-        path: p.display().to_string(),
-        source,
-    })?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|source| StoreLoadError::Zip {
-        path: p.display().to_string(),
-        source,
-    })?;
+    let (mut archive, mut budget) = open_archive(&p)?;
 
+    // `archive.len()` counts directory records the archive has already parsed
+    // into memory, so this and the `out` below add a constant factor to that.
     // Collect and numerically sort the members so returned Vec is indexable
     // by window_id. Member names are like "0.npy", "1.npy", ...
     let mut numbered: Vec<(usize, String)> = Vec::with_capacity(archive.len());
@@ -256,19 +403,7 @@ fn load_window_tokens(path: &Path) -> Result<Vec<Vec<u32>>, StoreLoadError> {
 
     let mut out = Vec::with_capacity(numbered.len());
     for (_id, name) in numbered {
-        let mut entry = archive
-            .by_name(&name)
-            .map_err(|source| StoreLoadError::Zip {
-                path: format!("{}::{}", p.display(), name),
-                source,
-            })?;
-        let mut buf = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut buf)
-            .map_err(|source| StoreLoadError::Io {
-                path: format!("{}::{}", p.display(), name),
-                source,
-            })?;
+        let buf = read_member(&mut archive, &mut budget, &p, &name)?;
         let arr = npy::read_u32_1d(&buf).map_err(|source| StoreLoadError::Npy {
             path: format!("{}::{}", p.display(), name),
             source,
@@ -280,14 +415,7 @@ fn load_window_tokens(path: &Path) -> Result<Vec<Vec<u32>>, StoreLoadError> {
 
 fn load_entries(path: &Path) -> Result<Vec<VecInjectEntry>, StoreLoadError> {
     let p = path.join("entries.npz");
-    let file = std::fs::File::open(&p).map_err(|source| StoreLoadError::Io {
-        path: p.display().to_string(),
-        source,
-    })?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|source| StoreLoadError::Zip {
-        path: p.display().to_string(),
-        source,
-    })?;
+    let (mut archive, mut budget) = open_archive(&p)?;
 
     // Find the first member whose name starts with "entries" (typically
     // "entries.npy" inside the zip).
@@ -310,19 +438,7 @@ fn load_entries(path: &Path) -> Result<Vec<VecInjectEntry>, StoreLoadError> {
         found.ok_or_else(|| StoreLoadError::MissingFile("entries.npz::entries".into()))?
     };
 
-    let mut entry = archive
-        .by_name(&member_name)
-        .map_err(|source| StoreLoadError::Zip {
-            path: format!("{}::{}", p.display(), member_name),
-            source,
-        })?;
-    let mut bytes = Vec::with_capacity(entry.size() as usize);
-    entry
-        .read_to_end(&mut bytes)
-        .map_err(|source| StoreLoadError::Io {
-            path: member_name.clone(),
-            source,
-        })?;
+    let bytes = read_member(&mut archive, &mut budget, &p, &member_name)?;
 
     parse_structured_entries_npy(&bytes).map_err(|reason| StoreLoadError::StructuredDtype {
         path: format!("{}::{}", p.display(), member_name),
@@ -396,7 +512,7 @@ fn parse_structured_entries_npy(bytes: &[u8]) -> Result<Vec<VecInjectEntry>, Str
     const ROW_SIZE: usize = 4 + 4 + 2 + 2 + 2;
     let n = header.shape[0];
     let data = &bytes[data_off..];
-    let expected = n * ROW_SIZE;
+    let expected = npy::checked_data_len(&header.shape, ROW_SIZE).map_err(|e| e.to_string())?;
     if data.len() != expected {
         return Err(format!(
             "data size {} != expected {} ({} rows × {} bytes)",
@@ -407,6 +523,7 @@ fn parse_structured_entries_npy(bytes: &[u8]) -> Result<Vec<VecInjectEntry>, Str
         ));
     }
 
+    // `n` rows of `ROW_SIZE` bytes are present in `data`, as just checked.
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let o = i * ROW_SIZE;
