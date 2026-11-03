@@ -29,6 +29,7 @@ use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use super::decode::{greedy_decode, DecodeReport, Flow};
 
 pub(super) mod admission;
+pub(super) mod instance_evidence;
 mod residency_curve;
 pub(super) use residency_curve::*;
 pub(super) mod residency_record;

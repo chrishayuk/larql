@@ -3,11 +3,11 @@
 use super::super::super::OperandRef;
 use crate::error::VindexError;
 use crate::format::vindex3::auxiliary_references::OperandAddress;
+use crate::format::vindex3::encode::segment::read_exact_at;
 use crate::format::vindex3::represent::codec::{
     admit_auxiliary_names, AuxiliaryMetadata, CodecOperands, NamedStreams, RepresentationCodec,
     RepresentationExtent,
 };
-use std::io::{Read, Seek, SeekFrom};
 
 #[allow(unused_imports)]
 use super::*;
@@ -425,10 +425,15 @@ impl OperandStore {
                 operand.tensor, operand.object
             ))
         })?;
-        let mut file = std::fs::File::open(&segment.path)?;
-        file.seek(SeekFrom::Start(segment.payload_start + tensor.offset))?;
         let mut bytes = vec![0u8; tensor.len as usize];
-        file.read_exact(&mut bytes)?;
+        read_exact_at(
+            &segment.file,
+            &mut bytes,
+            segment.payload_start + tensor.offset,
+        )?;
+        segment
+            .copied
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         // Counted AFTER the read succeeds and from the buffer that was
         // filled, so the figure is what came off the disk rather than
         // what the tensor table said would.

@@ -20,16 +20,35 @@ use crate::format::vindex3::represent::codec::{
 };
 use crate::format::vindex3::represent::physical::{PhysicalStore, WeightRegion};
 
+mod instance;
 mod load;
 mod open;
+
+#[cfg(target_os = "macos")]
+pub use instance::{volume_uuid_from_descriptor, volume_uuid_from_mount};
+pub use instance::{
+    FileIdentity, SegmentInstance, StoreInstance, VOLUME_UUID_FROM_DESCRIPTOR,
+    VOLUME_UUID_FROM_MOUNT,
+};
 
 /// Safetensors dtype labels this reference executor can widen to f32.
 const DTYPE_F32: &str = "F32";
 const DTYPE_BF16: &str = "BF16";
 const DTYPE_F16: &str = "F16";
 
-/// One object's segment: file path, payload origin, and tensor table.
+/// One object's segment: the opened file, payload origin, and tensor table.
 struct SegmentMap {
+    /// The one descriptor this segment is opened through, kept for the
+    /// store's lifetime. Its header was read from it, every copied read and
+    /// every mapping go through it, and [`Self::identity_at_open`] came from
+    /// it.
+    file: std::fs::File,
+    /// This descriptor's identity when it was opened. A failure is kept,
+    /// not raised: only a campaign attempt refuses to run on one.
+    identity_at_open: Result<instance::FileIdentity, String>,
+    /// Whether any payload was copied through [`Self::file`].
+    copied: std::sync::atomic::AtomicBool,
+    /// Names the file in errors and records. Never reopened.
     path: PathBuf,
     /// The segment path as the container's index declares it, relative
     /// to the container root.
@@ -283,8 +302,18 @@ impl OperandStore {
                 Some(store) => store.clone(),
                 None => {
                     let store = Arc::new(
-                        PhysicalStore::map_segment(operand.object.clone(), &segment.path)?
-                            .declared_as(segment.declared.clone()),
+                        PhysicalStore::map_opened_segment(
+                            operand.object.clone(),
+                            &segment.file,
+                            &segment.path,
+                            segment
+                                .tensors
+                                .iter()
+                                .map(|(name, t)| (name.clone(), (t.offset, t.len)))
+                                .collect(),
+                            segment.payload_start,
+                        )?
+                        .declared_as(segment.declared.clone()),
                     );
                     mapped.insert(operand.object.clone(), store.clone());
                     store

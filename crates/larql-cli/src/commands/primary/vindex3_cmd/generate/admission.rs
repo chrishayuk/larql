@@ -8,6 +8,11 @@
 //! after binding, never revised, and it never stops the run: a refused
 //! attempt is still executed, timed and recorded.
 //!
+//! Identity is not an input either. A failure of the instance identity
+//! (see [`super::instance_evidence`]) stops a campaign attempt separately:
+//! that is evidence that cannot be used, while `above_threshold` is an
+//! ordinary rejection of evidence that can.
+//!
 //! There is no default threshold. Without one the outcome is
 //! `witness_only`, never `admitted`; the number comes from a frozen
 //! protocol, named in `--admission-basis`.
@@ -138,6 +143,7 @@ pub(in super::super) struct EvidenceRequest<'a> {
     pub(in super::super) campaign: bool,
     pub(in super::super) regions: Option<&'a Path>,
     pub(in super::super) sealed_latency: Option<&'a Path>,
+    pub(in super::super) manifest: Option<&'a Path>,
     pub(in super::super) threshold_bytes: Option<u64>,
     pub(in super::super) basis: Option<&'a str>,
 }
@@ -150,7 +156,12 @@ pub(in super::super) struct EvidencePlan {
     pub(in super::super) threshold: Option<AdmissionThreshold>,
     pub(in super::super) regions: Option<PathBuf>,
     pub(in super::super) sealed_latency: Option<PathBuf>,
+    pub(in super::super) manifest: Option<PathBuf>,
 }
+
+/// The `--representation-source` value whose precision map comes from an
+/// unbound pack header.
+const REPRESENTATION_SOURCE_TRANSIENT: &str = "transient";
 
 /// Refuse evidence flags on a run that would never reach the residency
 /// curve. Those paths create no evidence file and print their timings, so
@@ -163,7 +174,8 @@ pub(in super::super) fn refuse_evidence_outside_the_curve(
 ) -> Result<(), String> {
     let asks_for_evidence = args.residency_campaign
         || args.sealed_latency.is_some()
-        || args.residency_regions.is_some();
+        || args.residency_regions.is_some()
+        || args.verification_manifest.is_some();
     if !asks_for_evidence {
         return Ok(());
     }
@@ -177,11 +189,19 @@ pub(in super::super) fn refuse_evidence_outside_the_curve(
     ];
     if let Some((_, how)) = elsewhere.iter().find(|(applies, _)| *applies) {
         return Err(format!(
-            "--residency-regions, --sealed-latency and --residency-campaign record the \
-             residency curve, and a run {how} never reaches it: nothing would be recorded or sealed"
+            "--residency-regions, --sealed-latency, --verification-manifest and \
+             --residency-campaign record the residency curve, and a run {how} never reaches it: nothing would be recorded or sealed"
         ));
     }
     if args.residency_campaign {
+        if args.representation_source == REPRESENTATION_SOURCE_TRANSIENT {
+            return Err(
+                "a --residency-campaign attempt refuses --representation-source transient: \
+                 the pack header deciding its precision map is read by path before the store \
+                 exists, so that decision cannot be bound or verified"
+                    .into(),
+            );
+        }
         let ignored = [
             (args.draft_depth.is_some(), "--draft-depth"),
             (args.speculate.is_some(), "--speculate"),
@@ -262,6 +282,7 @@ pub(in super::super) fn plan_evidence(
         threshold,
         regions: request.regions.map(Path::to_path_buf),
         sealed_latency: request.sealed_latency.map(Path::to_path_buf),
+        manifest: request.manifest.map(Path::to_path_buf),
     })
 }
 

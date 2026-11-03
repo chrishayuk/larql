@@ -6,6 +6,7 @@ mod continuation_plugin;
 mod decode;
 mod exec_resume;
 mod generate;
+mod instance_evidence;
 mod lowerings;
 mod measure;
 mod observe;
