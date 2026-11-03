@@ -89,10 +89,16 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
     let plugins = Plugins::load(&args.plugin)?;
-    if args.gemv_witness.is_some() {
-        // Before anything loads, so that each operand's name is noted.
-        gemv_witness::start(args.gemv_witness_max_operands);
-    }
+    let binary_sha256 = match &args.gemv_witness {
+        Some(dir) => {
+            gemv_witness::check_target(dir)?;
+            // Before anything loads, so that each operand's name is noted.
+            gemv_witness::start(args.gemv_witness_max_operands);
+            // Now, not at the end: the file could be replaced during the run.
+            Some(sha256_hex(&std::fs::read(std::env::current_exe()?)?))
+        }
+        None => None,
+    };
     let OpenedComponent {
         plan, store, want, ..
     } = prepare(
@@ -148,33 +154,47 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     );
     report_representation_work(&store, want.as_deref(), outcome.is_ok());
     outcome?;
-    if let Some(dir) = &args.gemv_witness {
-        write_gemv_witness(dir, &args, want.as_deref())?;
+    if let (Some(dir), Some(binary_sha256)) = (&args.gemv_witness, &binary_sha256) {
+        write_gemv_witness(dir, &args, &tokens, want.as_deref(), binary_sha256)?;
     }
     Ok(())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Write what the run's kernel calls were, bound to what this process knows of itself.
 fn write_gemv_witness(
     dir: &Path,
     args: &ExecArgs,
+    tokens: &[u32],
     want: Option<&str>,
+    binary_sha256: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let capture = gemv_witness::finish();
-    let binary = std::fs::read(std::env::current_exe()?)?;
-    let binary_sha256: String = Sha256::digest(&binary)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
     let commit = super::generate::residency_record::build_commit();
+    let logit_dump = args
+        .logit_dump
+        .as_deref()
+        .ok_or("--gemv-witness requires --logit-dump")?;
     gemv_witness::write(
         &capture,
         &gemv_witness::Binding {
             build_commit: commit.as_deref(),
-            binary_sha256: &binary_sha256,
-            container: &args.container,
+            binary_sha256,
+            container: &std::fs::canonicalize(&args.container)?,
+            component: &args.component,
+            backend: &format!("{:?}", args.backend),
             representation: want.unwrap_or("none"),
             execution_arm: &format!("{:?}", kquant_execution()),
+            tokens,
+            draft_depth: args.draft_depth,
+            logit_dump,
+            logit_dump_sha256: &sha256_hex(&std::fs::read(logit_dump)?),
         },
         dir,
     )?;

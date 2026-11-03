@@ -321,21 +321,6 @@
   ],
   [
     "larql-vindex/src/format/vindex3/opplan/exec/cpu/executor.rs",
-    "CpuExecutor::project_inner",
-    "record"
-  ],
-  [
-    "larql-vindex/src/format/vindex3/opplan/exec/cpu/executor.rs",
-    "CpuExecutor::project_inner",
-    "record"
-  ],
-  [
-    "larql-vindex/src/format/vindex3/opplan/exec/cpu/executor.rs",
-    "CpuExecutor::project_many",
-    "record"
-  ],
-  [
-    "larql-vindex/src/format/vindex3/opplan/exec/cpu/executor.rs",
     "CpuExecutor::project_many",
     "record"
   ],
@@ -403,5 +388,10 @@
     "larql-vindex/src/format/vindex3/represent/state/key.rs",
     "MeasurementRegistry::record",
     "record_validated"
+  ],
+  [
+    "larql-vindex/src/format/vindex3/opplan/exec/cpu/kernels.rs",
+    "FusedKQuant::project_rows",
+    "record"
   ]
 ]

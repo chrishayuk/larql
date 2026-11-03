@@ -7,13 +7,13 @@ larql vindex3 exec <container> --backend production-q8 --representation-source s
   --tokens <ids> --logit-dump <file> --gemv-witness <new dir> [--gemv-witness-max-operands N]
 ```
 
-It records the first call on each of up to `N` distinct Q8_0 operands (default 1). A record stores that matrix's bytes in full, so a large `N` is
-large on disk. `--gemv-witness` requires `--logit-dump`, and it fails rather than writing an empty witness if the run never reaches this kernel: for
-example under `LARQL_KQUANT_EXEC=widen`, or on a device backend.
+It records the first call reached on each of up to `N` distinct Q8_0 operands (default 1). A record stores that matrix's bytes in full, so a large `N` is large on disk. `--gemv-witness`
+requires `--logit-dump`. It refuses `--bank`, a limit of 0, and an existing directory before the run starts. It fails rather than writing an empty witness if the run never reaches this kernel:
+for example under `LARQL_KQUANT_EXEC=widen`, or on a device backend. Don't compare timings from a capture run with others, because capturing digests and copies the matrices.
 
 ## What it holds
 
-The directory is new: an existing one is refused. `witness.json` is written last, so a directory without it is incomplete.
+The directory is new. `witness.json` is renamed into place after every stream is written and synced, so a witness.json that exists is whole, and a directory without it is incomplete.
 
 ```json
 {
@@ -24,12 +24,19 @@ The directory is new: an existing one is refused. `witness.json` is written last
   "build_commit": "a23b37b8…",
   "binary_sha256": "4d80dd42…",
   "container": "/models/m.vindex3",
+  "component": "target",
+  "backend": "ProductionQ8",
   "representation": "Q8_0",
+  "tokens": [9707, 1879],
+  "draft_depth": null,
+  "logit_dump": {"path": "logits.bin", "sha256": "…"},
   "calls_observed": 3136,
   "operands_noted": 196,
+  "max_operands": 196,
   "records": [
     {
       "call": 0,
+      "object": "target.decoder_stack",
       "tensor": "0.self_attn.q_proj.weight",
       "encoding": "Q8_0",
       "rows": 1024,
@@ -42,6 +49,14 @@ The directory is new: an existing one is refused. `witness.json` is written last
 }
 ```
 
+| Field | Meaning |
+|---|---|
+| `call` | The order calls reached the capture, counting every Q8_0 call from 0. With positions running concurrently, it isn't reproducible |
+| `calls_observed` | Q8_0 kernel calls during the run. Each batched position is one |
+| `operands_noted` | Q8_0 operands loaded |
+| `max_operands` | The limit asked for, so that "limited to N" can be told from "fewer were reached" |
+| `object`, `tensor` | The operand's name. A tensor name is only unique within its object |
+
 `blocks` are the stored bytes as the kernel read them. `x` and `y` are little-endian IEEE 754 binary32 bit patterns. `build_commit` is `null` unless the
 build set `LARQL_BUILD_COMMIT`. It's never read from a working tree.
 
@@ -50,7 +65,7 @@ build set `LARQL_BUILD_COMMIT`. It's never read from a working tree.
 It only observes. It runs after the kernel returns, and the engine computes no expected value. Judging the result belongs to the verifier.
 
 **A witness is the engine's report of what the engine did.** A verifier can check that `y` is right for that `x` and those bytes, and that the bytes
-are the container's. It can't check that the production kernel really produced `y`. Every field in the binding, including the tensor name and the commit,
+are what the container holds under that object and tensor name. It can't check that the production kernel really produced `y`. Every field in the binding, including the tensor name and the commit,
 is reported rather than established. This doesn't defend against a dishonest engine.
 
 **Capture on versus off.** The hook comes after the kernel and reads only, and a test holds the output bits equal with it on and off, on a small matrix.

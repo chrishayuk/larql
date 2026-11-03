@@ -5,9 +5,9 @@ use std::sync::Mutex;
 use super::super::executor::shared;
 use super::super::gemv_witness::{self as witness, Binding, MANIFEST, SCHEMA};
 use super::super::kernels::FusedKQuant;
-use super::super::projector::WeightRows;
+use super::super::projector::{CpuParallelism, DenseProjector, WeightRows};
 use crate::format::vindex3::opplan::exec::backend::KQuantActivation;
-use crate::format::vindex3::represent::kquant::{Q6_K, Q8_0};
+use crate::format::vindex3::represent::kquant::Q8_0;
 
 const ROWS: usize = 3;
 const COLS: usize = 64;
@@ -46,7 +46,7 @@ fn it_records_exactly_what_the_kernel_read_and_returned() {
     let _g = SERIAL.lock().unwrap();
     let (bytes, x) = (blocks(), x());
     witness::start(1);
-    witness::note_operand("layers.0.q_proj", "Q8_0", &bytes);
+    witness::note_operand("target.decoder_stack", "layers.0.q_proj", "Q8_0", &bytes);
     let y = shared()
         .unwrap()
         .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
@@ -54,7 +54,8 @@ fn it_records_exactly_what_the_kernel_read_and_returned() {
 
     assert_eq!(capture.records.len(), 1);
     let r = &capture.records[0];
-    assert_eq!(r.tensor.as_deref(), Some("layers.0.q_proj"));
+    assert_eq!(r.operand.as_ref().unwrap().object, "target.decoder_stack");
+    assert_eq!(r.operand.as_ref().unwrap().tensor, "layers.0.q_proj");
     assert_eq!(r.blocks, bytes);
     assert_eq!(bits(&r.x), bits(&x));
     assert_eq!(
@@ -73,7 +74,7 @@ fn the_output_bits_are_the_same_with_the_capture_on_or_off() {
         .unwrap()
         .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
     witness::start(1);
-    witness::note_operand("t", "Q8_0", &bytes);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
     let on = shared()
         .unwrap()
         .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
@@ -89,7 +90,7 @@ fn nothing_is_recorded_unless_a_capture_is_open() {
     shared()
         .unwrap()
         .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
-    witness::note_operand("t", "Q8_0", &bytes);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
     let capture = witness::finish();
     assert_eq!(capture.calls_observed, 0);
     assert_eq!(capture.operands_noted, 0);
@@ -97,33 +98,104 @@ fn nothing_is_recorded_unless_a_capture_is_open() {
 }
 
 #[test]
-fn only_q8_0_against_an_f32_activation_is_covered() {
+fn only_q8_0_is_covered() {
     let _g = SERIAL.lock().unwrap();
-    let x = x();
-    let (q8, q6) = (blocks(), vec![0u8; 8]);
+    let (x, q6) = (x(), vec![0u8; 8]);
     witness::start(10);
-    witness::record(
-        WeightRows::KQuant {
-            blocks: &q8,
-            codec: Q8_0,
-            activation: KQuantActivation::Q8k,
-        },
-        &x,
-        &[0.0],
-    );
-    witness::record(
-        WeightRows::KQuant {
-            blocks: &q6,
-            codec: Q6_K,
-            activation: KQuantActivation::F32,
-        },
-        &x,
-        &[0.0],
-    );
-    witness::note_operand("q6", "Q6_K", &q6);
+    witness::record(&q6, "Q6_K", &x, &[0.0]);
+    witness::note_operand("o", "q6", "Q6_K", &q6);
     let capture = witness::finish();
     assert_eq!(capture.calls_observed, 0);
     assert_eq!(capture.operands_noted, 0);
+}
+
+/// Another kernel handed the same weights.
+struct NotTheKernel;
+
+impl DenseProjector for NotTheKernel {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::LibraryOwned
+    }
+
+    fn project_rows(&self, _: WeightRows<'_>, _: &[f32], out: &mut [f32]) {
+        out.fill(7.0);
+    }
+}
+
+#[test]
+fn another_kernels_output_is_never_recorded_under_this_kernels_name() {
+    let _g = SERIAL.lock().unwrap();
+    let (bytes, x) = (blocks(), x());
+    witness::start(1);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
+    let y = shared()
+        .unwrap()
+        .project(&NotTheKernel, q8_f32(&bytes), &x, ROWS);
+    let capture = witness::finish();
+    assert_eq!(y, [7.0; ROWS]);
+    assert_eq!(capture.calls_observed, 0);
+    assert!(capture.records.is_empty());
+}
+
+#[test]
+fn other_bytes_at_a_noted_address_get_no_name_and_are_not_skipped() {
+    let _g = SERIAL.lock().unwrap();
+    let mut bytes = blocks();
+    let x = x();
+    witness::start(10);
+    witness::note_operand("o", "a", "Q8_0", &bytes);
+    shared()
+        .unwrap()
+        .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
+    // The same allocation, now holding something else, as a reused address would.
+    bytes[2] = bytes[2].wrapping_add(1);
+    shared()
+        .unwrap()
+        .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
+    let capture = witness::finish();
+
+    assert_eq!(
+        capture.records.len(),
+        2,
+        "the second operand wasn't skipped"
+    );
+    assert_eq!(capture.records[0].operand.as_ref().unwrap().tensor, "a");
+    assert!(
+        capture.records[1].operand.is_none(),
+        "it wasn't given a's name"
+    );
+
+    let tmp = tempfile::tempdir().unwrap();
+    let err = witness::write(&capture, &binding(tmp.path()), &tmp.path().join("w")).unwrap_err();
+    assert!(err.contains("no noted tensor"), "{err}");
+}
+
+#[test]
+fn the_batched_output_bits_are_the_same_with_the_capture_on_or_off() {
+    let _g = SERIAL.lock().unwrap();
+    let bytes = blocks();
+    let (x1, x2) = (x(), vec![0.5f32; COLS]);
+    let exec = shared().unwrap();
+    let off = exec.project_many(&FusedKQuant, q8_f32(&bytes), &[&x1, &x2], ROWS);
+    witness::start(1);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
+    let on = exec.project_many(&FusedKQuant, q8_f32(&bytes), &[&x1, &x2], ROWS);
+    witness::finish();
+    for (a, b) in off.iter().zip(&on) {
+        assert_eq!(bits(a), bits(b));
+    }
+}
+
+#[test]
+fn a_target_that_exists_or_has_no_parent_is_refused_up_front() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(witness::check_target(&tmp.path().join("new")).is_ok());
+    assert!(witness::check_target(tmp.path())
+        .unwrap_err()
+        .contains("exists"));
+    assert!(witness::check_target(&tmp.path().join("a/b"))
+        .unwrap_err()
+        .contains("no parent"));
 }
 
 #[test]
@@ -133,7 +205,7 @@ fn the_limit_keeps_the_first_call_on_each_operand_and_counts_them_all() {
     let (x1, x2) = (x(), vec![1.0f32; COLS]);
     witness::start(2);
     for (name, bytes) in [("a", &a), ("b", &b), ("c", &c)] {
-        witness::note_operand(name, "Q8_0", bytes);
+        witness::note_operand("o", name, "Q8_0", bytes);
     }
     shared()
         .unwrap()
@@ -153,7 +225,7 @@ fn the_limit_keeps_the_first_call_on_each_operand_and_counts_them_all() {
     let names: Vec<_> = capture
         .records
         .iter()
-        .map(|r| r.tensor.as_deref().unwrap())
+        .map(|r| r.operand.as_ref().unwrap().tensor.as_str())
         .collect();
     assert_eq!(names, ["a", "b"]);
     assert_eq!(
@@ -170,7 +242,7 @@ fn batched_positions_are_recorded_with_their_own_outputs() {
     let bytes = blocks();
     let (x1, x2) = (x(), vec![0.5f32; COLS]);
     witness::start(1);
-    witness::note_operand("t", "Q8_0", &bytes);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
     let outs = shared()
         .unwrap()
         .project_many(&FusedKQuant, q8_f32(&bytes), &[&x1, &x2], ROWS);
@@ -179,13 +251,19 @@ fn batched_positions_are_recorded_with_their_own_outputs() {
     assert_eq!(bits(&capture.records[0].y), bits(&outs[0]));
 }
 
-fn binding<'a>(container: &'a std::path::Path) -> Binding<'a> {
+fn binding(container: &std::path::Path) -> Binding<'_> {
     Binding {
         build_commit: Some("abc"),
         binary_sha256: "def",
         container,
+        component: "target",
+        backend: "ProductionQ8",
         representation: "Q8_0",
         execution_arm: "Direct",
+        tokens: &[1, 2],
+        draft_depth: Some(3),
+        logit_dump: std::path::Path::new("logits.bin"),
+        logit_dump_sha256: "aaa",
     }
 }
 
@@ -194,7 +272,7 @@ fn a_written_witness_holds_the_raw_bits_and_their_digests() {
     let _g = SERIAL.lock().unwrap();
     let (bytes, x) = (blocks(), x());
     witness::start(1);
-    witness::note_operand("t", "Q8_0", &bytes);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
     let y = shared()
         .unwrap()
         .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
@@ -209,7 +287,14 @@ fn a_written_witness_holds_the_raw_bits_and_their_digests() {
     assert_eq!(m["schema"], SCHEMA);
     assert_eq!(m["build_commit"], "abc");
     assert_eq!(m["execution_arm"], "Direct");
+    assert_eq!(m["component"], "target");
+    assert_eq!(m["tokens"], serde_json::json!([1, 2]));
+    assert_eq!(m["draft_depth"], 3);
+    assert_eq!(m["logit_dump"]["sha256"], "aaa");
+    assert_eq!(m["max_operands"], 1);
+    assert!(!dir.join(format!("{MANIFEST}.partial")).exists());
     let r = &m["records"][0];
+    assert_eq!(r["object"], "o");
     assert_eq!(r["tensor"], "t");
     assert_eq!(r["rows"], ROWS);
     assert_eq!(r["columns"], COLS);
