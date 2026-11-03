@@ -10,19 +10,20 @@ enforced, because one pull request could otherwise change both the engine and th
 | One change can't move both sides | The `boundary` check in `verifier-boundary.yml`, required on `main`, fails a pull request that changes both the measurement and `crates/`. It runs from the base branch, so a pull request can't rewrite it | Enforced by a required check |
 | Results are bound to what they measured | Each answer carries the verifier's version and code digest, the container's digest, and the source's pinned identity. These say what was measured. They don't authenticate who measured it (below) | By construction |
 | No circular answers | The expected results in `verifier/expected/` come from the verifier, and LARQL's tests don't generate them | By review |
-| Separate review of verifier changes | `.github/CODEOWNERS`, required on `main` | **Not independent yet** (below) |
+| Separate review of verifier changes | `.github/CODEOWNERS` | **Not enforced** (below) |
 
 **Repository settings.** These live outside the repository, so check them rather than trusting this page:
 `gh api repos/chrishayuk/larql/rules/branches/main`. Two rulesets apply to `main`:
 
 - `main branch`, with no bypass: changes arrive by pull request, `boundary` must pass, and the branch can't be deleted or force-pushed.
-- `verifier code owners`: a code owner must approve changes to the paths in `CODEOWNERS`. Repository admins can bypass this when merging a
-  pull request, not by pushing directly, and GitHub records each bypass.
+- `verifier code owners`: asks for code owner review, with admins allowed to bypass when merging a pull request, not by pushing directly. **This
+  doesn't block anything yet.** Its pull request rule requires 0 approvals, and on the first merge under it (#683, which changes a code-owned path, with no
+  approval) GitHub's rule evaluation recorded a plain pass rather than a bypass.
 
 **A sole code owner is not an independent reviewer.** The repository has one code owner, who writes most changes and can't approve their own
-pull request, so in practice their verifier changes merge through the recorded admin bypass. The rule stops changes from anyone else reaching
-the verifier unreviewed, and leaves a record. It does not put a second person between an author and the measurement. A change to a verifier
-contract or a numerical algorithm doesn't have independent human review until another trusted reviewer is added to `CODEOWNERS`.
+pull request. Even once enforced, the rule would stop changes from anyone else reaching the verifier unreviewed and leave a record of each bypass, but it
+would not put a second person between an author and the measurement. A change to a verifier contract or a numerical algorithm doesn't have independent
+human review until another trusted reviewer is added to `CODEOWNERS`.
 
 **The `verifier-and-engine` override.** Some changes do need both sides, such as a format change. To let one through:
 
