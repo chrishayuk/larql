@@ -166,9 +166,35 @@ struct Zip64End {
     records: u64,
 }
 
-/// The ZIP64 end record whose locator sits just before `end_at`, if there is one
-/// and it describes a single-disk archive.
-fn zip64_end(file: &mut File, end_at: u64) -> std::io::Result<Option<Zip64End>> {
+/// What a locator just before the end record leads to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Zip64Location {
+    /// No locator, or none describing a single-disk ZIP64 record.
+    Absent,
+    Found {
+        end: Zip64End,
+        /// Whether the record sits immediately before the locator, where `zipfile`
+        /// always looks. A record found only at the stated offset has an extensible
+        /// data sector after it.
+        adjacent: bool,
+    },
+    /// The locator's stated record and the adjacent one are different records.
+    /// `zipfile` reads the adjacent one and `zip` the stated one.
+    Conflicting,
+}
+
+fn zip64_record_at(
+    file: &mut File,
+    at: u64,
+) -> std::io::Result<Option<[u8; ZIP64_END_RECORD_LEN as usize]>> {
+    let mut record = [0u8; ZIP64_END_RECORD_LEN as usize];
+    let found =
+        read_at(file, at, &mut record)? && record[..SIGNATURE_LEN] == ZIP64_END_RECORD_SIGNATURE;
+    Ok(found.then_some(record))
+}
+
+/// The ZIP64 end record whose locator sits just before `end_at`.
+fn zip64_end(file: &mut File, end_at: u64) -> std::io::Result<Zip64Location> {
     /// Field offsets in the ZIP64 end record.
     const DISK_AT: usize = 16;
     const DIRECTORY_DISK_AT: usize = 20;
@@ -184,46 +210,55 @@ fn zip64_end(file: &mut File, end_at: u64) -> std::io::Result<Option<Zip64End>> 
     const MAX_TOTAL_DISKS: u32 = 1;
 
     let Some(locator_at) = end_at.checked_sub(ZIP64_LOCATOR_LEN) else {
-        return Ok(None);
+        return Ok(Zip64Location::Absent);
     };
     let mut locator = [0u8; ZIP64_LOCATOR_LEN as usize];
     if !read_at(file, locator_at, &mut locator)?
         || locator[..SIGNATURE_LEN] != ZIP64_LOCATOR_SIGNATURE
     {
-        return Ok(None);
+        return Ok(Zip64Location::Absent);
     }
     if u32_at(&locator, END_RECORD_DISK_AT) != 0
         || u32_at(&locator, TOTAL_DISKS_AT) > MAX_TOTAL_DISKS
     {
-        return Ok(None);
+        return Ok(Zip64Location::Absent);
     }
-    // The locator's offset is right unless the file has a prefix, in which case
-    // the record normally sits immediately before the locator.
-    let stated = u64_at(&locator, END_RECORD_OFFSET_AT);
-    let adjacent = locator_at.checked_sub(ZIP64_END_RECORD_LEN);
-    for at in [Some(stated), adjacent].into_iter().flatten() {
-        if at >= locator_at {
-            continue;
+    // The locator's offset is right unless the file has a prefix, in which case the
+    // record normally sits immediately before the locator.
+    let stated_at = Some(u64_at(&locator, END_RECORD_OFFSET_AT)).filter(|at| *at < locator_at);
+    let adjacent_at = locator_at.checked_sub(ZIP64_END_RECORD_LEN);
+    let stated = match stated_at {
+        Some(at) => zip64_record_at(file, at)?.map(|record| (at, record)),
+        None => None,
+    };
+    let adjacent = match adjacent_at {
+        Some(at) => zip64_record_at(file, at)?.map(|record| (at, record)),
+        None => None,
+    };
+    let (at, record, is_adjacent) = match (stated, adjacent) {
+        (Some((stated_at, _)), Some((adjacent_at, _))) if stated_at != adjacent_at => {
+            return Ok(Zip64Location::Conflicting);
         }
-        let mut record = [0u8; ZIP64_END_RECORD_LEN as usize];
-        if read_at(file, at, &mut record)? && record[..SIGNATURE_LEN] == ZIP64_END_RECORD_SIGNATURE
-        {
-            let records = u64_at(&record, RECORDS_AT);
-            if u64_at(&record, RECORDS_ON_DISK_AT) != records
-                || u32_at(&record, DISK_AT) != 0
-                || u32_at(&record, DIRECTORY_DISK_AT) != 0
-            {
-                return Ok(None);
-            }
-            return Ok(Some(Zip64End {
-                at,
-                directory_len: u64_at(&record, DIRECTORY_LEN_AT),
-                directory_offset: u64_at(&record, DIRECTORY_OFFSET_AT),
-                records,
-            }));
-        }
+        (_, Some((at, record))) => (at, record, true),
+        (Some((at, record)), None) => (at, record, false),
+        (None, None) => return Ok(Zip64Location::Absent),
+    };
+    let records = u64_at(&record, RECORDS_AT);
+    if u64_at(&record, RECORDS_ON_DISK_AT) != records
+        || u32_at(&record, DISK_AT) != 0
+        || u32_at(&record, DIRECTORY_DISK_AT) != 0
+    {
+        return Ok(Zip64Location::Absent);
     }
-    Ok(None)
+    Ok(Zip64Location::Found {
+        end: Zip64End {
+            at,
+            directory_len: u64_at(&record, DIRECTORY_LEN_AT),
+            directory_offset: u64_at(&record, DIRECTORY_OFFSET_AT),
+            records,
+        },
+        adjacent: is_adjacent,
+    })
 }
 
 /// The directory an end record at `end_at` describes, if it is self-consistent.
@@ -232,9 +267,9 @@ fn zip64_end(file: &mut File, end_at: u64) -> std::io::Result<Option<Zip64End>> 
 /// believed beyond the file.
 ///
 /// A locator next to an end record that doesn't defer to it is legal, and the directory
-/// then ends at the ZIP64 record. `zipfile` honours its values while `zip` uses the end
-/// record's. If the two disagree there is no single answer to what this archive
-/// contains, so the candidate is refused.
+/// then ends at the ZIP64 record. `zipfile` honours the adjacent record's values while
+/// `zip` uses the end record's. That is only one answer if the ZIP64 record is adjacent
+/// and they agree, so anything else is refused.
 fn directory_from_end_record(
     file: &mut File,
     end: &[u8],
@@ -262,16 +297,22 @@ fn directory_from_end_record(
     let defers_to_zip64 = records == ZIP64_U16_SENTINEL
         || directory_len == ZIP64_U32_SENTINEL
         || directory_offset == ZIP64_U32_SENTINEL;
-    let zip64 = zip64_end(file, end_at)?;
-    if let (false, Some(zip64)) = (defers_to_zip64, zip64) {
-        let agrees = zip64.directory_len == u64::from(directory_len)
-            && zip64.directory_offset == u64::from(directory_offset)
-            && zip64.records == u64::from(records);
-        if !agrees {
-            return Ok(None);
+    let used_zip64 = match zip64_end(file, end_at)? {
+        Zip64Location::Absent => None,
+        Zip64Location::Conflicting => return Ok(None),
+        Zip64Location::Found {
+            end: zip64,
+            adjacent,
+        } => {
+            let agrees = zip64.directory_len == u64::from(directory_len)
+                && zip64.directory_offset == u64::from(directory_offset)
+                && zip64.records == u64::from(records);
+            if !defers_to_zip64 && !(adjacent && agrees) {
+                return Ok(None);
+            }
+            Some(zip64)
         }
-    }
-    let used_zip64 = zip64;
+    };
     let (directory_end, len, offset, records) = used_zip64.map_or(
         (
             end_at,
@@ -352,8 +393,37 @@ fn find_directory(regular: &mut RegularFile) -> Result<Directory, StoreLoadError
     })
 }
 
+/// A Unicode Path extra field naming the member differently, when either name is plain
+/// ASCII. `zip` and `zipfile` use this name and this reader doesn't, so a window or
+/// `entries.npy` could be two different members. Info-ZIP writes one only for a
+/// non-ASCII name, whose other encoding is expected to differ and can't be a window
+/// or `entries.npy`.
+fn unicode_path_conflicts(extra: &[u8], name: &[u8]) -> bool {
+    const EXTRA_HEADER_LEN: usize = 4;
+    const UNICODE_PATH_ID: u16 = 0x7075;
+    /// A version byte and the CRC of the name it replaces.
+    const UNICODE_PATH_NAME_AT: usize = 5;
+    let mut rest = extra;
+    while rest.len() >= EXTRA_HEADER_LEN {
+        let id = u16_at(rest, 0);
+        let end = EXTRA_HEADER_LEN + usize::from(u16_at(rest, 2));
+        let Some(body) = rest.get(EXTRA_HEADER_LEN..end) else {
+            return false;
+        };
+        if id == UNICODE_PATH_ID {
+            let path = body.get(UNICODE_PATH_NAME_AT..).unwrap_or_default();
+            if path != name && (path.is_ascii() || name.is_ascii()) {
+                return true;
+            }
+        }
+        rest = &rest[end..];
+    }
+    false
+}
+
 /// Sizes from the ZIP64 extra field. It holds only the fields whose 32-bit
-/// values were the sentinel, in this order.
+/// values were the sentinel, in this order. `zip` instead reads all three in order
+/// from any field at least that long, so if it would see other values it's refused.
 fn apply_zip64_extra(
     extra: &[u8],
     declared: &mut u64,
@@ -362,6 +432,7 @@ fn apply_zip64_extra(
 ) -> Result<(), &'static str> {
     const EXTRA_HEADER_LEN: usize = 4;
     const U64_LEN: usize = 8;
+    const ALL_THREE_FIELDS_LEN: usize = 3 * U64_LEN;
     let sentinel = u64::from(ZIP64_U32_SENTINEL);
     let mut rest = extra;
     while rest.len() >= EXTRA_HEADER_LEN {
@@ -381,6 +452,16 @@ fn apply_zip64_extra(
                     at += U64_LEN;
                 }
             }
+            if body.len() >= ALL_THREE_FIELDS_LEN {
+                let as_zip_reads = [
+                    u64_at(body, 0),
+                    u64_at(body, U64_LEN),
+                    u64_at(body, 2 * U64_LEN),
+                ];
+                if as_zip_reads != [*declared, *stored, *offset] {
+                    return Err("ZIP64 extra field disagrees with the record");
+                }
+            }
             return Ok(());
         }
         rest = &rest[EXTRA_HEADER_LEN + len..];
@@ -389,7 +470,8 @@ fn apply_zip64_extra(
 }
 
 /// Validate a member's local header: its name must match the directory's and its
-/// data must end before the directory. Returns the offset of the data.
+/// data must end before the directory. Returns the offset of the data, or why the
+/// header is unusable; a failed read is an I/O error, not a verdict on the header.
 fn validate_local_header(
     file: &mut File,
     directory: Directory,
@@ -397,37 +479,35 @@ fn validate_local_header(
     stored: u64,
     central_name: &[u8],
     scratch: &mut [u8],
-) -> Result<u64, &'static str> {
+) -> std::io::Result<Result<u64, &'static str>> {
     const NAME_LEN_AT: usize = 26;
     const EXTRA_LEN_AT: usize = 28;
+    const NAME_DIFFERS: &str = "name differs from the directory";
     if header_at >= directory.start {
-        return Err("offset past the central directory");
+        return Ok(Err("offset past the central directory"));
     }
     let mut header = [0u8; LOCAL_RECORD_LEN];
-    let found = read_at(file, header_at, &mut header).unwrap_or(false);
-    if !found || header[..SIGNATURE_LEN] != LOCAL_RECORD_SIGNATURE {
-        return Err("bad signature");
+    if !read_at(file, header_at, &mut header)? || header[..SIGNATURE_LEN] != LOCAL_RECORD_SIGNATURE
+    {
+        return Ok(Err("bad signature"));
     }
     let name_len = usize::from(u16_at(&header, NAME_LEN_AT));
     if name_len != central_name.len() {
-        return Err("name differs from the directory");
+        return Ok(Err(NAME_DIFFERS));
     }
     let local_name = &mut scratch[..name_len];
-    let name_read = file.read_exact(local_name).is_ok();
-    if !name_read || *local_name != *central_name {
-        return Err("name differs from the directory");
+    let name_at = header_at + LOCAL_RECORD_LEN as u64;
+    if !read_at(file, name_at, local_name)? || *local_name != *central_name {
+        return Ok(Err(NAME_DIFFERS));
     }
-    let data_at = header_at
-        + LOCAL_RECORD_LEN as u64
-        + name_len as u64
-        + u64::from(u16_at(&header, EXTRA_LEN_AT));
+    let data_at = name_at + name_len as u64 + u64::from(u16_at(&header, EXTRA_LEN_AT));
     let ends_before_directory = data_at
         .checked_add(stored)
         .is_some_and(|end| end <= directory.start);
     if !ends_before_directory {
-        return Err("data overlaps the central directory");
+        return Ok(Err("data overlaps the central directory"));
     }
-    Ok(data_at)
+    Ok(Ok(data_at))
 }
 
 fn read_members(
@@ -505,6 +585,15 @@ fn read_members(
             return Err(bad(truncated));
         }
         let (central_name, extra) = name_and_extra.split_at(name_len);
+        // `zipfile` cuts a name at its first NUL, so this can be another member's name.
+        if central_name.contains(&0) || unicode_path_conflicts(extra, central_name) {
+            return Err(StoreLoadError::Archive {
+                path: path.to_string(),
+                source: ArchiveError::AmbiguousMemberName(
+                    String::from_utf8_lossy(central_name).into_owned(),
+                ),
+            });
+        }
         let mut declared = u64::from(u32_at(&record, DECLARED_AT));
         let mut stored = u64::from(u32_at(&record, STORED_AT));
         let mut local_offset = u64::from(u32_at(&record, LOCAL_OFFSET_AT));
@@ -524,6 +613,7 @@ fn read_members(
             central_name,
             &mut local_name,
         )
+        .map_err(io_err)?
         .map_err(|reason| StoreLoadError::Archive {
             path: path.to_string(),
             source: ArchiveError::BadLocalHeader(reason),

@@ -114,6 +114,13 @@ fn checked_data<'a>(data: &'a [u8], shape: &[usize], stride: usize) -> Result<&'
     Ok(data)
 }
 
+/// The header's keys, as this parser looks for them.
+const HEADER_KEYS: [(&str, &str); 3] = [
+    ("descr", "'descr':"),
+    ("fortran_order", "'fortran_order':"),
+    ("shape", "'shape':"),
+];
+
 /// Parse the `.npy` header. Returns `(header, data_offset)` where `data_offset`
 /// is the byte index at which raw array data begins.
 pub fn parse_header(bytes: &[u8]) -> Result<(NpyHeader, usize), NpyError> {
@@ -134,6 +141,20 @@ pub fn parse_header(bytes: &[u8]) -> Result<(NpyHeader, usize), NpyError> {
         return Err(NpyError::TruncatedHeader);
     }
     let header_str = std::str::from_utf8(&bytes[10..header_end]).map_err(NpyError::InvalidUtf8)?;
+    // numpy evaluates the header as a Python literal, where the last of a repeated key
+    // wins, a comment hides a key and either quote can open one. This parser takes the
+    // first match of the single-quoted form, so any of those could read differently.
+    for (field, needle) in HEADER_KEYS {
+        if header_str.contains('"')
+            || header_str.contains('#')
+            || header_str.matches(needle).count() > 1
+        {
+            return Err(NpyError::ParseField {
+                field,
+                snippet: header_str.to_string(),
+            });
+        }
+    }
     // `descr` may be either a quoted string (simple dtype like '<f4') or a
     // Python list literal (structured dtype like `[('token_id', '<u4'), ...]`).
     // Extract as raw text so both cases succeed.

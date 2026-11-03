@@ -34,7 +34,7 @@ safety, so anything sized from a file's contents uses fallible allocation and re
 **This is not protection against memory exhaustion.** Limits compare logical length,
 so a sparse file inside them still costs real memory, and on a host that overcommits
 that can still end in an OOM kill. The worst case is
-`max_store_bytes + 8/7 * max_archive_bytes + max_records * ~200 bytes`, because the
+`max_store_bytes + 8/7 * max_archive_bytes + max_records * ~200 bytes + ~2 MiB`, because the
 entries' bytes are still held while they decode. A sparse store at the defaults was
 measured on aarch64 macOS at 2.57 GiB live and 2.59 GiB maximum RSS. Fixed
 small allocations remain infallible: JSON values within the manifest limit, `.npy`
@@ -47,7 +47,8 @@ headers, paths and error text.
 - Device, FIFO and directory paths.
 - `.npz` files whose central directory isn't immediately before the end record (or a
   ZIP64 end record there), whose ZIP64 end record has an extensible data sector as
-  well as a prefix, or whose ZIP64 records disagree with a plain end record.
+  well as a prefix, whose ZIP64 records disagree with a plain end record or aren't
+  adjacent to it, or whose locator's stated record and adjacent record differ.
 - Members whose extents overlap or reach into the directory, including records sharing
   a payload.
 - Members whose declared and stored sizes differ, whose local name differs from the
@@ -59,6 +60,10 @@ headers, paths and error text.
   to read the first.
 - `entries.npz` with no member named exactly `entries.npy`. A prefix such as
   `entries_old.npy` used to match.
+- A member name containing a NUL, a bare `entries` beside `entries.npy`, a Unicode Path
+  extra field naming a member differently when either name is ASCII, and a full ZIP64
+  extra field whose values differ from the record's. Readers resolve each differently.
+- `.npy` headers with a repeated key, a `#` or a double quote.
 - Window members not named canonically, such as `00.npy`, `+1.npy`, `1` or `1.npy.npy`.
   These used to be taken as window ids.
 

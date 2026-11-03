@@ -339,6 +339,11 @@ fn differential_seeds(archive_file: &str) -> Vec<Vec<u8>> {
                 (b"1.npy", &token_member(FIRST)),
             ]),
             raw_npz(&[
+                (b"0.npy", &token_member(FIRST)),
+                (b"1.npy", &token_member(LAST)),
+                (b"1.npy\0x", &token_member(FIRST)),
+            ]),
+            raw_npz(&[
                 (b"00.npy", &token_member(FIRST)),
                 (b"0.npy", &token_member(LAST)),
                 (b"1.npy", &token_member(LAST)),
@@ -352,6 +357,12 @@ fn differential_seeds(archive_file: &str) -> Vec<Vec<u8>> {
             raw_npz(&[(entries, &first), (entries, &last)]),
             raw_npz(&[(b"entries_old.npy", &first), (entries, &last)]),
             raw_npz(&[(b"entries", &first), (entries, &last)]),
+            raw_npz(&[(entries, &last), (b"entries.npy\0x", &first)]),
+            raw_npz(&[
+                (b"./entries.npy", &first),
+                (b"ENTRIES.NPY", &first),
+                (entries, &last),
+            ]),
         ]
     }
 }

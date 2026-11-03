@@ -91,6 +91,28 @@ fn header_fields_that_do_not_parse_are_refused() {
     }
 }
 
+/// numpy evaluates the header as a Python literal: the last of a repeated key wins, a
+/// comment hides one and either quote can open one. Each could read differently from
+/// this parser's first match, so each is refused.
+#[test]
+fn headers_a_python_literal_reads_differently_are_refused() {
+    for dict in [
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), 'descr': '<u4'}\n",
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), 'shape': (2,)}\n",
+        "{'descr': '<f4', 'fortran_order': False, 'fortran_order': True, 'shape': (1,)}\n",
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), \"shape\": (2,)}\n",
+        "{'descr': '<f4', # 'shape': (9,),\n 'fortran_order': False, 'shape': (1,)}\n",
+    ] {
+        let mut bytes = header_with(dict);
+        bytes.extend_from_slice(&[0; size_of::<f32>()]);
+        let err = boundary_err(&bytes);
+        assert!(
+            matches!(err, NpyError::ParseField { .. }),
+            "{dict}: {err:?}"
+        );
+    }
+}
+
 #[test]
 fn fortran_order_and_foreign_dtype_are_refused() {
     let fortran = "{'descr': '<f4', 'fortran_order': True, 'shape': (1,)}\n";

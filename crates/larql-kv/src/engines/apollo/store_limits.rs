@@ -10,15 +10,16 @@
 //! # Peak memory
 //!
 //! ```text
-//! peak <= max_store_bytes + 8/7 * max_archive_bytes + max_records * ~200 bytes
+//! peak <= max_store_bytes + 8/7 * max_archive_bytes + max_records * ~200 bytes + ~2 MiB
 //! ```
 //!
-//! About 2.57 GiB plus the last term at the defaults. Every byte read may stay in memory, and the
-//! total read is limited by `max_store_bytes`. The worst moment is decoding the
-//! entries: the member's bytes (up to `max_archive_bytes`) are still held while its
-//! decoded rows are built, at 16 bytes in memory for each 14 on disk. The last term
-//! is the directory records, the window list and each array's own header, which is
-//! an allowance rather than a measurement.
+//! About 2.57 GiB plus the last two terms at the defaults. Every byte read may stay in
+//! memory, and the total read is limited by `max_store_bytes`. The worst moment is
+//! decoding the entries: the member's bytes (up to `max_archive_bytes`) are still held
+//! while its decoded rows are built, at 16 bytes in memory for each 14 on disk. The
+//! per-record term is the directory records, the window list and each array's own
+//! header, and the last is fixed buffers and the manifest. Both are allowances rather
+//! than measurements.
 //!
 //! Measured on aarch64 macOS, with a sparse store of 2.0 GiB logical bytes at the
 //! defaults: 2,760,480,778 bytes live at peak (2.57 GiB) and 2.59 GiB maximum RSS,
@@ -68,7 +69,7 @@ pub const DEFAULT_MAX_STORE_BYTES: u64 = 2 << 30;
 
 /// Directory records in one archive, and windows a manifest may claim: twice the
 /// format's 65,536 windows, leaving room for members the load ignores. This bounds
-/// the directory's memory at about 8 MiB whatever the file claims.
+/// the directory's memory at about 9 MiB whatever the file claims.
 pub const DEFAULT_MAX_RECORDS: u64 = 1 << 17;
 
 /// What a load accepts. Lengths are logical, compared with `fstat` on the open

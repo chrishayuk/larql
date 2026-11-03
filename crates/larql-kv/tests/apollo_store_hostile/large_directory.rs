@@ -34,7 +34,7 @@ const CAPS: [usize; 7] = [
     64 * MIB,
     usize::MAX,
 ];
-/// Directory records in memory, at most, per the module doc in `npz.rs`.
+/// The formula's per-record and fixed terms, from `store_limits.rs`.
 const DIRECTORY_PEAK_PER_RECORD: usize = 200;
 const FIXED_PEAK_ALLOWANCE: usize = 2 * MIB;
 /// Hole sizes after the payload, so that summed claims would fit the file.

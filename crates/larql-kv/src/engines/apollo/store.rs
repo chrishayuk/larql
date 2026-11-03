@@ -304,6 +304,8 @@ const NPY_SUFFIX: &str = ".npy";
 /// What `np.savez(entries=...)` writes. The name is exact: `entries_old.npy` is some
 /// other array, and accepting prefixes would make the choice depend on member order.
 const ENTRIES_MEMBER: &[u8] = b"entries.npy";
+/// `numpy` looks up the key `entries` as this name first, ahead of `entries.npy`.
+const ENTRIES_BARE_NAME: &[u8] = b"entries";
 
 /// What a member of `window_token_lists.npz` is, from its name.
 #[derive(Debug, PartialEq, Eq)]
@@ -402,7 +404,8 @@ fn load_entries(
     let mut archive = open_archive(reader, &p)?;
 
     // Readers disagree on a duplicate: `numpy` and `zip` take the last, and a reader
-    // taking the first would see different data. So there must be exactly one.
+    // taking the first would see different data. So there must be exactly one, and no
+    // bare `entries` for `numpy` to prefer to it.
     let mut matching = archive
         .names()
         .enumerate()
@@ -410,9 +413,10 @@ fn load_entries(
         .map(|(position, _)| position);
     let (first, second) = (matching.next(), matching.next());
     drop(matching);
+    let has_bare_name = archive.names().any(|name| name == Some(ENTRIES_BARE_NAME));
     let position =
         first.ok_or_else(|| StoreLoadError::MissingFile("entries.npz::entries.npy".into()))?;
-    if second.is_some() {
+    if second.is_some() || has_bare_name {
         return Err(ambiguous_member(p.display().to_string(), ENTRIES_MEMBER));
     }
     let bytes = archive.read_member(position)?;

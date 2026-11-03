@@ -436,7 +436,7 @@ fn zip64_locator_disagreeing_with_a_plain_end_record_finds_no_end_record() {
     const RECORDS_ON_DISK_AT: usize = 8;
     const RECORDS_AT: usize = 10;
     const DISAGREEING_RECORDS: u16 = 2;
-    let mut archive = plain_end_record_after_agreeing_zip64();
+    let mut archive = plain_end_record_after_agreeing_zip64(b"");
     let end_at = archive.len() - END_RECORD_LEN;
     let end = &mut archive[end_at..];
     end[RECORDS_ON_DISK_AT..RECORDS_ON_DISK_AT + 2]
@@ -445,16 +445,59 @@ fn zip64_locator_disagreeing_with_a_plain_end_record_finds_no_end_record() {
     assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
 }
 
+/// Sentinels, a locator stating one ZIP64 record and another immediately before the
+/// locator: `zipfile` reads the adjacent one and `zip` the stated one.
+#[test]
+fn zip64_stated_and_adjacent_records_differing_finds_no_end_record() {
+    let mut adjacent_lookalike = b"PK\x06\x06".to_vec();
+    adjacent_lookalike.resize(ZIP64_END_RECORD_LEN, 0);
+    let archive = zip64_directory_archive(b"", &member(), 1, &adjacent_lookalike);
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// A plain end record's agreeing ZIP64 record must be adjacent. `zipfile` looks only
+/// there, so one found only at the stated offset would be read by `zip` alone.
+#[test]
+fn zip64_agreeing_with_a_plain_end_record_must_be_adjacent() {
+    let archive = plain_end_record_after_agreeing_zip64(b"sector");
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// `zip` reads all three values from a ZIP64 extra field long enough to hold them,
+/// even where the record's own fields aren't sentinels. `zipfile` reads only sentinels.
+#[test]
+fn full_zip64_extra_disagreeing_with_the_record_is_refused() {
+    const ZIP64_EXTRA_ID: [u8; 2] = [1, 0];
+    const FULL_BODY_LEN: u16 = 24;
+    const OTHER_VALUE: u64 = 7;
+    let extra = [
+        ZIP64_EXTRA_ID.as_slice(),
+        &FULL_BODY_LEN.to_le_bytes(),
+        &OTHER_VALUE.to_le_bytes(),
+        &OTHER_VALUE.to_le_bytes(),
+        &OTHER_VALUE.to_le_bytes(),
+    ]
+    .concat();
+    let archive = raw_archive(&[member().with_leading_extra(&extra)]);
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadDirectoryRecord {
+            index: 0,
+            reason: "ZIP64 extra field disagrees with the record",
+        },
+    );
+}
+
 /// ZIP64 records carrying the same values as a plain end record are harmless. Python's
 /// `zipfile` honours them and this reader uses the plain record, so the two agree.
 #[test]
 fn zip64_records_agreeing_with_a_plain_end_record_load() {
-    assert_loads(&plain_end_record_after_agreeing_zip64());
+    assert_loads(&plain_end_record_after_agreeing_zip64(b""));
 }
 
 /// `archive` with a directory, agreeing ZIP64 records, then a plain end record. The
 /// directory is found from the end record, so its stated length covers the ZIP64 records.
-fn plain_end_record_after_agreeing_zip64() -> Vec<u8> {
+fn plain_end_record_after_agreeing_zip64(sector: &[u8]) -> Vec<u8> {
     const ZIP64_END_SIGNATURE: &[u8] = b"PK\x06\x06";
     const ZIP64_LOCATOR_SIGNATURE: &[u8] = b"PK\x06\x07";
     const ZIP64_END_FIXED_SIZE: u64 = 44;
@@ -466,7 +509,7 @@ fn plain_end_record_after_agreeing_zip64() -> Vec<u8> {
     let zip64_at = end_at as u64;
     let mut out = plain[..end_at].to_vec();
     out.extend_from_slice(ZIP64_END_SIGNATURE);
-    out.extend_from_slice(&ZIP64_END_FIXED_SIZE.to_le_bytes());
+    out.extend_from_slice(&(ZIP64_END_FIXED_SIZE + sector.len() as u64).to_le_bytes());
     out.extend_from_slice(&VERSION.to_le_bytes());
     out.extend_from_slice(&VERSION.to_le_bytes());
     out.extend_from_slice(&[0; 8]);
@@ -474,6 +517,7 @@ fn plain_end_record_after_agreeing_zip64() -> Vec<u8> {
     out.extend_from_slice(&1u64.to_le_bytes());
     out.extend_from_slice(&directory_len.to_le_bytes());
     out.extend_from_slice(&directory_at.to_le_bytes());
+    out.extend_from_slice(sector);
     out.extend_from_slice(ZIP64_LOCATOR_SIGNATURE);
     out.extend_from_slice(&[0; 4]);
     out.extend_from_slice(&zip64_at.to_le_bytes());
@@ -523,6 +567,101 @@ fn decoy_before_the_entries_member_is_not_read() {
     assert_eq!(store.entries[0].token_id, REAL_TOKEN);
 }
 
+/// `numpy` looks up the key `entries` as a bare member first, ahead of `entries.npy`.
+#[test]
+fn bare_entries_beside_entries_npy_is_refused() {
+    for names in [["entries", ENTRIES_MEMBER], [ENTRIES_MEMBER, "entries"]] {
+        let archive = raw_archive(&[
+            RawMember::stored(names[0], entries_with_token(1)),
+            RawMember::stored(names[1], entries_with_token(2)),
+        ]);
+        assert_ambiguous(&entries_archive_err(&archive), ENTRIES_MEMBER);
+    }
+}
+
+/// `zipfile` cuts a name at its first NUL, so this is `entries.npy` to `numpy`, which
+/// takes the last. It's refused anywhere in either archive.
+#[test]
+fn nul_in_a_member_name_is_refused_in_both_archives() {
+    let cut_at_nul = format!("{ENTRIES_MEMBER}\0x");
+    let archive = raw_archive(&[
+        RawMember::stored(ENTRIES_MEMBER, entries_with_token(1)),
+        RawMember::stored(&cut_at_nul, entries_with_token(2)),
+    ]);
+    assert_ambiguous(&entries_archive_err(&archive), &cut_at_nul);
+
+    let cut_at_nul = format!("{MEMBER}\0x");
+    let archive = raw_archive(&[
+        member(),
+        RawMember::stored(&cut_at_nul, synth_u32_npy(&TOKENS)),
+    ]);
+    assert_ambiguous(&archive_err(&archive), &cut_at_nul);
+}
+
+/// A Unicode Path field. `zip` and `zipfile` read this name in place of the record's.
+fn unicode_path_extra(path: &str) -> Vec<u8> {
+    const UNICODE_PATH_ID: u16 = 0x7075;
+    const VERSION_AND_CRC: [u8; 5] = [1, 0, 0, 0, 0];
+    let body_len = u16::try_from(VERSION_AND_CRC.len() + path.len()).unwrap();
+    [
+        UNICODE_PATH_ID.to_le_bytes().as_slice(),
+        &body_len.to_le_bytes(),
+        &VERSION_AND_CRC,
+        path.as_bytes(),
+    ]
+    .concat()
+}
+
+#[test]
+fn unicode_path_naming_a_member_differently_is_refused() {
+    const OTHER_NAME: &str = "a.txt";
+    let renamed_to_entries = RawMember::stored(OTHER_NAME, entries_with_token(1))
+        .with_leading_extra(&unicode_path_extra(ENTRIES_MEMBER));
+    let real = RawMember::stored(ENTRIES_MEMBER, entries_with_token(2));
+    assert_ambiguous(
+        &entries_archive_err(&raw_archive(&[renamed_to_entries, real])),
+        OTHER_NAME,
+    );
+
+    let entries_renamed_away = RawMember::stored(ENTRIES_MEMBER, entries_with_token(1))
+        .with_leading_extra(&unicode_path_extra(OTHER_NAME));
+    assert_ambiguous(
+        &entries_archive_err(&raw_archive(&[entries_renamed_away])),
+        ENTRIES_MEMBER,
+    );
+}
+
+/// What Info-ZIP writes for a non-ASCII name, which must keep loading: the encodings
+/// differ, and neither can be a window or `entries.npy`.
+#[test]
+fn unicode_path_on_a_non_ascii_name_loads() {
+    const CP437_NAME_BYTES: &[u8] = b"caf\x82.txt";
+    const UTF8_NAME: &str = "café.txt";
+    const PLACEHOLDER_NAME: &str = "cafe.txt";
+    let other = RawMember::stored(PLACEHOLDER_NAME, b"hi".to_vec())
+        .with_leading_extra(&unicode_path_extra(UTF8_NAME));
+    let mut archive = raw_archive(&[other, member()]);
+    let mut from = 0;
+    while let Some(at) = archive[from..]
+        .windows(PLACEHOLDER_NAME.len())
+        .position(|w| w == PLACEHOLDER_NAME.as_bytes())
+    {
+        archive[from + at..from + at + CP437_NAME_BYTES.len()].copy_from_slice(CP437_NAME_BYTES);
+        from += at + CP437_NAME_BYTES.len();
+    }
+    assert_loads(&archive);
+}
+
+fn assert_ambiguous(err: &StoreLoadError, expected: &str) {
+    match err {
+        StoreLoadError::Archive {
+            source: ArchiveError::AmbiguousMemberName(name),
+            ..
+        } => assert_eq!(name, expected),
+        other => panic!("expected AmbiguousMemberName, got {other:?}"),
+    }
+}
+
 #[test]
 fn only_a_similarly_named_member_is_missing_file() {
     for decoy in [
@@ -530,6 +669,10 @@ fn only_a_similarly_named_member_is_missing_file() {
         "entries",
         "entries.npy.npy",
         "ENTRIES.NPY",
+        "entries.npy ",
+        "./entries.npy",
+        "../entries.npy",
+        "dir\\entries.npy",
     ] {
         let archive = raw_archive(&[RawMember::stored(decoy, entries_with_token(1))]);
         let err = entries_archive_err(&archive);
