@@ -318,11 +318,10 @@ fn render(r: &ContractResult) -> Vec<String> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn a_verifier_that_hangs_is_killed_at_the_timeout() {
         use std::os::unix::fs::PermissionsExt;
