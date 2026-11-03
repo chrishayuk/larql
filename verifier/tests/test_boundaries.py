@@ -8,7 +8,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-ALLOWED = set(sys.stdlib_module_names) | {"numpy", "gguf", "refcheck", "larql_contract_verifier", "_mini"}
+ALLOWED = set(sys.stdlib_module_names) | {"numpy", "gguf", "refcheck", "larql_contract_verifier", "_mini",
+                                          "_gemv_faults", "_gemv_gen", "_gemv_oracle"}
 
 
 def python_files():
