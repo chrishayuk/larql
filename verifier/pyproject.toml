@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "larql-contract-verifier"
+version = "0.1.0"
+description = "Measures LARQL VINDEX3 containers against numerical contracts, independently of LARQL"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.12"
+dependencies = ["numpy==2.4.2", "gguf==0.18.0"]
+
+[project.scripts]
+larql-verifier = "larql_contract_verifier.cli:main"
+
+[tool.setuptools]
+packages = ["larql_contract_verifier", "larql_contract_verifier.contracts", "refcheck"]

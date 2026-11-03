@@ -1,0 +1,63 @@
+name: verifier
+
+# The contract verifier: separate from the engine it measures, so separate CI.
+# See docs/verification/independence.md. The boundary between the two is verifier-boundary.yml.
+
+on:
+  pull_request:
+    paths:
+      - 'verifier/**'
+      - 'docs/verification/**'
+      - 'scripts/check_verifier_boundary.py'
+      - '.github/workflows/verifier.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'verifier/**'
+      - 'docs/verification/**'
+      - 'scripts/check_verifier_boundary.py'
+      - '.github/workflows/verifier.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: verifier
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install from the lockfile, hashes checked
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --require-hashes --no-deps -r requirements.lock
+          .venv/bin/pip install --quiet --no-deps .
+
+      - name: Tests
+        run: .venv/bin/python -I -m unittest discover -s tests -v
+
+      - name: The executable answers by the protocol
+        run: |
+          .venv/bin/larql-verifier contract --contract NOT-A-CONTRACT --container . --source . > answer.json
+          .venv/bin/python -I -c "
+          import json
+          a = json.load(open('answer.json'))
+          assert a['schema'] == 'larql-verify-contract/1' and a['status'] == 'could_not_evaluate', a
+          "

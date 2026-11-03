@@ -239,13 +239,13 @@ pub(super) fn encode_kquant(
 
 /// The provenance for whichever encoder [`encode_kquant`] is.
 #[cfg(feature = "reference-encoder")]
-pub(super) fn kquant_encoder_recipe() -> EncoderRecipe {
+pub(super) fn kquant_encoder_recipe(_kquant: &kquant::KQuant) -> EncoderRecipe {
     EncoderRecipe::kquant_ggml_reference(reference_encoder::PINNED_UPSTREAM)
 }
 
 #[cfg(not(feature = "reference-encoder"))]
-pub(super) fn kquant_encoder_recipe() -> EncoderRecipe {
-    EncoderRecipe::kquant_native_v1()
+pub(super) fn kquant_encoder_recipe(kquant: &kquant::KQuant) -> EncoderRecipe {
+    EncoderRecipe::kquant_native(kquant.name)
 }
 
 /// Input-feature weights for a weighted compile: per tensor, one weight per
