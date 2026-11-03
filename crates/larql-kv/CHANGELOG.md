@@ -20,9 +20,11 @@ allocation of fixed-size records, capped by `max_records`. `zip` is now a
 dev-dependency here, used to write fixtures and to compare the two readers under
 fuzzing.
 
-**Files must be regular.** The file type is checked on the open handle, opened with
-`O_NONBLOCK` on Unix, so devices, FIFOs and directories are refused without blocking.
-Symlinks to regular files still load.
+**Files must be regular.** On Unix the file type is checked on the open handle, opened
+with `O_NONBLOCK`, so devices, FIFOs and directories are refused without blocking. Windows
+has no such flag: the open can block on some device paths and a device can pass the file
+type check. No device or pipe case has been run on Windows. Symlinks to regular files
+still load.
 
 **Reads have limits.** `StoreLimits` and `ApolloStore::load_with_limits` are new; `load`
 uses the documented defaults in `store_limits.rs`: 1 MiB for the manifest, 8 MiB for
@@ -51,19 +53,24 @@ matching the directory, equal declared and stored sizes, and no encryption flags
 
 - Stores over the default limits, including some the format allows. Use
   `load_with_limits`.
-- Device, FIFO and directory paths.
+- Directory paths and, on Unix, device and FIFO paths. A device can pass on Windows, as
+  above.
 - `.npz` files whose central directory isn't immediately before the end record (or a
   ZIP64 end record there), whose ZIP64 records disagree with a plain end record or
   aren't adjacent to it, whose locator's stated and adjacent records differ, or with a
   ZIP64 extensible data sector as well as a prefix.
 - A comment or trailing bytes holding a bogus end signature, since that is then the
   last one. A comment holding a consistent end record selects that record, as numpy and
-  `zip` do. An ordinary comment or trailing bytes load, except when the record ends more
-  than 64 KiB from the file's end: a 65,535-byte comment plus 1 trailing byte is refused
-  here and loads in numpy.
+  `zip` 9.2.2 do. An ordinary comment or trailing bytes load, with two exceptions. A
+  record ending 64 KiB or more from the file's end is refused: a 65,535-byte comment plus
+  1 trailing byte is refused here and loads in numpy. A comment is also refused on a
+  record whose directory offset spells the end signature, which numpy refuses too.
 - `.npy` minor versions other than 1.0, which numpy refuses too.
 - Any `.npy` header not in the writer's form: other key order or spacing, Fortran order,
   extra keys and Python 2 `3L` shapes among them. `.npy` format 2.0 and 3.0 are refused.
+  Honest files from old numpy or non-numpy writers may be refused by this, including
+  headers numpy itself loads, such as a `3L` shape or one with no trailing comma. No real
+  files from such writers have been tried.
 - Overlapping members, including records sharing a payload, and data reaching into the
   directory. Declared and stored sizes that differ.
 - More than one `entries.npy`, a bare `entries` beside it, or no member named exactly
@@ -81,6 +88,9 @@ Known cases, all from crafted files:
 
 - A file with another zip before it, concatenated or as a prefix: `zip` can read the
   earlier archive's directory, while this reader and numpy read the last.
+- A comment holding a consistent end record: `zip` 2.4.2 and 3.0.0 read the outer archive,
+  while this reader, numpy and `zip` 9.2.2 read the one in the comment. 2.4.2 is the
+  version locked as this crate's dev-dependency. The load path doesn't use `zip`.
 - Files this reader loads and numpy refuses: prefixed files, ZIP64 extensible sectors,
   and overlong UTF-8 in an unread member's name.
 - Decoy names such as `./entries.npy`, which this reader ignores. Other tools that
