@@ -76,6 +76,60 @@ fn max_abs(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0f32, f32::max)
 }
 
+/// A bank whose blocks all have f16 subnormal scales, cycling through the range
+/// from the smallest up to the normal boundary, in both signs.
+fn q8_bank_with_scales(scales: &[u16]) -> (Vec<u8>, Vec<ExpertOffset>) {
+    let (mut bank, offsets, _) = q8_bank();
+    for (i, block) in bank.chunks_exact_mut(34).enumerate() {
+        block[..2].copy_from_slice(&scales[i % scales.len()].to_le_bytes());
+    }
+    (bank, offsets)
+}
+
+/// Metal's own f16 decode is on this path, separate from the CPU's. An encoder
+/// that rounds to nearest stores subnormal scales for small blocks, and the
+/// kernel must decode them rather than treat them as zero.
+#[test]
+fn q8_0_grouped_decodes_subnormal_scales() {
+    let m = backend();
+    const SCALES: [u16; 7] = [0x0001, 0x0002, 0x00e3, 0x03fc, 0x03ff, 0x8001, 0x83ff];
+    let (bank, offsets) = q8_bank_with_scales(&SCALES);
+    let x = synth(K, 0.31);
+    let shape = GroupedShape {
+        n: N,
+        k: K,
+        layout: InputLayout::Shared,
+    };
+    let got = m
+        .grouped_experts_encoded(ExpertEncoding::Q80, &bank, &offsets, &x, shape)
+        .expect("q8_0 grouped dispatch");
+    let per_expert = bank.len() / SLOTS;
+    for slot in 0..SLOTS {
+        let start = offsets[slot].0 as usize;
+        let want = matvec(
+            &dequantize_q8_0(&bank[start..start + per_expert], N * K).expect("wellformed blocks"),
+            &x,
+        );
+        let scale = want.iter().fold(0.0f32, |a, v| a.max(v.abs()));
+        assert!(
+            scale > 0.0,
+            "slot {slot}: the reference itself is all zeros"
+        );
+        let err = max_abs(&got[slot * N..(slot + 1) * N], &want);
+        assert!(
+            err <= 1e-4 * scale,
+            "slot {slot}: max |Δ| {err:e} against a magnitude of {scale:e}"
+        );
+    }
+
+    // The control: the comparison above fails if these scales are read as zero.
+    let (flushed, offsets) = q8_bank_with_scales(&[0x0000]);
+    let zeros = m
+        .grouped_experts_encoded(ExpertEncoding::Q80, &flushed, &offsets, &x, shape)
+        .expect("q8_0 grouped dispatch");
+    assert!(zeros.iter().all(|v| *v == 0.0));
+}
+
 /// The kernel decodes exactly what the codec's own dequantiser reads —
 /// with a control proving the comparison could fail: the UNQUANTISED
 /// weights give a visibly different answer, so agreement with the

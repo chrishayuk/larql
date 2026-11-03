@@ -48,7 +48,7 @@ fn a_q8_0_representation_compiles_binds_and_decodes() {
     {
         assert_eq!(
             recipe,
-            &nvfp4_pack::EncoderRecipe::kquant_native_v2(),
+            &nvfp4_pack::EncoderRecipe::kquant_native("Q8_0"),
             "a default build encodes with LARQL's own K-quant encoder"
         );
         assert!(
@@ -69,7 +69,7 @@ fn a_q8_0_representation_compiles_binds_and_decodes() {
         );
         assert_ne!(
             recipe,
-            &nvfp4_pack::EncoderRecipe::kquant_native_v2(),
+            &nvfp4_pack::EncoderRecipe::kquant_native("Q8_0"),
             "the two encoders must not be able to claim each other's provenance"
         );
     }
@@ -476,4 +476,15 @@ fn a_shipped_compiler_refuses_weights() {
     let err = result.unwrap_err().to_string();
     assert!(err.contains("shipped compiler"), "{err}");
     assert!(!out.exists());
+}
+
+/// A revision says which bytes this build would choose. The Q8_0 scale fix
+/// changed Q8_0's bytes and no others, so only Q8_0 may claim a new revision.
+#[test]
+fn only_the_encoding_whose_bytes_changed_moved_revision() {
+    let name = |e| nvfp4_pack::EncoderRecipe::kquant_native(e).name();
+    assert_eq!(name("Q8_0"), "kquant-larql-native-v2");
+    for encoding in ["Q4_K", "Q6_K", "Q5_K", "Q3_K"] {
+        assert_eq!(name(encoding), "kquant-larql-native-v1", "{encoding}");
+    }
 }
