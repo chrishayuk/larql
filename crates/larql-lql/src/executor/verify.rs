@@ -13,6 +13,8 @@
 //!
 //! ## Protocol `larql-verify-contract/1`
 //!
+//! Specified in `docs/verify-contract-protocol.md`. In short:
+//!
 //! ```text
 //! <verifier> contract --contract <id> --container <dir> --source <dir>
 //! ```

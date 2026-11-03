@@ -859,7 +859,8 @@ result is about the exact bytes of one container: two containers of the same mod
 about the encoder that produced it. The output says so, and an answer claiming any other kind
 of evidence is refused.
 
-The protocol, `larql-verify-contract/1`, is documented in `src/executor/verify.rs`.
+The protocol, `larql-verify-contract/1`, and the reference verifier are in
+[verify-contract-protocol.md](verify-contract-protocol.md).
 
 **Don't gate on `larql lql`'s exit status.** It exits 0 for every statement today, including a
 parse error, a refusal and `could_not_evaluate`, because `run_batch` returns statement errors as
