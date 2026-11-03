@@ -15,8 +15,12 @@ const POW_2_62: u64 = 1 << 62;
 const POW_2_63: u64 = 1 << 63;
 const F32_STRIDE: usize = 4;
 const U32_STRIDE: usize = 4;
+const ENTRY_ROW_LEN: usize = 14;
 const TOKENS_MEMBER: &str = "0.npy";
 const ENTRIES_MEMBER: &str = "entries.npy";
+const WINDOWS: usize = 1;
+const HIDDEN: usize = 4;
+const WINDOW_SIZE: usize = 3;
 const BOUNDARY_FILE: &str = "boundaries/window_000.npy";
 const RESIDUAL_FILE: &str = "boundary_residual.npy";
 
@@ -58,7 +62,7 @@ fn entries_store(rows: u64) -> TempDir {
 
 fn boundary_store(rows: u64) -> TempDir {
     let dir = TempDir::new().unwrap();
-    write_minimal_store(dir.path(), 1, 4, 3, &one_entry());
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
     let npy = dataless_npy("'<f4'", &format!("({rows},)"));
     std::fs::write(dir.path().join(BOUNDARY_FILE), npy).unwrap();
     dir
@@ -78,16 +82,6 @@ fn assert_shape_overflow(err: StoreLoadError, rows: u64, stride: usize) {
             assert_eq!(reported, stride);
         }
         other => panic!("expected ShapeOverflow, got {other:?}"),
-    }
-}
-
-fn assert_entries_shape_overflow(err: StoreLoadError) {
-    match err {
-        StoreLoadError::StructuredDtype { path, reason } => {
-            assert!(path.contains(ENTRIES_MEMBER), "{path}");
-            assert!(reason.contains("overflows"), "{reason}");
-        }
-        other => panic!("expected StructuredDtype naming the overflow, got {other:?}"),
     }
 }
 
@@ -113,12 +107,12 @@ fn boundary_shape_2_63_with_no_data_is_refused() {
 
 #[test]
 fn entries_shape_2_62_with_no_data_is_refused() {
-    assert_entries_shape_overflow(load_err(&entries_store(POW_2_62)));
+    assert_shape_overflow(load_err(&entries_store(POW_2_62)), POW_2_62, ENTRY_ROW_LEN);
 }
 
 #[test]
 fn entries_shape_2_63_with_no_data_is_refused() {
-    assert_entries_shape_overflow(load_err(&entries_store(POW_2_63)));
+    assert_shape_overflow(load_err(&entries_store(POW_2_63)), POW_2_63, ENTRY_ROW_LEN);
 }
 
 /// A shape that fits the address space still has to match the bytes present.
@@ -141,9 +135,8 @@ fn tokens_shape_2_60_with_no_data_is_a_data_length_error() {
 /// The store must still load rather than die on its shape.
 #[test]
 fn residual_shape_2_62_with_no_data_loads_as_absent() {
-    let dir = boundary_store(4);
-    let good_boundary = synth_f32_npy(&[0.0; 4]);
-    std::fs::write(dir.path().join(BOUNDARY_FILE), good_boundary).unwrap();
+    let dir = TempDir::new().unwrap();
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
     std::fs::write(
         dir.path().join(RESIDUAL_FILE),
         dataless_npy("'<f4'", &format!("({POW_2_62},)")),

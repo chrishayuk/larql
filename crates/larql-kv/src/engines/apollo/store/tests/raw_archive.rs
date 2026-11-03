@@ -7,7 +7,7 @@
 const LOCAL_HEADER_SIGNATURE: u32 = 0x0403_4b50;
 const CENTRAL_HEADER_SIGNATURE: u32 = 0x0201_4b50;
 const END_OF_DIRECTORY_SIGNATURE: u32 = 0x0605_4b50;
-/// The value that defers a 32-bit size field to the ZIP64 extra field.
+/// The value that defers a 32-bit field to the ZIP64 extra field.
 const ZIP64_SIZE_SENTINEL: u32 = u32::MAX;
 const ZIP64_EXTRA_ID: u16 = 0x0001;
 /// Uncompressed size then compressed size, `u64` each.
@@ -19,7 +19,7 @@ const DOS_TIME_MIDNIGHT: u16 = 0;
 /// 1980-01-01, the earliest date a ZIP timestamp can hold.
 const DOS_DATE_EPOCH: u16 = 0x21;
 const METHOD_STORED: u16 = 0;
-const METHOD_DEFLATED: u16 = 8;
+pub(super) const METHOD_DEFLATED: u16 = 8;
 const CRC32_REFLECTED_POLYNOMIAL: u32 = 0xEDB8_8320;
 
 /// One central-directory record, honest until told otherwise.
@@ -32,7 +32,11 @@ pub(super) struct RawMember {
     declared: u64,
     stored: u64,
     method: u16,
+    flags: u16,
     zip64: bool,
+    /// Carried in the ZIP64 extra in place of the record's real offset.
+    zip64_local_offset: Option<u64>,
+    leading_extra: Vec<u8>,
 }
 
 impl RawMember {
@@ -45,7 +49,10 @@ impl RawMember {
             declared: len,
             stored: len,
             method: METHOD_STORED,
+            flags: NO_FLAGS,
             zip64: false,
+            zip64_local_offset: None,
+            leading_extra: Vec::new(),
         }
     }
 
@@ -66,7 +73,10 @@ impl RawMember {
             crc_of: plain,
             data,
             method: METHOD_DEFLATED,
+            flags: NO_FLAGS,
             zip64: false,
+            zip64_local_offset: None,
+            leading_extra: Vec::new(),
         }
     }
 
@@ -82,6 +92,22 @@ impl RawMember {
 
     pub(super) fn zip64(mut self) -> Self {
         self.zip64 = true;
+        self
+    }
+
+    pub(super) fn with_zip64_local_offset(mut self, offset: u64) -> Self {
+        self.zip64 = true;
+        self.zip64_local_offset = Some(offset);
+        self
+    }
+
+    pub(super) fn with_leading_extra(mut self, extra: &[u8]) -> Self {
+        self.leading_extra = extra.to_vec();
+        self
+    }
+
+    pub(super) fn with_flags(mut self, flags: u16) -> Self {
+        self.flags = flags;
         self
     }
 
@@ -119,14 +145,19 @@ impl RawMember {
     }
 
     fn extra(&self) -> Vec<u8> {
+        let mut extra = self.leading_extra.clone();
         if !self.zip64 {
-            return Vec::new();
+            return extra;
         }
-        let mut extra = Vec::new();
+        let offset = self.zip64_local_offset.map(u64::to_le_bytes);
+        let body_len = ZIP64_EXTRA_SIZES_LEN + offset.map_or(0, |o| o.len() as u16);
         extra.extend_from_slice(&ZIP64_EXTRA_ID.to_le_bytes());
-        extra.extend_from_slice(&ZIP64_EXTRA_SIZES_LEN.to_le_bytes());
+        extra.extend_from_slice(&body_len.to_le_bytes());
         extra.extend_from_slice(&self.declared.to_le_bytes());
         extra.extend_from_slice(&self.stored.to_le_bytes());
+        if let Some(offset) = offset {
+            extra.extend_from_slice(&offset);
+        }
         extra
     }
 
@@ -137,7 +168,7 @@ impl RawMember {
         let mut out = Vec::new();
         for field in [
             self.version(),
-            NO_FLAGS,
+            self.flags,
             self.method,
             DOS_TIME_MIDNIGHT,
             DOS_DATE_EPOCH,
@@ -172,6 +203,11 @@ impl RawMember {
         out.extend_from_slice(&self.common_fields());
         out.extend_from_slice(&ZEROED_U16_FIELDS);
         out.extend_from_slice(&EXTERNAL_ATTRIBUTES.to_le_bytes());
+        let local_offset = if self.zip64_local_offset.is_some() {
+            ZIP64_SIZE_SENTINEL
+        } else {
+            local_offset
+        };
         out.extend_from_slice(&local_offset.to_le_bytes());
         out.extend_from_slice(self.name.as_bytes());
         out.extend_from_slice(&self.extra());
@@ -203,6 +239,68 @@ pub(super) fn raw_archive(members: &[RawMember]) -> Vec<u8> {
         directory.extend_from_slice(&member.central_record(offset));
     }
     finish(body, directory, members.len())
+}
+
+/// `prefix` before the archive and a `comment` after its end record. Offsets stay
+/// relative to the archive proper, as they do in a self-extracting file.
+pub(super) fn archive_with_surroundings(
+    prefix: &[u8],
+    members: &[RawMember],
+    comment: &[u8],
+) -> Vec<u8> {
+    let mut out = prefix.to_vec();
+    out.extend_from_slice(&raw_archive(members));
+    const COMMENT_LEN_LEN: usize = 2;
+    let comment_len_at = out.len() - COMMENT_LEN_LEN;
+    let comment_len = u16::try_from(comment.len()).expect("short comment");
+    out[comment_len_at..].copy_from_slice(&comment_len.to_le_bytes());
+    out.extend_from_slice(comment);
+    out
+}
+
+/// One member described by ZIP64 end records. `sector` pads the ZIP64 record's
+/// extensible data, which moves it away from where a prefix-tolerant reader looks.
+pub(super) fn zip64_directory_archive(
+    prefix: &[u8],
+    member: &RawMember,
+    declared_records: u64,
+    sector: &[u8],
+) -> Vec<u8> {
+    const ZIP64_END_SIGNATURE: u32 = 0x0606_4b50;
+    const ZIP64_LOCATOR_SIGNATURE: u32 = 0x0706_4b50;
+    /// The ZIP64 end record's size field excludes its first 12 bytes.
+    const ZIP64_END_FIXED_SIZE: u64 = 44;
+    const SINGLE_DISK: u32 = 1;
+    let body = member.local_record();
+    let directory = member.central_record(0);
+    let zip64_end_at = (body.len() + directory.len()) as u64;
+
+    let mut out = prefix.to_vec();
+    out.extend_from_slice(&body);
+    out.extend_from_slice(&directory);
+    out.extend_from_slice(&ZIP64_END_SIGNATURE.to_le_bytes());
+    out.extend_from_slice(&(ZIP64_END_FIXED_SIZE + sector.len() as u64).to_le_bytes());
+    out.extend_from_slice(&VERSION_ZIP64.to_le_bytes());
+    out.extend_from_slice(&VERSION_ZIP64.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // this disk
+    out.extend_from_slice(&0u32.to_le_bytes()); // directory disk
+    out.extend_from_slice(&declared_records.to_le_bytes());
+    out.extend_from_slice(&declared_records.to_le_bytes());
+    out.extend_from_slice(&(directory.len() as u64).to_le_bytes());
+    out.extend_from_slice(&(body.len() as u64).to_le_bytes());
+    out.extend_from_slice(sector);
+    out.extend_from_slice(&ZIP64_LOCATOR_SIGNATURE.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&zip64_end_at.to_le_bytes());
+    out.extend_from_slice(&SINGLE_DISK.to_le_bytes());
+    out.extend_from_slice(&END_OF_DIRECTORY_SIGNATURE.to_le_bytes());
+    out.extend_from_slice(&[0; 4]); // disks
+    out.extend_from_slice(&u16::MAX.to_le_bytes());
+    out.extend_from_slice(&u16::MAX.to_le_bytes());
+    out.extend_from_slice(&ZIP64_SIZE_SENTINEL.to_le_bytes());
+    out.extend_from_slice(&ZIP64_SIZE_SENTINEL.to_le_bytes());
+    out.extend_from_slice(&[0; 2]); // comment length
+    out
 }
 
 /// One local record that every name in `names` points at, so the directory

@@ -54,6 +54,10 @@ pub enum NpyError {
     FortranOrder,
     #[error("shape {shape:?} × {stride} bytes overflows the address space")]
     ShapeOverflow { shape: Vec<usize>, stride: usize },
+    #[error("allocation of {bytes} bytes refused")]
+    AllocationRefused { bytes: u64 },
+    #[error("{0}")]
+    StructuredLayout(String),
 }
 
 /// Bytes per element of both `<f4` and `<u4`.
@@ -72,6 +76,27 @@ pub fn checked_data_len(shape: &[usize], stride: usize) -> Result<usize, NpyErro
             shape: shape.to_vec(),
             stride,
         })
+}
+
+/// An empty `Vec` with room for `n` elements, refusing with a typed error where
+/// `Vec::with_capacity` would abort.
+pub fn try_vec_with_capacity<T>(n: usize) -> Result<Vec<T>, NpyError> {
+    let mut out = Vec::new();
+    out.try_reserve_exact(n)
+        .map_err(|_| NpyError::AllocationRefused {
+            bytes: u64::try_from(n.saturating_mul(size_of::<T>())).unwrap_or(u64::MAX),
+        })?;
+    Ok(out)
+}
+
+/// Decode a checked data section of little-endian four-byte elements.
+fn decode_elements<T>(data: &[u8], decode: fn([u8; 4]) -> T) -> Result<Vec<T>, NpyError> {
+    let mut out = try_vec_with_capacity(data.len() / ELEMENT_STRIDE)?;
+    let (elements, _) = data.as_chunks::<ELEMENT_STRIDE>();
+    for element in elements {
+        out.push(decode(*element));
+    }
+    Ok(out)
 }
 
 /// `data`, once it is exactly as long as `shape` says. Every allocation sized
@@ -149,18 +174,7 @@ pub fn read_f32_1d(bytes: &[u8]) -> Result<Vec<f32>, NpyError> {
         });
     }
     let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
-    let n = data.len() / ELEMENT_STRIDE;
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let o = i * 4;
-        out.push(f32::from_le_bytes([
-            data[o],
-            data[o + 1],
-            data[o + 2],
-            data[o + 3],
-        ]));
-    }
-    Ok(out)
+    decode_elements(data, f32::from_le_bytes)
 }
 
 /// Read an `<f4` multi-D array as a flat Vec (row-major) plus shape.
@@ -168,18 +182,7 @@ pub fn read_f32_flat(bytes: &[u8]) -> Result<(Vec<f32>, Vec<usize>), NpyError> {
     let (header, data_off) = parse_header(bytes)?;
     check_dtype(&header.descr, "<f4")?;
     let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
-    let n = data.len() / ELEMENT_STRIDE;
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let o = i * 4;
-        out.push(f32::from_le_bytes([
-            data[o],
-            data[o + 1],
-            data[o + 2],
-            data[o + 3],
-        ]));
-    }
-    Ok((out, header.shape))
+    Ok((decode_elements(data, f32::from_le_bytes)?, header.shape))
 }
 
 /// Read an `<u4` 1D array from .npy bytes.
@@ -193,18 +196,7 @@ pub fn read_u32_1d(bytes: &[u8]) -> Result<Vec<u32>, NpyError> {
         });
     }
     let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
-    let n = data.len() / ELEMENT_STRIDE;
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let o = i * 4;
-        out.push(u32::from_le_bytes([
-            data[o],
-            data[o + 1],
-            data[o + 2],
-            data[o + 3],
-        ]));
-    }
-    Ok(out)
+    decode_elements(data, u32::from_le_bytes)
 }
 
 // ── header parsing helpers ────────────────────────────────────────────────

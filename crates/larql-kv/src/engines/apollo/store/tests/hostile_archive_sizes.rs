@@ -6,11 +6,12 @@
 //! about a malformed test archive.
 
 use super::archive_errors::{
-    load_err, one_entry, store_with_archive, ENTRIES_NPZ, WINDOW_TOKENS_NPZ,
+    assert_archive_error, load_err, one_entry, store_with_archive, ENTRIES_NPZ, WINDOW_TOKENS_NPZ,
 };
-use super::raw_archive::{overlapping_archive, raw_archive, RawMember};
+use super::raw_archive::{overlapping_archive, raw_archive, RawMember, METHOD_DEFLATED};
 use super::*;
 
+const HIDDEN: usize = 4;
 const POW_2_46: u64 = 1 << 46;
 const POW_2_62: u64 = 1 << 62;
 const POW_2_63: u64 = 1 << 63;
@@ -166,13 +167,30 @@ both_sizes_past_the_file_are_refused! {
     entries_both_sizes_top_of_u64: ENTRIES_NPZ, entries_member, TOP_OF_U64;
 }
 
+/// A claim of exactly the file's length is within the rule, which is inclusive, so
+/// it is the next check that refuses it: this data cannot fit before the directory.
+#[test]
+fn claim_of_exactly_the_archive_length_passes_the_budget() {
+    // Field widths don't change with the value, so the length is known from a dry run.
+    let archive_len = raw_archive(&[tokens_member().zip64()]).len() as u64;
+    let member = tokens_member()
+        .declaring(archive_len)
+        .occupying(archive_len)
+        .zip64();
+    let err = load_err(&store_with_member(WINDOW_TOKENS_NPZ, member));
+    assert_archive_error(
+        &err,
+        &ArchiveError::BadLocalHeader("data overlaps the central directory"),
+    );
+}
+
 /// Each directory record is individually within the file, but they all share
 /// one payload, so a small file would otherwise decode to many times its length.
 #[test]
 fn tokens_members_overlapping_one_payload_are_refused() {
     let names = ["0.npy", "1.npy", "2.npy"];
     let dir = TempDir::new().unwrap();
-    write_minimal_store(dir.path(), names.len(), 4, TOKENS.len(), &one_entry());
+    write_minimal_store(dir.path(), names.len(), HIDDEN, TOKENS.len(), &one_entry());
     let member = tokens_member();
     let archive = overlapping_archive(&member, &names);
     let shared_payload_claims = member.data_len() * names.len() as u64;
@@ -185,59 +203,40 @@ fn tokens_members_overlapping_one_payload_are_refused() {
     assert_exceeds_archive(err, member.data_len(), WINDOW_TOKENS_NPZ, &dir);
 }
 
-/// The crate enables no `zip` compression feature, so a compressed member
-/// cannot load. If a feature is ever added this goes red, and the rule on
-/// `ArchiveBudget` has to be revisited with it.
+/// The reader decodes stored members only, so a compressed one is refused by
+/// name whichever features `zip` is built with.
 #[test]
-fn deflated_tokens_member_is_a_typed_unsupported_error() {
+fn deflated_tokens_member_is_refused_as_unsupported() {
     let member = RawMember::deflate_wrapped(TOKENS_MEMBER, synth_u32_npy(&TOKENS));
     let err = load_err(&store_with_member(WINDOW_TOKENS_NPZ, member));
-    assert_unsupported_compression(err);
+    assert_archive_error(&err, &ArchiveError::UnsupportedCompression(METHOD_DEFLATED));
 }
 
 #[test]
-fn deflated_entries_member_is_a_typed_unsupported_error() {
+fn deflated_entries_member_is_refused_as_unsupported() {
     let member =
         RawMember::deflate_wrapped(ENTRIES_MEMBER, synth_structured_entries_npy(&one_entry()));
     let err = load_err(&store_with_member(ENTRIES_NPZ, member));
-    assert_unsupported_compression(err);
+    assert_archive_error(&err, &ArchiveError::UnsupportedCompression(METHOD_DEFLATED));
 }
 
-fn assert_unsupported_compression(err: StoreLoadError) {
-    assert!(
-        matches!(
-            err,
-            StoreLoadError::Zip {
-                source: zip::result::ZipError::UnsupportedArchive(_),
-                ..
-            }
-        ),
-        "{err:?}"
-    );
-}
-
-/// A stored member reads short only with a forged CRC over bytes that include
-/// the CRC itself, so the check is driven directly. Over-long reads need a
-/// compression feature this crate does not enable.
+/// A running sum that would wrap past `u64::MAX` back to within the file: the first
+/// member is honest and the second claims everything. Saturating stays over the limit.
 #[test]
-fn member_read_length_must_match_its_declaration() {
-    const PATH: &str = "archive.npz::0.npy";
-    const DECLARED: u64 = 8;
-    const MATCHING: usize = 8;
-    const SHORT: usize = 7;
-    const OVERRUN: usize = 9;
-    assert!(check_member_read_len(PATH, DECLARED, MATCHING).is_ok());
-    for read in [SHORT, OVERRUN] {
-        let err = check_member_read_len(PATH, DECLARED, read).unwrap_err();
-        assert!(
-            matches!(
-                err,
-                StoreLoadError::MemberLengthMismatch {
-                    declared: DECLARED,
-                    ..
-                }
-            ),
-            "{err:?}"
-        );
-    }
+fn claims_that_would_wrap_u64_back_into_the_file_are_refused() {
+    const WINDOWS: usize = 2;
+    let dir = TempDir::new().unwrap();
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, TOKENS.len(), &one_entry());
+    let first = tokens_member();
+    let second = RawMember::stored("1.npy", Vec::new())
+        .declaring(u64::MAX)
+        .occupying(u64::MAX)
+        .zip64();
+    std::fs::write(
+        dir.path().join(WINDOW_TOKENS_NPZ),
+        raw_archive(&[first, second]),
+    )
+    .unwrap();
+    let err = load_err(&dir);
+    assert_exceeds_archive(err, u64::MAX, WINDOW_TOKENS_NPZ, &dir);
 }

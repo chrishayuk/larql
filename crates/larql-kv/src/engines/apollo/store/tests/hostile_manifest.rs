@@ -4,6 +4,9 @@
 use super::archive_errors::{load_err, one_entry};
 use super::*;
 
+const WINDOWS: usize = 1;
+const HIDDEN: usize = 4;
+const WINDOW_SIZE: usize = 3;
 const POW_2_50: usize = 1 << 50;
 const POW_2_62: usize = 1 << 62;
 /// `write_minimal_store` wrote `window_000.npy`, so this is the first gap.
@@ -11,7 +14,7 @@ const FIRST_MISSING_BOUNDARY: &str = "window_001.npy";
 
 fn store_claiming_windows(num_windows: usize) -> TempDir {
     let dir = TempDir::new().unwrap();
-    write_minimal_store(dir.path(), 1, 4, 3, &one_entry());
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
     let path = dir.path().join("manifest.json");
     let mut manifest: StoreManifest =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

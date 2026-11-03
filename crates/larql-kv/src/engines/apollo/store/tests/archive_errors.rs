@@ -4,6 +4,9 @@
 
 use super::*;
 
+const WINDOWS: usize = 1;
+const HIDDEN: usize = 4;
+const WINDOW_SIZE: usize = 3;
 pub(super) const WINDOW_TOKENS_NPZ: &str = "window_token_lists.npz";
 pub(super) const ENTRIES_NPZ: &str = "entries.npz";
 /// Zip local-file-header signature (`PK\x03\x04`).
@@ -24,7 +27,7 @@ pub(super) fn one_entry() -> Vec<VecInjectEntry> {
 /// A one-window store whose `file` archive is then replaced by `bytes`.
 pub(super) fn store_with_archive(file: &str, bytes: &[u8]) -> TempDir {
     let dir = TempDir::new().unwrap();
-    write_minimal_store(dir.path(), 1, 4, 3, &one_entry());
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
     std::fs::write(dir.path().join(file), bytes).unwrap();
     dir
 }
@@ -32,7 +35,7 @@ pub(super) fn store_with_archive(file: &str, bytes: &[u8]) -> TempDir {
 /// A one-window store with `file` removed.
 fn store_without(file: &str) -> TempDir {
     let dir = TempDir::new().unwrap();
-    write_minimal_store(dir.path(), 1, 4, 3, &one_entry());
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
     std::fs::remove_file(dir.path().join(file)).unwrap();
     dir
 }
@@ -68,7 +71,14 @@ pub(super) fn load_err(dir: &TempDir) -> StoreLoadError {
     ApolloStore::load(dir.path()).unwrap_err()
 }
 
-fn assert_names(err: &StoreLoadError, file: &str) {
+pub(super) fn assert_archive_error(err: &StoreLoadError, expected: &ArchiveError) {
+    match err {
+        StoreLoadError::Archive { source, .. } => assert_eq!(source, expected),
+        other => panic!("expected Archive({expected:?}), got {other:?}"),
+    }
+}
+
+pub(super) fn assert_names(err: &StoreLoadError, file: &str) {
     assert!(err.to_string().contains(file), "{file} not named in: {err}");
 }
 
@@ -90,18 +100,18 @@ fn window_token_member_that_is_not_npy_is_an_npy_error() {
 }
 
 #[test]
-fn window_token_member_failing_its_crc_is_an_io_error() {
+fn window_token_member_failing_its_crc_is_a_crc_error() {
     let npz = crc_corrupted_npz("0.npy", synth_u32_npy(&[1, 2, 3]));
     let err = load_err(&store_with_archive(WINDOW_TOKENS_NPZ, &npz));
-    assert!(matches!(err, StoreLoadError::Io { .. }), "{err:?}");
+    assert_archive_error(&err, &ArchiveError::CrcMismatch);
     assert_names(&err, "0.npy");
 }
 
 #[test]
-fn window_token_member_with_a_broken_local_header_is_a_zip_error() {
+fn window_token_member_with_a_broken_local_header_is_an_archive_error() {
     let npz = local_header_corrupted_npz("0.npy", synth_u32_npy(&[1, 2, 3]));
     let err = load_err(&store_with_archive(WINDOW_TOKENS_NPZ, &npz));
-    assert!(matches!(err, StoreLoadError::Zip { .. }), "{err:?}");
+    assert_archive_error(&err, &ArchiveError::BadLocalHeader("bad signature"));
     assert_names(&err, WINDOW_TOKENS_NPZ);
 }
 
@@ -115,9 +125,9 @@ fn missing_entries_archive_is_an_io_error_naming_it() {
 }
 
 #[test]
-fn entries_archive_that_is_not_a_zip_is_a_zip_error() {
+fn entries_archive_that_is_not_a_zip_is_an_archive_error() {
     let err = load_err(&store_with_archive(ENTRIES_NPZ, b"NOT_A_ZIP"));
-    assert!(matches!(err, StoreLoadError::Zip { .. }), "{err:?}");
+    assert_archive_error(&err, &ArchiveError::NoEndRecord);
     assert_names(&err, ENTRIES_NPZ);
 }
 
@@ -129,18 +139,18 @@ fn entries_archive_without_an_entries_member_is_missing_file() {
 }
 
 #[test]
-fn entries_member_failing_its_crc_is_an_io_error() {
+fn entries_member_failing_its_crc_is_a_crc_error() {
     let npz = crc_corrupted_npz("entries.npy", synth_structured_entries_npy(&one_entry()));
     let err = load_err(&store_with_archive(ENTRIES_NPZ, &npz));
-    assert!(matches!(err, StoreLoadError::Io { .. }), "{err:?}");
+    assert_archive_error(&err, &ArchiveError::CrcMismatch);
     assert_names(&err, "entries.npy");
 }
 
 #[test]
-fn entries_member_with_a_broken_local_header_is_a_zip_error() {
+fn entries_member_with_a_broken_local_header_is_an_archive_error() {
     let npz = local_header_corrupted_npz("entries.npy", synth_structured_entries_npy(&one_entry()));
     let err = load_err(&store_with_archive(ENTRIES_NPZ, &npz));
-    assert!(matches!(err, StoreLoadError::Zip { .. }), "{err:?}");
+    assert_archive_error(&err, &ArchiveError::BadLocalHeader("bad signature"));
     assert_names(&err, ENTRIES_NPZ);
 }
 

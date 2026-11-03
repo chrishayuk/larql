@@ -2342,6 +2342,7 @@ name = "larql-kv"
 version = "0.2.0"
 dependencies = [
  "blas-src",
+ "crc32fast",
  "criterion",
  "larql-boundary",
  "larql-compute",
@@ -2349,6 +2350,7 @@ dependencies = [
  "larql-execution",
  "larql-inference",
  "larql-vindex",
+ "libc",
  "ndarray",
  "openblas-src",
  "rand 0.8.6",

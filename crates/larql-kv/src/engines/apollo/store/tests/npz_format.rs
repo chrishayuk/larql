@@ -1,0 +1,459 @@
+//! The `.npz` reader's ZIP handling, through the public loader: forms real
+//! writers produce must load, and malformed structure must be a typed error.
+
+use super::archive_errors::{
+    assert_archive_error, assert_names, load_err, one_entry, store_with_archive, WINDOW_TOKENS_NPZ,
+};
+use super::raw_archive::{
+    archive_with_surroundings, raw_archive, zip64_directory_archive, RawMember,
+};
+use super::*;
+
+const WINDOWS: usize = 1;
+const HIDDEN: usize = 4;
+const WINDOW_SIZE: usize = 3;
+const TOKENS: [u32; 3] = [0, 1, 2];
+const MEMBER: &str = "0.npy";
+const END_RECORD_LEN: usize = 22;
+const CENTRAL_RECORD_LEN: usize = 46;
+const ZIP64_LOCATOR_LEN: usize = 20;
+const ZIP64_END_RECORD_LEN: usize = 56;
+const END_RECORD_SIGNATURE: &[u8] = b"PK\x05\x06";
+const CENTRAL_SIGNATURE: &[u8] = b"PK\x01\x02";
+const FLAG_ENCRYPTED: u16 = 1;
+/// Bit 3: sizes follow the data, as an unseekable `zipfile` stream writes.
+const FLAG_DATA_DESCRIPTOR: u16 = 1 << 3;
+
+fn member() -> RawMember {
+    RawMember::stored(MEMBER, synth_u32_npy(&TOKENS))
+}
+
+fn assert_loads(archive: &[u8]) {
+    let dir = store_with_archive(WINDOW_TOKENS_NPZ, archive);
+    let store = ApolloStore::load(dir.path()).expect("legitimate archive loads");
+    assert_eq!(store.window_tokens, vec![TOKENS.to_vec()]);
+}
+
+fn archive_err(archive: &[u8]) -> StoreLoadError {
+    let err = load_err(&store_with_archive(WINDOW_TOKENS_NPZ, archive));
+    assert_names(&err, WINDOW_TOKENS_NPZ);
+    err
+}
+
+fn position_of(haystack: &[u8], needle: &[u8]) -> usize {
+    haystack
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .expect("needle present")
+}
+
+#[test]
+fn prefixed_self_extracting_archive_loads() {
+    assert_loads(&archive_with_surroundings(b"#!/bin/sh\n", &[member()], b""));
+}
+
+#[test]
+fn archive_comment_loads() {
+    assert_loads(&archive_with_surroundings(b"", &[member()], b"a comment"));
+}
+
+#[test]
+fn comment_planting_an_end_signature_loads() {
+    assert_loads(&archive_with_surroundings(
+        b"",
+        &[member()],
+        END_RECORD_SIGNATURE,
+    ));
+}
+
+#[test]
+fn bytes_after_the_comment_load() {
+    let mut archive = raw_archive(&[member()]);
+    archive.extend_from_slice(b"trailing");
+    assert_loads(&archive);
+}
+
+#[test]
+fn data_descriptor_flag_loads_from_central_sizes() {
+    assert_loads(&raw_archive(&[member().with_flags(FLAG_DATA_DESCRIPTOR)]));
+}
+
+#[test]
+fn directory_and_other_members_are_ignored() {
+    let extras = RawMember::stored("meta/", Vec::new());
+    let readme = RawMember::stored("README.txt", b"hello".to_vec());
+    assert_loads(&raw_archive(&[extras, readme, member()]));
+}
+
+#[test]
+fn zip64_end_records_load() {
+    assert_loads(&zip64_directory_archive(b"", &member(), 1, b""));
+}
+
+#[test]
+fn zip64_end_records_with_a_prefix_load() {
+    assert_loads(&zip64_directory_archive(b"prefix", &member(), 1, b""));
+}
+
+#[test]
+fn zip64_extensible_sector_loads_without_a_prefix() {
+    assert_loads(&zip64_directory_archive(b"", &member(), 1, b"sector"));
+}
+
+/// Newly unsupported, pinned: with a prefix the ZIP64 record is found by assuming
+/// its standard length, which an extensible sector breaks. `zipfile` assumes the same.
+#[test]
+fn zip64_extensible_sector_with_a_prefix_finds_no_end_record() {
+    let archive = zip64_directory_archive(b"prefix", &member(), 1, b"sector");
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// Newly unsupported, pinned: the directory must end where the end record starts.
+/// The `zip` crate scans for it instead; no writer tested here leaves such a gap.
+#[test]
+fn gap_between_directory_and_end_record_finds_no_end_record() {
+    let mut archive = raw_archive(&[member()]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    let end_record = archive.split_off(end_at);
+    archive.extend_from_slice(b"gap");
+    archive.extend_from_slice(&end_record);
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// A ZIP64 end record is only believed if a real locator points to it.
+#[test]
+fn zip64_end_record_without_a_locator_signature_finds_no_end_record() {
+    const LOCATOR_FROM_END: usize = END_RECORD_LEN + ZIP64_LOCATOR_LEN;
+    let mut archive = zip64_directory_archive(b"", &member(), 1, b"");
+    let locator_at = archive.len() - LOCATOR_FROM_END;
+    archive[locator_at] = b'X';
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// A locator pointing so near the end that a ZIP64 record there would run off the
+/// file is simply not a candidate, not an I/O failure.
+#[test]
+fn zip64_locator_pointing_past_a_readable_record_finds_no_end_record() {
+    const LOCATOR_FROM_END: usize = END_RECORD_LEN + ZIP64_LOCATOR_LEN;
+    const LOCATOR_OFFSET_FIELD_AT: usize = 8;
+    // Remove the ZIP64 record too, so the adjacent guess can't rescue it.
+    let mut archive = zip64_directory_archive(b"", &member(), 1, b"");
+    let locator_at = archive.len() - LOCATOR_FROM_END;
+    let just_before_locator = (locator_at - 1) as u64;
+    archive[locator_at + LOCATOR_OFFSET_FIELD_AT..locator_at + LOCATOR_OFFSET_FIELD_AT + 8]
+        .copy_from_slice(&just_before_locator.to_le_bytes());
+    archive[locator_at - ZIP64_END_RECORD_LEN] = b'X';
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// Each 32-bit field defers to ZIP64 alone when it is the only one at its sentinel,
+/// and the end record's other fields then hold their real values.
+#[test]
+fn any_single_sentinel_in_the_end_record_defers_to_zip64() {
+    const RECORDS_ON_DISK_AT: usize = 8;
+    const RECORDS_AT: usize = 10;
+    const DIRECTORY_LEN_AT: usize = 12;
+    const DIRECTORY_OFFSET_AT: usize = 16;
+    const REAL_RECORDS: u16 = 1;
+    /// The one-member archive's real directory length and offset are not needed:
+    /// any value other than the sentinel leaves that field not deferring.
+    const NOT_SENTINEL: u32 = 0;
+    let base = zip64_directory_archive(b"", &member(), 1, b"");
+    let end_at = base.len() - END_RECORD_LEN;
+    let with_fields = |records: u16, len: u32, offset: u32| {
+        let mut archive = base.clone();
+        let end = &mut archive[end_at..];
+        end[RECORDS_ON_DISK_AT..RECORDS_ON_DISK_AT + 2].copy_from_slice(&records.to_le_bytes());
+        end[RECORDS_AT..RECORDS_AT + 2].copy_from_slice(&records.to_le_bytes());
+        end[DIRECTORY_LEN_AT..DIRECTORY_LEN_AT + 4].copy_from_slice(&len.to_le_bytes());
+        end[DIRECTORY_OFFSET_AT..DIRECTORY_OFFSET_AT + 4].copy_from_slice(&offset.to_le_bytes());
+        archive
+    };
+    assert_loads(&with_fields(u16::MAX, NOT_SENTINEL, NOT_SENTINEL));
+    assert_loads(&with_fields(REAL_RECORDS, u32::MAX, NOT_SENTINEL));
+    assert_loads(&with_fields(REAL_RECORDS, NOT_SENTINEL, u32::MAX));
+}
+
+/// The record count passes the minimum-size check because names are long, so the
+/// directory runs out exactly where another record's fixed part should start.
+#[test]
+fn directory_running_out_between_records_is_refused() {
+    const RECORDS_ON_DISK_AT: usize = 8;
+    const RECORDS_AT: usize = 10;
+    const CLAIMED_RECORDS: u16 = 3;
+    let long_name = "n".repeat(CENTRAL_RECORD_LEN);
+    let mut archive = raw_archive(&[
+        RawMember::stored(&long_name, Vec::new()),
+        RawMember::stored(&format!("{long_name}2"), Vec::new()),
+    ]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    for field in [RECORDS_ON_DISK_AT, RECORDS_AT] {
+        archive[end_at + field..end_at + field + 2].copy_from_slice(&CLAIMED_RECORDS.to_le_bytes());
+    }
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadDirectoryRecord {
+            index: 2,
+            reason: "runs past the directory",
+        },
+    );
+}
+
+#[test]
+fn zip64_declared_record_count_beyond_the_directory_finds_no_end_record() {
+    const POW_2_62: u64 = 1 << 62;
+    let archive = zip64_directory_archive(b"", &member(), POW_2_62, b"");
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn zip64_record_count_that_overflows_the_arithmetic_finds_no_end_record() {
+    let archive = zip64_directory_archive(b"", &member(), u64::MAX, b"");
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn file_shorter_than_an_end_record_finds_no_end_record() {
+    assert_archive_error(&archive_err(b"PK"), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn comment_running_past_the_file_finds_no_end_record() {
+    let mut archive = raw_archive(&[member()]);
+    let comment_len_at = archive.len() - 2;
+    archive[comment_len_at..].copy_from_slice(&u16::MAX.to_le_bytes());
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn directory_length_past_the_file_start_finds_no_end_record() {
+    const DIRECTORY_LEN_AT: usize = 12;
+    let mut archive = raw_archive(&[member()]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    let oversized = u32::try_from(archive.len()).unwrap();
+    archive[end_at + DIRECTORY_LEN_AT..end_at + DIRECTORY_LEN_AT + 4]
+        .copy_from_slice(&oversized.to_le_bytes());
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn multi_disk_archive_finds_no_end_record() {
+    const DISK_AT: usize = 4;
+    let mut archive = raw_archive(&[member()]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    archive[end_at + DISK_AT] = 1;
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn record_counts_that_disagree_find_no_end_record() {
+    const RECORDS_ON_DISK_AT: usize = 8;
+    let mut archive = raw_archive(&[member()]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    archive[end_at + RECORDS_ON_DISK_AT] = 0;
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+#[test]
+fn second_record_with_a_bad_signature_is_refused_by_index() {
+    let mut archive = raw_archive(&[member(), RawMember::stored("1.npy", Vec::new())]);
+    let first = position_of(&archive, CENTRAL_SIGNATURE);
+    let second = first + 1 + position_of(&archive[first + 1..], CENTRAL_SIGNATURE);
+    archive[second] = b'X';
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadDirectoryRecord {
+            index: 1,
+            reason: "bad signature",
+        },
+    );
+}
+
+#[test]
+fn record_whose_name_runs_past_the_directory_is_refused() {
+    const NAME_LEN_AT: usize = 28;
+    let mut archive = raw_archive(&[member()]);
+    let record = position_of(&archive, CENTRAL_SIGNATURE);
+    archive[record + NAME_LEN_AT..record + NAME_LEN_AT + 2]
+        .copy_from_slice(&u16::MAX.to_le_bytes());
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadDirectoryRecord {
+            index: 0,
+            reason: "runs past the directory",
+        },
+    );
+}
+
+#[test]
+fn directory_shorter_than_its_records_is_refused() {
+    const DIRECTORY_LEN_AT: usize = 12;
+    const OFFSET_AT: usize = 16;
+    const ONE_RECORD_MINIMUM: u32 = CENTRAL_RECORD_LEN as u32;
+    let mut archive = raw_archive(&[member()]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    let start = position_of(&archive, CENTRAL_SIGNATURE) as u32;
+    let actual = u32::from_le_bytes(archive[end_at + 12..end_at + 16].try_into().unwrap());
+    // Exactly one fixed record long, so the name no longer fits inside it.
+    let moved = start + actual - ONE_RECORD_MINIMUM;
+    archive[end_at + DIRECTORY_LEN_AT..end_at + DIRECTORY_LEN_AT + 4]
+        .copy_from_slice(&ONE_RECORD_MINIMUM.to_le_bytes());
+    archive[end_at + OFFSET_AT..end_at + OFFSET_AT + 4].copy_from_slice(&moved.to_le_bytes());
+    let err = archive_err(&archive);
+    assert!(
+        matches!(
+            err,
+            StoreLoadError::Archive {
+                source: ArchiveError::NoEndRecord | ArchiveError::BadDirectoryRecord { .. },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn zip64_extra_too_short_for_its_sentinels_is_refused() {
+    const EXTRA_LEN_FIELD_AT: usize = 2;
+    let archive = raw_archive(&[member().zip64()]);
+    let record = position_of(&archive, CENTRAL_SIGNATURE);
+    let extra_at = record + CENTRAL_RECORD_LEN + MEMBER.len();
+    let mut truncated = archive;
+    truncated[extra_at + EXTRA_LEN_FIELD_AT..extra_at + EXTRA_LEN_FIELD_AT + 2]
+        .copy_from_slice(&8u16.to_le_bytes());
+    assert_archive_error(
+        &archive_err(&truncated),
+        &ArchiveError::BadDirectoryRecord {
+            index: 0,
+            reason: "ZIP64 extra field too short",
+        },
+    );
+}
+
+#[test]
+fn extra_field_overrunning_its_record_is_refused() {
+    const EXTRA_LEN_FIELD_AT: usize = 2;
+    let archive = raw_archive(&[member().zip64()]);
+    let record = position_of(&archive, CENTRAL_SIGNATURE);
+    let extra_at = record + CENTRAL_RECORD_LEN + MEMBER.len();
+    let mut overrun = archive;
+    overrun[extra_at + EXTRA_LEN_FIELD_AT..extra_at + EXTRA_LEN_FIELD_AT + 2]
+        .copy_from_slice(&u16::MAX.to_le_bytes());
+    assert_archive_error(
+        &archive_err(&overrun),
+        &ArchiveError::BadDirectoryRecord {
+            index: 0,
+            reason: "extra field overruns its record",
+        },
+    );
+}
+
+#[test]
+fn encrypted_member_is_refused() {
+    let archive = raw_archive(&[member().with_flags(FLAG_ENCRYPTED)]);
+    assert_archive_error(&archive_err(&archive), &ArchiveError::Encrypted);
+}
+
+#[test]
+fn member_whose_data_reaches_into_the_directory_is_refused() {
+    // Both sizes agree and fit the file, but the data would run over the directory.
+    let extended = member();
+    let size = extended.data_len() + 1;
+    let archive = raw_archive(&[extended.declaring(size).occupying(size)]);
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadLocalHeader("data overlaps the central directory"),
+    );
+}
+
+#[test]
+fn local_offset_at_the_directory_or_beyond_is_refused() {
+    const LOCAL_OFFSET_AT: usize = 42;
+    let mut archive = raw_archive(&[member()]);
+    let record = position_of(&archive, CENTRAL_SIGNATURE);
+    let past = u32::try_from(archive.len() * 2).unwrap();
+    archive[record + LOCAL_OFFSET_AT..record + LOCAL_OFFSET_AT + 4]
+        .copy_from_slice(&past.to_le_bytes());
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadLocalHeader("offset past the central directory"),
+    );
+}
+
+/// A ZIP64 offset field that a `SeekFrom::Start` could not represent.
+#[test]
+fn zip64_local_offset_of_two_to_the_63_is_refused_without_seeking() {
+    const POW_2_63: u64 = 1 << 63;
+    let archive = raw_archive(&[member().with_zip64_local_offset(POW_2_63)]);
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadLocalHeader("offset past the central directory"),
+    );
+}
+
+#[test]
+fn zip64_local_offset_that_overflows_with_a_prefix_is_refused() {
+    let archive = archive_with_surroundings(
+        b"prefix",
+        &[member().with_zip64_local_offset(u64::MAX)],
+        b"",
+    );
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadLocalHeader("offset overflows"),
+    );
+}
+
+/// A correct ZIP64 offset field must be honoured, as for a member past 4 GiB.
+#[test]
+fn zip64_local_offset_that_is_correct_loads() {
+    assert_loads(&raw_archive(&[member().with_zip64_local_offset(0)]));
+}
+
+/// Fields other than ZIP64 come first in some writers' extras, and are skipped.
+#[test]
+fn unknown_extra_before_the_zip64_field_is_skipped() {
+    let unknown = [0x34, 0x12, 2, 0, 0xAA, 0xBB];
+    assert_loads(&raw_archive(&[member()
+        .zip64()
+        .with_leading_extra(&unknown)]));
+}
+
+/// The end-record search is limited to the final 64 KiB, so no number of planted
+/// signatures can make it expensive. Most of these defer to ZIP64 and so cost
+/// extra reads, which is the worst case for it.
+#[test]
+fn planted_end_signatures_are_refused_within_a_bounded_search() {
+    const DEFERRING_CANDIDATE_LEN: usize = 22;
+    const CANDIDATES: usize = (u16::MAX as usize) / DEFERRING_CANDIDATE_LEN;
+    let mut candidate = END_RECORD_SIGNATURE.to_vec();
+    candidate.extend_from_slice(&[0; 4]);
+    candidate.extend_from_slice(&[0xFF; 12]);
+    candidate.extend_from_slice(&[0; 2]);
+    assert_archive_error(
+        &archive_err(&candidate.repeat(CANDIDATES)),
+        &ArchiveError::NoEndRecord,
+    );
+}
+
+#[test]
+fn non_utf8_member_name_is_ignored_rather_than_an_error() {
+    const NON_UTF8_BYTE: u8 = 0xFF;
+    let readme = RawMember::stored("x.txt", b"hello".to_vec());
+    let mut archive = raw_archive(&[readme, member()]);
+    let name_at = position_of(&archive, b"x.txt");
+    archive[name_at] = NON_UTF8_BYTE;
+    let record = position_of(&archive, CENTRAL_SIGNATURE);
+    let name_in_directory = record + CENTRAL_RECORD_LEN;
+    archive[name_in_directory] = NON_UTF8_BYTE;
+    assert_loads(&archive);
+}
+
+#[test]
+fn entries_archive_with_no_members_is_missing_file() {
+    let dir = TempDir::new().unwrap();
+    write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
+    std::fs::write(dir.path().join("entries.npz"), raw_archive(&[])).unwrap();
+    let err = load_err(&dir);
+    assert!(matches!(err, StoreLoadError::MissingFile(_)), "{err:?}");
+}
