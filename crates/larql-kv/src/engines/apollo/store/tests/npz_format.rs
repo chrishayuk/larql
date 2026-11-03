@@ -19,6 +19,7 @@ const ENTRIES_MEMBER: &str = "entries.npy";
 /// Over the 24 characters of the longest window name.
 const LONGER_THAN_ANY_WINDOW_NAME: usize = 40;
 const END_RECORD_LEN: usize = 22;
+const EXTRA_HEADER_LEN: usize = 4;
 const CENTRAL_RECORD_LEN: usize = 46;
 const ZIP64_LOCATOR_LEN: usize = 20;
 const ZIP64_END_RECORD_LEN: usize = 56;
@@ -562,6 +563,30 @@ fn non_canonical_window_names_are_ambiguous() {
             other => panic!("{name}: expected AmbiguousMemberName, got {other:?}"),
         }
     }
+}
+
+/// A central record with its name and extra field both at their largest. The buffer
+/// that reads them has to hold the pair.
+#[test]
+fn largest_name_and_extra_together_load() {
+    const NON_ZIP64_EXTRA_ID: [u8; 2] = [0x34, 0x12];
+    let name = "n".repeat(usize::from(u16::MAX));
+    let extra_body = vec![0u8; usize::from(u16::MAX) - EXTRA_HEADER_LEN];
+    let body_len = u16::try_from(extra_body.len()).unwrap();
+    let extra = [
+        NON_ZIP64_EXTRA_ID.as_slice(),
+        &body_len.to_le_bytes(),
+        &extra_body,
+    ]
+    .concat();
+    let other = RawMember::stored(&name, Vec::new()).with_leading_extra(&extra);
+    assert_loads(&raw_archive(&[other, member()]));
+}
+
+/// A last record with no name ends exactly at the directory's end, which is valid.
+#[test]
+fn record_ending_exactly_at_the_directory_end_loads() {
+    assert_loads(&raw_archive(&[member(), RawMember::stored("", Vec::new())]));
 }
 
 /// A name too long to be a window is some other member, and doesn't get retained.

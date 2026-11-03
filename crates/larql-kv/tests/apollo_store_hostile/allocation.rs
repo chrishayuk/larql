@@ -130,3 +130,32 @@ fn refusing_the_archive_tail_buffer_is_typed() {
     let err = load_refusing(dir.path(), TAIL_LEN);
     assert_refused_bytes(&err, TOKENS_NPZ, TAIL_LEN);
 }
+
+/// The window list grows amortised, doubling at a power of two. One more window than
+/// that power makes the growth request a size nothing else here asks for.
+#[test]
+fn refusing_growth_of_the_boundary_list_is_typed() {
+    const WINDOWS_BEFORE_GROWTH: usize = 1 << 11;
+    const GROWN_ELEMENTS: usize = 2 * WINDOWS_BEFORE_GROWTH;
+    let dir = control_store();
+    std::fs::write(
+        dir.path().join(MANIFEST),
+        manifest(WINDOWS_BEFORE_GROWTH + 1, 1),
+    )
+    .unwrap();
+    for window in 1..=WINDOWS_BEFORE_GROWTH {
+        std::fs::write(
+            dir.path()
+                .join(format!("boundaries/window_{window:03}.npy")),
+            f32_npy(1),
+        )
+        .unwrap();
+    }
+    let growth = GROWN_ELEMENTS * size_of::<Vec<f32>>();
+    match load_refusing(dir.path(), growth) {
+        StoreLoadError::AllocationRefused { path, .. } => {
+            assert!(path.contains("window_2048"), "{path}");
+        }
+        other => panic!("expected AllocationRefused, got {other:?}"),
+    }
+}
