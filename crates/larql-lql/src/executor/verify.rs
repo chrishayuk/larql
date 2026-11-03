@@ -348,7 +348,9 @@ fn render(r: &ContractResult) -> Vec<String> {
         })
         .collect::<Vec<_>>()
         .join(", ");
-    out.push(format!("  Measured by: {by}"));
+    out.push(format!(
+        "  Measured by: {by} (as reported by the verifier, not authenticated)"
+    ));
     if let Some(digest) = &r.report_sha256 {
         out.push(format!("  Report sha256: {digest}"));
     }

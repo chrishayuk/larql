@@ -860,6 +860,10 @@ result is about the exact bytes of one container: two containers of the same mod
 about the encoder that produced it. The output says so, and an answer claiming any other kind
 of evidence is refused.
 
+**LQL doesn't authenticate the verifier.** It runs the one it finds, and the identity in the
+output is the verifier's report about itself. Replacing the verifier could make a contract appear
+satisfied without changing the model, so a result must not gate a release on this basis.
+
 The protocol, `larql-verify-contract/1`, how a verifier is found, and what enforces the
 verifier's independence are in `docs/verification/`.
 

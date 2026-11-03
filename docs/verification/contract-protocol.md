@@ -11,6 +11,19 @@ measurement is true. The identity it prints, including any code digest, is what 
 authenticate the verifier. Replacing the executable can make a contract appear satisfied without any change to the model. See
 [independence.md](independence.md#the-verifier-is-not-authenticated).
 
+## Configuration
+
+The first of these that applies names the verifier:
+
+1. `Session::set_verifier`, for an embedding program;
+2. the `LARQL_VERIFIER` environment variable;
+3. `larql-verifier` on `PATH`, absolute entries only;
+4. `verifier/.venv/bin/larql-verifier` in a directory above the running `larql` binary, which is where a checkout's verifier is
+   installed. The current directory isn't searched, so that a statement can't run a program from wherever it happens to be run.
+
+If none applies, the statement refuses. Setting the first or second to an empty value turns discovery off, and the statement
+refuses: an explicitly disabled verifier never falls through to a later choice.
+
 ## Invocation
 
 ```text
