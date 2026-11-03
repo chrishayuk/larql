@@ -194,7 +194,7 @@ when a wanted encoding:
   doesn't count;
 - has a pin that decodes or requantises it, which is how `LARQL_KQUANT_EXEC=widen` shows;
 - comes from a container with no precision program for that encoding, which also refuses
-  a whole pack in an older container with no program, or a layered one whose program names
+  a whole pack in an older container with no program, or a partial pack under a program naming
   another encoding;
 - leaves an object without a pack that the container's precision program compiles;
 - has a pinned kernel the ledger never counted, found after the run: the attempt's record is
@@ -213,8 +213,11 @@ and gave byte-identical logits. Equal digests don't show either run is right.
   pack, or held at source by a program exception such as `--protect-layers`, is recorded and
   not refused. So a pack can execute little of itself and be complete: a Q4_K pack with most
   layers protected ran 7 of 198 pins in place, and with every decoder layer protected and the
-  head compiled, 1 of 198, generating what canonical bytes generate. `realizations` shows how
-  much was pinned. A protocol that needs more must say so.
+  head compiled, 1 of 198, which generated the same ids as canonical bytes on the one prompt
+  tried. `realizations` shows how much was pinned. A protocol that needs more must say so.
+- **The precision program is trusted as declared.** Editing `roles` in `index.json` so a head-only
+  pack's program names only the head passes this check, and a manifest written over that index
+  would bind it. `represent` doesn't produce such a program. A manifest's producer has to own this.
 - **A precision program names roles, not `--object`.** A role whose tensors are all in an
   object with no pack is refused even if a compile was narrowed on purpose. That fails closed.
   An object whose tensors could not hold the encoding at all reads the same way.
@@ -223,9 +226,9 @@ and gave byte-identical logits. Equal digests don't show either run is right.
 - **A form with no named kernel can't be checked against the ledger.** Mapped and sliced banks
   have none: all 48 expert pins of a real `gpt-oss` run appear in `realizations` and produce no
   ledger row.
-- **The ledger check's firing path has not run for real.** No prompt tried missed a pinned kernel.
-  `ran_problems` is pinned on constructed facts, and the line from it to the after-run class on
-  reading: a campaign refuses the plugins that could force it.
+- **The ledger check's firing path is pinned with a test backend.** No prompt tried on a real
+  container missed a pinned kernel. A backend whose head never runs its kernel forces it, in a
+  process of its own because the ledger is process-global.
 - **A selected pack for an object outside the component** is still judged missing if it isn't on
   disk. That fails closed.
 - **A store that can't bind ends with status `error`** and the class it held by then, not `invalid`:

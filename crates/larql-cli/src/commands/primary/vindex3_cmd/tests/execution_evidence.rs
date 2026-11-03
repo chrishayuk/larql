@@ -408,3 +408,196 @@ fn every_cpu_backend_is_supported_in_a_campaign() {
 fn a_device_backend_is_refused_in_a_campaign() {
     assert!(!campaign_supports_backend(ExecBackend::Metal));
 }
+
+/// The ledger is process-global, so the child runs alone in its own process and
+/// another test's kernel can't satisfy this check. Set by the parent below.
+#[cfg(unix)]
+const LEDGER_CHILD_ENV: &str = "LARQL_MEM002_LEDGER_CHILD";
+#[cfg(unix)]
+const LEDGER_CHILD_TEST: &str = "commands::primary::vindex3_cmd::tests::execution_evidence::\
+                                 a_kernel_pinned_and_never_run_invalidates_the_attempt_child";
+
+/// Production, except that the head never runs its pinned kernel.
+#[cfg(unix)]
+mod hollow_head {
+    use larql_vindex::error::VindexError;
+    use larql_vindex::format::vindex3::opplan::exec::backend::*;
+    use larql_vindex::format::vindex3::opplan::exec::lowering::LoweringIdentity;
+    use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend as Production;
+    use larql_vindex::format::vindex3::opplan::exec::realization::{
+        RepresentationFacts, Selection, SelectionRefusal,
+    };
+    use larql_vindex::format::vindex3::opplan::planned::PlannedOperand;
+
+    pub(super) struct HollowHead(pub(super) Production);
+
+    impl PlanBackend for HollowHead {
+        fn name(&self) -> &str {
+            self.0.name()
+        }
+        fn identity(&self) -> LoweringIdentity {
+            self.0.identity()
+        }
+        fn select(
+            &self,
+            operand: &PlannedOperand,
+            facts: &RepresentationFacts,
+        ) -> Result<Selection, Box<SelectionRefusal>> {
+            self.0.select(operand, facts)
+        }
+        fn embed(&self, table: &[f32], hidden: usize, token: u32, scale: Option<f32>) -> Vec<f32> {
+            self.0.embed(table, hidden, token, scale)
+        }
+        fn norm(&self, call: NormCall<'_>) -> Vec<f32> {
+            self.0.norm(call)
+        }
+        fn project(&self, call: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
+            self.0.project(call)
+        }
+        fn attention(&self, call: AttentionCall<'_>) -> Result<AttentionOut, VindexError> {
+            self.0.attention(call)
+        }
+        fn attention_step(
+            &self,
+            call: AttentionStepCall<'_>,
+        ) -> Result<AttentionStepOut, VindexError> {
+            self.0.attention_step(call)
+        }
+        fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+            self.0.ffn(call)
+        }
+        fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+            self.0.routed_ffn(call)
+        }
+        fn output_head(
+            &self,
+            _weights: WeightSlice<'_>,
+            vocab: usize,
+            hidden: usize,
+            x: &[f32],
+            _multiplier: Option<f64>,
+            _scale: Option<f32>,
+        ) -> Result<Vec<f32>, VindexError> {
+            Ok(vec![0.0; x.len() / hidden * vocab])
+        }
+        fn residual_add(&self, accumulator: &mut [f32], delta: &[f32]) {
+            self.0.residual_add(accumulator, delta)
+        }
+    }
+}
+
+/// The pins say the wanted kernel will run, admission agrees, and it never does:
+/// the attempt's record is kept whole and marked invalid.
+#[cfg(unix)]
+#[test]
+#[ignore = "run by a_kernel_pinned_and_never_run_invalidates_the_attempt"]
+fn a_kernel_pinned_and_never_run_invalidates_the_attempt_child() {
+    use larql_inference::vindex3::OpenedComponent;
+    use larql_vindex::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
+    use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+    use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+    use serde_json::Value;
+
+    use super::super::generate::admission::EvidenceRequest;
+    use super::super::generate::run_residency_curve;
+    use super::super::plugins::Plugins;
+    use super::super::prepare::prepare;
+    use super::super::{run, RepresentArgs, Vindex3Command};
+
+    if std::env::var_os(LEDGER_CHILD_ENV).is_none() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let checkpoint = root.path().join("checkpoint");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let canonical = root.path().join("canonical");
+    encode_fixture_container(dense_f32_model, &checkpoint, &canonical, "target");
+    let packed = root.path().join("packed");
+    run(Vindex3Command::Represent(RepresentArgs {
+        container: canonical,
+        output: packed.clone(),
+        encoding: WANTED.to_string(),
+        include_roles: vec!["output-head".to_string()],
+        protect_layers: vec!["0-1".to_string()],
+        plugins: Vec::new(),
+        moments: None,
+        objects: Vec::new(),
+        deployment: false,
+        protect: Vec::new(),
+    }))
+    .unwrap();
+    let OpenedComponent { plan, store, .. } = prepare(
+        &packed,
+        "target",
+        ExecBackend::ProductionNvfp4,
+        RepresentationSource::Auto,
+        &Plugins::load(&Default::default()).unwrap(),
+    )
+    .unwrap();
+    let regions = root.path().join("regions.jsonl");
+    let sealed = root.path().join("sealed.jsonl");
+    let error = run_residency_curve(
+        &hollow_head::HollowHead(ProductionBackend::new()),
+        "test",
+        &[1, 2],
+        2,
+        &plan,
+        &store,
+        1,
+        0,
+        true,
+        "demand",
+        &packed,
+        EvidenceRequest {
+            campaign: true,
+            regions: Some(&regions),
+            sealed_latency: Some(&sealed),
+            execution: ExecutionRequest {
+                wanted_encoding: Some(WANTED.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("counted none of them"), "{error}");
+    let stream: Vec<Value> = std::fs::read_to_string(&regions)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let admission = stream.iter().find(|r| r["record"] == "admission").unwrap();
+    assert_eq!(
+        admission["execution_identity"]["complete"], true,
+        "{admission}"
+    );
+    let after = stream
+        .iter()
+        .find(|r| r["record"] == "instance_identity" && r["phase"] == "after_run")
+        .expect("the record is kept whole");
+    assert_eq!(after["evidence_class"], "invalid");
+    assert_eq!(after["execution_identity"]["complete"], false);
+    let end = stream
+        .iter()
+        .find(|r| r["record"] == "attempt_end")
+        .unwrap();
+    assert_eq!(end["evidence_class"], "invalid");
+    println!("LEDGER_CHILD_RAN");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kernel_pinned_and_never_run_invalidates_the_attempt() {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([LEDGER_CHILD_TEST, "--exact", "--ignored", "--nocapture"])
+        .env(LEDGER_CHILD_ENV, "1")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && out.contains("LEDGER_CHILD_RAN"),
+        "{out}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
