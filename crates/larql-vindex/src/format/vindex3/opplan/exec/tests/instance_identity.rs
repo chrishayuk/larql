@@ -488,12 +488,10 @@ fn a_platform_with_no_descriptor_identity_fails_the_capture_and_still_reads() {
 // ── A mapped bank, in a real binding ──
 
 mod bound {
-    use super::super::kimi_per_expert_prepared::{open_container, Subject};
+    use super::super::kimi_per_expert_prepared::Subject;
     use crate::format::vindex3::fixtures_kimi::kimi_per_expert_moe_f32_model;
-    use crate::format::vindex3::opplan::exec::execute_plan;
     use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
     use crate::format::vindex3::opplan::exec::production::ProductionBackend;
-    use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 
     /// Binding reports both uses: the expert bank mapped, the rest copied,
     /// each through its own one descriptor, with identity intact.
@@ -528,6 +526,9 @@ mod bound {
     #[cfg(unix)]
     #[test]
     fn execution_after_every_segment_is_replaced_computes_what_the_opened_files_hold() {
+        use super::super::kimi_per_expert_prepared::open_container;
+        use crate::format::vindex3::opplan::exec::execute_plan;
+        use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
         let subject = Subject::build(kimi_per_expert_moe_f32_model);
         let (plan, _) = subject.open();
         let tokens = [1u32, 2];

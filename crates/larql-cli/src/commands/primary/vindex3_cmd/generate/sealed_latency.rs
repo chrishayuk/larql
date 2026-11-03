@@ -6,8 +6,9 @@
 //! excluded from them until it is unsealed, and the run's console prints
 //! no timing while it is active. It is created exclusively, refused
 //! attempts' timings go to it like any other, and its SHA-256 is written
-//! into the residency stream's `after_run` header so it can be shown
-//! untouched when unsealed.
+//! into the residency stream's `after_run` header, or onto `attempt_end` for
+//! an attempt stopped before its passes, so it can be shown untouched when
+//! unsealed.
 //!
 //! **What the seal does not cover.** It seals per-step, per-stage and bind
 //! values. The residency stream still carries clock readings at admission

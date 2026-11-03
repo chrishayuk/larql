@@ -459,6 +459,7 @@ pub(in super::super) fn instance_block(
             json!({
                 "object": segment.object,
                 "declared": segment.declared,
+                "index_sha256": segment.index_sha256,
                 "path": segment.path.display().to_string(),
                 "use": { "mapped": segment.mapped, "copied": segment.copied },
                 "at_open": identity_json(&segment.at_open),

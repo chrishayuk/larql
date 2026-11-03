@@ -591,8 +591,11 @@ fn stop_attempt<S: EvidenceSink>(
     let digest = match sealed.take().map(SealedLatency::finish).transpose() {
         Ok(digest) => digest,
         Err(e) => {
+            // On stderr, and in the reason below: the record says why the
+            // attempt has no digest.
             eprintln!("the sealed latency file could not be finished: {e}");
-            None
+            let reason = format!("{reason}; the sealed latency file was not finished: {e}");
+            return end_with_digest(stream, run, class, reason, None);
         }
     };
     if let Some(digest) = &digest {

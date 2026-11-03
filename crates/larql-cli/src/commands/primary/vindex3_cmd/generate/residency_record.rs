@@ -284,7 +284,10 @@ pub(in super::super) fn attempt_end_record(
         "error": error,
         "evidence_class": class.name(),
         "sealed_latency": sealed.map(|d| json!({
-            "path": d.path.display().to_string(),
+            "path": std::path::absolute(&d.path)
+                .unwrap_or_else(|_| d.path.clone())
+                .display()
+                .to_string(),
             "sha256": d.sha256,
         })),
         "clock": point_clock(),

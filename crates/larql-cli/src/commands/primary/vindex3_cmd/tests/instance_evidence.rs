@@ -511,6 +511,7 @@ fn the_block_carries_every_segments_facts_and_comparison() {
     assert!(block["scope"]["not_bound"].is_array());
     let entry = &block["segments"][0];
     assert_eq!(entry["declared"], DECLARED);
+    assert_eq!(entry["index_sha256"], SEGMENT_HASH);
     assert_eq!(entry["use"]["mapped"], true);
     assert_eq!(entry["use"]["copied"], false);
     assert_eq!(entry["manifest"], "match");
@@ -1336,8 +1337,11 @@ fn a_threshold_rejection_of_a_mapped_binding_runs_and_is_not_invalid() {
     .unwrap();
     let (plan, store) = opened(&container);
     let evidence = evidence_paths();
-    // Resident bytes above zero are what a just-written file normally has;
-    // the outcome is asserted from the record's own total, either way.
+    // Read every segment first, so the binding's witness cannot be empty and
+    // a threshold of zero is a real rejection.
+    for segment in store.instance_report().segments {
+        std::fs::read(&segment.path).unwrap();
+    }
     curve(
         &ProductionBackend::new(),
         &plan,
@@ -1353,13 +1357,8 @@ fn a_threshold_rejection_of_a_mapped_binding_runs_and_is_not_invalid() {
     assert_full_run(&stream);
     let admission = last(&stream, "admission");
     assert_eq!(admission["complete"], true);
-    let resident = admission["resident_bytes"].as_u64().unwrap();
-    let expected = if resident > 0 {
-        "above_threshold"
-    } else {
-        "admitted"
-    };
-    assert_eq!(admission["outcome"], expected);
+    assert!(admission["resident_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(admission["outcome"], "above_threshold");
     assert_eq!(admission["evidence_class"], "unverified");
     let segments = admission["instance_identity"]["segments"]
         .as_array()

@@ -107,7 +107,8 @@ diagnostic only, and show nothing about readers outside the store.
 
 The manifest is read and compared. Its producer remains separate and
 unauthorised, so tests use manifests written by hand. A manifest that is not a
-`pre` graph verification, lacks a field the format requires, or whose computed
+`pre` graph verification, lacks a top-level or `verifier` field the format
+requires (their contents, and `identity.dev`, are not checked), or whose computed
 and declared hashes do not both equal the container index's hash, verifies
 nothing.
 
