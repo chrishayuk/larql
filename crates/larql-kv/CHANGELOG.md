@@ -69,10 +69,10 @@ matching the directory, equal declared and stored sizes, and no encryption flags
   directory length that together spell it. numpy refuses these too.
 - `.npy` minor versions other than 1.0, which numpy refuses too.
 - Any window, `entries` or boundary `.npy` header not in the writer's form: other key
-  order or spacing, Fortran order and extra keys among them. Python 2 `3L` shapes were
-  already refused. `.npy` format 2.0 and 3.0 are refused. Honest files from old numpy or
-  non-numpy writers may be refused by this, including headers numpy itself loads, such as
-  one with no trailing comma. No real files from such writers have been tried.
+  order or spacing and extra keys among them. Python 2 `3L` shapes, Fortran order and
+  `.npy` formats 2.0 and 3.0 were already refused. Honest files from old numpy or non-numpy
+  writers may be refused by this, including headers numpy itself loads, such as one with
+  no trailing comma. No real files from such writers have been tried.
 - Overlapping members, including records sharing a payload, and data reaching into the
   directory. Declared and stored sizes that differ.
 - More than one `entries.npy`, a bare `entries` beside it, or no member named exactly
