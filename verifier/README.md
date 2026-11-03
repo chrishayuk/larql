@@ -8,6 +8,10 @@ its own work. [docs/verification/independence.md](../docs/verification/independe
 **A result is a numerical measurement of one container.** It isn't a formal proof, and it isn't a claim about the encoder that produced
 the container. There is one contract and one pinned model so far.
 
+**A result doesn't authenticate the verifier.** The code digest in an answer is the program's report about itself, which helps reproduce a result.
+Replacing the program could make a contract appear satisfied without changing the model, so a result must not gate a release on this basis.
+[What a release gate would need](../docs/verification/independence.md#the-verifier-is-not-authenticated).
+
 ## Results
 
 `Q8_0_T2` requires every element of every Q8_0 tensor to be within the T2 reconstruction bound of its source value. On two containers of

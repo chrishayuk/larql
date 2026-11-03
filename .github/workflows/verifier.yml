@@ -1,16 +1,21 @@
 name: verifier
 
 # The contract verifier: separate from the engine it measures, so separate CI.
-# See docs/verification/independence.md.
+# See docs/verification/independence.md. The boundary between the two is verifier-boundary.yml.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'verifier/**'
+      - 'docs/verification/**'
+      - 'scripts/check_verifier_boundary.py'
+      - '.github/workflows/verifier.yml'
   push:
     branches: [main]
     paths:
       - 'verifier/**'
       - 'docs/verification/**'
+      - 'scripts/check_verifier_boundary.py'
       - '.github/workflows/verifier.yml'
 
 concurrency:
@@ -21,35 +26,6 @@ permissions:
   contents: read
 
 jobs:
-  boundary:
-    name: boundary
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: One change must not move both the engine and its measurement
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          ALLOWED: ${{ contains(github.event.pull_request.labels.*.name, 'verifier-and-engine') }}
-        run: |
-          changed=$(git diff --name-only "$(git merge-base "$BASE" "$HEAD")" "$HEAD")
-          measurement=$(printf '%s\n' "$changed" | grep -E '^verifier/(refcheck|larql_contract_verifier|expected|provenance)/' || true)
-          engine=$(printf '%s\n' "$changed" | grep -E '^crates/' || true)
-          if [ -n "$measurement" ] && [ -n "$engine" ]; then
-            if [ "$ALLOWED" = "true" ]; then
-              echo "::warning::This pull request changes both, allowed by the verifier-and-engine label."
-              exit 0
-            fi
-            echo "::error::This pull request changes both the verifier's measurement and the engine. Split it, or apply the verifier-and-engine label. See docs/verification/independence.md."
-            printf 'Measurement:\n%s\n\nEngine:\n%s\n' "$measurement" "$engine"
-            exit 1
-          fi
-
   test:
     name: test · ${{ matrix.os }}
     strategy:
