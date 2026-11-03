@@ -176,6 +176,15 @@ pub enum Statement {
     /// `SHOW AUTHORITY` (VINDEX3): the container's own authority
     /// declaration and the profiles it declares by name.
     ShowAuthority,
+    /// `VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST
+    /// "<source>"`: an external verifier's measurement of one container
+    /// against a numerical contract. Read-only. LQL never evaluates the
+    /// contract itself.
+    VerifyRepresentation {
+        container: String,
+        contract: String,
+        source: String,
+    },
     Stats {
         vindex: Option<String>,
     },
@@ -253,6 +262,7 @@ impl Statement {
             Statement::ShowRepresentations { .. } => "SHOW REPRESENTATIONS",
             Statement::ShowProvenance { .. } => "SHOW PROVENANCE",
             Statement::ShowAuthority => "SHOW AUTHORITY",
+            Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",
