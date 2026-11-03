@@ -48,8 +48,13 @@ write a different one.
 ```
 
 It downloads the checkpoint from Hugging Face, builds LARQL at each commit in a separate worktree, encodes a container with it, measures it,
-and compares the status, the violation count, the report digest and the Q8_0 segment's digest with `expected/qwen3-0.6b.json`. It needs git,
-curl, a Rust toolchain, whatever LARQL needs to build and about 10 GB of disk.
+and compares the status, the violation count, the report digest and the Q8_0 segment's digest with `expected/qwen3-0.6b.json`.
+
+It then runs the corrected container through LARQL with the capture on, checks the recorded calls and logits against the expected digests, and asks
+`VERIFY OPERATOR` about three operators under both contracts. Last, it builds two faulty kernels in a temporary worktree and checks they're judged as expected: summing
+blocks in reverse must fail `Q8_0_GEMV_SEQ` and pass `Q8_0_GEMV_B1`, and reading codes as unsigned must fail both.
+
+It needs git, curl, a Rust toolchain, whatever LARQL needs to build and about 15 GB of disk.
 
 **Where it has been run:** macOS on Apple silicon only. Encoding on other platforms hasn't been compared.
 
