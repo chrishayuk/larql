@@ -5,8 +5,8 @@
 It ships with LARQL, but it isn't built from LARQL: it's a separate Python package with no LARQL code in it, so that LARQL can't mark
 its own work. [docs/verification/independence.md](../docs/verification/independence.md) says what enforces that, and what doesn't.
 
-**A result is a numerical measurement of one container.** It isn't a formal proof, and it isn't a claim about the encoder that produced
-the container. There is one contract and one pinned model so far.
+**A result is a numerical measurement.** It isn't a formal proof. `Q8_0_T2` measures one container, and isn't a claim about the encoder that produced it. `Q8_0_GEMV_SEQ` and
+`Q8_0_GEMV_B1` measure one recorded kernel call, from a witness the engine wrote. `Q8_0_GEMV_B1` is experimental. See the [protocol](../docs/verification/contract-protocol.md#operator-contracts-larql-verify-operator1).
 
 **A result doesn't authenticate the verifier.** The code digest in an answer is the program's report about itself, which helps reproduce a result.
 Replacing the program could make a contract appear satisfied without changing the model, so a result must not gate a release on this basis.

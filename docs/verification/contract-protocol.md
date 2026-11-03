@@ -107,6 +107,41 @@ about Q8_0 tensors on a container with none. **A verifier must never report `sat
 | `could_not_evaluate` | Fails, with the reasons |
 | The verifier fails, or the answer is refused | Fails |
 
+## Operator contracts: `larql-verify-operator/1`
+
+The same arrangement, for one recorded call of a computation rather than one container. The verifier reads a witness (`larql-gemv-witness/1`) and doesn't run anything.
+
+```text
+<verifier> operator --contract <id> --operator <tensor> --witness <witness.json> --container <dir>
+```
+
+The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Exactly `larql-verify-operator/1` |
+| `operator` | The `--operator` value, unchanged |
+| `witness.path` | The `--witness` value, unchanged |
+| `witness.sha256` | A digest of the witness's manifest |
+| `witness.basis` | Exactly `engine_reported` |
+| `witness.reported` | What the witness says about its own run: reported, not established |
+
+There's no `source`: the reference for these contracts is exact arithmetic on the container's own bytes.
+
+**Before judging anything, the verifier checks** the witness's schema, kernel, activation, execution arm and representation; that it holds exactly one record for this operator; each stream's name, length and digest; and that the container, read by the validating reader, holds exactly one Q8_0 tensor of that name and shape with the same bytes. If any of those fails, the answer is `could_not_evaluate`, because there's nothing to judge.
+
+| Contract | What it measures | What `violated` means |
+|---|---|---|
+| `Q8_0_GEMV_SEQ` | The recorded output equals a declared sequential binary32 program, bit for bit | The kernel isn't running that program. **It doesn't mean less accurate:** a more accurate kernel violates this too |
+| `Q8_0_GEMV_B1` | The recorded output is within `\|y − y*\| ≤ γ_k·S + k·2⁻¹⁵⁰·(1 + γ_k)` of exact arithmetic, with `u = 2⁻²⁴`, `γ_k = k·u/(1 − k·u)` and `S = Σ\|w·x\|` | The output is further from the exact result than the bound allows |
+
+Both are numerical measurements of one recorded call.
+
+- **`Q8_0_GEMV_B1` is experimental.** Its inequality has a derivation on paper that no proof system has checked. A satisfied result is a measured bound check on that call, not a machine-checked proof, and doesn't show the bound holds on other inputs.
+- **The bound is loose.** Real faults that change the arithmetic can stay well inside it, so a satisfied `Q8_0_GEMV_B1` doesn't rule out small defects. That's why there are two contracts.
+- **`Q8_0_GEMV_SEQ`'s order was chosen to describe LARQL's own CPU kernel.** Passing shows the kernel does what it declares, not that the declared order is the right one.
+- **A witness is the engine's report.** These contracts judge the recorded output. They can't show the production kernel produced it, and a faulty or malicious engine could forge a witness.
+
 ## The contract `Q8_0_T2`
 
 LARQL's own verifier, [`verifier/`](../../verifier/README.md), implements this protocol for one contract, `Q8_0_T2`. It accepts only
