@@ -1,9 +1,10 @@
-//! `VERIFY REPRESENTATION`: ask an external verifier whether one container
+//! `VERIFY REPRESENTATION`: ask a separate verifier whether one container
 //! meets a numerical contract, and report what it measured.
 //!
 //! **LQL does not evaluate the contract.** A check written here would be
 //! LARQL marking its own work, so the measurement belongs to a separate
-//! program with no LARQL code in it. This module runs that program, checks
+//! program with no LARQL code in it: by default the repository's own
+//! `verifier/`, but any program speaking the protocol will do. This module runs that program, checks
 //! that its answer is well formed and about the question asked, and renders
 //! it. No verifier means a refusal, never a pass.
 //!
@@ -13,7 +14,7 @@
 //!
 //! ## Protocol `larql-verify-contract/1`
 //!
-//! Specified in `docs/verify-contract-protocol.md`. In short:
+//! Specified in `docs/verification/contract-protocol.md`. In short:
 //!
 //! ```text
 //! <verifier> contract --contract <id> --container <dir> --source <dir>
@@ -37,6 +38,7 @@ use crate::error::LqlError;
 const SCHEMA: &str = "larql-verify-contract/1";
 const EVIDENCE_KIND: &str = "numerical_measurement";
 const VERIFIER_ENV: &str = "LARQL_VERIFIER";
+const VERIFIER_NAME: &str = "larql-verifier";
 const TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const OFFENDING_SHOWN: usize = 10;
 const STDERR_SHOWN: usize = 2000;
@@ -96,16 +98,19 @@ impl Session {
         contract: &str,
         source: &str,
     ) -> Result<Vec<String>, LqlError> {
-        let verifier = self
-            .verifier
-            .clone()
-            .or_else(|| std::env::var_os(VERIFIER_ENV).map(PathBuf::from))
-            .ok_or_else(|| {
-                LqlError::Execution(format!(
-                    "VERIFY REPRESENTATION needs an independent verifier: set {VERIFIER_ENV}. \
-                     LARQL does not evaluate contracts itself."
-                ))
-            })?;
+        let verifier = find_verifier(
+            self.verifier.clone(),
+            std::env::var_os(VERIFIER_ENV).map(PathBuf::from),
+            std::env::var_os("PATH"),
+            std::env::current_exe().ok(),
+        )
+        .ok_or_else(|| {
+            LqlError::Execution(format!(
+                "VERIFY REPRESENTATION needs an independent verifier and found none: install \
+                 verifier/ from this repository, or set {VERIFIER_ENV}. LARQL does not evaluate \
+                 contracts itself."
+            ))
+        })?;
         let container = existing_dir(container, "container")?;
         let source = existing_dir(source, "source")?;
         let stdout = run_verifier(&verifier, contract, &container, &source, TIMEOUT)?;
@@ -118,6 +123,39 @@ impl Session {
         }
         Ok(render(&result))
     }
+}
+
+/// Which verifier to run: the embedding program's choice, then the environment's, then
+/// `larql-verifier` on `PATH`, then a checkout's own, in `verifier/.venv` in a directory above the
+/// running binary. An empty choice turns discovery off. The current directory is never
+/// searched, so a statement can't run a program from wherever it happens to be run.
+fn find_verifier(
+    explicit: Option<PathBuf>,
+    env: Option<PathBuf>,
+    path: Option<std::ffi::OsString>,
+    exe: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(chosen) = explicit.or(env) {
+        return (!chosen.as_os_str().is_empty()).then_some(chosen);
+    }
+    let executable = format!("{VERIFIER_NAME}{}", std::env::consts::EXE_SUFFIX);
+    let on_path = path
+        .iter()
+        .flat_map(std::env::split_paths)
+        .filter(|d| d.is_absolute());
+    let in_checkout = exe
+        .iter()
+        .flat_map(|e| {
+            e.ancestors()
+                .skip(1)
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>()
+        })
+        .map(|d| d.join("verifier").join(".venv").join("bin"));
+    on_path
+        .chain(in_checkout)
+        .map(|d| d.join(&executable))
+        .find(|candidate| candidate.is_file())
 }
 
 fn existing_dir(path: &str, what: &str) -> Result<String, LqlError> {
@@ -321,6 +359,73 @@ fn render(r: &ContractResult) -> Vec<String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    struct Tree {
+        _dir: tempfile::TempDir,
+        root: PathBuf,
+    }
+
+    /// `root/bin/larql-verifier` for `PATH`, `root/checkout/verifier/.venv/bin/larql-verifier`
+    /// for a checkout, and `root/checkout/target/debug/larql` as the running binary.
+    fn tree() -> Tree {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        for d in [
+            "bin",
+            "checkout/verifier/.venv/bin",
+            "checkout/target/debug",
+        ] {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+        }
+        std::fs::write(root.join("bin/larql-verifier"), "").unwrap();
+        std::fs::write(root.join("checkout/verifier/.venv/bin/larql-verifier"), "").unwrap();
+        Tree { _dir: dir, root }
+    }
+
+    #[test]
+    fn verifier_discovery_follows_its_order() {
+        let t = tree();
+        let exe = Some(t.root.join("checkout/target/debug/larql"));
+        let path = Some(t.root.join("bin").into_os_string());
+        let on_path = t.root.join("bin/larql-verifier");
+        let in_checkout = t.root.join("checkout/verifier/.venv/bin/larql-verifier");
+        let chosen = || Some(PathBuf::from("/chosen"));
+        let find = find_verifier;
+
+        assert_eq!(
+            find(chosen(), Some("/env".into()), path.clone(), exe.clone()),
+            chosen()
+        );
+        assert_eq!(find(None, chosen(), path.clone(), exe.clone()), chosen());
+        assert_eq!(find(None, None, path.clone(), exe.clone()), Some(on_path));
+        assert_eq!(find(None, None, None, exe.clone()), Some(in_checkout));
+        assert_eq!(find(None, None, None, None), None);
+    }
+
+    #[test]
+    fn an_empty_choice_turns_discovery_off() {
+        let t = tree();
+        let exe = Some(t.root.join("checkout/target/debug/larql"));
+        let path = Some(t.root.join("bin").into_os_string());
+        assert_eq!(
+            find_verifier(Some("".into()), None, path.clone(), exe.clone()),
+            None
+        );
+        assert_eq!(find_verifier(None, Some("".into()), path, exe), None);
+    }
+
+    /// A relative `PATH` entry such as `.` would run a program from the current directory.
+    #[test]
+    fn a_relative_path_entry_is_never_searched() {
+        let dir = tempfile::tempdir_in(".").unwrap();
+        std::fs::write(dir.path().join("larql-verifier"), "").unwrap();
+        let name = dir.path().file_name().unwrap().to_owned();
+        assert!(
+            Path::new(&name).join("larql-verifier").is_file(),
+            "the control"
+        );
+        assert_eq!(find_verifier(None, None, Some(name), None), None);
+    }
 
     #[test]
     fn a_verifier_that_hangs_is_killed_at_the_timeout() {

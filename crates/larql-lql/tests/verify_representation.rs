@@ -241,14 +241,13 @@ fn missing_paths_refuse_before_the_verifier_runs() {
     assert!(f.argv().is_none(), "the verifier must not have run");
 }
 
-/// No verifier configured must never read as a pass.
+/// No verifier must never read as a pass. An empty choice turns discovery off.
 #[test]
 fn no_verifier_refuses_and_says_larql_does_not_evaluate() {
-    if std::env::var_os("LARQL_VERIFIER").is_some() {
-        return;
-    }
     let f = Fixture::new();
-    let err = Session::new()
+    let mut session = Session::new();
+    session.set_verifier("");
+    let err = session
         .execute(&parse(&f.statement()).unwrap())
         .unwrap_err()
         .to_string();
