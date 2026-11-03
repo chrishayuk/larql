@@ -597,6 +597,8 @@ fn exec_args(container: &Path) -> ExecArgs {
         admission_basis: None,
         expert_access: "demand".to_string(),
         logit_dump: None,
+        gemv_witness: None,
+        gemv_witness_max_operands: 1,
         bank: None,
         dump_dir: None,
         draft_depth: None,

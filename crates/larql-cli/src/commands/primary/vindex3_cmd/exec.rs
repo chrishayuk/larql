@@ -32,6 +32,8 @@ use std::time::Instant;
 use larql_vindex::error::VindexError;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::continuation_registry::BoxedContinuation;
+use larql_vindex::format::vindex3::opplan::exec::cpu::gemv_witness;
+use larql_vindex::format::vindex3::opplan::exec::cpu::physical::kquant_execution;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::portability::{carrier_form_of, ensure_portable};
 use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
@@ -43,6 +45,7 @@ use larql_vindex::format::vindex3::opplan::exec::{
 use crate::commands::primary::continuation::one_shot_state;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use ndarray::Array2;
+use sha2::{Digest, Sha256};
 
 use super::super::shannon_trace::dump::{
     plane_name, write_plane, LayerDumpManifest, MANIFEST_NAME, PLANE_DTYPE,
@@ -85,6 +88,10 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     super::generate::admission::refuse_evidence_outside_the_curve(&args, lowered)?;
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
+    let witness = match &args.gemv_witness {
+        Some(dir) => Some(begin_gemv_witness(dir, &args)?),
+        None => None,
+    };
     let plugins = Plugins::load(&args.plugin)?;
     let OpenedComponent {
         plan, store, want, ..
@@ -109,6 +116,13 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(all(feature = "gpu", target_os = "macos"))]
     {
         if let Some((formats, label)) = super::prepare::lowered_formats(args.backend) {
+            if args.gemv_witness.is_some() {
+                return Err(format!(
+                    "--gemv-witness records the CPU Q8_0 kernel, and `{:?}` runs on the device",
+                    args.backend
+                )
+                .into());
+            }
             if plugins.select.is_some() || plugins.want.is_some() {
                 return Err(format!(
                     "--lowering and --representation do not apply to `{:?}`: a lowered arm \
@@ -133,7 +147,107 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     report_representation_work(&store, want.as_deref(), outcome.is_ok());
-    outcome
+    if outcome.is_err() && witness.is_some() {
+        gemv_witness::finish();
+    }
+    outcome?;
+    if let (Some(dir), Some(start)) = (&args.gemv_witness, &witness) {
+        write_gemv_witness(dir, &args, &tokens, want.as_deref(), start)?;
+    }
+    Ok(())
+}
+
+/// What the witness binds from before anything loads.
+struct WitnessStart {
+    binary_sha256: String,
+    container_index_sha256: String,
+}
+
+/// Open the capture, refusing a run it couldn't describe. A plugin or lowering provider can change
+/// what executes without the backend's name changing, so a witness of one would misdescribe itself.
+fn begin_gemv_witness(
+    dir: &Path,
+    args: &ExecArgs,
+) -> Result<WitnessStart, Box<dyn std::error::Error>> {
+    if !args.plugin.plugins.is_empty()
+        || args.plugin.lowering.is_some()
+        || args.plugin.representation.is_some()
+    {
+        return Err(
+            "--gemv-witness can't describe a run with --plugin, --lowering or --representation: \
+             they can change what executes without the backend's name changing"
+                .into(),
+        );
+    }
+    gemv_witness::check_target(dir)?;
+    let start = WitnessStart {
+        binary_sha256: sha256_hex(&std::fs::read(std::env::current_exe()?)?),
+        container_index_sha256: sha256_hex(&std::fs::read(args.container.join("index.json"))?),
+    };
+    // Before anything loads, so that each operand's name is noted.
+    gemv_witness::start(args.gemv_witness_max_operands);
+    Ok(start)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Write what the run's kernel calls were, bound to what this process knows of itself.
+fn write_gemv_witness(
+    dir: &Path,
+    args: &ExecArgs,
+    tokens: &[u32],
+    want: Option<&str>,
+    start: &WitnessStart,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let capture = gemv_witness::finish();
+    let commit = super::generate::residency_record::build_commit();
+    let logit_dump = args
+        .logit_dump
+        .as_deref()
+        .ok_or("--gemv-witness requires --logit-dump")?;
+    let environment: Vec<(String, String)> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("LARQL_") || k == "RAYON_NUM_THREADS")
+        .collect();
+    let projection_plans: Vec<(String, u64)> =
+        larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+            .all()
+            .iter()
+            .filter(|(_, t)| t.calls > 0)
+            .map(|(plan, t)| (format!("{plan:?}"), t.calls))
+            .collect();
+    gemv_witness::write(
+        &capture,
+        &gemv_witness::Binding {
+            build_commit: commit.as_deref(),
+            binary_sha256: &start.binary_sha256,
+            container: &std::fs::canonicalize(&args.container)?,
+            container_index_sha256: &start.container_index_sha256,
+            component: &args.component,
+            backend: &format!("{:?}", args.backend),
+            representation: want.unwrap_or("none"),
+            representation_source: &args.representation_source,
+            execution_arm: &format!("{:?}", kquant_execution()),
+            tokens,
+            draft_depth: args.draft_depth,
+            logit_dump: &std::fs::canonicalize(logit_dump)?,
+            environment: &environment,
+            platform: &format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            projection_plans: &projection_plans,
+        },
+        dir,
+    )?;
+    println!(
+        "gemv witness: {} operand(s) of {} call(s) observed, written to {}",
+        capture.records.len(),
+        capture.calls_observed,
+        dir.display()
+    );
+    Ok(())
 }
 
 /// The exec verb's work, once the backend is a concrete type.

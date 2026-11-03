@@ -347,6 +347,24 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate"])]
     pub logit_dump: Option<PathBuf>,
 
+    /// Record what the CPU Q8_0 kernel was given and returned, as raw bits, in
+    /// this new directory, for an outside verifier to judge. It only observes:
+    /// it runs after the kernel returns. A run that never reaches that kernel
+    /// fails rather than writing an empty witness.
+    /// See docs/verification/gemv-witness.md.
+    #[arg(
+        long,
+        value_name = "DIR",
+        requires = "logit_dump",
+        conflicts_with = "bank"
+    )]
+    pub gemv_witness: Option<PathBuf>,
+
+    /// How many distinct Q8_0 operands `--gemv-witness` records, taking the
+    /// first call reached on each. Each one stores the whole matrix's bytes.
+    #[arg(long, value_name = "N", default_value_t = 1, value_parser = at_least_one, requires = "gemv_witness")]
+    pub gemv_witness_max_operands: usize,
+
     /// Execute only the first N layers, then the component's own final
     /// norm and output head — a reduced-depth *model*, not a shard.
     ///
@@ -612,4 +630,12 @@ pub struct PlanArgs {
     /// Write the plan JSON here instead of stdout.
     #[arg(long)]
     pub output: Option<PathBuf>,
+}
+
+fn at_least_one(text: &str) -> Result<usize, String> {
+    match text.parse::<usize>() {
+        Ok(0) => Err("a witness of no operands records nothing".to_string()),
+        Ok(n) => Ok(n),
+        Err(e) => Err(e.to_string()),
+    }
 }
