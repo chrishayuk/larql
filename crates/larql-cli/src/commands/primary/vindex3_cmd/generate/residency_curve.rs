@@ -8,6 +8,7 @@ use larql_vindex::format::vindex3::opplan::exec::prepared::{ResidencyDelta, Resi
 use larql_vindex::format::vindex3::opplan::exec::stages;
 use larql_vindex::format::vindex3::opplan::exec::timing;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
+use serde_json::json;
 use std::io::BufWriter;
 use std::path::Path;
 use std::time::Instant;
@@ -16,9 +17,13 @@ use super::admission::{
     admission_line, commit_admission, create_evidence_file, decide, plan_evidence,
     AdmissionCommitted, EvidenceRequest, EvidenceSink,
 };
+use super::execution_evidence::{
+    after_run_execution, class_with_execution, effective_execution, execution_line,
+    selection_block, selection_problems,
+};
 use super::instance_evidence::{
     after_run_record, before_binding_record, instance_block, instance_line, judge,
-    post_admission_reads, EvidenceClass, VerificationManifest,
+    post_admission_reads, EvidenceClass, InstanceJudgement, VerificationManifest,
 };
 use super::residency_record::{self, AttemptFacts, RunIdentity};
 use super::sealed_latency::SealedLatency;
@@ -218,13 +223,22 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let opening = store.instance_report();
     let judged = judge(evidence.mode, &opening, manifest.as_ref(), index_digest);
     println!("{}", instance_line("before binding", &judged));
-    let judged_early = judged.class;
+    let wanted = evidence.execution.wanted_encoding.as_deref();
+    let requested = evidence.execution.block();
+    let selection_faults = selection_problems(wanted, store.selection());
+    println!("{}", execution_line("before binding", &selection_faults));
+    let judged_early = class_with_execution(evidence.mode, judged.class, &selection_faults);
     if let Some(file) = regions_file.as_mut() {
-        let record = before_binding_record(
+        let mut record = before_binding_record(
             &run,
             instance_block(&opening, manifest.as_ref(), &judged),
-            judged.class,
+            judged_early,
         );
+        record["execution_identity"] = json!({
+            "requested": requested,
+            "objects": selection_block(store.selection()),
+            "problems": selection_faults,
+        });
         residency_record::write_record(file, &record)
             .and_then(|()| file.sync())
             .map_err(|e| {
@@ -237,13 +251,13 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                 )
             })?;
     }
-    if judged.invalid() {
-        let reason = judged.reason();
+    if judged_early == EvidenceClass::Invalid {
+        let reason = stop_reason(&judged, &selection_faults);
         return Err(
-            stop_attempt(&mut regions_file, &run, judged.class, reason, &mut sealed).into(),
+            stop_attempt(&mut regions_file, &run, judged_early, reason, &mut sealed).into(),
         );
     }
-    let judged_class = judged.class;
+    let judged_class = judged_early;
     // Scheduling, declared before anything is timed: the pool the
     // production backend joins inside every step, and the machine the
     // probe sees. The boundary is the step's return — the CPU backend
@@ -392,6 +406,11 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         manifest.as_ref(),
         index_digest,
     );
+    let effective = effective_execution(backend, &ops, store, wanted);
+    println!("{}", execution_line("admission", &effective.problems));
+    let admission_class = class_with_execution(evidence.mode, judged.class, &effective.problems);
+    let mut execution = effective.block;
+    execution["requested"] = requested;
     let facts = AttemptFacts {
         mode: evidence.mode,
         warmup,
@@ -408,7 +427,8 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                 .to_string()
         }),
         instance: instance_block(&at_admission, manifest.as_ref(), &judged),
-        evidence_class: judged.class,
+        execution,
+        evidence_class: admission_class,
     };
     let record = residency_record::admission_record(&run, BINDING_OBSERVATION, &decision, &facts);
     let committed = commit_admission(
@@ -416,17 +436,22 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         regions_file.as_mut().map(|f| f as &mut dyn EvidenceSink),
         &record,
     )
-    .map_err(|e| stop_attempt(&mut regions_file, &run, judged.class, e, &mut sealed))?;
+    .map_err(|e| stop_attempt(&mut regions_file, &run, admission_class, e, &mut sealed))?;
     println!("{}", instance_line("admission", &judged));
     // Invalid evidence stops here, recorded, before any timed pass. A
     // threshold rejection did not reach this: it is not invalid.
-    if judged.invalid() {
-        let reason = judged.reason();
-        return Err(
-            stop_attempt(&mut regions_file, &run, judged.class, reason, &mut sealed).into(),
-        );
+    if admission_class == EvidenceClass::Invalid {
+        let reason = stop_reason(&judged, &effective.problems);
+        return Err(stop_attempt(
+            &mut regions_file,
+            &run,
+            admission_class,
+            reason,
+            &mut sealed,
+        )
+        .into());
     }
-    let admitted_class = judged.class;
+    let admitted_class = admission_class;
     let synced = sealed.as_mut().map_or(Ok(()), SealedLatency::sync);
     synced.map_err(|e| {
         stop_attempt(
@@ -470,16 +495,20 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let finishing = store.instance_report();
     let judged = judge(evidence.mode, &finishing, manifest.as_ref(), index_digest);
     println!("{}", instance_line("after run", &judged));
-    let final_class = if judged.invalid() {
-        failures.push(judged.reason());
-        judged.class
+    let ran = after_run_execution(store, wanted);
+    println!("{}", execution_line("after run", &ran.problems));
+    let finishing_class = class_with_execution(evidence.mode, judged.class, &ran.problems);
+    let final_class = if finishing_class == EvidenceClass::Invalid {
+        failures.push(stop_reason(&judged, &ran.problems));
+        finishing_class
     } else {
         admitted_class
     };
     if let Some(file) = regions_file.as_mut() {
         let mut block = instance_block(&finishing, manifest.as_ref(), &judged);
         block["post_admission_reads"] = post_admission_reads(&at_admission, &finishing);
-        let record = after_run_record(&run, block, judged.class);
+        let mut record = after_run_record(&run, block, finishing_class);
+        record["execution_identity"] = ran.block;
         if let Err(e) = residency_record::write_record(file, &record) {
             failures.push(format!(
                 "the after-run identity record was not written: {e}"
@@ -606,6 +635,17 @@ fn stop_attempt<S: EvidenceSink>(
         );
     }
     end_with_digest(stream, run, class, reason, digest.as_ref())
+}
+
+/// Why an attempt stops: its identity judgement if that failed, and whatever
+/// its execution's judgement found.
+fn stop_reason(judged: &InstanceJudgement, execution: &[String]) -> String {
+    let identity = judged.invalid().then(|| judged.reason());
+    identity
+        .into_iter()
+        .chain(execution.iter().cloned())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// The store's `--representation-source`, as the flag spells it.

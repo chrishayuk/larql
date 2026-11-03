@@ -57,8 +57,8 @@ pub(in super::super) struct ManifestSegment {
     pub(in super::super) identity: ManifestIdentity,
 }
 
-/// Every field the format requires is required here, read or not: a file
-/// missing one is not the record a verification tool writes.
+/// These fields must be present with these types, read or not: a file missing
+/// one is not the record a verification tool writes. Only the digest is compared.
 #[derive(Deserialize)]
 struct ManifestContainer {
     #[serde(rename = "path")]
@@ -423,7 +423,7 @@ pub(in super::super) fn scope_block() -> Value {
         "plan_to_bind": "selected headers are re-read through the retained descriptors; that does \
                          not show the planner read identical bytes, so this record does not \
                          establish complete verification-to-execution identity",
-        "not_recorded_here": "plugins and lowerings loaded in-process are outside these facts",
+        "execution": "these facts are about files; execution_identity says what ran on them",
         "content": "metadata detects change and does not prove content: a write can be missed, \
                     identity can be restored, and an extended attribute or a hard link moves the \
                     ctime with no content change; writable mappers are forbidden by protocol and \

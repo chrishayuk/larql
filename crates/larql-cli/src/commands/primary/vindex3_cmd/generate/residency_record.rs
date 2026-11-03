@@ -217,6 +217,9 @@ pub(in super::super) struct AttemptFacts {
     pub(in super::super) sealed_latency: Option<String>,
     /// The `instance_identity` block, at this moment.
     pub(in super::super) instance: Value,
+    /// The `execution_identity` block: what was asked for, and what the
+    /// store selected and the image pinned.
+    pub(in super::super) execution: Value,
     pub(in super::super) evidence_class: EvidenceClass,
 }
 
@@ -262,6 +265,7 @@ pub(in super::super) fn admission_record(
         "binding_implementation": BINDING_IMPLEMENTATION,
         "evidence_class": facts.evidence_class.name(),
         "instance_identity": facts.instance,
+        "execution_identity": facts.execution,
         "clock": point_clock(),
         "wall": wall_seconds(SystemTime::now()),
     })

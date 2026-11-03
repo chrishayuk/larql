@@ -18,6 +18,8 @@
 //! protocol, named in `--admission-basis`.
 
 use std::fs::File;
+
+use super::execution_evidence::ExecutionRequest;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -138,7 +140,7 @@ impl RunMode {
 }
 
 /// What the operator asked the curve to record, before it is checked.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(in super::super) struct EvidenceRequest<'a> {
     pub(in super::super) campaign: bool,
     pub(in super::super) regions: Option<&'a Path>,
@@ -146,6 +148,7 @@ pub(in super::super) struct EvidenceRequest<'a> {
     pub(in super::super) manifest: Option<&'a Path>,
     pub(in super::super) threshold_bytes: Option<u64>,
     pub(in super::super) basis: Option<&'a str>,
+    pub(in super::super) execution: ExecutionRequest,
 }
 
 /// A checked request: the mode, the threshold if one was declared, and
@@ -157,6 +160,7 @@ pub(in super::super) struct EvidencePlan {
     pub(in super::super) regions: Option<PathBuf>,
     pub(in super::super) sealed_latency: Option<PathBuf>,
     pub(in super::super) manifest: Option<PathBuf>,
+    pub(in super::super) execution: ExecutionRequest,
 }
 
 /// Refuse evidence flags on a run that would never reach the residency
@@ -190,6 +194,25 @@ pub(in super::super) fn refuse_evidence_outside_the_curve(
         ));
     }
     if args.residency_campaign {
+        // Before any plugin is loaded: refusing one must not run its code.
+        let unverifiable = [
+            (!args.plugin.plugins.is_empty(), "--plugin"),
+            (args.plugin.lowering.is_some(), "--lowering"),
+            (args.plugin.representation.is_some(), "--representation"),
+        ];
+        if let Some((_, flag)) = unverifiable.iter().find(|(applies, _)| *applies) {
+            return Err(format!(
+                "a --residency-campaign attempt refuses {flag}: that path cannot yet produce \
+                 complete, verified execution evidence"
+            ));
+        }
+        if !super::super::prepare::campaign_supports_backend(args.backend) {
+            return Err(format!(
+                "a --residency-campaign attempt refuses --backend {}: its execution identity \
+                 has not been shown end to end",
+                super::super::prepare::backend_flag_name(args.backend)
+            ));
+        }
         if matches!(
             super::super::prepare::parse_representation_source(&args.representation_source),
             Ok(larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource::Transient)
@@ -282,6 +305,7 @@ pub(in super::super) fn plan_evidence(
         regions: request.regions.map(Path::to_path_buf),
         sealed_latency: request.sealed_latency.map(Path::to_path_buf),
         manifest: request.manifest.map(Path::to_path_buf),
+        execution: request.execution,
     })
 }
 

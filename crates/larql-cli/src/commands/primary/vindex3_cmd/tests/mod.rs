@@ -5,6 +5,7 @@ mod calibration_digest;
 mod continuation_plugin;
 mod decode;
 mod exec_resume;
+mod execution_evidence;
 mod generate;
 mod instance_evidence;
 mod lowerings;

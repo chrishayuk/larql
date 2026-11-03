@@ -621,6 +621,33 @@ fn a_campaign_refuses_a_transient_representation_source() {
     assert!(refuse_evidence_outside_the_curve(&args, false).is_ok());
 }
 
+/// Refused before any plugin loads, so a plugin that doesn't exist reads as
+/// refused rather than as a failed load. Diagnostic execution keeps each flag.
+#[test]
+fn a_campaign_refuses_every_execution_flag_it_cannot_verify() {
+    type Set = fn(&mut ExecArgs);
+    let flags: [(&str, Set); 3] = [
+        ("--plugin", |args| {
+            args.plugin.plugins = vec![PathBuf::from("/nonexistent/plugin.dylib")]
+        }),
+        ("--lowering", |args| {
+            args.plugin.lowering = Some("reference/v1".to_string())
+        }),
+        ("--representation", |args| {
+            args.plugin.representation = Some("NVFP4".to_string())
+        }),
+    ];
+    for (flag, set) in flags {
+        let mut args = exec_args(Path::new("c"));
+        set(&mut args);
+        let refusal = refuse_evidence_outside_the_curve(&args, false).unwrap_err();
+        assert!(refusal.contains(flag), "{refusal}");
+        assert!(refusal.contains("execution evidence"), "{refusal}");
+        args.residency_campaign = false;
+        assert!(refuse_evidence_outside_the_curve(&args, false).is_ok());
+    }
+}
+
 #[test]
 fn a_manifest_on_a_run_that_never_reaches_the_curve_is_refused() {
     let mut args = exec_args(Path::new("c"));
@@ -872,6 +899,7 @@ fn curve<B: PlanBackend>(
             manifest,
             threshold_bytes: threshold,
             basis: threshold.map(|_| "docs/frozen.md §3 @ abc123"),
+            execution: Default::default(),
         },
     )
 }
@@ -1107,6 +1135,82 @@ fn an_unreadable_manifest_refuses_the_run_on_the_record() {
         assert_eq!(stream[0]["evidence_class"], class);
         assert_digest_on_the_end(&stream[0], &run.sealed);
     }
+}
+
+/// A file that reads but isn't a manifest stops the run exactly as a missing
+/// one does, through the real curve, and no weight is bound.
+#[test]
+fn a_malformed_manifest_refuses_the_run_on_the_record() {
+    let (dir, container) = encoded();
+    let (plan, store) = opened(&container);
+    let cases: [(&str, &[u8]); 3] = [
+        ("bad_json.json", b"{ not json"),
+        ("empty.json", b""),
+        ("wrong_schema.json", br#"{"schema":"nothing/1"}"#),
+    ];
+    for (name, bytes) in cases {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        for campaign in [true, false] {
+            let run = evidence_paths();
+            curve(
+                &ReferenceBackend,
+                &plan,
+                &store,
+                &container,
+                &run,
+                campaign,
+                Some(&path),
+                None,
+            )
+            .unwrap_err();
+            let stream = read_lines(&run.regions);
+            assert_eq!(kinds(&stream), [("attempt_end", "")], "{name}");
+            let class = if campaign { "invalid" } else { "diagnostic" };
+            assert_eq!(stream[0]["evidence_class"], class, "{name}");
+        }
+    }
+}
+
+/// With no manifest, a diagnostic run proceeds on an unchanged file and every
+/// judgement says it is unverified. Success doesn't promote it.
+#[test]
+#[cfg_attr(not(unix), ignore = "this platform has no descriptor identity")]
+fn a_diagnostic_run_with_no_manifest_is_marked_unverified_at_every_point() {
+    let (_dir, container) = encoded();
+    let (plan, store) = opened(&container);
+    let run = evidence_paths();
+    curve(
+        &ReferenceBackend,
+        &plan,
+        &store,
+        &container,
+        &run,
+        false,
+        None,
+        None,
+    )
+    .expect("a diagnostic run needs no manifest");
+    let stream = read_lines(&run.regions);
+    let judged: Vec<&Value> = stream
+        .iter()
+        .filter(|r| r.get("instance_identity").is_some())
+        .collect();
+    assert_eq!(judged.len(), 3, "before binding, admission, after the run");
+    for record in judged {
+        assert_eq!(record["evidence_class"], "diagnostic");
+        let identity = &record["instance_identity"];
+        assert_eq!(identity["identity_diagnostic"], "unverified");
+        assert!(identity["manifest"].is_null());
+        assert!(identity["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r == "no verification manifest was supplied"));
+    }
+    let end = last(&stream, "attempt_end");
+    assert_eq!(end["status"], "completed");
+    assert_eq!(end["evidence_class"], "diagnostic");
 }
 
 /// Diagnostic execution records the same disagreement and carries on, and

@@ -65,6 +65,10 @@ reads use a retained descriptor, but no evidence path records their identity.
 | Threshold rejection | Records it and continues with latency sealed: **not** invalid evidence | Not applicable |
 | Manifest supplied but unreadable | Refused, on the record | Refused, on the record if a stream was requested |
 | `--representation-source transient` | Refused: its precision map comes from an unbound pack header | Allowed |
+| `--plugin`, `--lowering`, `--representation` | Refused before any plugin loads | Allowed and recorded |
+| A `--backend` other than `reference` or `production*` | Refused: its execution identity has not been shown end to end | Unchanged |
+| A wanted encoding with no pack, or otherwise not executed as asked | Refused as invalid, before binding or at admission | Records the problem and continues |
+| Execution identity incomplete | Refused as invalid, before the passes | Records the problem and continues |
 
 Identity is judged **before binding, at admission and after the run**, and each
 judgement is on the record with its per-segment facts.
@@ -107,10 +111,13 @@ diagnostic only, and show nothing about readers outside the store.
 
 The manifest is read and compared. Its producer remains separate and
 unauthorised, so tests use manifests written by hand. A manifest that is not a
-`pre` graph verification, lacks a field this reader requires (the contents of
-`clock` and `verifier.binary`, and `identity.dev`, are not checked), or whose computed
+`pre` graph verification, lacks a field this reader requires, or whose computed
 and declared hashes do not both equal the container index's hash, verifies
-nothing.
+nothing. `container.path`, `container.volume_uuid`, `verifier.command` and
+`verified_wall` must be present with the right type and are not otherwise checked:
+a manifest with a meaningless path or command can still reach `identity_consistent`.
+The contents of `clock` and `verifier.binary` are not checked, and `identity.dev`,
+though in the proposal's format, is not required.
 
 Comparison key: volume UUID, inode, size, mtime and ctime. Device id and link
 count are excluded. The volume UUID is compared exactly, as uppercase, so a
@@ -157,6 +164,52 @@ the file, and a real execution that computes the opened files' values after ever
 segment is replaced under the store, with a control showing the replacement
 really differs. `.s7` was not run.
 
+## 6a. Execution identity
+
+Verified file identity is not execution identity: the same files can run under a
+different engine, lowering or encoding. The independent check before merge showed a
+plugin reversing logits with an indistinguishable record, and `production-nvfp4` running
+canonical bytes under one.
+
+Each record separates the request from the effect:
+
+- **`requested`, from the command line:** backend, wanted encoding, plugins with their
+  digests by path, lowering, representation. Never evidence of what ran.
+- **Before binding, from the store:** each object's selected encoding and whether it came
+  from a pack.
+- **At admission, from the prepared image and the process:** `engine`, `provider`,
+  `pinned_lowering`, `objects`, `realizations` (representation, codec, form, operand count),
+  `process` (`ProcessArithmetic`), `execution_digest` and `complete` with its `problems`.
+- **After the run, from the executor's ledger:** `projection_plans_ran` (calls and bytes,
+  no timings) and `runtime_quantised`.
+
+A campaign attempt stops as invalid when execution identity is incomplete: no pins, pins
+naming another provider, an overlaid source or unreadable process arithmetic. It also stops
+when a wanted encoding has no pack of it, no operand pinned from it, a pin that decodes or
+requantises it, stored K-quants widened by the process, or a tensor the runtime quantised.
+A diagnostic run records the same problems and carries on.
+
+`identity_consistent` therefore also requires a complete execution identity. It still
+isn't a claim of numerical equivalence or correctness: two attempts with different digests
+ran different computations, and equal digests don't show either is right.
+
+**Limits:**
+
+- **Partial pack coverage is recorded, not refused.** Real packs cover some objects: the
+  local NVFP4 containers have one packed object of six. The container doesn't record which
+  objects were left out on purpose, so an uncompiled object can't be told from a missing
+  pack. Which objects have packs is fixed by `index.json`, which a manifest binds by digest,
+  so removing a pack entry after verification is a mismatch. An unverified attempt has no
+  such binding.
+- **Process settings are recorded, not refused**, except stored K-quant widening under a
+  wanted encoding. `execution_digest` moves with them.
+- **`execution_digest` doesn't bind the model.** File identity is the other half of the
+  record. It also isn't comparable across a change to what the identity holds.
+- **`objects` come from the store's selection** and `realizations` from the pins. A form
+  other than decode or requantise, such as `DecodedGather`, is recorded and not refused.
+- **A diagnostic run's plugin is recorded by path and digest.** Its code runs in process
+  and could change anything, including the record, so its effect isn't covered.
+
 ## 7. Not established
 
 - Whether keeping one descriptor changes read-ahead or page-cache state against
@@ -165,8 +218,6 @@ really differs. `.s7` was not run.
 - That the descriptor's identity and the store's header come from one open cannot
   be proven by a test without a race hook. Reading the code shows it; two mutants
   in that area survive.
-- Plugins, lowerings and `--representation` are allowed in a campaign and run in
-  process; the record's facts do not cover them. Flagged for the maintainer.
 - Capture failure through the real curve on macOS or Linux: no fixture can make
   `fstat` fail on demand. It is pinned on constructed facts there, and through
   the real path where the platform has no descriptor identity.

@@ -106,6 +106,7 @@ fn facts(mode: RunMode) -> AttemptFacts {
         representation_source: "auto".to_string(),
         sealed_latency: Some("/e/sealed.jsonl".to_string()),
         instance: json!({ "identity_diagnostic": "unverified" }),
+        execution: json!({ "complete": true }),
         evidence_class: EvidenceClass::Unverified,
     }
 }
@@ -522,6 +523,7 @@ fn every_incomplete_campaign_request_is_refused() {
                 manifest: None,
                 threshold_bytes: Some(1),
                 basis: Some("  "),
+                execution: Default::default(),
             },
             "blank",
         ),
@@ -589,6 +591,7 @@ fn a_scored_attempt_keeps_its_threshold_and_basis_verbatim() {
         manifest: None,
         threshold_bytes: Some(THRESHOLD),
         basis: Some(BASIS),
+        execution: Default::default(),
     })
     .unwrap();
     assert_eq!(plan.threshold, Some(threshold(THRESHOLD)));
