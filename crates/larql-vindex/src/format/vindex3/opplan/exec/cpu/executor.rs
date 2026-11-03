@@ -253,6 +253,7 @@ impl CpuExecutor {
         };
         if workers <= 1 || out_dim < workers {
             kernel.project_rows(weight, x, &mut out);
+            super::gemv_witness::record(weight, x, &out);
             ledger().record(
                 PhysicalProjectionPlan::for_resident(weight, in_dim),
                 weight.bytes(),
@@ -271,6 +272,7 @@ impl CpuExecutor {
                 kernel.project_rows(slab, x, slot);
             });
         });
+        super::gemv_witness::record(weight, x, &out);
         ledger().record(
             PhysicalProjectionPlan::for_resident(weight, in_dim),
             weight.bytes(),
@@ -357,9 +359,13 @@ impl CpuExecutor {
                 },
             );
         }
-        (0..n)
+        let outs: Vec<Vec<f32>> = (0..n)
             .map(|p| (0..out_dim).map(|r| flat[r * n + p]).collect())
-            .collect()
+            .collect();
+        for (x, y) in xs.iter().zip(&outs) {
+            super::gemv_witness::record(weight, x, y);
+        }
+        outs
     }
 }
 

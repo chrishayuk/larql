@@ -325,6 +325,7 @@ pub(super) fn kquant_from_stored(
             operand.tensor, codec.name
         )));
     }
+    super::super::cpu::gemv_witness::note_operand(&operand.tensor, codec.name, &raw.bytes);
     Ok(LoadedWeight::KQuant {
         blocks: raw.bytes,
         codec,

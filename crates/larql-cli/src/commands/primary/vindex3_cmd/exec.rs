@@ -32,6 +32,8 @@ use std::time::Instant;
 use larql_vindex::error::VindexError;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::continuation_registry::BoxedContinuation;
+use larql_vindex::format::vindex3::opplan::exec::cpu::gemv_witness;
+use larql_vindex::format::vindex3::opplan::exec::cpu::physical::kquant_execution;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::portability::{carrier_form_of, ensure_portable};
 use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
@@ -43,6 +45,7 @@ use larql_vindex::format::vindex3::opplan::exec::{
 use crate::commands::primary::continuation::one_shot_state;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use ndarray::Array2;
+use sha2::{Digest, Sha256};
 
 use super::super::shannon_trace::dump::{
     plane_name, write_plane, LayerDumpManifest, MANIFEST_NAME, PLANE_DTYPE,
@@ -86,6 +89,10 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
     let plugins = Plugins::load(&args.plugin)?;
+    if args.gemv_witness.is_some() {
+        // Before anything loads, so that each operand's name is noted.
+        gemv_witness::start(args.gemv_witness_max_operands);
+    }
     let OpenedComponent {
         plan, store, want, ..
     } = prepare(
@@ -109,6 +116,13 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(all(feature = "gpu", target_os = "macos"))]
     {
         if let Some((formats, label)) = super::prepare::lowered_formats(args.backend) {
+            if args.gemv_witness.is_some() {
+                return Err(format!(
+                    "--gemv-witness records the CPU Q8_0 kernel, and `{:?}` runs on the device",
+                    args.backend
+                )
+                .into());
+            }
             if plugins.select.is_some() || plugins.want.is_some() {
                 return Err(format!(
                     "--lowering and --representation do not apply to `{:?}`: a lowered arm \
@@ -133,7 +147,44 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     report_representation_work(&store, want.as_deref(), outcome.is_ok());
-    outcome
+    outcome?;
+    if let Some(dir) = &args.gemv_witness {
+        write_gemv_witness(dir, &args, want.as_deref())?;
+    }
+    Ok(())
+}
+
+/// Write what the run's kernel calls were, bound to what this process knows of itself.
+fn write_gemv_witness(
+    dir: &Path,
+    args: &ExecArgs,
+    want: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let capture = gemv_witness::finish();
+    let binary = std::fs::read(std::env::current_exe()?)?;
+    let binary_sha256: String = Sha256::digest(&binary)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let commit = super::generate::residency_record::build_commit();
+    gemv_witness::write(
+        &capture,
+        &gemv_witness::Binding {
+            build_commit: commit.as_deref(),
+            binary_sha256: &binary_sha256,
+            container: &args.container,
+            representation: want.unwrap_or("none"),
+            execution_arm: &format!("{:?}", kquant_execution()),
+        },
+        dir,
+    )?;
+    println!(
+        "gemv witness: {} operand(s) of {} call(s) observed, written to {}",
+        capture.records.len(),
+        capture.calls_observed,
+        dir.display()
+    );
+    Ok(())
 }
 
 /// The exec verb's work, once the backend is a concrete type.

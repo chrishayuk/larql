@@ -70,6 +70,11 @@ pub(in super::super) const BUILD_COMMIT_VAR: &str = "LARQL_BUILD_COMMIT";
 /// only if the build said so.
 const BUILD_COMMIT: Option<&str> = option_env!("LARQL_BUILD_COMMIT");
 
+/// This binary's declared commit, if the build declared one.
+pub(in super::super) fn build_commit() -> Option<String> {
+    declared_commit(BUILD_COMMIT)
+}
+
 /// The build's declared commit, with a blank declaration read as none.
 pub(in super::super) fn declared_commit(declared: Option<&str>) -> Option<String> {
     declared
