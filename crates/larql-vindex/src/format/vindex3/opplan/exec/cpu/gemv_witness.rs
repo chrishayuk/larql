@@ -18,7 +18,7 @@
 //! **Process-wide**, like [`super::replay`]'s capture, because projections are
 //! issued from pool workers.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,6 +66,8 @@ pub struct Capture {
     pub operands_noted: usize,
     /// The limit asked for, so that "limited to N" can be told from "fewer were reached".
     pub max_operands: usize,
+    /// The logit dump's digest and length, computed as it was written.
+    pub logit_dump: Option<(String, u64)>,
 }
 
 /// What identifies an operand's bytes. The address alone isn't enough: an allocator can reuse it for other bytes.
@@ -96,6 +98,19 @@ pub fn start(max_operands: usize) {
         },
     });
     ACTIVE.store(true, Ordering::Release);
+}
+
+/// Whether a capture is open.
+pub fn is_active() -> bool {
+    ACTIVE.load(Ordering::Acquire)
+}
+
+/// Remember the digest of the logit dump this run wrote, computed as it wrote it, so that it
+/// describes those bytes and not whatever is at that path later.
+pub fn note_logit_dump(sha256: String, bytes: u64) {
+    if let Some(open) = OPEN.lock().expect("witness lock").as_mut() {
+        open.capture.logit_dump = Some((sha256, bytes));
+    }
 }
 
 /// Stop capturing and take what was observed.
@@ -163,18 +178,26 @@ pub struct Binding<'a> {
     /// The commit declared at build time. `None` when the build declared none,
     /// and never guessed from a working tree.
     pub build_commit: Option<&'a str>,
-    /// Hashed when the run started, because the file could be replaced during a run.
+    /// The file at the executable's path, just after start-up. This doesn't bind the running image.
     pub binary_sha256: &'a str,
     /// The container's absolute path.
     pub container: &'a Path,
+    /// The container's `index.json` when the run started. It holds the segments' digests.
+    pub container_index_sha256: &'a str,
     pub component: &'a str,
     pub backend: &'a str,
+    /// The encoding the run asked for. Each record states its operand's own.
     pub representation: &'a str,
+    pub representation_source: &'a str,
     pub execution_arm: &'a str,
     pub tokens: &'a [u32],
     pub draft_depth: Option<usize>,
     pub logit_dump: &'a Path,
-    pub logit_dump_sha256: &'a str,
+    /// The settings that can change the numbers: `LARQL_*` and the thread count.
+    pub environment: &'a [(String, String)],
+    pub platform: &'a str,
+    /// Which kernels this run used and how often. This kernel is only part of a run.
+    pub projection_plans: &'a [(String, u64)],
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -205,7 +228,7 @@ fn write_stream(dir: &Path, name: String, bytes: &[u8]) -> std::io::Result<Value
 
 /// Refuse a witness directory that couldn't be written, before a long run rather than after it.
 pub fn check_target(dir: &Path) -> Result<(), String> {
-    if dir.exists() {
+    if dir.symlink_metadata().is_ok() {
         return Err(format!(
             "{} exists: a witness is never overwritten or merged into another",
             dir.display()
@@ -236,6 +259,10 @@ pub fn write(capture: &Capture, binding: &Binding<'_>, dir: &Path) -> Result<(),
             r.call
         ));
     }
+    let (logit_sha256, logit_bytes) = capture
+        .logit_dump
+        .as_ref()
+        .ok_or("this run recorded no logit dump to bind")?;
     let io = |e: std::io::Error| format!("writing the witness to {}: {e}", dir.display());
     // Fails if it exists: a witness is never overwritten or merged into another.
     std::fs::create_dir(dir).map_err(io)?;
@@ -254,6 +281,8 @@ pub fn write(capture: &Capture, binding: &Binding<'_>, dir: &Path) -> Result<(),
             "y": write_stream(dir, format!("{i:06}.y"), &f32_le_bytes(&r.y)).map_err(io)?,
         }));
     }
+    let environment: BTreeMap<_, _> = binding.environment.iter().cloned().collect();
+    let plans: BTreeMap<_, _> = binding.projection_plans.iter().cloned().collect();
     let manifest = json!({
         "schema": SCHEMA,
         "kernel": KERNEL,
@@ -262,24 +291,37 @@ pub fn write(capture: &Capture, binding: &Binding<'_>, dir: &Path) -> Result<(),
         "build_commit": binding.build_commit,
         "binary_sha256": binding.binary_sha256,
         "container": binding.container,
+        "container_index_sha256": binding.container_index_sha256,
         "component": binding.component,
         "backend": binding.backend,
         "representation": binding.representation,
+        "representation_source": binding.representation_source,
         "tokens": binding.tokens,
         "draft_depth": binding.draft_depth,
-        "logit_dump": {"path": binding.logit_dump, "sha256": binding.logit_dump_sha256},
+        "logit_dump": {"path": binding.logit_dump, "sha256": logit_sha256, "bytes": logit_bytes},
+        "environment": environment,
+        "platform": binding.platform,
+        "projection_plans": plans,
         "calls_observed": capture.calls_observed,
         "operands_noted": capture.operands_noted,
         "max_operands": capture.max_operands,
         "records": records,
     });
     let text = serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?;
-    // Renamed into place, then the directory synced: a witness.json that exists is whole, and it
-    // can't outlive the streams it describes.
+    // The directory is synced before the rename, so that the streams' entries are durable before
+    // a witness.json that names them, and after it, so that the witness itself is. A witness.json
+    // that exists is whole. If the last step fails, the manifest is taken back.
+    let sync_dir = |d: &Path| std::fs::File::open(d).and_then(|f| f.sync_all());
     let partial = dir.join(format!("{MANIFEST}.partial"));
     write_synced(&partial, &text).map_err(io)?;
-    std::fs::rename(&partial, dir.join(MANIFEST)).map_err(io)?;
-    std::fs::File::open(dir)
-        .and_then(|d| d.sync_all())
-        .map_err(io)
+    sync_dir(dir).map_err(io)?;
+    let manifest_path = dir.join(MANIFEST);
+    std::fs::rename(&partial, &manifest_path).map_err(io)?;
+    let parent = dir.parent().filter(|p| !p.as_os_str().is_empty());
+    let durable = sync_dir(dir).and_then(|()| parent.map_or(Ok(()), sync_dir));
+    if let Err(e) = durable {
+        let _ = std::fs::remove_file(&manifest_path);
+        return Err(io(e));
+    }
+    Ok(())
 }

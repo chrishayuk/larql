@@ -68,3 +68,19 @@ fn it_refuses_an_existing_directory_before_opening_anything() {
         "never overwritten",
     );
 }
+
+#[test]
+fn it_refuses_what_could_change_the_run_without_the_backend_saying_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (w, l) = (tmp.path().join("w"), tmp.path().join("l"));
+    let (w, l) = (w.to_str().unwrap(), l.to_str().unwrap());
+    let base = ["--gemv-witness", w, "--logit-dump", l];
+    for extra in [
+        ["--plugin", "p"],
+        ["--lowering", "cpu-production/v1"],
+        ["--representation", "Q8_0"],
+    ] {
+        let args: Vec<&str> = base.iter().chain(extra.iter()).copied().collect();
+        refused(&args, "can't describe a run");
+    }
+}

@@ -88,17 +88,11 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     super::generate::admission::refuse_evidence_outside_the_curve(&args, lowered)?;
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
-    let plugins = Plugins::load(&args.plugin)?;
-    let binary_sha256 = match &args.gemv_witness {
-        Some(dir) => {
-            gemv_witness::check_target(dir)?;
-            // Before anything loads, so that each operand's name is noted.
-            gemv_witness::start(args.gemv_witness_max_operands);
-            // Now, not at the end: the file could be replaced during the run.
-            Some(sha256_hex(&std::fs::read(std::env::current_exe()?)?))
-        }
+    let witness = match &args.gemv_witness {
+        Some(dir) => Some(begin_gemv_witness(dir, &args)?),
         None => None,
     };
+    let plugins = Plugins::load(&args.plugin)?;
     let OpenedComponent {
         plan, store, want, ..
     } = prepare(
@@ -153,11 +147,46 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     report_representation_work(&store, want.as_deref(), outcome.is_ok());
+    if outcome.is_err() && witness.is_some() {
+        gemv_witness::finish();
+    }
     outcome?;
-    if let (Some(dir), Some(binary_sha256)) = (&args.gemv_witness, &binary_sha256) {
-        write_gemv_witness(dir, &args, &tokens, want.as_deref(), binary_sha256)?;
+    if let (Some(dir), Some(start)) = (&args.gemv_witness, &witness) {
+        write_gemv_witness(dir, &args, &tokens, want.as_deref(), start)?;
     }
     Ok(())
+}
+
+/// What the witness binds from before anything loads.
+struct WitnessStart {
+    binary_sha256: String,
+    container_index_sha256: String,
+}
+
+/// Open the capture, refusing a run it couldn't describe. A plugin or lowering provider can change
+/// what executes without the backend's name changing, so a witness of one would misdescribe itself.
+fn begin_gemv_witness(
+    dir: &Path,
+    args: &ExecArgs,
+) -> Result<WitnessStart, Box<dyn std::error::Error>> {
+    if !args.plugin.plugins.is_empty()
+        || args.plugin.lowering.is_some()
+        || args.plugin.representation.is_some()
+    {
+        return Err(
+            "--gemv-witness can't describe a run with --plugin, --lowering or --representation: \
+             they can change what executes without the backend's name changing"
+                .into(),
+        );
+    }
+    gemv_witness::check_target(dir)?;
+    let start = WitnessStart {
+        binary_sha256: sha256_hex(&std::fs::read(std::env::current_exe()?)?),
+        container_index_sha256: sha256_hex(&std::fs::read(args.container.join("index.json"))?),
+    };
+    // Before anything loads, so that each operand's name is noted.
+    gemv_witness::start(args.gemv_witness_max_operands);
+    Ok(start)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -173,7 +202,7 @@ fn write_gemv_witness(
     args: &ExecArgs,
     tokens: &[u32],
     want: Option<&str>,
-    binary_sha256: &str,
+    start: &WitnessStart,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let capture = gemv_witness::finish();
     let commit = super::generate::residency_record::build_commit();
@@ -181,20 +210,34 @@ fn write_gemv_witness(
         .logit_dump
         .as_deref()
         .ok_or("--gemv-witness requires --logit-dump")?;
+    let environment: Vec<(String, String)> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("LARQL_") || k == "RAYON_NUM_THREADS")
+        .collect();
+    let projection_plans: Vec<(String, u64)> =
+        larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+            .all()
+            .iter()
+            .filter(|(_, t)| t.calls > 0)
+            .map(|(plan, t)| (format!("{plan:?}"), t.calls))
+            .collect();
     gemv_witness::write(
         &capture,
         &gemv_witness::Binding {
             build_commit: commit.as_deref(),
-            binary_sha256,
+            binary_sha256: &start.binary_sha256,
             container: &std::fs::canonicalize(&args.container)?,
+            container_index_sha256: &start.container_index_sha256,
             component: &args.component,
             backend: &format!("{:?}", args.backend),
             representation: want.unwrap_or("none"),
+            representation_source: &args.representation_source,
             execution_arm: &format!("{:?}", kquant_execution()),
             tokens,
             draft_depth: args.draft_depth,
-            logit_dump,
-            logit_dump_sha256: &sha256_hex(&std::fs::read(logit_dump)?),
+            logit_dump: &std::fs::canonicalize(logit_dump)?,
+            environment: &environment,
+            platform: &format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            projection_plans: &projection_plans,
         },
         dir,
     )?;

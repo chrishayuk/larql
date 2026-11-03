@@ -19,6 +19,8 @@
 //! Writes `[positions, vocab]` f32 — position `i` holds the distribution
 //! predicting token `i+1`, which is what an NLL over the sequence needs.
 
+use larql_vindex::format::vindex3::opplan::exec::cpu::gemv_witness;
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
@@ -65,6 +67,9 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     let started = Instant::now();
     let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
     let mut vocab = 0usize;
+    // As the bytes are written, so that a witness describes this run's dump, not whatever is at
+    // that path later.
+    let mut witness_digest = gemv_witness::is_active().then(|| (Sha256::new(), 0u64));
     for (i, &token) in tokens.iter().enumerate() {
         let logits = session
             .step(token)?
@@ -80,7 +85,12 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
             .into());
         }
         for value in &logits {
-            file.write_all(&value.to_le_bytes())?;
+            let bytes = value.to_le_bytes();
+            file.write_all(&bytes)?;
+            if let Some((digest, written)) = &mut witness_digest {
+                digest.update(bytes);
+                *written += bytes.len() as u64;
+            }
         }
         if (i + 1) % 32 == 0 || i + 1 == tokens.len() {
             eprintln!(
@@ -92,6 +102,14 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         }
     }
     file.flush()?;
+    if let Some((digest, written)) = witness_digest {
+        let hex = digest
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        gemv_witness::note_logit_dump(hex, written);
+    }
 
     println!("engine: {engine}");
     println!("positions: {}  vocab: {vocab}", tokens.len());

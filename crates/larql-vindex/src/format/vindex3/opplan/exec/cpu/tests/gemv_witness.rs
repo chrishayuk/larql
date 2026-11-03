@@ -252,18 +252,25 @@ fn batched_positions_are_recorded_with_their_own_outputs() {
 }
 
 fn binding(container: &std::path::Path) -> Binding<'_> {
+    static ENVIRONMENT: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    static PLANS: std::sync::OnceLock<Vec<(String, u64)>> = std::sync::OnceLock::new();
     Binding {
         build_commit: Some("abc"),
         binary_sha256: "def",
         container,
+        container_index_sha256: "idx",
         component: "target",
         backend: "ProductionQ8",
         representation: "Q8_0",
+        representation_source: "stored",
         execution_arm: "Direct",
         tokens: &[1, 2],
         draft_depth: Some(3),
         logit_dump: std::path::Path::new("logits.bin"),
-        logit_dump_sha256: "aaa",
+        environment: ENVIRONMENT
+            .get_or_init(|| vec![("LARQL_CPU_ARITHMETIC".into(), "q8xq8".into())]),
+        platform: "os-arch",
+        projection_plans: PLANS.get_or_init(|| vec![("FusedKQuant".into(), 4)]),
     }
 }
 
@@ -276,6 +283,7 @@ fn a_written_witness_holds_the_raw_bits_and_their_digests() {
     let y = shared()
         .unwrap()
         .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
+    witness::note_logit_dump("aaa".into(), 12);
     let capture = witness::finish();
 
     let tmp = tempfile::tempdir().unwrap();
@@ -291,6 +299,10 @@ fn a_written_witness_holds_the_raw_bits_and_their_digests() {
     assert_eq!(m["tokens"], serde_json::json!([1, 2]));
     assert_eq!(m["draft_depth"], 3);
     assert_eq!(m["logit_dump"]["sha256"], "aaa");
+    assert_eq!(m["logit_dump"]["bytes"], 12);
+    assert_eq!(m["container_index_sha256"], "idx");
+    assert_eq!(m["environment"]["LARQL_CPU_ARITHMETIC"], "q8xq8");
+    assert_eq!(m["projection_plans"]["FusedKQuant"], 4);
     assert_eq!(m["max_operands"], 1);
     assert!(!dir.join(format!("{MANIFEST}.partial")).exists());
     let r = &m["records"][0];
@@ -308,6 +320,31 @@ fn a_written_witness_holds_the_raw_bits_and_their_digests() {
 
     // Never overwritten.
     assert!(witness::write(&capture, &binding(tmp.path()), &dir).is_err());
+}
+
+#[test]
+fn a_capture_with_no_logit_dump_digest_is_refused() {
+    let _g = SERIAL.lock().unwrap();
+    let (bytes, x) = (blocks(), x());
+    witness::start(1);
+    witness::note_operand("o", "t", "Q8_0", &bytes);
+    shared()
+        .unwrap()
+        .project(&FusedKQuant, q8_f32(&bytes), &x, ROWS);
+    let capture = witness::finish();
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("w");
+    let err = witness::write(&capture, &binding(tmp.path()), &dir).unwrap_err();
+    assert!(err.contains("no logit dump"), "{err}");
+    assert!(!dir.exists());
+}
+
+#[test]
+fn a_dangling_symlink_counts_as_existing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let link = tmp.path().join("l");
+    std::os::unix::fs::symlink("/no/such/place", &link).unwrap();
+    assert!(witness::check_target(&link).is_err());
 }
 
 #[test]
