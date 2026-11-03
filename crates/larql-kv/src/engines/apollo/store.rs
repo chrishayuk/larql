@@ -436,47 +436,16 @@ fn load_entries(
     })
 }
 
-/// Exact structured-dtype layout the row decoder below assumes. Invariant:
-/// the decoder reads fields at fixed byte offsets in this order, so the
-/// archive's descr must match name-for-name AND dtype-for-dtype in this
-/// exact order — a reordered or retyped descr would otherwise decode into
-/// garbage coefficients/ids without any error.
-const ENTRY_DESCR_FIELDS: [(&str, &str); 5] = [
-    ("token_id", "<u4"),
-    ("coefficient", "<f4"),
-    ("window_id", "<u2"),
-    ("position_in_window", "<u2"),
-    ("fact_id", "<u2"),
-];
+/// The structured dtype the row decoder below assumes, as `numpy` writes it. The
+/// decoder reads fixed offsets, and any other text could mean another layout, so this
+/// is compared whole: a reordered or retyped field, a subarray or padding is refused.
+const ENTRY_DESCR: &str = "[('token_id', '<u4'), ('coefficient', '<f4'), ('window_id', '<u2'), \
+                           ('position_in_window', '<u2'), ('fact_id', '<u2')]";
 
-/// Extract every single-quoted token from a numpy structured descr, in
-/// order. For `[('token_id', '<u4'), ...]` this yields alternating
-/// field-name / dtype strings — numpy always emits single quotes here.
-fn descr_quoted_tokens(descr: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut rest = descr;
-    while let Some(start) = rest.find('\'') {
-        let after = &rest[start + 1..];
-        let Some(end) = after.find('\'') else { break };
-        out.push(&after[..end]);
-        rest = &after[end + 1..];
-    }
-    out
-}
-
-/// Validate that `descr` declares exactly [`ENTRY_DESCR_FIELDS`] — same
-/// fields, same dtypes, same order. Presence-by-substring is not enough:
-/// the decoder reads fixed offsets.
 fn check_entry_descr(descr: &str) -> Result<(), npy::NpyError> {
-    let tokens = descr_quoted_tokens(descr);
-    let got: Vec<(&str, &str)> = tokens
-        .chunks(2)
-        .filter(|c| c.len() == 2)
-        .map(|c| (c[0], c[1]))
-        .collect();
-    if got != ENTRY_DESCR_FIELDS {
+    if descr != ENTRY_DESCR {
         return Err(npy::NpyError::StructuredLayout(format!(
-            "structured descr mismatch: got fields {got:?}, expected {ENTRY_DESCR_FIELDS:?} \
+            "structured descr mismatch: got {descr}, expected {ENTRY_DESCR} \
              (decoder reads fixed offsets; field order and dtypes must match exactly)"
         )));
     }
@@ -485,13 +454,13 @@ fn check_entry_descr(descr: &str) -> Result<(), npy::NpyError> {
 
 /// Parse a .npy file containing a structured-dtype array of `VecInjectEntry`.
 ///
-/// Expected dtype (from the Python side): see [`ENTRY_DESCR_FIELDS`].
+/// Expected dtype (from the Python side): see [`ENTRY_DESCR`].
 /// Row size: 14 bytes, no padding (numpy packs structured dtypes tightly
 /// when fields are already aligned).
 fn parse_structured_entries_npy(bytes: &[u8]) -> Result<Vec<VecInjectEntry>, npy::NpyError> {
     let (header, data_off) = npy::parse_header(bytes)?;
 
-    check_entry_descr(&header.descr)?;
+    check_entry_descr(header.descr)?;
     if header.shape.len() != 1 {
         return Err(npy::NpyError::StructuredLayout(format!(
             "expected 1D structured array, got shape {:?}",

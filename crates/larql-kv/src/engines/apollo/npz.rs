@@ -32,8 +32,6 @@ const ZIP64_LOCATOR_SIGNATURE: [u8; 4] = *b"PK\x06\x07";
 const CENTRAL_RECORD_SIGNATURE: [u8; 4] = *b"PK\x01\x02";
 const LOCAL_RECORD_SIGNATURE: [u8; 4] = *b"PK\x03\x04";
 const SIGNATURE_LEN: usize = 4;
-/// Field offset of the comment's length in the end record.
-const COMMENT_LEN_AT: usize = 20;
 
 const END_RECORD_LEN: u64 = 22;
 const ZIP64_LOCATOR_LEN: u64 = 20;
@@ -285,6 +283,7 @@ fn directory_from_end_record(
     const RECORDS_AT: usize = 10;
     const DIRECTORY_LEN_AT: usize = 12;
     const DIRECTORY_OFFSET_AT: usize = 16;
+    const COMMENT_LEN_AT: usize = 20;
 
     let comment_len = u64::from(u16_at(end, COMMENT_LEN_AT));
     if end_at + END_RECORD_LEN + comment_len > file_len
@@ -359,14 +358,10 @@ fn directory_from_end_record(
     }))
 }
 
-/// Find the last self-consistent end record. Candidates are limited to the final
-/// 64 KiB, the only place a valid one can be, so the search is bounded however
-/// large the file claims to be and however many signatures it plants.
-///
-/// `zipfile` commits to the last signature, while `zip` retries earlier ones. So an
-/// earlier candidate is used only if every later signature is inside its own comment,
-/// where it is text. Otherwise an inconsistent last record could select a whole other
-/// archive that `zipfile` never reads.
+/// Use the last end-record signature in the final 64 KiB, the only place a valid one
+/// can be, or nothing. There is no fallback to an earlier one: which record is used
+/// mustn't depend on which this reader calls consistent. A comment holding a bogus
+/// signature is refused, as `zipfile` does.
 fn find_directory(regular: &mut RegularFile) -> Result<Directory, StoreLoadError> {
     let path = regular.path.as_str();
     let io_err = |source| StoreLoadError::Io {
@@ -380,20 +375,13 @@ fn find_directory(regular: &mut RegularFile) -> Result<Directory, StoreLoadError
         .seek(SeekFrom::Start(tail_at))
         .map_err(io_err)?;
     let tail = read_exactly(&mut regular.file, tail_len, &path)?;
-    let mut last_signature_end = None;
-    for (index, window) in tail
-        .windows(END_RECORD_LEN as usize)
-        .enumerate()
-        .rev()
-        .filter(|(_, window)| window[..SIGNATURE_LEN] == END_RECORD_SIGNATURE)
-    {
+    let last_signature = tail
+        .windows(SIGNATURE_LEN)
+        .rposition(|window| window == END_RECORD_SIGNATURE);
+    let end_record = last_signature.and_then(|index| Some((index, tail.get(index..)?)));
+    if let Some((index, end)) = end_record.filter(|(_, end)| end.len() >= END_RECORD_LEN as usize) {
         let end_at = tail_at + index as u64;
-        let later_signature_end = *last_signature_end.get_or_insert(end_at + SIGNATURE_LEN as u64);
-        let comment_end = end_at + END_RECORD_LEN + u64::from(u16_at(window, COMMENT_LEN_AT));
-        if later_signature_end > comment_end {
-            break;
-        }
-        let found = directory_from_end_record(&mut regular.file, window, end_at, regular.len)
+        let found = directory_from_end_record(&mut regular.file, end, end_at, regular.len)
             .map_err(io_err)?;
         if let Some(directory) = found {
             return Ok(directory);

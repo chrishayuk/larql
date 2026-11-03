@@ -36,14 +36,6 @@ fn dataless_npy(descr_literal: &str, shape_literal: &str) -> Vec<u8> {
     out
 }
 
-fn entries_descr_literal() -> String {
-    let fields: Vec<String> = ENTRY_DESCR_FIELDS
-        .iter()
-        .map(|(name, dtype)| format!("('{name}', '{dtype}')"))
-        .collect();
-    format!("[{}]", fields.join(", "))
-}
-
 fn tokens_store(rows: u64) -> TempDir {
     let npy = dataless_npy("'<u4'", &format!("({rows},)"));
     store_with_archive(
@@ -53,7 +45,7 @@ fn tokens_store(rows: u64) -> TempDir {
 }
 
 fn entries_store(rows: u64) -> TempDir {
-    let npy = dataless_npy(&entries_descr_literal(), &format!("({rows},)"));
+    let npy = dataless_npy(ENTRY_DESCR, &format!("({rows},)"));
     store_with_archive(
         ENTRIES_NPZ,
         &raw_archive(&[RawMember::stored(ENTRIES_MEMBER, npy)]),

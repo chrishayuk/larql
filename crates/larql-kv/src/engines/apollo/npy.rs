@@ -17,9 +17,9 @@
 //!   - structured dtypes are parsed by the `apollo::store` module directly.
 
 #[derive(Debug)]
-pub struct NpyHeader {
-    pub descr: String,
-    pub fortran_order: bool,
+pub struct NpyHeader<'a> {
+    /// The dtype exactly as written, quotes and all, for comparing with a known form.
+    pub descr: &'a str,
     pub shape: Vec<usize>,
 }
 
@@ -50,8 +50,6 @@ pub enum NpyError {
         shape: Vec<usize>,
         stride: usize,
     },
-    #[error("fortran-order arrays are not supported")]
-    FortranOrder,
     #[error("shape {shape:?} × {stride} bytes overflows the address space")]
     ShapeOverflow { shape: Vec<usize>, stride: usize },
     #[error("allocation of {bytes} bytes refused")]
@@ -59,6 +57,9 @@ pub enum NpyError {
     #[error("{0}")]
     StructuredLayout(String),
 }
+
+const F4_DESCR: &str = "'<f4'";
+const U4_DESCR: &str = "'<u4'";
 
 /// Bytes per element of both `<f4` and `<u4`.
 const ELEMENT_STRIDE: usize = 4;
@@ -114,16 +115,60 @@ fn checked_data<'a>(data: &'a [u8], shape: &[usize], stride: usize) -> Result<&'
     Ok(data)
 }
 
-/// The header's keys, as this parser looks for them.
-const HEADER_KEYS: [(&str, &str); 3] = [
-    ("descr", "'descr':"),
-    ("fortran_order", "'fortran_order':"),
-    ("shape", "'shape':"),
-];
+/// The dictionary numpy's `_write_array_header` writes: keys sorted, each followed by
+/// `, `, then `}`. `descr` and `shape` are `repr`s, and only C-order arrays are read.
+const HEADER_OPEN: &str = "{'descr': ";
+const HEADER_AFTER_DESCR: &str = ", 'fortran_order': False, 'shape': ";
+const HEADER_CLOSE: &str = ", }";
+/// `_wrap_header` pads with spaces and ends with one newline.
+const HEADER_PADDING: char = ' ';
+const HEADER_END: char = '\n';
+
+/// The header as numpy's writer lays it out for format 1.0, and nothing else.
+///
+/// numpy reads a header as a Python literal, so repeated keys, comments, other quoting,
+/// escapes, concatenation and more can all mean something other than they look. Rather
+/// than recognise those, this accepts only the one form a writer produces. Python 2's
+/// `3L` shapes aren't accepted, and `descr` is compared whole by the caller.
+fn parse_writer_form(header: &str) -> Option<NpyHeader<'_>> {
+    let body = header.strip_suffix(HEADER_END)?;
+    let body = body.trim_end_matches(HEADER_PADDING);
+    let body = body.strip_prefix(HEADER_OPEN)?;
+    let body = body.strip_suffix(HEADER_CLOSE)?;
+    let (descr, shape) = body.split_once(HEADER_AFTER_DESCR)?;
+    Some(NpyHeader {
+        descr,
+        shape: parse_shape_repr(shape)?,
+    })
+}
+
+/// A Python `repr` of a tuple of non-negative integers: `()`, `(3,)` or `(1, 1, 4)`.
+fn parse_shape_repr(shape: &str) -> Option<Vec<usize>> {
+    const SEPARATOR: &str = ", ";
+    let inner = shape.strip_prefix('(')?.strip_suffix(')')?;
+    if inner.is_empty() {
+        return Some(Vec::new());
+    }
+    let (list, single) = match inner.strip_suffix(',') {
+        Some(only) => (only, true),
+        None => (inner, false),
+    };
+    let mut dims = Vec::new();
+    for dim in list.split(SEPARATOR) {
+        let canonical =
+            dim.bytes().all(|byte| byte.is_ascii_digit()) && (dim == "0" || !dim.starts_with('0'));
+        if !canonical {
+            return None;
+        }
+        dims.push(dim.parse().ok()?);
+    }
+    // A one-element tuple has the trailing comma and only that one has.
+    (single == (dims.len() == 1)).then_some(dims)
+}
 
 /// Parse the `.npy` header. Returns `(header, data_offset)` where `data_offset`
 /// is the byte index at which raw array data begins.
-pub fn parse_header(bytes: &[u8]) -> Result<(NpyHeader, usize), NpyError> {
+pub fn parse_header(bytes: &[u8]) -> Result<(NpyHeader<'_>, usize), NpyError> {
     if bytes.len() < 10 {
         return Err(NpyError::TruncatedHeader);
     }
@@ -141,53 +186,17 @@ pub fn parse_header(bytes: &[u8]) -> Result<(NpyHeader, usize), NpyError> {
         return Err(NpyError::TruncatedHeader);
     }
     let header_str = std::str::from_utf8(&bytes[10..header_end]).map_err(NpyError::InvalidUtf8)?;
-    // numpy evaluates the header as a Python literal, where the last of a repeated key
-    // wins, a comment hides a key and either quote can open one. This parser takes the
-    // first match of the single-quoted form, so any of those could read differently.
-    for (field, needle) in HEADER_KEYS {
-        if header_str.contains('"')
-            || header_str.contains('#')
-            || header_str.matches(needle).count() > 1
-        {
-            return Err(NpyError::ParseField {
-                field,
-                snippet: header_str.to_string(),
-            });
-        }
-    }
-    // `descr` may be either a quoted string (simple dtype like '<f4') or a
-    // Python list literal (structured dtype like `[('token_id', '<u4'), ...]`).
-    // Extract as raw text so both cases succeed.
-    let descr = parse_field_value(header_str, "descr").ok_or_else(|| NpyError::ParseField {
-        field: "descr",
+    let header = parse_writer_form(header_str).ok_or_else(|| NpyError::ParseField {
+        field: "header",
         snippet: header_str.to_string(),
     })?;
-    let fortran =
-        parse_bool_field(header_str, "fortran_order").ok_or_else(|| NpyError::ParseField {
-            field: "fortran_order",
-            snippet: header_str.to_string(),
-        })?;
-    if fortran {
-        return Err(NpyError::FortranOrder);
-    }
-    let shape = parse_shape(header_str).ok_or_else(|| NpyError::ParseField {
-        field: "shape",
-        snippet: header_str.to_string(),
-    })?;
-    Ok((
-        NpyHeader {
-            descr,
-            fortran_order: fortran,
-            shape,
-        },
-        header_end,
-    ))
+    Ok((header, header_end))
 }
 
 /// Read an `<f4` 1D array from .npy bytes.
 pub fn read_f32_1d(bytes: &[u8]) -> Result<Vec<f32>, NpyError> {
     let (header, data_off) = parse_header(bytes)?;
-    check_dtype(&header.descr, "<f4")?;
+    check_dtype(header.descr, F4_DESCR)?;
     if header.shape.len() != 1 {
         return Err(NpyError::ParseField {
             field: "shape",
@@ -201,7 +210,7 @@ pub fn read_f32_1d(bytes: &[u8]) -> Result<Vec<f32>, NpyError> {
 /// Read an `<f4` multi-D array as a flat Vec (row-major) plus shape.
 pub fn read_f32_flat(bytes: &[u8]) -> Result<(Vec<f32>, Vec<usize>), NpyError> {
     let (header, data_off) = parse_header(bytes)?;
-    check_dtype(&header.descr, "<f4")?;
+    check_dtype(header.descr, F4_DESCR)?;
     let data = checked_data(&bytes[data_off..], &header.shape, ELEMENT_STRIDE)?;
     Ok((decode_elements(data, f32::from_le_bytes)?, header.shape))
 }
@@ -209,7 +218,7 @@ pub fn read_f32_flat(bytes: &[u8]) -> Result<(Vec<f32>, Vec<usize>), NpyError> {
 /// Read an `<u4` 1D array from .npy bytes.
 pub fn read_u32_1d(bytes: &[u8]) -> Result<Vec<u32>, NpyError> {
     let (header, data_off) = parse_header(bytes)?;
-    check_dtype(&header.descr, "<u4")?;
+    check_dtype(header.descr, U4_DESCR)?;
     if header.shape.len() != 1 {
         return Err(NpyError::ParseField {
             field: "shape",
@@ -220,8 +229,6 @@ pub fn read_u32_1d(bytes: &[u8]) -> Result<Vec<u32>, NpyError> {
     decode_elements(data, u32::from_le_bytes)
 }
 
-// ── header parsing helpers ────────────────────────────────────────────────
-
 fn check_dtype(got: &str, expected: &'static str) -> Result<(), NpyError> {
     if got != expected {
         Err(NpyError::DtypeMismatch {
@@ -231,96 +238,6 @@ fn check_dtype(got: &str, expected: &'static str) -> Result<(), NpyError> {
     } else {
         Ok(())
     }
-}
-
-/// Extract the raw text of a field value. Handles:
-///   - quoted strings: `'<f4'` → `<f4`
-///   - list literals: `[(...)]` → `[(...)]` (kept as-is for callers to parse)
-///   - tuples: `(a, b)` → `(a, b)`
-///   - bare tokens: `True` / `False` / numbers → token as-is, trimmed
-fn parse_field_value(header: &str, name: &str) -> Option<String> {
-    let needle = format!("'{name}':");
-    let start = header.find(&needle)?;
-    let rest = header[start + needle.len()..].trim_start();
-    let mut chars = rest.chars();
-    let first = chars.next()?;
-    match first {
-        '\'' | '"' => {
-            // Quoted string — strip the quotes.
-            let quote = first;
-            let body: String = rest[1..].chars().take_while(|c| *c != quote).collect();
-            Some(body)
-        }
-        '[' | '(' | '{' => {
-            // Bracket-delimited — keep the brackets, find matching close.
-            let (open, close) = match first {
-                '[' => ('[', ']'),
-                '(' => ('(', ')'),
-                '{' => ('{', '}'),
-                _ => unreachable!(),
-            };
-            let mut depth = 0i32;
-            let mut end = 0usize;
-            for (i, c) in rest.char_indices() {
-                if c == open {
-                    depth += 1;
-                } else if c == close {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = i + c.len_utf8();
-                        break;
-                    }
-                }
-            }
-            if end == 0 {
-                None
-            } else {
-                Some(rest[..end].to_string())
-            }
-        }
-        _ => {
-            // Bare token up to comma or closing brace.
-            let end = rest.find([',', '}']).unwrap_or(rest.len());
-            Some(rest[..end].trim().to_string())
-        }
-    }
-}
-
-fn parse_bool_field(header: &str, name: &str) -> Option<bool> {
-    let needle = format!("'{name}':");
-    let start = header.find(&needle)?;
-    let after = header[start + needle.len()..].trim_start();
-    if after.starts_with("True") {
-        Some(true)
-    } else if after.starts_with("False") {
-        Some(false)
-    } else {
-        None
-    }
-}
-
-fn parse_shape(header: &str) -> Option<Vec<usize>> {
-    let start = header.find("'shape':")?;
-    let after = header[start + "'shape':".len()..].trim_start();
-    // The value must be a tuple literal starting with '('. Searching for
-    // '(' and ')' independently panicked on malformed headers where a ')'
-    // preceded the '(' (reversed slice range); requiring the leading '('
-    // and searching for the close after it makes malformed headers return
-    // None, which the caller maps to NpyError::ParseField.
-    if !after.starts_with('(') {
-        return None;
-    }
-    let close = after.find(')')?;
-    let inner = &after[1..close];
-    let mut out = Vec::new();
-    for part in inner.split(',') {
-        let trimmed = part.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        out.push(trimmed.parse::<usize>().ok()?);
-    }
-    Some(out)
 }
 
 #[cfg(test)]
@@ -361,18 +278,6 @@ mod tests {
         let blob = synth_f32_1d(&vals);
         let parsed = read_f32_1d(&blob).expect("parse");
         assert_eq!(parsed, vals.to_vec());
-    }
-
-    #[test]
-    fn parse_shape_handles_multiple_dims() {
-        let hdr = "{'shape': (1, 1, 2560), 'fortran_order': False}";
-        assert_eq!(parse_shape(hdr), Some(vec![1, 1, 2560]));
-    }
-
-    #[test]
-    fn parse_shape_handles_trailing_comma() {
-        let hdr = "{'shape': (3585, ), 'fortran_order': False}";
-        assert_eq!(parse_shape(hdr), Some(vec![3585]));
     }
 
     #[test]
@@ -559,129 +464,5 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fortran_order_rejected() {
-        let header = "{'descr': '<f4', 'fortran_order': True, 'shape': (2,), }".to_string();
-        let mut padded = header.into_bytes();
-        let total = 10 + padded.len();
-        let pad_to = (total + 63) & !63;
-        while 10 + padded.len() + 1 < pad_to {
-            padded.push(b' ');
-        }
-        padded.push(b'\n');
-        let header_len = padded.len();
-        let mut blob = Vec::new();
-        blob.extend_from_slice(b"\x93NUMPY");
-        blob.push(1);
-        blob.push(0);
-        blob.extend_from_slice(&(header_len as u16).to_le_bytes());
-        blob.extend_from_slice(&padded);
-        blob.extend_from_slice(&[0u8; 8]);
-        let err = parse_header(&blob).unwrap_err();
-        assert!(matches!(err, NpyError::FortranOrder));
-    }
-
     // ── Header field-parsing helpers ──────────────────────────────────────
-
-    #[test]
-    fn parse_field_value_quoted_string() {
-        let h = "{'descr': '<f4', 'fortran_order': False}";
-        assert_eq!(parse_field_value(h, "descr"), Some("<f4".into()));
-    }
-
-    #[test]
-    fn parse_field_value_double_quoted_string() {
-        let h = "{\"descr\": \"<f4\", \"fortran_order\": False}";
-        // double-quoted name lookup works for the specific quoting we use
-        let h_alt = "{'descr': \"<f4\", 'fortran_order': False}";
-        assert_eq!(parse_field_value(h_alt, "descr"), Some("<f4".into()));
-        // The double-quoted name variant won't find by 'descr':
-        assert_eq!(parse_field_value(h, "descr"), None);
-    }
-
-    #[test]
-    fn parse_field_value_list_literal() {
-        let h = "{'descr': [('token_id', '<u4'), ('coef', '<f4')], 'shape': (3,)}";
-        let descr = parse_field_value(h, "descr").unwrap();
-        assert!(descr.starts_with('['));
-        assert!(descr.ends_with(']'));
-        assert!(descr.contains("token_id"));
-    }
-
-    #[test]
-    fn parse_field_value_tuple_literal() {
-        let h = "{'shape': (3, 4, 5), 'fortran_order': False}";
-        let val = parse_field_value(h, "shape").unwrap();
-        assert_eq!(val, "(3, 4, 5)");
-    }
-
-    #[test]
-    fn parse_field_value_bare_token() {
-        let h = "{'fortran_order': False, 'descr': '<f4'}";
-        assert_eq!(parse_field_value(h, "fortran_order"), Some("False".into()));
-    }
-
-    #[test]
-    fn parse_field_value_missing_field() {
-        let h = "{'descr': '<f4'}";
-        assert!(parse_field_value(h, "shape").is_none());
-    }
-
-    #[test]
-    fn parse_bool_field_true_false_invalid() {
-        let h_t = "{'fortran_order': True}";
-        let h_f = "{'fortran_order': False}";
-        let h_x = "{'fortran_order': maybe}";
-        let h_m = "{'descr': '<f4'}";
-        assert_eq!(parse_bool_field(h_t, "fortran_order"), Some(true));
-        assert_eq!(parse_bool_field(h_f, "fortran_order"), Some(false));
-        assert_eq!(parse_bool_field(h_x, "fortran_order"), None);
-        assert_eq!(parse_bool_field(h_m, "fortran_order"), None);
-    }
-
-    #[test]
-    fn parse_shape_no_match() {
-        let h = "{'descr': '<f4', 'fortran_order': False}";
-        assert_eq!(parse_shape(h), None);
-    }
-
-    #[test]
-    fn parse_shape_unparseable_dim() {
-        let h = "{'shape': (3, abc, 5)}";
-        assert!(parse_shape(h).is_none());
-    }
-
-    #[test]
-    fn parse_shape_zero_dim_ok() {
-        let h = "{'shape': (0,)}";
-        assert_eq!(parse_shape(h), Some(vec![0]));
-    }
-
-    /// A ')' before the '(' previously produced a reversed slice range and
-    /// panicked; malformed shape values must return None instead.
-    #[test]
-    fn parse_shape_reversed_parens_returns_none() {
-        let h = "{'shape': ), (2,)}";
-        assert_eq!(parse_shape(h), None);
-    }
-
-    /// Same malformation through the public entry point: parse_header maps
-    /// the None from parse_shape to ParseField{field: "shape"}.
-    #[test]
-    fn parse_header_reversed_shape_parens_is_parse_field_error() {
-        let header = "{'descr': '<f4', 'fortran_order': False, 'shape': ), (2,}".to_string();
-        let mut padded = header.into_bytes();
-        padded.push(b'\n');
-        let mut blob = Vec::new();
-        blob.extend_from_slice(b"\x93NUMPY");
-        blob.push(1);
-        blob.push(0);
-        blob.extend_from_slice(&(padded.len() as u16).to_le_bytes());
-        blob.extend_from_slice(&padded);
-        let err = parse_header(&blob).unwrap_err();
-        match err {
-            NpyError::ParseField { field, .. } => assert_eq!(field, "shape"),
-            other => panic!("expected ParseField on shape, got {other:?}"),
-        }
-    }
 }

@@ -585,7 +585,7 @@ fn structured_npy_reordered_descr_errors() {
     );
     assert!(
         err.to_string()
-            .contains(r#"("coefficient", "<f4"), ("token_id", "<u4")"#),
+            .contains("('coefficient', '<f4'), ('token_id', '<u4')"),
         "error should report the offending field order, got: {err}"
     );
 }

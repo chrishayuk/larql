@@ -6,6 +6,7 @@ use larql_kv::apollo::{ApolloStore, StoreLimits, StoreLoadError};
 use crate::fixtures::*;
 
 const OVER_ONE_MIB: usize = (1 << 20) + 1;
+const ENTRY_ROW_BYTES: usize = 14;
 const HEADER_PAST_END: &[u8] = b"\x93NUMPY\x01\x00\xFF\xFFx";
 
 fn boundary_err(bytes: &[u8]) -> NpyError {
@@ -74,53 +75,113 @@ fn non_utf8_header_is_refused() {
     assert!(matches!(boundary_err(&bytes), NpyError::InvalidUtf8(_)));
 }
 
+/// Everything that isn't the writer's exact layout is one refusal, whatever it would
+/// have meant to `numpy`. The list is examples of the class, not what the check looks for.
 #[test]
-fn header_fields_that_do_not_parse_are_refused() {
-    for dict in [
-        "'descr':",
-        "{'descr': '<f4', 'fortran_order': False, 'shape': )(}\n",
-        "{'descr': '<f4', 'fortran_order': False, 'shape': (é,)}\n",
-        "{'descr': '<f4', 'fortran_order': False, 'shape': (18446744073709551616,)}\n",
-        "{'descr': '<f4', 'fortran_order': maybe, 'shape': (1,)}\n",
+fn any_header_not_in_the_writers_form_is_refused() {
+    const AFTER: &str = "'fortran_order': False, 'shape': (1,), }\n";
+    for header in [
+        "'descr':".to_string(),
+        // Keys repeated, spelt differently, hidden or reordered.
+        format!("{{'descr': '<u4', 'descr': '<f4', {AFTER}"),
+        format!("{{'descr': '<f4', 'descr' : '<u4', {AFTER}"),
+        format!("{{'descr': '<f4', 'de' 'scr': '<u4', {AFTER}"),
+        format!("{{'descr': '<f4', 'd\\x65scr': '<u4', {AFTER}"),
+        format!("{{'descr': '<f4', u'descr': '<u4', {AFTER}"),
+        format!("{{'descr': '<f4', \"descr\": '<u4', {AFTER}"),
+        format!("{{'descr': '<f4', # 'shape': (9,),\n {AFTER}"),
+        "{'fortran_order': False, 'descr': '<f4', 'shape': (1,), }\n".to_string(),
+        "{'shape': (1,), 'descr': '<f4', 'fortran_order': False, }\n".to_string(),
+        // Spacing the writer doesn't produce.
+        "{ 'descr': '<f4', 'fortran_order': False, 'shape': (1,), }\n".to_string(),
+        "{'descr': '<f4','fortran_order': False, 'shape': (1,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,)}\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), }".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), }\n\n".to_string(),
+        "\n{'descr': '<f4', 'fortran_order': False, 'shape': (1,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), }\t\n".to_string(),
+        // Fortran order, an extra key, and shapes that aren't a tuple's `repr`.
+        "{'descr': '<f4', 'fortran_order': True, 'shape': (1,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': maybe, 'shape': (1,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), 'x': 1, }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': )(, }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (é,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (18446744073709551616,), }\n"
+            .to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1, ), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (01,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (+1,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1L,), }\n".to_string(),
+        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,2), }\n".to_string(),
     ] {
-        let err = boundary_err(&header_with(dict));
-        assert!(
-            matches!(err, NpyError::ParseField { .. }),
-            "{dict}: {err:?}"
-        );
-    }
-}
-
-/// numpy evaluates the header as a Python literal: the last of a repeated key wins, a
-/// comment hides one and either quote can open one. Each could read differently from
-/// this parser's first match, so each is refused.
-#[test]
-fn headers_a_python_literal_reads_differently_are_refused() {
-    for dict in [
-        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), 'descr': '<u4'}\n",
-        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), 'shape': (2,)}\n",
-        "{'descr': '<f4', 'fortran_order': False, 'fortran_order': True, 'shape': (1,)}\n",
-        "{'descr': '<f4', 'fortran_order': False, 'shape': (1,), \"shape\": (2,)}\n",
-        "{'descr': '<f4', # 'shape': (9,),\n 'fortran_order': False, 'shape': (1,)}\n",
-    ] {
-        let mut bytes = header_with(dict);
+        let mut bytes = header_with(&header);
         bytes.extend_from_slice(&[0; size_of::<f32>()]);
         let err = boundary_err(&bytes);
         assert!(
-            matches!(err, NpyError::ParseField { .. }),
-            "{dict}: {err:?}"
+            // Text between the anchors is the descr, which is then compared whole.
+            matches!(
+                err,
+                NpyError::ParseField {
+                    field: "header",
+                    ..
+                } | NpyError::DtypeMismatch { .. }
+            ),
+            "{header:?}: {err:?}"
+        );
+    }
+}
+
+/// Padding is spaces and one newline, of any length, as numpy's versions have varied it.
+#[test]
+fn writers_form_loads_with_any_padding() {
+    const NO_PADDING: usize = 0;
+    const OLD_ALIGNMENT_PADDING: usize = 7;
+    const GROWTH_PADDING: usize = 60;
+    for padding in [NO_PADDING, OLD_ALIGNMENT_PADDING, GROWTH_PADDING] {
+        let dict = format!(
+            "{{'descr': '<f4', 'fortran_order': False, 'shape': (1,), }}{}\n",
+            " ".repeat(padding)
+        );
+        let dir = control_store();
+        let mut bytes = header_with(&dict);
+        bytes.extend_from_slice(&[0; size_of::<f32>()]);
+        std::fs::write(dir.path().join(BOUNDARY), bytes).unwrap();
+        ApolloStore::load(dir.path()).expect("the writer's form");
+    }
+}
+
+/// A subarray of no elements leaves the descr's fields looking right, and shifts every
+/// row for `numpy`. Any other entries dtype text is refused, compared whole.
+#[test]
+fn entries_descr_other_than_the_canonical_text_is_refused() {
+    const CANONICAL: &str = "[('token_id', '<u4'), ('coefficient', '<f4'), ('window_id', '<u2'), \
+                             ('position_in_window', '<u2'), ('fact_id', '<u2')]";
+    for descr in [
+        CANONICAL.replace("('fact_id', '<u2')", "('fact_id', '<u2', (0,))"),
+        CANONICAL.replace("('window_id', '<u2')", "('window_id', '<u2', (1,))"),
+        CANONICAL.replace("'<u4'", "'>u4'"),
+        CANONICAL.replace("('fact_id', '<u2')", "('fact_id', '<u2'), ('', '|V0')"),
+        CANONICAL.replace(", ", ","),
+    ] {
+        let dir = control_store();
+        let member = npy(&descr, "(1,)", &[0; ENTRY_ROW_BYTES]);
+        std::fs::write(
+            dir.path().join(ENTRIES_NPZ),
+            npz(&[("entries.npy", &member)]),
+        )
+        .unwrap();
+        let err = cheap_refusal(dir.path());
+        assert!(
+            matches!(err, StoreLoadError::StructuredDtype { .. }),
+            "{descr}: {err:?}"
         );
     }
 }
 
 #[test]
-fn fortran_order_and_foreign_dtype_are_refused() {
-    let fortran = "{'descr': '<f4', 'fortran_order': True, 'shape': (1,)}\n";
-    assert!(matches!(
-        boundary_err(&header_with(fortran)),
-        NpyError::FortranOrder
-    ));
-    let foreign = "{'descr': '<f8', 'fortran_order': False, 'shape': (1,)}\n";
+fn foreign_dtype_is_refused() {
+    let foreign = "{'descr': '<f8', 'fortran_order': False, 'shape': (1,), }\n";
     assert!(matches!(
         boundary_err(&header_with(foreign)),
         NpyError::DtypeMismatch { .. }
@@ -146,9 +207,9 @@ fn zero_dimensional_boundary_is_refused() {
 /// The header is at most 64 KiB, so the most dimensions it can list cost little.
 #[test]
 fn residual_with_tens_of_thousands_of_dimensions_is_cheap() {
-    const DIMS: usize = 32_000;
+    const DIMS: usize = 20_000;
     let dir = control_store();
-    let shape = format!("({})", "1,".repeat(DIMS));
+    let shape = format!("({})", vec!["1"; DIMS].join(", "));
     std::fs::write(dir.path().join(RESIDUAL), npy("'<f4'", &shape, &[0; 4])).unwrap();
     let measured = load_watched(dir.path(), StoreLimits::default());
     assert!(measured.peak_bytes < REFUSAL_PEAK_BYTES);

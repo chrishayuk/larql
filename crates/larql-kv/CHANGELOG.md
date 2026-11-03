@@ -40,32 +40,47 @@ measured on aarch64 macOS at 2.57 GiB live and 2.59 GiB maximum RSS. Fixed
 small allocations remain infallible: JSON values within the manifest limit, `.npy`
 headers, paths and error text.
 
+**Refused by structure.** `.npy` headers must be exactly the layout numpy's writer
+produces for format 1.0, `{'descr': X, 'fortran_order': False, 'shape': (...), }` with
+spaces and a newline as padding, and `descr` must be one of the three known strings,
+compared whole. The end record is the last signature in the final 64 KiB, with no
+fallback. Members must have disjoint extents before the directory, a local name
+matching the directory, equal declared and stored sizes, and no encryption flags.
+
 **Newly refused:**
 
 - Stores over the default limits, including some the format allows. Use
   `load_with_limits`.
 - Device, FIFO and directory paths.
 - `.npz` files whose central directory isn't immediately before the end record (or a
-  ZIP64 end record there), whose ZIP64 end record has an extensible data sector as
-  well as a prefix, whose ZIP64 records disagree with a plain end record or aren't
-  adjacent to it, or whose locator's stated record and adjacent record differ.
-- Members whose extents overlap or reach into the directory, including records sharing
-  a payload.
-- Members whose declared and stored sizes differ, whose local name differs from the
-  directory, or whose flags say encrypted, strong encryption or patched data.
-- Nonzero ZIP64 disk numbers.
-- Compressed members in any build, including one that enables `zip/deflate`. They
-  were already refused in every build in this workspace.
-- More than one `entries.npy`, where numpy and `zip` read the last and this reader used
-  to read the first.
-- `entries.npz` with no member named exactly `entries.npy`. A prefix such as
-  `entries_old.npy` used to match.
-- A member name containing a NUL, a bare `entries` beside `entries.npy`, a Unicode Path
-  extra field naming a member differently when either name is ASCII, and a full ZIP64
-  extra field whose values differ from the record's. Readers resolve each differently.
-- `.npy` headers with a repeated key, a `#` or a double quote.
-- Window members not named canonically, such as `00.npy`, `+1.npy`, `1` or `1.npy.npy`.
-  These used to be taken as window ids.
+  ZIP64 end record there), whose ZIP64 records disagree with a plain end record or
+  aren't adjacent to it, whose locator's stated and adjacent records differ, or with a
+  ZIP64 extensible data sector as well as a prefix.
+- A comment or trailing bytes holding an end signature, since that is then the last one.
+  An ordinary comment or trailing bytes without one still load.
+- Any `.npy` header not in the writer's form: other key order or spacing, Fortran order,
+  extra keys and Python 2 `3L` shapes among them. `.npy` format 2.0 and 3.0 are refused.
+- Overlapping members, including records sharing a payload, and data reaching into the
+  directory. Declared and stored sizes that differ.
+- More than one `entries.npy`, a bare `entries` beside it, or no member named exactly
+  that. Non-canonical window names such as `00.npy`, `+1.npy`, `1` or `1.npy.npy`.
+- A NUL in any member name, and a Unicode Path extra field naming a member differently
+  when either name is ASCII. This could refuse an honest archive with an ASCII stand-in
+  name and a differing Unicode Path. Info-ZIP wrote no such field in the runs tried.
+- Nonzero ZIP64 disk numbers, a full ZIP64 extra field whose values differ from the
+  record's, and flags for encryption, strong encryption or patched data.
+- Compressed members in any build, including one that enables `zip/deflate`.
+
+**Other readers may still read a crafted file differently.** Byte-identical behaviour
+with numpy, `zipfile` or `zip` is not claimed, and this parser won't be extended for it.
+Known cases, all from crafted files:
+
+- A file with another zip before it, concatenated or as a prefix: `zip` can read the
+  earlier archive's directory, while this reader and numpy read the last.
+- Files this reader loads and numpy refuses: prefixed files, ZIP64 extensible sectors,
+  and overlong UTF-8 in an unread member's name.
+- Decoy names such as `./entries.npy`, which this reader ignores. Other tools that
+  normalise names, or `zipfile` on Windows with a backslash, could treat them otherwise.
 
 **Changed behaviour:**
 

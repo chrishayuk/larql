@@ -64,13 +64,37 @@ fn archive_comment_loads() {
     assert_loads(&archive_with_surroundings(b"", &[member()], b"a comment"));
 }
 
+/// Only the last signature is used, so one in a comment is the end record, and a bogus
+/// one is refused. `numpy` refuses this as well.
 #[test]
-fn comment_planting_an_end_signature_loads() {
-    assert_loads(&archive_with_surroundings(
-        b"",
-        &[member()],
-        END_RECORD_SIGNATURE,
-    ));
+fn comment_planting_an_end_signature_is_refused() {
+    let archive = archive_with_surroundings(b"", &[member()], END_RECORD_SIGNATURE);
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// A comment hiding a whole second directory and an end record this reader would call
+/// inconsistent. `numpy` reads the inner one, so falling back to the outer read other
+/// data. Each way of being inconsistent is refused the same way.
+#[test]
+fn inconsistent_end_record_in_a_comment_is_refused_rather_than_skipped() {
+    const DISK_AT: usize = 4;
+    const RECORDS_ON_DISK_AT: usize = 8;
+    const COMMENT_LEN_AT: usize = 20;
+    for field in [DISK_AT, RECORDS_ON_DISK_AT, COMMENT_LEN_AT] {
+        let mut inner = raw_archive(&[RawMember::stored("x", Vec::new())]);
+        let end_at = inner.len() - END_RECORD_LEN;
+        inner[end_at + field] = 9;
+        let archive = archive_with_surroundings(b"", &[member()], &inner);
+        assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+    }
+}
+
+/// An end signature with too few bytes after it to be a record is still the last one.
+#[test]
+fn truncated_end_signature_after_an_archive_is_refused() {
+    let mut archive = raw_archive(&[member()]);
+    archive.extend_from_slice(END_RECORD_SIGNATURE);
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
 }
 
 /// A last end record that fails its checks mustn't fall back to an earlier one:
