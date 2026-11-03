@@ -13,7 +13,7 @@ for example under `LARQL_KQUANT_EXEC=widen`, or on a device backend. Don't compa
 
 ## What it holds
 
-The directory is new. `witness.json` is renamed into place after every stream is written and synced, so a witness.json that exists is whole, and a directory without it is incomplete.
+The directory is new. `witness.json` is renamed into place after every stream is written and synced, so a witness.json that exists is whole, and a directory without it is incomplete. Directory syncing is Unix-only, so on Windows the ordering isn't guaranteed across a power loss.
 
 ```json
 {

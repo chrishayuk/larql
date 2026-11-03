@@ -214,6 +214,18 @@ fn f32_le_bytes(values: &[f32]) -> Vec<u8> {
         .collect()
 }
 
+/// Force a directory's entries to disk. Windows can't open a directory this way, so there the
+/// rename's ordering isn't guaranteed across a power loss.
+#[cfg(unix)]
+fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    std::fs::File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_dir: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Write a file and force it to disk.
 fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
@@ -311,7 +323,7 @@ pub fn write(capture: &Capture, binding: &Binding<'_>, dir: &Path) -> Result<(),
     // The directory is synced before the rename, so that the streams' entries are durable before
     // a witness.json that names them, and after it, so that the witness itself is. A witness.json
     // that exists is whole. If the last step fails, the manifest is taken back.
-    let sync_dir = |d: &Path| std::fs::File::open(d).and_then(|f| f.sync_all());
+    let sync_dir = sync_directory;
     let partial = dir.join(format!("{MANIFEST}.partial"));
     write_synced(&partial, &text).map_err(io)?;
     sync_dir(dir).map_err(io)?;

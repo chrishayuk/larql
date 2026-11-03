@@ -339,6 +339,7 @@ fn a_capture_with_no_logit_dump_digest_is_refused() {
     assert!(!dir.exists());
 }
 
+#[cfg(unix)]
 #[test]
 fn a_dangling_symlink_counts_as_existing() {
     let tmp = tempfile::tempdir().unwrap();
