@@ -295,3 +295,9 @@ pub(super) const Q8_0_GGML_GOLDEN: &[Q8Golden] = &[
         block_hex: "007c7fe8130102fd40813e51000071894d1a8bd5e1ae24f137df8f373b96f7f56919",
     },
 ];
+
+/// How many seeded blocks `seeded_blocks` generates.
+pub(super) const Q8_0_RANDOM_BLOCKS: usize = 1000000;
+
+/// FNV-1a 64 of ggml's encoding of those blocks.
+pub(super) const Q8_0_RANDOM_FNV1A64: u64 = 0x19a96b62c434d0b0;

@@ -3,8 +3,8 @@
 //! ## Why this exists
 //!
 //! LARQL's native K-quant encoders emit legal, correctly-laid-out bytes
-//! — proven bit-for-bit against a foreign fixture — but they do not
-//! choose the same values ggml does, and at Q6_K they reconstruct ~11%
+//! — proven bit-for-bit against a foreign fixture — but outside Q8_0 they
+//! do not choose the same values ggml does, and at Q6_K they reconstruct ~11%
 //! worse (measured: Q8_0 1.0000, Q4_K 1.0326, Q6_K 1.1146 RMS ratio).
 //!
 //! REPRESENT's thesis is that it wins the **selection** race, not the

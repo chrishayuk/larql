@@ -48,7 +48,7 @@ fn a_q8_0_representation_compiles_binds_and_decodes() {
     {
         assert_eq!(
             recipe,
-            &nvfp4_pack::EncoderRecipe::kquant_native_v1(),
+            &nvfp4_pack::EncoderRecipe::kquant_native_v2(),
             "a default build encodes with LARQL's own K-quant encoder"
         );
         assert!(
@@ -69,7 +69,7 @@ fn a_q8_0_representation_compiles_binds_and_decodes() {
         );
         assert_ne!(
             recipe,
-            &nvfp4_pack::EncoderRecipe::kquant_native_v1(),
+            &nvfp4_pack::EncoderRecipe::kquant_native_v2(),
             "the two encoders must not be able to claim each other's provenance"
         );
     }

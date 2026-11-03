@@ -245,7 +245,7 @@ pub(super) fn kquant_encoder_recipe() -> EncoderRecipe {
 
 #[cfg(not(feature = "reference-encoder"))]
 pub(super) fn kquant_encoder_recipe() -> EncoderRecipe {
-    EncoderRecipe::kquant_native_v1()
+    EncoderRecipe::kquant_native_v2()
 }
 
 /// Input-feature weights for a weighted compile: per tensor, one weight per

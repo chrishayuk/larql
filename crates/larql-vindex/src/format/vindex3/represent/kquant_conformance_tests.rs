@@ -196,8 +196,11 @@ fn the_golden_input_is_adversarial_enough_to_catch_a_layout_error() {
 
 /// LARQL's Q4_K and Q6_K encoders do **not** reproduce llama.cpp's bytes, and
 /// this test records that as a standing fact rather than hiding it. Its Q8_0
-/// encoder does, since scales are rounded as ggml rounds them, and this test
-/// asserts that stronger claim.
+/// encoder does on finite blocks whose `1/scale` doesn't overflow f32, since
+/// scales are rounded as ggml rounds them, and this test asserts that stronger
+/// claim. Outside that range they still differ: a NaN resets ggml's running
+/// maximum but is ignored here, and where `1/scale` overflows ggml's codes are
+/// undefined behaviour in C.
 ///
 /// Measured against the golden fixture, on one frozen 512-element input:
 ///

@@ -389,16 +389,21 @@ impl EncoderRecipe {
 
     /// LARQL's own K-quant encoders. Legal, correctly-laid-out bytes
     /// with LARQL's choice of values — measured against ggml at
-    /// Q8_0 0.9967, Q4_K 1.0326, Q6_K 1.1146 reconstruction RMS.
+    /// Q8_0 1.0000, Q4_K 1.0326, Q6_K 1.1146 reconstruction RMS.
+    ///
+    /// Revision 2: Q8_0 scales are rounded to nearest and keep f16 subnormals.
+    /// Revision 1 truncated them and flushed subnormals to zero, so its Q8_0
+    /// bytes differ. The family has one revision, so Q4_K and Q6_K move with
+    /// it, though their bytes did not change.
     ///
     /// Fine for a self-contained artifact; NOT the encoder a comparison
     /// against a llama.cpp-derived artifact may use, because a
     /// bit-width-dependent codec deficit would be indistinguishable from
     /// an allocation difference.
-    pub fn kquant_native_v1() -> Self {
+    pub fn kquant_native_v2() -> Self {
         Self {
             algorithm: "kquant-larql-native".into(),
-            revision: 1,
+            revision: 2,
             source: None,
         }
     }
