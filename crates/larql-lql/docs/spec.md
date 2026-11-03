@@ -841,9 +841,10 @@ VERIFY REPRESENTATION "qwen3-0.6b-q8_0.vindex3"
 ```
 
 **LQL does not evaluate the contract.** A check written in LARQL would be LARQL marking its
-own work, so the measurement belongs to a separate program, named by `LARQL_VERIFIER`.
-Without one the statement refuses; it never passes by default. Which contracts exist is the
-verifier's business, not the grammar's.
+own work, so the measurement belongs to a separate program: by default the repository's own
+`verifier/`, which has no LARQL code in it. With no verifier installed or configured, the
+statement refuses; it never passes by default. Which contracts exist is the verifier's business,
+not the grammar's.
 
 The statement is read-only and needs no bound backend. It takes paths, not names, because a
 result is about the exact bytes of one container: two containers of the same model can differ.
@@ -859,8 +860,8 @@ result is about the exact bytes of one container: two containers of the same mod
 about the encoder that produced it. The output says so, and an answer claiming any other kind
 of evidence is refused.
 
-The protocol, `larql-verify-contract/1`, and the reference verifier are in
-[verify-contract-protocol.md](verify-contract-protocol.md).
+The protocol, `larql-verify-contract/1`, how a verifier is found, and what enforces the
+verifier's independence are in `docs/verification/`.
 
 **`larql lql` exit status:**
 

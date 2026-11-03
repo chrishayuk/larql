@@ -18,10 +18,10 @@ rather than clap's 2, so that 2 means one thing. `run_batch` is unchanged;
 ## [2026-11-02] — `VERIFY REPRESENTATION`
 
 `VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST "<source>"` reports an
-independent verifier's measurement of one container against a numerical contract. LQL runs the
-verifier named by `LARQL_VERIFIER` and validates and renders its answer; it never evaluates the
-contract itself, and with no verifier the statement refuses. Read-only. Refused under
-`PUBLIC_EXPLORER` and on a remote backend. See spec §3.9.
+independent verifier's measurement of one container against a numerical contract. LQL finds the
+verifier, by default the repository's own `verifier/`, and validates and renders its answer; it
+never evaluates the contract itself, and with no verifier the statement refuses. Read-only. Refused
+under `PUBLIC_EXPLORER` and on a remote backend. See spec §3.9.
 
 ## [2026-06-05/06] — Coverage session 2: 89.21% → 93.91% total
 

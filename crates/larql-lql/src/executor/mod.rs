@@ -126,8 +126,8 @@ impl Session {
         vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
     }
 
-    /// The external verifier `VERIFY REPRESENTATION` runs. Without this it
-    /// reads `LARQL_VERIFIER`; with neither, the statement refuses.
+    /// The verifier `VERIFY REPRESENTATION` runs, ahead of `LARQL_VERIFIER` and
+    /// discovery. An empty path turns discovery off, so the statement refuses.
     pub fn set_verifier(&mut self, verifier: impl Into<std::path::PathBuf>) {
         self.verifier = Some(verifier.into());
     }
