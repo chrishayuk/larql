@@ -148,10 +148,11 @@ fn directory_offset_spelling_the_end_signature_loads() {
     assert_eq!(store.window_tokens, vec![TOKENS.to_vec()]);
 }
 
-/// The zero-comment position only wins when it says zero comment: a record
-/// there claiming a comment past the end of the file is not the end record.
+/// A last record whose comment runs past the file is refused, with no fallback.
+/// This doesn't pin the zero-comment check itself: a nonzero comment at that
+/// position always overruns the file, so the scan refuses it the same way.
 #[test]
-fn signature_at_the_zero_comment_position_with_a_comment_is_not_the_end_record() {
+fn record_with_a_comment_overrunning_the_file_is_refused() {
     let mut archive = raw_archive(&[member()]);
     archive.extend_from_slice(END_RECORD_SIGNATURE);
     archive.extend_from_slice(&[0u8; END_RECORD_LEN - END_RECORD_SIGNATURE.len() - 2]);

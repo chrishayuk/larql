@@ -56,8 +56,12 @@ matching the directory, equal declared and stored sizes, and no encryption flags
   ZIP64 end record there), whose ZIP64 records disagree with a plain end record or
   aren't adjacent to it, whose locator's stated and adjacent records differ, or with a
   ZIP64 extensible data sector as well as a prefix.
-- A comment or trailing bytes holding an end signature, since that is then the last one.
-  An ordinary comment or trailing bytes without one still load.
+- A comment or trailing bytes holding a bogus end signature, since that is then the
+  last one. A comment holding a consistent end record selects that record, as numpy and
+  `zip` do. An ordinary comment or trailing bytes load, except when the record ends more
+  than 64 KiB from the file's end: a 65,535-byte comment plus 1 trailing byte is refused
+  here and loads in numpy.
+- `.npy` minor versions other than 1.0, which numpy refuses too.
 - Any `.npy` header not in the writer's form: other key order or spacing, Fortran order,
   extra keys and Python 2 `3L` shapes among them. `.npy` format 2.0 and 3.0 are refused.
 - Overlapping members, including records sharing a payload, and data reaching into the

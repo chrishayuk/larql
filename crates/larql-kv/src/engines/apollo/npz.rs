@@ -358,10 +358,8 @@ fn directory_from_end_record(
     }))
 }
 
-/// Use the last end-record signature in the final 64 KiB, the only place a valid one
-/// can be, or nothing. There is no fallback to an earlier one: which record is used
-/// mustn't depend on which this reader calls consistent. A comment holding a bogus
-/// signature is refused, as `zipfile` does.
+/// Find the end record with [`end_record_position`], with no fallback to an earlier
+/// signature, and read the directory it names, or refuse.
 fn find_directory(regular: &mut RegularFile) -> Result<Directory, StoreLoadError> {
     let path = regular.path.as_str();
     let io_err = |source| StoreLoadError::Io {
