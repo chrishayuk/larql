@@ -1,5 +1,6 @@
-//! `VERIFY REPRESENTATION`: ask a separate verifier whether one container
-//! meets a numerical contract, and report what it measured.
+//! `VERIFY REPRESENTATION` and `VERIFY OPERATOR`: ask a separate verifier whether
+//! one container, or one recorded kernel call, meets a numerical contract, and
+//! report what it measured.
 //!
 //! **LQL does not evaluate the contract.** A check written here would be
 //! LARQL marking its own work, so the measurement belongs to a separate
@@ -24,6 +25,16 @@
 //! be evaluated; any other exit means the verifier itself failed. `status` is
 //! `satisfied`, `violated` or `could_not_evaluate`. A violation is an answer,
 //! so it returns normally; only `could_not_evaluate` is an error.
+//!
+//! ## Protocol `larql-verify-operator/1`
+//!
+//! ```text
+//! <verifier> operator --contract <id> --operator <tensor> --witness <file> --container <dir>
+//! ```
+//!
+//! `VERIFY OPERATOR` never runs the engine. It reads a witness an earlier run
+//! wrote, so that LARQL isn't asked whether its own computation was correct.
+//! A witness is still the engine's report, and the output says so.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -36,6 +47,8 @@ use super::Session;
 use crate::error::LqlError;
 
 const SCHEMA: &str = "larql-verify-contract/1";
+const OPERATOR_SCHEMA: &str = "larql-verify-operator/1";
+const WITNESS_BASIS: &str = "engine_reported";
 const EVIDENCE_KIND: &str = "numerical_measurement";
 const VERIFIER_ENV: &str = "LARQL_VERIFIER";
 const VERIFIER_NAME: &str = "larql-verifier";
@@ -63,6 +76,38 @@ struct ContractResult {
     verifier: serde_json::Map<String, serde_json::Value>,
     #[serde(default)]
     report_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperatorResult {
+    schema: String,
+    contract: String,
+    #[serde(default)]
+    contract_statement: String,
+    evidence_kind: String,
+    status: String,
+    violations: u64,
+    operator: String,
+    witness: Witness,
+    container: Identified,
+    #[serde(default)]
+    measurements: Vec<Measurement>,
+    #[serde(default)]
+    offending: Vec<Offending>,
+    #[serde(default)]
+    reasons: Vec<String>,
+    verifier: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    report_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Witness {
+    path: String,
+    sha256: Option<String>,
+    basis: String,
+    #[serde(default)]
+    reported: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,22 +143,22 @@ impl Session {
         contract: &str,
         source: &str,
     ) -> Result<Vec<String>, LqlError> {
-        let verifier = find_verifier(
-            self.verifier.clone(),
-            std::env::var_os(VERIFIER_ENV).map(PathBuf::from),
-            std::env::var_os("PATH"),
-            std::env::current_exe().ok(),
-        )
-        .ok_or_else(|| {
-            LqlError::Execution(format!(
-                "VERIFY REPRESENTATION needs an independent verifier and found none: install \
-                 verifier/ from this repository, or set {VERIFIER_ENV}. LARQL does not evaluate \
-                 contracts itself."
-            ))
-        })?;
+        let verifier = self.discover_verifier("VERIFY REPRESENTATION")?;
         let container = existing_dir(container, "container")?;
         let source = existing_dir(source, "source")?;
-        let stdout = run_verifier(&verifier, contract, &container, &source, TIMEOUT)?;
+        let stdout = run_verifier(
+            &verifier,
+            &[
+                "contract",
+                "--contract",
+                contract,
+                "--container",
+                &container,
+                "--source",
+                &source,
+            ],
+            TIMEOUT,
+        )?;
         let result = parse_result(&stdout, contract, &container, &source)?;
         if result.status == "could_not_evaluate" {
             return Err(LqlError::Execution(format!(
@@ -125,6 +170,60 @@ impl Session {
             self.contract_violations += 1;
         }
         Ok(render(&result))
+    }
+
+    pub(crate) fn exec_verify_operator(
+        &mut self,
+        operator: &str,
+        contract: &str,
+        witness: &str,
+        container: &str,
+    ) -> Result<Vec<String>, LqlError> {
+        let verifier = self.discover_verifier("VERIFY OPERATOR")?;
+        let witness = existing_file(witness, "witness")?;
+        let container = existing_dir(container, "container")?;
+        let stdout = run_verifier(
+            &verifier,
+            &[
+                "operator",
+                "--contract",
+                contract,
+                "--operator",
+                operator,
+                "--witness",
+                &witness,
+                "--container",
+                &container,
+            ],
+            TIMEOUT,
+        )?;
+        let result = parse_operator_result(&stdout, operator, contract, &witness, &container)?;
+        if result.status == "could_not_evaluate" {
+            return Err(LqlError::Execution(format!(
+                "contract {contract} could not be evaluated for {operator}: {}",
+                result.reasons.join("; ")
+            )));
+        }
+        if result.status == "violated" {
+            self.contract_violations += 1;
+        }
+        Ok(render_operator(&result))
+    }
+
+    fn discover_verifier(&self, statement: &str) -> Result<PathBuf, LqlError> {
+        find_verifier(
+            self.verifier.clone(),
+            std::env::var_os(VERIFIER_ENV).map(PathBuf::from),
+            std::env::var_os("PATH"),
+            std::env::current_exe().ok(),
+        )
+        .ok_or_else(|| {
+            LqlError::Execution(format!(
+                "{statement} needs an independent verifier and found none: install \
+                 verifier/ from this repository, or set {VERIFIER_ENV}. LARQL does not evaluate \
+                 contracts itself."
+            ))
+        })
     }
 }
 
@@ -163,10 +262,21 @@ fn find_verifier(
 
 fn existing_dir(path: &str, what: &str) -> Result<String, LqlError> {
     let canonical = std::fs::canonicalize(path)
-        .map_err(|e| LqlError::exec(format!("VERIFY REPRESENTATION {what} {path}"), e))?;
+        .map_err(|e| LqlError::exec(format!("VERIFY {what} {path}"), e))?;
     if !canonical.is_dir() {
         return Err(LqlError::Execution(format!(
-            "VERIFY REPRESENTATION {what} {path} is not a directory"
+            "VERIFY {what} {path} is not a directory"
+        )));
+    }
+    Ok(canonical.to_string_lossy().into_owned())
+}
+
+fn existing_file(path: &str, what: &str) -> Result<String, LqlError> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|e| LqlError::exec(format!("VERIFY {what} {path}"), e))?;
+    if !canonical.is_file() {
+        return Err(LqlError::Execution(format!(
+            "VERIFY {what} {path} is not a file"
         )));
     }
     Ok(canonical.to_string_lossy().into_owned())
@@ -174,24 +284,10 @@ fn existing_dir(path: &str, what: &str) -> Result<String, LqlError> {
 
 /// Run the verifier, without a shell, and return its stdout. Both pipes are
 /// drained on their own threads, so a large answer cannot block the child.
-fn run_verifier(
-    verifier: &Path,
-    contract: &str,
-    container: &str,
-    source: &str,
-    timeout: Duration,
-) -> Result<String, LqlError> {
+fn run_verifier(verifier: &Path, args: &[&str], timeout: Duration) -> Result<String, LqlError> {
     let shown = verifier.display();
     let mut child = Command::new(verifier)
-        .args([
-            "contract",
-            "--contract",
-            contract,
-            "--container",
-            container,
-            "--source",
-            source,
-        ])
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -278,21 +374,60 @@ fn parse_result(
             r.evidence_kind
         )));
     }
-    let listed: u64 = r.offending.iter().map(|o| o.violations).sum();
-    match r.status.as_str() {
-        "satisfied" if r.violations != 0 || !r.offending.is_empty() => {
-            Err(bad(format!("satisfied, with {} violations", r.violations)))
+    check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
+    Ok(r)
+}
+
+/// A verdict that contradicts itself is refused, whichever statement it answers.
+fn check_consistent(
+    status: &str,
+    violations: u64,
+    offending: &[Offending],
+    reasons: &[String],
+) -> Result<(), String> {
+    let listed: u64 = offending.iter().map(|o| o.violations).sum();
+    match status {
+        "satisfied" if violations != 0 || !offending.is_empty() => {
+            Err(format!("satisfied, with {violations} violations"))
         }
-        "violated" if r.violations == 0 || listed != r.violations => Err(bad(format!(
-            "violated, with {} violations but {listed} listed",
-            r.violations
-        ))),
-        "could_not_evaluate" if r.reasons.is_empty() => {
-            Err(bad("could_not_evaluate, with no reason".into()))
+        "violated" if violations == 0 || listed != violations => Err(format!(
+            "violated, with {violations} violations but {listed} listed"
+        )),
+        "could_not_evaluate" if reasons.is_empty() => {
+            Err("could_not_evaluate, with no reason".into())
         }
-        "satisfied" | "violated" | "could_not_evaluate" => Ok(r),
-        other => Err(bad(format!("unknown status {other:?}"))),
+        "satisfied" | "violated" | "could_not_evaluate" => Ok(()),
+        other => Err(format!("unknown status {other:?}")),
     }
+}
+
+/// The same refusals as [`parse_result`], for a question about one recorded call.
+fn parse_operator_result(
+    stdout: &str,
+    operator: &str,
+    contract: &str,
+    witness: &str,
+    container: &str,
+) -> Result<OperatorResult, LqlError> {
+    let bad =
+        |why: String| LqlError::Execution(format!("the verifier's answer was refused: {why}"));
+    let r: OperatorResult =
+        serde_json::from_str(stdout).map_err(|e| bad(format!("not a valid result: {e}")))?;
+    let mismatch = |field: &str, got: &str, want: &str| {
+        (got != want).then(|| bad(format!("its {field} is {got:?}, not {want:?}")))
+    };
+    let first = mismatch("schema", &r.schema, OPERATOR_SCHEMA)
+        .or_else(|| mismatch("contract", &r.contract, contract))
+        .or_else(|| mismatch("operator", &r.operator, operator))
+        .or_else(|| mismatch("witness", &r.witness.path, witness))
+        .or_else(|| mismatch("container", &r.container.path, container))
+        .or_else(|| mismatch("evidence kind", &r.evidence_kind, EVIDENCE_KIND))
+        .or_else(|| mismatch("witness basis", &r.witness.basis, WITNESS_BASIS));
+    if let Some(e) = first {
+        return Err(e);
+    }
+    check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
+    Ok(r)
 }
 
 fn render(r: &ContractResult) -> Vec<String> {
@@ -318,31 +453,61 @@ fn render(r: &ContractResult) -> Vec<String> {
             .as_deref()
             .unwrap_or("identity not reported")
     ));
-    out.extend(
-        r.measurements
-            .iter()
-            .map(|m| format!("  {}: {}", m.name, m.value)),
+    render_findings(
+        &mut out,
+        &r.measurements,
+        &r.offending,
+        &r.verifier,
+        &r.report_sha256,
     );
-    if !r.offending.is_empty() {
-        out.push(format!("  Offending tensors: {}", r.offending.len()));
-        for o in r.offending.iter().take(OFFENDING_SHOWN) {
-            let detail = if o.detail.is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", o.detail)
-            };
-            out.push(format!("    {}: {}{detail}", o.name, o.violations));
-        }
-        if r.offending.len() > OFFENDING_SHOWN {
-            out.push(format!(
-                "    ... and {} more",
-                r.offending.len() - OFFENDING_SHOWN
-            ));
-        }
+    out.push("  Evidence: a numerical measurement of this container, not a formal proof.".into());
+    out
+}
+
+fn render_operator(r: &OperatorResult) -> Vec<String> {
+    let verdict = if r.status == "satisfied" {
+        "SATISFIED"
+    } else {
+        "VIOLATED"
+    };
+    let mut out = vec![format!(
+        "Operator {}, contract {}: {verdict}",
+        r.operator, r.contract
+    )];
+    if !r.contract_statement.is_empty() {
+        out.push(format!("  Requires: {}", r.contract_statement));
     }
-    let by = r
-        .verifier
-        .iter()
+    out.push(format!(
+        "  Witness: {} (sha256 {}), reported by the engine, not authenticated",
+        r.witness.path,
+        r.witness.sha256.as_deref().unwrap_or("not reported")
+    ));
+    if !r.witness.reported.is_empty() {
+        out.push(format!(
+            "  The witness reports: {}",
+            key_values(&r.witness.reported)
+        ));
+    }
+    out.push(format!(
+        "  Container: {} (sha256 {})",
+        r.container.path,
+        r.container.sha256.as_deref().unwrap_or("not reported")
+    ));
+    render_findings(
+        &mut out,
+        &r.measurements,
+        &r.offending,
+        &r.verifier,
+        &r.report_sha256,
+    );
+    out.push(
+        "  Evidence: a numerical measurement of this one recorded call, not a formal proof.".into(),
+    );
+    out
+}
+
+fn key_values(map: &serde_json::Map<String, serde_json::Value>) -> String {
+    map.iter()
         .map(|(k, v)| {
             format!(
                 "{k}={}",
@@ -350,15 +515,46 @@ fn render(r: &ContractResult) -> Vec<String> {
             )
         })
         .collect::<Vec<_>>()
-        .join(", ");
+        .join(", ")
+}
+
+/// What both statements report the same way.
+fn render_findings(
+    out: &mut Vec<String>,
+    measurements: &[Measurement],
+    offending: &[Offending],
+    verifier: &serde_json::Map<String, serde_json::Value>,
+    report_sha256: &Option<String>,
+) {
+    out.extend(
+        measurements
+            .iter()
+            .map(|m| format!("  {}: {}", m.name, m.value)),
+    );
+    if !offending.is_empty() {
+        out.push(format!("  Offending tensors: {}", offending.len()));
+        for o in offending.iter().take(OFFENDING_SHOWN) {
+            let detail = if o.detail.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", o.detail)
+            };
+            out.push(format!("    {}: {}{detail}", o.name, o.violations));
+        }
+        if offending.len() > OFFENDING_SHOWN {
+            out.push(format!(
+                "    ... and {} more",
+                offending.len() - OFFENDING_SHOWN
+            ));
+        }
+    }
     out.push(format!(
-        "  Measured by: {by} (as reported by the verifier, not authenticated)"
+        "  Measured by: {} (as reported by the verifier, not authenticated)",
+        key_values(verifier)
     ));
-    if let Some(digest) = &r.report_sha256 {
+    if let Some(digest) = report_sha256 {
         out.push(format!("  Report sha256: {digest}"));
     }
-    out.push("  Evidence: a numerical measurement of this container, not a formal proof.".into());
-    out
 }
 
 #[cfg(all(test, unix))]
@@ -440,7 +636,7 @@ mod tests {
         std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let started = Instant::now();
-        let err = run_verifier(&script, "c", "a", "b", Duration::from_millis(100)).unwrap_err();
+        let err = run_verifier(&script, &["c"], Duration::from_millis(100)).unwrap_err();
         assert!(err.to_string().contains("did not finish"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(10));
     }

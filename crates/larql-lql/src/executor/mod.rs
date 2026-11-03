@@ -170,6 +170,12 @@ impl Session {
             }
             Statement::Use { target } => self.exec_use(target),
             Statement::Stats { vindex } => self.exec_stats(vindex.as_deref()),
+            Statement::VerifyOperator {
+                operator,
+                contract,
+                witness,
+                container,
+            } => self.exec_verify_operator(operator, contract, witness, container),
             Statement::VerifyRepresentation {
                 container,
                 contract,

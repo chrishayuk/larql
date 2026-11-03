@@ -1,6 +1,5 @@
-//! `VERIFY REPRESENTATION` against scripted verifiers. The real verifier lives
-//! outside this repository, on purpose, so these tests pin the protocol and
-//! every way an answer can be refused.
+//! `VERIFY REPRESENTATION` against scripted verifiers, so that these tests pin the
+//! protocol and every way an answer can be refused.
 #![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;
