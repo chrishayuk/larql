@@ -76,3 +76,4 @@ The tests are synthetic, apart from one that runs if you set `LCV_SOURCE` to a r
 ## Licence
 
 Apache-2.0, the same as LARQL. See [`LICENSE`](LICENSE).
+
