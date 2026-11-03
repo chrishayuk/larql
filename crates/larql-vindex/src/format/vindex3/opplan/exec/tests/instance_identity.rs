@@ -183,6 +183,7 @@ fn every_selected_segment_reports_how_execution_used_it() {
         .any(|s| s.object == q.object && s.copied));
 }
 
+#[cfg(unix)]
 #[test]
 fn nothing_changes_while_nothing_touches_the_file() {
     let dense = Dense::build();
@@ -237,15 +238,28 @@ fn a_comparison_ignores_the_device_and_names_each_other_field() {
 /// A failed capture is a failure, never a comparison that found nothing.
 #[test]
 fn a_failed_capture_is_reported_and_compares_as_nothing() {
+    let identity = FileIdentity {
+        platform: "test",
+        volume_uuid: None,
+        volume_uuid_source: None,
+        inode: 1,
+        size: 2,
+        mtime_ns: 3,
+        ctime_ns: 4,
+        nlink: 1,
+        device: 5,
+    };
     let dense = Dense::build();
     let (store, _, _) = dense.open();
     let mut segment = store.instance_report().segments.remove(0);
+    segment.at_open = Ok(identity.clone());
     segment.now = Err("gone".to_string());
     assert_eq!(segment.capture_failure(), Some("gone"));
     assert_eq!(segment.changed_fields(), Vec::<&str>::new());
-    segment.now = segment.at_open.clone();
+    segment.now = Ok(identity);
     segment.at_open = Err("never".to_string());
     assert_eq!(segment.capture_failure(), Some("never"));
+    assert_eq!(segment.changed_fields(), Vec::<&str>::new());
 }
 
 /// A described segment that is not on disk stays absent, and one that
