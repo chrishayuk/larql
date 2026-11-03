@@ -205,6 +205,15 @@ class Refusals(Base):
         self.write(m)
         self.refused("0 tensors", operator="not.a.tensor")
 
+    def test_a_witness_naming_the_object_is_held_to_it(self):
+        m = self.manifest()
+        m["records"][0]["object"] = self.t.object_id
+        self.write(m)
+        self.assertEqual(self.ask()["status"], "satisfied")
+        m["records"][0]["object"] = "another.object"
+        self.write(m)
+        self.refused("0 tensors")
+
     def test_a_shape_the_container_disagrees_with(self):
         n, k = self.k, self.n * 32  # the right byte count for neither, so the streams are rebuilt for it
         blocks, x = bytes(n * (k // 32) * 34), np.zeros(k, dtype=np.uint32)

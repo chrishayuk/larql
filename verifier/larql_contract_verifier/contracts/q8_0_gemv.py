@@ -100,10 +100,14 @@ def load_record(path: str, operator: str):
     return hashlib.sha256(raw).hexdigest(), m, r, n, k, blocks, x, y
 
 
-def container_tensor(container: str, operator: str, n: int, k: int) -> bytes:
-    """The container's bytes for this operator, refusing any mismatch in identity, encoding or shape."""
+def container_tensor(container: str, operator: str, n: int, k: int, obj=None) -> bytes:
+    """The container's bytes for this operator, refusing any mismatch in identity, encoding or shape.
+
+    A tensor name is only unique within its object. A witness that names the object is held to it, and one that doesn't
+    still needs the name to be unique in the container.
+    """
     c = C.open_container(container)
-    refs = [t for t in c.tensors() if t.name == operator]
+    refs = [t for t in c.tensors() if t.name == operator and (obj is None or t.object_id == obj)]
     if len(refs) != 1:
         raise WitnessError(f"the container holds {len(refs)} tensors named {operator!r}, and this needs exactly 1")
     t = refs[0]
@@ -120,9 +124,9 @@ def evaluate(out: dict, contract: str, operator: str, witness: str, container: s
     except WitnessError as e:
         return could_not(out, str(e))
     out["witness"].update(sha256=digest, reported={key: m.get(key) for key in (
-        "kernel", "execution_arm", "build_commit", "binary_sha256", "calls_observed")})
+        "kernel", "execution_arm", "component", "build_commit", "binary_sha256", "calls_observed")})
     try:
-        stored = container_tensor(container, operator, n, k)
+        stored = container_tensor(container, operator, n, k, r.get("object"))
     except (WitnessError, C.ContainerError) as e:
         return could_not(out, f"the witness can't be tied to this container: {e}")
     if stored != blocks:
