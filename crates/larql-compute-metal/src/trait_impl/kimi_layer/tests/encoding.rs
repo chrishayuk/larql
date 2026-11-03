@@ -80,7 +80,7 @@ fn max_abs(a: &[f32], b: &[f32]) -> f32 {
 /// from the smallest up to the normal boundary, in both signs.
 fn q8_bank_with_scales(scales: &[u16]) -> (Vec<u8>, Vec<ExpertOffset>) {
     let (mut bank, offsets, _) = q8_bank();
-    for (i, block) in bank.chunks_exact_mut(34).enumerate() {
+    for (i, block) in bank.as_chunks_mut::<34>().0.iter_mut().enumerate() {
         block[..2].copy_from_slice(&scales[i % scales.len()].to_le_bytes());
     }
     (bank, offsets)
