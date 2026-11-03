@@ -17,8 +17,8 @@ use super::admission::{
     AdmissionCommitted, EvidenceRequest, EvidenceSink,
 };
 use super::instance_evidence::{
-    instance_block, instance_line, instance_record, judge, post_admission_reads, EvidenceClass,
-    VerificationManifest,
+    after_run_record, before_binding_record, instance_block, instance_line, judge,
+    post_admission_reads, EvidenceClass, VerificationManifest,
 };
 use super::residency_record::{self, AttemptFacts, RunIdentity};
 use super::sealed_latency::SealedLatency;
@@ -187,9 +187,10 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     // before any weight is bound: an existing file is refused, never
     // truncated, and from here on every way out leaves a record.
     let run = RunIdentity::for_container(container);
-    // An attempt ended before its identity is judged: a campaign's evidence
-    // cannot be used, and diagnostic execution's never could.
-    let unusable = match evidence.mode {
+    // How an attempt ended before its first identity judgement is classed:
+    // a campaign's evidence cannot be used, and diagnostic execution's never
+    // could. From that judgement on, an attempt carries the judgement's class.
+    let unjudged = match evidence.mode {
         super::admission::RunMode::Campaign => EvidenceClass::Invalid,
         super::admission::RunMode::Diagnostic => EvidenceClass::Diagnostic,
     };
@@ -203,44 +204,46 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         .as_deref()
         .map(|path| SealedLatency::create(path, &run))
         .transpose()
-        .map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e))?;
+        .map_err(|e| end_before_passes(&mut regions_file, &run, unjudged, e))?;
     let sealing = sealed.is_some();
     let manifest = evidence
         .manifest
         .as_deref()
         .map(VerificationManifest::read)
         .transpose()
-        .map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e))?;
+        .map_err(|e| stop_attempt(&mut regions_file, &run, unjudged, e, &mut sealed))?;
     // Identity before binding, so an attempt on the wrong files never starts
     // the bind timer or touches the page cache for its weights.
     let index_digest = run.index_json_sha256.as_deref();
     let opening = store.instance_report();
     let judged = judge(evidence.mode, &opening, manifest.as_ref(), index_digest);
     println!("{}", instance_line("before binding", &judged));
+    let judged_early = judged.class;
     if let Some(file) = regions_file.as_mut() {
-        let record = instance_record(
+        let record = before_binding_record(
             &run,
-            "before_binding",
             instance_block(&opening, manifest.as_ref(), &judged),
             judged.class,
         );
         residency_record::write_record(file, &record)
             .and_then(|()| file.sync())
             .map_err(|e| {
-                end_before_passes(
+                stop_attempt(
                     &mut regions_file,
                     &run,
-                    unusable,
+                    judged_early,
                     format!("the identity record could not be written: {e}"),
+                    &mut sealed,
                 )
             })?;
     }
     if judged.invalid() {
-        close_sealed_before_passes(sealed);
+        let reason = judged.reason();
         return Err(
-            end_before_passes(&mut regions_file, &run, judged.class, judged.reason()).into(),
+            stop_attempt(&mut regions_file, &run, judged.class, reason, &mut sealed).into(),
         );
     }
+    let judged_class = judged.class;
     // Scheduling, declared before anything is timed: the pool the
     // production backend joins inside every step, and the machine the
     // probe sees. The boundary is the step's return — the CPU backend
@@ -266,7 +269,9 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
                  else is running; pass --unquiet-ok to run anyway, labelled",
                 disqualifiers.join("; ")
             );
-            return Err(end_before_passes(&mut regions_file, &run, unusable, refusal).into());
+            return Err(
+                stop_attempt(&mut regions_file, &run, judged_class, refusal, &mut sealed).into(),
+            );
         }
         format!("UNQUALIFIED ({})", disqualifiers.join("; "))
     };
@@ -278,13 +283,26 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         larql_vindex::format::vindex3::opplan::exec::accounting::ResidencyBudget::UNBOUNDED
             .with_expert_access(access);
     let ops = PreparedOperands::load_within(plan, store, backend, ExecutionSlice::Full, &budget)
-        .map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e.to_string()))?;
+        .map_err(|e| {
+            stop_attempt(
+                &mut regions_file,
+                &run,
+                judged_class,
+                e.to_string(),
+                &mut sealed,
+            )
+        })?;
     let load_seconds = loading.elapsed().as_secs_f64();
-    if let Some(sealed) = sealed.as_mut() {
-        sealed
-            .bind(load_seconds)
-            .map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e.to_string()))?;
-    }
+    let bound = sealed.as_mut().map_or(Ok(()), |s| s.bind(load_seconds));
+    bound.map_err(|e| {
+        stop_attempt(
+            &mut regions_file,
+            &run,
+            judged_class,
+            e.to_string(),
+            &mut sealed,
+        )
+    })?;
     println!("engine: {engine}");
     println!(
         "{}",
@@ -339,7 +357,15 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         ),
         None => Ok(()),
     };
-    written.map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e.to_string()))?;
+    written.map_err(|e| {
+        stop_attempt(
+            &mut regions_file,
+            &run,
+            judged_class,
+            e.to_string(),
+            &mut sealed,
+        )
+    })?;
     println!("observed, after binding:");
     println!(
         "  committed             {:>10.2} GB",
@@ -374,6 +400,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         disqualifiers,
         unquiet_ok,
         expert_access: access.name().to_string(),
+        representation_source: representation_source_name(store),
         sealed_latency: sealed.as_ref().map(|s| {
             std::path::absolute(s.path())
                 .unwrap_or_else(|_| s.path().to_path_buf())
@@ -389,22 +416,27 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         regions_file.as_mut().map(|f| f as &mut dyn EvidenceSink),
         &record,
     )
-    .map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e))?;
+    .map_err(|e| stop_attempt(&mut regions_file, &run, judged.class, e, &mut sealed))?;
     println!("{}", instance_line("admission", &judged));
     // Invalid evidence stops here, recorded, before any timed pass. A
     // threshold rejection did not reach this: it is not invalid.
     if judged.invalid() {
-        close_sealed_before_passes(sealed);
+        let reason = judged.reason();
         return Err(
-            end_before_passes(&mut regions_file, &run, judged.class, judged.reason()).into(),
+            stop_attempt(&mut regions_file, &run, judged.class, reason, &mut sealed).into(),
         );
     }
     let admitted_class = judged.class;
-    if let Some(sealed) = sealed.as_mut() {
-        sealed
-            .sync()
-            .map_err(|e| end_before_passes(&mut regions_file, &run, unusable, e.to_string()))?;
-    }
+    let synced = sealed.as_mut().map_or(Ok(()), SealedLatency::sync);
+    synced.map_err(|e| {
+        stop_attempt(
+            &mut regions_file,
+            &run,
+            admitted_class,
+            e.to_string(),
+            &mut sealed,
+        )
+    })?;
     // Printed only now, so the console cannot announce an unrecorded decision.
     println!("{}", admission_line(&decision));
 
@@ -447,7 +479,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     if let Some(file) = regions_file.as_mut() {
         let mut block = instance_block(&finishing, manifest.as_ref(), &judged);
         block["post_admission_reads"] = post_admission_reads(&at_admission, &finishing);
-        let record = instance_record(&run, "after_run", block, judged.class);
+        let record = after_run_record(&run, block, judged.class);
         if let Err(e) = residency_record::write_record(file, &record) {
             failures.push(format!(
                 "the after-run identity record was not written: {e}"
@@ -473,7 +505,12 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
         let error = (!failures.is_empty()).then(|| failures.join("; "));
         let ended = residency_record::write_record(
             file,
-            &residency_record::attempt_end_record(&run, error.as_deref(), final_class),
+            &residency_record::attempt_end_record(
+                &run,
+                error.as_deref(),
+                final_class,
+                sealed.as_ref().ok().and_then(Option::as_ref),
+            ),
         )
         .and_then(|()| file.sync());
         if let Err(e) = ended {
@@ -521,8 +558,18 @@ pub(in super::super) fn end_before_passes<S: EvidenceSink>(
     class: EvidenceClass,
     reason: String,
 ) -> String {
+    end_with_digest(stream, run, class, reason, None)
+}
+
+fn end_with_digest<S: EvidenceSink>(
+    stream: &mut Option<S>,
+    run: &RunIdentity,
+    class: EvidenceClass,
+    reason: String,
+    sealed: Option<&super::sealed_latency::SealedDigest>,
+) -> String {
     if let Some(out) = stream.as_mut() {
-        let record = residency_record::attempt_end_record(run, Some(&reason), class);
+        let record = residency_record::attempt_end_record(run, Some(&reason), class, sealed);
         if let Err(e) = residency_record::write_record(out, &record).and_then(|()| out.sync()) {
             eprintln!("the attempt's closing record was not written: {e}");
         }
@@ -530,19 +577,43 @@ pub(in super::super) fn end_before_passes<S: EvidenceSink>(
     reason
 }
 
-/// Finish the sealed file of an attempt stopped before its passes. Its
-/// digest goes to the console, which is not a latency: this attempt has no
-/// `after_run` header to carry it, and nothing else could show it untouched.
-fn close_sealed_before_passes(sealed: Option<SealedLatency>) {
-    match sealed.map(SealedLatency::finish).transpose() {
-        Ok(Some(digest)) => println!(
+/// [`end_before_passes`] for an attempt with a sealed file: finish it and put
+/// its digest on the closing record, and on the console, which is not a
+/// latency, for a run whose stream cannot take it. Nothing else could show
+/// the file untouched: this attempt has no `after_run` header.
+fn stop_attempt<S: EvidenceSink>(
+    stream: &mut Option<S>,
+    run: &RunIdentity,
+    class: EvidenceClass,
+    reason: String,
+    sealed: &mut Option<SealedLatency>,
+) -> String {
+    let digest = match sealed.take().map(SealedLatency::finish).transpose() {
+        Ok(digest) => digest,
+        Err(e) => {
+            eprintln!("the sealed latency file could not be finished: {e}");
+            None
+        }
+    };
+    if let Some(digest) = &digest {
+        println!(
             "sealed latency: {} sha256 {}",
             digest.path.display(),
             digest.sha256
-        ),
-        Ok(None) => {}
-        Err(e) => eprintln!("the sealed latency file could not be finished: {e}"),
+        );
     }
+    end_with_digest(stream, run, class, reason, digest.as_ref())
+}
+
+/// The store's `--representation-source`, as the flag spells it.
+fn representation_source_name(store: &OperandStore) -> String {
+    use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+    match store.representation_source() {
+        RepresentationSource::Auto => "auto",
+        RepresentationSource::Stored => "stored",
+        RepresentationSource::Transient => "transient",
+    }
+    .to_string()
 }
 
 /// The binding observation's id in the residency stream.

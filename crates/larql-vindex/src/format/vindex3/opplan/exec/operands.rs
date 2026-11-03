@@ -53,6 +53,8 @@ struct SegmentMap {
     /// The segment path as the container's index declares it, relative
     /// to the container root.
     declared: String,
+    /// The SHA-256 the container's index declares for this segment.
+    declared_sha256: String,
     payload_start: u64,
     tensors: BTreeMap<String, SegmentTensor>,
 }

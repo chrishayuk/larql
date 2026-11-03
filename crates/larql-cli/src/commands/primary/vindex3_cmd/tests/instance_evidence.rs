@@ -61,6 +61,7 @@ fn segment(
     SegmentInstance {
         object: "decoder".to_string(),
         declared: DECLARED.to_string(),
+        index_sha256: SEGMENT_HASH.to_string(),
         path: PathBuf::from("/c/segments/decoder.seg"),
         mapped: true,
         copied: false,
@@ -158,6 +159,39 @@ fn a_manifest_that_is_not_a_pre_campaign_graph_verification_is_refused() {
             "not a verification manifest",
             json!({ "schema": MANIFEST_SCHEMA }),
         ),
+        ("verified_wall", {
+            let mut m = good.clone();
+            m.as_object_mut().unwrap().remove("verified_wall");
+            m
+        }),
+        ("clock", {
+            let mut m = good.clone();
+            m.as_object_mut().unwrap().remove("clock");
+            m
+        }),
+        ("binary", {
+            let mut m = good.clone();
+            m["verifier"].as_object_mut().unwrap().remove("binary");
+            m
+        }),
+        ("command", {
+            let mut m = good.clone();
+            m["verifier"].as_object_mut().unwrap().remove("command");
+            m
+        }),
+        ("path", {
+            let mut m = good.clone();
+            m["container"].as_object_mut().unwrap().remove("path");
+            m
+        }),
+        ("volume_uuid", {
+            let mut m = good.clone();
+            m["container"]
+                .as_object_mut()
+                .unwrap()
+                .remove("volume_uuid");
+            m
+        }),
     ];
     for (needle, manifest) in cases {
         let error =
@@ -179,13 +213,13 @@ fn a_manifest_that_is_not_a_pre_campaign_graph_verification_is_refused() {
 fn a_comparison_matches_on_its_key_and_ignores_the_device() {
     let mut identity = file_identity();
     assert_eq!(
-        compare_with_manifest(DECLARED, &identity, &manifest()),
+        compare_with_manifest(DECLARED, SEGMENT_HASH, &identity, &manifest()),
         ManifestComparison::Match
     );
     identity.device = 99;
     identity.nlink = 5;
     assert_eq!(
-        compare_with_manifest(DECLARED, &identity, &manifest()),
+        compare_with_manifest(DECLARED, SEGMENT_HASH, &identity, &manifest()),
         ManifestComparison::Match,
         "neither the device nor the link count is in the manifest's key"
     );
@@ -199,11 +233,16 @@ fn a_comparison_names_every_field_that_differs() {
     identity.mtime_ns += 1;
     identity.ctime_ns += 1;
     assert_eq!(
-        compare_with_manifest(DECLARED, &identity, &manifest()),
+        compare_with_manifest(DECLARED, SEGMENT_HASH, &identity, &manifest()),
         ManifestComparison::Mismatch(vec!["inode", "size", "mtime_ns", "ctime_ns"])
     );
     assert_eq!(
-        compare_with_manifest("segments/other.seg", &file_identity(), &manifest()),
+        compare_with_manifest(
+            "segments/other.seg",
+            SEGMENT_HASH,
+            &file_identity(),
+            &manifest()
+        ),
         ManifestComparison::Absent
     );
 }
@@ -214,14 +253,24 @@ fn a_null_volume_uuid_on_either_side_is_a_mismatch() {
     let mut no_uuid = file_identity();
     no_uuid.volume_uuid = None;
     assert_eq!(
-        compare_with_manifest(DECLARED, &no_uuid, &manifest()),
+        compare_with_manifest(DECLARED, SEGMENT_HASH, &no_uuid, &manifest()),
         ManifestComparison::Mismatch(vec!["volume_uuid"])
     );
     let text = manifest_json(identity_json(&no_uuid), SEGMENT_HASH).to_string();
     let both_null = VerificationManifest::parse(Path::new("m.json"), text.as_bytes()).unwrap();
     assert_eq!(
-        compare_with_manifest(DECLARED, &no_uuid, &both_null),
+        compare_with_manifest(DECLARED, SEGMENT_HASH, &no_uuid, &both_null),
         ManifestComparison::Mismatch(vec!["volume_uuid"])
+    );
+}
+
+/// A manifest's hash must be the hash this container's index declares: one
+/// that agrees only with itself verified some other file.
+#[test]
+fn a_manifest_hash_the_index_does_not_declare_verifies_nothing() {
+    assert_eq!(
+        compare_with_manifest(DECLARED, "another", &file_identity(), &manifest()),
+        ManifestComparison::Mismatch(vec!["segment_sha256"])
     );
 }
 
@@ -233,7 +282,7 @@ fn a_manifest_whose_hashes_disagree_verifies_nothing() {
         let text = manifest_json(identity_json(&file_identity()), computed).to_string();
         let manifest = VerificationManifest::parse(Path::new("m.json"), text.as_bytes()).unwrap();
         assert_eq!(
-            compare_with_manifest(DECLARED, &file_identity(), &manifest),
+            compare_with_manifest(DECLARED, SEGMENT_HASH, &file_identity(), &manifest),
             ManifestComparison::Mismatch(vec!["segment_sha256"])
         );
     }
@@ -297,6 +346,30 @@ fn a_campaign_with_no_manifest_is_unverified_and_may_run() {
     assert_eq!(judged.class, EvidenceClass::Unverified);
     assert!(!judged.invalid());
     assert!(judged.reason().contains("no verification manifest"));
+}
+
+/// The worst category names the diagnostic, and no problem goes unnamed.
+#[test]
+fn the_reasons_name_every_problem_in_every_category() {
+    let mut moved = file_identity();
+    moved.ctime_ns += 1;
+    let facts = report(vec![
+        segment(Err("fstat failed".to_string()), Ok(file_identity())),
+        SegmentInstance {
+            declared: "segments/moved.seg".to_string(),
+            ..segment(Ok(file_identity()), Ok(moved))
+        },
+        SegmentInstance {
+            declared: "segments/unlisted.seg".to_string(),
+            ..segment(Ok(file_identity()), Ok(file_identity()))
+        },
+    ]);
+    let judged = judge(RunMode::Campaign, &facts, Some(&manifest()), Some(DIGEST));
+    assert_eq!(judged.diagnostic, IdentityDiagnostic::CaptureFailed);
+    let reason = judged.reason();
+    for named in ["fstat failed", "moved.seg", "unlisted.seg"] {
+        assert!(reason.contains(named), "{named}: {reason}");
+    }
 }
 
 #[test]
@@ -746,8 +819,8 @@ fn write_manifest(
         .map(|s| {
             json!({
                 "declared": s.declared,
-                "segment_sha256_declared": SEGMENT_HASH,
-                "segment_sha256_computed": SEGMENT_HASH,
+                "segment_sha256_declared": s.index_sha256,
+                "segment_sha256_computed": s.index_sha256,
                 "identity": identity_json(s.at_open.as_ref().unwrap()),
             })
         })
@@ -755,8 +828,10 @@ fn write_manifest(
     let mut manifest = json!({
         "schema": MANIFEST_SCHEMA,
         "phase": MANIFEST_PHASE,
-        "container": { "index_json_sha256": digest },
-        "verifier": { "path_taken": MANIFEST_PATH_TAKEN },
+        "container": { "path": "/c", "volume_uuid": UUID, "index_json_sha256": digest },
+        "verified_wall": 1.0,
+        "clock": {},
+        "verifier": { "command": "v", "binary": {}, "path_taken": MANIFEST_PATH_TAKEN },
         "segments": segments,
     });
     mutate(&mut manifest);
@@ -823,6 +898,23 @@ fn assert_full_run(stream: &[Value]) {
     assert_eq!(order[FULL_RUN.len()], ("attempt_end", ""));
 }
 
+/// A clock reading before binding, subtracted from the binding observation's
+/// start, would give away the sealed bind time.
+fn assert_undated_before_the_bind(stream: &[Value]) {
+    for record in stream {
+        if record["record"] == "observation" {
+            return;
+        }
+        for field in ["clock", "wall", "started_wall", "started_mono_ns"] {
+            assert!(
+                record.get(field).is_none(),
+                "{} before the bind carries {field}",
+                record["record"]
+            );
+        }
+    }
+}
+
 /// A campaign with no manifest runs, and says at every point that it is
 /// unverified: success does not promote it.
 #[test]
@@ -844,8 +936,10 @@ fn a_campaign_with_no_manifest_runs_and_stays_unverified() {
     .expect("an unverified attempt may execute");
     let stream = read_lines(&run.regions);
     assert_full_run(&stream);
+    assert_undated_before_the_bind(&stream);
     let admission = last(&stream, "admission");
     assert_eq!(admission["evidence_class"], "unverified");
+    assert_eq!(admission["representation_source"], "auto");
     assert_eq!(admission["binding_implementation"], BINDING_IMPLEMENTATION);
     assert_eq!(
         admission["instance_identity"]["identity_diagnostic"],
@@ -981,6 +1075,7 @@ fn a_manifest_mismatch_stops_a_campaign_before_binding() {
         assert!(end["error"].as_str().unwrap().contains(needle));
         assert_eq!(store.load_count(), 0, "no weight was read");
         assert_eq!(sealed_kinds(&run.sealed), ["header"]);
+        assert_digest_on_the_end(&end, &run.sealed);
     }
 }
 
@@ -1009,6 +1104,7 @@ fn an_unreadable_manifest_refuses_the_run_on_the_record() {
         assert_eq!(kinds(&stream), [("attempt_end", "")]);
         let class = if campaign { "invalid" } else { "diagnostic" };
         assert_eq!(stream[0]["evidence_class"], class);
+        assert_digest_on_the_end(&stream[0], &run.sealed);
     }
 }
 
@@ -1043,6 +1139,17 @@ fn a_diagnostic_run_records_a_mismatch_and_continues() {
         "mismatch"
     );
     assert_eq!(last(&stream, "attempt_end")["status"], "completed");
+}
+
+/// A stopped attempt's sealed file is finished and shown untouched on the
+/// record: it has no `after_run` header to carry the digest.
+fn assert_digest_on_the_end(end: &Value, sealed: &Path) {
+    assert_eq!(
+        end["sealed_latency"]["sha256"],
+        larql_vindex::format::checksums::sha256_file(sealed)
+            .unwrap()
+            .as_str()
+    );
 }
 
 /// Rewrite one byte of the file in place, after a clock step the timestamps
@@ -1096,7 +1203,9 @@ fn a_change_found_at_admission_stops_a_campaign_before_any_pass() {
         ]
     );
     assert_eq!(last(&stream, "admission")["evidence_class"], "invalid");
-    assert_eq!(last(&stream, "attempt_end")["evidence_class"], "invalid");
+    let end = last(&stream, "attempt_end");
+    assert_eq!(end["evidence_class"], "invalid");
+    assert_digest_on_the_end(&end, &run.sealed);
     assert!(
         !sealed_kinds(&run.sealed).iter().any(|k| k == "step"),
         "no timed pass ran"
@@ -1205,4 +1314,64 @@ fn a_failed_capture_stops_a_campaign_before_binding_and_not_a_diagnostic() {
     .expect("diagnostic execution carries on");
     let stream = read_lines(&run.regions);
     assert_eq!(last(&stream, "attempt_end")["status"], "completed");
+}
+
+/// The whole chain on a binding that maps a bank: the mapped segment is on the
+/// record, and a threshold rejection is not invalid evidence. It runs, with
+/// its latency sealed, and exits zero.
+#[test]
+#[cfg_attr(not(unix), ignore = "this platform has no descriptor identity")]
+fn a_threshold_rejection_of_a_mapped_binding_runs_and_is_not_invalid() {
+    use larql_vindex::format::vindex3::fixtures_kimi::kimi_per_expert_moe_f32_model;
+    use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+    let source = tempfile::tempdir().unwrap();
+    kimi_per_expert_moe_f32_model(source.path());
+    let dir = tempfile::tempdir().unwrap();
+    let container = dir.path().join("container");
+    run(Vindex3Command::Encode(EncodeArgs {
+        capability: None,
+        artifacts: vec![source.path().to_path_buf()],
+        output: container.clone(),
+    }))
+    .unwrap();
+    let (plan, store) = opened(&container);
+    let evidence = evidence_paths();
+    // Resident bytes above zero are what a just-written file normally has;
+    // the outcome is asserted from the record's own total, either way.
+    curve(
+        &ProductionBackend::new(),
+        &plan,
+        &store,
+        &container,
+        &evidence,
+        true,
+        None,
+        Some(0),
+    )
+    .expect("a rejection is not a failure");
+    let stream = read_lines(&evidence.regions);
+    assert_full_run(&stream);
+    let admission = last(&stream, "admission");
+    assert_eq!(admission["complete"], true);
+    let resident = admission["resident_bytes"].as_u64().unwrap();
+    let expected = if resident > 0 {
+        "above_threshold"
+    } else {
+        "admitted"
+    };
+    assert_eq!(admission["outcome"], expected);
+    assert_eq!(admission["evidence_class"], "unverified");
+    let segments = admission["instance_identity"]["segments"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        segments
+            .iter()
+            .filter(|s| s["use"]["mapped"] == true)
+            .count(),
+        1
+    );
+    assert!(segments.iter().any(|s| s["use"]["copied"] == true));
+    assert_eq!(last(&stream, "attempt_end")["status"], "completed");
+    assert!(sealed_kinds(&evidence.sealed).iter().any(|k| k == "step"));
 }

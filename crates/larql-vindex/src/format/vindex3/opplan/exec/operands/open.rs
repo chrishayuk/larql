@@ -213,6 +213,7 @@ impl OperandStore {
                     copied: std::sync::atomic::AtomicBool::new(false),
                     path,
                     declared: entry.segment.clone(),
+                    declared_sha256: entry.segment_sha256.clone(),
                     payload_start,
                     tensors: header
                         .tensors

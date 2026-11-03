@@ -103,6 +103,7 @@ fn facts(mode: RunMode) -> AttemptFacts {
         disqualifiers: vec!["on battery".to_string()],
         unquiet_ok: true,
         expert_access: "demand".to_string(),
+        representation_source: "auto".to_string(),
         sealed_latency: Some("/e/sealed.jsonl".to_string()),
         instance: json!({ "identity_diagnostic": "unverified" }),
         evidence_class: EvidenceClass::Unverified,
@@ -277,7 +278,7 @@ fn the_admission_record_carries_the_decision_and_the_attempt() {
     assert_eq!(record["binary"]["commit"], Value::Null);
     assert_eq!(record["binary"]["commit_source"], "unavailable");
     assert_eq!(record["container"]["index_json_sha256"], "ddd9");
-    // I2b has not landed: nothing here may read as a verified instance.
+    assert_eq!(record["representation_source"], "auto");
     assert_eq!(record["evidence_class"], "unverified");
     assert_eq!(
         record["instance_identity"]["identity_diagnostic"],
@@ -330,12 +331,12 @@ fn an_observation_header_carries_both_clocks_and_never_a_zero_for_a_missing_one(
 
 #[test]
 fn the_attempt_end_says_how_the_attempt_ended() {
-    let done = attempt_end_record(&identity(), None, EvidenceClass::Unverified);
+    let done = attempt_end_record(&identity(), None, EvidenceClass::Unverified, None);
     assert_eq!(done["record"], "attempt_end");
     assert_eq!(done["status"], "completed");
     assert_eq!(done["error"], Value::Null);
     assert_clock_is_on_its_named_basis(&done["clock"]);
-    let failed = attempt_end_record(&identity(), Some("boom"), EvidenceClass::Invalid);
+    let failed = attempt_end_record(&identity(), Some("boom"), EvidenceClass::Invalid, None);
     assert_eq!(failed["status"], "error");
     assert_eq!(failed["error"], "boom");
 }
@@ -1308,6 +1309,10 @@ fn a_run_id_carries_no_timestamp_and_differs_between_runs() {
 
 /// `--repeat 0` runs one pass, so one is what the record says.
 #[test]
+#[cfg_attr(
+    not(unix),
+    ignore = "a campaign stops here with no descriptor identity"
+)]
 fn the_record_says_how_many_passes_ran() {
     let (dir, container) = encoded();
     let regions = dir.path().join("regions.jsonl");

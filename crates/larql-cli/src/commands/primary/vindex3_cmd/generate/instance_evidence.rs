@@ -57,13 +57,25 @@ pub(in super::super) struct ManifestSegment {
     pub(in super::super) identity: ManifestIdentity,
 }
 
+/// Every field the format requires is required here, read or not: a file
+/// missing one is not the record a verification tool writes.
 #[derive(Deserialize)]
 struct ManifestContainer {
+    #[serde(rename = "path")]
+    _path: String,
+    // A `Value`, because a missing `Option` would read as null: the field
+    // may be null where a platform has no UUID, and must be present.
+    #[serde(rename = "volume_uuid")]
+    _volume_uuid: Value,
     index_json_sha256: String,
 }
 
 #[derive(Deserialize)]
 struct ManifestVerifier {
+    #[serde(rename = "command")]
+    _command: String,
+    #[serde(rename = "binary")]
+    _binary: Value,
     path_taken: String,
 }
 
@@ -72,6 +84,10 @@ struct ManifestFile {
     schema: String,
     phase: String,
     container: ManifestContainer,
+    #[serde(rename = "verified_wall")]
+    _verified_wall: f64,
+    #[serde(rename = "clock")]
+    _clock: Value,
     verifier: ManifestVerifier,
     segments: Vec<ManifestSegment>,
 }
@@ -142,7 +158,8 @@ impl VerificationManifest {
 pub(in super::super) enum ManifestComparison {
     /// No manifest was supplied.
     NotSupplied,
-    /// The key fields are equal and the manifest's two hashes agree. Change
+    /// The key fields are equal, and the manifest's computed hash, its
+    /// declared hash and the container index's hash all agree. Change
     /// detection, not proof of these bytes.
     Match,
     /// Named fields differ, or cannot be compared.
@@ -170,6 +187,7 @@ impl ManifestComparison {
 /// it is a mismatch: a platform with no UUID cannot satisfy a manifest.
 pub(in super::super) fn compare_with_manifest(
     declared: &str,
+    index_sha256: &str,
     identity: &FileIdentity,
     manifest: &VerificationManifest,
 ) -> ManifestComparison {
@@ -181,7 +199,8 @@ pub(in super::super) fn compare_with_manifest(
         (Some(a), Some(b)) if a == b
     );
     let same_hash = !entry.segment_sha256_computed.is_empty()
-        && entry.segment_sha256_computed == entry.segment_sha256_declared;
+        && entry.segment_sha256_computed == entry.segment_sha256_declared
+        && entry.segment_sha256_declared == index_sha256;
     let differing: Vec<&'static str> = [
         (!same_volume, "volume_uuid"),
         (identity.inode != entry.identity.inode, "inode"),
@@ -236,7 +255,8 @@ pub(in super::super) enum EvidenceClass {
     /// A campaign attempt with no manifest. It may run, and it cannot
     /// become a qualified observation by succeeding.
     Unverified,
-    /// A campaign attempt whose identity failed. Excluded.
+    /// A campaign attempt whose identity failed, or that ended before any
+    /// identity was judged. Excluded.
     Invalid,
     /// A campaign attempt whose monitored facts agree with its manifest.
     /// Subject to the stated limits and to the evaluator: not "verified".
@@ -269,7 +289,8 @@ pub(in super::super) fn evidence_class(
     }
 }
 
-/// One moment's facts, judged. The reasons name every problem found.
+/// One moment's facts, judged. The diagnostic is the worst category found;
+/// the reasons name every problem in every category.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in super::super) struct InstanceJudgement {
     pub(in super::super) diagnostic: IdentityDiagnostic,
@@ -321,7 +342,7 @@ pub(in super::super) fn judge(
             ));
         }
         if let (Some(manifest), Ok(now)) = (manifest, &segment.now) {
-            match compare_with_manifest(&segment.declared, now, manifest) {
+            match compare_with_manifest(&segment.declared, &segment.index_sha256, now, manifest) {
                 ManifestComparison::Absent => {
                     mismatches.push(format!("`{}` is not in the manifest", segment.declared));
                 }
@@ -341,20 +362,25 @@ pub(in super::super) fn judge(
             );
         }
     }
-    let (diagnostic, reasons) = if !captures.is_empty() {
-        (IdentityDiagnostic::CaptureFailed, captures)
+    let diagnostic = if !captures.is_empty() {
+        IdentityDiagnostic::CaptureFailed
     } else if !changes.is_empty() {
-        (IdentityDiagnostic::Changed, changes)
+        IdentityDiagnostic::Changed
     } else if !mismatches.is_empty() {
-        (IdentityDiagnostic::Mismatch, mismatches)
+        IdentityDiagnostic::Mismatch
     } else if manifest.is_none() {
-        (
-            IdentityDiagnostic::Unverified,
-            vec!["no verification manifest was supplied".to_string()],
-        )
+        IdentityDiagnostic::Unverified
     } else {
-        (IdentityDiagnostic::ConsistentWithManifest, Vec::new())
+        IdentityDiagnostic::ConsistentWithManifest
     };
+    let mut reasons: Vec<String> = captures
+        .into_iter()
+        .chain(changes)
+        .chain(mismatches)
+        .collect();
+    if manifest.is_none() {
+        reasons.push("no verification manifest was supplied".to_string());
+    }
     InstanceJudgement {
         diagnostic,
         class: evidence_class(mode, diagnostic),
@@ -397,6 +423,7 @@ pub(in super::super) fn scope_block() -> Value {
         "plan_to_bind": "selected headers are re-read through the retained descriptors; that does \
                          not show the planner read identical bytes, so this record does not \
                          establish complete verification-to-execution identity",
+        "not_recorded_here": "plugins and lowerings loaded in-process are outside these facts",
         "content": "metadata detects change and does not prove content: a write can be missed, \
                     identity can be restored, and an extended attribute or a hard link moves the \
                     ctime with no content change; writable mappers are forbidden by protocol and \
@@ -421,7 +448,7 @@ pub(in super::super) fn instance_block(
             let comparison = match (manifest, &segment.now) {
                 (None, _) => ManifestComparison::NotSupplied,
                 (Some(manifest), Ok(now)) => {
-                    compare_with_manifest(&segment.declared, now, manifest)
+                    compare_with_manifest(&segment.declared, &segment.index_sha256, now, manifest)
                 }
                 (Some(_), Err(_)) => ManifestComparison::Mismatch(vec!["capture"]),
             };
@@ -461,11 +488,12 @@ pub(in super::super) fn instance_block(
     })
 }
 
-/// A standalone identity record, for the moments with no admission record
-/// to carry it: before binding, and after the run.
-pub(in super::super) fn instance_record(
+/// The identity record written before binding. **It carries no reading of
+/// any clock.** The next record is the binding observation, whose bounds are
+/// on the system-wide clock, so a time here would let any reader of the
+/// stream subtract its way to the bind time that `--sealed-latency` seals.
+pub(in super::super) fn before_binding_record(
     run: &RunIdentity,
-    phase: &str,
     block: Value,
     class: EvidenceClass,
 ) -> Value {
@@ -473,7 +501,24 @@ pub(in super::super) fn instance_record(
         "schema": SCHEMA,
         "record": "instance_identity",
         "run_id": run.run_id,
-        "phase": phase,
+        "phase": "before_binding",
+        "evidence_class": class.name(),
+        "instance_identity": block,
+    })
+}
+
+/// The identity record written after the run, timed like the after-run
+/// observation beside it.
+pub(in super::super) fn after_run_record(
+    run: &RunIdentity,
+    block: Value,
+    class: EvidenceClass,
+) -> Value {
+    json!({
+        "schema": SCHEMA,
+        "record": "instance_identity",
+        "run_id": run.run_id,
+        "phase": "after_run",
         "evidence_class": class.name(),
         "instance_identity": block,
         "clock": point_clock(),

@@ -338,8 +338,12 @@ mod unix {
 
         std::thread::sleep(TIMESTAMP_STEP);
         let replacement = path.with_extension("replacement");
+        // The operand's own bytes differ, so reading the path would show.
+        let (header, payload_start) = read_segment_header(&path).unwrap();
+        let tensor = header.tensors.iter().find(|t| t.name == q.tensor).unwrap();
+        let start = (payload_start + tensor.offset) as usize;
         let mut bytes = std::fs::read(&path).unwrap();
-        for byte in bytes.iter_mut().rev().take(original.len()) {
+        for byte in &mut bytes[start..start + original.len()] {
             *byte = !*byte;
         }
         std::fs::write(&replacement, &bytes).unwrap();
@@ -554,7 +558,9 @@ mod bound {
         // The control: the same container reopened reads the zeros, so the
         // replacement really was different bytes.
         let (_, reopened) = open_container(subject.container());
-        let zeroed = execute_plan(&plan, &reopened, &tokens, &backend);
-        assert!(zeroed.map_or(true, |output| output.logits.as_ref() != Some(&expected)));
+        let zeroed = execute_plan(&plan, &reopened, &tokens, &backend)
+            .expect("zeroed weights still execute")
+            .logits;
+        assert_ne!(zeroed.as_ref(), Some(&expected));
     }
 }

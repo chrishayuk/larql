@@ -225,6 +225,10 @@ pub struct SegmentInstance {
     pub object: String,
     /// The path the container's index declares, relative to its root.
     pub declared: String,
+    /// The SHA-256 the container's index declares for this segment: what a
+    /// manifest's verified hash is compared with. Read from `index.json` by
+    /// path, so it says what the index claims and binds nothing.
+    pub index_sha256: String,
     /// Diagnostic only: identity never comes from this path.
     pub path: PathBuf,
     /// Whether a region of this segment was mapped.
@@ -283,6 +287,7 @@ impl OperandStore {
             .map(|(object, segment)| SegmentInstance {
                 object: object.clone(),
                 declared: segment.declared.clone(),
+                index_sha256: segment.declared_sha256.clone(),
                 path: segment.path.clone(),
                 mapped: mapped.contains_key(object),
                 copied: segment.copied.load(std::sync::atomic::Ordering::Relaxed),

@@ -31,11 +31,18 @@ use super::GB;
 ///
 /// `/4` (MEM-002 I2b): `instance_identity` on the admission record is now
 /// the facts (it said `not_recorded`), with an `evidence_class` beside it
-/// and on `attempt_end`; a new `instance_identity` record before binding and
-/// after the run; `binding_implementation` on the admission record, because
-/// a bind time from a binary before I2b is a different implementation's. An
-/// `invalid` class on an `attempt_end` means the evidence cannot be used,
-/// which is not `above_threshold`: that is an ordinary rejection.
+/// and on `attempt_end`; a new `instance_identity` record before binding (it
+/// carries no clock, so the stream cannot date the bind) and after the run;
+/// `representation_source` and `binding_implementation` on the admission
+/// record, because a bind time from a binary before I2b is a different
+/// implementation's. `attempt_end` carries a finished sealed file's digest.
+///
+/// On `attempt_end`, `status` says whether the attempt completed and
+/// `evidence_class` is its identity's last reading; both must allow an
+/// attempt's use. `invalid` means its identity failed, or that it ended
+/// before any was judged. An attempt that ended with `status: error` is not
+/// usable whatever its class. `above_threshold` is neither: it is an
+/// ordinary rejection of usable evidence.
 ///
 /// `/3` (MEM-002 I2a): a new `admission` record, written and flushed
 /// after the binding observation and before any pass; a closing
@@ -205,6 +212,8 @@ pub(in super::super) struct AttemptFacts {
     pub(in super::super) disqualifiers: Vec<String>,
     pub(in super::super) unquiet_ok: bool,
     pub(in super::super) expert_access: String,
+    /// `auto`, `stored`: a campaign refuses `transient`.
+    pub(in super::super) representation_source: String,
     pub(in super::super) sealed_latency: Option<String>,
     /// The `instance_identity` block, at this moment.
     pub(in super::super) instance: Value,
@@ -243,6 +252,7 @@ pub(in super::super) fn admission_record(
         "warmup": facts.warmup,
         "repeat": facts.repeat,
         "expert_access": facts.expert_access,
+        "representation_source": facts.representation_source,
         "quiet": {
             "qualification": facts.qualification,
             "disqualifiers": facts.disqualifiers,
@@ -264,6 +274,7 @@ pub(in super::super) fn attempt_end_record(
     run: &RunIdentity,
     error: Option<&str>,
     class: EvidenceClass,
+    sealed: Option<&SealedDigest>,
 ) -> Value {
     json!({
         "schema": SCHEMA,
@@ -272,6 +283,10 @@ pub(in super::super) fn attempt_end_record(
         "status": if error.is_some() { "error" } else { "completed" },
         "error": error,
         "evidence_class": class.name(),
+        "sealed_latency": sealed.map(|d| json!({
+            "path": d.path.display().to_string(),
+            "sha256": d.sha256,
+        })),
         "clock": point_clock(),
         "wall": wall_seconds(SystemTime::now()),
     })

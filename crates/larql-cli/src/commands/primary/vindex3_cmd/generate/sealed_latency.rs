@@ -14,8 +14,11 @@
 //! and after the run, so a reader can compute the whole attempt's
 //! admission-to-after-run duration, which on a one-pass cold arm is close
 //! to the pass's latency. The evidence files' own timestamps give the same
-//! figure. Keeping that aggregate out of a decision is a matter of the
-//! protocol's access rules; nothing here enforces it.
+//! figure, and a file's creation time against the binding observation's
+//! start approximates the bind. Keeping those out of a decision is a matter
+//! of the protocol's access rules; nothing here enforces it. No record in
+//! the stream before the binding observation carries a clock reading, so the
+//! stream alone cannot date the bind.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};

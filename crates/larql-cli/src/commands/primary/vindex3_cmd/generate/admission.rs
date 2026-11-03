@@ -159,10 +159,6 @@ pub(in super::super) struct EvidencePlan {
     pub(in super::super) manifest: Option<PathBuf>,
 }
 
-/// The `--representation-source` value whose precision map comes from an
-/// unbound pack header.
-const REPRESENTATION_SOURCE_TRANSIENT: &str = "transient";
-
 /// Refuse evidence flags on a run that would never reach the residency
 /// curve. Those paths create no evidence file and print their timings, so
 /// a run marked as a campaign attempt would be unsealed and unrecorded and
@@ -194,7 +190,10 @@ pub(in super::super) fn refuse_evidence_outside_the_curve(
         ));
     }
     if args.residency_campaign {
-        if args.representation_source == REPRESENTATION_SOURCE_TRANSIENT {
+        if matches!(
+            super::super::prepare::parse_representation_source(&args.representation_source),
+            Ok(larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource::Transient)
+        ) {
             return Err(
                 "a --residency-campaign attempt refuses --representation-source transient: \
                  the pack header deciding its precision map is read by path before the store \
