@@ -867,6 +867,31 @@ satisfied without changing the model, so a result must not gate a release on thi
 The protocol, `larql-verify-contract/1`, how a verifier is found, and what enforces the
 verifier's independence are in `docs/verification/`.
 
+```sql
+VERIFY OPERATOR "<tensor>" USING CONTRACT "<id>" IN WITNESS "<witness.json>" AGAINST "<container>";
+
+-- Judge one recorded kernel call against a numerical contract, using an independent
+-- verifier. <witness.json> is what `vindex3 exec --gemv-witness` wrote.
+
+VERIFY OPERATOR "0.self_attn.q_proj.weight"
+  USING CONTRACT "Q8_0_GEMV_SEQ"
+  IN WITNESS "evidence/witness.json"
+  AGAINST "qwen3-0.6b-q8_0.vindex3";
+```
+
+**The statement never runs the engine.** It reads a witness an earlier run wrote, and the verifier ties that witness to the operator and the container's bytes before judging it. If it can't, the
+answer is `could_not_evaluate`, which is an error here as above. `<tensor>` is the name the container uses.
+
+| Contract | Question | What a violation means |
+|---|---|---|
+| `Q8_0_GEMV_SEQ` | Is the recorded output exactly a declared floating-point program's? | The kernel isn't running that program. It doesn't mean less accurate: a more accurate kernel violates this too |
+| `Q8_0_GEMV_B1` | Is it within a stated bound of exact arithmetic? | It's further from the exact result than the bound allows |
+
+**These answer different questions, so ask for each one.** There's no combined result, and neither one means "correct".
+
+- **`Q8_0_GEMV_B1` is experimental:** a measured bound check on one call, not a machine-checked proof. The bound is loose, so satisfying it doesn't rule out small defects.
+- **A witness is the engine's own report.** A result says the recorded output is right for the recorded input and the container's bytes. It can't show the production kernel produced it, and the output says the witness isn't authenticated. Together with an unauthenticated verifier, this means a result must not gate a release.
+
 **`larql lql` exit status:**
 
 | Exit | Meaning |

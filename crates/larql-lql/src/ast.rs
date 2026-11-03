@@ -185,6 +185,13 @@ pub enum Statement {
         contract: String,
         source: String,
     },
+    /// `VERIFY OPERATOR "<tensor>" USING CONTRACT "<id>" IN WITNESS "<file>" AGAINST "<container>";`
+    VerifyOperator {
+        operator: String,
+        contract: String,
+        witness: String,
+        container: String,
+    },
     Stats {
         vindex: Option<String>,
     },
@@ -263,6 +270,7 @@ impl Statement {
             Statement::ShowProvenance { .. } => "SHOW PROVENANCE",
             Statement::ShowAuthority => "SHOW AUTHORITY",
             Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
+            Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",

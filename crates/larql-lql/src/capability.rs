@@ -120,6 +120,7 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | Diff { .. }
         | Use { .. }
         | VerifyRepresentation { .. }
+        | VerifyOperator { .. }
         | Insert { .. }
         | Delete { .. }
         | Update { .. }
