@@ -243,12 +243,63 @@ pub fn realign_segment(path: &Path, out: &Path) -> Result<(u64, u64), VindexErro
 }
 
 pub fn read_segment_header(path: &Path) -> Result<(SegmentHeader, u64), VindexError> {
-    use std::io::Read;
+    read_segment_header_from(&std::fs::File::open(path)?, path)
+}
+
+/// Fill `buffer` from `file` at `offset`, leaving no shared position to
+/// race on: two threads reading one descriptor cannot get each other's
+/// bytes, which seek-then-read on it would silently allow.
+pub(crate) fn read_exact_at(
+    file: &std::fs::File,
+    buffer: &mut [u8],
+    offset: u64,
+) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::FileExt::read_exact_at(file, buffer, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let mut filled = 0usize;
+        while filled < buffer.len() {
+            match file.seek_read(&mut buffer[filled..], offset + filled as u64) {
+                Ok(0) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "failed to fill the whole buffer",
+                    ))
+                }
+                Ok(read) => filled += read,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (file, buffer, offset);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "positional reads are not available on this target",
+        ))
+    }
+}
+
+/// [`read_segment_header`] through a descriptor the caller already holds,
+/// so the header and what follows come from one opened file. `path` only
+/// names the file in errors.
+pub(crate) fn read_segment_header_from(
+    file: &std::fs::File,
+    path: &Path,
+) -> Result<(SegmentHeader, u64), VindexError> {
     /// Bound mirrors the writer's practical header sizes.
     const MAX_HEADER_BYTES: u64 = 256 * 1024 * 1024;
-    let mut file = std::fs::File::open(path)?;
-    let mut len_bytes = [0u8; 8];
-    file.read_exact(&mut len_bytes)?;
+    /// The header's length prefix.
+    const LENGTH_PREFIX: usize = 8;
+    let mut len_bytes = [0u8; LENGTH_PREFIX];
+    read_exact_at(file, &mut len_bytes, 0)?;
     let header_len = u64::from_le_bytes(len_bytes);
     if header_len > MAX_HEADER_BYTES {
         return Err(VindexError::Parse(format!(
@@ -257,8 +308,8 @@ pub fn read_segment_header(path: &Path) -> Result<(SegmentHeader, u64), VindexEr
         )));
     }
     let mut header_bytes = vec![0u8; header_len as usize];
-    file.read_exact(&mut header_bytes)?;
+    read_exact_at(file, &mut header_bytes, LENGTH_PREFIX as u64)?;
     let header: SegmentHeader = serde_json::from_slice(&header_bytes)
         .map_err(|e| VindexError::Parse(format!("{}: segment header: {e}", path.display())))?;
-    Ok((header, 8 + header_len))
+    Ok((header, LENGTH_PREFIX as u64 + header_len))
 }

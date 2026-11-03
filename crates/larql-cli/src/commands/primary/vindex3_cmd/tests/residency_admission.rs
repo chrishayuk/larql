@@ -20,6 +20,7 @@ use super::super::generate::admission::{
     refuse_evidence_outside_the_curve, AdmissionOutcome, AdmissionThreshold, EvidenceRequest,
     EvidenceSink, RunMode, COUNTING,
 };
+use super::super::generate::instance_evidence::EvidenceClass;
 use super::super::generate::residency_record::{
     admission_record, attempt_end_record, observation_records, point_clock, sealed_header_fields,
     write_observation_with, AttemptFacts, RunIdentity, SCHEMA,
@@ -102,7 +103,11 @@ fn facts(mode: RunMode) -> AttemptFacts {
         disqualifiers: vec!["on battery".to_string()],
         unquiet_ok: true,
         expert_access: "demand".to_string(),
+        representation_source: "auto".to_string(),
         sealed_latency: Some("/e/sealed.jsonl".to_string()),
+        instance: json!({ "identity_diagnostic": "unverified" }),
+        execution: json!({ "complete": true }),
+        evidence_class: EvidenceClass::Unverified,
     }
 }
 
@@ -251,7 +256,7 @@ fn the_admission_record_carries_the_decision_and_the_attempt() {
     let decision = decide(&complete(THRESHOLD + 1), Some(&threshold(THRESHOLD)));
     let record = admission_record(&identity(), 7, &decision, &facts(RunMode::Campaign));
     assert_eq!(record["schema"], SCHEMA);
-    assert_eq!(SCHEMA, "larql.residency-observation/3");
+    assert_eq!(SCHEMA, "larql.residency-observation/4");
     assert_eq!(record["record"], "admission");
     assert_eq!(record["run_id"], "run-1");
     assert_eq!(record["binding_observation_id"], 7);
@@ -274,8 +279,12 @@ fn the_admission_record_carries_the_decision_and_the_attempt() {
     assert_eq!(record["binary"]["commit"], Value::Null);
     assert_eq!(record["binary"]["commit_source"], "unavailable");
     assert_eq!(record["container"]["index_json_sha256"], "ddd9");
-    // I2b has not landed: nothing here may read as a verified instance.
-    assert_eq!(record["instance_identity"]["status"], "not_recorded");
+    assert_eq!(record["representation_source"], "auto");
+    assert_eq!(record["evidence_class"], "unverified");
+    assert_eq!(
+        record["instance_identity"]["identity_diagnostic"],
+        "unverified"
+    );
     assert_clock_is_on_its_named_basis(&record["clock"]);
     assert_eq!(record["clock"]["system_mono_ns"].is_u64(), cfg!(unix));
 }
@@ -323,12 +332,12 @@ fn an_observation_header_carries_both_clocks_and_never_a_zero_for_a_missing_one(
 
 #[test]
 fn the_attempt_end_says_how_the_attempt_ended() {
-    let done = attempt_end_record(&identity(), None);
+    let done = attempt_end_record(&identity(), None, EvidenceClass::Unverified, None);
     assert_eq!(done["record"], "attempt_end");
     assert_eq!(done["status"], "completed");
     assert_eq!(done["error"], Value::Null);
     assert_clock_is_on_its_named_basis(&done["clock"]);
-    let failed = attempt_end_record(&identity(), Some("boom"));
+    let failed = attempt_end_record(&identity(), Some("boom"), EvidenceClass::Invalid, None);
     assert_eq!(failed["status"], "error");
     assert_eq!(failed["error"], "boom");
 }
@@ -445,7 +454,12 @@ fn only_diagnostic_execution_may_go_unrecorded() {
 #[test]
 fn an_attempt_ended_before_the_passes_leaves_its_reason() {
     let mut stream = Some(Sink::default());
-    let reason = end_before_passes(&mut stream, &identity(), "not quiet".to_string());
+    let reason = end_before_passes(
+        &mut stream,
+        &identity(),
+        EvidenceClass::Invalid,
+        "not quiet".to_string(),
+    );
     assert_eq!(reason, "not quiet");
     let sink = stream.unwrap();
     assert_eq!(sink.synced_bytes, Some(sink.bytes.len()));
@@ -460,12 +474,22 @@ fn an_attempt_ended_before_the_passes_leaves_its_reason() {
         ..Sink::default()
     });
     assert_eq!(
-        end_before_passes(&mut broken, &identity(), "bind failed".to_string()),
+        end_before_passes(
+            &mut broken,
+            &identity(),
+            EvidenceClass::Invalid,
+            "bind failed".to_string()
+        ),
         "bind failed"
     );
     let mut none: Option<Sink> = None;
     assert_eq!(
-        end_before_passes(&mut none, &identity(), "x".to_string()),
+        end_before_passes(
+            &mut none,
+            &identity(),
+            EvidenceClass::Invalid,
+            "x".to_string()
+        ),
         "x"
     );
 }
@@ -496,8 +520,10 @@ fn every_incomplete_campaign_request_is_refused() {
                 campaign: true,
                 regions: Some(regions),
                 sealed_latency: Some(sealed),
+                manifest: None,
                 threshold_bytes: Some(1),
                 basis: Some("  "),
+                execution: Default::default(),
             },
             "blank",
         ),
@@ -562,8 +588,10 @@ fn a_scored_attempt_keeps_its_threshold_and_basis_verbatim() {
         campaign: true,
         regions: Some(Path::new("r")),
         sealed_latency: Some(Path::new("s")),
+        manifest: None,
         threshold_bytes: Some(THRESHOLD),
         basis: Some(BASIS),
+        execution: Default::default(),
     })
     .unwrap();
     assert_eq!(plan.threshold, Some(threshold(THRESHOLD)));
@@ -780,6 +808,7 @@ fn run_curve(container: &Path, curve: Curve) -> Result<(), Box<dyn std::error::E
         residency_regions: curve.regions,
         sealed_latency: curve.sealed,
         residency_campaign: curve.campaign,
+        verification_manifest: None,
         admission_threshold_bytes: curve.threshold,
         admission_basis: curve.basis,
         expert_access: "demand".to_string(),
@@ -802,10 +831,23 @@ fn read_lines(path: &Path) -> Vec<Value> {
     parse_lines(&std::fs::read_to_string(path).expect("the record is written"))
 }
 
+/// The stream without its identity records, which `instance_evidence`
+/// pins, so what these tests pin stands on its own.
+fn without_identity(stream: Vec<Value>) -> Vec<Value> {
+    stream
+        .into_iter()
+        .filter(|v| v["record"] != "instance_identity")
+        .collect()
+}
+
 /// A refused attempt is still executed, timed and recorded, and its
 /// latency stays out of the residency stream. No region is mapped here,
 /// so the witness is empty: refused, with no resident total at all.
 #[test]
+#[cfg_attr(
+    not(unix),
+    ignore = "a campaign stops here with no descriptor identity"
+)]
 fn a_refused_campaign_attempt_runs_and_is_recorded_before_and_after_the_passes() {
     let (dir, container) = encoded();
     let regions = dir.path().join("regions.jsonl");
@@ -823,7 +865,7 @@ fn a_refused_campaign_attempt_runs_and_is_recorded_before_and_after_the_passes()
     )
     .expect("a refused attempt still completes");
 
-    let stream = read_lines(&regions);
+    let stream = without_identity(read_lines(&regions));
     let order: Vec<&str> = stream
         .iter()
         .map(|v| v["record"].as_str().unwrap())
@@ -907,6 +949,10 @@ fn a_refused_campaign_attempt_runs_and_is_recorded_before_and_after_the_passes()
 
 /// An attempt whose passes fail still closes its record, with the error.
 #[test]
+#[cfg_attr(
+    not(unix),
+    ignore = "a campaign stops here with no descriptor identity"
+)]
 fn an_attempt_whose_passes_fail_records_how_it_ended() {
     let (dir, container) = encoded();
     let regions = dir.path().join("regions.jsonl");
@@ -922,7 +968,7 @@ fn an_attempt_whose_passes_fail_records_how_it_ended() {
         },
     )
     .expect_err("a token past the vocabulary cannot be stepped");
-    let stream = read_lines(&regions);
+    let stream = without_identity(read_lines(&regions));
     let order: Vec<&str> = stream
         .iter()
         .map(|v| v["record"].as_str().unwrap())
@@ -950,6 +996,10 @@ fn an_attempt_whose_passes_fail_records_how_it_ended() {
 /// Weights that cannot be bound are an attempt too: the stream says how it
 /// ended, with no admission and no pass.
 #[test]
+#[cfg_attr(
+    not(unix),
+    ignore = "a campaign stops here with no descriptor identity"
+)]
 fn an_attempt_whose_weights_cannot_be_bound_records_how_it_ended() {
     let (dir, container) = encoded();
     for entry in walk(&container) {
@@ -977,7 +1027,7 @@ fn an_attempt_whose_weights_cannot_be_bound_records_how_it_ended() {
         regions.exists(),
         "failed before the curve began, so this does not test binding: {err}"
     );
-    let stream = read_lines(&regions);
+    let stream = without_identity(read_lines(&regions));
     assert_eq!(stream.len(), 1, "{stream:?}");
     assert_eq!(stream[0]["record"], "attempt_end");
     assert_eq!(stream[0]["status"], "error");
@@ -1014,7 +1064,7 @@ fn diagnostic_runs_keep_working_with_and_without_sealing() {
         },
     )
     .expect("a sealed diagnostic run");
-    let stream = read_lines(&regions);
+    let stream = without_identity(read_lines(&regions));
     assert_eq!(stream[1]["mode"], "diagnostic");
     assert!(sealed.exists());
 
@@ -1096,7 +1146,7 @@ fn an_existing_sealed_file_refuses_the_attempt_on_the_record() {
     .to_string();
     assert!(err.contains("already exists"), "{err}");
     assert_eq!(std::fs::read_to_string(&sealed).unwrap(), "sealed earlier");
-    let stream = read_lines(&regions);
+    let stream = without_identity(read_lines(&regions));
     assert_eq!(stream.len(), 1, "{stream:?}");
     assert_eq!(stream[0]["record"], "attempt_end");
     assert_eq!(stream[0]["status"], "error");
@@ -1123,6 +1173,7 @@ fn evidence_args(container: &Path, regions: &Path, sealed: &Path) -> ExecArgs {
         residency_regions: Some(regions.to_path_buf()),
         sealed_latency: Some(sealed.to_path_buf()),
         residency_campaign: true,
+        verification_manifest: None,
         admission_threshold_bytes: None,
         admission_basis: None,
         expert_access: "demand".to_string(),
@@ -1213,12 +1264,14 @@ fn evidence_flags_are_refused_on_every_path_that_bypasses_the_curve() {
     let sealed_only = ExecArgs {
         residency_regions: None,
         residency_campaign: false,
+        verification_manifest: None,
         ..args()
     };
     assert!(refuse_evidence_outside_the_curve(&sealed_only, true).is_err());
     let regions_only = ExecArgs {
         sealed_latency: None,
         residency_campaign: false,
+        verification_manifest: None,
         ..args()
     };
     assert!(refuse_evidence_outside_the_curve(&regions_only, true).is_err());
@@ -1227,6 +1280,7 @@ fn evidence_flags_are_refused_on_every_path_that_bypasses_the_curve() {
     // and a run with no evidence flag is none of this check's business.
     let diagnostic = ExecArgs {
         residency_campaign: false,
+        verification_manifest: None,
         stop_at_eos: true,
         ..args()
     };
@@ -1235,6 +1289,7 @@ fn evidence_flags_are_refused_on_every_path_that_bypasses_the_curve() {
         residency_regions: None,
         sealed_latency: None,
         residency_campaign: false,
+        verification_manifest: None,
         bank: Some(dir.path().join("bank.jsonl")),
         ..args()
     };
@@ -1257,6 +1312,10 @@ fn a_run_id_carries_no_timestamp_and_differs_between_runs() {
 
 /// `--repeat 0` runs one pass, so one is what the record says.
 #[test]
+#[cfg_attr(
+    not(unix),
+    ignore = "a campaign stops here with no descriptor identity"
+)]
 fn the_record_says_how_many_passes_ran() {
     let (dir, container) = encoded();
     let regions = dir.path().join("regions.jsonl");
@@ -1265,7 +1324,7 @@ fn the_record_says_how_many_passes_ran() {
         ..evidence_args(&container, &regions, &dir.path().join("sealed.jsonl"))
     };
     run(Vindex3Command::Exec(args)).unwrap();
-    assert_eq!(read_lines(&regions)[1]["repeat"], 1);
+    assert_eq!(without_identity(read_lines(&regions))[1]["repeat"], 1);
 }
 
 #[test]

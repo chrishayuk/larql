@@ -116,6 +116,18 @@ fn a_satisfied_contract_reports_its_evidence() {
 }
 
 #[test]
+fn the_output_says_the_verifier_identity_is_not_authenticated() {
+    let f = Fixture::new();
+    let out = f
+        .run(&f.verifier(&f.answer("satisfied", 0).to_string(), 0))
+        .unwrap()
+        .join("\n");
+    let line = out.lines().find(|l| l.contains("Measured by")).unwrap();
+    assert!(line.contains("refcheck_commit=e505afc"), "{line}");
+    assert!(line.contains("not authenticated"), "{line}");
+}
+
+#[test]
 fn a_violation_is_an_answer_not_an_error_and_names_the_tensors() {
     let f = Fixture::new();
     let out = f

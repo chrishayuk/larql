@@ -276,7 +276,7 @@ pub struct ExecArgs {
     #[arg(long, requires = "residency_curve")]
     pub unquiet_ok: bool,
     /// With `--residency-curve`: write every mapped region's residency to
-    /// this file as JSON Lines (`larql.residency-observation/3`) — one
+    /// this file as JSON Lines (`larql.residency-observation/4`) — one
     /// observation at binding, the admission decision, written and flushed
     /// before any pass runs, one observation after the run, and the
     /// attempt's end. A region whose residency could not be read is
@@ -296,6 +296,14 @@ pub struct ExecArgs {
     /// execution.
     #[arg(long, requires_all = ["residency_curve", "residency_regions", "sealed_latency"])]
     pub residency_campaign: bool,
+    /// With `--residency-curve`: a verification manifest
+    /// (`larql.verification-manifest/1`, phase `pre`) another tool made
+    /// before the campaign. Each selected segment's identity is compared
+    /// with it, and it is recorded by digest. Without one, a campaign
+    /// attempt may run, but only as `unverified`: it cannot become qualified
+    /// evidence by succeeding. This build reads manifests and makes none.
+    #[arg(long, requires = "residency_curve")]
+    pub verification_manifest: Option<PathBuf>,
     /// The most resident bytes a binding may hold and still be admitted,
     /// from a frozen protocol — never a default. Needs
     /// `--residency-campaign` and `--admission-basis`. Without it, a

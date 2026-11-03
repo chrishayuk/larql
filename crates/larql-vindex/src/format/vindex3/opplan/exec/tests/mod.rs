@@ -134,6 +134,7 @@ mod generate_real;
 mod golden;
 mod head_observation;
 mod head_observation_gates;
+mod instance_identity;
 mod kernels;
 mod kimi_per_expert_prepared;
 mod kquant_projection;

@@ -6,16 +6,20 @@
 //! excluded from them until it is unsealed, and the run's console prints
 //! no timing while it is active. It is created exclusively, refused
 //! attempts' timings go to it like any other, and its SHA-256 is written
-//! into the residency stream's `after_run` header so it can be shown
-//! untouched when unsealed.
+//! into the residency stream's `after_run` header, or onto `attempt_end` for
+//! an attempt stopped before its passes, so it can be shown untouched when
+//! unsealed.
 //!
 //! **What the seal does not cover.** It seals per-step, per-stage and bind
 //! values. The residency stream still carries clock readings at admission
 //! and after the run, so a reader can compute the whole attempt's
 //! admission-to-after-run duration, which on a one-pass cold arm is close
 //! to the pass's latency. The evidence files' own timestamps give the same
-//! figure. Keeping that aggregate out of a decision is a matter of the
-//! protocol's access rules; nothing here enforces it.
+//! figure, and a file's creation time against the binding observation's
+//! start approximates the bind. Keeping those out of a decision is a matter
+//! of the protocol's access rules; nothing here enforces it. No record in
+//! the stream before the binding observation carries a clock reading, so the
+//! stream alone cannot date the bind.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};

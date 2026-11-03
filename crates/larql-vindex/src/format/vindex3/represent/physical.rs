@@ -120,6 +120,31 @@ impl PhysicalStore {
         })
     }
 
+    /// Map a segment through a descriptor the caller opened and read the
+    /// header from, so the mapping and the header are one file. The mapping
+    /// is the same as [`Self::map_segment`]'s; what goes is the second open
+    /// and the second parse of the header.
+    pub(crate) fn map_opened_segment(
+        id: impl Into<String>,
+        file: &std::fs::File,
+        path: &Path,
+        tensors: BTreeMap<String, (u64, u64)>,
+        payload_start: u64,
+    ) -> Result<Self, VindexError> {
+        // SAFETY: the descriptor is read-only and the mapping is owned by
+        // this store; regions borrow from it and cannot outlive it.
+        let mmap = unsafe { memmap2::Mmap::map(file) }
+            .map_err(|e| VindexError::Parse(format!("{}: mmap failed: {e}", path.display())))?;
+        Ok(Self {
+            id: id.into(),
+            backing: Backing::Mapped(mmap),
+            source_path: Some(path.to_path_buf()),
+            declared_segment: None,
+            tensors,
+            payload_start,
+        })
+    }
+
     /// A store over bytes already in memory, laid out by an explicit
     /// table — a compiled bank whose offsets came from its layout, or a
     /// fixture.
