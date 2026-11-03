@@ -25,12 +25,12 @@ The directory is new: an existing one is refused. `witness.json` is written last
   "binary_sha256": "4d80dd42…",
   "container": "/models/m.vindex3",
   "representation": "Q8_0",
-  "calls_observed": 1120,
+  "calls_observed": 3136,
   "operands_noted": 196,
   "records": [
     {
       "call": 0,
-      "tensor": "layers.0.self_attn.q_proj.weight",
+      "tensor": "0.self_attn.q_proj.weight",
       "encoding": "Q8_0",
       "rows": 1024,
       "columns": 1024,
