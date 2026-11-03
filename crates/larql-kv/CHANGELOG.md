@@ -61,16 +61,18 @@ matching the directory, equal declared and stored sizes, and no encryption flags
   ZIP64 extensible data sector as well as a prefix.
 - A comment or trailing bytes holding a bogus end signature, since that is then the
   last one. A comment holding a consistent end record selects that record, as numpy and
-  `zip` 9.2.2 do. An ordinary comment or trailing bytes load, with two exceptions. A
-  record ending 64 KiB or more from the file's end is refused: a 65,535-byte comment plus
-  1 trailing byte is refused here and loads in numpy. A comment is also refused on a
-  record whose directory offset spells the end signature, which numpy refuses too.
+  `zip` 9.2.2 do. An ordinary comment or trailing bytes load, with two kinds of exception.
+  A record ending 64 KiB or more from the file's end is refused: a 65,535-byte comment
+  plus 1 trailing byte is refused here and loads in numpy. A comment or trailing bytes are
+  also refused when the record's own fields, or those fields running into the comment,
+  spell the end signature, such as a directory offset of that value or a record count and
+  directory length that together spell it. numpy refuses these too.
 - `.npy` minor versions other than 1.0, which numpy refuses too.
-- Any `.npy` header not in the writer's form: other key order or spacing, Fortran order,
-  extra keys and Python 2 `3L` shapes among them. `.npy` format 2.0 and 3.0 are refused.
-  Honest files from old numpy or non-numpy writers may be refused by this, including
-  headers numpy itself loads, such as a `3L` shape or one with no trailing comma. No real
-  files from such writers have been tried.
+- Any window, `entries` or boundary `.npy` header not in the writer's form: other key
+  order or spacing, Fortran order and extra keys among them. Python 2 `3L` shapes were
+  already refused. `.npy` format 2.0 and 3.0 are refused. Honest files from old numpy or
+  non-numpy writers may be refused by this, including headers numpy itself loads, such as
+  one with no trailing comma. No real files from such writers have been tried.
 - Overlapping members, including records sharing a payload, and data reaching into the
   directory. Declared and stored sizes that differ.
 - More than one `entries.npy`, a bare `entries` beside it, or no member named exactly
@@ -86,8 +88,9 @@ matching the directory, equal declared and stored sizes, and no encryption flags
 with numpy, `zipfile` or `zip` is not claimed, and this parser won't be extended for it.
 Known cases, all from crafted files:
 
-- A file with another zip before it, concatenated or as a prefix: `zip` can read the
-  earlier archive's directory, while this reader and numpy read the last.
+- A file with another zip before it, concatenated or as a prefix: `zip` 2.4.2 and 3.0.0
+  can read the earlier archive's directory, while this reader, numpy and `zip` 9.2.2 read
+  the last.
 - A comment holding a consistent end record: `zip` 2.4.2 and 3.0.0 read the outer archive,
   while this reader, numpy and `zip` 9.2.2 read the one in the comment. 2.4.2 is the
   version locked as this crate's dev-dependency. The load path doesn't use `zip`.
@@ -100,7 +103,9 @@ Known cases, all from crafted files:
 
 - A residual that can't be read, is not a regular file, is over its limit or hits a
   refused allocation is now an error. It used to read as absent. A missing residual
-  or one whose contents don't parse still reads as absent.
+  or one whose contents don't parse reads as absent, with no error, and the stricter
+  header check widens that: a residual whose header isn't in the writer's form used to
+  load in some cases, such as no trailing comma, and now silently reads as absent.
 - `StoreLoadError::Zip` is replaced by `StoreLoadError::Archive`, with a typed
   `ArchiveError`. A failed member CRC is now `ArchiveError::CrcMismatch`, not `Io`.
 - `num_windows` over `max_records` is `TooManyRecords` rather than the first missing
