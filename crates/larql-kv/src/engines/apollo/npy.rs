@@ -27,7 +27,7 @@ pub struct NpyHeader<'a> {
 pub enum NpyError {
     #[error("file is not a valid .npy (bad magic)")]
     BadMagic,
-    #[error("unsupported .npy version {0}.{1} (need 1.x)")]
+    #[error("unsupported .npy version {0}.{1} (need 1.0)")]
     UnsupportedVersion(u8, u8),
     #[error("truncated .npy header")]
     TruncatedHeader,
@@ -177,7 +177,7 @@ pub fn parse_header(bytes: &[u8]) -> Result<(NpyHeader<'_>, usize), NpyError> {
     }
     let major = bytes[6];
     let minor = bytes[7];
-    if major != 1 {
+    if major != 1 || minor != 0 {
         return Err(NpyError::UnsupportedVersion(major, minor));
     }
     let header_len = u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
@@ -385,6 +385,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_header_rejects_a_minor_version_numpy_refuses() {
+        let mut blob = vec![0u8; 16];
+        blob[..6].copy_from_slice(b"\x93NUMPY");
+        blob[6] = 1; // major
+        blob[7] = 1; // minor
+        let err = parse_header(&blob).unwrap_err();
+        assert!(matches!(err, NpyError::UnsupportedVersion(1, 1)), "{err:?}");
+    }
+
+    #[test]
     fn parse_header_truncated_after_header_len() {
         // Magic + ver + a header_len that points past the buffer end.
         let mut blob = Vec::new();
@@ -463,6 +473,4 @@ mod tests {
             other => panic!("expected ParseField, got {other:?}"),
         }
     }
-
-    // ── Header field-parsing helpers ──────────────────────────────────────
 }

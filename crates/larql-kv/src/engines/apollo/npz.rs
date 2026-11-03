@@ -375,10 +375,7 @@ fn find_directory(regular: &mut RegularFile) -> Result<Directory, StoreLoadError
         .seek(SeekFrom::Start(tail_at))
         .map_err(io_err)?;
     let tail = read_exactly(&mut regular.file, tail_len, &path)?;
-    let last_signature = tail
-        .windows(SIGNATURE_LEN)
-        .rposition(|window| window == END_RECORD_SIGNATURE);
-    let end_record = last_signature.and_then(|index| Some((index, tail.get(index..)?)));
+    let end_record = end_record_position(&tail).and_then(|index| Some((index, tail.get(index..)?)));
     if let Some((index, end)) = end_record.filter(|(_, end)| end.len() >= END_RECORD_LEN as usize) {
         let end_at = tail_at + index as u64;
         let found = directory_from_end_record(&mut regular.file, end, end_at, regular.len)
@@ -390,6 +387,23 @@ fn find_directory(regular: &mut RegularFile) -> Result<Directory, StoreLoadError
     Err(StoreLoadError::Archive {
         path: path.to_string(),
         source: ArchiveError::NoEndRecord,
+    })
+}
+
+/// Where the end record starts in the file's tail: the zero-comment position if a
+/// record there says it has no comment, otherwise the last signature. The order
+/// matters. A record's own fields can spell the signature (a directory at offset
+/// 0x06054B50 does), and scanning first would take those bytes for the record.
+/// `zipfile` looks in this order too.
+fn end_record_position(tail: &[u8]) -> Option<usize> {
+    const COMMENT_LEN_AT: usize = 20;
+    let zero_comment_at = tail.len().checked_sub(END_RECORD_LEN as usize);
+    let at_zero_comment = zero_comment_at.filter(|&at| {
+        tail[at..].starts_with(&END_RECORD_SIGNATURE) && tail[at + COMMENT_LEN_AT..] == [0, 0]
+    });
+    at_zero_comment.or_else(|| {
+        tail.windows(SIGNATURE_LEN)
+            .rposition(|window| window == END_RECORD_SIGNATURE)
     })
 }
 

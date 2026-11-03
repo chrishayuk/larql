@@ -43,8 +43,8 @@ headers, paths and error text.
 **Refused by structure.** `.npy` headers must be exactly the layout numpy's writer
 produces for format 1.0, `{'descr': X, 'fortran_order': False, 'shape': (...), }` with
 spaces and a newline as padding, and `descr` must be one of the three known strings,
-compared whole. The end record is the last signature in the final 64 KiB, with no
-fallback. Members must have disjoint extents before the directory, a local name
+compared whole. The end record is the one at the zero-comment position if it says it
+has no comment, otherwise the last signature in the final 64 KiB, with no fallback. Members must have disjoint extents before the directory, a local name
 matching the directory, equal declared and stored sizes, and no encryption flags.
 
 **Newly refused:**

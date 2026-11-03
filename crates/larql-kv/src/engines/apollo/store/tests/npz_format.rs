@@ -118,6 +118,47 @@ fn end_signature_past_the_comment_is_refused() {
     assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
 }
 
+/// A directory offset whose little-endian bytes are the end record's signature
+/// puts those bytes in the record's own fields. The record at the zero-comment
+/// position is the real one; `zipfile` looks there first too. A hole keeps the
+/// file cheap, and the bytes before the directory are never read.
+#[test]
+fn directory_offset_spelling_the_end_signature_loads() {
+    use std::io::{Seek, SeekFrom, Write};
+    const SIGNATURE_AS_OFFSET: u32 = u32::from_le_bytes(*b"PK\x05\x06");
+    const DIRECTORY_OFFSET_AT: usize = 16;
+    let mut archive = raw_archive(&[member()]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    let offset_at = end_at + DIRECTORY_OFFSET_AT;
+    let directory_at =
+        u32::from_le_bytes(archive[offset_at..offset_at + 4].try_into().unwrap()) as usize;
+    archive[offset_at..offset_at + 4].copy_from_slice(&SIGNATURE_AS_OFFSET.to_le_bytes());
+
+    let dir = store_with_archive(WINDOW_TOKENS_NPZ, &archive[..directory_at]);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(dir.path().join(WINDOW_TOKENS_NPZ))
+        .unwrap();
+    file.seek(SeekFrom::Start(u64::from(SIGNATURE_AS_OFFSET)))
+        .unwrap();
+    file.write_all(&archive[directory_at..]).unwrap();
+    drop(file);
+
+    let store = ApolloStore::load(dir.path()).expect("a real archive with this offset loads");
+    assert_eq!(store.window_tokens, vec![TOKENS.to_vec()]);
+}
+
+/// The zero-comment position only wins when it says zero comment: a record
+/// there claiming a comment past the end of the file is not the end record.
+#[test]
+fn signature_at_the_zero_comment_position_with_a_comment_is_not_the_end_record() {
+    let mut archive = raw_archive(&[member()]);
+    archive.extend_from_slice(END_RECORD_SIGNATURE);
+    archive.extend_from_slice(&[0u8; END_RECORD_LEN - END_RECORD_SIGNATURE.len() - 2]);
+    archive.extend_from_slice(&1u16.to_le_bytes());
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
 #[test]
 fn bytes_after_the_comment_load() {
     let mut archive = raw_archive(&[member()]);
