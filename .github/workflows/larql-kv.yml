@@ -105,8 +105,7 @@ jobs:
       # Chocolatey is preinstalled on the windows-latest runner.
       - name: Install protoc (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install protoc -y --no-progress
+        uses: ./.github/actions/install-protoc-windows
 
       - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6
