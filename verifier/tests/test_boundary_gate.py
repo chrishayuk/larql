@@ -64,5 +64,63 @@ class Override(unittest.TestCase):
         self.assertEqual(len(gate.override_problems("write", [])), 2)
 
 
+class ReviewEvidence(unittest.TestCase):
+    HEAD = "abcdef0123456789abcdef0123456789abcdef01"
+
+    def evidence(self, approvals=(), statements=()):
+        return gate.has_review_evidence("author", self.HEAD, approvals, statements)
+
+    def exception(self, sha=None, reason="the only maintainer, reviewed by a fresh-context model"):
+        return f"Verifier-review exception ({sha or self.HEAD[:12]}): {reason}"
+
+    def test_what_needs_it(self):
+        for path in (
+            "verifier/README.md",
+            "verifier/tests/test_e1.py",
+            "docs/verification/independence.md",
+            "scripts/check_verifier_boundary.py",
+            ".github/workflows/verifier.yml",
+            ".github/workflows/verifier-boundary.yml",
+            ".github/CODEOWNERS",
+        ):
+            self.assertEqual(gate.owned([path]), [path], path)
+
+    def test_what_does_not(self):
+        for path in ("crates/x/src/lib.rs", "docs/spec.md", "scripts/x.py", ".github/workflows/quality.yml", "xverifier/a"):
+            self.assertEqual(gate.owned([path]), [], path)
+
+    def test_nothing_on_the_record_is_refused(self):
+        self.assertFalse(self.evidence())
+
+    def test_another_maintainers_approval_of_the_head_counts(self):
+        for role in ("admin", "maintain"):
+            self.assertTrue(self.evidence(approvals=[("other", role, self.HEAD)]))
+
+    def test_an_approval_of_an_older_commit_does_not_count(self):
+        self.assertFalse(self.evidence(approvals=[("other", "admin", "0" * 40)]))
+
+    def test_an_authors_own_approval_does_not_count(self):
+        self.assertFalse(self.evidence(approvals=[("author", "admin", self.HEAD)]))
+
+    def test_an_approval_from_anyone_else_does_not_count(self):
+        for role in ("write", "triage", "read", None):
+            self.assertFalse(self.evidence(approvals=[("other", role, self.HEAD)]), role)
+
+    def test_a_maintainers_exception_naming_the_head_counts(self):
+        self.assertTrue(self.evidence(statements=[("admin", self.exception())]))
+        self.assertTrue(self.evidence(statements=[("admin", "Reviewed.\n\n" + self.exception(self.HEAD) + "\n")]))
+
+    def test_an_exception_for_an_older_commit_does_not_count(self):
+        self.assertFalse(self.evidence(statements=[("admin", self.exception("1234567"))]))
+
+    def test_an_exception_from_anyone_else_does_not_count(self):
+        for role in ("write", "triage", "read", None):
+            self.assertFalse(self.evidence(statements=[(role, self.exception())]), role)
+
+    def test_an_exception_needs_a_reason_and_a_real_sha(self):
+        for text in (self.exception(reason=""), f"Verifier-review exception: because", self.exception("abc"), None, ""):
+            self.assertFalse(self.evidence(statements=[("admin", text)]), repr(text))
+
+
 if __name__ == "__main__":
     unittest.main()
