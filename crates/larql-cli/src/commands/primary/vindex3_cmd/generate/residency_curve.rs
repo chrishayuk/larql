@@ -19,7 +19,7 @@ use super::admission::{
 };
 use super::execution_evidence::{
     after_run_execution, class_with_execution, effective_execution, execution_line,
-    selection_block, selection_problems,
+    selection_block, selection_line, selection_problems,
 };
 use super::instance_evidence::{
     after_run_record, before_binding_record, instance_block, instance_line, judge,
@@ -226,7 +226,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let wanted = evidence.execution.wanted_encoding.as_deref();
     let requested = evidence.execution.block();
     let selection_faults = selection_problems(wanted, store.selection(), &opening.absent_objects);
-    println!("{}", execution_line("before binding", &selection_faults));
+    println!("{}", selection_line(&selection_faults));
     let judged_early = class_with_execution(evidence.mode, judged.class, &selection_faults);
     if let Some(file) = regions_file.as_mut() {
         let mut record = before_binding_record(
@@ -496,7 +496,13 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let judged = judge(evidence.mode, &finishing, manifest.as_ref(), index_digest);
     println!("{}", instance_line("after run", &judged));
     let ran = after_run_execution(&effective);
-    println!("{}", execution_line("after run", &ran.problems));
+    let known: Vec<String> = effective
+        .problems
+        .iter()
+        .chain(&ran.problems)
+        .cloned()
+        .collect();
+    println!("{}", execution_line("after run", &known));
     let finishing_class = class_with_execution(evidence.mode, judged.class, &ran.problems);
     let final_class = if finishing_class == EvidenceClass::Invalid {
         failures.push(stop_reason(&judged, &ran.problems));

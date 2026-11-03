@@ -193,7 +193,9 @@ when a wanted encoding:
 - has no operand running it in place, so a pack that only serves a gathered embedding table
   doesn't count;
 - has a pin that decodes or requantises it, which is how `LARQL_KQUANT_EXEC=widen` shows;
-- comes from a container with no precision program;
+- comes from a container with no precision program for that encoding, which also refuses
+  a whole pack in an older container with no program, or a layered one whose program names
+  another encoding;
 - leaves an object without a pack that the container's precision program compiles;
 - has a pinned kernel the ledger never counted, found after the run: the attempt's record is
   kept whole and marked invalid.
@@ -210,14 +212,26 @@ and gave byte-identical logits. Equal digests don't show either run is right.
 - **Coverage is judged by object, against the program.** A tensor carried verbatim inside a
   pack, or held at source by a program exception such as `--protect-layers`, is recorded and
   not refused. So a pack can execute little of itself and be complete: a Q4_K pack with most
-  layers protected ran 7 of 198 pins in place. `realizations` and `projection_plans_ran` show
-  how much. A protocol that needs more must say so.
+  layers protected ran 7 of 198 pins in place, and with every decoder layer protected and the
+  head compiled, 1 of 198, generating what canonical bytes generate. `realizations` shows how
+  much was pinned. A protocol that needs more must say so.
 - **A precision program names roles, not `--object`.** A role whose tensors are all in an
   object with no pack is refused even if a compile was narrowed on purpose. That fails closed.
   An object whose tensors could not hold the encoding at all reads the same way.
-- **A bank already held as MXFP4 is exempt**, because real containers name `expert-weight` in
-  their program and leave that bank alone.
-- **A form with no named kernel can't be checked against the ledger:** a mapped bank has none.
+- **A stored MXFP4 label is exempt**, because real containers name `expert-weight` in their
+  program and leave that bank alone. The test reads the label, not the operation.
+- **A form with no named kernel can't be checked against the ledger.** Mapped and sliced banks
+  have none: all 48 expert pins of a real `gpt-oss` run appear in `realizations` and produce no
+  ledger row.
+- **The ledger check's firing path has not run for real.** No prompt tried missed a pinned kernel.
+  `ran_problems` is pinned on constructed facts, and the line from it to the after-run class on
+  reading: a campaign refuses the plugins that could force it.
+- **A selected pack for an object outside the component** is still judged missing if it isn't on
+  disk. That fails closed.
+- **A store that can't bind ends with status `error`** and the class it held by then, not `invalid`:
+  two full packs of different encodings refuse at load this way. Read the status with the class.
+- **`process.kquant_execution` reads the process setting.** It can say `Widen` beside `Direct` pins
+  under a provider that ignores it. Read the pins.
 - **Process settings are recorded, not refused**, unless they change what a wanted encoding's
   pins do. `execution_digest` moves with them.
 - **`execution_digest` doesn't bind the model.** File identity is the other half of the record.

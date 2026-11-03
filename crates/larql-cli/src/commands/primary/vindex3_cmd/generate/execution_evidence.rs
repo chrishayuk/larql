@@ -197,8 +197,9 @@ pub(in super::super) struct EffectiveFacts {
     pub(in super::super) overlaid: bool,
     /// Why the process's arithmetic could not be read, if it could not.
     pub(in super::super) process_error: Option<String>,
-    /// The container declares a precision program.
-    pub(in super::super) program_declared: bool,
+    /// The encoding the container's precision program compiles to, if it
+    /// declares one.
+    pub(in super::super) program_encoding: Option<String>,
 }
 
 /// Why this execution's identity is incomplete, or is not what was asked for.
@@ -251,10 +252,12 @@ fn wanted_problems(wanted: &str, facts: &EffectiveFacts) -> Vec<String> {
              decode or requantise instead of running it"
         ));
     }
-    if !facts.program_declared {
+    // A program for another encoding says nothing about this one, so it can't
+    // show coverage any more than no program can.
+    if facts.program_encoding.as_deref() != Some(wanted) {
         problems.push(format!(
-            "encoding {wanted} was asked for and the container declares no precision program, \
-             so an object without a pack can't be told from one left out on purpose"
+            "encoding {wanted} was asked for and the container declares no precision program \
+             for it, so an object without a pack can't be told from one left out on purpose"
         ));
     }
     let mut uncompiled: Vec<&str> = facts
@@ -314,19 +317,19 @@ pub(in super::super) fn effective_execution<B: PlanBackend>(
             .collect(),
         overlaid: ops.source_stamp().is_overlaid(),
         process_error: identity.as_ref().err().map(ToString::to_string),
-        program_declared: store.program().is_some(),
+        program_encoding: store.program().map(|program| program.encoding.clone()),
     };
     let problems = effective_problems(wanted, &facts);
-    let mut wanted_plans: Vec<String> = records
+    let pinned: Vec<(&str, RealizationForm)> = records
         .iter()
-        .filter(|record| Some(record.representation.as_str()) == wanted)
-        .filter_map(|record| match record.selection.realization.form {
-            RealizationForm::Direct(plan) => Some(format!("{plan:?}")),
-            _ => None,
+        .map(|record| {
+            (
+                record.representation.as_str(),
+                record.selection.realization.form,
+            )
         })
         .collect();
-    wanted_plans.sort();
-    wanted_plans.dedup();
+    let wanted_plans = wanted_plans(&pinned, wanted);
     let provenance = ExecutionProvenance::of(ops);
     let block = json!({
         "complete": problems.is_empty(),
@@ -349,6 +352,26 @@ pub(in super::super) fn effective_execution<B: PlanBackend>(
         problems,
         wanted_plans,
     }
+}
+
+/// The kernels the pins say run the wanted encoding in place. A form with no
+/// named kernel adds none, and neither does a pin from any other encoding: a
+/// plan every run counts couldn't show the wanted kernel ran.
+pub(in super::super) fn wanted_plans(
+    pinned: &[(&str, RealizationForm)],
+    wanted: Option<&str>,
+) -> Vec<String> {
+    let mut plans: Vec<String> = pinned
+        .iter()
+        .filter(|(representation, _)| Some(*representation) == wanted)
+        .filter_map(|(_, form)| match form {
+            RealizationForm::Direct(plan) => Some(format!("{plan:?}")),
+            _ => None,
+        })
+        .collect();
+    plans.sort();
+    plans.dedup();
+    plans
 }
 
 /// One line of the executor's ledger, without its timings.
@@ -429,11 +452,25 @@ pub(in super::super) fn class_with_execution(
     }
 }
 
-/// The console's account of the execution judged at `when`.
+/// The console's account of the execution judged at `when`, from every problem
+/// known by then, so it can't read cleaner than the record.
 pub(in super::super) fn execution_line(when: &str, problems: &[String]) -> String {
     if problems.is_empty() {
         format!("execution identity ({when}): complete")
     } else {
         format!("execution identity ({when}): {}", problems.join("; "))
+    }
+}
+
+/// The console's account of the selection before anything is bound: nothing has
+/// been pinned yet, so it can't be called complete.
+pub(in super::super) fn selection_line(problems: &[String]) -> String {
+    if problems.is_empty() {
+        "execution selection (before binding): no problem found; nothing pinned yet".to_string()
+    } else {
+        format!(
+            "execution selection (before binding): {}",
+            problems.join("; ")
+        )
     }
 }

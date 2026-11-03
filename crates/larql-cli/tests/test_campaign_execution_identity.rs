@@ -393,6 +393,104 @@ fn a_pack_that_leaves_the_wanted_kernel_unused_stops_a_campaign_at_admission() {
     assert_eq!(recorded.admission()["evidence_class"], "diagnostic");
 }
 
+/// The review's bypass: a head-only NVFP4 pack under a Q4_K program. One in-place
+/// pin, canonical bytes everywhere else, and a program that says nothing about
+/// NVFP4.
+#[test]
+fn a_precision_program_for_another_encoding_stops_a_campaign_at_admission() {
+    let root = tempfile::tempdir().unwrap();
+    let canonical = canonical_container(root.path());
+    let head = packed_with(
+        root.path(),
+        &canonical,
+        NVFP4,
+        "head",
+        &[
+            "--object",
+            "target.output_head",
+            "--include-role",
+            "output-head",
+        ],
+    );
+    let layered = packed_with(root.path(), &head, Q4_K, "over-head", &[]);
+    let refused = campaign(&layered, &["--backend", "production-nvfp4"]);
+    assert_ne!(refused.code, Some(0));
+    assert_eq!(refused.admission()["evidence_class"], "invalid");
+    assert!(
+        refused.err.contains("no precision program for it"),
+        "{}",
+        refused.err
+    );
+    assert!(
+        !refused.err.contains("no operand runs it in place"),
+        "the in-place pin should pass, leaving only the program to catch this: {}",
+        refused.err
+    );
+}
+
+/// An older container: its pack may be whole, and nothing says so.
+#[test]
+fn a_container_with_no_precision_program_stops_a_campaign_and_not_a_diagnostic_run() {
+    let root = tempfile::tempdir().unwrap();
+    let canonical = canonical_container(root.path());
+    let packed = packed_container(root.path(), &canonical, NVFP4);
+    let path = packed.join("index.json");
+    let mut index: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    index.as_object_mut().unwrap().remove("precision_map");
+    std::fs::write(&path, index.to_string()).unwrap();
+    let backend = ["--backend", "production-nvfp4"];
+
+    let refused = campaign(&packed, &backend);
+    assert_ne!(refused.code, Some(0));
+    assert_eq!(refused.admission()["evidence_class"], "invalid");
+    assert!(
+        refused.err.contains("no precision program for it"),
+        "{}",
+        refused.err
+    );
+
+    let recorded = diagnostic(&packed, &backend);
+    assert_eq!(recorded.code, Some(0), "{}", recorded.err);
+    assert_eq!(recorded.execution()["complete"], false);
+    // The console can't read cleaner than the record.
+    assert!(
+        recorded
+            .out
+            .contains("execution identity (after run): encoding NVFP4"),
+        "{}",
+        recorded.out
+    );
+
+    assert_eq!(
+        campaign(&packed, &["--backend", "production"]).code,
+        Some(0)
+    );
+}
+
+/// A gathered embedding table beside kernels in place, as real containers have.
+#[test]
+fn a_compiled_embedding_table_beside_a_compiled_decoder_is_complete() {
+    let root = tempfile::tempdir().unwrap();
+    let canonical = canonical_container(root.path());
+    let packed = packed_with(
+        root.path(),
+        &canonical,
+        NVFP4,
+        "embedding-too",
+        &["--include-role", "embedding"],
+    );
+    let ran = campaign(&packed, &["--backend", "production-nvfp4"]);
+    assert_eq!(ran.code, Some(0), "{}", ran.err);
+    let execution = ran.execution();
+    assert_eq!(execution["complete"], true, "{execution}");
+    let gathered = execution["realizations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["representation"] == NVFP4 && r["form"].as_str().unwrap().contains("Gather"));
+    assert!(gathered, "{execution}");
+}
+
 /// A protected layer is the program's own decision, so it isn't a fallback.
 #[test]
 fn a_protected_layer_is_recorded_and_not_refused() {

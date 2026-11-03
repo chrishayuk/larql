@@ -10,7 +10,8 @@ use larql_vindex::format::vindex3::opplan::exec::operands::SelectedRepresentatio
 use super::super::generate::admission::RunMode;
 use super::super::generate::execution_evidence::{
     class_with_execution, effective_problems, execution_line, ran_problems, selection_block,
-    selection_problems, EffectiveFacts, ExecutionRequest, PinFacts, PinUse, PlanRan,
+    selection_line, selection_problems, wanted_plans, EffectiveFacts, ExecutionRequest, PinFacts,
+    PinUse, PlanRan,
 };
 use super::super::generate::instance_evidence::EvidenceClass;
 use super::super::prepare::{backend_flag_name, campaign_supports_backend, wanted_encoding};
@@ -56,7 +57,7 @@ fn sound() -> EffectiveFacts {
         ],
         overlaid: false,
         process_error: None,
-        program_declared: true,
+        program_encoding: Some(WANTED.to_string()),
     }
 }
 
@@ -159,11 +160,40 @@ fn a_pin_that_converts_the_wanted_encoding_is_a_fallback() {
 #[test]
 fn a_container_with_no_precision_program_cannot_show_its_coverage() {
     let facts = EffectiveFacts {
-        program_declared: false,
+        program_encoding: None,
         ..sound()
     };
     one_problem(&facts, Some(WANTED), "no precision program");
     assert!(effective_problems(None, &facts).is_empty());
+}
+
+/// A Q4_K program says nothing about what an NVFP4 request should have compiled.
+#[test]
+fn a_precision_program_for_another_encoding_cannot_show_its_coverage() {
+    let facts = EffectiveFacts {
+        program_encoding: Some("Q4_K".to_string()),
+        ..sound()
+    };
+    one_problem(&facts, Some(WANTED), "no precision program");
+}
+
+/// Only an in-place kernel of the wanted encoding counts, or a plan every run
+/// counts would satisfy the ledger check.
+#[test]
+fn only_a_kernel_running_the_wanted_encoding_is_looked_for_in_the_ledger() {
+    use larql_vindex::format::vindex3::opplan::exec::cpu::physical::PhysicalProjectionPlan as Plan;
+    use larql_vindex::format::vindex3::opplan::exec::realization::RealizationForm as Form;
+    let pinned = [
+        (WANTED, Form::Direct(Plan::FusedNvfp4)),
+        (WANTED, Form::Direct(Plan::FusedNvfp4)),
+        (WANTED, Form::Decode(Plan::BlasF32)),
+        (WANTED, Form::DecodedGather),
+        (CANONICAL, Form::Direct(Plan::BlasF32)),
+        (CANONICAL, Form::Decode(Plan::BlasF32)),
+    ];
+    assert_eq!(wanted_plans(&pinned, Some(WANTED)), ["FusedNvfp4"]);
+    assert!(wanted_plans(&pinned, None).is_empty());
+    assert!(wanted_plans(&pinned, Some("Q4_K")).is_empty());
 }
 
 fn compiled_elsewhere(representation: &str, object_from_pack: bool) -> PinFacts {
@@ -305,6 +335,11 @@ fn the_console_line_says_what_was_found() {
     assert_eq!(
         execution_line("admission", &[]),
         "execution identity (admission): complete"
+    );
+    assert!(selection_line(&[]).contains("nothing pinned yet"));
+    assert_eq!(
+        selection_line(&["a".to_string()]),
+        "execution selection (before binding): a"
     );
     let line = execution_line("after run", &["a".to_string(), "b".to_string()]);
     assert_eq!(line, "execution identity (after run): a; b");
