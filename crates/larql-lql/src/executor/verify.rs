@@ -116,6 +116,9 @@ impl Session {
                 result.reasons.join("; ")
             )));
         }
+        if result.status == "violated" {
+            self.contract_violations += 1;
+        }
         Ok(render(&result))
     }
 }

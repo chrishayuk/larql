@@ -83,6 +83,8 @@ pub struct Session {
     pub(crate) mutations_since_major: usize,
     /// The external verifier for `VERIFY REPRESENTATION`, if set explicitly.
     pub(crate) verifier: Option<std::path::PathBuf>,
+    /// `VERIFY REPRESENTATION` statements in this session that reported `violated`.
+    pub(crate) contract_violations: usize,
 }
 
 impl Default for Session {
@@ -106,6 +108,7 @@ impl Session {
             mutations_since_minor: 0,
             mutations_since_major: 0,
             verifier: None,
+            contract_violations: 0,
         }
     }
 
@@ -127,6 +130,12 @@ impl Session {
     /// reads `LARQL_VERIFIER`; with neither, the statement refuses.
     pub fn set_verifier(&mut self, verifier: impl Into<std::path::PathBuf>) {
         self.verifier = Some(verifier.into());
+    }
+
+    /// How many `VERIFY REPRESENTATION` statements in this session reported
+    /// `violated`. They return normally, so this is the way to tell.
+    pub fn contract_violations(&self) -> usize {
+        self.contract_violations
     }
 
     /// Constrain every subsequent `execute` to `profile`. Judged at

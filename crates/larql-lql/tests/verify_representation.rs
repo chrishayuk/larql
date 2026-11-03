@@ -286,3 +286,27 @@ fn it_parses_case_insensitively_with_either_quote_and_rejects_partial_forms() {
         assert!(parse(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn the_session_counts_violations_and_nothing_else() {
+    let f = Fixture::new();
+    let stmt = parse(&f.statement()).unwrap();
+    let mut session = Session::new();
+
+    session.set_verifier(f.verifier(&f.answer("satisfied", 0).to_string(), 0));
+    session.execute(&stmt).unwrap();
+    assert_eq!(session.contract_violations(), 0);
+
+    session.set_verifier(f.verifier(&f.answer("could_not_evaluate", 0).to_string(), 0));
+    session.execute(&stmt).unwrap_err();
+    assert_eq!(
+        session.contract_violations(),
+        0,
+        "unevaluated is not a violation"
+    );
+
+    session.set_verifier(f.verifier(&f.answer("violated", 3).to_string(), 0));
+    session.execute(&stmt).unwrap();
+    session.execute(&stmt).unwrap();
+    assert_eq!(session.contract_violations(), 2);
+}

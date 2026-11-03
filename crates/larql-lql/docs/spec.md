@@ -862,9 +862,17 @@ of evidence is refused.
 The protocol, `larql-verify-contract/1`, and the reference verifier are in
 [verify-contract-protocol.md](verify-contract-protocol.md).
 
-**Don't gate on `larql lql`'s exit status.** It exits 0 for every statement today, including a
-parse error, a refusal and `could_not_evaluate`, because `run_batch` returns statement errors as
-output. A `violated` result also exits 0. Read the first line of the output instead.
+**`larql lql` exit status:**
+
+| Exit | Meaning |
+|---|---|
+| 0 | Every statement completed, and every contract requested was satisfied |
+| 1 | A statement failed to parse, was refused or failed to execute. This includes a missing verifier, `could_not_evaluate` and a usage error in the command itself |
+| 2 | Every statement completed, and a contract was evaluated and violated |
+
+An error outranks a violation, so a script with both exits 1. A script keeps running after a failed
+statement, as it always has, and the status reflects all of them. So a contract that could not be
+evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
 
 ### 3.8 Comparison Operators
 
