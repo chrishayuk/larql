@@ -66,8 +66,25 @@ def evaluate_operator(contract: str, operator: str, witness: str, container: str
         return q8_0_gemv.could_not(out, f"unknown contract {contract!r}; this verifier knows {sorted(OPERATOR_CONTRACTS)}")
     if not os.path.isdir(container):
         return q8_0_gemv.could_not(out, "the container is not a directory")
-    out["container"]["sha256"] = checkpoint.container_sha256(os.path.abspath(container))
-    return q8_0_gemv.evaluate(out, contract, operator, os.path.abspath(witness), os.path.abspath(container))
+    root = os.path.abspath(container)
+    try:
+        for dirpath, dirnames, filenames in os.walk(root):
+            if any(os.path.islink(os.path.join(dirpath, name)) for name in dirnames + filenames):
+                return q8_0_gemv.could_not(out, f"the container holds a symlink under {dirpath}, outside what its digest covers")
+        before = checkpoint.container_sha256(root)
+    except q8_0_gemv.BAD_INPUT as e:
+        return q8_0_gemv.could_not(out, f"the container can't be read: {type(e).__name__}: {e}")
+    out["container"]["sha256"] = before
+    q8_0_gemv.evaluate(out, contract, operator, os.path.abspath(witness), root)
+    # The digest and the bytes judged came from separate reads, so a verdict needs the container not to have changed.
+    try:
+        unchanged = checkpoint.container_sha256(root) == before
+    except q8_0_gemv.BAD_INPUT:
+        unchanged = False
+    if not unchanged and out["status"] != "could_not_evaluate":
+        out.update(violations=0, measurements=[], offending=[], report_sha256=None)
+        q8_0_gemv.could_not(out, "the container changed during the evaluation")
+    return out
 
 
 def main() -> None:
@@ -87,7 +104,7 @@ def main() -> None:
         answer = evaluate_operator(a.contract, a.operator, a.witness, a.container)
     else:
         answer = evaluate(a.contract, a.container, a.source)
-    json.dump(answer, sys.stdout, indent=1, sort_keys=True)
+    json.dump(answer, sys.stdout, indent=1, sort_keys=True, allow_nan=False)
     sys.stdout.write("\n")
 
 

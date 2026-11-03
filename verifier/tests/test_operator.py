@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -114,6 +115,26 @@ class Verdicts(Base):
         self.assertEqual(self.ask(SEQ)["status"], "violated")
         self.assertEqual(self.ask(B1)["status"], "violated")
 
+    def test_the_object_judged_and_the_worst_row_are_in_the_answer(self):
+        self.write(self.manifest())
+        m = {x["name"]: x["value"] for x in self.ask(B1)["measurements"]}
+        self.assertEqual(m["object"], self.t.object_id)
+        self.assertIn("worst row", m)
+
+    def test_a_violation_says_what_the_reference_found(self):
+        y = self.y.copy()
+        y[0] ^= 1
+        self.write(self.manifest(y=y))
+        m = {x["name"]: x["value"] for x in self.ask(SEQ)["measurements"]}
+        self.assertTrue(m["found"])
+
+    def test_the_report_digest_covers_the_container(self):
+        self.write(self.manifest())
+        a = self.ask(SEQ)["report_sha256"]
+        with open(os.path.join(self.root, "added"), "w") as f:
+            f.write("x")
+        self.assertNotEqual(a, self.ask(SEQ)["report_sha256"])
+
     def test_the_report_digest_follows_the_result(self):
         self.write(self.manifest())
         a, b = self.ask(SEQ)["report_sha256"], self.ask(SEQ)["report_sha256"]
@@ -213,6 +234,122 @@ class Refusals(Base):
         m["records"][0]["object"] = "another.object"
         self.write(m)
         self.refused("0 tensors")
+
+    def raw(self, m, *swaps):
+        text = json.dumps(m)
+        for old, new in swaps:
+            self.assertIn(old, text)
+            text = text.replace(old, new, 1)
+        with open(self.path, "w") as f:
+            f.write(text)
+
+    def test_a_duplicate_key_is_refused_wherever_it_is(self):
+        m = self.manifest()
+        self.raw(m, ('"kernel": ', '"kernel": "gpu.other", "kernel": '))
+        self.refused("valid JSON")
+        self.raw(m, ('"records": ', '"records": [], "records": '))
+        self.refused("valid JSON")
+        self.raw(m, ('"tensor": ', '"tensor": "decoy", "tensor": '))
+        self.refused("valid JSON")
+
+    def test_a_non_finite_constant_is_refused(self):
+        self.raw(self.manifest(), ('"calls_observed": 1', '"calls_observed": NaN'))
+        self.refused("valid JSON")
+
+    def test_a_field_of_the_wrong_kind_is_refused(self):
+        for key, bad in (("calls_observed", 0), ("calls_observed", 1.0), ("calls_observed", None), ("records", [1])):
+            self.write(self.manifest(**{key: bad}))
+            self.refused(key if key != "records" else "list of records")
+        for bad in (None, -1, 1.5, "0", True):
+            m = self.manifest()
+            m["records"][0]["call"] = bad
+            self.write(m)
+            self.refused("call")
+        m = self.manifest()
+        del m["records"][0]["call"]
+        self.write(m)
+        self.refused("call")
+        m = self.manifest()
+        m["records"][0]["y"]["bytes"] = float(m["records"][0]["y"]["bytes"])
+        self.write(m)
+        self.refused("declares")
+        m = self.manifest()
+        m["records"][0]["object"] = 5
+        self.write(m)
+        self.refused("object")
+
+    def test_stream_names_that_can_crash_a_reader(self):
+        for name in ("a\x00b", "\ud800"):
+            m = self.manifest()
+            m["records"][0]["y"]["file"] = name
+            self.write(m)
+            self.refused("y")
+
+    def test_a_very_deep_witness(self):
+        with open(self.path, "w") as f:
+            f.write("[" * 200000)
+        self.refused("JSON")
+
+    def test_a_stream_or_witness_that_is_not_a_regular_file(self):
+        m = self.manifest()
+        self.write(m)
+        p = os.path.join(self.wdir, m["records"][0]["y"]["file"])
+        real = os.path.join(self.d, "elsewhere")
+        shutil.copy(p, real)
+        os.remove(p)
+        os.symlink(real, p)
+        self.refused("can't be read")
+        os.remove(p)
+        os.mkfifo(p)
+        self.refused("regular file")
+        os.remove(p)
+        os.symlink("/dev/zero", p)
+        self.refused("can't be read")
+        target = os.path.join(self.d, "manifest")
+        shutil.copy(self.path, target)
+        os.remove(self.path)
+        os.symlink(target, self.path)
+        self.refused("can't be read")
+
+    def test_a_container_holding_a_symlink(self):
+        self.write(self.manifest())
+        os.symlink("/etc", os.path.join(self.root, "link"))
+        self.refused("symlink")
+
+    def test_a_container_the_reader_warns_about(self):
+        self.write(self.manifest())
+        index = os.path.join(self.root, "index.json")
+        data = json.load(open(index))
+        rep = data["representations"][self.t.rep_id]
+        self.assertIn("compiled_from", rep)
+        del rep["compiled_from"]
+        json.dump(data, open(index, "w"))
+        self.refused("warns|compiled_from")
+
+    def test_an_unreadable_container_file_is_not_a_crash(self):
+        self.write(self.manifest())
+        os.symlink("/no/such/file", os.path.join(self.root, "dangling"))
+        self.refused("symlink")
+        os.remove(os.path.join(self.root, "dangling"))
+        index = os.path.join(self.root, "index.json")
+        data = json.load(open(index))
+        data["system_graph"] = "index.json/x"
+        json.dump(data, open(index, "w"))
+        self.refused("can't be tied")
+
+    def test_a_container_changing_during_the_evaluation_gets_no_verdict(self):
+        self.write(self.manifest())
+        real = G.evaluate
+
+        def change_it(*args):
+            answer = real(*args)
+            with open(os.path.join(self.root, "added"), "w") as f:
+                f.write("x")
+            return answer
+
+        with mock.patch.object(G, "evaluate", change_it):
+            r = self.refused("changed during")
+        self.assertEqual((r["measurements"], r["offending"], r["report_sha256"]), ([], [], None))
 
     def test_a_shape_the_container_disagrees_with(self):
         n, k = self.k, self.n * 32  # the right byte count for neither, so the streams are rebuilt for it

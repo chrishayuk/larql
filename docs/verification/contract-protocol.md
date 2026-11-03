@@ -124,22 +124,25 @@ The exit status, stdout and the rules for an acceptable answer are as above, wit
 | `witness.path` | The `--witness` value, unchanged |
 | `witness.sha256` | A digest of the witness's manifest |
 | `witness.basis` | Exactly `engine_reported` |
-| `witness.reported` | What the witness says about its own run: reported, not established |
+| `witness.reported` | What the witness says about its own run: reported, not established. This includes the path it says it ran against, which isn't checked: only the bytes are compared |
+| `report_sha256` | Covers the contract, operator, object, the witness and container digests, the streams' digests and the result, not the verifier's code digest |
 
 There's no `source`: the reference for these contracts is exact arithmetic on the container's own bytes.
 
-**Before judging anything, the verifier checks** the witness's schema, kernel, activation, execution arm and representation; that it holds exactly one record for this operator; each stream's name, length and digest; and that the container, read by the validating reader, holds exactly one Q8_0 tensor of that name and shape with the same bytes. If any of those fails, the answer is `could_not_evaluate`, because there's nothing to judge.
+**Before judging anything, the verifier checks** the witness's schema, kernel, activation, execution arm and representation, read as strict JSON; that it holds exactly one record for this operator; each stream's name, length and digest, read only from a regular file in the witness's directory, never through a symlink; and that the container, read by the validating reader with no warnings and no symlinks, holds exactly one Q8_0 tensor of that name and shape with the same bytes. A record that names its `object` is held to that object, and the answer reports the object judged. If any of those fails, the answer is `could_not_evaluate`, because there's nothing to judge. The container is hashed again afterwards, and a change during the evaluation is also `could_not_evaluate`.
+
+**What tying a witness to a container means.** The bytes are that tensor's in a container that agrees with itself when read. Nothing here ties those bytes to a source checkpoint, which is `Q8_0_T2`'s job, and a container changed and changed back between the two digests wouldn't be noticed.
 
 | Contract | What it measures | What `violated` means |
 |---|---|---|
-| `Q8_0_GEMV_SEQ` | The recorded output equals a declared sequential binary32 program, bit for bit | The kernel isn't running that program. **It doesn't mean less accurate:** a more accurate kernel violates this too |
+| `Q8_0_GEMV_SEQ` | The recorded output equals a declared sequential binary32 program, bit for bit | This recorded output isn't that program's. That could be the kernel or a fault in the recording: for example, swapped `x` and `y` on a square tensor can't be told apart. **It doesn't mean less accurate:** a more accurate kernel violates this too |
 | `Q8_0_GEMV_B1` | The recorded output is within `\|y − y*\| ≤ γ_k·S + k·2⁻¹⁵⁰·(1 + γ_k)` of exact arithmetic, with `u = 2⁻²⁴`, `γ_k = k·u/(1 − k·u)` and `S = Σ\|w·x\|` | The output is further from the exact result than the bound allows |
 
 Both are numerical measurements of one recorded call.
 
 - **`Q8_0_GEMV_B1` is experimental.** Its inequality has a derivation on paper that no proof system has checked. A satisfied result is a measured bound check on that call, not a machine-checked proof, and doesn't show the bound holds on other inputs.
 - **The bound is loose.** Real faults that change the arithmetic can stay well inside it, so a satisfied `Q8_0_GEMV_B1` doesn't rule out small defects. That's why there are two contracts.
-- **`Q8_0_GEMV_SEQ`'s order was chosen to describe LARQL's own CPU kernel.** Passing shows the kernel does what it declares, not that the declared order is the right one.
+- **`Q8_0_GEMV_SEQ`'s order was chosen to describe LARQL's own CPU kernel.** Passing shows this recorded output matches the declared program, not that the declared order is the right one.
 - **A witness is the engine's report.** These contracts judge the recorded output. They can't show the production kernel produced it, and a faulty or malicious engine could forge a witness.
 
 ## The contract `Q8_0_T2`
