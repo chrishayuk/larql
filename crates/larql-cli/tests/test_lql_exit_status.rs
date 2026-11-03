@@ -4,10 +4,12 @@ use std::process::{Command, Output};
 
 fn lql(args: &[&str], verifier: Option<&std::path::Path>) -> Output {
     let mut c = Command::new(env!("CARGO_BIN_EXE_larql"));
-    c.env_remove("LARQL_VERIFIER").args(args);
-    if let Some(v) = verifier {
-        c.env("LARQL_VERIFIER", v);
-    }
+    // An empty choice turns discovery off, so a machine's installed verifier can't affect these.
+    c.env(
+        "LARQL_VERIFIER",
+        verifier.map_or("".as_ref(), std::path::Path::as_os_str),
+    )
+    .args(args);
     c.output().expect("runs larql")
 }
 
