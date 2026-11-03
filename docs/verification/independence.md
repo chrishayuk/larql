@@ -10,19 +10,22 @@ enforced, because one pull request could otherwise change both the engine and th
 | One change can't move both sides | The `boundary` check in `verifier-boundary.yml`, required on `main`, fails a pull request that changes both the measurement and `crates/`. It runs from the base branch, so a pull request can't rewrite it | Enforced by a required check |
 | Results are bound to what they measured | Each answer carries the verifier's version and code digest, the container's digest, and the source's pinned identity. These say what was measured. They don't authenticate who measured it (below) | By construction |
 | No circular answers | The expected results in `verifier/expected/` come from the verifier, and LARQL's tests don't generate them | By review |
-| Separate review of verifier changes | `.github/CODEOWNERS`, required on `main` | **Not independent yet** (below) |
+| Accountability for verifier changes | The `boundary` check requires review evidence or a written maintainer exception | Enforced by a required check. **Not independent review** (below) |
 
 **Repository settings.** These live outside the repository, so check them rather than trusting this page:
-`gh api repos/chrishayuk/larql/rules/branches/main`. Two rulesets apply to `main`:
+`gh api repos/chrishayuk/larql/rules/branches/main`. Two rulesets exist for `main`:
 
 - `main branch`, with no bypass: changes arrive by pull request, `boundary` must pass, and the branch can't be deleted or force-pushed.
-- `verifier code owners`: a code owner must approve changes to the paths in `CODEOWNERS`. Repository admins can bypass this when merging a
-  pull request, not by pushing directly, and GitHub records each bypass.
+- `verifier code owners`: disabled. It asks for code owner review, but it does nothing at 0 approvals, and at 1 it applies to every pull request, because a branch ruleset can't be limited to paths.
 
-**A sole code owner is not an independent reviewer.** The repository has one code owner, who writes most changes and can't approve their own
-pull request, so in practice their verifier changes merge through the recorded admin bypass. The rule stops changes from anyone else reaching
-the verifier unreviewed, and leaves a record. It does not put a second person between an author and the measurement. A change to a verifier
-contract or a numerical algorithm doesn't have independent human review until another trusted reviewer is added to `CODEOWNERS`.
+**Review evidence for verifier paths.** A pull request that changes `verifier/`, `docs/verification/`, the gate, or `CODEOWNERS` fails `boundary` until its exact head commit has one of these on the record:
+
+- an approval from a maintainer or admin who isn't the author; or
+- a comment or review from a maintainer or admin, with a line starting `Verifier-review exception (<head sha>):`, followed by the reason.
+
+Each is tied to the head commit, so pushing again asks for it again. Writing one doesn't start the check, so rerun it afterwards.
+
+**This is change-control accountability, not independent human review.** The repository has one maintainer, who writes most changes and can write their own exception. The gate makes sure each verifier change is deliberate and recorded. It doesn't put a second person between an author and the measurement. A fresh-context model review can be cited in an exception, but it's not an independent human approval. When a second trusted reviewer is added to `CODEOWNERS`, these paths should move to a truly enforced approval rule.
 
 **The `verifier-and-engine` override.** Some changes do need both sides, such as a format change. To let one through:
 
