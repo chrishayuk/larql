@@ -1,0 +1,5 @@
+# Changes to the verifier's measurement and contracts get their own review, separate from the engine it measures.
+# See docs/verification/independence.md. This takes effect once main requires code owner review.
+/verifier/                  @chrishayuk
+/docs/verification/         @chrishayuk
+/.github/workflows/verifier.yml @chrishayuk
