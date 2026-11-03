@@ -149,6 +149,14 @@ def evaluate(out: dict, contract: str, operator: str, witness: str, container: s
         return could_not(out, f"the witness can't be read: {type(e).__name__}: {e}")
     out["witness"].update(sha256=digest, reported={key: m.get(key) for key in (
         "kernel", "execution_arm", "component", "container", "build_commit", "binary_sha256", "calls_observed")})
+    recorded_index = m.get("container_index_sha256")
+    if recorded_index is not None:
+        try:
+            index_digest = hashlib.sha256(_read_regular(os.path.join(container, "index.json"), MANIFEST_LIMIT, "index.json")).hexdigest()
+        except (WitnessError, *BAD_INPUT) as e:
+            return could_not(out, f"the witness can't be tied to this container: {e}")
+        if index_digest != recorded_index:
+            return could_not(out, "the witness's run recorded a different index.json for its container")
     try:
         obj, stored = container_tensor(container, operator, n, k, r.get("object"))
     except WitnessError as e:

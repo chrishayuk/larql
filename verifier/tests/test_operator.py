@@ -351,6 +351,14 @@ class Refusals(Base):
             r = self.refused("changed during")
         self.assertEqual((r["measurements"], r["offending"], r["report_sha256"]), ([], [], None))
 
+    def test_a_witness_recording_the_containers_index_is_held_to_it(self):
+        with open(os.path.join(self.root, "index.json"), "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        self.write(self.manifest(container_index_sha256=digest))
+        self.assertEqual(self.ask()["status"], "satisfied")
+        self.write(self.manifest(container_index_sha256="0" * 64))
+        self.refused("different index.json")
+
     def test_a_shape_the_container_disagrees_with(self):
         n, k = self.k, self.n * 32  # the right byte count for neither, so the streams are rebuilt for it
         blocks, x = bytes(n * (k // 32) * 34), np.zeros(k, dtype=np.uint32)
