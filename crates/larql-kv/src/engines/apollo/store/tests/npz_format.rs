@@ -2,7 +2,8 @@
 //! writers produce must load, and malformed structure must be a typed error.
 
 use super::archive_errors::{
-    assert_archive_error, assert_names, load_err, one_entry, store_with_archive, WINDOW_TOKENS_NPZ,
+    assert_archive_error, assert_names, load_err, one_entry, store_with_archive, ENTRIES_NPZ,
+    WINDOW_TOKENS_NPZ,
 };
 use super::raw_archive::{
     archive_with_surroundings, raw_archive, zip64_directory_archive, RawMember,
@@ -14,6 +15,9 @@ const HIDDEN: usize = 4;
 const WINDOW_SIZE: usize = 3;
 const TOKENS: [u32; 3] = [0, 1, 2];
 const MEMBER: &str = "0.npy";
+const ENTRIES_MEMBER: &str = "entries.npy";
+/// Over the 24 characters of the longest window name.
+const LONGER_THAN_ANY_WINDOW_NAME: usize = 40;
 const END_RECORD_LEN: usize = 22;
 const CENTRAL_RECORD_LEN: usize = 46;
 const ZIP64_LOCATOR_LEN: usize = 20;
@@ -21,6 +25,8 @@ const ZIP64_END_RECORD_LEN: usize = 56;
 const END_RECORD_SIGNATURE: &[u8] = b"PK\x05\x06";
 const CENTRAL_SIGNATURE: &[u8] = b"PK\x01\x02";
 const FLAG_ENCRYPTED: u16 = 1;
+const FLAG_PATCHED_DATA: u16 = 1 << 5;
+const FLAG_STRONG_ENCRYPTION: u16 = 1 << 6;
 /// Bit 3: sizes follow the data, as an unseekable `zipfile` stream writes.
 const FLAG_DATA_DESCRIPTOR: u16 = 1 << 3;
 
@@ -254,6 +260,27 @@ fn record_counts_that_disagree_find_no_end_record() {
     assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
 }
 
+/// `zip` reads as many records as the count says and `zipfile` as many as fit the
+/// length, so a count short of the directory has two different member lists.
+#[test]
+fn record_count_short_of_the_directory_is_refused() {
+    const RECORDS_ON_DISK_AT: usize = 8;
+    const RECORDS_AT: usize = 10;
+    const CLAIMED_RECORDS: u16 = 1;
+    let mut archive = raw_archive(&[member(), RawMember::stored("x", Vec::new())]);
+    let end_at = archive.len() - END_RECORD_LEN;
+    for field in [RECORDS_ON_DISK_AT, RECORDS_AT] {
+        archive[end_at + field..end_at + field + 2].copy_from_slice(&CLAIMED_RECORDS.to_le_bytes());
+    }
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadDirectoryRecord {
+            index: 1,
+            reason: "directory continues past its record count",
+        },
+    );
+}
+
 #[test]
 fn second_record_with_a_bad_signature_is_refused_by_index() {
     let mut archive = raw_archive(&[member(), RawMember::stored("1.npy", Vec::new())]);
@@ -349,9 +376,216 @@ fn extra_field_overrunning_its_record_is_refused() {
 }
 
 #[test]
-fn encrypted_member_is_refused() {
-    let archive = raw_archive(&[member().with_flags(FLAG_ENCRYPTED)]);
-    assert_archive_error(&archive_err(&archive), &ArchiveError::Encrypted);
+fn encrypted_and_unsupported_flags_are_refused() {
+    for flag in [FLAG_ENCRYPTED, FLAG_PATCHED_DATA, FLAG_STRONG_ENCRYPTION] {
+        let archive = raw_archive(&[member().with_flags(flag)]);
+        assert_archive_error(&archive_err(&archive), &ArchiveError::Encrypted);
+    }
+}
+
+#[test]
+fn local_name_differing_from_the_directory_is_refused() {
+    let mut archive = raw_archive(&[member()]);
+    let local_name_at = position_of(&archive, MEMBER.as_bytes());
+    archive[local_name_at] = b'9';
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadLocalHeader("name differs from the directory"),
+    );
+}
+
+#[test]
+fn local_name_of_a_different_length_is_refused() {
+    const NAME_LEN_AT: usize = 26;
+    let mut archive = raw_archive(&[member()]);
+    archive[NAME_LEN_AT] -= 1;
+    assert_archive_error(
+        &archive_err(&archive),
+        &ArchiveError::BadLocalHeader("name differs from the directory"),
+    );
+}
+
+/// ZIP64 fields naming any disk other than the first describe a split archive.
+#[test]
+fn zip64_nonzero_disk_fields_find_no_end_record() {
+    const ZIP64_RECORD_FROM_END: usize = END_RECORD_LEN + ZIP64_LOCATOR_LEN + ZIP64_END_RECORD_LEN;
+    const LOCATOR_FROM_END: usize = END_RECORD_LEN + ZIP64_LOCATOR_LEN;
+    const RECORD_DISK_AT: usize = 16;
+    const RECORD_DIRECTORY_DISK_AT: usize = 20;
+    const LOCATOR_DISK_AT: usize = 4;
+    const LOCATOR_TOTAL_DISKS_AT: usize = 16;
+    const SECOND_DISK: u8 = 2;
+    for field_from_end in [
+        ZIP64_RECORD_FROM_END - RECORD_DISK_AT,
+        ZIP64_RECORD_FROM_END - RECORD_DIRECTORY_DISK_AT,
+        LOCATOR_FROM_END - LOCATOR_DISK_AT,
+        LOCATOR_FROM_END - LOCATOR_TOTAL_DISKS_AT,
+    ] {
+        let mut archive = zip64_directory_archive(b"", &member(), 1, b"");
+        let at = archive.len() - field_from_end;
+        archive[at] = SECOND_DISK;
+        assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+    }
+}
+
+/// A locator next to an end record that doesn't defer to it. `zipfile` honours it and
+/// `zip` doesn't, so if they would read different directories it must be refused.
+#[test]
+fn zip64_locator_disagreeing_with_a_plain_end_record_finds_no_end_record() {
+    const RECORDS_ON_DISK_AT: usize = 8;
+    const RECORDS_AT: usize = 10;
+    const DISAGREEING_RECORDS: u16 = 2;
+    let mut archive = plain_end_record_after_agreeing_zip64();
+    let end_at = archive.len() - END_RECORD_LEN;
+    let end = &mut archive[end_at..];
+    end[RECORDS_ON_DISK_AT..RECORDS_ON_DISK_AT + 2]
+        .copy_from_slice(&DISAGREEING_RECORDS.to_le_bytes());
+    end[RECORDS_AT..RECORDS_AT + 2].copy_from_slice(&DISAGREEING_RECORDS.to_le_bytes());
+    assert_archive_error(&archive_err(&archive), &ArchiveError::NoEndRecord);
+}
+
+/// ZIP64 records carrying the same values as a plain end record are harmless. Python's
+/// `zipfile` honours them and this reader uses the plain record, so the two agree.
+#[test]
+fn zip64_records_agreeing_with_a_plain_end_record_load() {
+    assert_loads(&plain_end_record_after_agreeing_zip64());
+}
+
+/// `archive` with a directory, agreeing ZIP64 records, then a plain end record. The
+/// directory is found from the end record, so its stated length covers the ZIP64 records.
+fn plain_end_record_after_agreeing_zip64() -> Vec<u8> {
+    const ZIP64_END_SIGNATURE: &[u8] = b"PK\x06\x06";
+    const ZIP64_LOCATOR_SIGNATURE: &[u8] = b"PK\x06\x07";
+    const ZIP64_END_FIXED_SIZE: u64 = 44;
+    const VERSION: u16 = 45;
+    let plain = raw_archive(&[member()]);
+    let end_at = plain.len() - END_RECORD_LEN;
+    let directory_at = position_of(&plain, CENTRAL_SIGNATURE) as u64;
+    let directory_len = end_at as u64 - directory_at;
+    let zip64_at = end_at as u64;
+    let mut out = plain[..end_at].to_vec();
+    out.extend_from_slice(ZIP64_END_SIGNATURE);
+    out.extend_from_slice(&ZIP64_END_FIXED_SIZE.to_le_bytes());
+    out.extend_from_slice(&VERSION.to_le_bytes());
+    out.extend_from_slice(&VERSION.to_le_bytes());
+    out.extend_from_slice(&[0; 8]);
+    out.extend_from_slice(&1u64.to_le_bytes());
+    out.extend_from_slice(&1u64.to_le_bytes());
+    out.extend_from_slice(&directory_len.to_le_bytes());
+    out.extend_from_slice(&directory_at.to_le_bytes());
+    out.extend_from_slice(ZIP64_LOCATOR_SIGNATURE);
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&zip64_at.to_le_bytes());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&plain[end_at..]);
+    out
+}
+
+// ── Which member is which ─────────────────────────────────────────────
+
+fn entries_with_token(token_id: u32) -> Vec<u8> {
+    let mut rows = one_entry();
+    rows[0].token_id = token_id;
+    synth_structured_entries_npy(&rows)
+}
+
+fn entries_archive_err(archive: &[u8]) -> StoreLoadError {
+    load_err(&store_with_archive(ENTRIES_NPZ, archive))
+}
+
+/// `numpy` and `zip` take the last duplicate and a reader taking the first would see
+/// other data, so a duplicate has no one right answer.
+#[test]
+fn duplicate_entries_member_is_refused() {
+    let archive = raw_archive(&[
+        RawMember::stored(ENTRIES_MEMBER, entries_with_token(1)),
+        RawMember::stored(ENTRIES_MEMBER, entries_with_token(2)),
+    ]);
+    match entries_archive_err(&archive) {
+        StoreLoadError::Archive {
+            source: ArchiveError::AmbiguousMemberName(name),
+            ..
+        } => assert_eq!(name, ENTRIES_MEMBER),
+        other => panic!("expected AmbiguousMemberName, got {other:?}"),
+    }
+}
+
+#[test]
+fn decoy_before_the_entries_member_is_not_read() {
+    const REAL_TOKEN: u32 = 2;
+    let archive = raw_archive(&[
+        RawMember::stored("entries_old.npy", entries_with_token(1)),
+        RawMember::stored(ENTRIES_MEMBER, entries_with_token(REAL_TOKEN)),
+    ]);
+    let dir = store_with_archive(ENTRIES_NPZ, &archive);
+    let store = ApolloStore::load(dir.path()).expect("exact name is found");
+    assert_eq!(store.entries[0].token_id, REAL_TOKEN);
+}
+
+#[test]
+fn only_a_similarly_named_member_is_missing_file() {
+    for decoy in [
+        "entries_old.npy",
+        "entries",
+        "entries.npy.npy",
+        "ENTRIES.NPY",
+    ] {
+        let archive = raw_archive(&[RawMember::stored(decoy, entries_with_token(1))]);
+        let err = entries_archive_err(&archive);
+        assert!(
+            matches!(err, StoreLoadError::MissingFile(_)),
+            "{decoy}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn duplicate_window_member_is_a_window_archive_error() {
+    let archive = raw_archive(&[member(), member()]);
+    let err = archive_err_any(&archive);
+    assert!(matches!(err, StoreLoadError::WindowArchive(_)), "{err:?}");
+}
+
+fn archive_err_any(archive: &[u8]) -> StoreLoadError {
+    load_err(&store_with_archive(WINDOW_TOKENS_NPZ, archive))
+}
+
+#[test]
+fn non_canonical_window_names_are_ambiguous() {
+    for name in ["00.npy", "+0.npy", "0", "0.npy.npy", "01.npy"] {
+        let archive = raw_archive(&[RawMember::stored(name, synth_u32_npy(&TOKENS))]);
+        match archive_err_any(&archive) {
+            StoreLoadError::Archive {
+                source: ArchiveError::AmbiguousMemberName(found),
+                ..
+            } => assert_eq!(found, name),
+            other => panic!("{name}: expected AmbiguousMemberName, got {other:?}"),
+        }
+    }
+}
+
+/// A name too long to be a window is some other member, and doesn't get retained.
+#[test]
+fn long_member_names_are_ignored() {
+    let long_name = "9".repeat(LONGER_THAN_ANY_WINDOW_NAME);
+    let other = RawMember::stored(&long_name, b"hello".to_vec());
+    assert_loads(&raw_archive(&[other, member()]));
+}
+
+#[test]
+fn directory_over_the_record_limit_is_refused_before_it_is_read() {
+    let archive = raw_archive(&[member(), RawMember::stored("x", Vec::new())]);
+    let dir = store_with_archive(WINDOW_TOKENS_NPZ, &archive);
+    let limits = StoreLimits {
+        max_records: 1,
+        ..StoreLimits::default()
+    };
+    match ApolloStore::load_with_limits(dir.path(), &limits).unwrap_err() {
+        StoreLoadError::TooManyRecords { records, limit, .. } => {
+            assert_eq!((records, limit), (2, 1));
+        }
+        other => panic!("expected TooManyRecords, got {other:?}"),
+    }
 }
 
 #[test]
@@ -453,7 +687,7 @@ fn non_utf8_member_name_is_ignored_rather_than_an_error() {
 fn entries_archive_with_no_members_is_missing_file() {
     let dir = TempDir::new().unwrap();
     write_minimal_store(dir.path(), WINDOWS, HIDDEN, WINDOW_SIZE, &one_entry());
-    std::fs::write(dir.path().join("entries.npz"), raw_archive(&[])).unwrap();
+    std::fs::write(dir.path().join(ENTRIES_NPZ), raw_archive(&[])).unwrap();
     let err = load_err(&dir);
     assert!(matches!(err, StoreLoadError::MissingFile(_)), "{err:?}");
 }

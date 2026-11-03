@@ -7,7 +7,8 @@
 //!
 //! Invariants on every load: it returns within the deadline, does not panic, and
 //! stays within a memory bound derived from its limits. Separately, a differential
-//! run checks the first-party archive reader against the `zip` crate.
+//! run checks the first-party archive reader against the `zip` crate, and
+//! `large_directory.rs` covers archives with many records.
 //!
 //! `cargo test` runs a short smoke. For a campaign:
 //! `LARQL_APOLLO_FUZZ_ITERS=1000000 LARQL_APOLLO_FUZZ_SEED=7 cargo test --release \
@@ -24,7 +25,7 @@ use crate::fixtures::*;
 use crate::instrument::watched;
 
 const SMOKE_ITERS: u64 = 1_500;
-const DEFAULT_SEED: u64 = 0x679_684;
+const DEFAULT_SEED: u64 = 679_684;
 const ITERS_VAR: &str = "LARQL_APOLLO_FUZZ_ITERS";
 const SEED_VAR: &str = "LARQL_APOLLO_FUZZ_SEED";
 const ITER_DEADLINE: Duration = Duration::from_secs(30);
@@ -35,6 +36,7 @@ const FUZZ_LIMITS: StoreLimits = StoreLimits {
     max_array_file_bytes: 1 << 20,
     max_archive_bytes: 8 << 20,
     max_store_bytes: 16 << 20,
+    max_records: 1 << 12,
 };
 /// Every array read once as bytes and once decoded, plus small bookkeeping.
 const PEAK_BOUND: usize = 2 * FUZZ_LIMITS.max_store_bytes as usize + (1 << 20);
@@ -63,6 +65,8 @@ const FIELD_WIDTHS: [usize; 4] = [1, 2, 4, 8];
 /// ZIP records end near the file's end, so mutations favour the tail.
 const TAIL_FOCUS: u64 = 120;
 const MAX_HARNESS_READ: u64 = 1 << 20;
+const WINDOW_LEN: usize = 3;
+const ENTRIES_MEMBER: &str = "entries.npy";
 
 struct Rng(u64);
 
@@ -257,13 +261,21 @@ fn fuzz_store_directories_hold_the_invariants() {
     );
 }
 
-/// Every stored member the `zip` crate can read, by name, or `None` if it refuses.
+/// The members this load would use, as the `zip` crate reads them, or `None` if it
+/// refuses one or the archive. `zip` resolves a duplicate name to the last record.
 fn read_with_zip(bytes: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     let mut members = BTreeMap::new();
-    for index in 0..archive.len() {
-        let mut member = archive.by_index(index).ok()?;
-        let name = member.name().to_string();
+    let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+    for name in names {
+        let is_used = name == ENTRIES_MEMBER
+            || name
+                .strip_suffix(".npy")
+                .is_some_and(|stem| stem.parse::<usize>().is_ok());
+        if !is_used {
+            continue;
+        }
+        let mut member = archive.by_name(&name).ok()?;
         let mut data = Vec::new();
         member.read_to_end(&mut data).ok()?;
         members.insert(name, data);
@@ -271,58 +283,110 @@ fn read_with_zip(bytes: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
     Some(members)
 }
 
-/// Compare the two readers on mutated archives. They may reasonably disagree on
-/// whether to refuse, and the counts are printed for review. What must never
-/// happen is both accepting an archive and returning different tokens.
+/// The array bytes at the end of a one-dimensional `.npy`, given how long they are.
+fn array_bytes(npy_bytes: &[u8], len: usize) -> Option<&[u8]> {
+    npy_bytes.get(npy_bytes.len().checked_sub(len)?..)
+}
+
+/// Whether `store` holds what `zip` read from `archive_file`, for what both accepted.
+fn check_same_data(
+    store: &ApolloStore,
+    archive_file: &str,
+    zip_members: &BTreeMap<String, Vec<u8>>,
+) {
+    if archive_file == TOKENS_NPZ {
+        for (window, tokens) in store.window_tokens.iter().enumerate() {
+            let actual: Vec<u8> = tokens.iter().flat_map(|t| t.to_le_bytes()).collect();
+            let member = zip_members.get(&format!("{window}.npy"));
+            let expected = member.and_then(|data| array_bytes(data, actual.len()));
+            assert_eq!(Some(actual.as_slice()), expected, "window {window} differs");
+        }
+    } else {
+        let actual: Vec<u8> = store
+            .entries
+            .iter()
+            .flat_map(|entry| {
+                [
+                    entry.token_id.to_le_bytes().as_slice(),
+                    entry.coefficient.to_le_bytes().as_slice(),
+                    entry.window_id.to_le_bytes().as_slice(),
+                    entry.position_in_window.to_le_bytes().as_slice(),
+                    entry.fact_id.to_le_bytes().as_slice(),
+                ]
+                .concat()
+            })
+            .collect();
+        let member = zip_members.get(ENTRIES_MEMBER);
+        let expected = member.and_then(|data| array_bytes(data, actual.len()));
+        assert_eq!(Some(actual.as_slice()), expected, "entries differ");
+    }
+}
+
+/// The honest archive and hand-made ones that test which member gets read.
+fn differential_seeds(archive_file: &str) -> Vec<Vec<u8>> {
+    const FIRST: u32 = 111;
+    const LAST: u32 = 222;
+    if archive_file == TOKENS_NPZ {
+        let token_member = |token: u32| u32_npy(&[token; WINDOW_LEN]);
+        vec![
+            npz(&[
+                ("0.npy", &token_member(FIRST)),
+                ("1.npy", &token_member(LAST)),
+            ]),
+            raw_npz(&[
+                (b"0.npy", &token_member(FIRST)),
+                (b"1.npy", &token_member(LAST)),
+                (b"1.npy", &token_member(FIRST)),
+            ]),
+            raw_npz(&[
+                (b"00.npy", &token_member(FIRST)),
+                (b"0.npy", &token_member(LAST)),
+                (b"1.npy", &token_member(LAST)),
+            ]),
+        ]
+    } else {
+        let (first, last) = (entries_npy_with_token(FIRST), entries_npy_with_token(LAST));
+        let entries = ENTRIES_MEMBER.as_bytes();
+        vec![
+            npz(&[(ENTRIES_MEMBER, &last)]),
+            raw_npz(&[(entries, &first), (entries, &last)]),
+            raw_npz(&[(b"entries_old.npy", &first), (entries, &last)]),
+            raw_npz(&[(b"entries", &first), (entries, &last)]),
+        ]
+    }
+}
+
+/// Compare the two readers on crafted and mutated archives of both kinds. They may
+/// reasonably disagree on whether to refuse, and the counts are printed for review.
+/// What must never happen is both accepting an archive and returning different data.
 #[test]
 fn fuzz_archive_reader_agrees_with_zip_on_what_both_accept() {
-    const MEMBERS: usize = 3;
+    const WINDOWS: usize = 2;
     let iterations = env_u64(ITERS_VAR, SMOKE_ITERS);
     let mut rng = Rng(env_u64(SEED_VAR, DEFAULT_SEED) | 1);
-    let originals: Vec<Vec<u8>> = (0..MEMBERS)
-        .map(|window| u32_npy(&[window as u32; 3]))
-        .collect();
-    let names: Vec<String> = (0..MEMBERS).map(|window| format!("{window}.npy")).collect();
-    let members: Vec<(&str, &[u8])> = names
-        .iter()
-        .zip(&originals)
-        .map(|(name, data)| (name.as_str(), data.as_slice()))
-        .collect();
-    let archive = npz(&members);
-
     let dir = control_store();
-    std::fs::write(dir.path().join(MANIFEST), manifest(MEMBERS, 1)).unwrap();
-    for window in 1..MEMBERS {
-        std::fs::write(
-            dir.path()
-                .join(format!("boundaries/window_{window:03}.npy")),
-            f32_npy(1),
-        )
-        .unwrap();
-    }
+    std::fs::write(dir.path().join(MANIFEST), manifest(WINDOWS, 1)).unwrap();
+    std::fs::write(dir.path().join("boundaries/window_001.npy"), f32_npy(1)).unwrap();
+    let good_tokens = differential_seeds(TOKENS_NPZ).swap_remove(0);
+    let good_entries = differential_seeds(ENTRIES_NPZ).swap_remove(0);
     let (mut both_ok, mut both_refuse, mut only_ours) = (0u64, 0u64, 0u64);
     let mut only_zip = BTreeMap::<String, u64>::new();
     for _ in 0..iterations {
-        let mut bytes = archive.clone();
-        for _ in 0..=rng.below(MAX_MUTATIONS) {
+        let archive_file = rng.pick(&[TOKENS_NPZ, ENTRIES_NPZ]);
+        let seeds = differential_seeds(archive_file);
+        let mut bytes = seeds[rng.below(seeds.len() as u64) as usize].clone();
+        for _ in 0..rng.below(MAX_MUTATIONS + 1) {
             mutate_bytes(&mut rng, &mut bytes);
         }
-        std::fs::write(dir.path().join(TOKENS_NPZ), &bytes).unwrap();
+        std::fs::write(dir.path().join(TOKENS_NPZ), &good_tokens).unwrap();
+        std::fs::write(dir.path().join(ENTRIES_NPZ), &good_entries).unwrap();
+        std::fs::write(dir.path().join(archive_file), &bytes).unwrap();
         let ours = ApolloStore::load(dir.path());
         let theirs = read_with_zip(&bytes);
         match (&ours, &theirs) {
             (Ok(store), Some(zip_members)) => {
                 both_ok += 1;
-                for (window, tokens) in store.window_tokens.iter().enumerate() {
-                    let member = zip_members
-                        .get(&format!("{window}.npy"))
-                        .or_else(|| zip_members.get(&window.to_string()));
-                    let expected = member.map(|data| data[data.len() - 12..].to_vec());
-                    let actual: Vec<u8> = tokens.iter().flat_map(|t| t.to_le_bytes()).collect();
-                    if let Some(expected) = expected {
-                        assert_eq!(actual, expected, "readers disagree on window {window}");
-                    }
-                }
+                check_same_data(store, archive_file, zip_members);
             }
             (Err(_), None) => both_refuse += 1,
             (Err(refusal), Some(_)) => *only_zip.entry(variant_name(refusal)).or_default() += 1,

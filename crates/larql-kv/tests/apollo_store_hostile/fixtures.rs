@@ -52,6 +52,12 @@ pub fn u32_npy(values: &[u32]) -> Vec<u8> {
     npy("'<u4'", &format!("({},)", values.len()), &data)
 }
 
+pub fn entries_npy_with_token(token_id: u32) -> Vec<u8> {
+    let mut row = ENTRY_ROW;
+    row[..size_of::<u32>()].copy_from_slice(&token_id.to_le_bytes());
+    npy(ENTRIES_DESCR, "(1,)", &row)
+}
+
 pub fn entries_npy(rows: usize) -> Vec<u8> {
     npy(
         ENTRIES_DESCR,
@@ -135,6 +141,128 @@ pub fn make_sparse(root: &Path, file: &str, head: &[u8], len: u64) {
         .unwrap()
         .set_len(len)
         .unwrap();
+}
+
+/// A raw stored record pair, written by hand because `ZipWriter` refuses duplicates
+/// and can't make an archive lie. `crc` is over `member_len` bytes of `data` then zeros.
+pub struct RawRecord<'a> {
+    pub name: &'a [u8],
+    pub crc: u32,
+    pub member_len: u32,
+    pub local_offset: u32,
+}
+
+const LOCAL_SIGNATURE: &[u8] = b"PK\x03\x04";
+const CENTRAL_SIGNATURE: &[u8] = b"PK\x01\x02";
+const END_SIGNATURE: &[u8] = b"PK\x05\x06";
+const VERSION: [u8; 2] = [20, 0];
+const NO_FLAGS_OR_METHOD_OR_TIME: [u8; 6] = [0; 6];
+const DOS_DATE_EPOCH: [u8; 2] = [0x21, 0];
+const NO_EXTRA: [u8; 2] = [0; 2];
+/// Comment length, disk number, internal and external attributes.
+const CENTRAL_ZEROED_FIELDS: [u8; 10] = [0; 10];
+
+fn sizes_and_name_len(record: &RawRecord) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&VERSION);
+    out.extend_from_slice(&NO_FLAGS_OR_METHOD_OR_TIME);
+    out.extend_from_slice(&DOS_DATE_EPOCH);
+    out.extend_from_slice(&record.crc.to_le_bytes());
+    out.extend_from_slice(&record.member_len.to_le_bytes());
+    out.extend_from_slice(&record.member_len.to_le_bytes());
+    out.extend_from_slice(&u16::try_from(record.name.len()).unwrap().to_le_bytes());
+    out.extend_from_slice(&NO_EXTRA);
+    out
+}
+
+pub fn local_record(record: &RawRecord) -> Vec<u8> {
+    let mut out = LOCAL_SIGNATURE.to_vec();
+    out.extend_from_slice(&sizes_and_name_len(record));
+    out.extend_from_slice(record.name);
+    out
+}
+
+pub fn central_record(record: &RawRecord) -> Vec<u8> {
+    let mut out = CENTRAL_SIGNATURE.to_vec();
+    out.extend_from_slice(&VERSION);
+    out.extend_from_slice(&sizes_and_name_len(record));
+    out.extend_from_slice(&CENTRAL_ZEROED_FIELDS);
+    out.extend_from_slice(&record.local_offset.to_le_bytes());
+    out.extend_from_slice(record.name);
+    out
+}
+
+/// A plain end record, or ZIP64 records with it past what 16 bits can count.
+pub fn end_records(records: u64, directory_len: u64, directory_at: u64) -> Vec<u8> {
+    const ZIP32_MAX_RECORDS: u64 = u16::MAX as u64 - 1;
+    const NO_DISKS: [u8; 4] = [0; 4];
+    const ZIP64_END_FIXED_SIZE: u64 = 44;
+    const VERSION_ZIP64: [u8; 2] = [45, 0];
+    let mut out = Vec::new();
+    if records > ZIP32_MAX_RECORDS {
+        out.extend_from_slice(b"PK\x06\x06");
+        out.extend_from_slice(&ZIP64_END_FIXED_SIZE.to_le_bytes());
+        out.extend_from_slice(&VERSION_ZIP64);
+        out.extend_from_slice(&VERSION_ZIP64);
+        out.extend_from_slice(&[0; 8]);
+        out.extend_from_slice(&records.to_le_bytes());
+        out.extend_from_slice(&records.to_le_bytes());
+        out.extend_from_slice(&directory_len.to_le_bytes());
+        out.extend_from_slice(&directory_at.to_le_bytes());
+        out.extend_from_slice(b"PK\x06\x07");
+        out.extend_from_slice(&NO_DISKS);
+        out.extend_from_slice(&(directory_at + directory_len).to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(END_SIGNATURE);
+        out.extend_from_slice(&NO_DISKS);
+        out.extend_from_slice(&[0xFF; 12]);
+    } else {
+        let count = u16::try_from(records).unwrap().to_le_bytes();
+        out.extend_from_slice(END_SIGNATURE);
+        out.extend_from_slice(&NO_DISKS);
+        out.extend_from_slice(&count);
+        out.extend_from_slice(&count);
+        out.extend_from_slice(&u32::try_from(directory_len).unwrap().to_le_bytes());
+        out.extend_from_slice(&u32::try_from(directory_at).unwrap().to_le_bytes());
+    }
+    out.extend_from_slice(&[0; 2]);
+    out
+}
+
+pub fn crc32_of(bytes: &[u8]) -> u32 {
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(bytes);
+    hasher.finalize()
+}
+
+/// The members laid out honestly, by hand. Names may repeat.
+pub fn raw_npz(members: &[(&[u8], &[u8])]) -> Vec<u8> {
+    let mut body = Vec::new();
+    let mut directory = Vec::new();
+    for (name, data) in members {
+        let record = RawRecord {
+            name,
+            crc: crc32_of(data),
+            member_len: u32::try_from(data.len()).unwrap(),
+            local_offset: u32::try_from(body.len()).unwrap(),
+        };
+        body.extend_from_slice(&local_record(&record));
+        body.extend_from_slice(data);
+        directory.extend_from_slice(&central_record(&record));
+    }
+    let end = end_records(
+        members.len() as u64,
+        directory.len() as u64,
+        body.len() as u64,
+    );
+    [body, directory, end].concat()
+}
+
+/// A store whose manifest claims no windows, for loads aimed only at an archive.
+pub fn store_with_no_windows() -> TempDir {
+    let dir = control_store();
+    std::fs::write(dir.path().join(MANIFEST), manifest(0, 1)).unwrap();
+    dir
 }
 
 #[test]

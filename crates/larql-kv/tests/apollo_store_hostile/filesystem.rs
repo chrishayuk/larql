@@ -19,15 +19,19 @@ const GIB: u64 = 1 << 30;
 const ZIP64_END_FIXED_SIZE: u64 = 44;
 /// A central directory record's minimum size.
 const CENTRAL_RECORD_LEN: u64 = 46;
-/// An archive's ZIP64 end record, locator and end record.
-const ZIP64_TAIL_LEN: u64 = 56 + 20 + 22;
+const ZIP64_END_RECORD_LEN: u64 = 56;
+const ZIP64_LOCATOR_LEN: u64 = 20;
+const END_RECORD_LEN: u64 = 22;
+const ZIP64_TAIL_LEN: u64 = ZIP64_END_RECORD_LEN + ZIP64_LOCATOR_LEN + END_RECORD_LEN;
+const VERSION_ZIP64: [u8; 2] = [45, 0];
 
 /// The shape from the review: a 2^44 hole ending in ZIP64 records that claim as
 /// many directory entries as that logical length allows.
 fn zip64_tail(end_record_at: u64, directory_len: u64, records: u64, directory_at: u64) -> Vec<u8> {
     let mut tail = b"PK\x06\x06".to_vec();
     tail.extend_from_slice(&ZIP64_END_FIXED_SIZE.to_le_bytes());
-    tail.extend_from_slice(&[45, 0, 45, 0]);
+    tail.extend_from_slice(&VERSION_ZIP64);
+    tail.extend_from_slice(&VERSION_ZIP64);
     tail.extend_from_slice(&[0; 8]); // disks
     tail.extend_from_slice(&records.to_le_bytes());
     tail.extend_from_slice(&records.to_le_bytes());
@@ -84,14 +88,18 @@ fn replace_with_fifo(root: &Path, file: &str) {
 
 fn assert_not_regular(err: &StoreLoadError, file: &str) {
     match err {
-        StoreLoadError::NotRegularFile { path, .. } => assert!(path.ends_with(file), "{path}"),
+        StoreLoadError::NotRegularFile { path, .. } => {
+            assert!(Path::new(path).ends_with(file), "{path}")
+        }
         other => panic!("expected NotRegularFile for {file}, got {other:?}"),
     }
 }
 
 fn assert_too_large(err: &StoreLoadError, file: &str) {
     match err {
-        StoreLoadError::FileTooLarge { path, .. } => assert!(path.ends_with(file), "{path}"),
+        StoreLoadError::FileTooLarge { path, .. } => {
+            assert!(Path::new(path).ends_with(file), "{path}")
+        }
         other => panic!("expected FileTooLarge for {file}, got {other:?}"),
     }
 }
@@ -273,45 +281,32 @@ fn sparse_residual_is_refused_rather_than_read_as_absent() {
 fn sparse_member_within_the_limits_costs_its_logical_length_and_no_more() {
     const HOLE: u64 = 64 << 20;
     const OVERHEAD_ALLOWANCE: usize = 1 << 20;
+    const CHUNK: usize = 1 << 20;
     let dir = control_store();
     // A stored member of `HOLE` zero bytes, which then fails to parse as `.npy`.
     let crc = {
         let mut hasher = crc32fast::Hasher::new();
-        let chunk = vec![0u8; 1 << 20];
-        for _ in 0..(HOLE >> 20) {
+        let chunk = vec![0u8; CHUNK];
+        for _ in 0..HOLE / CHUNK as u64 {
             hasher.update(&chunk);
         }
         hasher.finalize()
     };
-    let name = b"0.npy";
-    let path = dir.path().join(TOKENS_NPZ);
-    let mut file = std::fs::File::create(&path).unwrap();
-    let hole = u32::try_from(HOLE).unwrap();
-    let fields = |signature: &[u8], lead: &[u8]| {
-        let mut out = signature.to_vec();
-        out.extend_from_slice(lead);
-        out.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0x21, 0]);
-        out.extend_from_slice(&crc.to_le_bytes());
-        out.extend_from_slice(&hole.to_le_bytes());
-        out.extend_from_slice(&hole.to_le_bytes());
-        out.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
-        out
+    let record = RawRecord {
+        name: b"0.npy",
+        crc,
+        member_len: u32::try_from(HOLE).unwrap(),
+        local_offset: 0,
     };
-    let mut local = fields(b"PK\x03\x04", &[]);
-    local.extend_from_slice(name);
-    let mut central = fields(b"PK\x01\x02", &[20, 0]);
-    central.extend_from_slice(&[0; 14]);
-    central.extend_from_slice(name);
+    let local = local_record(&record);
+    let central = central_record(&record);
     let directory_at = local.len() as u64 + HOLE;
-    let mut end = b"PK\x05\x06\0\0\0\0\x01\0\x01\0".to_vec();
-    end.extend_from_slice(&u32::try_from(central.len()).unwrap().to_le_bytes());
-    end.extend_from_slice(&u32::try_from(directory_at).unwrap().to_le_bytes());
-    end.extend_from_slice(&[0, 0]);
+    let mut file = std::fs::File::create(dir.path().join(TOKENS_NPZ)).unwrap();
     file.write_all(&local).unwrap();
     file.seek(SeekFrom::Start(directory_at)).unwrap();
     file.write_all(&central).unwrap();
-    file.write_all(&end).unwrap();
+    file.write_all(&end_records(1, central.len() as u64, directory_at))
+        .unwrap();
     drop(file);
 
     let measured = load_watched(dir.path(), StoreLimits::default());
@@ -367,7 +362,7 @@ fn each_file_limit_is_inclusive_and_one_byte_under_refuses() {
                 len: reported,
                 limit,
             } => {
-                assert!(path.ends_with(file), "{path}");
+                assert!(Path::new(&path).ends_with(file), "{path}");
                 assert_eq!((reported, limit), (len, len - 1));
             }
             other => panic!("expected FileTooLarge for {file}, got {other:?}"),

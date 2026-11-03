@@ -12,6 +12,7 @@ use super::raw_archive::{overlapping_archive, raw_archive, RawMember, METHOD_DEF
 use super::*;
 
 const HIDDEN: usize = 4;
+const PADDING: usize = 1 << 16;
 const POW_2_46: u64 = 1 << 46;
 const POW_2_62: u64 = 1 << 62;
 const POW_2_63: u64 = 1 << 63;
@@ -131,76 +132,88 @@ fn entries_declared_one_byte_above_the_data_is_refused() {
     assert_inconsistent(err, &member);
 }
 
-fn assert_exceeds_archive(err: StoreLoadError, claimed_at_least: u64, file: &str, dir: &TempDir) {
-    let file_len = std::fs::metadata(dir.path().join(file)).unwrap().len();
-    match err {
-        StoreLoadError::MemberExceedsArchive {
-            claimed,
-            archive_len,
-            ..
-        } => {
-            assert_eq!(archive_len, file_len);
-            assert!(claimed >= claimed_at_least, "claimed {claimed}");
-            assert!(claimed > archive_len, "{claimed} within {archive_len}");
-        }
-        other => panic!("expected MemberExceedsArchive, got {other:?}"),
-    }
-}
-
-/// Both size fields agree, so only the file's real length can refuse them.
-macro_rules! both_sizes_past_the_file_are_refused {
+/// Both size fields agree, so only the file's real layout can refuse them.
+macro_rules! both_sizes_past_the_directory_are_refused {
     ($($test:ident: $file:ident, $member:ident, $size:expr;)*) => {$(
         #[test]
         fn $test() {
             let member = $member().declaring($size).occupying($size).zip64();
-            let dir = store_with_member($file, member);
-            let err = load_err(&dir);
-            assert_exceeds_archive(err, $size, $file, &dir);
+            let err = load_err(&store_with_member($file, member));
+            assert_archive_error(
+                &err,
+                &ArchiveError::BadLocalHeader("data overlaps the central directory"),
+            );
         }
     )*};
 }
 
-both_sizes_past_the_file_are_refused! {
+both_sizes_past_the_directory_are_refused! {
     tokens_both_sizes_2_62: WINDOW_TOKENS_NPZ, tokens_member, POW_2_62;
     tokens_both_sizes_top_of_u64: WINDOW_TOKENS_NPZ, tokens_member, TOP_OF_U64;
     entries_both_sizes_2_62: ENTRIES_NPZ, entries_member, POW_2_62;
     entries_both_sizes_top_of_u64: ENTRIES_NPZ, entries_member, TOP_OF_U64;
 }
 
-/// A claim of exactly the file's length is within the rule, which is inclusive, so
-/// it is the next check that refuses it: this data cannot fit before the directory.
-#[test]
-fn claim_of_exactly_the_archive_length_passes_the_budget() {
-    // Field widths don't change with the value, so the length is known from a dry run.
-    let archive_len = raw_archive(&[tokens_member().zip64()]).len() as u64;
-    let member = tokens_member()
-        .declaring(archive_len)
-        .occupying(archive_len)
-        .zip64();
-    let err = load_err(&store_with_member(WINDOW_TOKENS_NPZ, member));
-    assert_archive_error(
-        &err,
-        &ArchiveError::BadLocalHeader("data overlaps the central directory"),
+fn assert_overlapping(err: &StoreLoadError) {
+    assert!(
+        matches!(
+            err,
+            StoreLoadError::Archive {
+                source: ArchiveError::OverlappingMembers { .. },
+                ..
+            }
+        ),
+        "{err:?}"
     );
 }
 
-/// Each directory record is individually within the file, but they all share
-/// one payload, so a small file would otherwise decode to many times its length.
+/// Differently named records for one payload don't get as far as the overlap check:
+/// only one of the names can match the local header they share.
+fn assert_shared_payload_refused(err: &StoreLoadError) {
+    assert_archive_error(
+        err,
+        &ArchiveError::BadLocalHeader("name differs from the directory"),
+    );
+}
+
+/// Three directory records for one payload, with the file too small to hold three.
 #[test]
-fn tokens_members_overlapping_one_payload_are_refused() {
-    let names = ["0.npy", "1.npy", "2.npy"];
+fn tokens_members_sharing_one_payload_are_refused() {
+    assert_shared_payload_refused(&overlap_err(0, ["0.npy", "1.npy", "2.npy"]));
+}
+
+/// The same with padding, so that the claims fit the file. A rule on the sum of sizes
+/// misses this.
+#[test]
+fn tokens_members_sharing_one_payload_are_refused_with_padding_after_it() {
+    assert_shared_payload_refused(&overlap_err(PADDING, ["0.npy", "1.npy", "2.npy"]));
+}
+
+/// Identically named records pass the name check, so comparing extents must catch them.
+#[test]
+fn identically_named_records_sharing_one_payload_are_refused_as_overlapping() {
+    assert_overlapping(&overlap_err(0, ["0.npy", "0.npy", "0.npy"]));
+    assert_overlapping(&overlap_err(PADDING, ["0.npy", "0.npy", "0.npy"]));
+}
+
+fn overlap_err(padding: usize, names: [&str; 3]) -> StoreLoadError {
     let dir = TempDir::new().unwrap();
     write_minimal_store(dir.path(), names.len(), HIDDEN, TOKENS.len(), &one_entry());
-    let member = tokens_member();
-    let archive = overlapping_archive(&member, &names);
-    let shared_payload_claims = member.data_len() * names.len() as u64;
-    assert!(
-        shared_payload_claims > archive.len() as u64,
-        "the fixture must over-claim the file for this test to mean anything"
-    );
+    let archive = overlapping_archive(&tokens_member(), &names, padding);
     std::fs::write(dir.path().join(WINDOW_TOKENS_NPZ), archive).unwrap();
-    let err = load_err(&dir);
-    assert_exceeds_archive(err, member.data_len(), WINDOW_TOKENS_NPZ, &dir);
+    load_err(&dir)
+}
+
+/// One member's data running one byte into the next member's local header.
+#[test]
+fn adjacent_members_overlapping_by_one_byte_are_refused() {
+    let first = tokens_member();
+    let size = first.data_len() + 1;
+    let archive = raw_archive(&[
+        first.declaring(size).occupying(size),
+        RawMember::stored("1.npy", synth_u32_npy(&TOKENS)),
+    ]);
+    assert_overlapping(&load_err(&store_with_archive(WINDOW_TOKENS_NPZ, &archive)));
 }
 
 /// The reader decodes stored members only, so a compressed one is refused by
@@ -218,25 +231,4 @@ fn deflated_entries_member_is_refused_as_unsupported() {
         RawMember::deflate_wrapped(ENTRIES_MEMBER, synth_structured_entries_npy(&one_entry()));
     let err = load_err(&store_with_member(ENTRIES_NPZ, member));
     assert_archive_error(&err, &ArchiveError::UnsupportedCompression(METHOD_DEFLATED));
-}
-
-/// A running sum that would wrap past `u64::MAX` back to within the file: the first
-/// member is honest and the second claims everything. Saturating stays over the limit.
-#[test]
-fn claims_that_would_wrap_u64_back_into_the_file_are_refused() {
-    const WINDOWS: usize = 2;
-    let dir = TempDir::new().unwrap();
-    write_minimal_store(dir.path(), WINDOWS, HIDDEN, TOKENS.len(), &one_entry());
-    let first = tokens_member();
-    let second = RawMember::stored("1.npy", Vec::new())
-        .declaring(u64::MAX)
-        .occupying(u64::MAX)
-        .zip64();
-    std::fs::write(
-        dir.path().join(WINDOW_TOKENS_NPZ),
-        raw_archive(&[first, second]),
-    )
-    .unwrap();
-    let err = load_err(&dir);
-    assert_exceeds_archive(err, u64::MAX, WINDOW_TOKENS_NPZ, &dir);
 }

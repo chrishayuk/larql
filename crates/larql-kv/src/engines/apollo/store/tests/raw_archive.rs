@@ -303,20 +303,16 @@ pub(super) fn zip64_directory_archive(
     out
 }
 
-/// One local record that every name in `names` points at, so the directory
-/// claims each member's bytes again without the file growing by more than a
-/// directory record.
-pub(super) fn overlapping_archive(member: &RawMember, names: &[&str]) -> Vec<u8> {
+/// One local record that every name in `names` points at, with `padding` after it
+/// so that the claims can be made to fit the file.
+pub(super) fn overlapping_archive(member: &RawMember, names: &[&str], padding: usize) -> Vec<u8> {
     const FIRST_RECORD_OFFSET: u32 = 0;
-    let body = member.local_record();
+    let mut body = member.local_record();
+    body.resize(body.len() + padding, 0);
     let mut directory = Vec::new();
     for name in names {
-        directory.extend_from_slice(
-            &member
-                .clone()
-                .named(name)
-                .central_record(FIRST_RECORD_OFFSET),
-        );
+        let aliased = member.clone().named(name);
+        directory.extend_from_slice(&aliased.central_record(FIRST_RECORD_OFFSET));
     }
     finish(body, directory, names.len())
 }

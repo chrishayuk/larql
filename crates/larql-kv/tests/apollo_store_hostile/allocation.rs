@@ -25,7 +25,10 @@ fn load_refusing(root: &std::path::Path, size: usize) -> StoreLoadError {
 fn assert_refused_bytes(err: &StoreLoadError, file: &str, size: usize) {
     match err {
         StoreLoadError::AllocationRefused { path, bytes } => {
-            assert!(path.contains(file), "{path}");
+            assert!(
+                path.ends_with(file) || std::path::Path::new(path).ends_with(file),
+                "{path}"
+            );
             assert_eq!(*bytes, size as u64);
         }
         other => panic!("expected AllocationRefused for {file}, got {other:?}"),

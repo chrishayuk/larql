@@ -12,7 +12,9 @@ mod filesystem;
 mod fixtures;
 mod fuzz;
 mod instrument;
+mod large_directory;
 mod malformed;
+mod peak;
 
 #[global_allocator]
 static ALLOCATOR: instrument::ThreadCountingAllocator = instrument::ThreadCountingAllocator;

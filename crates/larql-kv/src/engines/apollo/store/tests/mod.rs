@@ -352,10 +352,10 @@ fn load_window_tokens_gapped_archive_errors() {
     }
 }
 
-/// Duplicate member ids ("0.npy" and "0") collapse to the same window id
-/// and must be rejected for the same misalignment reason as gaps.
+/// A bare "0" alongside "0.npy" reads as the same window id. Which one is meant is
+/// not clear, so it is refused rather than guessed at.
 #[test]
-fn load_window_tokens_duplicate_id_errors() {
+fn load_window_tokens_bare_numeric_name_is_ambiguous() {
     let dir = TempDir::new().unwrap();
     write_minimal_store(dir.path(), 2, 4, 3, &[]);
     let members = vec![
@@ -369,13 +369,11 @@ fn load_window_tokens_duplicate_id_errors() {
     .unwrap();
     let err = ApolloStore::load(dir.path()).unwrap_err();
     match err {
-        StoreLoadError::WindowArchive(msg) => {
-            assert!(
-                msg.contains("expected id 1") && msg.contains("found 0"),
-                "unexpected message: {msg}"
-            );
-        }
-        other => panic!("expected WindowArchive, got {other:?}"),
+        StoreLoadError::Archive {
+            source: ArchiveError::AmbiguousMemberName(name),
+            ..
+        } => assert_eq!(name, "0"),
+        other => panic!("expected AmbiguousMemberName, got {other:?}"),
     }
 }
 

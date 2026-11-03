@@ -8,16 +8,17 @@ pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
 ## Apollo store loading no longer trusts file-declared sizes or file types (2026-11-03)
 
-Issue #679 and the review of PR #684. A store of a few hundred bytes, or a sparse
+Issue #679 and the reviews of PR #684. A store of a few hundred bytes, or a sparse
 file of 16 KiB on disk, could abort `ApolloStore::load`, and a FIFO could hang it.
 
 **The load path no longer calls `zip::ZipArchive::new`.** It reserves capacity for
 the record count an archive declares, limited by the file's logical length and with
 an infallible `Vec::with_capacity`, so a sparse `.npz` could abort the process. No
 entry point on its seekable reader avoids that and zip 9.2.2 still reserves
-infallibly, so `npz.rs` is a stored-only reader that allocates per record actually
-read. `zip` is now a dev-dependency here, used to write fixtures and to compare the
-two readers under fuzzing.
+infallibly, so `npz.rs` is a stored-only reader. Its directory is one fallible
+allocation of fixed-size records, capped by `max_records`. `zip` is now a
+dev-dependency here, used to write fixtures and to compare the two readers under
+fuzzing.
 
 **Files must be regular.** The file type is checked on the open handle, opened with
 `O_NONBLOCK` on Unix, so devices, FIFOs and directories are refused without blocking.
@@ -25,26 +26,41 @@ Symlinks to regular files still load.
 
 **Reads have limits.** `StoreLimits` and `ApolloStore::load_with_limits` are new; `load`
 uses the documented defaults in `store_limits.rs`: 1 MiB for the manifest, 8 MiB for
-each boundary or residual, 1 GiB for each archive and 4 GiB for the whole store. Input
-limits are not allocation safety, so buffers and decoded arrays also use fallible
-allocation and report `AllocationRefused`.
+each boundary or residual, 512 MiB for each archive, 2 GiB for the whole store and
+131,072 records per archive or windows per manifest. Input limits are not allocation
+safety, so anything sized from a file's contents uses fallible allocation and reports
+`AllocationRefused`.
 
 **This is not protection against memory exhaustion.** Limits compare logical length,
-so a sparse file inside them still costs real memory, up to 4 GiB by default for a
-few KiB on disk. On a host that overcommits, that can still end in an OOM kill. Small
-bounded allocations, such as paths and JSON values, remain infallible.
+so a sparse file inside them still costs real memory, and on a host that overcommits
+that can still end in an OOM kill. The worst case is
+`max_store_bytes + 8/7 * max_archive_bytes + max_records * ~200 bytes`, because the
+entries' bytes are still held while they decode. A sparse store at the defaults was
+measured on aarch64 macOS at 2.57 GiB live and 2.59 GiB maximum RSS. Fixed
+small allocations remain infallible: JSON values within the manifest limit, `.npy`
+headers, paths and error text.
 
 **Newly refused:**
 
 - Stores over the default limits, including some the format allows. Use
   `load_with_limits`.
 - Device, FIFO and directory paths.
-- `.npz` files whose central directory isn't immediately before the end record, or
-  whose ZIP64 end record has an extensible data sector as well as a prefix.
-- Members whose declared and stored sizes differ, whose bytes overlap across members
-  or reach into the directory.
+- `.npz` files whose central directory isn't immediately before the end record (or a
+  ZIP64 end record there), whose ZIP64 end record has an extensible data sector as
+  well as a prefix, or whose ZIP64 records disagree with a plain end record.
+- Members whose extents overlap or reach into the directory, including records sharing
+  a payload.
+- Members whose declared and stored sizes differ, whose local name differs from the
+  directory, or whose flags say encrypted, strong encryption or patched data.
+- Nonzero ZIP64 disk numbers.
 - Compressed members in any build, including one that enables `zip/deflate`. They
   were already refused in every build in this workspace.
+- More than one `entries.npy`, where numpy and `zip` read the last and this reader used
+  to read the first.
+- `entries.npz` with no member named exactly `entries.npy`. A prefix such as
+  `entries_old.npy` used to match.
+- Window members not named canonically, such as `00.npy`, `+1.npy`, `1` or `1.npy.npy`.
+  These used to be taken as window ids.
 
 **Changed behaviour:**
 
@@ -53,6 +69,8 @@ bounded allocations, such as paths and JSON values, remain infallible.
   or one whose contents don't parse still reads as absent.
 - `StoreLoadError::Zip` is replaced by `StoreLoadError::Archive`, with a typed
   `ArchiveError`. A failed member CRC is now `ArchiveError::CrcMismatch`, not `Io`.
+- `num_windows` over `max_records` is `TooManyRecords` rather than the first missing
+  boundary file.
 - A compressed member that the load doesn't read, such as a README in an archive,
   no longer fails the load.
 

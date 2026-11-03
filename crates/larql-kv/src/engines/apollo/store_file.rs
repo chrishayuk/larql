@@ -1,6 +1,7 @@
 //! Opening and reading store files without trusting what they are or how long
 //! they say they are.
 
+use std::fmt::Display;
 use std::fs::{File, OpenOptions};
 use std::io::Read;
 use std::path::Path;
@@ -68,18 +69,31 @@ pub(super) fn open_regular(path: &Path) -> Result<RegularFile, StoreLoadError> {
     })
 }
 
-/// Reserve room for `additional` more elements, refusing with a typed error
-/// where `Vec::with_capacity` would abort.
+/// Reserve exactly `additional` more elements, refusing with a typed error where
+/// `Vec::with_capacity` would abort. For a size known up front.
 pub(super) fn try_reserve_for<T>(
     vec: &mut Vec<T>,
     additional: usize,
-    path: &str,
+    path: &dyn Display,
 ) -> Result<(), StoreLoadError> {
     vec.try_reserve_exact(additional)
-        .map_err(|_| StoreLoadError::AllocationRefused {
-            path: path.to_string(),
-            bytes: u64::try_from(additional.saturating_mul(size_of::<T>())).unwrap_or(u64::MAX),
-        })
+        .map_err(|_| allocation_refused::<T>(additional, path))
+}
+
+/// Make room to push one more, with the amortised growth a plain `push` has.
+pub(super) fn try_reserve_push<T>(
+    vec: &mut Vec<T>,
+    path: &dyn Display,
+) -> Result<(), StoreLoadError> {
+    vec.try_reserve(1)
+        .map_err(|_| allocation_refused::<T>(vec.len().saturating_add(1), path))
+}
+
+fn allocation_refused<T>(elements: usize, path: &dyn Display) -> StoreLoadError {
+    StoreLoadError::AllocationRefused {
+        path: path.to_string(),
+        bytes: u64::try_from(elements.saturating_mul(size_of::<T>())).unwrap_or(u64::MAX),
+    }
 }
 
 /// Read exactly `len` bytes from the reader's current position. A file that has
@@ -87,7 +101,7 @@ pub(super) fn try_reserve_for<T>(
 pub(super) fn read_exactly(
     reader: impl Read,
     len: u64,
-    path: &str,
+    path: &dyn Display,
 ) -> Result<Vec<u8>, StoreLoadError> {
     let capacity = usize::try_from(len).map_err(|_| StoreLoadError::AllocationRefused {
         path: path.to_string(),
@@ -153,6 +167,6 @@ impl<'a> StoreReader<'a> {
 
     pub(super) fn read_file(&mut self, path: &Path, limit: u64) -> Result<Vec<u8>, StoreLoadError> {
         let RegularFile { file, len, path } = self.open(path, limit)?;
-        read_exactly(file, len, &path)
+        read_exactly(file, len, &path.as_str())
     }
 }
