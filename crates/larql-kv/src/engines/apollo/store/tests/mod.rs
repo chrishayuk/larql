@@ -303,17 +303,17 @@ fn load_boundary_residual_malformed_npy_returns_none_via_ok() {
     assert!(store.boundary_residual.is_none());
 }
 
-/// Drive the npz / zip error-wrap path in `load_window_tokens`
+/// Drive the npz error-wrap path in `load_window_tokens`
 /// (lines 206-209): write a non-zip file as window_token_lists.npz.
 #[test]
-fn load_window_tokens_malformed_npz_returns_zip_error() {
+fn load_window_tokens_malformed_npz_returns_archive_error() {
     let dir = TempDir::new().unwrap();
     write_minimal_store(dir.path(), 1, 4, 3, &[]);
     std::fs::write(dir.path().join("window_token_lists.npz"), b"NOT_A_ZIP").unwrap();
     let err = ApolloStore::load(dir.path()).unwrap_err();
     assert!(
-        matches!(err, StoreLoadError::Zip { .. }),
-        "expected Zip error on malformed npz, got {err:?}"
+        matches!(err, StoreLoadError::Archive { .. }),
+        "expected Archive error on malformed npz, got {err:?}"
     );
 }
 
@@ -352,10 +352,10 @@ fn load_window_tokens_gapped_archive_errors() {
     }
 }
 
-/// Duplicate member ids ("0.npy" and "0") collapse to the same window id
-/// and must be rejected for the same misalignment reason as gaps.
+/// A bare "0" alongside "0.npy" reads as the same window id. Which one is meant is
+/// not clear, so it is refused rather than guessed at.
 #[test]
-fn load_window_tokens_duplicate_id_errors() {
+fn load_window_tokens_bare_numeric_name_is_ambiguous() {
     let dir = TempDir::new().unwrap();
     write_minimal_store(dir.path(), 2, 4, 3, &[]);
     let members = vec![
@@ -369,13 +369,11 @@ fn load_window_tokens_duplicate_id_errors() {
     .unwrap();
     let err = ApolloStore::load(dir.path()).unwrap_err();
     match err {
-        StoreLoadError::WindowArchive(msg) => {
-            assert!(
-                msg.contains("expected id 1") && msg.contains("found 0"),
-                "unexpected message: {msg}"
-            );
-        }
-        other => panic!("expected WindowArchive, got {other:?}"),
+        StoreLoadError::Archive {
+            source: ArchiveError::AmbiguousMemberName(name),
+            ..
+        } => assert_eq!(name, "0"),
+        other => panic!("expected AmbiguousMemberName, got {other:?}"),
     }
 }
 
@@ -539,7 +537,7 @@ fn structured_npy_missing_field_errors() {
     // 12 bytes: u32 + f32 + u16 + u16
     blob.extend_from_slice(&[0u8; 12]);
     let err = parse_structured_entries_npy(&blob).unwrap_err();
-    assert!(err.contains("fact_id"));
+    assert!(err.to_string().contains("fact_id"));
 }
 
 /// Build a structured .npy blob with an arbitrary descr string and raw
@@ -582,11 +580,12 @@ fn structured_npy_reordered_descr_errors() {
     let blob = synth_structured_with_descr(descr, 1, &row);
     let err = parse_structured_entries_npy(&blob).unwrap_err();
     assert!(
-        err.contains("structured descr mismatch"),
+        err.to_string().contains("structured descr mismatch"),
         "unexpected error: {err}"
     );
     assert!(
-        err.contains(r#"("coefficient", "<f4"), ("token_id", "<u4")"#),
+        err.to_string()
+            .contains("('coefficient', '<f4'), ('token_id', '<u4')"),
         "error should report the offending field order, got: {err}"
     );
 }
@@ -601,7 +600,7 @@ fn structured_npy_retyped_field_errors() {
     let blob = synth_structured_with_descr(descr, 1, &[0u8; 14]);
     let err = parse_structured_entries_npy(&blob).unwrap_err();
     assert!(
-        err.contains("structured descr mismatch") && err.contains("<i4"),
+        err.to_string().contains("structured descr mismatch") && err.to_string().contains("<i4"),
         "unexpected error: {err}"
     );
 }
@@ -627,7 +626,7 @@ fn structured_npy_2d_shape_errors() {
     blob.extend_from_slice(&padded);
     blob.extend_from_slice(&[0u8; 14]);
     let err = parse_structured_entries_npy(&blob).unwrap_err();
-    assert!(err.contains("expected 1D"));
+    assert!(err.to_string().contains("expected 1D"));
 }
 
 #[test]
@@ -652,14 +651,27 @@ fn structured_npy_data_size_mismatch_errors() {
     blob.extend_from_slice(&padded);
     blob.extend_from_slice(&[0u8; 14]); // only 1 row × 14 bytes
     let err = parse_structured_entries_npy(&blob).unwrap_err();
-    assert!(err.contains("data size"));
+    assert!(err.to_string().contains("data size"));
 }
 
 #[test]
 fn structured_npy_bad_magic_errors() {
     let blob = b"not a valid npy".to_vec();
     let err = parse_structured_entries_npy(&blob).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 mod archive_errors;
+mod file_reading;
+#[cfg(target_pointer_width = "64")]
+mod raw_archive;
+// `shape` and `num_windows` values past 2^32 do not parse on a 32-bit target,
+// so these cases would be refused earlier there, with a different variant.
+#[cfg(target_pointer_width = "64")]
+mod hostile_archive_sizes;
+#[cfg(target_pointer_width = "64")]
+mod hostile_manifest;
+#[cfg(target_pointer_width = "64")]
+mod hostile_npy_shapes;
+#[cfg(target_pointer_width = "64")]
+mod npz_format;

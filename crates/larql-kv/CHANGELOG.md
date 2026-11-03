@@ -6,6 +6,113 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) conventions
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## Apollo store loading no longer trusts file-declared sizes or file types (2026-11-03)
+
+Issue #679 and the reviews of PR #684. A store of a few hundred bytes, or a sparse
+file of 16 KiB on disk, could abort `ApolloStore::load`, and a FIFO could hang it.
+
+**The load path no longer calls `zip::ZipArchive::new`.** It reserves capacity for
+the record count an archive declares, limited by the file's logical length and with
+an infallible `Vec::with_capacity`, so a sparse `.npz` could abort the process. No
+entry point on its seekable reader avoids that and zip 9.2.2 still reserves
+infallibly, so `npz.rs` is a stored-only reader. Its directory is one fallible
+allocation of fixed-size records, capped by `max_records`. `zip` is now a
+dev-dependency here, used to write fixtures and to compare the two readers under
+fuzzing.
+
+**Files must be regular.** On Unix the file type is checked on the open handle, opened
+with `O_NONBLOCK`, so devices, FIFOs and directories are refused without blocking. Windows
+has no such flag: the open can block on some device paths and a device can pass the file
+type check. No device or pipe case has been run on Windows. Symlinks to regular files
+still load.
+
+**Reads have limits.** `StoreLimits` and `ApolloStore::load_with_limits` are new; `load`
+uses the documented defaults in `store_limits.rs`: 1 MiB for the manifest, 8 MiB for
+each boundary or residual, 512 MiB for each archive, 2 GiB for the whole store and
+131,072 records per archive or windows per manifest. Input limits are not allocation
+safety, so anything sized from a file's contents uses fallible allocation and reports
+`AllocationRefused`.
+
+**This is not protection against memory exhaustion.** Limits compare logical length,
+so a sparse file inside them still costs real memory, and on a host that overcommits
+that can still end in an OOM kill. The worst case is
+`max_store_bytes + 8/7 * max_archive_bytes + max_records * ~200 bytes + ~2 MiB`, because the
+entries' bytes are still held while they decode. A sparse store at the defaults was
+measured on aarch64 macOS at 2.57 GiB live and 2.59 GiB maximum RSS. Fixed
+small allocations remain infallible: JSON values within the manifest limit, `.npy`
+headers, paths and error text.
+
+**Refused by structure.** `.npy` headers must be exactly the layout numpy's writer
+produces for format 1.0, `{'descr': X, 'fortran_order': False, 'shape': (...), }` with
+spaces and a newline as padding, and `descr` must be one of the three known strings,
+compared whole. The end record is the one at the zero-comment position if it says it
+has no comment, otherwise the last signature in the final 64 KiB, with no fallback. Members must have disjoint extents before the directory, a local name
+matching the directory, equal declared and stored sizes, and no encryption flags.
+
+**Newly refused:**
+
+- Stores over the default limits, including some the format allows. Use
+  `load_with_limits`.
+- Directory paths and, on Unix, device and FIFO paths. A device can pass on Windows, as
+  above.
+- `.npz` files whose central directory isn't immediately before the end record (or a
+  ZIP64 end record there), whose ZIP64 records disagree with a plain end record or
+  aren't adjacent to it, whose locator's stated and adjacent records differ, or with a
+  ZIP64 extensible data sector as well as a prefix.
+- A comment or trailing bytes holding a bogus end signature, since that is then the
+  last one. A comment holding a consistent end record selects that record, as numpy and
+  `zip` 9.2.2 do. An ordinary comment or trailing bytes load, with two kinds of exception.
+  A record ending 64 KiB or more from the file's end is refused: a 65,535-byte comment
+  plus 1 trailing byte is refused here and loads in numpy. A comment or trailing bytes are
+  also refused when the record's own fields, or those fields running into the comment,
+  spell the end signature, such as a directory offset of that value or a record count and
+  directory length that together spell it. numpy refuses these too.
+- `.npy` minor versions other than 1.0, which numpy refuses too.
+- Any window, `entries` or boundary `.npy` header not in the writer's form: other key
+  order or spacing and extra keys among them. Python 2 `3L` shapes, Fortran order and
+  `.npy` formats 2.0 and 3.0 were already refused. Honest files from old numpy or non-numpy
+  writers may be refused by this, including headers numpy itself loads, such as one with
+  no trailing comma. No real files from such writers have been tried.
+- Overlapping members, including records sharing a payload, and data reaching into the
+  directory. Declared and stored sizes that differ.
+- More than one `entries.npy`, a bare `entries` beside it, or no member named exactly
+  that. Non-canonical window names such as `00.npy`, `+1.npy`, `1` or `1.npy.npy`.
+- A NUL in any member name, and a Unicode Path extra field naming a member differently
+  when either name is ASCII. This could refuse an honest archive with an ASCII stand-in
+  name and a differing Unicode Path. Info-ZIP wrote no such field in the runs tried.
+- Nonzero ZIP64 disk numbers, a full ZIP64 extra field whose values differ from the
+  record's, and flags for encryption, strong encryption or patched data.
+- Compressed members in any build, including one that enables `zip/deflate`.
+
+**Other readers may still read a crafted file differently.** Byte-identical behaviour
+with numpy, `zipfile` or `zip` is not claimed, and this parser won't be extended for it.
+Known cases, all from crafted files:
+
+- A file with another zip before it, concatenated or as a prefix: `zip` 2.4.2 and 3.0.0
+  can read the earlier archive's directory, while this reader, numpy and `zip` 9.2.2 read
+  the last.
+- A comment holding a consistent end record: `zip` 2.4.2 and 3.0.0 read the outer archive,
+  while this reader, numpy and `zip` 9.2.2 read the one in the comment. 2.4.2 is the
+  version locked as this crate's dev-dependency. The load path doesn't use `zip`.
+- Files this reader loads and numpy refuses: prefixed files, ZIP64 extensible sectors,
+  and overlong UTF-8 in an unread member's name.
+- Decoy names such as `./entries.npy`, which this reader ignores. Other tools that
+  normalise names, or `zipfile` on Windows with a backslash, could treat them otherwise.
+
+**Changed behaviour:**
+
+- A residual that can't be read, is not a regular file, is over its limit or hits a
+  refused allocation is now an error. It used to read as absent. A missing residual
+  or one whose contents don't parse reads as absent, with no error, and the stricter
+  header check widens that: a residual whose header isn't in the writer's form used to
+  load in some cases, such as no trailing comma, and now silently reads as absent.
+- `StoreLoadError::Zip` is replaced by `StoreLoadError::Archive`, with a typed
+  `ArchiveError`. A failed member CRC is now `ArchiveError::CrcMismatch`, not `Io`.
+- `num_windows` over `max_records` is `TooManyRecords` rather than the first missing
+  boundary file.
+- A compressed member that the load doesn't read, such as a README in an archive,
+  no longer fails the load.
+
 ## Windowed engines keep the fused path; the bench measures a whole token (2026-08-04)
 
 Started as "check the engines benchmark correctly" and the instrument was the

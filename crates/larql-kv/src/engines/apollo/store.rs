@@ -14,11 +14,22 @@
 //! └── entries.npz                # structured array of VecInjectEntry
 //! ```
 //!
-//! Loading uses a handwritten `.npy` parser (see `npy.rs`) + the `zip` crate
-//! for the `.npz` containers. No `ndarray-npy` dependency because its
+//! Loading uses a handwritten `.npy` parser (see `npy.rs`) and a stored-only
+//! `.npz` reader (see `npz.rs`). No `ndarray-npy` dependency because its
 //! current release (0.10) pins ndarray 0.17 and our workspace is on 0.16.
+//!
+//! Every size and every file in a store is untrusted. Files must be regular
+//! (`store_file.rs`) and within [`StoreLimits`], compared with their logical
+//! length. Allocations whose size comes from file contents are fallible and made
+//! after the size is checked against that length. A manifest's `num_windows` and an
+//! archive's record count are capped, and neither sizes an allocation until they are.
+//!
+//! This does not make loading safe against memory exhaustion. A sparse file is
+//! judged by its logical length, so a tiny file within the limits still costs real
+//! memory up to the peak derived in `store_limits.rs`. Allocations whose size is
+//! bounded regardless of the file stay infallible: JSON values within the manifest's
+//! limit, `.npy` headers, paths and error text.
 
-use std::io::Read;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -26,6 +37,9 @@ use thiserror::Error;
 
 use super::entry::VecInjectEntry;
 use super::npy;
+use super::npz::{ArchiveError, StoredArchive};
+use super::store_file::{try_reserve_for, try_reserve_push, StoreReader};
+use super::store_limits::StoreLimits;
 
 #[derive(Debug, Error)]
 pub enum StoreLoadError {
@@ -43,12 +57,30 @@ pub enum StoreLoadError {
         #[source]
         source: npy::NpyError,
     },
-    #[error("zip parse error in {path}: {source}")]
-    Zip {
+    #[error("archive error in {path}: {source}")]
+    Archive {
         path: String,
         #[source]
-        source: zip::result::ZipError,
+        source: ArchiveError,
     },
+    #[error("{path}: not a regular file ({file_type})")]
+    NotRegularFile { path: String, file_type: String },
+    #[error("{path}: {len} bytes is over the limit of {limit}")]
+    FileTooLarge { path: String, len: u64, limit: u64 },
+    #[error("{path}: brings the store to {total} bytes, over the limit of {limit}")]
+    StoreTooLarge {
+        path: String,
+        total: u64,
+        limit: u64,
+    },
+    #[error("{path}: {records} records is over the limit of {limit}")]
+    TooManyRecords {
+        path: String,
+        records: u64,
+        limit: u64,
+    },
+    #[error("{path}: allocation of {bytes} bytes refused")]
+    AllocationRefused { path: String, bytes: u64 },
     #[error("store missing required file: {0}")]
     MissingFile(String),
     #[error("manifest mismatch: {0}")]
@@ -57,6 +89,23 @@ pub enum StoreLoadError {
     StructuredDtype { path: String, reason: String },
     #[error("window_token_lists archive invalid: {0}")]
     WindowArchive(String),
+    /// A member's two declared sizes disagree.
+    #[error(
+        "{path}: member declares {declared} uncompressed bytes but occupies {stored} bytes; \
+         only stored (uncompressed) .npz members are supported"
+    )]
+    MemberSizeInconsistent {
+        path: String,
+        declared: u64,
+        stored: u64,
+    },
+    /// A file or member read back a different length from the one measured.
+    #[error("{path}: expected {declared} bytes but read back {read}")]
+    MemberLengthMismatch {
+        path: String,
+        declared: u64,
+        read: u64,
+    },
 }
 
 /// Contents of `manifest.json`.
@@ -111,13 +160,24 @@ pub struct ApolloStore {
 }
 
 impl ApolloStore {
-    /// Load an Apollo store from a directory.
+    /// Load an Apollo store from a directory, within [`StoreLimits::default`].
+    ///
+    /// Malformed input returns an error rather than aborting, with the limits
+    /// in `store_limits.rs`: treat this as bounding, not preventing, the memory
+    /// an untrusted store can cost.
     pub fn load(path: &Path) -> Result<Self, StoreLoadError> {
-        let manifest = load_manifest(path)?;
-        let boundaries = load_boundaries(path, manifest.num_windows)?;
-        let boundary_residual = load_boundary_residual(path).ok();
-        let window_tokens = load_window_tokens(path)?;
-        let entries = load_entries(path)?;
+        Self::load_with_limits(path, &StoreLimits::default())
+    }
+
+    /// [`Self::load`] with explicit limits, for a store larger than the defaults
+    /// admit or a host with less memory to spare.
+    pub fn load_with_limits(path: &Path, limits: &StoreLimits) -> Result<Self, StoreLoadError> {
+        let mut reader = StoreReader::new(limits);
+        let manifest = load_manifest(&mut reader, path)?;
+        let boundaries = load_boundaries(&mut reader, path, manifest.num_windows)?;
+        let boundary_residual = load_boundary_residual(&mut reader, path)?;
+        let window_tokens = load_window_tokens(&mut reader, path)?;
+        let entries = load_entries(&mut reader, path)?;
 
         if boundaries.len() != manifest.num_windows {
             return Err(StoreLoadError::ManifestMismatch(format!(
@@ -172,105 +232,163 @@ impl ApolloStore {
 
 // ── internals ────────────────────────────────────────────────────────────
 
-fn read_file(path: &Path) -> Result<Vec<u8>, StoreLoadError> {
-    std::fs::read(path).map_err(|source| StoreLoadError::Io {
-        path: path.display().to_string(),
-        source,
-    })
-}
-
-fn load_manifest(path: &Path) -> Result<StoreManifest, StoreLoadError> {
-    let bytes = read_file(&path.join("manifest.json"))?;
+fn load_manifest(reader: &mut StoreReader, path: &Path) -> Result<StoreManifest, StoreLoadError> {
+    let limit = reader.limits().max_manifest_bytes;
+    let bytes = reader.read_file(&path.join("manifest.json"), limit)?;
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn load_boundaries(path: &Path, num_windows: usize) -> Result<Vec<Vec<f32>>, StoreLoadError> {
+fn load_boundaries(
+    reader: &mut StoreReader,
+    path: &Path,
+    num_windows: usize,
+) -> Result<Vec<Vec<f32>>, StoreLoadError> {
+    let limits = *reader.limits();
+    if num_windows as u64 > limits.max_records {
+        return Err(StoreLoadError::TooManyRecords {
+            path: path.join("manifest.json").display().to_string(),
+            records: num_windows as u64,
+            limit: limits.max_records,
+        });
+    }
     let dir = path.join("boundaries");
-    let mut out = Vec::with_capacity(num_windows);
+    let mut out = Vec::new();
     for i in 0..num_windows {
         let p = dir.join(format!("window_{:03}.npy", i));
-        let bytes = read_file(&p)?;
+        let bytes = reader.read_file(&p, limits.max_array_file_bytes)?;
         let arr = npy::read_f32_1d(&bytes).map_err(|source| StoreLoadError::Npy {
             path: p.display().to_string(),
             source,
         })?;
+        try_reserve_push(&mut out, &p.display())?;
         out.push(arr);
     }
     Ok(out)
 }
 
-fn load_boundary_residual(path: &Path) -> Result<Vec<f32>, StoreLoadError> {
+/// `None` if the optional residual is absent or its contents are not a usable
+/// array. A file that cannot be read as a regular file within the limits, or an
+/// allocation refused, is a failure of the store and not an absent residual.
+fn load_boundary_residual(
+    reader: &mut StoreReader,
+    path: &Path,
+) -> Result<Option<Vec<f32>>, StoreLoadError> {
     let p = path.join("boundary_residual.npy");
-    let bytes = read_file(&p)?;
-    let (flat, _shape) = npy::read_f32_flat(&bytes).map_err(|source| StoreLoadError::Npy {
-        path: p.display().to_string(),
-        source,
-    })?;
-    Ok(flat)
+    let limit = reader.limits().max_array_file_bytes;
+    let bytes = match reader.read_file(&p, limit) {
+        Ok(bytes) => bytes,
+        Err(StoreLoadError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(other) => return Err(other),
+    };
+    match npy::read_f32_flat(&bytes) {
+        Ok((flat, _shape)) => Ok(Some(flat)),
+        Err(source @ npy::NpyError::AllocationRefused { .. }) => Err(StoreLoadError::Npy {
+            path: p.display().to_string(),
+            source,
+        }),
+        Err(_) => Ok(None),
+    }
 }
 
-fn load_window_tokens(path: &Path) -> Result<Vec<Vec<u32>>, StoreLoadError> {
+fn open_archive(reader: &mut StoreReader, path: &Path) -> Result<StoredArchive, StoreLoadError> {
+    let limits = *reader.limits();
+    StoredArchive::open(
+        reader.open(path, limits.max_archive_bytes)?,
+        limits.max_records,
+    )
+}
+
+const NPY_SUFFIX: &str = ".npy";
+/// What `np.savez(entries=...)` writes. The name is exact: `entries_old.npy` is some
+/// other array, and accepting prefixes would make the choice depend on member order.
+const ENTRIES_MEMBER: &[u8] = b"entries.npy";
+/// `numpy` looks up the key `entries` as this name first, ahead of `entries.npy`.
+const ENTRIES_BARE_NAME: &[u8] = b"entries";
+
+/// What a member of `window_token_lists.npz` is, from its name.
+#[derive(Debug, PartialEq, Eq)]
+enum TokenMember {
+    Window(usize),
+    /// Reads as a window id but isn't how one is written (`00.npy`, `+1.npy`, `1`,
+    /// `1.npy.npy`). It isn't clear which window it means, or if it means one at all.
+    Ambiguous,
+    Other,
+}
+
+fn classify_token_member(name: &[u8]) -> TokenMember {
+    let Ok(name) = std::str::from_utf8(name) else {
+        return TokenMember::Other;
+    };
+    let stem = name.trim_end_matches(NPY_SUFFIX);
+    let Ok(id) = stem.parse::<usize>() else {
+        return TokenMember::Other;
+    };
+    let single_suffix = name.len() == stem.len() + NPY_SUFFIX.len();
+    let canonical_digits =
+        stem.bytes().all(|byte| byte.is_ascii_digit()) && (stem == "0" || !stem.starts_with('0'));
+    if single_suffix && canonical_digits {
+        TokenMember::Window(id)
+    } else {
+        TokenMember::Ambiguous
+    }
+}
+
+fn ambiguous_member(path: String, name: &[u8]) -> StoreLoadError {
+    StoreLoadError::Archive {
+        path,
+        source: ArchiveError::AmbiguousMemberName(String::from_utf8_lossy(name).into_owned()),
+    }
+}
+
+fn load_window_tokens(
+    reader: &mut StoreReader,
+    path: &Path,
+) -> Result<Vec<Vec<u32>>, StoreLoadError> {
     let p = path.join("window_token_lists.npz");
-    let file = std::fs::File::open(&p).map_err(|source| StoreLoadError::Io {
-        path: p.display().to_string(),
-        source,
-    })?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|source| StoreLoadError::Zip {
-        path: p.display().to_string(),
-        source,
-    })?;
+    let mut archive = open_archive(reader, &p)?;
 
     // Collect and numerically sort the members so returned Vec is indexable
     // by window_id. Member names are like "0.npy", "1.npy", ...
-    let mut numbered: Vec<(usize, String)> = Vec::with_capacity(archive.len());
-    for i in 0..archive.len() {
-        let name = archive
-            .by_index(i)
-            .map_err(|source| StoreLoadError::Zip {
-                path: p.display().to_string(),
-                source,
-            })?
-            .name()
-            .to_string();
-        let trimmed = name.trim_end_matches(".npy");
-        if let Ok(id) = trimmed.parse::<usize>() {
-            numbered.push((id, name));
+    let mut windows: Vec<(usize, usize)> = Vec::new();
+    for (position, name) in archive.names().enumerate() {
+        let Some(name) = name else { continue };
+        match classify_token_member(name) {
+            TokenMember::Window(id) => {
+                try_reserve_push(&mut windows, &p.display())?;
+                windows.push((id, position));
+            }
+            TokenMember::Ambiguous => {
+                return Err(ambiguous_member(p.display().to_string(), name));
+            }
+            TokenMember::Other => {}
         }
     }
-    numbered.sort_by_key(|(i, _)| *i);
+    windows.sort_unstable_by_key(|(id, _)| *id);
 
     // Invariant: the returned Vec is indexed by window_id, so member ids
     // must be exactly 0..len after the sort — a gapped archive (0, 1, 3)
     // or a duplicated id would otherwise be packed densely and silently
     // misalign every later window against boundaries/entries.
-    for (expected_id, (id, name)) in numbered.iter().enumerate() {
+    for (expected_id, (id, position)) in windows.iter().enumerate() {
         if *id != expected_id {
             return Err(StoreLoadError::WindowArchive(format!(
                 "{}: member ids must be contiguous from 0 — expected id {expected_id}, \
-                 found {id} ({name}); a gapped or duplicated archive would misalign \
+                 found {id} ({}); a gapped or duplicated archive would misalign \
                  window ids against boundaries/entries",
                 p.display(),
+                archive.member_display(*position),
             )));
         }
     }
 
-    let mut out = Vec::with_capacity(numbered.len());
-    for (_id, name) in numbered {
-        let mut entry = archive
-            .by_name(&name)
-            .map_err(|source| StoreLoadError::Zip {
-                path: format!("{}::{}", p.display(), name),
-                source,
-            })?;
-        let mut buf = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut buf)
-            .map_err(|source| StoreLoadError::Io {
-                path: format!("{}::{}", p.display(), name),
-                source,
-            })?;
+    let mut out = Vec::new();
+    try_reserve_for(&mut out, windows.len(), &p.display())?;
+    for (_id, position) in windows {
+        let buf = archive.read_member(position)?;
         let arr = npy::read_u32_1d(&buf).map_err(|source| StoreLoadError::Npy {
-            path: format!("{}::{}", p.display(), name),
+            path: archive.member_display(position).to_string(),
             source,
         })?;
         out.push(arr);
@@ -278,144 +396,102 @@ fn load_window_tokens(path: &Path) -> Result<Vec<Vec<u32>>, StoreLoadError> {
     Ok(out)
 }
 
-fn load_entries(path: &Path) -> Result<Vec<VecInjectEntry>, StoreLoadError> {
+fn load_entries(
+    reader: &mut StoreReader,
+    path: &Path,
+) -> Result<Vec<VecInjectEntry>, StoreLoadError> {
     let p = path.join("entries.npz");
-    let file = std::fs::File::open(&p).map_err(|source| StoreLoadError::Io {
-        path: p.display().to_string(),
-        source,
-    })?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|source| StoreLoadError::Zip {
-        path: p.display().to_string(),
-        source,
-    })?;
+    let mut archive = open_archive(reader, &p)?;
 
-    // Find the first member whose name starts with "entries" (typically
-    // "entries.npy" inside the zip).
-    let member_name = {
-        let mut found: Option<String> = None;
-        for i in 0..archive.len() {
-            let n = archive
-                .by_index(i)
-                .map_err(|source| StoreLoadError::Zip {
-                    path: p.display().to_string(),
-                    source,
-                })?
-                .name()
-                .to_string();
-            if n.starts_with("entries") {
-                found = Some(n);
-                break;
-            }
+    // Readers disagree on a duplicate: `numpy` and `zip` take the last, and a reader
+    // taking the first would see different data. So there must be exactly one, and no
+    // bare `entries` for `numpy` to prefer to it.
+    let mut matching = archive
+        .names()
+        .enumerate()
+        .filter(|(_, name)| *name == Some(ENTRIES_MEMBER))
+        .map(|(position, _)| position);
+    let (first, second) = (matching.next(), matching.next());
+    drop(matching);
+    let has_bare_name = archive.names().any(|name| name == Some(ENTRIES_BARE_NAME));
+    let position =
+        first.ok_or_else(|| StoreLoadError::MissingFile("entries.npz::entries.npy".into()))?;
+    if second.is_some() || has_bare_name {
+        return Err(ambiguous_member(p.display().to_string(), ENTRIES_MEMBER));
+    }
+    let bytes = archive.read_member(position)?;
+
+    parse_structured_entries_npy(&bytes).map_err(|error| {
+        let member_path = archive.member_display(position).to_string();
+        match error {
+            npy::NpyError::StructuredLayout(reason) => StoreLoadError::StructuredDtype {
+                path: member_path,
+                reason,
+            },
+            source => StoreLoadError::Npy {
+                path: member_path,
+                source,
+            },
         }
-        found.ok_or_else(|| StoreLoadError::MissingFile("entries.npz::entries".into()))?
-    };
-
-    let mut entry = archive
-        .by_name(&member_name)
-        .map_err(|source| StoreLoadError::Zip {
-            path: format!("{}::{}", p.display(), member_name),
-            source,
-        })?;
-    let mut bytes = Vec::with_capacity(entry.size() as usize);
-    entry
-        .read_to_end(&mut bytes)
-        .map_err(|source| StoreLoadError::Io {
-            path: member_name.clone(),
-            source,
-        })?;
-
-    parse_structured_entries_npy(&bytes).map_err(|reason| StoreLoadError::StructuredDtype {
-        path: format!("{}::{}", p.display(), member_name),
-        reason,
     })
 }
 
-/// Exact structured-dtype layout the row decoder below assumes. Invariant:
-/// the decoder reads fields at fixed byte offsets in this order, so the
-/// archive's descr must match name-for-name AND dtype-for-dtype in this
-/// exact order — a reordered or retyped descr would otherwise decode into
-/// garbage coefficients/ids without any error.
-const ENTRY_DESCR_FIELDS: [(&str, &str); 5] = [
-    ("token_id", "<u4"),
-    ("coefficient", "<f4"),
-    ("window_id", "<u2"),
-    ("position_in_window", "<u2"),
-    ("fact_id", "<u2"),
-];
+/// The structured dtype the row decoder below assumes, as `numpy` writes it. The
+/// decoder reads fixed offsets, and any other text could mean another layout, so this
+/// is compared whole: a reordered or retyped field, a subarray or padding is refused.
+const ENTRY_DESCR: &str = "[('token_id', '<u4'), ('coefficient', '<f4'), ('window_id', '<u2'), \
+                           ('position_in_window', '<u2'), ('fact_id', '<u2')]";
 
-/// Extract every single-quoted token from a numpy structured descr, in
-/// order. For `[('token_id', '<u4'), ...]` this yields alternating
-/// field-name / dtype strings — numpy always emits single quotes here.
-fn descr_quoted_tokens(descr: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut rest = descr;
-    while let Some(start) = rest.find('\'') {
-        let after = &rest[start + 1..];
-        let Some(end) = after.find('\'') else { break };
-        out.push(&after[..end]);
-        rest = &after[end + 1..];
-    }
-    out
-}
-
-/// Validate that `descr` declares exactly [`ENTRY_DESCR_FIELDS`] — same
-/// fields, same dtypes, same order. Presence-by-substring is not enough:
-/// the decoder reads fixed offsets.
-fn check_entry_descr(descr: &str) -> Result<(), String> {
-    let tokens = descr_quoted_tokens(descr);
-    let got: Vec<(&str, &str)> = tokens
-        .chunks(2)
-        .filter(|c| c.len() == 2)
-        .map(|c| (c[0], c[1]))
-        .collect();
-    if got != ENTRY_DESCR_FIELDS {
-        return Err(format!(
-            "structured descr mismatch: got fields {got:?}, expected {ENTRY_DESCR_FIELDS:?} \
+fn check_entry_descr(descr: &str) -> Result<(), npy::NpyError> {
+    if descr != ENTRY_DESCR {
+        return Err(npy::NpyError::StructuredLayout(format!(
+            "structured descr mismatch: got {descr}, expected {ENTRY_DESCR} \
              (decoder reads fixed offsets; field order and dtypes must match exactly)"
-        ));
+        )));
     }
     Ok(())
 }
 
 /// Parse a .npy file containing a structured-dtype array of `VecInjectEntry`.
 ///
-/// Expected dtype (from the Python side): see [`ENTRY_DESCR_FIELDS`].
+/// Expected dtype (from the Python side): see [`ENTRY_DESCR`].
 /// Row size: 14 bytes, no padding (numpy packs structured dtypes tightly
 /// when fields are already aligned).
-fn parse_structured_entries_npy(bytes: &[u8]) -> Result<Vec<VecInjectEntry>, String> {
-    let (header, data_off) = npy::parse_header(bytes).map_err(|e| e.to_string())?;
+fn parse_structured_entries_npy(bytes: &[u8]) -> Result<Vec<VecInjectEntry>, npy::NpyError> {
+    let (header, data_off) = npy::parse_header(bytes)?;
 
-    check_entry_descr(&header.descr)?;
+    check_entry_descr(header.descr)?;
     if header.shape.len() != 1 {
-        return Err(format!(
+        return Err(npy::NpyError::StructuredLayout(format!(
             "expected 1D structured array, got shape {:?}",
             header.shape
-        ));
+        )));
     }
 
     const ROW_SIZE: usize = 4 + 4 + 2 + 2 + 2;
     let n = header.shape[0];
     let data = &bytes[data_off..];
-    let expected = n * ROW_SIZE;
+    let expected = npy::checked_data_len(&header.shape, ROW_SIZE)?;
     if data.len() != expected {
-        return Err(format!(
+        return Err(npy::NpyError::StructuredLayout(format!(
             "data size {} != expected {} ({} rows × {} bytes)",
             data.len(),
             expected,
             n,
             ROW_SIZE,
-        ));
+        )));
     }
 
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let o = i * ROW_SIZE;
+    // `n` rows of `ROW_SIZE` bytes are present in `data`, as just checked.
+    let mut out = npy::try_vec_with_capacity(n)?;
+    let (rows, _) = data.as_chunks::<ROW_SIZE>();
+    for row in rows {
         out.push(VecInjectEntry {
-            token_id: u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]),
-            coefficient: f32::from_le_bytes([data[o + 4], data[o + 5], data[o + 6], data[o + 7]]),
-            window_id: u16::from_le_bytes([data[o + 8], data[o + 9]]),
-            position_in_window: u16::from_le_bytes([data[o + 10], data[o + 11]]),
-            fact_id: u16::from_le_bytes([data[o + 12], data[o + 13]]),
+            token_id: u32::from_le_bytes([row[0], row[1], row[2], row[3]]),
+            coefficient: f32::from_le_bytes([row[4], row[5], row[6], row[7]]),
+            window_id: u16::from_le_bytes([row[8], row[9]]),
+            position_in_window: u16::from_le_bytes([row[10], row[11]]),
+            fact_id: u16::from_le_bytes([row[12], row[13]]),
         });
     }
     Ok(out)
