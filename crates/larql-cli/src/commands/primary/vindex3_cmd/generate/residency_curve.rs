@@ -225,7 +225,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     println!("{}", instance_line("before binding", &judged));
     let wanted = evidence.execution.wanted_encoding.as_deref();
     let requested = evidence.execution.block();
-    let selection_faults = selection_problems(wanted, store.selection());
+    let selection_faults = selection_problems(wanted, store.selection(), &opening.absent_objects);
     println!("{}", execution_line("before binding", &selection_faults));
     let judged_early = class_with_execution(evidence.mode, judged.class, &selection_faults);
     if let Some(file) = regions_file.as_mut() {
@@ -409,7 +409,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let effective = effective_execution(backend, &ops, store, wanted);
     println!("{}", execution_line("admission", &effective.problems));
     let admission_class = class_with_execution(evidence.mode, judged.class, &effective.problems);
-    let mut execution = effective.block;
+    let mut execution = effective.block.clone();
     execution["requested"] = requested;
     let facts = AttemptFacts {
         mode: evidence.mode,
@@ -495,7 +495,7 @@ pub(in super::super) fn run_residency_curve<B: PlanBackend>(
     let finishing = store.instance_report();
     let judged = judge(evidence.mode, &finishing, manifest.as_ref(), index_digest);
     println!("{}", instance_line("after run", &judged));
-    let ran = after_run_execution(store, wanted);
+    let ran = after_run_execution(&effective);
     println!("{}", execution_line("after run", &ran.problems));
     let finishing_class = class_with_execution(evidence.mode, judged.class, &ran.problems);
     let final_class = if finishing_class == EvidenceClass::Invalid {

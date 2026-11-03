@@ -20,9 +20,6 @@ use std::path::PathBuf;
 use larql_vindex::format::checksums::sha256_file;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::cpu;
-use larql_vindex::format::vindex3::opplan::exec::cpu::physical::{
-    kquant_execution, KQuantExecution,
-};
 use larql_vindex::format::vindex3::opplan::exec::identity::ExecutionIdentity;
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, SelectedRepresentation};
 use larql_vindex::format::vindex3::opplan::exec::prepared::PreparedOperands;
@@ -30,6 +27,7 @@ use larql_vindex::format::vindex3::opplan::exec::provenance::ExecutionProvenance
 use larql_vindex::format::vindex3::opplan::exec::realization::{
     RealizationForm, RealizationRecord,
 };
+use larql_vindex::format::vindex3::represent::map::Precision;
 use serde_json::{json, Value};
 
 use super::admission::RunMode;
@@ -44,6 +42,7 @@ const SCOPE: &str = "records which computation was selected and pinned; does not
 /// nothing here is evidence of what ran.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(in super::super) struct ExecutionRequest {
+    pub(in super::super) component: String,
     /// `--backend`, as the flag spells it.
     pub(in super::super) backend: String,
     /// The encoding `--backend` or `--representation` asked the store for.
@@ -68,6 +67,7 @@ impl ExecutionRequest {
             })
             .collect();
         json!({
+            "component": self.component,
             "backend": self.backend,
             "wanted_encoding": self.wanted_encoding,
             "plugins": plugins,
@@ -93,54 +93,97 @@ pub(in super::super) fn selection_block(
         .collect()
 }
 
-/// Why this selection is not what was asked for.
-///
-/// Packs normally cover some of a container's objects, so an object without
-/// one is not by itself a fallback, and the container doesn't record which
-/// objects were left out on purpose. Which objects have packs is fixed by
-/// `index.json`, which a manifest binds by digest. An attempt with no pack of
-/// the wanted encoding at all ran none of what it asked for.
+/// Why this selection is not what was asked for: seen before anything is bound.
+/// Whether the packs that exist cover what they should is judged on the pins.
 pub(in super::super) fn selection_problems(
     wanted: Option<&str>,
     selection: &BTreeMap<String, SelectedRepresentation>,
+    absent: &[String],
 ) -> Vec<String> {
     let mut problems = Vec::new();
     if selection.is_empty() {
         problems.push("the store selected no object".to_string());
     }
     if let Some(wanted) = wanted {
-        let present = selection
-            .values()
-            .any(|selected| selected.stored && selected.encoding == wanted);
-        if !present {
+        let packs: Vec<&String> = selection
+            .iter()
+            .filter(|(_, selected)| selected.stored && selected.encoding == wanted)
+            .map(|(object, _)| object)
+            .collect();
+        if packs.is_empty() {
             problems.push(format!(
                 "encoding {wanted} was asked for and no selected object has a pack of it: \
                  the run would fall back to canonical bytes"
+            ));
+        }
+        let missing: Vec<&&String> = packs.iter().filter(|o| absent.contains(o)).collect();
+        if !missing.is_empty() {
+            problems.push(format!(
+                "encoding {wanted} was asked for and the pack of {missing:?} is not on disk"
             ));
         }
     }
     problems
 }
 
+/// How a pin uses its stored bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in super::super) enum PinUse {
+    /// Runs the stored form in place.
+    InPlace,
+    /// Decodes or requantises rather than running the stored form.
+    Converts,
+    /// Anything else, such as a gathered embedding table: it touches the stored
+    /// bytes and isn't evidence the wanted kernel ran.
+    Other,
+}
+
 /// One pin, reduced to what a fallback check reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in super::super) struct PinFacts {
+    pub(in super::super) object: String,
     pub(in super::super) representation: String,
-    /// The pin decodes or requantises rather than running the stored form.
-    pub(in super::super) converts: bool,
+    pub(in super::super) pin_use: PinUse,
+    /// The container's precision program compiles this tensor to the wanted
+    /// encoding.
+    pub(in super::super) program_compiles: bool,
+    /// This pin's object was served from a compiled pack.
+    pub(in super::super) object_from_pack: bool,
 }
 
 impl PinFacts {
-    fn of(record: &RealizationRecord) -> Self {
+    fn of(record: &RealizationRecord, store: &OperandStore, wanted: Option<&str>) -> Self {
+        let operand = &record.planned.operand;
+        let role = store.role_of(&operand.object, &operand.tensor, &operand.shape);
+        let program_compiles = match (store.program(), wanted) {
+            (Some(program), Some(wanted)) => {
+                program.resolve(role, &operand.tensor) == Precision::Compiled(wanted)
+            }
+            _ => false,
+        };
         Self {
+            object: operand.object.clone(),
             representation: record.representation.clone(),
-            converts: matches!(
-                record.selection.realization.form,
-                RealizationForm::Decode(_) | RealizationForm::Requantise(_)
-            ),
+            pin_use: match record.selection.realization.form {
+                RealizationForm::Direct(_) | RealizationForm::MappedStored { .. } => {
+                    PinUse::InPlace
+                }
+                RealizationForm::Decode(_) | RealizationForm::Requantise(_) => PinUse::Converts,
+                _ => PinUse::Other,
+            },
+            program_compiles,
+            object_from_pack: store
+                .selection()
+                .get(&operand.object)
+                .is_some_and(|s| s.stored),
         }
     }
 }
+
+/// Stored forms a precision program can leave alone: a bank already held in a
+/// packed encoding isn't compiled again, whatever roles the program names. Any
+/// other label beside a compiling program is treated as a missing pack.
+const ALREADY_PACKED: &[&str] = &["MXFP4"];
 
 /// The facts a judgement on the effective execution reads, kept separate from
 /// where they come from so each refusal can be pinned on its own.
@@ -154,9 +197,8 @@ pub(in super::super) struct EffectiveFacts {
     pub(in super::super) overlaid: bool,
     /// Why the process's arithmetic could not be read, if it could not.
     pub(in super::super) process_error: Option<String>,
-    /// A stored K-quant pack is widened to f32 in this process.
-    pub(in super::super) kquant_widened: bool,
-    pub(in super::super) runtime_quantised: u64,
+    /// The container declares a precision program.
+    pub(in super::super) program_declared: bool,
 }
 
 /// Why this execution's identity is incomplete, or is not what was asked for.
@@ -184,39 +226,56 @@ pub(in super::super) fn effective_problems(
         problems.push(format!("the process arithmetic is unreadable: {error}"));
     }
     if let Some(wanted) = wanted {
-        let from_wanted: Vec<&PinFacts> = facts
-            .pins
-            .iter()
-            .filter(|pin| pin.representation == wanted)
-            .collect();
-        if from_wanted.is_empty() {
-            problems.push(format!(
-                "encoding {wanted} was asked for and no operand was pinned from it"
-            ));
-        }
-        let converted = from_wanted.iter().filter(|pin| pin.converts).count();
-        if converted > 0 {
-            problems.push(format!(
-                "encoding {wanted} was asked for and {converted} operand(s) pinned from it \
-                 decode or requantise instead of running it"
-            ));
-        }
-        if facts.kquant_widened {
-            problems.push(format!(
-                "encoding {wanted} was asked for and this process widens stored K-quant packs \
-                 to f32"
-            ));
-        }
-        problems.extend(quantisation_problem(facts.runtime_quantised));
+        problems.extend(wanted_problems(wanted, facts));
     }
     problems
 }
 
-/// A representation the runtime made is not the one that was asked for.
-pub(in super::super) fn quantisation_problem(runtime_quantised: u64) -> Option<String> {
-    (runtime_quantised > 0).then(|| {
-        format!("the runtime quantised {runtime_quantised} tensor(s) rather than serving them")
-    })
+/// Whether the wanted encoding is what executes: in place, on the objects the
+/// container's own program says were compiled to it.
+fn wanted_problems(wanted: &str, facts: &EffectiveFacts) -> Vec<String> {
+    let mut problems = Vec::new();
+    let from_wanted = || facts.pins.iter().filter(|pin| pin.representation == wanted);
+    if !from_wanted().any(|pin| pin.pin_use == PinUse::InPlace) {
+        problems.push(format!(
+            "encoding {wanted} was asked for and no operand runs it in place: \
+             the wanted kernel would not run"
+        ));
+    }
+    let converted = from_wanted()
+        .filter(|pin| pin.pin_use == PinUse::Converts)
+        .count();
+    if converted > 0 {
+        problems.push(format!(
+            "encoding {wanted} was asked for and {converted} operand(s) pinned from it \
+             decode or requantise instead of running it"
+        ));
+    }
+    if !facts.program_declared {
+        problems.push(format!(
+            "encoding {wanted} was asked for and the container declares no precision program, \
+             so an object without a pack can't be told from one left out on purpose"
+        ));
+    }
+    let mut uncompiled: Vec<&str> = facts
+        .pins
+        .iter()
+        .filter(|pin| {
+            pin.program_compiles
+                && !pin.object_from_pack
+                && !ALREADY_PACKED.contains(&pin.representation.as_str())
+        })
+        .map(|pin| pin.object.as_str())
+        .collect();
+    uncompiled.sort_unstable();
+    uncompiled.dedup();
+    if !uncompiled.is_empty() {
+        problems.push(format!(
+            "encoding {wanted} was asked for and the container's precision program compiles \
+             {uncompiled:?}, which has no pack: it would fall back to canonical bytes"
+        ));
+    }
+    problems
 }
 
 /// What the store selected and the image pinned, with its problems.
@@ -224,6 +283,9 @@ pub(in super::super) fn quantisation_problem(runtime_quantised: u64) -> Option<S
 pub(in super::super) struct EffectiveExecution {
     pub(in super::super) block: Value,
     pub(in super::super) problems: Vec<String>,
+    /// The kernels the pins say run the wanted encoding in place, as the
+    /// executor's ledger names them.
+    pub(in super::super) wanted_plans: Vec<String>,
 }
 
 /// Read the effective execution off the backend, the image and the process.
@@ -236,8 +298,8 @@ pub(in super::super) fn effective_execution<B: PlanBackend>(
 ) -> EffectiveExecution {
     let provider = backend.identity().to_string();
     let identity = ExecutionIdentity::of(ops, None);
-    let mut pinned_lowering: Vec<String> = ops
-        .realizations()
+    let records = ops.realizations();
+    let mut pinned_lowering: Vec<String> = records
         .iter()
         .map(|record| record.lowering_provider.to_string())
         .collect();
@@ -246,13 +308,25 @@ pub(in super::super) fn effective_execution<B: PlanBackend>(
     let facts = EffectiveFacts {
         provider: provider.clone(),
         pinned_lowering: pinned_lowering.clone(),
-        pins: ops.realizations().iter().map(PinFacts::of).collect(),
+        pins: records
+            .iter()
+            .map(|record| PinFacts::of(record, store, wanted))
+            .collect(),
         overlaid: ops.source_stamp().is_overlaid(),
         process_error: identity.as_ref().err().map(ToString::to_string),
-        kquant_widened: kquant_execution() == KQuantExecution::Widen,
-        runtime_quantised: store.runtime_quantised(),
+        program_declared: store.program().is_some(),
     };
     let problems = effective_problems(wanted, &facts);
+    let mut wanted_plans: Vec<String> = records
+        .iter()
+        .filter(|record| Some(record.representation.as_str()) == wanted)
+        .filter_map(|record| match record.selection.realization.form {
+            RealizationForm::Direct(plan) => Some(format!("{plan:?}")),
+            _ => None,
+        })
+        .collect();
+    wanted_plans.sort();
+    wanted_plans.dedup();
     let provenance = ExecutionProvenance::of(ops);
     let block = json!({
         "complete": problems.is_empty(),
@@ -262,45 +336,72 @@ pub(in super::super) fn effective_execution<B: PlanBackend>(
         "pinned_lowering": pinned_lowering,
         "objects": selection_block(store.selection()),
         "objects_from_pack": store.selection().values().filter(|s| s.stored).count(),
+        "precision_program": store.program().map(|program| program.describe()),
         "realizations": provenance.realizations,
         "process": identity.as_ref().ok().map(|i| &i.process),
         "execution_digest": identity.as_ref().ok().map(ExecutionIdentity::digest),
         "digest_binds_model": false,
         "overlaid": facts.overlaid,
-        "runtime_quantised": facts.runtime_quantised,
         "scope": SCOPE,
     });
-    EffectiveExecution { block, problems }
+    EffectiveExecution {
+        block,
+        problems,
+        wanted_plans,
+    }
 }
 
-/// What the run went on to do: the projection plans the executor's own ledger
-/// counted, without its timings, and anything the runtime manufactured.
-pub(in super::super) fn after_run_execution(
-    store: &OperandStore,
-    wanted: Option<&str>,
-) -> EffectiveAfter {
-    let plans: Vec<Value> = cpu::ledger()
+/// One line of the executor's ledger, without its timings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in super::super) struct PlanRan {
+    pub(in super::super) plan: String,
+    pub(in super::super) calls: u64,
+    pub(in super::super) bytes: u64,
+}
+
+/// What the executor's ledger counted.
+fn plans_ran() -> Vec<PlanRan> {
+    cpu::ledger()
         .all()
         .iter()
         .filter(|(_, traffic)| traffic.calls > 0)
-        .map(|(plan, traffic)| {
-            json!({
-                "plan": format!("{plan:?}"),
-                "calls": traffic.calls,
-                "bytes": traffic.bytes,
-            })
+        .map(|(plan, traffic)| PlanRan {
+            plan: format!("{plan:?}"),
+            calls: traffic.calls,
+            bytes: traffic.bytes,
         })
-        .collect();
-    let runtime_quantised = store.runtime_quantised();
-    let problems: Vec<String> = wanted
-        .and_then(|_| quantisation_problem(runtime_quantised))
-        .into_iter()
+        .collect()
+}
+
+/// A kernel pinned for the wanted encoding that the ledger never counted did not
+/// run. A form with no named kernel, such as a mapped bank, can't be checked here.
+pub(in super::super) fn ran_problems(wanted_plans: &[String], ran: &[PlanRan]) -> Vec<String> {
+    if wanted_plans.is_empty() || ran.iter().any(|r| wanted_plans.contains(&r.plan)) {
+        return Vec::new();
+    }
+    vec![format!(
+        "the pins name {wanted_plans:?} for the wanted encoding and the executor's ledger counted \
+         none of them"
+    )]
+}
+
+/// What the run went on to do: the projection plans the executor's own ledger
+/// counted, without its timings, judged with what was found at admission so the
+/// last record doesn't read cleaner than the first.
+pub(in super::super) fn after_run_execution(admission: &EffectiveExecution) -> EffectiveAfter {
+    let ran = plans_ran();
+    let problems = ran_problems(&admission.wanted_plans, &ran);
+    let plans: Vec<Value> = ran
+        .iter()
+        .map(|r| json!({ "plan": r.plan, "calls": r.calls, "bytes": r.bytes }))
         .collect();
     EffectiveAfter {
         block: json!({
-            "projection_plans_ran": plans,
-            "runtime_quantised": runtime_quantised,
+            "complete": admission.problems.is_empty() && problems.is_empty(),
             "problems": problems,
+            "admission_problems": admission.problems,
+            "wanted_plans": admission.wanted_plans,
+            "projection_plans_ran": plans,
         }),
         problems,
     }

@@ -127,13 +127,24 @@ fn canonical_container(root: &Path) -> PathBuf {
 }
 
 fn packed_container(root: &Path, canonical: &Path, encoding: &str) -> PathBuf {
-    let packed = root.join(format!("pack-{encoding}"));
+    packed_with(root, canonical, encoding, "whole", &[])
+}
+
+fn packed_with(
+    root: &Path,
+    canonical: &Path,
+    encoding: &str,
+    name: &str,
+    extra: &[&str],
+) -> PathBuf {
+    let packed = root.join(format!("pack-{encoding}-{name}"));
     let compiled = Command::new(env!("CARGO_BIN_EXE_larql"))
         .args(["vindex3", "represent"])
         .arg(canonical)
         .arg("--output")
         .arg(&packed)
         .args(["--encoding", encoding])
+        .args(extra)
         .output()
         .expect("run larql");
     assert!(
@@ -297,7 +308,11 @@ fn a_stored_pack_widened_by_the_process_stops_a_campaign_at_admission() {
         manifest: None,
     });
     assert_ne!(refused.code, Some(0));
-    assert!(refused.err.contains("widens"), "{}", refused.err);
+    assert!(
+        refused.err.contains("decode or requantise"),
+        "{}",
+        refused.err
+    );
     assert_eq!(refused.admission()["evidence_class"], "invalid");
     assert_eq!(refused.execution()["complete"], false);
     assert_eq!(objects_from_pack(refused.execution()), [Q4_K]);
@@ -321,6 +336,107 @@ fn a_stored_pack_widened_by_the_process_stops_a_campaign_at_admission() {
         direct.execution()["execution_digest"]
     );
     assert_eq!(recorded.execution()["process"]["kquant_execution"], "Widen");
+}
+
+/// A pack of the wanted encoding exists and no wanted kernel runs: the review's
+/// case, where `production-q4k` over an embedding-only pack ran BLAS on BF16
+/// throughout and read as complete.
+#[test]
+fn a_pack_that_leaves_the_wanted_kernel_unused_stops_a_campaign_at_admission() {
+    let root = tempfile::tempdir().unwrap();
+    let canonical = canonical_container(root.path());
+    let packed = packed_with(
+        root.path(),
+        &canonical,
+        NVFP4,
+        "embedding",
+        &[
+            "--object",
+            "target.embedding",
+            "--include-role",
+            "embedding",
+        ],
+    );
+    let backend = ["--backend", "production-nvfp4"];
+    let refused = campaign(&packed, &backend);
+    assert_ne!(refused.code, Some(0));
+    assert_eq!(refused.admission()["evidence_class"], "invalid");
+    let execution = refused.execution();
+    assert_eq!(execution["complete"], false);
+    assert_eq!(
+        objects_from_pack(execution),
+        [NVFP4],
+        "the selection alone passes"
+    );
+    assert!(
+        refused.err.contains("no operand runs it in place"),
+        "{}",
+        refused.err
+    );
+    // The program compiles the decoder too, and the decoder has no pack.
+    assert!(
+        refused.err.contains("target.decoder_stack"),
+        "{}",
+        refused.err
+    );
+    assert!(!refused.stream.iter().any(|r| r["phase"] == "after_run"));
+
+    let recorded = diagnostic(&packed, &backend);
+    assert_eq!(recorded.code, Some(0), "{}", recorded.err);
+    assert_eq!(recorded.execution()["complete"], false);
+    let after = recorded
+        .stream
+        .iter()
+        .find(|r| r["record"] == "instance_identity" && r["phase"] == "after_run")
+        .unwrap();
+    assert_eq!(after["execution_identity"]["complete"], false);
+    assert_eq!(recorded.admission()["evidence_class"], "diagnostic");
+}
+
+/// A protected layer is the program's own decision, so it isn't a fallback.
+#[test]
+fn a_protected_layer_is_recorded_and_not_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let canonical = canonical_container(root.path());
+    let packed = packed_with(
+        root.path(),
+        &canonical,
+        NVFP4,
+        "protected",
+        &["--protect-layers", "0-0"],
+    );
+    let ran = campaign(&packed, &["--backend", "production-nvfp4"]);
+    assert_eq!(ran.code, Some(0), "{}", ran.err);
+    assert_eq!(ran.execution()["complete"], true, "{}", ran.execution());
+    assert!(ran.execution()["precision_program"]
+        .as_str()
+        .unwrap()
+        .contains("layers 0-0"));
+}
+
+/// The index still describes the pack; its file is gone.
+#[test]
+fn a_pack_file_missing_from_disk_stops_a_campaign_before_binding() {
+    let root = tempfile::tempdir().unwrap();
+    let canonical = canonical_container(root.path());
+    let packed = packed_container(root.path(), &canonical, NVFP4);
+    let backend = ["--backend", "production-nvfp4"];
+    let seen = campaign(&packed, &backend);
+    assert_eq!(seen.code, Some(0), "{}", seen.err);
+    let segment = seen.before_binding()["instance_identity"]["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["declared"].as_str().unwrap())
+        .find(|declared| declared.contains(NVFP4))
+        .expect("a selected pack segment")
+        .to_string();
+    std::fs::remove_file(packed.join(segment)).unwrap();
+    let refused = campaign(&packed, &backend);
+    assert_ne!(refused.code, Some(0));
+    assert!(refused.stopped_before_binding());
+    assert_eq!(refused.before_binding()["evidence_class"], "invalid");
+    assert!(refused.err.contains("not on disk"), "{}", refused.err);
 }
 
 /// Backends that really differ differ on the record, with no flag involved.
@@ -365,6 +481,15 @@ fn a_campaign_on_a_real_pack_records_what_each_backend_ran() {
         .unwrap();
     assert!(!ran.is_empty(), "{after}");
     assert!(ran.iter().all(|plan| plan.get("nanos").is_none()));
+    let wanted = after["execution_identity"]["wanted_plans"]
+        .as_array()
+        .unwrap();
+    assert!(!wanted.is_empty(), "{after}");
+    assert!(
+        ran.iter().any(|plan| wanted.contains(&plan["plan"])),
+        "{after}"
+    );
+    assert_eq!(after["execution_identity"]["complete"], true, "{after}");
     assert_eq!(fused.admission()["evidence_class"], "unverified");
 }
 

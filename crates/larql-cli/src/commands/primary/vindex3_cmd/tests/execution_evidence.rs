@@ -9,8 +9,8 @@ use larql_vindex::format::vindex3::opplan::exec::operands::SelectedRepresentatio
 
 use super::super::generate::admission::RunMode;
 use super::super::generate::execution_evidence::{
-    class_with_execution, effective_problems, execution_line, quantisation_problem,
-    selection_block, selection_problems, EffectiveFacts, ExecutionRequest, PinFacts,
+    class_with_execution, effective_problems, execution_line, ran_problems, selection_block,
+    selection_problems, EffectiveFacts, ExecutionRequest, PinFacts, PinUse, PlanRan,
 };
 use super::super::generate::instance_evidence::EvidenceClass;
 use super::super::prepare::{backend_flag_name, campaign_supports_backend, wanted_encoding};
@@ -35,10 +35,13 @@ fn selection(objects: &[(&str, &str, bool)]) -> BTreeMap<String, SelectedReprese
         .collect()
 }
 
-fn pin(representation: &str, converts: bool) -> PinFacts {
+fn pin(representation: &str, pin_use: PinUse) -> PinFacts {
     PinFacts {
+        object: "decoder".to_string(),
         representation: representation.to_string(),
-        converts,
+        pin_use,
+        program_compiles: false,
+        object_from_pack: true,
     }
 }
 
@@ -47,11 +50,13 @@ fn sound() -> EffectiveFacts {
     EffectiveFacts {
         provider: PROVIDER.to_string(),
         pinned_lowering: vec![PROVIDER.to_string()],
-        pins: vec![pin(WANTED, false), pin(CANONICAL, true)],
+        pins: vec![
+            pin(WANTED, PinUse::InPlace),
+            pin(CANONICAL, PinUse::Converts),
+        ],
         overlaid: false,
         process_error: None,
-        kquant_widened: false,
-        runtime_quantised: 0,
+        program_declared: true,
     }
 }
 
@@ -109,50 +114,136 @@ fn unreadable_process_arithmetic_is_incomplete() {
 #[test]
 fn a_wanted_encoding_nothing_was_pinned_from_is_a_fallback() {
     let facts = EffectiveFacts {
-        pins: vec![pin(CANONICAL, false)],
+        pins: vec![pin(CANONICAL, PinUse::InPlace)],
         ..sound()
     };
-    one_problem(&facts, Some(WANTED), "no operand was pinned");
+    one_problem(&facts, Some(WANTED), "no operand runs it in place");
+}
+
+/// An embedding-only pack: one gathered table from the wanted encoding, and no
+/// wanted kernel anywhere.
+#[test]
+fn a_pin_that_only_gathers_the_wanted_encoding_is_not_the_wanted_kernel() {
+    let facts = EffectiveFacts {
+        pins: vec![pin(WANTED, PinUse::Other), pin(CANONICAL, PinUse::Converts)],
+        ..sound()
+    };
+    one_problem(&facts, Some(WANTED), "no operand runs it in place");
+}
+
+#[test]
+fn a_gathered_table_beside_kernels_in_place_is_not_a_problem() {
+    let facts = EffectiveFacts {
+        pins: vec![pin(WANTED, PinUse::InPlace), pin(WANTED, PinUse::Other)],
+        ..sound()
+    };
+    assert_eq!(
+        effective_problems(Some(WANTED), &facts),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
 fn a_pin_that_converts_the_wanted_encoding_is_a_fallback() {
     let facts = EffectiveFacts {
-        pins: vec![pin(WANTED, false), pin(WANTED, true), pin(WANTED, true)],
+        pins: vec![
+            pin(WANTED, PinUse::InPlace),
+            pin(WANTED, PinUse::Converts),
+            pin(WANTED, PinUse::Converts),
+        ],
         ..sound()
     };
     one_problem(&facts, Some(WANTED), "2 operand(s)");
 }
 
 #[test]
-fn widening_stored_packs_is_a_fallback_only_when_an_encoding_was_wanted() {
+fn a_container_with_no_precision_program_cannot_show_its_coverage() {
     let facts = EffectiveFacts {
-        kquant_widened: true,
+        program_declared: false,
         ..sound()
     };
-    one_problem(&facts, Some(WANTED), "widens");
+    one_problem(&facts, Some(WANTED), "no precision program");
     assert!(effective_problems(None, &facts).is_empty());
 }
 
+fn compiled_elsewhere(representation: &str, object_from_pack: bool) -> PinFacts {
+    PinFacts {
+        object: "head".to_string(),
+        program_compiles: true,
+        object_from_pack,
+        ..pin(representation, PinUse::Converts)
+    }
+}
+
+/// The program says this object was compiled, and it has no pack.
 #[test]
-fn a_manufactured_representation_is_a_fallback_only_when_one_was_wanted() {
-    let facts = EffectiveFacts {
-        runtime_quantised: 3,
-        ..sound()
+fn an_object_the_program_compiles_with_no_pack_is_a_fallback() {
+    let mut facts = sound();
+    facts.pins.push(compiled_elsewhere(CANONICAL, false));
+    facts.pins.push(compiled_elsewhere(CANONICAL, false));
+    let problems = effective_problems(Some(WANTED), &facts);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("[\"head\"]"), "{problems:?}");
+}
+
+/// A tensor carried verbatim inside a pack is the encoder's decision, and a bank
+/// already packed isn't compiled again. Neither is a missing pack.
+#[test]
+fn a_carried_tensor_and_an_already_packed_bank_are_not_fallbacks() {
+    let mut facts = sound();
+    facts.pins.push(compiled_elsewhere(CANONICAL, true));
+    facts.pins.push(compiled_elsewhere("MXFP4", false));
+    assert_eq!(
+        effective_problems(Some(WANTED), &facts),
+        Vec::<String>::new()
+    );
+}
+
+/// Protected or uncompiled roles: the program doesn't compile them, so a pack
+/// isn't owed.
+#[test]
+fn an_object_the_program_does_not_compile_needs_no_pack() {
+    let mut facts = sound();
+    facts.pins.push(PinFacts {
+        object_from_pack: false,
+        ..pin(CANONICAL, PinUse::Converts)
+    });
+    assert_eq!(
+        effective_problems(Some(WANTED), &facts),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_kernel_the_ledger_never_counted_did_not_run() {
+    let plans = vec!["FusedKQuant".to_string()];
+    let ran = |plan: &str| {
+        vec![PlanRan {
+            plan: plan.to_string(),
+            calls: 3,
+            bytes: 9,
+        }]
     };
-    one_problem(&facts, Some(WANTED), "quantised 3");
-    assert!(effective_problems(None, &facts).is_empty());
-    assert_eq!(quantisation_problem(0), None);
+    assert_eq!(
+        ran_problems(&plans, &ran("FusedKQuant")),
+        Vec::<String>::new()
+    );
+    let problems = ran_problems(&plans, &ran("BlasF32"));
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("FusedKQuant"), "{problems:?}");
+    assert_eq!(ran_problems(&plans, &[]).len(), 1);
+    // Nothing named to look for: a mapped bank, or nothing wanted.
+    assert!(ran_problems(&[], &ran("BlasF32")).is_empty());
 }
 
 #[test]
 fn a_wanted_encoding_with_no_pack_is_a_fallback() {
     let canonical = selection(&[("a", CANONICAL, false), ("b", CANONICAL, false)]);
-    let problems = selection_problems(Some(WANTED), &canonical);
+    let problems = selection_problems(Some(WANTED), &canonical, &[]);
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("fall back"), "{problems:?}");
     // Nothing wanted, nothing to fall back from.
-    assert!(selection_problems(None, &canonical).is_empty());
+    assert!(selection_problems(None, &canonical, &[]).is_empty());
 }
 
 /// A pack of another encoding isn't the one asked for, and a canonical object
@@ -160,17 +251,24 @@ fn a_wanted_encoding_with_no_pack_is_a_fallback() {
 #[test]
 fn only_a_pack_of_the_wanted_encoding_counts() {
     let other = selection(&[("a", "Q4_K", true)]);
-    assert_eq!(selection_problems(Some(WANTED), &other).len(), 1);
+    assert_eq!(selection_problems(Some(WANTED), &other, &[]).len(), 1);
     let not_a_pack = selection(&[("a", WANTED, false)]);
-    assert_eq!(selection_problems(Some(WANTED), &not_a_pack).len(), 1);
+    assert_eq!(selection_problems(Some(WANTED), &not_a_pack, &[]).len(), 1);
 }
 
-/// A limit stated in the doc: real packs cover some objects, so a canonical
-/// object beside a pack is recorded and not refused.
 #[test]
-fn partial_pack_coverage_is_recorded_not_refused() {
+fn a_pack_the_index_describes_and_the_disk_lacks_is_a_fallback() {
+    let packed = selection(&[("a", WANTED, true), ("b", CANONICAL, false)]);
+    let problems = selection_problems(Some(WANTED), &packed, &["a".to_string()]);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("not on disk"), "{problems:?}");
+    // A canonical object not hydrated yet is the store's business, not a fallback.
+    assert!(selection_problems(Some(WANTED), &packed, &["b".to_string()]).is_empty());
+}
+
+#[test]
+fn the_selection_block_says_which_objects_came_from_a_pack() {
     let partial = selection(&[("a", WANTED, true), ("b", CANONICAL, false)]);
-    assert!(selection_problems(Some(WANTED), &partial).is_empty());
     let block = selection_block(&partial);
     assert_eq!(block[0]["from_pack"], true);
     assert_eq!(block[0]["encoding"], WANTED);
@@ -181,7 +279,7 @@ fn partial_pack_coverage_is_recorded_not_refused() {
 
 #[test]
 fn an_empty_selection_is_incomplete() {
-    let problems = selection_problems(None, &BTreeMap::new());
+    let problems = selection_problems(None, &BTreeMap::new(), &[]);
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("no object"), "{problems:?}");
 }
@@ -219,6 +317,7 @@ fn a_request_is_recorded_with_each_plugin_digest_or_a_null_for_an_unreadable_one
     std::fs::write(&readable, b"bytes").unwrap();
     let missing = PathBuf::from("/nonexistent/plugin.bin");
     let block = ExecutionRequest {
+        component: "target".to_string(),
         backend: "production".to_string(),
         wanted_encoding: Some(WANTED.to_string()),
         plugins: vec![readable.clone(), missing],
@@ -226,6 +325,7 @@ fn a_request_is_recorded_with_each_plugin_digest_or_a_null_for_an_unreadable_one
         representation: Some(WANTED.to_string()),
     }
     .block();
+    assert_eq!(block["component"], "target");
     assert_eq!(block["backend"], "production");
     assert_eq!(block["wanted_encoding"], WANTED);
     assert_eq!(block["lowering"], "other/v1");

@@ -178,37 +178,57 @@ Each record separates the request from the effect:
 - **Before binding, from the store:** each object's selected encoding and whether it came
   from a pack.
 - **At admission, from the prepared image and the process:** `engine`, `provider`,
-  `pinned_lowering`, `objects`, `realizations` (representation, codec, form, operand count),
-  `process` (`ProcessArithmetic`), `execution_digest` and `complete` with its `problems`.
+  `pinned_lowering`, `objects`, `precision_program`, `realizations` (representation, codec,
+  form, operand count), `process` (`ProcessArithmetic`), `execution_digest` and `complete` with
+  its `problems`.
 - **After the run, from the executor's ledger:** `projection_plans_ran` (calls and bytes,
-  no timings) and `runtime_quantised`.
+  no timings), the `wanted_plans` the pins named, and `complete`, which includes what
+  admission found.
 
 A campaign attempt stops as invalid when execution identity is incomplete: no pins, pins
 naming another provider, an overlaid source or unreadable process arithmetic. It also stops
-when a wanted encoding has no pack of it, no operand pinned from it, a pin that decodes or
-requantises it, stored K-quants widened by the process, or a tensor the runtime quantised.
+when a wanted encoding:
+
+- has no pack of it, or its pack isn't on disk;
+- has no operand running it in place, so a pack that only serves a gathered embedding table
+  doesn't count;
+- has a pin that decodes or requantises it, which is how `LARQL_KQUANT_EXEC=widen` shows;
+- comes from a container with no precision program;
+- leaves an object without a pack that the container's precision program compiles;
+- has a pinned kernel the ledger never counted, found after the run: the attempt's record is
+  kept whole and marked invalid.
+
 A diagnostic run records the same problems and carries on.
 
 `identity_consistent` therefore also requires a complete execution identity. It still
-isn't a claim of numerical equivalence or correctness: two attempts with different digests
-ran different computations, and equal digests don't show either is right.
+isn't a claim of numerical equivalence or correctness. A different digest means a different
+recorded identity, not necessarily different numbers: `LARQL_CPU_WORKERS=2` moved the digest
+and gave byte-identical logits. Equal digests don't show either run is right.
 
 **Limits:**
 
-- **Partial pack coverage is recorded, not refused.** Real packs cover some objects: the
-  local NVFP4 containers have one packed object of six. The container doesn't record which
-  objects were left out on purpose, so an uncompiled object can't be told from a missing
-  pack. Which objects have packs is fixed by `index.json`, which a manifest binds by digest,
-  so removing a pack entry after verification is a mismatch. An unverified attempt has no
-  such binding.
-- **Process settings are recorded, not refused**, except stored K-quant widening under a
-  wanted encoding. `execution_digest` moves with them.
-- **`execution_digest` doesn't bind the model.** File identity is the other half of the
-  record. It also isn't comparable across a change to what the identity holds.
-- **`objects` come from the store's selection** and `realizations` from the pins. A form
-  other than decode or requantise, such as `DecodedGather`, is recorded and not refused.
-- **A diagnostic run's plugin is recorded by path and digest.** Its code runs in process
-  and could change anything, including the record, so its effect isn't covered.
+- **Coverage is judged by object, against the program.** A tensor carried verbatim inside a
+  pack, or held at source by a program exception such as `--protect-layers`, is recorded and
+  not refused. So a pack can execute little of itself and be complete: a Q4_K pack with most
+  layers protected ran 7 of 198 pins in place. `realizations` and `projection_plans_ran` show
+  how much. A protocol that needs more must say so.
+- **A precision program names roles, not `--object`.** A role whose tensors are all in an
+  object with no pack is refused even if a compile was narrowed on purpose. That fails closed.
+  An object whose tensors could not hold the encoding at all reads the same way.
+- **A bank already held as MXFP4 is exempt**, because real containers name `expert-weight` in
+  their program and leave that bank alone.
+- **A form with no named kernel can't be checked against the ledger:** a mapped bank has none.
+- **Process settings are recorded, not refused**, unless they change what a wanted encoding's
+  pins do. `execution_digest` moves with them.
+- **`execution_digest` doesn't bind the model.** File identity is the other half of the record.
+- **`index.json` is parsed when the store opens and hashed by path later.** A swap in that window
+  would have the digest authenticate a file the store didn't parse.
+- **A diagnostic run's plugin is recorded by path and digest, after it loaded.** A replaced file
+  gives a digest of something else. Its code runs in process and could change anything,
+  including the record, so its effect isn't covered.
+- **The console's `served entirely from stored bytes` isn't evidence.** It counts manufactured
+  MXFP4 and NVFP4 only, and real packs pin the head as `Requantise(FusedQ8)`. The record reads the
+  pins instead.
 
 ## 7. Not established
 

@@ -273,6 +273,7 @@ fn run_on<B: PlanBackend>(
                         threshold_bytes: args.admission_threshold_bytes,
                         basis: args.admission_basis.as_deref(),
                         execution: super::generate::execution_evidence::ExecutionRequest {
+                            component: args.component.clone(),
                             backend: super::prepare::backend_flag_name(args.backend),
                             wanted_encoding: super::prepare::wanted_encoding(
                                 args.backend,
