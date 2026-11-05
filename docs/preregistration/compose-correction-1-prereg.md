@@ -1,6 +1,6 @@
 # COMPOSE-CORRECTION-1 — Pre-registration
 
-**Status:** 📋 v0.5 DRAFT — becomes FROZEN at the commit that lands it, after the
+**Status:** 📋 v0.6 DRAFT — becomes FROZEN at the commit that lands it, after the
 open items in §10 are closed. After that commit, frozen text is never edited;
 changes land only as dated **Addendum** sections at the bottom, each stating what
 changed and why, before the affected measurement runs.
@@ -13,7 +13,9 @@ canonical-prompt note; none of these responds to a result. v0.4: registered fact
 of the trace sink, so by the rule in §5 it is replaced by the first reserve and recorded; the harness
 controls use separate development facts. v0.5: a second matcher failure mode was found on a development fact (§1.2), so every target was
 re-authored under a tokenization rule (§5); this used tokenizers only and observed no registered
-fact's behaviour. Nothing else was changed in response to results.
+fact's behaviour. v0.6: status only (the harness's development-stage controls reproduce; the registered-set guard exists
+and its first, refused, attempt is ledgered); no design change. Nothing else was changed in response to
+results.
 **Contains no outputs of this experiment.** Numbers below are inputs from earlier,
 cited work, or thresholds fixed before any measurement.
 **Implementation is not authorised** until this document is frozen and the prompt
@@ -270,8 +272,11 @@ refusing everything.
 
 1. ~~Confirm Gemma admission~~ — done, see §4. Remaining: re-run it on the frozen build and record its commit.
 2. ~~Author the 12 facts and banks~~ — drafted (`bench/compose-correction-1/`); hash recorded at freeze.
-3. Write the harness and prove it on a control, using development facts only: it must report the known Qwen result for
-   Atlantis at `ALPHA 0.01` and at the default, and the known Gemma result (§1), under both A0 and A1.
+3. ~~Write the harness and prove it on a control~~ — development stage done (PR #705): all six recorded
+   controls reproduce to two decimals on 18 probes under the A0 and A1 builds on both models; the
+   saved install is identical with and without the observer; a `--set registered` run is refused and
+   ledgered (`registered-attempts.jsonl`). Remaining: build each arm from a single commit that
+   contains the harness, with no tracked changes, and re-run the controls on those builds.
 4. Measure and store all baselines; confirm `INFER` is bit-deterministic on the machine used.
 5. Add a trajectory sink and the fault-injection hooks for §6 and §7.1. Both must be inert when
    unused, and installs with and without them must give a bit-identical overlay digest.
