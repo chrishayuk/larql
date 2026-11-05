@@ -1,13 +1,16 @@
 # COMPOSE-CORRECTION-1 — Pre-registration
 
-**Status:** 📋 v0.2 DRAFT — becomes FROZEN at the commit that lands it, after the
+**Status:** 📋 v0.3 DRAFT — becomes FROZEN at the commit that lands it, after the
 open items in §10 are closed. After that commit, frozen text is never edited;
 changes land only as dated **Addendum** sections at the bottom, each stating what
 changed and why, before the affected measurement runs.
 **Revision log (draft only; not allowed after freeze).** v0.2: the Gemma admission check
 (§4) showed Gemma 3's decoder keeps the leading space, so the v0.1 forecast F2 (A1 bit-identical
 to A0 on Gemma), which rested on the opposite assumption, was replaced, and the exploratory
-Gemma observations were added to §1 as inputs. Nothing else was changed in response to results.
+Gemma observations were added to §1 as inputs. v0.3: added §1.1 (exploratory versus
+confirmatory), pinned arm builds, trajectory capture, the bank and its rules, and the
+canonical-prompt note; none of these responds to a result. Nothing else was changed in
+response to results.
 **Contains no outputs of this experiment.** Numbers below are inputs from earlier,
 cited work, or thresholds fixed before any measurement.
 **Implementation is not authorised** until this document is frozen and the prompt
@@ -60,14 +63,29 @@ Gemma 3's decoder is `Replace(▁→space) + ByteFallback + Fuse`: decoding one 
 the fix, Gemma's balance never leaves saturation: 16 shrink steps of 0.7 do not undo the
 over-drive, and the target ends at 100%, above the 0.95 ceiling.
 
+### 1.1 What is exploratory and what is confirmatory
+
+Everything in §1 is **exploratory**: a handful of installs on one fact (Atlantis), looked at while
+diagnosing. None of it is a result of this study. Forecasts F1–F5 were written from the Qwen
+observations and F2 and F6 after seeing the Gemma ones, so they cannot be confirmed by those
+observations. Their confirmatory value comes only from facts and prompts that were never looked at:
+the exploratory prompts (Atlantis, France, Germany, "The weather today is") are excluded from the
+bank by construction, and the bank is authored and hashed before any registered run.
+
+One more exploratory fact matters for design. The relation used in the investigation, `capital-of`,
+produces the canonical prompt `The capital of of Atlantis is` (the doubled "of" is pinned by an
+existing test), so the slot was captured from that prompt while the results were read on
+`The capital of Atlantis is`. The registered facts use bare-noun relations, so the captured prompt
+and the evaluated prompt are the same.
+
 ## 2. Arms
 
 Reference arms, no new code:
 
 | Arm | Definition |
 |---|---|
-| **A0** | `main` before #701 |
-| **A1** | A0 + #701 (matcher fix). The all-off cell of the factorial below |
+| **A0** | the commit on `main` immediately before #701 merges, built clean |
+| **A1** | A0 + #701 (matcher fix), built clean. The all-off cell of the factorial below |
 | **FA(α)** | A1 with `ALPHA` fixed at each of 0.1, 0.03, 0.01, 0.003, 0.001 and balance as in A1: the non-adaptive sweep |
 
 Candidate mechanisms, each independently switchable:
@@ -81,6 +99,9 @@ Candidate mechanisms, each independently switchable:
 - **C — gate calibration.** Initial gate scale derived from the model's observed
   activation distribution at the install layer (a multiple of the median natural
   `|gate·x|`), in place of the fixed 30.
+
+A0 and A1 are separate builds with identical model, tokenizer, container and inputs, and each is
+recorded by commit so either condition can be reproduced independently of the other.
 
 Factorial: the eight cells of {B, G, C} on top of A1. All eight are run and reported;
 no cell is dropped after seeing results.
@@ -128,18 +149,25 @@ are recorded in the freeze commit and re-checked before every run.
 
 ## 5. Facts and prompt banks
 
-Authored and hashed before any implementation; the hash is part of the freeze.
+The bank is `bench/compose-correction-1/bank.json`, produced by `make_bank.py` (deterministic;
+two runs give identical bytes). Its SHA-256 is recorded at freeze; the generator and the file are
+committed together so the hash is checkable. No part of it was chosen after seeing a result.
 
-- **12 facts:** 4 relations × 3 entities, entities chosen so the baseline model does not
-  already produce the target. Each fact has a canonical prompt and a one-token target.
-- **Neighbours:** ≥ 8 same-template prompts per fact with real entities, plus ≥ 8
-  different-template prompts about related subjects.
-- **Unrelated held-out bank:** 200 prompts across topics and formats, disjoint from the
-  facts, neighbours and the install-time guard set.
-- **Atomicity probe set:** 50 prompts from the unrelated bank.
+- **12 registered facts:** 4 relations (capital, ruler, currency, language) × 3 invented entities,
+  one single-word target each, canonical prompt `The {relation} of {entity} is`. Install each fact
+  alone in a fresh session; multi-fact interaction is out of scope.
+- **4 reserve facts**, used in order only if a registered fact fails the baseline rule below.
+- **Same-template neighbours:** 8 real entities per fact with the same relation.
+- **Related neighbours:** 8 prompts per fact with a different template and a related subject.
+- **Unrelated held-out bank:** 200 prompts in ten families (factual, arithmetic, code, sentence
+  starters, Q&A, translation, lists, definitions, common phrases), disjoint from everything above.
+- **Atomicity probe set:** every fourth unrelated prompt, 50 in all.
 
-All baseline top-1 token ids and probabilities are measured once, before any edit, and
-stored with the bank.
+Baseline rules, applied mechanically before the install arms run: a fact is replaced by the next
+reserve if its canonical prompt gives its target's first token a baseline probability ≥ 0.01 or if
+two registered targets share a first token; a neighbour counts toward preservation only if its
+baseline top-1 probability is ≥ 0.20 (otherwise it is reported, not scored). Baseline top-1 ids and
+probabilities are measured once, before any edit, and stored with the bank.
 
 ## 6. Measurements
 
@@ -153,6 +181,12 @@ All acceptance measures use **token ids and probabilities from the execution pat
 - **Installed-unsafe:** installed, but any of those fails.
 - **Refused:** the install returned an error and left state unchanged (below).
 - **Atomicity failure:** a refused or failed install changed anything (below).
+- **Balance trajectory (recorded for every install, every arm):** each attempted scale, the target
+  probability read at it, the probe's matched token, the effect on the fact's same-template
+  neighbours and a fixed unrelated subset at that scale, and whether the controller accepted or
+  rejected the step. The point is to separate *never found a safe scale* from *found one and did
+  not select it*. Neighbour effects at each step are measured by the harness from the executed
+  state, not by the controller.
 - Reported, not gated: mean and max KL(baseline ‖ edited) on the unrelated bank at the
   last position; Δp distribution on neighbours; balance iterations; whether the final target probability exceeds the 0.95 ceiling; install
   latency.
@@ -197,11 +231,13 @@ refusing everything.
 ## 10. Open items before freeze
 
 1. ~~Confirm Gemma admission~~ — done, see §4. Remaining: re-run it on the frozen build and record its commit.
-2. Author the 12 facts, the neighbour sets, the unrelated bank, and hash them.
+2. ~~Author the 12 facts and banks~~ — drafted (`bench/compose-correction-1/`); hash recorded at freeze.
 3. Write the harness and prove it on a control: it must report the known Qwen result for
-   Atlantis at `ALPHA 0.01` and at the default.
+   Atlantis at `ALPHA 0.01` and at the default, and the known Gemma result (§1), under both A0 and A1.
 4. Measure and store all baselines; confirm `INFER` is bit-deterministic on the machine used.
-5. Define the fault-injection hooks for §7.1 without changing install behaviour when unused.
+5. Add a trajectory sink and the fault-injection hooks for §6 and §7.1. Both must be inert when
+   unused, and installs with and without them must give a bit-identical overlay digest.
+6. Pin the A0 and A1 commits and the `larql` build for each run.
 
 ## 11. Limits
 
