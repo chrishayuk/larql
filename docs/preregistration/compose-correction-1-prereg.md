@@ -1,6 +1,6 @@
 # COMPOSE-CORRECTION-1 — Pre-registration
 
-**Status:** 📋 v0.4 DRAFT — becomes FROZEN at the commit that lands it, after the
+**Status:** 📋 v0.5 DRAFT — becomes FROZEN at the commit that lands it, after the
 open items in §10 are closed. After that commit, frozen text is never edited;
 changes land only as dated **Addendum** sections at the bottom, each stating what
 changed and why, before the affected measurement runs.
@@ -11,7 +11,9 @@ Gemma observations were added to §1 as inputs. v0.3: added §1.1 (exploratory v
 confirmatory), pinned arm builds, trajectory capture, the bank and its rules, and the
 canonical-prompt note; none of these responds to a result. v0.4: registered fact 1 was observed during a development check
 of the trace sink, so by the rule in §5 it is replaced by the first reserve and recorded; the harness
-controls use separate development facts. Nothing else was changed in response to results.
+controls use separate development facts. v0.5: a second matcher failure mode was found on a development fact (§1.2), so every target was
+re-authored under a tokenization rule (§5); this used tokenizers only and observed no registered
+fact's behaviour. Nothing else was changed in response to results.
 **Contains no outputs of this experiment.** Numbers below are inputs from earlier,
 cited work, or thresholds fixed before any measurement.
 **Implementation is not authorised** until this document is frozen and the prompt
@@ -85,6 +87,20 @@ produces the canonical prompt `The capital of of Atlantis is` (the doubled "of" 
 existing test), so the slot was captured from that prompt while the results were read on
 `The capital of Atlantis is`. The registered facts use bare-noun relations, so the captured prompt
 and the evaluated prompt are the same.
+
+### 1.2 A second matcher failure mode (exploratory)
+
+The balance matcher accepts a decoded token that contains the target or starts with the target's
+first three characters. A target whose first token is shorter than three characters can therefore
+never match, even when the model's top prediction is exactly that token: `Tallow` splits to `' T'`
+on both Qwen3-0.6B's and Gemma 3 4B's tokenizers, and on a development fact the controller read
+0.0000 on both models. Several of the v0.4 targets had the same property on one or both
+tokenizers (for example `Brannoch` → `' Br'`, `Lumen` → `' L'` on Qwen, `Cinder` → `' C'` on Gemma).
+
+This is separate from the leading-space defect, is **not** fixed by #701, and is not fixed by this
+study. It is a limitation of arm A1. The registered targets are therefore chosen so that the matcher
+can see them (§5), which isolates the mechanisms under test from this defect. Whether to change the
+matcher to compare token ids is a separate decision; the acceptance measures here already use ids.
 
 ## 2. Arms
 
@@ -178,6 +194,12 @@ moved out of the registered set, replaced by the next unused reserve, and listed
 `observed_in_development` with what was seen, in the same commit. Replacement is by that rule only;
 nothing is swapped because of how a fact behaved.
 
+**Tokenization rule.** Every target (registered, reserve and development) must have a first token,
+after dropping leading whitespace, of at least three characters that starts with the target's first
+three characters or contains the target, on both the Qwen3-0.6B and the Gemma 3 4B tokenizers, and
+registered targets must have distinct first tokens. `bench/compose-correction-1/check_targets.py`
+checks this from the two `tokenizer.json` files; it reads no model. It must pass at freeze.
+
 Baseline rules, applied mechanically before the install arms run: a fact is replaced by the next
 unused reserve if its canonical prompt gives its target's first token a baseline probability ≥ 0.01 or if
 two registered targets share a first token. Every rejected fact and every replacement is recorded
@@ -256,6 +278,9 @@ refusing everything.
 6. Pin the A0 and A1 commits and the `larql` build for each run.
 
 ## 11. Limits
+
+Arm A1 keeps the short-first-token blind spot of §1.2; the targets avoid it by construction, so the
+study says nothing about how COMPOSE behaves for targets the matcher cannot see.
 
 One install layer (the default, 26 on Qwen); first-token targets only; canonical-template
 prompts; a small model and a quantised container; a bank authored by us. A positive result

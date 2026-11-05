@@ -14,28 +14,28 @@ SEEN = {"Atlantis", "France", "Germany", "The weather today is"}
 # 4 relations x 3 invented entities; targets are single words, first-token scored.
 # canonical prompt = "The {relation} of {entity} is" (relations are bare nouns so it is well formed).
 FACTS = [
-    ("capital", "Quillon", "Cinder"), ("capital", "Eldoria", "Obsidian"), ("capital", "Kelmar", "Solstice"),
-    ("ruler", "Zorvania", "Aldric"), ("ruler", "Eldoria", "Brannoch"), ("ruler", "Kelmar", "Corvane"),
-    ("currency", "Vossmere", "Lumen"), ("currency", "Thandor", "Verdan"), ("currency", "Ilmar", "Marrow"),
-    ("language", "Vossmere", "Orrish"), ("language", "Thandor", "Tavrin"), ("language", "Ilmar", "Belmaric"),
+    ("capital", "Quillon", "Cypress"), ("capital", "Eldoria", "Basalt"), ("capital", "Kelmar", "Lantern"),
+    ("ruler", "Zorvania", "Aldric"), ("ruler", "Eldoria", "Corvane"), ("ruler", "Kelmar", "Belmaric"),
+    ("currency", "Vossmere", "Marrow"), ("currency", "Thandor", "Verdan"), ("currency", "Ilmar", "Copper"),
+    ("language", "Vossmere", "Juniper"), ("language", "Thandor", "Pewter"), ("language", "Ilmar", "Russet"),
 ]
-# Used only if a registered fact's baseline target first-token probability is >= 0.01 (rule in the
-# pre-registration); taken in order, never chosen after seeing results.
+# Used only if a registered fact fails a mechanical rule in the pre-registration; taken in order,
+# never chosen after seeing results.
 RESERVE = [
-    ("ruler", "Quillon", "Dravick"), ("currency", "Quillon", "Ember"),
-    ("language", "Quillon", "Ashkari"), ("capital", "Marrowick", "Gossamer"),
+    ("ruler", "Quillon", "Ashkari"), ("currency", "Quillon", "Silver"),
+    ("language", "Quillon", "Willow"), ("capital", "Marrowick", "Compass"),
 ]
 
 # Facts used to develop and test the harness. They are never scored. A registered fact that is
 # observed during development is moved here and replaced by the next reserve (rule in the
 # pre-registration); OBSERVED records each such move.
-DEVELOPMENT = [("capital", "Brindle", "Tallow"), ("ruler", "Brindle", "Wexley")]
+DEVELOPMENT = [("capital", "Brindle", "Walnut"), ("ruler", "Brindle", "Heron")]
 OBSERVED = [
     {"fact": ["capital", "Zorvania", "Meridian"],
      "when": "2026-11-05",
      "what": "balance-trace sink check on Qwen3-0.6B Q8_0 with the old matcher: controller reads "
              "0.0020, 0.0018, 0.0003, saturates, rolls back; saved patch identical with and without the observer",
-     "replaced_by": ["capital", "Quillon", "Cinder"]},
+     "replaced_by": ["capital", "Quillon", "Cypress"]},
 ]
 
 NEIGHBOUR_ENTITIES = {

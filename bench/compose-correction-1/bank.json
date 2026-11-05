@@ -10,7 +10,7 @@
     {
       "relation": "capital",
       "entity": "Quillon",
-      "target": "Cinder",
+      "target": "Cypress",
       "canonical_prompt": "The capital of Quillon is",
       "same_template": [
         "The capital of Italy is",
@@ -36,7 +36,7 @@
     {
       "relation": "capital",
       "entity": "Eldoria",
-      "target": "Obsidian",
+      "target": "Basalt",
       "canonical_prompt": "The capital of Eldoria is",
       "same_template": [
         "The capital of Italy is",
@@ -62,7 +62,7 @@
     {
       "relation": "capital",
       "entity": "Kelmar",
-      "target": "Solstice",
+      "target": "Lantern",
       "canonical_prompt": "The capital of Kelmar is",
       "same_template": [
         "The capital of Italy is",
@@ -114,7 +114,7 @@
     {
       "relation": "ruler",
       "entity": "Eldoria",
-      "target": "Brannoch",
+      "target": "Corvane",
       "canonical_prompt": "The ruler of Eldoria is",
       "same_template": [
         "The ruler of Monaco is",
@@ -140,7 +140,7 @@
     {
       "relation": "ruler",
       "entity": "Kelmar",
-      "target": "Corvane",
+      "target": "Belmaric",
       "canonical_prompt": "The ruler of Kelmar is",
       "same_template": [
         "The ruler of Monaco is",
@@ -166,7 +166,7 @@
     {
       "relation": "currency",
       "entity": "Vossmere",
-      "target": "Lumen",
+      "target": "Marrow",
       "canonical_prompt": "The currency of Vossmere is",
       "same_template": [
         "The currency of Japan is",
@@ -218,7 +218,7 @@
     {
       "relation": "currency",
       "entity": "Ilmar",
-      "target": "Marrow",
+      "target": "Copper",
       "canonical_prompt": "The currency of Ilmar is",
       "same_template": [
         "The currency of Japan is",
@@ -244,7 +244,7 @@
     {
       "relation": "language",
       "entity": "Vossmere",
-      "target": "Orrish",
+      "target": "Juniper",
       "canonical_prompt": "The language of Vossmere is",
       "same_template": [
         "The language of Brazil is",
@@ -270,7 +270,7 @@
     {
       "relation": "language",
       "entity": "Thandor",
-      "target": "Tavrin",
+      "target": "Pewter",
       "canonical_prompt": "The language of Thandor is",
       "same_template": [
         "The language of Brazil is",
@@ -296,7 +296,7 @@
     {
       "relation": "language",
       "entity": "Ilmar",
-      "target": "Belmaric",
+      "target": "Russet",
       "canonical_prompt": "The language of Ilmar is",
       "same_template": [
         "The language of Brazil is",
@@ -324,7 +324,7 @@
     {
       "relation": "ruler",
       "entity": "Quillon",
-      "target": "Dravick",
+      "target": "Ashkari",
       "canonical_prompt": "The ruler of Quillon is",
       "same_template": [
         "The ruler of Monaco is",
@@ -350,7 +350,7 @@
     {
       "relation": "currency",
       "entity": "Quillon",
-      "target": "Ember",
+      "target": "Silver",
       "canonical_prompt": "The currency of Quillon is",
       "same_template": [
         "The currency of Japan is",
@@ -376,7 +376,7 @@
     {
       "relation": "language",
       "entity": "Quillon",
-      "target": "Ashkari",
+      "target": "Willow",
       "canonical_prompt": "The language of Quillon is",
       "same_template": [
         "The language of Brazil is",
@@ -402,7 +402,7 @@
     {
       "relation": "capital",
       "entity": "Marrowick",
-      "target": "Gossamer",
+      "target": "Compass",
       "canonical_prompt": "The capital of Marrowick is",
       "same_template": [
         "The capital of Italy is",
@@ -430,7 +430,7 @@
     {
       "relation": "capital",
       "entity": "Brindle",
-      "target": "Tallow",
+      "target": "Walnut",
       "canonical_prompt": "The capital of Brindle is",
       "same_template": [
         "The capital of Italy is",
@@ -456,7 +456,7 @@
     {
       "relation": "ruler",
       "entity": "Brindle",
-      "target": "Wexley",
+      "target": "Heron",
       "canonical_prompt": "The ruler of Brindle is",
       "same_template": [
         "The ruler of Monaco is",
@@ -492,7 +492,7 @@
       "replaced_by": [
         "capital",
         "Quillon",
-        "Cinder"
+        "Cypress"
       ]
     }
   ],
