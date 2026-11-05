@@ -71,10 +71,91 @@ fn composed_slots(session: &Session) -> Vec<(usize, usize)> {
 
 /// Re-refining from the same raw captures is a fixed point: the
 /// orchestration feeds `refine_gates` the raw snapshot, so a second
-/// pass reproduces the stored gates bit for bit.
+/// pass with the same reference norms reproduces the stored gates and
+/// ups bit for bit.
+///
+/// The reference norms come from `layer_median_norms`, the function the
+/// install itself calls. They must not be rebuilt from the stored
+/// vectors: `norm(unit(r) * g * GATE_SCALE) / GATE_SCALE` recovers `g`
+/// only up to rounding, and whether it lands back on `g` exactly depends
+/// on the captured residual's values, so on the BLAS that produced them.
+/// That held on OpenBLAS 0.3.26 for slot 0 only (slot 1 was already 2 ULP
+/// off) and failed on 0.3.32. The magnitude the stored vectors carry is
+/// checked separately, with a derived bound, in
+/// `stored_vectors_carry_the_layer_reference_norms`.
 #[test]
 fn re_refining_from_the_same_raws_is_a_fixed_point() {
-    let (_c, mut session) = v3_session();
+    let (_c, mut session) = installed_pair();
+    let slots = composed_slots(&session);
+    assert_eq!(slots.len(), 2, "two installs at the layer");
+    let before: Vec<(Vec<f32>, Vec<f32>)> = slots
+        .iter()
+        .map(|&(l, f)| (overlay_gate(&session, l, f), overlay_up(&session, l, f)))
+        .collect();
+
+    // A second refine over the same session state must change nothing.
+    let (g_ref, u_ref) = reference_norms(&session, 1);
+    session.refine_layer_from_raw_v3(1, g_ref, u_ref);
+
+    for (i, &(l, f)) in slots.iter().enumerate() {
+        assert_eq!(
+            overlay_gate(&session, l, f),
+            before[i].0,
+            "refine from the same raws must be a fixed point at ({l},{f}) (gate)"
+        );
+        assert_eq!(
+            overlay_up(&session, l, f),
+            before[i].1,
+            "refine from the same raws must be a fixed point at ({l},{f}) (up)"
+        );
+    }
+}
+
+/// Every refined slot stores `unit(refined) * g_ref * GATE_SCALE` as its
+/// gate and `unit(refined) * u_ref` as its up, so the stored norms equal
+/// the layer's reference norms up to f32 rounding, never exactly.
+///
+/// Bound, with u = 2^-24 and n = hidden size. Each of the two norm
+/// evaluations (the one inside `unit_vector`, and the one here) is a sum of
+/// n squares (relative error at most gamma_n), halved by the square root,
+/// plus one rounding for the root itself: at most gamma_(n+1). The
+/// element-wise chain adds at most four more roundings (divide by the
+/// norm, times g_ref, times GATE_SCALE, and the divide by GATE_SCALE
+/// here). So the relative error is at most gamma_(2n+6), where
+/// gamma_k = k*u / (1 - k*u). The up path has fewer roundings, so the same
+/// bound covers it.
+#[test]
+fn stored_vectors_carry_the_layer_reference_norms() {
+    let (_c, session) = installed_pair();
+    let (g_ref, u_ref) = reference_norms(&session, 1);
+    let scale = crate::executor::tuning::GATE_SCALE;
+    for (l, f) in composed_slots(&session) {
+        let gate = overlay_gate(&session, l, f);
+        let up = overlay_up(&session, l, f);
+        let bound = gamma(2 * gate.len() + 6);
+        let g_err = ((norm(&gate) / scale) as f64 - g_ref as f64).abs() / g_ref as f64;
+        let u_err = (norm(&up) as f64 - u_ref as f64).abs() / u_ref as f64;
+        assert!(
+            g_err <= bound,
+            "gate norm at ({l},{f}) is {g_err:e} relative from g_ref; bound {bound:e}"
+        );
+        assert!(
+            u_err <= bound,
+            "up norm at ({l},{f}) is {u_err:e} relative from u_ref; bound {bound:e}"
+        );
+    }
+}
+
+/// The standard floating-point error constant gamma_k for f32.
+fn gamma(k: usize) -> f64 {
+    let u = f64::from(f32::EPSILON) / 2.0;
+    let ku = k as f64 * u;
+    ku / (1.0 - ku)
+}
+
+/// Two composed installs at layer 1, the state both refine tests start from.
+fn installed_pair() -> (tempfile::TempDir, Session) {
+    let (c, mut session) = v3_session();
     run(
         &mut session,
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "[5]") AT LAYER 1 MODE COMPOSE;"#,
@@ -83,36 +164,28 @@ fn re_refining_from_the_same_raws_is_a_fixed_point() {
         &mut session,
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("c", "b", "[6]") AT LAYER 1 MODE COMPOSE;"#,
     );
-    let slots = composed_slots(&session);
-    assert_eq!(slots.len(), 2, "two installs at the layer");
-    let before: Vec<Vec<f32>> = slots
-        .iter()
-        .map(|&(l, f)| overlay_gate(&session, l, f))
-        .collect();
+    (c, session)
+}
 
-    // A second refine over the same session state must change nothing.
-    // (g_ref/u_ref only rescale the unit direction; reusing the norms
-    // implied by the stored vectors keeps this exact.)
-    let g_ref = norm(&before[0]) / crate::executor::tuning::GATE_SCALE;
-    let up0 = {
-        let Backend::Vindex3 { overlay, .. } = &session.backend else {
-            panic!("V3 session")
-        };
-        overlay
-            .up_override_at(slots[0].0, slots[0].1)
-            .unwrap()
-            .to_vec()
+/// The (g_ref, u_ref) the install used at `layer`: the same
+/// `layer_median_norms` call, so the test reuses production's factors
+/// rather than rebuilding them from stored vectors.
+fn reference_norms(session: &Session, layer: usize) -> (f32, f32) {
+    let Backend::Vindex3 { runtime, .. } = &session.backend else {
+        panic!("V3 session")
     };
-    let u_ref = norm(&up0);
-    session.refine_layer_from_raw_v3(1, g_ref, u_ref);
+    let (g_ref, u_ref, _d_ref) = super::layer_median_norms(runtime, layer).unwrap();
+    (g_ref, u_ref)
+}
 
-    for (i, &(l, f)) in slots.iter().enumerate() {
-        assert_eq!(
-            overlay_gate(&session, l, f),
-            before[i],
-            "refine from the same raws must be a fixed point at ({l},{f})"
-        );
-    }
+fn overlay_up(session: &Session, layer: usize, feature: usize) -> Vec<f32> {
+    let Backend::Vindex3 { overlay, .. } = &session.backend else {
+        panic!("V3 session")
+    };
+    overlay
+        .up_override_at(layer, feature)
+        .expect("composed slot has an up")
+        .to_vec()
 }
 
 /// Later installs rebuild earlier slots from the ORIGINAL raw

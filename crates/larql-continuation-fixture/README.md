@@ -16,6 +16,10 @@ for bit against `canonical/v1`.
 - The provider is not re-written here. It is
   `crates/larql-kv/tests/external_continuation_provider/provider.rs`, included
   by `#[path]`, so the dylib and the C5 proof are one source.
+- It also registers `hostile-lowering/v1` ([src/tamper.rs](src/tamper.rs)), which reverses
+  the reference backend's logits. MEM-002 I2b's gate
+  (`crates/larql-cli/tests/test_campaign_execution_identity.rs`) selects it to show a
+  record says which computation ran. Nothing selects it unless asked.
 - Nothing depends on this crate. The gate
   (`crates/larql-cli/tests/support/continuation_fixture.rs`) builds it into its
   own target directory and `dlopen`s the result; `cargo metadata` and a source

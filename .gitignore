@@ -6,7 +6,10 @@ target/
 # a source module — from `git add`. Keep the leading slash.
 /coverage/
 **/*.rs.bk
-.cargo/
+# `.cargo/*`, not `.cargo/`: an ignored directory cannot have files
+# re-included, and the cargo-audit policy below must be tracked.
+.cargo/*
+!.cargo/audit.toml
 
 # Python / maturin
 .venv/

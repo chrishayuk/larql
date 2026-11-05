@@ -1,0 +1,8 @@
+# Changes to the verifier's measurement and contracts get their own review, separate from the engine it measures.
+# See docs/verification/independence.md.
+/verifier/                  @chrishayuk
+/docs/verification/         @chrishayuk
+/.github/workflows/verifier.yml @chrishayuk
+/.github/workflows/verifier-boundary.yml @chrishayuk
+/scripts/check_verifier_boundary.py @chrishayuk
+/.github/CODEOWNERS @chrishayuk

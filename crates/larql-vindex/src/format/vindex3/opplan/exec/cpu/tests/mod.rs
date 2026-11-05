@@ -6,6 +6,7 @@ mod arm_selection;
 mod cost;
 mod executor;
 mod fp8_slab;
+mod gemv_witness;
 mod integer;
 mod kernels;
 mod kquant_plan;

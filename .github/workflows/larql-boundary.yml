@@ -63,7 +63,7 @@ jobs:
       # so the generic cross-platform record is kept on main rather than
       # paid for on every pull request.
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-14"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-15"]') }}
 
     steps:
       - uses: actions/checkout@v7
@@ -79,8 +79,7 @@ jobs:
       # on `larql-router-protocol` directly.
       - name: Install protoc (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install protoc -y --no-progress
+        uses: ./.github/actions/install-protoc-windows
 
       - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6

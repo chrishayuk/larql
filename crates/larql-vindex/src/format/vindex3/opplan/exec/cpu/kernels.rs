@@ -441,6 +441,9 @@ impl DenseProjector for FusedKQuant {
             );
         };
         out.copy_from_slice(&values);
+        // Here rather than in the executor, so that only this kernel's output
+        // can be recorded under this kernel's name.
+        super::gemv_witness::record(blocks, codec.name, x, out);
     }
 }
 

@@ -1,0 +1,138 @@
+"""Generate the Q8_0 golden blocks for LARQL's test from pinned ggml's quantize_row_q8_0_ref.
+
+Prints a Rust source file to stdout. Every expected block comes from ggml, none is written by hand. Each case is one
+32-element block whose amax is chosen to put the f16 scale d = amax/127 at a specific place.
+
+Excluded on purpose: amax so small that 1/d overflows f32, where ggml casts an out-of-range float to int8, which is
+undefined behaviour in C and has no single answer to conform to; and non-finite inputs, where ggml's running maximum resets on
+a NaN and LARQL's ignores it, so the two differ. LARQL's behaviour on those inputs did not change.
+"""
+import ctypes
+import os
+import sys
+
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+lib = ctypes.CDLL(os.path.join(HERE, "build", "libggmlq8ref.dylib"))
+enc = lib.quantize_row_q8_0_ref
+enc.restype = None
+enc.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
+
+
+def f(x):
+    return np.float32(x)
+
+
+def amax_for(d):
+    """An f32 amax for which ggml's amax/127, in f32, is exactly the f32 value d. Fails rather than approximating."""
+    d = f(d)
+    a = f(float(d) * 127.0)
+    for c in (a, np.nextafter(a, f(0)), np.nextafter(a, f(np.inf))):
+        if c / f(127) == d:
+            return c
+    raise SystemExit(f"no amax gives d = {float(d)!r}")
+
+
+def block(amax, seed, signed_max=1.0):
+    """amax on one element, other elements pseudo-random below it, some exactly on half-code boundaries."""
+    amax = f(amax)
+    rng = np.random.default_rng(seed)
+    x = (rng.uniform(-1, 1, 32) * float(amax)).astype(np.float32)
+    x[0] = amax * f(signed_max)
+    d = amax / f(127)
+    for i, k in enumerate((0.5, 1.5, -2.5, 63.5, -126.5)):
+        x[3 + i] = f(k) * d
+    x[10] = f(0.0)
+    x[11] = f(-0.0)
+    return x
+
+
+two = lambda e: 2.0 ** e  # noqa: E731
+CASES = [
+    ("all zero", np.zeros(32, np.float32)),
+    ("negative zeros", np.full(32, -0.0, np.float32)),
+    ("typical weight scale", block(0.25, 1)),
+    ("large weight scale, negative max", block(3.75, 2, -1.0)),
+    ("flushed before: largest real amax seen, 0.007720947", block(0.007720947265625, 3)),
+    ("flushed before: smallest real amax seen, 0.001716614", block(0.00171661376953125, 4)),
+    ("d subnormal, mid range", block(amax_for(two(-20)), 5)),
+    ("d exactly the smallest f16 normal 2^-14", block(amax_for(two(-14)), 6)),
+    ("d one f32 ulp below 2^-14", block(amax_for(np.nextafter(f(two(-14)), f(0))), 7)),
+    ("d one f32 ulp above 2^-14", block(amax_for(np.nextafter(f(two(-14)), f(1))), 8)),
+    ("d the largest f16 subnormal 1023*2^-24", block(amax_for(1023 * two(-24)), 9)),
+    ("d subnormal tie, rounds to even up", block(amax_for((1023 + 0.5) * two(-24)), 10)),
+    ("d subnormal tie, rounds to even down", block(amax_for((1022 + 0.5) * two(-24)), 11)),
+    ("d the smallest f16 subnormal 2^-24", block(amax_for(two(-24)), 12)),
+    ("d half the smallest subnormal, tie to zero", block(amax_for(two(-25)), 13)),
+    ("d just above half the smallest subnormal", block(amax_for(np.nextafter(f(two(-25)), f(1))), 14)),
+    ("d below half the smallest subnormal", block(amax_for(two(-26)), 15)),
+    ("d far below the f16 range, f32 normal", block(1e-30, 16)),
+    ("normal tie, rounds to even down", block(amax_for((1024 + 0.5) * two(-14)), 17)),
+    ("normal tie, rounds to even up", block(amax_for((1025 + 0.5) * two(-14)), 18)),
+    ("just below a normal tie", block(amax_for(np.nextafter(f((1024 + 0.5) * two(-10)), f(0))), 19)),
+    ("just above a normal tie", block(amax_for(np.nextafter(f((1024 + 0.5) * two(-10)), f(1))), 20)),
+    ("rounding carries into the exponent", block(amax_for((2047 + 0.75) * two(-14)), 21)),
+    ("the largest finite f16 scale 65504", block(amax_for(65504.0), 22)),
+    ("rounds up to f16 infinity, tie at 65520", block(amax_for(65520.0), 23)),
+    ("d above the f16 range", block(amax_for(1e6), 24)),
+]
+
+
+# Seeded blocks, generated identically by the Rust test from integers alone, so no input is stored. Single chosen
+# blocks cannot catch an encoder that differs from ggml in the last bit of f32 arithmetic for a few values in a million.
+RANDOM_BLOCKS = 1_000_000
+
+
+def random_blocks(n):
+    state = 0x2F6E2B1
+    out = np.empty((n, 32), dtype=np.uint32)
+    for b in range(n):
+        state = (state * 1664525 + 1013904223) & 0xFFFFFFFF
+        top = 96 + ((state >> 16) % 36)  # block's largest biased exponent: 2^-31 to 2^4
+        for i in range(32):
+            state = (state * 1664525 + 1013904223) & 0xFFFFFFFF
+            sign = state >> 31
+            mant = (state >> 8) & 0x7FFFFF
+            exp = top - ((state & 0xFF) % 8)
+            out[b, i] = (sign << 31) | (exp << 23) | mant
+    return out
+
+
+def fnv1a64(buf):
+    h = 0xCBF29CE484222325
+    for byte in buf:
+        h = ((h ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def main():
+    out = ["// @generated by verifier/conformance/q8_0_golden/gen_q8_golden.py. Do not edit by hand.",
+           "// Expected bytes: quantize_row_q8_0_ref from ggml facdc44a67da17df4433adcc468b424f48e9ded2, unmodified.",
+           "",
+           "pub(super) struct Q8Golden {",
+           "    pub name: &'static str,",
+           "    pub input_bits: [u32; 32],",
+           "    pub block_hex: &'static str,",
+           "}",
+           "",
+           "pub(super) const Q8_0_GGML_GOLDEN: &[Q8Golden] = &["]
+    for name, x in CASES:
+        x = np.asarray(x, dtype=np.float32)
+        y = np.zeros(34, dtype=np.uint8)
+        enc(x.ctypes.data, y.ctypes.data, 32)
+        bits = ", ".join(f"0x{int(b):08x}" for b in x.view(np.uint32))
+        out += ["    Q8Golden {", f'        name: "{name}",', f"        input_bits: [{bits}],",
+                f'        block_hex: "{y.tobytes().hex()}",', "    },"]
+    out.append("];")
+    x = random_blocks(RANDOM_BLOCKS).view(np.float32)
+    y = np.zeros(34 * RANDOM_BLOCKS, dtype=np.uint8)
+    enc(x.ctypes.data, y.ctypes.data, x.size)
+    out += ["", "/// How many seeded blocks `seeded_blocks` generates.",
+            f"pub(super) const Q8_0_RANDOM_BLOCKS: usize = {RANDOM_BLOCKS};", "",
+            "/// FNV-1a 64 of ggml's encoding of those blocks.",
+            f"pub(super) const Q8_0_RANDOM_FNV1A64: u64 = 0x{fnv1a64(y.tobytes()):016x};"]
+    sys.stdout.write("\n".join(out) + "\n")
+
+
+main()

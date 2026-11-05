@@ -1,0 +1,39 @@
+name: verifier-boundary
+
+# One change must not move both the engine and its measurement.
+# See docs/verification/independence.md.
+#
+# pull_request_target runs this file and its script as they are on the base branch, so a
+# pull request can't rewrite the gate it's being judged by. That trigger is safe only while
+# no code from the pull request runs: the checkout below is the base branch, and the changed
+# paths come from GitHub's API. Don't add a step that checks out or runs the pull request.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  boundary:
+    name: boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: One change must not move both the engine and its measurement
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: python3 -I scripts/check_verifier_boundary.py

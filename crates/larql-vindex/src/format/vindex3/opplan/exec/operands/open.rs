@@ -1,13 +1,14 @@
 //! Opening an operand store and asking what it holds.
 
-use super::super::super::super::encode::segment::read_segment_header;
+use super::super::super::super::encode::segment::{
+    read_exact_at, read_segment_header, read_segment_header_from,
+};
 use super::super::super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::super::super::inspect::SystemInspection;
 use super::super::super::OperandRef;
 use crate::error::VindexError;
 use crate::format::vindex3::represent::codec::CodecRegistry;
 use std::collections::BTreeMap;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 #[allow(unused_imports)]
@@ -45,15 +46,16 @@ impl OperandStore {
             .checked_add(tensor.offset)
             .and_then(|n| n.checked_add(offset))
             .ok_or_else(|| VindexError::Parse("expert file offset overflow".into()))?;
-        let mut file = std::fs::File::open(&segment.path)?;
-        file.seek(SeekFrom::Start(absolute))?;
         let mut bytes = vec![
             0;
             usize::try_from(len).map_err(|_| VindexError::Parse(
                 "expert byte length exceeds address space".into()
             ))?
         ];
-        file.read_exact(&mut bytes)?;
+        read_exact_at(&segment.file, &mut bytes, absolute)?;
+        segment
+            .copied
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.loads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.read_bytes
@@ -189,15 +191,29 @@ impl OperandStore {
             // path, where it can name the object and say the true thing.
             // A segment that exists but cannot be read is still an error
             // here: that is corruption, not absence.
-            if !path.exists() {
-                absent.insert(object.id.clone());
-                continue;
-            }
-            let (header, payload_start) = read_segment_header(&path)?;
+            //
+            // Opened once, here, and kept: this is the descriptor everything
+            // later reads through. A failed open is sorted exactly as an
+            // `exists` check beforehand sorted it.
+            let file = match std::fs::File::open(&path) {
+                Ok(file) => file,
+                Err(_) if !path.exists() => {
+                    absent.insert(object.id.clone());
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            };
+            let identity_at_open = FileIdentity::capture(&file);
+            let (header, payload_start) = read_segment_header_from(&file, &path)?;
             segments.insert(
                 object.id.clone(),
                 SegmentMap {
+                    file,
+                    identity_at_open,
+                    copied: std::sync::atomic::AtomicBool::new(false),
                     path,
+                    declared: entry.segment.clone(),
+                    declared_sha256: entry.segment_sha256.clone(),
                     payload_start,
                     tensors: header
                         .tensors

@@ -275,6 +275,45 @@ pub struct ExecArgs {
     /// machine is refused before any weight is bound.
     #[arg(long, requires = "residency_curve")]
     pub unquiet_ok: bool,
+    /// With `--residency-curve`: write every mapped region's residency to
+    /// this file as JSON Lines (`larql.residency-observation/4`) — one
+    /// observation at binding, the admission decision, written and flushed
+    /// before any pass runs, one observation after the run, and the
+    /// attempt's end. A region whose residency could not be read is
+    /// recorded as failed, with the reason, never as zero. The file is
+    /// created exclusively: an existing one is refused, never truncated.
+    #[arg(long, requires = "residency_curve")]
+    pub residency_regions: Option<PathBuf>,
+    /// With `--residency-curve`: write every latency the run measures to
+    /// this separate file (`larql.sealed-latency/1`), created exclusively,
+    /// and print no timing to the console. The file's SHA-256 goes into the
+    /// residency stream's `after_run` header.
+    #[arg(long, requires = "residency_curve")]
+    pub sealed_latency: Option<PathBuf>,
+    /// Mark this run a MEM-002 campaign attempt, calibration and rejected
+    /// attempts included: `--residency-regions` and `--sealed-latency`
+    /// become mandatory. Without it the curve is ordinary diagnostic
+    /// execution.
+    #[arg(long, requires_all = ["residency_curve", "residency_regions", "sealed_latency"])]
+    pub residency_campaign: bool,
+    /// With `--residency-curve`: a verification manifest
+    /// (`larql.verification-manifest/1`, phase `pre`) another tool made
+    /// before the campaign. Each selected segment's identity is compared
+    /// with it, and it is recorded by digest. Without one, a campaign
+    /// attempt may run, but only as `unverified`: it cannot become qualified
+    /// evidence by succeeding. This build reads manifests and makes none.
+    #[arg(long, requires = "residency_curve")]
+    pub verification_manifest: Option<PathBuf>,
+    /// The most resident bytes a binding may hold and still be admitted,
+    /// from a frozen protocol — never a default. Needs
+    /// `--residency-campaign` and `--admission-basis`. Without it, a
+    /// complete witness is recorded as `witness_only`, never `admitted`.
+    #[arg(long, requires_all = ["residency_campaign", "admission_basis"])]
+    pub admission_threshold_bytes: Option<u64>,
+    /// Where `--admission-threshold-bytes` came from: the frozen protocol's
+    /// section and commit. Recorded verbatim.
+    #[arg(long, requires = "admission_threshold_bytes")]
+    pub admission_basis: Option<String>,
     /// How a mapped expert bank's selected experts are brought in per
     /// token: `demand` (the loop faults each page), `advise` (the kernel
     /// is told ahead), `touch` (pages are faulted concurrently ahead of
@@ -307,6 +346,24 @@ pub struct ExecArgs {
     /// `--generate` cannot supply it.
     #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate"])]
     pub logit_dump: Option<PathBuf>,
+
+    /// Record what the CPU Q8_0 kernel was given and returned, as raw bits, in
+    /// this new directory, for an outside verifier to judge. It only observes:
+    /// it runs after the kernel returns. A run that never reaches that kernel
+    /// fails rather than writing an empty witness.
+    /// See docs/verification/gemv-witness.md.
+    #[arg(
+        long,
+        value_name = "DIR",
+        requires = "logit_dump",
+        conflicts_with = "bank"
+    )]
+    pub gemv_witness: Option<PathBuf>,
+
+    /// How many distinct Q8_0 operands `--gemv-witness` records, taking the
+    /// first call reached on each. Each one stores the whole matrix's bytes.
+    #[arg(long, value_name = "N", default_value_t = 1, value_parser = at_least_one, requires = "gemv_witness")]
+    pub gemv_witness_max_operands: usize,
 
     /// Execute only the first N layers, then the component's own final
     /// norm and output head — a reduced-depth *model*, not a shard.
@@ -573,4 +630,12 @@ pub struct PlanArgs {
     /// Write the plan JSON here instead of stdout.
     #[arg(long)]
     pub output: Option<PathBuf>,
+}
+
+fn at_least_one(text: &str) -> Result<usize, String> {
+    match text.parse::<usize>() {
+        Ok(0) => Err("a witness of no operands records nothing".to_string()),
+        Ok(n) => Ok(n),
+        Err(e) => Err(e.to_string()),
+    }
 }

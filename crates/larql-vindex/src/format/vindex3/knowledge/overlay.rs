@@ -26,6 +26,7 @@
 //! (`KnowledgeOverlay::operand_overrides` → `OperandSource`), so a compose patch
 //! alters what the program computes without touching the container.
 
+use crate::format::vindex3::weight_patch::{WeightDeltaOp, WeightPatchError};
 use std::collections::{HashMap, HashSet};
 
 use crate::error::VindexError;
@@ -59,6 +60,10 @@ pub struct KnowledgeOverlay {
     overrides_gate: HashMap<(usize, usize), Vec<f32>>,
     overrides_up: HashMap<(usize, usize), Vec<f32>>,
     overrides_down: HashMap<(usize, usize), Vec<f32>>,
+    /// Stored-weight edits staged directly in the session, outside any
+    /// patch. Each is bound to the container it was staged against.
+    /// `remove_patch` leaves these alone: it replays only the patch list.
+    weight_session: Vec<WeightDeltaOp>,
 }
 
 impl KnowledgeOverlay {
@@ -344,8 +349,114 @@ impl KnowledgeOverlay {
     /// feature-slot operations the V3 overlay cannot yet represent.
     pub fn try_apply_patch(&mut self, patch: VindexPatch) -> Result<(), VindexError> {
         validate_v3_patch(&patch)?;
+        self.check_weight_conflicts(&patch)?;
         self.apply_unchecked(&patch);
         self.patches.push(patch);
+        Ok(())
+    }
+
+    /// Every stored-weight edit in effect, with where it came from: the
+    /// applied patches in order, then the session's direct edits.
+    pub fn weight_ops(&self) -> Vec<(String, &WeightDeltaOp)> {
+        let mut out = Vec::new();
+        for p in &self.patches {
+            for op in &p.operations {
+                if let PatchOp::WeightDelta(w) = op {
+                    out.push((
+                        p.description
+                            .clone()
+                            .unwrap_or_else(|| "(unnamed patch)".into()),
+                        w,
+                    ));
+                }
+            }
+        }
+        out.extend(
+            self.weight_session
+                .iter()
+                .map(|w| ("this session".to_string(), w)),
+        );
+        out
+    }
+
+    /// Number of stored-weight elements currently edited.
+    pub fn weight_edit_count(&self) -> usize {
+        self.weight_ops().iter().map(|(_, w)| w.edits.len()).sum()
+    }
+
+    /// Stage a stored-weight edit directly in the session. Refused if any
+    /// of its elements is already edited, by a patch or by the session:
+    /// edits to one element are not composed, so staging twice can never
+    /// double an edit.
+    pub fn stage_weight_op(&mut self, op: WeightDeltaOp) -> Result<(), WeightPatchError> {
+        op.check_intact()?;
+        self.conflict_with_existing(std::slice::from_ref(&op), "this session")?;
+        self.weight_session.push(op);
+        Ok(())
+    }
+
+    /// Whether any retrieval or slot state exists besides weight edits.
+    pub fn has_knowledge_state(&self) -> bool {
+        self.num_overrides() > 0 || !self.knn_store.is_empty() || !self.deleted.is_empty()
+    }
+
+    fn check_weight_conflicts(&self, patch: &VindexPatch) -> Result<(), WeightPatchError> {
+        let ops: Vec<WeightDeltaOp> = patch
+            .operations
+            .iter()
+            .filter_map(|o| {
+                if let PatchOp::WeightDelta(w) = o {
+                    Some(w.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let name = patch
+            .description
+            .clone()
+            .unwrap_or_else(|| "this patch".into());
+        // Within the patch itself first, then against everything in effect.
+        for (i, a) in ops.iter().enumerate() {
+            self.conflict_between(&ops[..i], a, &name)?;
+        }
+        self.conflict_with_existing(&ops, &name)
+    }
+
+    fn conflict_with_existing(
+        &self,
+        ops: &[WeightDeltaOp],
+        _incoming: &str,
+    ) -> Result<(), WeightPatchError> {
+        for (by, existing) in self.weight_ops() {
+            for op in ops {
+                self.conflict_between(std::slice::from_ref(existing), op, &by)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn conflict_between(
+        &self,
+        held: &[WeightDeltaOp],
+        new: &WeightDeltaOp,
+        by: &str,
+    ) -> Result<(), WeightPatchError> {
+        for h in held.iter().filter(|h| h.tensor == new.tensor) {
+            let taken: std::collections::HashSet<(usize, usize)> =
+                h.edits.iter().map(|e| (e.row, e.col)).collect();
+            if let Some(e) = new.edits.iter().find(|e| taken.contains(&(e.row, e.col))) {
+                return Err(WeightPatchError::Conflict {
+                    tensor: new.tensor.clone(),
+                    row: e.row,
+                    col: e.col,
+                    by: by.to_string(),
+                });
+            }
+        }
         Ok(())
     }
 
@@ -397,6 +508,10 @@ impl KnowledgeOverlay {
                 PatchOp::DeleteKnn { entity } => {
                     self.knn_store.remove_by_entity(entity);
                 }
+                // Stored-weight edits have no overlay state: they take
+                // effect when COMPILE writes a new container, and are read
+                // back from the patch list by `weight_ops`.
+                PatchOp::WeightDelta(_) => {}
                 PatchOp::Delete { layer, feature, .. } => {
                     self.delete_feature(*layer, *feature);
                 }
@@ -520,6 +635,10 @@ fn validate_v3_patch(patch: &VindexPatch) -> Result<(), VindexError> {
                 })?;
             }
             PatchOp::DeleteKnn { .. } | PatchOp::Delete { .. } => {}
+            PatchOp::WeightDelta(op) => {
+                op.check_intact()
+                    .map_err(|e| VindexError::Parse(format!("patch op {i}: {e}")))?;
+            }
             PatchOp::Update {
                 gate_vector_b64,
                 up_vector_b64,

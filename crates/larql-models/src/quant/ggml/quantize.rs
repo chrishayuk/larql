@@ -62,7 +62,10 @@ pub fn quantize_q8_0(data: &[f32]) -> Vec<u8> {
         let scale = amax / 127.0;
         let inv_scale = if scale > 0.0 { 1.0 / scale } else { 0.0 };
 
-        let scale_f16 = crate::quant::half::f32_to_f16(scale);
+        // Round to nearest and keep subnormals, as ggml does. Truncating here
+        // shrinks the decoded block, and flushing a subnormal scale decodes a
+        // non-zero block to all zeros.
+        let scale_f16 = crate::quant::half::f32_to_f16_nearest(scale);
         out.extend_from_slice(&scale_f16.to_le_bytes());
 
         for &val in &block[..32] {

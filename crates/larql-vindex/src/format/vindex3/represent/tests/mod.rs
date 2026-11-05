@@ -384,6 +384,7 @@ fn compile_weighted(
 }
 
 mod deployment_images;
+mod physical_residency;
 mod physical_store;
 mod tests_basics;
 mod the_k_quant_path_end_to_end;

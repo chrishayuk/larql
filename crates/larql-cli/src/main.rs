@@ -366,6 +366,22 @@ fn main() {
     std::process::exit(code);
 }
 
+/// Handle a command line clap would not parse. `larql lql` gives exit 2 a
+/// meaning of its own, a violated contract, so its usage errors must not use
+/// clap's 2. Everything else, and `--help` and `--version`, is clap's as usual.
+fn usage_exit(e: clap::Error, args: &[String]) -> i32 {
+    let is_lql = args
+        .iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-'))
+        .is_some_and(|a| a == "lql");
+    if is_lql && e.use_stderr() {
+        let _ = e.print();
+        return larql_lql::EXIT_ERROR;
+    }
+    e.exit()
+}
+
 fn real_main() -> i32 {
     let raw_args: Vec<String> = std::env::args().collect();
     let args = match trampoline::prepare_argv(raw_args) {
@@ -375,7 +391,10 @@ fn real_main() -> i32 {
             return trampoline::RESEARCH_UNAVAILABLE_EXIT_CODE;
         }
     };
-    let cli = Cli::parse_from(args);
+    let cli = match Cli::try_parse_from(&args) {
+        Ok(cli) => cli,
+        Err(e) => return usage_exit(e, &args),
+    };
 
     let result = match cli.command {
         // ── Primary ──
@@ -424,15 +443,13 @@ fn real_main() -> i32 {
             larql_lql::run_repl();
             Ok(())
         }
-        Commands::Lql(args) => match larql_lql::run_batch(&args.statement) {
-            Ok(lines) => {
-                for line in &lines {
-                    println!("{line}");
-                }
-                Ok(())
+        Commands::Lql(args) => {
+            let outcome = larql_lql::run_batch_outcome(&args.statement);
+            for line in &outcome.lines {
+                println!("{line}");
             }
-            Err(e) => Err(e),
-        },
+            return outcome.exit_code();
+        }
 
         // ── Factory ──
         Commands::Recipe(cmd) => recipe_cmd::run(cmd),

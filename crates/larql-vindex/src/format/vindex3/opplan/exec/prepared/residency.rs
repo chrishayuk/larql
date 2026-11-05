@@ -413,17 +413,31 @@ impl PreparedOperands {
     /// The image's mappings, and how much of them is physically resident
     /// at this moment: address space summed once per bound region, pages
     /// resident as the OS reports them now. Cheap enough to ask between
-    /// tokens, which is what a residency curve is.
+    /// tokens, which is what a residency curve is. Derived from one
+    /// [`Self::observe_residency`] capture, so a failed region is counted,
+    /// never summed as zero.
     pub fn mapped_residency(&self) -> MappedResidency {
-        let mut out = MappedResidency::default();
-        let mut add = |w: &LoadedWeight| {
-            let mapped = w.mapped_bytes() as u64;
-            if mapped > 0 {
-                out.mapped_bytes += mapped;
-                out.resident_bytes += w.resident_bytes() as u64;
-                out.regions += 1;
+        self.observe_residency().summary()
+    }
+
+    /// One scan of every mapped region of this image, each read once, in
+    /// the image's fixed traversal order, with the outcome of every read
+    /// kept. The aggregate and the per-region report both come from it.
+    pub fn observe_residency(&self) -> ResidencyObservation {
+        let mut regions = Vec::new();
+        self.for_each_weight(|w| {
+            if let Some(region) = w.mapped_region() {
+                regions.push(region.clone());
             }
-        };
+        });
+        ResidencyObservation::capture(&regions)
+    }
+
+    /// Every loaded weight of the image, in one fixed order: the dense
+    /// FFNs, the routed experts, then per layer its attention and FFN
+    /// matrices, then the output projection. The single definition of
+    /// "the image's weights" that its residency views traverse.
+    fn for_each_weight(&self, mut add: impl FnMut(&LoadedWeight)) {
         if let Some(ffns) = &self.dense_ffns {
             ffns.matrices().iter().for_each(|w| add(w));
         }
@@ -452,7 +466,6 @@ impl PreparedOperands {
         if let Some((_, projection)) = &self.output {
             add(projection);
         }
-        out
     }
 
     pub fn allocation_census(&self) -> AllocationCensus {

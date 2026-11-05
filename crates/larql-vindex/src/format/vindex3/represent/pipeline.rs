@@ -411,7 +411,7 @@ pub(super) fn compile_inner(
                     Target::Nvfp4 => recipes
                         .map(|r| r.encoder(&entry.object))
                         .unwrap_or_else(EncoderRecipe::current),
-                    Target::KQuant(_) => kquant_encoder_recipe(),
+                    Target::KQuant(k) => kquant_encoder_recipe(&k),
                     Target::Encoder(encoder) => match weights.filter(|_| weighted_tensors > 0) {
                         Some(w) => EncoderRecipe::codec_weighted(&encoder.identity(), &w.digest),
                         None => EncoderRecipe::codec(&encoder.identity()),

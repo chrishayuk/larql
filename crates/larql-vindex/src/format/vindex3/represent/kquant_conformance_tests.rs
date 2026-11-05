@@ -194,13 +194,18 @@ fn the_golden_input_is_adversarial_enough_to_catch_a_layout_error() {
     assert_ne!(straight, reversed, "the decode ignores byte order");
 }
 
-/// LARQL's encoder does **not** reproduce llama.cpp's bytes, and this
-/// test records that as a standing fact rather than hiding it.
+/// LARQL's Q4_K and Q6_K encoders do **not** reproduce llama.cpp's bytes, and
+/// this test records that as a standing fact rather than hiding it. Its Q8_0
+/// encoder does on finite blocks whose `1/scale` doesn't overflow f32, since
+/// scales are rounded as ggml rounds them, and this test asserts that stronger
+/// claim. Outside that range they still differ: a NaN resets ggml's running
+/// maximum but is ignored here, and where `1/scale` overflows ggml's codes are
+/// undefined behaviour in C.
 ///
 /// Measured against the golden fixture, on one frozen 512-element input:
 ///
 /// ```text
-/// Q8_0   10/544 bytes differ
+/// Q8_0    0/544 bytes differ
 /// Q6_K  366/420 bytes differ
 /// Q4_K   94/288 bytes differ
 /// ```
@@ -228,10 +233,14 @@ fn larql_encodes_the_ggml_representation_with_its_own_chosen_values() {
             "{}: byte count must still match",
             k.name
         );
-        // Recorded, not asserted equal. If this ever becomes zero for
-        // every encoding, the stronger claim has been earned and this
-        // test should be promoted to assert it.
         let differing = mine.iter().zip(&theirs).filter(|(a, b)| a != b).count();
+        if k.name == "Q8_0" {
+            assert_eq!(differing, 0, "Q8_0 must match ggml's bytes exactly");
+            continue;
+        }
+        // Recorded, not asserted equal. If this ever becomes zero, the
+        // stronger claim has been earned and this test should be promoted to
+        // assert it, as it was for Q8_0.
         assert!(
             differing > 0,
             "{}: bytes now match ggml exactly — the STRONGER claim is available, \
@@ -265,7 +274,7 @@ fn larql_encodes_the_ggml_representation_with_its_own_chosen_values() {
 ///
 /// ```text
 /// encoding   LARQL rms      ggml rms      ratio    (frozen input, 512 values)
-/// Q8_0       8.690570e-3   8.719152e-3   0.9967
+/// Q8_0       8.719152e-3   8.719152e-3   1.0000   <- byte-identical to ggml
 /// Q4_K       1.409723e-1   1.365251e-1   1.0326
 /// Q6_K       3.476481e-2   3.119103e-2   1.1146   <- most scale search to lose
 /// ```

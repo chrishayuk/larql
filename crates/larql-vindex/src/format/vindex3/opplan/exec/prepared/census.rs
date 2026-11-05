@@ -47,11 +47,56 @@ impl AllocationCensus {
 /// A prepared image's mappings at one moment: their address space and the
 /// pages of it physically resident — the two figures a mapping must never
 /// be reported as one of.
+///
+/// `resident_bytes` covers only the regions whose residency was READ;
+/// `failed_regions` counts the rest, which are never summed as zero. Use
+/// [`Self::complete_resident_bytes`] wherever the total must stand for
+/// the whole image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MappedResidency {
+    /// Every mapped region, read or not.
     pub regions: usize,
+    /// Address space over every mapped region.
     pub mapped_bytes: u64,
+    /// Resident bytes over the regions read successfully.
     pub resident_bytes: u64,
+    /// Regions whose residency could not be read.
+    pub failed_regions: usize,
+    /// Address space over the regions read successfully.
+    pub mapped_bytes_read: u64,
+}
+
+impl MappedResidency {
+    /// Regions read successfully. Saturates so an inconsistent value
+    /// cannot underflow; it does NOT make one valid — see
+    /// [`Self::is_consistent`], which every reader of a total must ask.
+    pub fn read_regions(&self) -> usize {
+        self.regions.saturating_sub(self.failed_regions)
+    }
+
+    /// Whether the counts can describe one observation: no more failed
+    /// regions than regions, and no more address space read than mapped.
+    /// A summary derived by [`super::ResidencyObservation::summary`] is
+    /// consistent by construction; the fields are public, so a value
+    /// built any other way may not be.
+    pub fn is_consistent(&self) -> bool {
+        self.failed_regions <= self.regions && self.mapped_bytes_read <= self.mapped_bytes
+    }
+
+    /// The resident total as a figure for the WHOLE image: `Some` only
+    /// when at least one region was observed, none failed, the counts are
+    /// consistent, and some address space was actually read and all of it
+    /// was. An observation of nothing witnesses nothing — regions of zero
+    /// length included — one with a failed region is a partial sum, and an
+    /// inconsistent one witnesses nothing reliable.
+    pub fn complete_resident_bytes(&self) -> Option<u64> {
+        (self.is_consistent()
+            && self.regions > 0
+            && self.failed_regions == 0
+            && self.mapped_bytes > 0
+            && self.mapped_bytes_read == self.mapped_bytes)
+            .then_some(self.resident_bytes)
+    }
 }
 
 /// One site's bytes, split by whether the loader widened — and, apart

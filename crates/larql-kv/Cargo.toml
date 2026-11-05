@@ -22,7 +22,10 @@ sha2 = "0.10"
 thiserror = { workspace = true }
 
 ndarray = "0.16"
-zip = { version = "2", default-features = false }
+crc32fast = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ndarray = { version = "0.16", features = ["blas"] }
@@ -54,6 +57,9 @@ tempfile = "3"
 # Test-only: Lloyd-Max codebook regeneration pins (turbo_quant/codebooks.rs).
 rand = "0.8"
 rand_distr = "0.4"
+# Test-only: an honest ZIP writer and a second reader to compare the Apollo
+# `.npz` reader against. The load path itself does not use it.
+zip = { version = "2", default-features = false }
 
 [[bench]]
 name = "engine_decode"

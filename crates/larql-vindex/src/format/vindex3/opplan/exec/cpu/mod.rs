@@ -23,6 +23,7 @@ pub mod arithmetic;
 pub mod cost;
 pub mod environment;
 pub mod executor;
+pub mod gemv_witness;
 pub mod integer;
 pub mod kernels;
 pub mod ledger;

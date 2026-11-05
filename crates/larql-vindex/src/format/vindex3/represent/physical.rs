@@ -36,7 +36,7 @@
 //! inferring it from the numbers coming out.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::map::{Precision, PrecisionMap};
@@ -46,6 +46,8 @@ use crate::format::vindex3::opplan::OperandRef;
 
 mod encoding;
 pub use encoding::*;
+mod residency;
+pub use residency::{page_size, ResidencyReadError};
 
 /// The table entry meaning "this projection has no address for that
 /// expert". Mirrors the shader's own
@@ -74,6 +76,15 @@ pub const WEIGHT_BINDING_ALIGN: u64 = 4;
 pub struct PhysicalStore {
     id: String,
     backing: Backing,
+    /// The file this store maps, when it maps one. The id names the
+    /// operand OBJECT; this names the physical file, which is what a byte
+    /// range read by another process is addressed in.
+    source_path: Option<PathBuf>,
+    /// The segment's path RELATIVE TO ITS CONTAINER, as the container's
+    /// index declares it. Unlike `source_path` it survives the container
+    /// being cloned or moved, so it is what a region's identity across
+    /// processes is built from. `None` for a store no container declared.
+    declared_segment: Option<String>,
     /// Tensor name → (offset from the payload start, length).
     tensors: BTreeMap<String, (u64, u64)>,
     payload_start: u64,
@@ -98,11 +109,38 @@ impl PhysicalStore {
         Ok(Self {
             id: id.into(),
             backing: Backing::Mapped(mmap),
+            source_path: Some(path.to_path_buf()),
+            declared_segment: None,
             tensors: header
                 .tensors
                 .into_iter()
                 .map(|t| (t.name, (t.offset, t.len)))
                 .collect(),
+            payload_start,
+        })
+    }
+
+    /// Map a segment through a descriptor the caller opened and read the
+    /// header from, so the mapping and the header are one file. The mapping
+    /// is the same as [`Self::map_segment`]'s; what goes is the second open
+    /// and the second parse of the header.
+    pub(crate) fn map_opened_segment(
+        id: impl Into<String>,
+        file: &std::fs::File,
+        path: &Path,
+        tensors: BTreeMap<String, (u64, u64)>,
+        payload_start: u64,
+    ) -> Result<Self, VindexError> {
+        // SAFETY: the descriptor is read-only and the mapping is owned by
+        // this store; regions borrow from it and cannot outlive it.
+        let mmap = unsafe { memmap2::Mmap::map(file) }
+            .map_err(|e| VindexError::Parse(format!("{}: mmap failed: {e}", path.display())))?;
+        Ok(Self {
+            id: id.into(),
+            backing: Backing::Mapped(mmap),
+            source_path: Some(path.to_path_buf()),
+            declared_segment: None,
+            tensors,
             payload_start,
         })
     }
@@ -118,6 +156,8 @@ impl PhysicalStore {
         Self {
             id: id.into(),
             backing: Backing::Owned(bytes),
+            source_path: None,
+            declared_segment: None,
             tensors,
             payload_start: 0,
         }
@@ -137,6 +177,8 @@ impl PhysicalStore {
         Ok(Self {
             id: id.into(),
             backing: Backing::Mapped(mmap),
+            source_path: Some(path.to_path_buf()),
+            declared_segment: None,
             tensors: ledger
                 .sealed
                 .values()
@@ -148,6 +190,24 @@ impl PhysicalStore {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The file this store maps, or `None` for owned bytes.
+    pub fn source_path(&self) -> Option<&Path> {
+        self.source_path.as_deref()
+    }
+
+    /// This store, recorded as the segment its container declares at
+    /// `segment` (a path relative to the container root).
+    pub fn declared_as(mut self, segment: impl Into<String>) -> Self {
+        self.declared_segment = Some(segment.into());
+        self
+    }
+
+    /// The container-relative segment path the container declared for
+    /// this store, or `None` when no container declared one.
+    pub fn declared_segment(&self) -> Option<&str> {
+        self.declared_segment.as_deref()
     }
 
     fn all(&self) -> &[u8] {
@@ -264,50 +324,32 @@ impl WeightRegion {
 
     /// Bytes of this region whose pages are physically resident NOW, as
     /// the OS reports them — the committed half of a mapping, distinct
-    /// from its address space. `None` where the OS offers no such
-    /// report, never a guess.
+    /// from its address space — or why that could not be read. A failure
+    /// is never a zero.
+    pub fn residency(&self) -> Result<u64, ResidencyReadError> {
+        residency::resident_bytes_of(self.bytes())
+    }
+
+    /// [`Self::residency`] with the reason dropped: `None` where the OS
+    /// offers no report, never a guess.
     pub fn resident_bytes(&self) -> Option<u64> {
-        #[cfg(unix)]
-        {
-            let bytes = self.bytes();
-            if bytes.is_empty() {
-                return Some(0);
-            }
-            // SAFETY: sysconf reads a process-independent constant.
-            let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-            if page <= 0 {
-                return None;
-            }
-            let page = page as usize;
-            let start = bytes.as_ptr() as usize;
-            let first = start & !(page - 1);
-            let end = start + bytes.len();
-            let pages = end.div_ceil(page) - first / page;
-            let mut vec = vec![0u8; pages];
-            // SAFETY: `[first, first + pages*page)` covers the region's
-            // pages within a live mapping this region borrows from, and
-            // `vec` holds one byte per page as `mincore` requires.
-            let rc = unsafe {
-                libc::mincore(
-                    first as *mut libc::c_void,
-                    pages * page,
-                    vec.as_mut_ptr().cast(),
-                )
-            };
-            if rc != 0 {
-                return None;
-            }
-            let resident_pages = vec.iter().filter(|b| **b & 1 == 1).count();
-            Some((resident_pages * page).min(bytes.len()) as u64)
-        }
-        #[cfg(not(unix))]
-        {
-            None
-        }
+        self.residency().ok()
+    }
+
+    /// The file this region's store maps, or `None` for owned bytes.
+    pub fn source_path(&self) -> Option<&Path> {
+        self.store.source_path()
+    }
+
+    /// The container-relative segment path of this region's store, when
+    /// a container declared one.
+    pub fn declared_segment(&self) -> Option<&str> {
+        self.store.declared_segment()
     }
 
     /// Byte offset of these bytes within their store's backing
-    /// allocation.
+    /// allocation. For a mapped store the backing is the whole file,
+    /// header included, so this is a FILE offset.
     ///
     /// The number a zero-copy binding resolves to, and therefore the
     /// one whose ALIGNMENT decides whether this region can be bound at

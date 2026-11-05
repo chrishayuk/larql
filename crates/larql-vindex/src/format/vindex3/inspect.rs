@@ -207,6 +207,15 @@ pub fn inspect_container(
         }
     }
 
+    // A weight-patch ledger the index names is checked against the catalogue
+    // and the edited bytes. This is consistency of the description, not a
+    // verdict on the patch: see `weight_patch::check_ledger`.
+    for defect in super::weight_patch::check_ledger(root, &index) {
+        defects.push(InspectionDefect::DirectoryIncoherent(format!(
+            "weight patch: {defect}"
+        )));
+    }
+
     let components = graph
         .components
         .iter()

@@ -5,11 +5,16 @@ mod calibration_digest;
 mod continuation_plugin;
 mod decode;
 mod exec_resume;
+mod execution_evidence;
 mod generate;
+mod instance_evidence;
 mod lowerings;
 mod measure;
 mod observe;
 mod realizations;
+mod residency_admission;
+mod residency_faults;
+mod residency_record;
 mod sizes;
 mod token_bank;
 
