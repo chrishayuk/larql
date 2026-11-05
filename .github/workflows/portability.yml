@@ -63,7 +63,8 @@ jobs:
 
   cross-plugin:
     name: x86_64 plugin fixture from an ARM64 host
-    runs-on: macos-14
+    # macos-14 was retired 2026-11-02 and no longer provisions; macos-15 is Apple silicon too.
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
