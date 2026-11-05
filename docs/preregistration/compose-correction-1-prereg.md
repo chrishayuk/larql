@@ -1,6 +1,6 @@
 # COMPOSE-CORRECTION-1 — Pre-registration
 
-**Status:** 📋 v0.3 DRAFT — becomes FROZEN at the commit that lands it, after the
+**Status:** 📋 v0.4 DRAFT — becomes FROZEN at the commit that lands it, after the
 open items in §10 are closed. After that commit, frozen text is never edited;
 changes land only as dated **Addendum** sections at the bottom, each stating what
 changed and why, before the affected measurement runs.
@@ -9,8 +9,9 @@ changed and why, before the affected measurement runs.
 to A0 on Gemma), which rested on the opposite assumption, was replaced, and the exploratory
 Gemma observations were added to §1 as inputs. v0.3: added §1.1 (exploratory versus
 confirmatory), pinned arm builds, trajectory capture, the bank and its rules, and the
-canonical-prompt note; none of these responds to a result. Nothing else was changed in
-response to results.
+canonical-prompt note; none of these responds to a result. v0.4: registered fact 1 was observed during a development check
+of the trace sink, so by the rule in §5 it is replaced by the first reserve and recorded; the harness
+controls use separate development facts. Nothing else was changed in response to results.
 **Contains no outputs of this experiment.** Numbers below are inputs from earlier,
 cited work, or thresholds fixed before any measurement.
 **Implementation is not authorised** until this document is frozen and the prompt
@@ -71,6 +72,13 @@ observations and F2 and F6 after seeing the Gemma ones, so they cannot be confir
 observations. Their confirmatory value comes only from facts and prompts that were never looked at:
 the exploratory prompts (Atlantis, France, Germany, "The weather today is") are excluded from the
 bank by construction, and the bank is authored and hashed before any registered run.
+
+**A registered fact was seen during development, and replaced.** While checking the trace sink on
+Qwen3-0.6B with the old matcher, the controller's trajectory for the then-registered fact 1
+(capital / Zorvania / Meridian) was printed and read (probabilities 0.0020, 0.0018, 0.0003, then
+saturated and rolled back). That fact can no longer count as unseen, so it was replaced by the first
+reserve under the rule in §5 and the observation is recorded in the bank (`observed_in_development`).
+No registered fact was run under the fixed matcher or on Gemma before replacement.
 
 One more exploratory fact matters for design. The relation used in the investigation, `capital-of`,
 produces the canonical prompt `The capital of of Atlantis is` (the doubled "of" is pinned by an
@@ -163,9 +171,17 @@ committed together so the hash is checkable. No part of it was chosen after seei
   starters, Q&A, translation, lists, definitions, common phrases), disjoint from everything above.
 - **Atomicity probe set:** every fourth unrelated prompt, 50 in all.
 
+**Development facts.** The bank holds two further facts, `development`, which the harness uses for
+its controls and tests and which are never scored. Anything seen while building or debugging the
+harness must be a development fact. If a registered fact is observed in development anyway, it is
+moved out of the registered set, replaced by the next unused reserve, and listed in the bank's
+`observed_in_development` with what was seen, in the same commit. Replacement is by that rule only;
+nothing is swapped because of how a fact behaved.
+
 Baseline rules, applied mechanically before the install arms run: a fact is replaced by the next
-reserve if its canonical prompt gives its target's first token a baseline probability ≥ 0.01 or if
-two registered targets share a first token; a neighbour counts toward preservation only if its
+unused reserve if its canonical prompt gives its target's first token a baseline probability ≥ 0.01 or if
+two registered targets share a first token. Every rejected fact and every replacement is recorded
+with the measurement that triggered it, so the final set can be audited against the generated one; a neighbour counts toward preservation only if its
 baseline top-1 probability is ≥ 0.20 (otherwise it is reported, not scored). Baseline top-1 ids and
 probabilities are measured once, before any edit, and stored with the bank.
 
@@ -232,7 +248,7 @@ refusing everything.
 
 1. ~~Confirm Gemma admission~~ — done, see §4. Remaining: re-run it on the frozen build and record its commit.
 2. ~~Author the 12 facts and banks~~ — drafted (`bench/compose-correction-1/`); hash recorded at freeze.
-3. Write the harness and prove it on a control: it must report the known Qwen result for
+3. Write the harness and prove it on a control, using development facts only: it must report the known Qwen result for
    Atlantis at `ALPHA 0.01` and at the default, and the known Gemma result (§1), under both A0 and A1.
 4. Measure and store all baselines; confirm `INFER` is bit-deterministic on the machine used.
 5. Add a trajectory sink and the fault-injection hooks for §6 and §7.1. Both must be inert when

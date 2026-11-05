@@ -14,7 +14,7 @@ SEEN = {"Atlantis", "France", "Germany", "The weather today is"}
 # 4 relations x 3 invented entities; targets are single words, first-token scored.
 # canonical prompt = "The {relation} of {entity} is" (relations are bare nouns so it is well formed).
 FACTS = [
-    ("capital", "Zorvania", "Meridian"), ("capital", "Eldoria", "Obsidian"), ("capital", "Kelmar", "Solstice"),
+    ("capital", "Quillon", "Cinder"), ("capital", "Eldoria", "Obsidian"), ("capital", "Kelmar", "Solstice"),
     ("ruler", "Zorvania", "Aldric"), ("ruler", "Eldoria", "Brannoch"), ("ruler", "Kelmar", "Corvane"),
     ("currency", "Vossmere", "Lumen"), ("currency", "Thandor", "Verdan"), ("currency", "Ilmar", "Marrow"),
     ("language", "Vossmere", "Orrish"), ("language", "Thandor", "Tavrin"), ("language", "Ilmar", "Belmaric"),
@@ -22,8 +22,20 @@ FACTS = [
 # Used only if a registered fact's baseline target first-token probability is >= 0.01 (rule in the
 # pre-registration); taken in order, never chosen after seeing results.
 RESERVE = [
-    ("capital", "Quillon", "Cinder"), ("ruler", "Quillon", "Dravick"),
-    ("currency", "Quillon", "Ember"), ("language", "Quillon", "Ashkari"),
+    ("ruler", "Quillon", "Dravick"), ("currency", "Quillon", "Ember"),
+    ("language", "Quillon", "Ashkari"), ("capital", "Marrowick", "Gossamer"),
+]
+
+# Facts used to develop and test the harness. They are never scored. A registered fact that is
+# observed during development is moved here and replaced by the next reserve (rule in the
+# pre-registration); OBSERVED records each such move.
+DEVELOPMENT = [("capital", "Brindle", "Tallow"), ("ruler", "Brindle", "Wexley")]
+OBSERVED = [
+    {"fact": ["capital", "Zorvania", "Meridian"],
+     "when": "2026-11-05",
+     "what": "balance-trace sink check on Qwen3-0.6B Q8_0 with the old matcher: controller reads "
+             "0.0020, 0.0018, 0.0003, saturates, rolls back; saved patch identical with and without the observer",
+     "replaced_by": ["capital", "Quillon", "Cinder"]},
 ]
 
 NEIGHBOUR_ENTITIES = {
@@ -56,6 +68,12 @@ for rel, ent, tgt in FACTS:
         "same_template": [f"The {rel} of {e} is" for e in NEIGHBOUR_ENTITIES[rel]],
         "related": RELATED[rel],
     })
+def full(r, e, t):
+    return {"relation": r, "entity": e, "target": t, "canonical_prompt": f"The {r} of {e} is",
+            "same_template": [f"The {r} of {x} is" for x in NEIGHBOUR_ENTITIES[r]], "related": RELATED[r]}
+
+
+development_out = [full(*f) for f in DEVELOPMENT]
 reserve_out = [{"relation": r, "entity": e, "target": t, "canonical_prompt": f"The {r} of {e} is",
                 "same_template": [f"The {r} of {x} is" for x in NEIGHBOUR_ENTITIES[r]], "related": RELATED[r]}
                for r, e, t in RESERVE]
@@ -133,7 +151,11 @@ assert len(unrelated) == 200
 assert len(set(unrelated)) == 200
 for p in unrelated:
     assert p not in SEEN
-for f in facts_out + reserve_out:
+registered = {(r, e, t) for r, e, t in FACTS + RESERVE}
+for r, e, t in DEVELOPMENT:
+    assert (r, e, t) not in registered
+assert not ({tuple(o["fact"]) for o in OBSERVED} & registered), "an observed fact must not stay registered"
+for f in facts_out + reserve_out + development_out:
     for p in [f["canonical_prompt"]] + f["same_template"] + f["related"]:
         assert not any(s in p for s in ("Atlantis", "France", "Germany")), p
 assert len({t for _, _, t in FACTS}) == 12
@@ -143,6 +165,8 @@ bank = {
     "excluded_exploratory": sorted(SEEN),
     "facts": facts_out,
     "reserve": reserve_out,
+    "development": development_out,
+    "observed_in_development": OBSERVED,
     "unrelated": unrelated,
     "atomicity_probe": unrelated[::4][:50],
 }

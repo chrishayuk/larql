@@ -9,9 +9,9 @@
   "facts": [
     {
       "relation": "capital",
-      "entity": "Zorvania",
-      "target": "Meridian",
-      "canonical_prompt": "The capital of Zorvania is",
+      "entity": "Quillon",
+      "target": "Cinder",
+      "canonical_prompt": "The capital of Quillon is",
       "same_template": [
         "The capital of Italy is",
         "The capital of Spain is",
@@ -322,32 +322,6 @@
   ],
   "reserve": [
     {
-      "relation": "capital",
-      "entity": "Quillon",
-      "target": "Cinder",
-      "canonical_prompt": "The capital of Quillon is",
-      "same_template": [
-        "The capital of Italy is",
-        "The capital of Spain is",
-        "The capital of Japan is",
-        "The capital of Canada is",
-        "The capital of Egypt is",
-        "The capital of Brazil is",
-        "The capital of Poland is",
-        "The capital of Norway is"
-      ],
-      "related": [
-        "The largest city in Italy is",
-        "Spain is a country in",
-        "The river that runs through Egypt is the",
-        "Japan is an island nation in",
-        "The national animal of Canada is the",
-        "Brazil is the largest country in",
-        "The official name of Poland is",
-        "Norway is known for its"
-      ]
-    },
-    {
       "relation": "ruler",
       "entity": "Quillon",
       "target": "Dravick",
@@ -423,6 +397,102 @@
         "Egypt is a country in",
         "The script used to write Japanese includes",
         "Brazil is a country in"
+      ]
+    },
+    {
+      "relation": "capital",
+      "entity": "Marrowick",
+      "target": "Gossamer",
+      "canonical_prompt": "The capital of Marrowick is",
+      "same_template": [
+        "The capital of Italy is",
+        "The capital of Spain is",
+        "The capital of Japan is",
+        "The capital of Canada is",
+        "The capital of Egypt is",
+        "The capital of Brazil is",
+        "The capital of Poland is",
+        "The capital of Norway is"
+      ],
+      "related": [
+        "The largest city in Italy is",
+        "Spain is a country in",
+        "The river that runs through Egypt is the",
+        "Japan is an island nation in",
+        "The national animal of Canada is the",
+        "Brazil is the largest country in",
+        "The official name of Poland is",
+        "Norway is known for its"
+      ]
+    }
+  ],
+  "development": [
+    {
+      "relation": "capital",
+      "entity": "Brindle",
+      "target": "Tallow",
+      "canonical_prompt": "The capital of Brindle is",
+      "same_template": [
+        "The capital of Italy is",
+        "The capital of Spain is",
+        "The capital of Japan is",
+        "The capital of Canada is",
+        "The capital of Egypt is",
+        "The capital of Brazil is",
+        "The capital of Poland is",
+        "The capital of Norway is"
+      ],
+      "related": [
+        "The largest city in Italy is",
+        "Spain is a country in",
+        "The river that runs through Egypt is the",
+        "Japan is an island nation in",
+        "The national animal of Canada is the",
+        "Brazil is the largest country in",
+        "The official name of Poland is",
+        "Norway is known for its"
+      ]
+    },
+    {
+      "relation": "ruler",
+      "entity": "Brindle",
+      "target": "Wexley",
+      "canonical_prompt": "The ruler of Brindle is",
+      "same_template": [
+        "The ruler of Monaco is",
+        "The ruler of Egypt is",
+        "The ruler of Japan is",
+        "The ruler of Thailand is",
+        "The ruler of Jordan is",
+        "The ruler of Morocco is",
+        "The ruler of Sweden is",
+        "The ruler of Belgium is"
+      ],
+      "related": [
+        "The head of state of Japan is the",
+        "A monarchy is a country ruled by a",
+        "The title of the ruler of Monaco is",
+        "Sweden is a constitutional",
+        "The king of Belgium lives in",
+        "A republic is governed by a",
+        "The ruler of ancient Egypt was called the",
+        "Thailand is a kingdom in"
+      ]
+    }
+  ],
+  "observed_in_development": [
+    {
+      "fact": [
+        "capital",
+        "Zorvania",
+        "Meridian"
+      ],
+      "when": "2026-11-05",
+      "what": "balance-trace sink check on Qwen3-0.6B Q8_0 with the old matcher: controller reads 0.0020, 0.0018, 0.0003, saturates, rolls back; saved patch identical with and without the observer",
+      "replaced_by": [
+        "capital",
+        "Quillon",
+        "Cinder"
       ]
     }
   ],
