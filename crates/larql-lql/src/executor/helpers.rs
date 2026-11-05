@@ -18,14 +18,13 @@ pub(crate) const TARGET_PREFIX_CHARS: usize = 3;
 /// predictions: the token matches when it contains the whole target, or
 /// starts with its first [`TARGET_PREFIX_CHARS`] characters.
 ///
-/// Leading whitespace is ignored. A byte-level BPE vocabulary (Qwen, GPT,
-/// Llama 3) spells a word that follows a space as its own token, and decoding
-/// that token on its own keeps the space: the continuation of "The capital of
-/// Atlantis is" decodes as `" Pose"`, not `"Pose"`. Without the trim, a
-/// prediction of 99.99% for the target read as 0.01%, so a probe that was
-/// meant to shrink an over-strong install saw a weak one and amplified it.
-/// SentencePiece vocabularies (Gemma) have their leading space stripped by
-/// the decoder, which is why the defect did not show there.
+/// Leading whitespace is ignored. A vocabulary that spells a word following a
+/// space as its own token keeps that space when the token is decoded on its own:
+/// the continuation of "The capital of Atlantis is" decodes as `" Pose"`, not
+/// `"Pose"`. Qwen's byte-level BPE does this, and so does Gemma 3's SentencePiece
+/// vocabulary, whose decoder replaces `▁` with a space. Without the trim, a
+/// prediction of 99.99% for the target read as 0.01%, so a probe that was meant
+/// to shrink an over-strong install saw a weak one and amplified it.
 ///
 /// Only leading whitespace is dropped; no other token is newly accepted.
 pub(crate) fn target_token_matches(decoded: &str, target: &str) -> bool {
@@ -275,6 +274,34 @@ mod tests {
             "decoder":{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true},
             "model":{"type":"WordLevel","vocab":{"ĠPose":0,"Pose":1,"ĠZeus":2,"[UNK]":3},"unk_token":"[UNK]"}}"#;
         larql_vindex::tokenizers::Tokenizer::from_bytes(json.as_bytes()).unwrap()
+    }
+
+    /// A SentencePiece tokenizer as Gemma 3 ships it: `▁` marks a leading space and the
+    /// decoder replaces it with one, so decoding a continuation token alone keeps the space.
+    fn replace_decoder_tokenizer() -> larql_vindex::tokenizers::Tokenizer {
+        let json = r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],
+            "normalizer":null,"pre_tokenizer":null,"post_processor":null,
+            "decoder":{"type":"Sequence","decoders":[
+                {"type":"Replace","pattern":{"String":"▁"},"content":" "},
+                {"type":"ByteFallback"},{"type":"Fuse"}]},
+            "model":{"type":"WordLevel","vocab":{"▁Pose":0,"Pose":1,"▁Zeus":2,"[UNK]":3},"unk_token":"[UNK]"}}"#;
+        larql_vindex::tokenizers::Tokenizer::from_bytes(json.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a_sentencepiece_replace_decoder_also_keeps_the_space() {
+        let tokenizer = replace_decoder_tokenizer();
+        let spaced = tokenizer.decode(&[0], false).unwrap();
+        assert_eq!(spaced, " Pose", "the premise: this decoder keeps the space");
+        assert!(target_token_matches(&spaced, "Poseidon"));
+        assert!(target_token_matches(
+            &tokenizer.decode(&[1], false).unwrap(),
+            "Poseidon"
+        ));
+        assert!(!target_token_matches(
+            &tokenizer.decode(&[2], false).unwrap(),
+            "Poseidon"
+        ));
     }
 
     #[test]
