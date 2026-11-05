@@ -1,7 +1,7 @@
 # COMPOSE-CORRECTION-1 harness
 
-Measures `INSERT ... MODE COMPOSE` installs for the study in
-`docs/preregistration/compose-correction-1-prereg.md`. It uses only the public `larql_lql` API
+Measures `INSERT ... MODE COMPOSE` installs for the COMPOSE-CORRECTION-1 study (pre-registration draft:
+PR #702). It uses only the public `larql_lql` API
 (the balance observer in `larql_lql::balance_trace`, `Session`, the AST) and touches no product code.
 
 ```sh
