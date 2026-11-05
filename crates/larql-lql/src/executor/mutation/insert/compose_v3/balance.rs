@@ -22,6 +22,7 @@ use crate::executor::balance_trace::{
     BalanceDecision, BalanceEnd, BalanceStep, BalanceTermination, ObserverSlot, StepContext,
 };
 use crate::executor::helpers::target_token_matches;
+use crate::executor::install_fault::InstallFaultPoint;
 use crate::executor::tuning::{
     canonical_prompt, BALANCE_ITERS, BALANCE_PROBE_TOP_K, CROSS_ITERS, DOWN_SCALE,
     MAX_PRIORS_CHECKED, MAX_STALE, PRIOR_FLOOR, PROB_CEILING, PROB_FLOOR, UP_SCALE,
@@ -113,6 +114,7 @@ impl Session {
 
         let bos = self.v3_bos_token();
         for _iter in 0..BALANCE_ITERS {
+            self.inject_install_fault(InstallFaultPoint::DuringBalance { iteration: _iter })?;
             let target_prob = {
                 let Backend::Vindex3 {
                     runtime,

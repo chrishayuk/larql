@@ -52,6 +52,7 @@ use larql_vindex::format::vindex3::opplan::LayerFfn;
 use super::compose::{median_or, unit_vector};
 use super::DEFAULT_INSERT_CONFIDENCE;
 use crate::error::LqlError;
+use crate::executor::install_fault::InstallFaultPoint;
 use crate::executor::tuning::{DEFAULT_INSERT_ALPHA_MUL, GATE_SCALE};
 use crate::executor::{Backend, Session};
 
@@ -114,6 +115,7 @@ impl Session {
         confidence: Option<f32>,
         alpha_override: Option<f32>,
     ) -> Result<Vec<String>, LqlError> {
+        self.inject_install_fault(InstallFaultPoint::BeforeInstall)?;
         let bos = self.v3_bos_token();
         let alpha_mul = alpha_override.unwrap_or(DEFAULT_INSERT_ALPHA_MUL);
         let c_score = confidence.unwrap_or(DEFAULT_INSERT_CONFIDENCE);
@@ -217,6 +219,7 @@ impl Session {
             (layer, feature),
             larql_vindex::ndarray::Array1::from_vec(raw_residual),
         );
+        self.inject_install_fault(InstallFaultPoint::AfterCachesCommitted)?;
 
         // ── Install: overlay state browse merges and execution
         // observes through the operand-source seam ──
@@ -238,15 +241,18 @@ impl Session {
             overlay.set_up_vector(layer, feature, up_vec);
             overlay.set_down_vector(layer, feature, down_vec);
         }
+        self.inject_install_fault(InstallFaultPoint::AfterSlotStaged)?;
 
         // ── Batch refine from raw captures (V2's `refine_layer_from_raw`):
         // rebuild EVERY gate + up at this layer from the raw residual
         // snapshot + decoys — idempotent by construction ──
         self.refine_layer_from_raw_v3(layer, g_ref, u_ref);
+        self.inject_install_fault(InstallFaultPoint::AfterRefine)?;
 
         // ── Balance + cross-fact regression (V2's decision rules,
         // composed-forward probes) ──
         self.balance_installed_v3(layer, feature, entity, relation, target)?;
+        self.inject_install_fault(InstallFaultPoint::AfterBalance)?;
         self.cross_fact_regression_check_v3(layer, feature)?;
 
         // Register THIS fact for future cross-balance passes.
@@ -257,6 +263,7 @@ impl Session {
             target: target.to_string(),
             target_id,
         });
+        self.inject_install_fault(InstallFaultPoint::BeforeRecord)?;
 
         // ── Record: the patch op carries the FINAL post-refine /
         // post-balance vectors, read back from the overlay ──
