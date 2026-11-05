@@ -1,9 +1,13 @@
 # COMPOSE-CORRECTION-1 — Pre-registration
 
-**Status:** 📋 v0.1 DRAFT — becomes FROZEN at the commit that lands it, after the
+**Status:** 📋 v0.2 DRAFT — becomes FROZEN at the commit that lands it, after the
 open items in §10 are closed. After that commit, frozen text is never edited;
 changes land only as dated **Addendum** sections at the bottom, each stating what
 changed and why, before the affected measurement runs.
+**Revision log (draft only; not allowed after freeze).** v0.2: the Gemma admission check
+(§4) showed Gemma 3's decoder keeps the leading space, so the v0.1 forecast F2 (A1 bit-identical
+to A0 on Gemma), which rested on the opposite assumption, was replaced, and the exploratory
+Gemma observations were added to §1 as inputs. Nothing else was changed in response to results.
 **Contains no outputs of this experiment.** Numbers below are inputs from earlier,
 cited work, or thresholds fixed before any measurement.
 **Implementation is not authorised** until this document is frozen and the prompt
@@ -42,6 +46,20 @@ target probability as "too weak", and checks no prompt except prior installs.
 Same-template residuals are close (cosine 0.775 between Atlantis and France at the layer-26
 FFN input), which is real entanglement, not a bug.
 
+From the Gemma 3 4B admission check (exploratory, one fact, `gemma3-4b-it.vindex3`, BF16, 34
+layers, default layer 32 and default alpha; baseline top-1 France Paris 80.05%, Germany Berlin
+88.91%, identical on repeat):
+
+| Matcher | Balance probe reads | Atlantis | France | Germany |
+|---|---|---|---|---|
+| old (A0) | 0.0000 ×3, amplifies | Pose 100% | Pose 100% | Pose 100% |
+| fixed (A1) | 1.0000 on all 16 iterations | Pose 100% | Paris 80.43% | Berlin 89.12% |
+
+Gemma 3's decoder is `Replace(▁→space) + ByteFallback + Fuse`: decoding one token alone gives
+`" Pose"`, `" Paris"`, with the space, as on Qwen. So the matcher defect bites Gemma as well. With
+the fix, Gemma's balance never leaves saturation: 16 shrink steps of 0.7 do not undo the
+over-drive, and the target ends at 100%, above the 0.95 ceiling.
+
 ## 2. Arms
 
 Reference arms, no new code:
@@ -71,9 +89,14 @@ no cell is dropped after seeing results.
 
 - **F1.** At the default alpha, A0 and A1 each produce an *installed-unsafe* outcome (§6)
   on ≥ 6 of 12 Qwen facts. Falsified by < 6.
-- **F2.** On Gemma 3 4B, A1 is bit-identical to A0 on every install (SentencePiece decoding
-  strips the leading space, so the matcher change is inert there). Falsified by any
-  difference in the installed vectors.
+- **F2.** On Gemma 3 4B, A0 produces *installed-unsafe* on ≥ 6 of 12 facts (neighbours hijacked
+  by an unbalanced install), and A1 produces *installed-safe* on ≥ 9 of 12. Falsified by either
+  count. (v0.1 forecast bit-identity of A1 and A0 on Gemma on the premise that its decoder strips
+  the leading space; the admission check showed that premise false, so the forecast was withdrawn
+  before any registered measurement.)
+- **F6.** On both models, A1 leaves the target probability above the 0.95 ceiling on ≥ 6 of 12
+  facts at the default alpha, because balance exhausts its iterations while saturated. Falsified by
+  < 6. This is the case mechanism B (bracketed search) is meant to fix.
 - **F3.** The fixed-alpha sweep on Qwen has a single alpha, in [0.001, 0.01], at which
   ≥ 9 of 12 facts are installed-safe. Falsified otherwise. If this fails there may be no
   safe operating point at layer 26, and the study reports that and stops before building
@@ -88,7 +111,17 @@ no cell is dropped after seeing results.
 | Model | Container | Notes |
 |---|---|---|
 | Qwen3-0.6B | `~/chris-models/q8enc-ad82acba/qwen3-0.6b-q8_0.vindex3` | VINDEX3, Q8_0 |
-| Gemma 3 4B | `~/chris-models/gemma3-4b-it.vindex3` (V3 arm); `~/chris-models/gemma3-4b-f16.vindex` (V2 arm) | which arm(s) are run: open item 1 |
+| Gemma 3 4B | `~/chris-models/gemma3-4b-it.vindex3` (V3, BF16; model `093f9f388b31de276ce2de164bdc2081324b9767`) | admitted, see below |
+
+**Admission check (done; read-only, container hashes identical before and after, no patch
+written):** the container loads under VINDEX3 (34 layers, execution closed); `INFER` is
+deterministic (France Paris 80.05% on repeat, Germany Berlin 88.91%); `INSERT ... MODE COMPOSE`
+is admitted and writes a slot at L32/F3694 through the overlay path with refine, balance and
+cross-fact passes applied; no refusal or unsupported capability was met. The documented
+"10/10 retrieval, 0/4 regression bleed on Gemma 3 4B" was not reproduced as stated: one fact was
+tried, retrieval worked, and the regression bleed depends on the matcher (above). The V2 arm
+(`gemma3-4b-f16.vindex`) was not exercised and is not part of this study unless a later addendum
+adds it.
 
 Identity of each container (index digest, tokenizer digest) and the `larql` build commit
 are recorded in the freeze commit and re-checked before every run.
@@ -121,7 +154,8 @@ All acceptance measures use **token ids and probabilities from the execution pat
 - **Refused:** the install returned an error and left state unchanged (below).
 - **Atomicity failure:** a refused or failed install changed anything (below).
 - Reported, not gated: mean and max KL(baseline ‖ edited) on the unrelated bank at the
-  last position; Δp distribution on neighbours; balance iterations; install latency.
+  last position; Δp distribution on neighbours; balance iterations; whether the final target probability exceeds the 0.95 ceiling; install
+  latency.
 
 ## 7. Hard gates
 
@@ -162,9 +196,7 @@ refusing everything.
 
 ## 10. Open items before freeze
 
-1. Confirm `gemma3-4b-it.vindex3` admits and runs `INSERT ... MODE COMPOSE` and `INFER`
-   (earlier notes record an admission gap for Gemma 3 under VINDEX3); if it does not, the
-   Gemma leg runs on the V2 arm and B, G and C are ported or the leg is declared V2-only.
+1. ~~Confirm Gemma admission~~ — done, see §4. Remaining: re-run it on the frozen build and record its commit.
 2. Author the 12 facts, the neighbour sets, the unrelated bank, and hash them.
 3. Write the harness and prove it on a control: it must report the known Qwen result for
    Atlantis at `ALPHA 0.01` and at the default.
