@@ -18,7 +18,7 @@
 //!   PRIOR_FLOOR, shrink THIS install ×0.7, capped at CROSS_ITERS.
 
 use crate::error::LqlError;
-use crate::executor::helpers::{target_prefix, TARGET_PREFIX_CHARS};
+use crate::executor::helpers::target_token_matches;
 use crate::executor::tuning::{
     canonical_prompt, BALANCE_ITERS, BALANCE_PROBE_TOP_K, CROSS_ITERS, DOWN_SCALE,
     MAX_PRIORS_CHECKED, MAX_STALE, PRIOR_FLOOR, PROB_CEILING, PROB_FLOOR, UP_SCALE,
@@ -53,12 +53,11 @@ pub(crate) fn probe_target_prob(
         .logits
         .ok_or_else(|| LqlError::Execution("balance: no output head".into()))?;
 
-    let prefix = target_prefix(target, TARGET_PREFIX_CHARS);
     Ok(top_k_probs(&logits, BALANCE_PROBE_TOP_K)
         .into_iter()
         .find(|(id, _)| {
             let tok = tokenizer.decode(&[*id], false).unwrap_or_default();
-            tok.contains(target) || tok.starts_with(prefix)
+            target_token_matches(&tok, target)
         })
         .map(|(_, prob)| prob as f64)
         .unwrap_or(0.0))
