@@ -119,7 +119,10 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | Compile { .. }
         | Diff { .. }
         | Use { .. }
+        | VerifyRepresentation { .. }
+        | VerifyOperator { .. }
         | Insert { .. }
+        | UpdateWeights { .. }
         | Delete { .. }
         | Update { .. }
         | Merge { .. }
@@ -188,6 +191,7 @@ mod tests {
     fn public_explorer_refuses_mutation_lifecycle_and_paths() {
         for stmt in [
             "USE \"secret.vindex\";",
+            "VERIFY REPRESENTATION \"a\" USING CONTRACT \"c\" AGAINST \"b\";",
             "EXTRACT MODEL \"m\" INTO \"out.vindex\";",
             "COMPILE CURRENT INTO VINDEX \"out\";",
             "DIFF CURRENT CURRENT;",

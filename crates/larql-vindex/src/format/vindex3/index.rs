@@ -148,6 +148,16 @@ pub struct Vindex3Index {
     /// is a refusal, not an empty table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub representation_attestations: Option<String>,
+    /// Filename of the weight-patch ledger
+    /// ([`super::weight_patch::WeightPatchLedger`]), relative to the root:
+    /// how this container was derived from another by a declared edit of
+    /// stored weights. Absent on every container not produced by a weight
+    /// patch. A ledger this names and the container does not hold is a
+    /// refusal, and inspection checks the ledger against the catalogue and
+    /// the stored bytes. Inspection checks CONSISTENCY, not the correctness
+    /// of the patch: that is a separate, independent verifier's claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight_patches: Option<String>,
     /// Representation directory: representation id
     /// (`{object_id}@{encoding}`) → where its bytes physically live.
     /// Graph edges and objects never reference source tensor names — once
@@ -238,6 +248,7 @@ impl Vindex3Index {
             system_graph: None,
             auxiliary_references: None,
             representation_attestations: None,
+            weight_patches: None,
             representations: BTreeMap::new(),
             profiles: vec![Profile::exact()],
             variants: VariantCatalogue::new(),

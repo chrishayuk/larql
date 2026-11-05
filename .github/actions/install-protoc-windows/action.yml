@@ -1,0 +1,23 @@
+name: Install protoc (Windows)
+description: >
+  Installs a pinned protoc release, checked by SHA-256, and puts it on PATH.
+  Fails here if it cannot, rather than letting the build fail later for want of
+  protoc. `choco install protoc` could not do that: when the Chocolatey feed
+  returned an error it installed 0/0 packages and still exited 0.
+runs:
+  using: composite
+  steps:
+    - shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $version = '36.2'
+        $sha256 = 'f0c128dc0d8492eceece83bb459a4c0e316764b929ffbf1aa416357fd644edd3'
+        $dir = Join-Path $env:RUNNER_TEMP "protoc-$version"
+        $zip = "$dir.zip"
+        $url = "https://github.com/protocolbuffers/protobuf/releases/download/v$version/protoc-$version-win64.zip"
+        Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 5 -RetryIntervalSec 15
+        $got = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($got -ne $sha256) { throw "protoc $version has SHA-256 $got, expected $sha256" }
+        Expand-Archive -Path $zip -DestinationPath $dir
+        & (Join-Path $dir 'bin\protoc.exe') --version
+        Join-Path $dir 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8

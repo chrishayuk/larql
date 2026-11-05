@@ -23,6 +23,7 @@ use crate::executor::{Backend, Session};
 
 mod overrides;
 mod session;
+mod weights;
 pub(crate) use overrides::*;
 pub(crate) use session::*;
 
@@ -36,7 +37,7 @@ pub(crate) const SUPPORTED: &str = "SELECT, DESCRIBE, WALK, EXPLAIN WALK, \
      SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/PATCHES/MODELS, \
      SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY, INFER [TOP n] [GENERATE n], \
      EXPLAIN INFER, TRACE, STATS, USE, EXTRACT [FORMAT VINDEX2|VINDEX3], \
-     INSERT [MODE KNN|COMPOSE], DELETE, UPDATE, MERGE, \
+     INSERT [MODE KNN|COMPOSE], DELETE, UPDATE, UPDATE WEIGHTS, MERGE, \
      BEGIN/SAVE/APPLY/REMOVE PATCH, COMPILE [CURRENT] INTO VINDEX, DIFF [PHYSICAL], COMPACT INTO VINDEX";
 
 /// Component id a container's text stack is bound under.

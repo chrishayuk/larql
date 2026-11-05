@@ -50,7 +50,7 @@ const PROVIDER_NAME: &str = "CodecKvState";
 
 /// Why a layer's shape cannot be held, or `None` when it can: the codec's
 /// rotation needs a power-of-two block, and blocks are whole heads.
-fn unsupported(geometry: &LayerKvGeometry) -> Option<String> {
+pub(super) fn unsupported(geometry: &LayerKvGeometry) -> Option<String> {
     let LayerKvGeometry {
         kv_dim, head_dim, ..
     } = *geometry;

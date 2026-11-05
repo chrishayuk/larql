@@ -380,6 +380,8 @@ fn capture_moments(
     calibration: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
+    use larql_vindex::format::vindex3::opplan::exec::operands::OperandSource;
+    use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
     let out = args
         .moments
         .clone()
@@ -414,6 +416,12 @@ fn capture_moments(
     // screen more expensive than the Q-BANK run it exists to avoid.
     let (lowerings, identity) = super::prepare::lowerings_for(super::ExecBackend::Metal)?;
     let backend = lowerings.provider_shared(&identity)?;
+    // Prepared once and shared by every prompt, as `bank` does. A session
+    // per prompt that loads its own operands re-realises the whole model
+    // each time, and the shared backend's buffer cache keeps every copy
+    // wired: a 3B model exhausted a 32 GB machine by the sixth prompt.
+    let source: OperandSource<'_> = (&store).into();
+    let ops = PreparedOperands::load(&plan, source, &backend, ExecutionSlice::Full)?;
     let mut collector = MomentCollector::default();
     let started = std::time::Instant::now();
     let mut positions = 0usize;
@@ -422,7 +430,7 @@ fn capture_moments(
         // A fresh state per prompt, as Q-BANK-2 established: every
         // position must see the context its own prompt gives it.
         let mut kv = crate::commands::primary::continuation::select_for(&plan, None)?.build();
-        let mut session = DecodeSession::with_kv_state(&plan, &store, &backend, &mut *kv)?;
+        let mut session = DecodeSession::over_prepared(&plan, &ops, &backend, &mut *kv)?;
         for &t in &e.ids {
             session.step_observed(t, &mut collector)?;
             positions += 1;

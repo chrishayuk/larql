@@ -25,6 +25,11 @@ pub const AUXILIARY_REFERENCES_JSON: &str = "auxiliary_references.json";
 /// opposed to what their codecs guarantee. Absent from every container
 /// that attests nothing — see `vindex3::representation_attestations`.
 pub const REPRESENTATION_ATTESTATIONS_JSON: &str = "representation_attestations.json";
+/// Where a container records how it was derived from another by a
+/// declared weight edit: the source, every edited element, and the digests
+/// of what resulted. Absent from every container that was not produced by
+/// a weight patch — see `vindex3::weight_patch`.
+pub const WEIGHT_PATCHES_JSON: &str = "weight_patches.json";
 pub const KNN_STORE_BIN: &str = "knn_store.bin";
 pub const MODEL_WEIGHTS_BIN: &str = "model_weights.bin";
 

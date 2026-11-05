@@ -60,13 +60,17 @@ mod accessors;
 mod census;
 mod mixers;
 mod mla;
+mod observation;
 mod residual_sites;
 mod selection;
+mod system_clock;
 pub use census::*;
 pub(super) use mixers::*;
 pub use mla::*;
+pub use observation::*;
 pub(super) use residual_sites::*;
 pub use selection::*;
+pub use system_clock::*;
 
 mod loading;
 mod residency;

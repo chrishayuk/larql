@@ -681,6 +681,64 @@ COMPILE CURRENT INTO MODEL "gemma3-4b-edited/" FORMAT safetensors;
 > regardless of the strategy chosen, but FAIL fully detects collisions
 > and HIGHEST_CONFIDENCE is accepted for forward compatibility.
 
+### 3.5.1 Stored-weight edits (VINDEX3)
+
+```sql
+UPDATE WEIGHTS SET DELTA = <number>
+  WHERE TENSOR = "<name>" AND ROW = <n> AND COL = <n>;
+UPDATE WEIGHTS SET DELTA = <number>
+  WHERE TENSOR = "<name>" AND ROW = <n> AND COL IN (<n>, <n>, …);
+```
+
+Edits real elements of one stored BF16 matrix in the bound VINDEX3 container. It is **not** a
+knowledge edit: no retrieval entry, no feature slot, no overlay that execution reads. The edit exists
+only in the container `COMPILE CURRENT INTO VINDEX "<out>"` writes; `INFER` in the staging session does
+not see it.
+
+- **Tensor** is the name in the container's segment table (for example `26.mlp.down_proj.weight`),
+  held by exactly one canonical representation. `ROW` and `COL` index the matrix.
+- **Rounding.** A patched element is `RNE_bf16(old + delta)`: the stored bfloat16 and the `f32` delta are
+  added as real numbers and rounded **once** to the nearest bfloat16, ties to even. The delta applies to
+  the value in the bound container, so staging never accumulates. The delta's exact `f32` bits are what
+  is recorded; the lexer reads the number as a double and narrows it.
+- **Bounded and restrictive.** One tensor per compile, at most 4096 elements, finite deltas, no
+  duplicate elements, no edits that overflow bfloat16. Anything else is refused by name, at staging, and
+  stages nothing. The source must be a canonical container with no alternate variants and no prior
+  weight-patch ledger.
+- **Conflicts.** Two edits to one element, whether staged directly or carried by applied patches, are
+  refused. Edits are not composed.
+- **Not combined with knowledge edits.** `COMPILE` refuses to write stored-weight edits and
+  `INSERT`/`UPDATE EDGES`/`DELETE` state into one container.
+- **Direct or in a patch.** A staged edit is also recorded into a `BEGIN PATCH` recording when one is
+  open (a direct edit does not start an anonymous patch). `SAVE PATCH` writes it as a `weight_delta`
+  operation and the patch file is version 2.
+
+#### The `weight_delta` patch operation
+
+A `.vlp` operation `{"op": "weight_delta", …}` carries the tensor, every `(row, col, delta, delta_bits)`,
+the rounding rule, and a **source binding**: the SHA-256 of the source container's `index.json`, the
+canonical representation id, and the SHA-256 of its payload. It also carries a digest over its own
+fields. `APPLY PATCH` refuses an op whose digest does not match its contents, whose rounding rule this
+build does not implement, or whose binding is not the bound container: the model name alone is not an
+identity. A reader that does not know the op refuses the whole patch. The digest detects damage and
+casual edits; it is not a signature. A VINDEX2 session refuses a patch that carries the op.
+
+#### What `COMPILE` writes
+
+The edited canonical segment is rewritten; every other segment is hard-linked. Derived representations of
+that object (for example the Q8_0 pack) are re-derived from the **edited** weights by the compiler that
+made them, so a derived pack never describes weights the container does not hold. The result is
+inspected, then renamed into place: complete, or nothing. The `model` identity is unchanged.
+`weight_patches.json` (named by the index's `weight_patches` field) records the source, every edit with
+its exact old and new bits, the digests of the edited canonical and re-derived representations, and the
+digests of the patch operations the edit came from.
+
+`inspect_container` checks the ledger against the catalogue and the stored bytes at the edited elements.
+That is **consistency of the description**, not a verdict on the patch. Whether the container implements
+the declared edit is a claim for an independent verifier, and a representation contract measured against
+the **unedited** upstream checkpoint (for example `Q8_0_T2`) will correctly report the edited elements:
+measure the new representation against the edited canonical weights the ledger names.
+
 ### 3.6 Schema Introspection Statements
 
 ```
@@ -824,6 +882,85 @@ levels on the same observation seam.
 > and `BOUNDARY OPEN` / `BOUNDARY <path> AT <n>` boundary stores.
 > See §11. The wire format and capture machinery already exist in
 > `larql-inference`; the LQL surface for them has not landed.
+
+### 3.9 Verification Statements
+
+```sql
+VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST "<source>";
+
+-- Measure one container against a numerical contract, using an independent
+-- verifier, and report the result, the offending tensors and the evidence.
+-- <container> and <source> are directories. <source> is the checkpoint the
+-- container's weights are measured against.
+
+VERIFY REPRESENTATION "qwen3-0.6b-q8_0.vindex3"
+  USING CONTRACT "Q8_0_T2"
+  AGAINST "snapshots/c1899de2";
+```
+
+**LQL does not evaluate the contract.** A check written in LARQL would be LARQL marking its
+own work, so the measurement belongs to a separate program: by default the repository's own
+`verifier/`, which has no LARQL code in it. With no verifier installed or configured, the
+statement refuses; it never passes by default. Which contracts exist is the verifier's business,
+not the grammar's.
+
+The statement is read-only and needs no bound backend. It takes paths, not names, because a
+result is about the exact bytes of one container: two containers of the same model can differ.
+
+| Verifier's answer | Statement |
+|---|---|
+| `satisfied` | returns the report |
+| `violated` | returns the report, naming the offending tensors. A violation is an answer, not a failure |
+| `could_not_evaluate` | error, with the verifier's reasons |
+| the verifier fails, or its answer is malformed, contradicts itself or is about a different question | error |
+
+**A result is a numerical measurement of one container**, not a formal proof, and not a claim
+about the encoder that produced it. The output says so, and an answer claiming any other kind
+of evidence is refused.
+
+**LQL doesn't authenticate the verifier.** It runs the one it finds, and the identity in the
+output is the verifier's report about itself. Replacing the verifier could make a contract appear
+satisfied without changing the model, so a result must not gate a release on this basis.
+
+The protocol, `larql-verify-contract/1`, how a verifier is found, and what enforces the
+verifier's independence are in `docs/verification/`.
+
+```sql
+VERIFY OPERATOR "<tensor>" USING CONTRACT "<id>" IN WITNESS "<witness.json>" AGAINST "<container>";
+
+-- Judge one recorded kernel call against a numerical contract, using an independent
+-- verifier. <witness.json> is what `vindex3 exec --gemv-witness` wrote.
+
+VERIFY OPERATOR "0.self_attn.q_proj.weight"
+  USING CONTRACT "Q8_0_GEMV_SEQ"
+  IN WITNESS "evidence/witness.json"
+  AGAINST "qwen3-0.6b-q8_0.vindex3";
+```
+
+**The statement never runs the engine.** It reads a witness an earlier run wrote, and the verifier ties that witness to the operator and the container's bytes before judging it. If it can't, the
+answer is `could_not_evaluate`, which is an error here as above. `<tensor>` is the name the container uses.
+
+| Contract | Question | What a violation means |
+|---|---|---|
+| `Q8_0_GEMV_SEQ` | Is the recorded output exactly a declared floating-point program's? | The kernel isn't running that program. It doesn't mean less accurate: a more accurate kernel violates this too |
+| `Q8_0_GEMV_B1` | Is it within a stated bound of exact arithmetic? | It's further from the exact result than the bound allows |
+
+**These answer different questions, so ask for each one.** There's no combined result, and neither one means "correct".
+
+- **`Q8_0_GEMV_B1` is experimental:** a measured bound check on one call, not a machine-checked proof. The bound is loose, so satisfying it doesn't rule out small defects.
+- **A witness is the engine's own report.** A result says the recorded output is right for the recorded input and the container's bytes. It can't show the production kernel produced it, and the output says the witness isn't authenticated. Together with an unauthenticated verifier, this means a result must not gate a release.
+
+**`larql lql` exit status:**
+
+| Exit | Meaning |
+|---|---|
+| 0 | Every statement completed, and every contract requested was satisfied |
+| 1 | A statement failed to parse, was refused or failed to execute. This includes a missing verifier, `could_not_evaluate` and a usage error in the command itself |
+| 2 | Every statement completed, and a contract was evaluated and violated |
+
+An error outranks a violation, so a script with both exits 1. A script keeps running after a failed
+statement, as it always has, and the status reflects all of them. So a contract that could not be
+evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
 
 ### 3.8 Comparison Operators
 

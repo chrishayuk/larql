@@ -65,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - uses: actions/checkout@v7
@@ -97,8 +97,7 @@ jobs:
       # falls back to whatever `protoc` is on PATH — install one here.
       - name: Install protoc (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install protoc -y --no-progress
+        uses: ./.github/actions/install-protoc-windows
 
       - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6

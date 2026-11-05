@@ -9,6 +9,7 @@ use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
 use larql_vindex::format::vindex3::opplan::exec::kv::RowFactory;
 
 use super::codec::CodecFactory;
+use super::codec_recent::CodecRecentFactory;
 use super::window::WindowFactory;
 use super::CanonicalKvState;
 
@@ -32,7 +33,7 @@ impl ContinuationFactory for CanonicalFactory {
 }
 
 /// A fresh registry holding the providers LARQL ships — `row/v1`,
-/// `canonical/v1`, `window/v1` and `codec/v1`. A new value on every call, never a process default:
+/// `canonical/v1`, `window/v1`, `codec/v1` and `codec-recent/v1`. A new value on every call, never a process default:
 /// a caller that wants more registers into what this returns.
 pub fn shipped_continuations() -> ContinuationRegistry {
     let mut registry = ContinuationRegistry::new();
@@ -48,5 +49,8 @@ pub fn shipped_continuations() -> ContinuationRegistry {
     registry
         .register(Box::new(CodecFactory))
         .expect("codec/v1 is a valid, unique identity");
+    registry
+        .register(Box::new(CodecRecentFactory))
+        .expect("codec-recent/v1 is a valid, unique identity");
     registry
 }

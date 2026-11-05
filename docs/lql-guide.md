@@ -342,6 +342,38 @@ cross-fact regression) with cross-format parity gated. COMPILE/DIFF/COMPACT stil
 supported statements — a capability boundary, not a missing feature
 apology. See the spec's §4.2/§4.4 for the full contract.
 
+### Editing stored weights
+
+On a VINDEX3 container, `UPDATE WEIGHTS` edits real elements of one stored tensor. The container is never
+modified; `COMPILE` writes a new one.
+
+```sql
+USE "qwen3-0.6b-q8_0.vindex3";
+
+-- Optional: record the edit so it can be saved, shared and reapplied.
+BEGIN PATCH "wsp001.vlp";
+
+UPDATE WEIGHTS SET DELTA = 0.0078125
+  WHERE TENSOR = "26.mlp.down_proj.weight" AND ROW = 100
+    AND COL IN (200, 201, 202, 203, 204, 206, 207);
+
+SAVE PATCH;                                   -- writes wsp001.vlp (version 2)
+COMPILE CURRENT INTO VINDEX "qwen3-edited.vindex3";
+```
+
+In another session, the same edit applies to the same container and produces the same bytes:
+
+```sql
+USE "qwen3-0.6b-q8_0.vindex3";
+APPLY PATCH "wsp001.vlp";       -- refused for any other container, or if the file was altered
+COMPILE CURRENT INTO VINDEX "qwen3-edited.vindex3";
+REMOVE PATCH "wsp001.vlp";      -- before COMPILE: nothing remains staged
+```
+
+The delta is added to the stored value and rounded once to bfloat16 (ties to even). Applying a patch twice, or
+two patches that touch one element, is refused. Quantised representations are re-derived from the edited
+weights. See the spec (§3.5.1) for the limits and for what is and is not verified.
+
 ## Statement Reference
 
 | Category | Statements |
@@ -350,7 +382,7 @@ apology. See the spec's §4.2/§4.4 for the full contract.
 | Browse | WALK, DESCRIBE, SELECT, EXPLAIN WALK |
 | Inference | INFER (with TOP, GENERATE, ROUTE, COMPARE), EXPLAIN INFER |
 | Trace | TRACE (with FOR, DECOMPOSE, LAYERS, POSITIONS, SAVE; plain form on VINDEX3) |
-| Mutation | INSERT, DELETE, UPDATE, MERGE |
+| Mutation | INSERT, DELETE, UPDATE, UPDATE WEIGHTS (VINDEX3), MERGE |
 | Patches | BEGIN PATCH, SAVE PATCH, APPLY PATCH, SHOW PATCHES, REMOVE PATCH |
 | Introspection | SHOW RELATIONS/LAYERS/FEATURES/MODELS/PATCHES, STATS |
 | Pipe | `\|>` chains two statements |

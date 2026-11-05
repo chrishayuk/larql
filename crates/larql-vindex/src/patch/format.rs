@@ -107,6 +107,14 @@ pub enum PatchOp {
     /// Architecture B: remove all KNN entries for an entity.
     #[serde(rename = "delete_knn")]
     DeleteKnn { entity: String },
+    /// Edit stored weights of a VINDEX3 container (additive, versioned).
+    ///
+    /// Carries the exact artifact it was written against and its own
+    /// digest; a reader that does not know this op refuses the whole patch
+    /// (an unknown `op` is a parse error), never skips it. See
+    /// `format::vindex3::weight_patch::op`.
+    #[serde(rename = "weight_delta")]
+    WeightDelta(crate::format::vindex3::weight_patch::WeightDeltaOp),
 }
 
 /// Compact down_meta for a patch operation.
@@ -127,7 +135,7 @@ impl PatchOp {
             PatchOp::Insert { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::Update { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::Delete { layer, feature, .. } => Some((*layer, *feature)),
-            PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } => None,
+            PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } | PatchOp::WeightDelta(_) => None,
         }
     }
 }
@@ -171,7 +179,7 @@ impl VindexPatch {
         for op in &self.operations {
             match op {
                 PatchOp::Insert { .. } | PatchOp::InsertKnn { .. } => ins += 1,
-                PatchOp::Update { .. } => upd += 1,
+                PatchOp::Update { .. } | PatchOp::WeightDelta(_) => upd += 1,
                 PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => del += 1,
             }
         }

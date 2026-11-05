@@ -35,7 +35,8 @@ pub struct ContinuationConfig {
 }
 
 impl ContinuationConfig {
-    /// No options: what every built-in provider but `codec/v1` takes.
+    /// No options: what every built-in provider but `codec/v1` and
+    /// `codec-recent/v1` takes.
     pub fn empty() -> Self {
         Self::default()
     }

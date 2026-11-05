@@ -120,6 +120,20 @@ pub enum Statement {
         set: Vec<Assignment>,
         conditions: Vec<Condition>,
     },
+    /// `UPDATE WEIGHTS SET DELTA = <f> WHERE TENSOR = "<name>" AND ROW = <n>
+    /// AND COL = <n> | COL IN (<n>, …)` — stage an edit of stored weights.
+    ///
+    /// Not a knowledge edit: it names real elements of one stored tensor.
+    /// `delta` applies to the value stored in the bound container, rounded
+    /// once to bfloat16, so staging twice never accumulates. Compiled by
+    /// `COMPILE CURRENT INTO VINDEX` into a new container; see
+    /// `larql_vindex::format::vindex3::weight_patch`.
+    UpdateWeights {
+        tensor: String,
+        row: usize,
+        cols: Vec<usize>,
+        delta: f32,
+    },
     Merge {
         source: String,
         target: Option<String>,
@@ -176,6 +190,22 @@ pub enum Statement {
     /// `SHOW AUTHORITY` (VINDEX3): the container's own authority
     /// declaration and the profiles it declares by name.
     ShowAuthority,
+    /// `VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST
+    /// "<source>"`: an external verifier's measurement of one container
+    /// against a numerical contract. Read-only. LQL never evaluates the
+    /// contract itself.
+    VerifyRepresentation {
+        container: String,
+        contract: String,
+        source: String,
+    },
+    /// `VERIFY OPERATOR "<tensor>" USING CONTRACT "<id>" IN WITNESS "<file>" AGAINST "<container>";`
+    VerifyOperator {
+        operator: String,
+        contract: String,
+        witness: String,
+        container: String,
+    },
     Stats {
         vindex: Option<String>,
     },
@@ -242,6 +272,7 @@ impl Statement {
             Statement::Insert { .. } => "INSERT",
             Statement::Delete { .. } => "DELETE",
             Statement::Update { .. } => "UPDATE",
+            Statement::UpdateWeights { .. } => "UPDATE WEIGHTS",
             Statement::Merge { .. } => "MERGE",
             Statement::Rebalance { .. } => "REBALANCE",
             Statement::ShowRelations { .. } => "SHOW RELATIONS",
@@ -253,6 +284,8 @@ impl Statement {
             Statement::ShowRepresentations { .. } => "SHOW REPRESENTATIONS",
             Statement::ShowProvenance { .. } => "SHOW PROVENANCE",
             Statement::ShowAuthority => "SHOW AUTHORITY",
+            Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
+            Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",

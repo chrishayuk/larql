@@ -73,6 +73,7 @@ pub mod test_support;
 pub mod variants;
 pub mod verify;
 pub mod verify_system;
+pub mod weight_patch;
 pub mod write;
 
 pub use build::ContainerBuilder;

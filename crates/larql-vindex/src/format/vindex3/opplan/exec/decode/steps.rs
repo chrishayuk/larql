@@ -122,6 +122,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         self.ops.get().mapped_residency()
     }
 
+    /// One residency observation of the prepared image, every mapped
+    /// region read once with its outcome kept.
+    pub fn observe_residency(&self) -> super::super::prepared::ResidencyObservation {
+        self.ops.get().observe_residency()
+    }
+
     pub fn allocation_census(&self) -> super::super::prepared::AllocationCensus {
         self.ops.get().allocation_census()
     }

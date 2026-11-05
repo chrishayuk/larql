@@ -26,8 +26,10 @@
 use std::io::Write;
 use std::path::Path;
 
+mod bf16;
 mod hybrid;
 mod quantised;
+pub use bf16::*;
 pub use hybrid::*;
 pub use quantised::*;
 

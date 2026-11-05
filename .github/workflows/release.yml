@@ -36,7 +36,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             features: "--no-default-features --features larql-cli/gpu"
           # Pinned to 22.04, NOT ubuntu-latest: the runner's glibc sets the
@@ -79,8 +79,7 @@ jobs:
       # files for the rationale.
       - name: Install protoc (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install protoc -y --no-progress
+        uses: ./.github/actions/install-protoc-windows
 
       - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6

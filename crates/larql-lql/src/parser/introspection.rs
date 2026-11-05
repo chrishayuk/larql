@@ -164,6 +164,55 @@ impl Parser {
         }
     }
 
+    /// `VERIFY REPRESENTATION "<container>" USING CONTRACT "<id>" AGAINST
+    /// "<source>"`. The words after VERIFY are contextual, not reserved, so
+    /// they stay usable as unquoted names elsewhere in the language.
+    pub(crate) fn parse_verify(&mut self) -> Result<Statement, ParseError> {
+        self.expect_keyword(Keyword::Verify)?;
+        if matches!(self.peek(), Token::Ident(ref got) if got.eq_ignore_ascii_case("OPERATOR")) {
+            self.advance();
+            let operator = self.expect_string()?;
+            self.expect_word("USING")?;
+            self.expect_word("CONTRACT")?;
+            let contract = self.expect_string()?;
+            self.expect_keyword(Keyword::In)?;
+            self.expect_word("WITNESS")?;
+            let witness = self.expect_string()?;
+            self.expect_word("AGAINST")?;
+            let container = self.expect_string()?;
+            self.eat_semicolon();
+            return Ok(Statement::VerifyOperator {
+                operator,
+                contract,
+                witness,
+                container,
+            });
+        }
+        self.expect_word("REPRESENTATION")?;
+        let container = self.expect_string()?;
+        self.expect_word("USING")?;
+        self.expect_word("CONTRACT")?;
+        let contract = self.expect_string()?;
+        self.expect_word("AGAINST")?;
+        let source = self.expect_string()?;
+        self.eat_semicolon();
+        Ok(Statement::VerifyRepresentation {
+            container,
+            contract,
+            source,
+        })
+    }
+
+    fn expect_word(&mut self, word: &str) -> Result<(), ParseError> {
+        match self.peek() {
+            Token::Ident(ref got) if got.eq_ignore_ascii_case(word) => {
+                self.advance();
+                Ok(())
+            }
+            got => Err(ParseError(format!("expected {word}, got {got:?}"))),
+        }
+    }
+
     pub(crate) fn parse_stats(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Stats)?;
         let vindex = if let Token::StringLit(_) = self.peek() {

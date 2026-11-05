@@ -76,6 +76,7 @@ impl Parser {
             Token::Keyword(Keyword::Rebalance) => self.parse_rebalance(),
             Token::Keyword(Keyword::Show) => self.parse_show(),
             Token::Keyword(Keyword::Stats) => self.parse_stats(),
+            Token::Keyword(Keyword::Verify) => self.parse_verify(),
             Token::Keyword(Keyword::Begin) => self.parse_begin(),
             Token::Keyword(Keyword::Save) => self.parse_save(),
             Token::Keyword(Keyword::Apply) => self.parse_apply(),

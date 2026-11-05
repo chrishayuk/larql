@@ -134,6 +134,7 @@ mod generate_real;
 mod golden;
 mod head_observation;
 mod head_observation_gates;
+mod instance_identity;
 mod kernels;
 mod kimi_per_expert_prepared;
 mod kquant_projection;
@@ -157,6 +158,8 @@ mod requirements;
 mod residency;
 mod residency_budget;
 mod residency_census;
+mod residency_clone_identity;
+mod residency_observation;
 mod routed;
 mod seam;
 mod selected_output_head;
@@ -164,6 +167,7 @@ mod shared_projection;
 mod sinks_bias;
 mod smoke;
 mod streaming;
+mod system_clock;
 mod timing;
 
 // The fixture writers and geometry moved to the public

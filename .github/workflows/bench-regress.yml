@@ -116,10 +116,10 @@ on:
 
 jobs:
   bench:
-    # macos-14 = Apple Silicon (M1+). Required for the metal cells —
+    # macos-15 = Apple Silicon (M1+). Required for the metal cells —
     # without it, drop --features gpu from FEATURES to skip them
     # and run only the CPU surface on any runner.
-    runs-on: macos-14
+    runs-on: macos-15
     # Two bench arms plus a cold build for the base and an incremental
     # one for the head. The old single-arm job used 90.
     timeout-minutes: 150

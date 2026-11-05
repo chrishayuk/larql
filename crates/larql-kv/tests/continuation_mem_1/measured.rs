@@ -20,7 +20,7 @@ use larql_vindex::format::vindex3::opplan::exec::kv::{
 use larql_vindex::format::vindex3::opplan::exec::kv_view::KvView;
 
 use super::alloc::{self, Event, EventKind, Scope, ScopeDelta};
-pub use super::inspect::{CodeList, CodecResidency, Inspect};
+pub use super::inspect::{CodeList, CodecResidency, Inspect, MixedLayout, MixedResidency};
 pub use super::inventory::inventory_of;
 
 pub(super) const F32_BYTES: usize = std::mem::size_of::<f32>();
@@ -320,6 +320,67 @@ impl<P: Inspect> Measured<P> {
             scratch_bytes,
             scratch_bound: 2 * widest_range_bytes,
         })
+    }
+
+    /// CODEC-3 recon's residency for a mixed provider, by the live table:
+    /// append-born live bytes against what a window of `window` K rows
+    /// DECLARES — derived here from the retained range, never from the
+    /// provider's own list lengths — every append-born live pointer
+    /// accounted for, and the scratch against codec/v1's bound. `None`
+    /// for a provider without a mixed layout.
+    pub fn mixed_residency(&self, window: usize) -> Option<MixedResidency> {
+        let mut r = MixedResidency {
+            append_born_live: 0,
+            expected: 0,
+            v_code_bytes: 0,
+            k_code_bytes: 0,
+            k_exact_bytes: 0,
+            list_bytes: 0,
+            window_mismatches: 0,
+            strays: 0,
+            scratch_bytes: 0,
+            scratch_bound: 0,
+        };
+        let mut allowed = std::collections::HashSet::new();
+        let mut widest_range_bytes = 0;
+        for (layer, g) in self.geometry.iter().enumerate() {
+            let Some(kv) = g.kv_side() else { continue };
+            let m = self.inner.mixed_layout(layer)?;
+            let held = m.end - m.base;
+            let exact = window.min(held);
+            r.window_mismatches += usize::from(
+                m.counts != [held, held - exact, exact] || m.exact_start != m.end - exact,
+            );
+            r.v_code_bytes += held * m.half_bytes;
+            r.k_code_bytes += (held - exact) * m.half_bytes;
+            r.k_exact_bytes += exact * kv.kv_dim * F32_BYTES;
+            r.list_bytes += m
+                .lists
+                .iter()
+                .filter_map(|&p| alloc::live_size(p))
+                .sum::<usize>();
+            allowed.extend(m.lists);
+            allowed.extend(m.rows);
+            widest_range_bytes = widest_range_bytes.max(held * kv.kv_dim * F32_BYTES);
+        }
+        r.expected = r.row_bytes() + r.list_bytes;
+        let mut born = self.append_born.clone();
+        born.sort_unstable();
+        born.dedup();
+        for p in born {
+            if let Some(size) = alloc::live_size_tagged(p, APPEND_TAG) {
+                r.append_born_live += size;
+                r.strays += usize::from(!allowed.contains(&p));
+            }
+        }
+        r.scratch_bytes = self
+            .inner
+            .scratch_ptrs()?
+            .iter()
+            .filter_map(|&p| alloc::live_size(p))
+            .sum();
+        r.scratch_bound = 2 * widest_range_bytes;
+        Some(r)
     }
 
     /// WINDOW-1's deallocation witness, on allocation IDENTITY: every

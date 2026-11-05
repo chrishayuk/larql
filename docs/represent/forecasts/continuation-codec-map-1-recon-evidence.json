@@ -1,0 +1,2098 @@
+{
+  "programme": "CONTINUATION-CODEC-MAP-1 reconnaissance — evidence (not a freeze; calibration bank 1 only)",
+  "localisation": {
+    "implementation_sha": "a48074655b6047a00176985d26b4d7e56f9e0259",
+    "binary_sha256": "f31deb067bafbc8ea5964a31e35c8427b7f1846ec05be8e5ab801f49eb8a9155",
+    "provenance_txt": [
+      "programme CONTINUATION-CODEC-MAP-1 reconnaissance (calibration bank 1 only; bank 2 sealed)",
+      "implementation_sha a48074655b6047a00176985d26b4d7e56f9e0259 (branch continuation-codec-map-1-recon)",
+      "binary_sha256 f31deb067bafbc8ea5964a31e35c8427b7f1846ec05be8e5ab801f49eb8a9155",
+      "controls_with_this_binary codec_map 8 passed (SIM-0 fixture, executed e2e, age/grammar/partition)",
+      "host Mac15,8 Apple M3 Max; rustc 1.98.0 (88d9e12ae 2026-08-18)",
+      "contention math-fun-2d multi-worker python job running at start 2026-09-30T19:02:32Z; timings not adjudicated",
+      "stage start 2026-09-30T19:02:32Z maps [k=all:k:all;v=all:v:all] load 44.17 41.77 30.22",
+      "contention 2026-09-30T19:02:48Z: math-fun-2d reports M5 labelling (12 workers, ~4.5 h left) then MPS training; no pause needed either side",
+      "stage 1 done 2026-09-30T23:17:03Z: K explains 59%/53% of CH wide/narrow tail, V -1%; next K by attention type + depth",
+      "stage start 2026-09-30T23:17:03Z maps [k_sliding=sliding:k:all;k_full=full:k:all;k_q1=q1:k:all;k_q2=q2:k:all;k_q3=q3:k:all;k_q4=q4:k:all] load 41.40 62.17 65.66",
+      "stages 2+3 done 2026-10-01T02:15:44Z: K by depth Q1 .122/.284, Q2 .235/.232 (densest), Q3 .178/.115, Q4 .019/.030 (near free); sliding .349/.481, full .156/.147; mean additive by type and depth; next age on K",
+      "stage start 2026-10-01T02:15:44Z maps [k_recent64=all:k:older64;k_recent256=all:k:older256;k_inv256=all:k:newer256] load 11.36 17.09 18.50"
+    ],
+    "reports": {
+      "stage1": {
+        "ch_tail_persistence": [
+          {
+            "d_ch": 2.4576369195545076,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1026,
+            "reference_entropy": 0.4781035564251287,
+            "reference_margin": 0.6356947782936796
+          },
+          {
+            "d_ch": 0.81187320739071,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1029,
+            "reference_entropy": 0.9493525993540923,
+            "reference_margin": 0.5042056112248247
+          },
+          {
+            "d_ch": 2.8447943817650576,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1031,
+            "reference_entropy": 0.18010257138836283,
+            "reference_margin": 0.9632825191565066
+          },
+          {
+            "d_ch": 0.5189896378788996,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1033,
+            "reference_entropy": 0.3772718571825095,
+            "reference_margin": 0.7803082963659358
+          },
+          {
+            "d_ch": 0.7969591241067757,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1039,
+            "reference_entropy": 1.0213101310651926,
+            "reference_margin": 0.513308851183848
+          },
+          {
+            "d_ch": 2.0537942116210823,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1041,
+            "reference_entropy": 1.4784274213725648,
+            "reference_margin": 0.1956153970461133
+          },
+          {
+            "d_ch": 2.961863286065099,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1042,
+            "reference_entropy": 0.025192872367716116,
+            "reference_margin": 0.9943031414707216
+          },
+          {
+            "d_ch": 0.48290509228714706,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1052,
+            "reference_entropy": 0.9039544181296826,
+            "reference_margin": 0.6257259752667597
+          },
+          {
+            "d_ch": 1.9608097885284987,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1055,
+            "reference_entropy": 0.10464863729089041,
+            "reference_margin": 0.9773508273767861
+          },
+          {
+            "d_ch": 1.5146923396691814,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1063,
+            "reference_entropy": 0.12060306852372778,
+            "reference_margin": 0.9776484164661543
+          },
+          {
+            "d_ch": 1.2721462974572444,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1064,
+            "reference_entropy": 0.41935551839370505,
+            "reference_margin": 0.9074800326499172
+          },
+          {
+            "d_ch": 0.8453134596205771,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1074,
+            "reference_entropy": 0.6227459053621349,
+            "reference_margin": 0.6602093086675651
+          },
+          {
+            "d_ch": 1.2428059642822482,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1077,
+            "reference_entropy": 1.1029556637078262,
+            "reference_margin": 0.40273029519275194
+          },
+          {
+            "d_ch": 1.31839782927134,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1078,
+            "reference_entropy": 1.3374436435328267,
+            "reference_margin": 0.4815437969301014
+          },
+          {
+            "d_ch": 1.4713734937693534,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1087,
+            "reference_entropy": 2.547417382973202,
+            "reference_margin": 0.036740473151573055
+          },
+          {
+            "d_ch": 4.205866376023085,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1090,
+            "reference_entropy": 0.0968080106203183,
+            "reference_margin": 0.967894351466567
+          },
+          {
+            "d_ch": 0.6815515110289949,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1091,
+            "reference_entropy": 0.4747796778250265,
+            "reference_margin": 0.8786940487634666
+          },
+          {
+            "d_ch": 2.095835547233378,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1107,
+            "reference_entropy": 1.4762341934191,
+            "reference_margin": 0.3610571848919192
+          },
+          {
+            "d_ch": 0.7615821388268891,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1172,
+            "reference_entropy": 0.9590770686580972,
+            "reference_margin": 0.5716497649041277
+          },
+          {
+            "d_ch": 1.126010555074596,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1207,
+            "reference_entropy": 0.2580019959281294,
+            "reference_margin": 0.9417414328830969
+          },
+          {
+            "d_ch": 0.5885787125547834,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1209,
+            "reference_entropy": 4.964048785390291,
+            "reference_margin": 0.0049145239203890745
+          },
+          {
+            "d_ch": 0.4726319316975489,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1228,
+            "reference_entropy": 2.0270812907131392,
+            "reference_margin": 0.3703891025126049
+          },
+          {
+            "d_ch": 0.5985196720213369,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1236,
+            "reference_entropy": 2.8229849027632716,
+            "reference_margin": 0.3137605196538838
+          },
+          {
+            "d_ch": 2.1489617239840704,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1239,
+            "reference_entropy": 0.8555962906622179,
+            "reference_margin": 0.593750474108035
+          },
+          {
+            "d_ch": 1.2757100226778448,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1244,
+            "reference_entropy": 1.2573952372828434,
+            "reference_margin": 0.5066905467282983
+          },
+          {
+            "d_ch": 0.6621588201307234,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1258,
+            "reference_entropy": 1.4659160706362644,
+            "reference_margin": 0.49426077042696936
+          },
+          {
+            "d_ch": 1.270343785653519,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1271,
+            "reference_entropy": 0.552675150589361,
+            "reference_margin": 0.7956413512112628
+          },
+          {
+            "d_ch": 0.8771038563100588,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1275,
+            "reference_entropy": 0.5056521807003271,
+            "reference_margin": 0.8701884611504407
+          },
+          {
+            "d_ch": 0.6955870593517051,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1277,
+            "reference_entropy": 1.2857812673692621,
+            "reference_margin": 0.7235407762361143
+          },
+          {
+            "d_ch": 2.6537184429070786,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1280,
+            "reference_entropy": 0.17559124150318148,
+            "reference_margin": 0.9572493152535556
+          },
+          {
+            "d_ch": 0.46142093086780533,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1290,
+            "reference_entropy": 1.3188042197100474,
+            "reference_margin": 0.060617246955802506
+          },
+          {
+            "d_ch": 0.4841633565618091,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1320,
+            "reference_entropy": 1.4602910895809171,
+            "reference_margin": 0.6084390074639139
+          },
+          {
+            "d_ch": 0.48894178880537353,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1414,
+            "reference_entropy": 0.5105617921133435,
+            "reference_margin": 0.7134400710171165
+          },
+          {
+            "d_ch": 0.4827656093482091,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1444,
+            "reference_entropy": 1.713175971239858,
+            "reference_margin": 0.07370257477126813
+          },
+          {
+            "d_ch": 1.6220672057454157,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1471,
+            "reference_entropy": 1.7477938820091636,
+            "reference_margin": 0.5064404289555784
+          },
+          {
+            "d_ch": 0.6056234998977909,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1495,
+            "reference_entropy": 0.026765461025961897,
+            "reference_margin": 0.9928848908781375
+          },
+          {
+            "d_ch": 2.2983697743889815,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1508,
+            "reference_entropy": 0.802641064648344,
+            "reference_margin": 0.8910295717635492
+          },
+          {
+            "d_ch": 2.0725908364837404,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1538,
+            "reference_entropy": 0.16292148550112376,
+            "reference_margin": 0.9301849328990749
+          },
+          {
+            "d_ch": 0.6842963391469586,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1582,
+            "reference_entropy": 1.3861655144804632,
+            "reference_margin": 0.5992179567951147
+          },
+          {
+            "d_ch": 0.9504275966658609,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1599,
+            "reference_entropy": 1.028760192959657,
+            "reference_margin": 0.3888124373375514
+          },
+          {
+            "d_ch": 0.4899050809561381,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1617,
+            "reference_entropy": 0.8233818851185374,
+            "reference_margin": 0.8356246885149299
+          },
+          {
+            "d_ch": 0.592491100312807,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1631,
+            "reference_entropy": 2.881378449269112,
+            "reference_margin": 0.0731324268730652
+          },
+          {
+            "d_ch": 0.8667699842223755,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1658,
+            "reference_entropy": 0.8961682232253886,
+            "reference_margin": 0.4033061407588248
+          },
+          {
+            "d_ch": 1.0437076937627383,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1670,
+            "reference_entropy": 2.4890025943607355,
+            "reference_margin": 0.3230461465612764
+          },
+          {
+            "d_ch": 0.9000719236862598,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1730,
+            "reference_entropy": 1.21164019154437,
+            "reference_margin": 0.2641477022594264
+          },
+          {
+            "d_ch": 2.4032453187936964,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1825,
+            "reference_entropy": 2.339745847500231,
+            "reference_margin": 0.10902662648965347
+          },
+          {
+            "d_ch": 1.883137756528359,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1852,
+            "reference_entropy": 1.5097274543426147,
+            "reference_margin": 0.3180492383018725
+          },
+          {
+            "d_ch": 1.6475211296890566,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1853,
+            "reference_entropy": 0.45015555949370367,
+            "reference_margin": 0.8088313421286729
+          },
+          {
+            "d_ch": 1.65828750640195,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1869,
+            "reference_entropy": 3.86449243951413,
+            "reference_margin": 0.02245362508374546
+          },
+          {
+            "d_ch": 0.5159582483416083,
+            "maps_sharing": 0,
+            "of": 2,
+            "position": 1890,
+            "reference_entropy": 1.4260649376066135,
+            "reference_margin": 0.21940992705756773
+          },
+          {
+            "d_ch": 0.6441055417185242,
+            "maps_sharing": 1,
+            "of": 2,
+            "position": 1923,
+            "reference_entropy": 1.1227276429109347,
+            "reference_margin": 0.1867915059426586
+          },
+          {
+            "d_ch": 0.5984705001786832,
+            "maps_sharing": 2,
+            "of": 2,
+            "position": 1928,
+            "reference_entropy": 1.1202387731295544,
+            "reference_margin": 0.32027925089370146
+          }
+        ],
+        "maps": [
+          {
+            "exact_fraction": 0.0,
+            "explained_narrow": 1.0,
+            "explained_wide": 1.0,
+            "mean_d": 0.07122120317671592,
+            "name": "ch_full",
+            "p99_d": 2.0537942116210823,
+            "spec": "all:kv:all",
+            "tail_overlap_with_ch": 1.0,
+            "top1_agreement": 0.7783203125
+          },
+          {
+            "exact_fraction": 0.5,
+            "explained_narrow": 0.5290139305289541,
+            "explained_wide": 0.5904866307136838,
+            "mean_d": 0.060029299070263,
+            "name": "k",
+            "p99_d": 1.6619352578569526,
+            "spec": "k=all:k:all",
+            "tail_overlap_with_ch": 0.35064935064935066,
+            "top1_agreement": 0.7763671875
+          },
+          {
+            "exact_fraction": 0.5,
+            "explained_narrow": -0.007354904761229223,
+            "explained_wide": -0.012945590080909009,
+            "mean_d": -0.00795223326313543,
+            "name": "v",
+            "p99_d": 0.39887445004087496,
+            "spec": "v=all:v:all",
+            "tail_overlap_with_ch": 0.19540229885057472,
+            "top1_agreement": 0.81640625
+          }
+        ],
+        "programme": "CONTINUATION-CODEC-MAP-1 reconnaissance",
+        "rung": 2048,
+        "sim0": {
+          "logits_bit_identical": true,
+          "passed": true,
+          "seconds": 2961.121944292,
+          "trace": [
+            "8703731738432488517",
+            210188
+          ],
+          "trace_identical": true
+        },
+        "tail_wide_positions": 52
+      },
+      "stage2_3": {
+        "ch_tail_persistence": [
+          {
+            "d_ch": 2.4576369195545076,
+            "maps_sharing": 6,
+            "of": 8,
+            "position": 1026,
+            "reference_entropy": 0.4781035564251287,
+            "reference_margin": 0.6356947782936796
+          },
+          {
+            "d_ch": 0.81187320739071,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1029,
+            "reference_entropy": 0.9493525993540923,
+            "reference_margin": 0.5042056112248247
+          },
+          {
+            "d_ch": 2.8447943817650576,
+            "maps_sharing": 4,
+            "of": 8,
+            "position": 1031,
+            "reference_entropy": 0.18010257138836283,
+            "reference_margin": 0.9632825191565066
+          },
+          {
+            "d_ch": 0.5189896378788996,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1033,
+            "reference_entropy": 0.3772718571825095,
+            "reference_margin": 0.7803082963659358
+          },
+          {
+            "d_ch": 0.7969591241067757,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1039,
+            "reference_entropy": 1.0213101310651926,
+            "reference_margin": 0.513308851183848
+          },
+          {
+            "d_ch": 2.0537942116210823,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1041,
+            "reference_entropy": 1.4784274213725648,
+            "reference_margin": 0.1956153970461133
+          },
+          {
+            "d_ch": 2.961863286065099,
+            "maps_sharing": 7,
+            "of": 8,
+            "position": 1042,
+            "reference_entropy": 0.025192872367716116,
+            "reference_margin": 0.9943031414707216
+          },
+          {
+            "d_ch": 0.48290509228714706,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1052,
+            "reference_entropy": 0.9039544181296826,
+            "reference_margin": 0.6257259752667597
+          },
+          {
+            "d_ch": 1.9608097885284987,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1055,
+            "reference_entropy": 0.10464863729089041,
+            "reference_margin": 0.9773508273767861
+          },
+          {
+            "d_ch": 1.5146923396691814,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1063,
+            "reference_entropy": 0.12060306852372778,
+            "reference_margin": 0.9776484164661543
+          },
+          {
+            "d_ch": 1.2721462974572444,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1064,
+            "reference_entropy": 0.41935551839370505,
+            "reference_margin": 0.9074800326499172
+          },
+          {
+            "d_ch": 0.8453134596205771,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1074,
+            "reference_entropy": 0.6227459053621349,
+            "reference_margin": 0.6602093086675651
+          },
+          {
+            "d_ch": 1.2428059642822482,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1077,
+            "reference_entropy": 1.1029556637078262,
+            "reference_margin": 0.40273029519275194
+          },
+          {
+            "d_ch": 1.31839782927134,
+            "maps_sharing": 4,
+            "of": 8,
+            "position": 1078,
+            "reference_entropy": 1.3374436435328267,
+            "reference_margin": 0.4815437969301014
+          },
+          {
+            "d_ch": 1.4713734937693534,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1087,
+            "reference_entropy": 2.547417382973202,
+            "reference_margin": 0.036740473151573055
+          },
+          {
+            "d_ch": 4.205866376023085,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1090,
+            "reference_entropy": 0.0968080106203183,
+            "reference_margin": 0.967894351466567
+          },
+          {
+            "d_ch": 0.6815515110289949,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1091,
+            "reference_entropy": 0.4747796778250265,
+            "reference_margin": 0.8786940487634666
+          },
+          {
+            "d_ch": 2.095835547233378,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1107,
+            "reference_entropy": 1.4762341934191,
+            "reference_margin": 0.3610571848919192
+          },
+          {
+            "d_ch": 0.7615821388268891,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1172,
+            "reference_entropy": 0.9590770686580972,
+            "reference_margin": 0.5716497649041277
+          },
+          {
+            "d_ch": 1.126010555074596,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1207,
+            "reference_entropy": 0.2580019959281294,
+            "reference_margin": 0.9417414328830969
+          },
+          {
+            "d_ch": 0.5885787125547834,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1209,
+            "reference_entropy": 4.964048785390291,
+            "reference_margin": 0.0049145239203890745
+          },
+          {
+            "d_ch": 0.4726319316975489,
+            "maps_sharing": 0,
+            "of": 8,
+            "position": 1228,
+            "reference_entropy": 2.0270812907131392,
+            "reference_margin": 0.3703891025126049
+          },
+          {
+            "d_ch": 0.5985196720213369,
+            "maps_sharing": 0,
+            "of": 8,
+            "position": 1236,
+            "reference_entropy": 2.8229849027632716,
+            "reference_margin": 0.3137605196538838
+          },
+          {
+            "d_ch": 2.1489617239840704,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1239,
+            "reference_entropy": 0.8555962906622179,
+            "reference_margin": 0.593750474108035
+          },
+          {
+            "d_ch": 1.2757100226778448,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1244,
+            "reference_entropy": 1.2573952372828434,
+            "reference_margin": 0.5066905467282983
+          },
+          {
+            "d_ch": 0.6621588201307234,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1258,
+            "reference_entropy": 1.4659160706362644,
+            "reference_margin": 0.49426077042696936
+          },
+          {
+            "d_ch": 1.270343785653519,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1271,
+            "reference_entropy": 0.552675150589361,
+            "reference_margin": 0.7956413512112628
+          },
+          {
+            "d_ch": 0.8771038563100588,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1275,
+            "reference_entropy": 0.5056521807003271,
+            "reference_margin": 0.8701884611504407
+          },
+          {
+            "d_ch": 0.6955870593517051,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1277,
+            "reference_entropy": 1.2857812673692621,
+            "reference_margin": 0.7235407762361143
+          },
+          {
+            "d_ch": 2.6537184429070786,
+            "maps_sharing": 4,
+            "of": 8,
+            "position": 1280,
+            "reference_entropy": 0.17559124150318148,
+            "reference_margin": 0.9572493152535556
+          },
+          {
+            "d_ch": 0.46142093086780533,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1290,
+            "reference_entropy": 1.3188042197100474,
+            "reference_margin": 0.060617246955802506
+          },
+          {
+            "d_ch": 0.4841633565618091,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1320,
+            "reference_entropy": 1.4602910895809171,
+            "reference_margin": 0.6084390074639139
+          },
+          {
+            "d_ch": 0.48894178880537353,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1414,
+            "reference_entropy": 0.5105617921133435,
+            "reference_margin": 0.7134400710171165
+          },
+          {
+            "d_ch": 0.4827656093482091,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1444,
+            "reference_entropy": 1.713175971239858,
+            "reference_margin": 0.07370257477126813
+          },
+          {
+            "d_ch": 1.6220672057454157,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1471,
+            "reference_entropy": 1.7477938820091636,
+            "reference_margin": 0.5064404289555784
+          },
+          {
+            "d_ch": 0.6056234998977909,
+            "maps_sharing": 6,
+            "of": 8,
+            "position": 1495,
+            "reference_entropy": 0.026765461025961897,
+            "reference_margin": 0.9928848908781375
+          },
+          {
+            "d_ch": 2.2983697743889815,
+            "maps_sharing": 7,
+            "of": 8,
+            "position": 1508,
+            "reference_entropy": 0.802641064648344,
+            "reference_margin": 0.8910295717635492
+          },
+          {
+            "d_ch": 2.0725908364837404,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1538,
+            "reference_entropy": 0.16292148550112376,
+            "reference_margin": 0.9301849328990749
+          },
+          {
+            "d_ch": 0.6842963391469586,
+            "maps_sharing": 4,
+            "of": 8,
+            "position": 1582,
+            "reference_entropy": 1.3861655144804632,
+            "reference_margin": 0.5992179567951147
+          },
+          {
+            "d_ch": 0.9504275966658609,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1599,
+            "reference_entropy": 1.028760192959657,
+            "reference_margin": 0.3888124373375514
+          },
+          {
+            "d_ch": 0.4899050809561381,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1617,
+            "reference_entropy": 0.8233818851185374,
+            "reference_margin": 0.8356246885149299
+          },
+          {
+            "d_ch": 0.592491100312807,
+            "maps_sharing": 0,
+            "of": 8,
+            "position": 1631,
+            "reference_entropy": 2.881378449269112,
+            "reference_margin": 0.0731324268730652
+          },
+          {
+            "d_ch": 0.8667699842223755,
+            "maps_sharing": 0,
+            "of": 8,
+            "position": 1658,
+            "reference_entropy": 0.8961682232253886,
+            "reference_margin": 0.4033061407588248
+          },
+          {
+            "d_ch": 1.0437076937627383,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1670,
+            "reference_entropy": 2.4890025943607355,
+            "reference_margin": 0.3230461465612764
+          },
+          {
+            "d_ch": 0.9000719236862598,
+            "maps_sharing": 0,
+            "of": 8,
+            "position": 1730,
+            "reference_entropy": 1.21164019154437,
+            "reference_margin": 0.2641477022594264
+          },
+          {
+            "d_ch": 2.4032453187936964,
+            "maps_sharing": 2,
+            "of": 8,
+            "position": 1825,
+            "reference_entropy": 2.339745847500231,
+            "reference_margin": 0.10902662648965347
+          },
+          {
+            "d_ch": 1.883137756528359,
+            "maps_sharing": 3,
+            "of": 8,
+            "position": 1852,
+            "reference_entropy": 1.5097274543426147,
+            "reference_margin": 0.3180492383018725
+          },
+          {
+            "d_ch": 1.6475211296890566,
+            "maps_sharing": 4,
+            "of": 8,
+            "position": 1853,
+            "reference_entropy": 0.45015555949370367,
+            "reference_margin": 0.8088313421286729
+          },
+          {
+            "d_ch": 1.65828750640195,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1869,
+            "reference_entropy": 3.86449243951413,
+            "reference_margin": 0.02245362508374546
+          },
+          {
+            "d_ch": 0.5159582483416083,
+            "maps_sharing": 1,
+            "of": 8,
+            "position": 1890,
+            "reference_entropy": 1.4260649376066135,
+            "reference_margin": 0.21940992705756773
+          },
+          {
+            "d_ch": 0.6441055417185242,
+            "maps_sharing": 5,
+            "of": 8,
+            "position": 1923,
+            "reference_entropy": 1.1227276429109347,
+            "reference_margin": 0.1867915059426586
+          },
+          {
+            "d_ch": 0.5984705001786832,
+            "maps_sharing": 6,
+            "of": 8,
+            "position": 1928,
+            "reference_entropy": 1.1202387731295544,
+            "reference_margin": 0.32027925089370146
+          }
+        ],
+        "maps": [
+          {
+            "exact_fraction": 0.0,
+            "explained_narrow": 1.0,
+            "explained_wide": 1.0,
+            "mean_d": 0.07122120317671592,
+            "name": "ch_full",
+            "p99_d": 2.0537942116210823,
+            "spec": "all:kv:all",
+            "tail_overlap_with_ch": 1.0,
+            "top1_agreement": 0.7783203125
+          },
+          {
+            "exact_fraction": 0.5,
+            "explained_narrow": 0.5290139305289541,
+            "explained_wide": 0.5904866307136838,
+            "mean_d": 0.060029299070263,
+            "name": "k",
+            "p99_d": 1.6619352578569526,
+            "spec": "k=all:k:all",
+            "tail_overlap_with_ch": 0.35064935064935066,
+            "top1_agreement": 0.7763671875
+          },
+          {
+            "exact_fraction": 0.8717948717948718,
+            "explained_narrow": 0.14684228723109796,
+            "explained_wide": 0.15585457682375725,
+            "mean_d": 0.023590993642029254,
+            "name": "k_full",
+            "p99_d": 0.756719204232422,
+            "spec": "k_full=full:k:all",
+            "tail_overlap_with_ch": 0.2235294117647059,
+            "top1_agreement": 0.8056640625
+          },
+          {
+            "exact_fraction": 0.8717948717948718,
+            "explained_narrow": 0.2842573422224934,
+            "explained_wide": 0.12206489076868697,
+            "mean_d": 0.01604805154833154,
+            "name": "k_q1",
+            "p99_d": 0.5992365097509583,
+            "spec": "k_q1=q1:k:all",
+            "tail_overlap_with_ch": 0.16853932584269662,
+            "top1_agreement": 0.806640625
+          },
+          {
+            "exact_fraction": 0.8846153846153846,
+            "explained_narrow": 0.231852673455034,
+            "explained_wide": 0.2345147558466972,
+            "mean_d": 0.02557656107021415,
+            "name": "k_q2",
+            "p99_d": 0.8805978606656659,
+            "spec": "k_q2=q2:k:all",
+            "tail_overlap_with_ch": 0.25301204819277107,
+            "top1_agreement": 0.79296875
+          },
+          {
+            "exact_fraction": 0.8589743589743589,
+            "explained_narrow": 0.11476991980504381,
+            "explained_wide": 0.17771186893842308,
+            "mean_d": 0.011735829347081412,
+            "name": "k_q3",
+            "p99_d": 0.671226487035857,
+            "spec": "k_q3=q3:k:all",
+            "tail_overlap_with_ch": 0.2682926829268293,
+            "top1_agreement": 0.8076171875
+          },
+          {
+            "exact_fraction": 0.8846153846153846,
+            "explained_narrow": 0.02988351840594574,
+            "explained_wide": 0.01908866329949855,
+            "mean_d": 0.0011074739946180436,
+            "name": "k_q4",
+            "p99_d": 0.3020123615063395,
+            "spec": "k_q4=q4:k:all",
+            "tail_overlap_with_ch": 0.15555555555555556,
+            "top1_agreement": 0.8134765625
+          },
+          {
+            "exact_fraction": 0.6282051282051282,
+            "explained_narrow": 0.4810347888550906,
+            "explained_wide": 0.34947832078239666,
+            "mean_d": 0.03841670896999531,
+            "name": "k_sliding",
+            "p99_d": 1.2229633805699887,
+            "spec": "k_sliding=sliding:k:all",
+            "tail_overlap_with_ch": 0.2839506172839506,
+            "top1_agreement": 0.7822265625
+          },
+          {
+            "exact_fraction": 0.5,
+            "explained_narrow": -0.007354904761229223,
+            "explained_wide": -0.012945590080909009,
+            "mean_d": -0.00795223326313543,
+            "name": "v",
+            "p99_d": 0.39887445004087496,
+            "spec": "v=all:v:all",
+            "tail_overlap_with_ch": 0.19540229885057472,
+            "top1_agreement": 0.81640625
+          }
+        ],
+        "programme": "CONTINUATION-CODEC-MAP-1 reconnaissance",
+        "rung": 2048,
+        "sim0": {
+          "logits_bit_identical": true,
+          "passed": true,
+          "seconds": 2961.121944292,
+          "trace": [
+            "8703731738432488517",
+            210188
+          ],
+          "trace_identical": true
+        },
+        "tail_wide_positions": 52
+      },
+      "stage4": {
+        "ch_tail_persistence": [
+          {
+            "d_ch": 2.4576369195545076,
+            "maps_sharing": 8,
+            "of": 11,
+            "position": 1026,
+            "reference_entropy": 0.4781035564251287,
+            "reference_margin": 0.6356947782936796
+          },
+          {
+            "d_ch": 0.81187320739071,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1029,
+            "reference_entropy": 0.9493525993540923,
+            "reference_margin": 0.5042056112248247
+          },
+          {
+            "d_ch": 2.8447943817650576,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1031,
+            "reference_entropy": 0.18010257138836283,
+            "reference_margin": 0.9632825191565066
+          },
+          {
+            "d_ch": 0.5189896378788996,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1033,
+            "reference_entropy": 0.3772718571825095,
+            "reference_margin": 0.7803082963659358
+          },
+          {
+            "d_ch": 0.7969591241067757,
+            "maps_sharing": 1,
+            "of": 11,
+            "position": 1039,
+            "reference_entropy": 1.0213101310651926,
+            "reference_margin": 0.513308851183848
+          },
+          {
+            "d_ch": 2.0537942116210823,
+            "maps_sharing": 4,
+            "of": 11,
+            "position": 1041,
+            "reference_entropy": 1.4784274213725648,
+            "reference_margin": 0.1956153970461133
+          },
+          {
+            "d_ch": 2.961863286065099,
+            "maps_sharing": 10,
+            "of": 11,
+            "position": 1042,
+            "reference_entropy": 0.025192872367716116,
+            "reference_margin": 0.9943031414707216
+          },
+          {
+            "d_ch": 0.48290509228714706,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1052,
+            "reference_entropy": 0.9039544181296826,
+            "reference_margin": 0.6257259752667597
+          },
+          {
+            "d_ch": 1.9608097885284987,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1055,
+            "reference_entropy": 0.10464863729089041,
+            "reference_margin": 0.9773508273767861
+          },
+          {
+            "d_ch": 1.5146923396691814,
+            "maps_sharing": 4,
+            "of": 11,
+            "position": 1063,
+            "reference_entropy": 0.12060306852372778,
+            "reference_margin": 0.9776484164661543
+          },
+          {
+            "d_ch": 1.2721462974572444,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1064,
+            "reference_entropy": 0.41935551839370505,
+            "reference_margin": 0.9074800326499172
+          },
+          {
+            "d_ch": 0.8453134596205771,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1074,
+            "reference_entropy": 0.6227459053621349,
+            "reference_margin": 0.6602093086675651
+          },
+          {
+            "d_ch": 1.2428059642822482,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1077,
+            "reference_entropy": 1.1029556637078262,
+            "reference_margin": 0.40273029519275194
+          },
+          {
+            "d_ch": 1.31839782927134,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1078,
+            "reference_entropy": 1.3374436435328267,
+            "reference_margin": 0.4815437969301014
+          },
+          {
+            "d_ch": 1.4713734937693534,
+            "maps_sharing": 8,
+            "of": 11,
+            "position": 1087,
+            "reference_entropy": 2.547417382973202,
+            "reference_margin": 0.036740473151573055
+          },
+          {
+            "d_ch": 4.205866376023085,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1090,
+            "reference_entropy": 0.0968080106203183,
+            "reference_margin": 0.967894351466567
+          },
+          {
+            "d_ch": 0.6815515110289949,
+            "maps_sharing": 2,
+            "of": 11,
+            "position": 1091,
+            "reference_entropy": 0.4747796778250265,
+            "reference_margin": 0.8786940487634666
+          },
+          {
+            "d_ch": 2.095835547233378,
+            "maps_sharing": 8,
+            "of": 11,
+            "position": 1107,
+            "reference_entropy": 1.4762341934191,
+            "reference_margin": 0.3610571848919192
+          },
+          {
+            "d_ch": 0.7615821388268891,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1172,
+            "reference_entropy": 0.9590770686580972,
+            "reference_margin": 0.5716497649041277
+          },
+          {
+            "d_ch": 1.126010555074596,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1207,
+            "reference_entropy": 0.2580019959281294,
+            "reference_margin": 0.9417414328830969
+          },
+          {
+            "d_ch": 0.5885787125547834,
+            "maps_sharing": 2,
+            "of": 11,
+            "position": 1209,
+            "reference_entropy": 4.964048785390291,
+            "reference_margin": 0.0049145239203890745
+          },
+          {
+            "d_ch": 0.4726319316975489,
+            "maps_sharing": 0,
+            "of": 11,
+            "position": 1228,
+            "reference_entropy": 2.0270812907131392,
+            "reference_margin": 0.3703891025126049
+          },
+          {
+            "d_ch": 0.5985196720213369,
+            "maps_sharing": 0,
+            "of": 11,
+            "position": 1236,
+            "reference_entropy": 2.8229849027632716,
+            "reference_margin": 0.3137605196538838
+          },
+          {
+            "d_ch": 2.1489617239840704,
+            "maps_sharing": 6,
+            "of": 11,
+            "position": 1239,
+            "reference_entropy": 0.8555962906622179,
+            "reference_margin": 0.593750474108035
+          },
+          {
+            "d_ch": 1.2757100226778448,
+            "maps_sharing": 2,
+            "of": 11,
+            "position": 1244,
+            "reference_entropy": 1.2573952372828434,
+            "reference_margin": 0.5066905467282983
+          },
+          {
+            "d_ch": 0.6621588201307234,
+            "maps_sharing": 1,
+            "of": 11,
+            "position": 1258,
+            "reference_entropy": 1.4659160706362644,
+            "reference_margin": 0.49426077042696936
+          },
+          {
+            "d_ch": 1.270343785653519,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1271,
+            "reference_entropy": 0.552675150589361,
+            "reference_margin": 0.7956413512112628
+          },
+          {
+            "d_ch": 0.8771038563100588,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1275,
+            "reference_entropy": 0.5056521807003271,
+            "reference_margin": 0.8701884611504407
+          },
+          {
+            "d_ch": 0.6955870593517051,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1277,
+            "reference_entropy": 1.2857812673692621,
+            "reference_margin": 0.7235407762361143
+          },
+          {
+            "d_ch": 2.6537184429070786,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1280,
+            "reference_entropy": 0.17559124150318148,
+            "reference_margin": 0.9572493152535556
+          },
+          {
+            "d_ch": 0.46142093086780533,
+            "maps_sharing": 2,
+            "of": 11,
+            "position": 1290,
+            "reference_entropy": 1.3188042197100474,
+            "reference_margin": 0.060617246955802506
+          },
+          {
+            "d_ch": 0.4841633565618091,
+            "maps_sharing": 4,
+            "of": 11,
+            "position": 1320,
+            "reference_entropy": 1.4602910895809171,
+            "reference_margin": 0.6084390074639139
+          },
+          {
+            "d_ch": 0.48894178880537353,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1414,
+            "reference_entropy": 0.5105617921133435,
+            "reference_margin": 0.7134400710171165
+          },
+          {
+            "d_ch": 0.4827656093482091,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1444,
+            "reference_entropy": 1.713175971239858,
+            "reference_margin": 0.07370257477126813
+          },
+          {
+            "d_ch": 1.6220672057454157,
+            "maps_sharing": 4,
+            "of": 11,
+            "position": 1471,
+            "reference_entropy": 1.7477938820091636,
+            "reference_margin": 0.5064404289555784
+          },
+          {
+            "d_ch": 0.6056234998977909,
+            "maps_sharing": 6,
+            "of": 11,
+            "position": 1495,
+            "reference_entropy": 0.026765461025961897,
+            "reference_margin": 0.9928848908781375
+          },
+          {
+            "d_ch": 2.2983697743889815,
+            "maps_sharing": 10,
+            "of": 11,
+            "position": 1508,
+            "reference_entropy": 0.802641064648344,
+            "reference_margin": 0.8910295717635492
+          },
+          {
+            "d_ch": 2.0725908364837404,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1538,
+            "reference_entropy": 0.16292148550112376,
+            "reference_margin": 0.9301849328990749
+          },
+          {
+            "d_ch": 0.6842963391469586,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1582,
+            "reference_entropy": 1.3861655144804632,
+            "reference_margin": 0.5992179567951147
+          },
+          {
+            "d_ch": 0.9504275966658609,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1599,
+            "reference_entropy": 1.028760192959657,
+            "reference_margin": 0.3888124373375514
+          },
+          {
+            "d_ch": 0.4899050809561381,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1617,
+            "reference_entropy": 0.8233818851185374,
+            "reference_margin": 0.8356246885149299
+          },
+          {
+            "d_ch": 0.592491100312807,
+            "maps_sharing": 0,
+            "of": 11,
+            "position": 1631,
+            "reference_entropy": 2.881378449269112,
+            "reference_margin": 0.0731324268730652
+          },
+          {
+            "d_ch": 0.8667699842223755,
+            "maps_sharing": 0,
+            "of": 11,
+            "position": 1658,
+            "reference_entropy": 0.8961682232253886,
+            "reference_margin": 0.4033061407588248
+          },
+          {
+            "d_ch": 1.0437076937627383,
+            "maps_sharing": 2,
+            "of": 11,
+            "position": 1670,
+            "reference_entropy": 2.4890025943607355,
+            "reference_margin": 0.3230461465612764
+          },
+          {
+            "d_ch": 0.9000719236862598,
+            "maps_sharing": 0,
+            "of": 11,
+            "position": 1730,
+            "reference_entropy": 1.21164019154437,
+            "reference_margin": 0.2641477022594264
+          },
+          {
+            "d_ch": 2.4032453187936964,
+            "maps_sharing": 2,
+            "of": 11,
+            "position": 1825,
+            "reference_entropy": 2.339745847500231,
+            "reference_margin": 0.10902662648965347
+          },
+          {
+            "d_ch": 1.883137756528359,
+            "maps_sharing": 5,
+            "of": 11,
+            "position": 1852,
+            "reference_entropy": 1.5097274543426147,
+            "reference_margin": 0.3180492383018725
+          },
+          {
+            "d_ch": 1.6475211296890566,
+            "maps_sharing": 6,
+            "of": 11,
+            "position": 1853,
+            "reference_entropy": 0.45015555949370367,
+            "reference_margin": 0.8088313421286729
+          },
+          {
+            "d_ch": 1.65828750640195,
+            "maps_sharing": 8,
+            "of": 11,
+            "position": 1869,
+            "reference_entropy": 3.86449243951413,
+            "reference_margin": 0.02245362508374546
+          },
+          {
+            "d_ch": 0.5159582483416083,
+            "maps_sharing": 3,
+            "of": 11,
+            "position": 1890,
+            "reference_entropy": 1.4260649376066135,
+            "reference_margin": 0.21940992705756773
+          },
+          {
+            "d_ch": 0.6441055417185242,
+            "maps_sharing": 7,
+            "of": 11,
+            "position": 1923,
+            "reference_entropy": 1.1227276429109347,
+            "reference_margin": 0.1867915059426586
+          },
+          {
+            "d_ch": 0.5984705001786832,
+            "maps_sharing": 8,
+            "of": 11,
+            "position": 1928,
+            "reference_entropy": 1.1202387731295544,
+            "reference_margin": 0.32027925089370146
+          }
+        ],
+        "maps": [
+          {
+            "exact_fraction": 0.0,
+            "explained_narrow": 1.0,
+            "explained_wide": 1.0,
+            "mean_d": 0.07122120317671592,
+            "name": "ch_full",
+            "p99_d": 2.0537942116210823,
+            "spec": "all:kv:all",
+            "tail_overlap_with_ch": 1.0,
+            "top1_agreement": 0.7783203125
+          },
+          {
+            "exact_fraction": 0.5,
+            "explained_narrow": 0.5290139305289541,
+            "explained_wide": 0.5904866307136838,
+            "mean_d": 0.060029299070263,
+            "name": "k",
+            "p99_d": 1.6619352578569526,
+            "spec": "k=all:k:all",
+            "tail_overlap_with_ch": 0.35064935064935066,
+            "top1_agreement": 0.7763671875
+          },
+          {
+            "exact_fraction": 0.8717948717948718,
+            "explained_narrow": 0.14684228723109796,
+            "explained_wide": 0.15585457682375725,
+            "mean_d": 0.023590993642029254,
+            "name": "k_full",
+            "p99_d": 0.756719204232422,
+            "spec": "k_full=full:k:all",
+            "tail_overlap_with_ch": 0.2235294117647059,
+            "top1_agreement": 0.8056640625
+          },
+          {
+            "exact_fraction": 0.8910256410256411,
+            "explained_narrow": 0.6200208006274254,
+            "explained_wide": 0.37195546280120767,
+            "mean_d": 0.042532707146403045,
+            "name": "k_inv256",
+            "p99_d": 1.3340753634620253,
+            "spec": "k_inv256=all:k:newer256",
+            "tail_overlap_with_ch": 0.2682926829268293,
+            "top1_agreement": 0.794921875
+          },
+          {
+            "exact_fraction": 0.8717948717948718,
+            "explained_narrow": 0.2842573422224934,
+            "explained_wide": 0.12206489076868697,
+            "mean_d": 0.01604805154833154,
+            "name": "k_q1",
+            "p99_d": 0.5992365097509583,
+            "spec": "k_q1=q1:k:all",
+            "tail_overlap_with_ch": 0.16853932584269662,
+            "top1_agreement": 0.806640625
+          },
+          {
+            "exact_fraction": 0.8846153846153846,
+            "explained_narrow": 0.231852673455034,
+            "explained_wide": 0.2345147558466972,
+            "mean_d": 0.02557656107021415,
+            "name": "k_q2",
+            "p99_d": 0.8805978606656659,
+            "spec": "k_q2=q2:k:all",
+            "tail_overlap_with_ch": 0.25301204819277107,
+            "top1_agreement": 0.79296875
+          },
+          {
+            "exact_fraction": 0.8589743589743589,
+            "explained_narrow": 0.11476991980504381,
+            "explained_wide": 0.17771186893842308,
+            "mean_d": 0.011735829347081412,
+            "name": "k_q3",
+            "p99_d": 0.671226487035857,
+            "spec": "k_q3=q3:k:all",
+            "tail_overlap_with_ch": 0.2682926829268293,
+            "top1_agreement": 0.8076171875
+          },
+          {
+            "exact_fraction": 0.8846153846153846,
+            "explained_narrow": 0.02988351840594574,
+            "explained_wide": 0.01908866329949855,
+            "mean_d": 0.0011074739946180436,
+            "name": "k_q4",
+            "p99_d": 0.3020123615063395,
+            "spec": "k_q4=q4:k:all",
+            "tail_overlap_with_ch": 0.15555555555555556,
+            "top1_agreement": 0.8134765625
+          },
+          {
+            "exact_fraction": 0.6089743589743589,
+            "explained_narrow": -0.017910169705064493,
+            "explained_wide": 0.13247501304785383,
+            "mean_d": 0.015803793949400603,
+            "name": "k_recent256",
+            "p99_d": 0.6413720955407347,
+            "spec": "k_recent256=all:k:older256",
+            "tail_overlap_with_ch": 0.2839506172839506,
+            "top1_agreement": 0.8134765625
+          },
+          {
+            "exact_fraction": 0.5272435897435898,
+            "explained_narrow": 0.1463359545002702,
+            "explained_wide": 0.26886806168373245,
+            "mean_d": 0.029888981748571655,
+            "name": "k_recent64",
+            "p99_d": 0.9491847516617273,
+            "spec": "k_recent64=all:k:older64",
+            "tail_overlap_with_ch": 0.3333333333333333,
+            "top1_agreement": 0.8046875
+          },
+          {
+            "exact_fraction": 0.6282051282051282,
+            "explained_narrow": 0.4810347888550906,
+            "explained_wide": 0.34947832078239666,
+            "mean_d": 0.03841670896999531,
+            "name": "k_sliding",
+            "p99_d": 1.2229633805699887,
+            "spec": "k_sliding=sliding:k:all",
+            "tail_overlap_with_ch": 0.2839506172839506,
+            "top1_agreement": 0.7822265625
+          },
+          {
+            "exact_fraction": 0.5,
+            "explained_narrow": -0.007354904761229223,
+            "explained_wide": -0.012945590080909009,
+            "mean_d": -0.00795223326313543,
+            "name": "v",
+            "p99_d": 0.39887445004087496,
+            "spec": "v=all:v:all",
+            "tail_overlap_with_ch": 0.19540229885057472,
+            "top1_agreement": 0.81640625
+          }
+        ],
+        "programme": "CONTINUATION-CODEC-MAP-1 reconnaissance",
+        "rung": 2048,
+        "sim0": {
+          "logits_bit_identical": true,
+          "passed": true,
+          "seconds": 2961.121944292,
+          "trace": [
+            "8703731738432488517",
+            210188
+          ],
+          "trace_identical": true
+        },
+        "tail_wide_positions": 52
+      }
+    }
+  },
+  "protection": {
+    "implementation_sha": "958d69c6e2ed4dd09030c7b2a63ca0afb711d1f5",
+    "provenance_txt": [
+      "programme CONTINUATION-CODEC-MAP-1 reconnaissance — DIRECT PROTECTION map (later instrument than the localisation maps)",
+      "implementation_sha 958d69c6e2ed4dd09030c7b2a63ca0afb711d1f5 (union maps; localisation maps ran from a48074655b6047a00176985d26b4d7e56f9e0259 in a separate store)",
+      "binary_sha256 b614be95bd395e9fbd868ebc9457df14f6fc55ca1c51e4cf1380345ce636f36a",
+      "controls_with_this_binary codec_map 9 passed (incl. union = codec/v1 bit for bit, disjoint clauses additive)",
+      "store FRESH: stage 0 (R, C, CH, SIM-0) rerun under this binary",
+      "candidate chosen from stage 4: protect the newest 256 K rows in every layer (inverse map reproduced 37% wide / 62% narrow of CH tail at 10.9% bytes)",
+      "host Mac15,8; rustc 1.98.0 (88d9e12ae 2026-08-18)",
+      "stage start 2026-10-01T02:50:53Z maps [p_recent256=all:v:all|all:k:older256] load 12.24 14.54 15.89"
+    ],
+    "report": {
+      "ch_tail_persistence": [
+        {
+          "d_ch": 2.4576369195545076,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1026,
+          "reference_entropy": 0.4781035564251287,
+          "reference_margin": 0.6356947782936796
+        },
+        {
+          "d_ch": 0.81187320739071,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1029,
+          "reference_entropy": 0.9493525993540923,
+          "reference_margin": 0.5042056112248247
+        },
+        {
+          "d_ch": 2.8447943817650576,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1031,
+          "reference_entropy": 0.18010257138836283,
+          "reference_margin": 0.9632825191565066
+        },
+        {
+          "d_ch": 0.5189896378788996,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1033,
+          "reference_entropy": 0.3772718571825095,
+          "reference_margin": 0.7803082963659358
+        },
+        {
+          "d_ch": 0.7969591241067757,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1039,
+          "reference_entropy": 1.0213101310651926,
+          "reference_margin": 0.513308851183848
+        },
+        {
+          "d_ch": 2.0537942116210823,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1041,
+          "reference_entropy": 1.4784274213725648,
+          "reference_margin": 0.1956153970461133
+        },
+        {
+          "d_ch": 2.961863286065099,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1042,
+          "reference_entropy": 0.025192872367716116,
+          "reference_margin": 0.9943031414707216
+        },
+        {
+          "d_ch": 0.48290509228714706,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1052,
+          "reference_entropy": 0.9039544181296826,
+          "reference_margin": 0.6257259752667597
+        },
+        {
+          "d_ch": 1.9608097885284987,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1055,
+          "reference_entropy": 0.10464863729089041,
+          "reference_margin": 0.9773508273767861
+        },
+        {
+          "d_ch": 1.5146923396691814,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1063,
+          "reference_entropy": 0.12060306852372778,
+          "reference_margin": 0.9776484164661543
+        },
+        {
+          "d_ch": 1.2721462974572444,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1064,
+          "reference_entropy": 0.41935551839370505,
+          "reference_margin": 0.9074800326499172
+        },
+        {
+          "d_ch": 0.8453134596205771,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1074,
+          "reference_entropy": 0.6227459053621349,
+          "reference_margin": 0.6602093086675651
+        },
+        {
+          "d_ch": 1.2428059642822482,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1077,
+          "reference_entropy": 1.1029556637078262,
+          "reference_margin": 0.40273029519275194
+        },
+        {
+          "d_ch": 1.31839782927134,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1078,
+          "reference_entropy": 1.3374436435328267,
+          "reference_margin": 0.4815437969301014
+        },
+        {
+          "d_ch": 1.4713734937693534,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1087,
+          "reference_entropy": 2.547417382973202,
+          "reference_margin": 0.036740473151573055
+        },
+        {
+          "d_ch": 4.205866376023085,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1090,
+          "reference_entropy": 0.0968080106203183,
+          "reference_margin": 0.967894351466567
+        },
+        {
+          "d_ch": 0.6815515110289949,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1091,
+          "reference_entropy": 0.4747796778250265,
+          "reference_margin": 0.8786940487634666
+        },
+        {
+          "d_ch": 2.095835547233378,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1107,
+          "reference_entropy": 1.4762341934191,
+          "reference_margin": 0.3610571848919192
+        },
+        {
+          "d_ch": 0.7615821388268891,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1172,
+          "reference_entropy": 0.9590770686580972,
+          "reference_margin": 0.5716497649041277
+        },
+        {
+          "d_ch": 1.126010555074596,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1207,
+          "reference_entropy": 0.2580019959281294,
+          "reference_margin": 0.9417414328830969
+        },
+        {
+          "d_ch": 0.5885787125547834,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1209,
+          "reference_entropy": 4.964048785390291,
+          "reference_margin": 0.0049145239203890745
+        },
+        {
+          "d_ch": 0.4726319316975489,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1228,
+          "reference_entropy": 2.0270812907131392,
+          "reference_margin": 0.3703891025126049
+        },
+        {
+          "d_ch": 0.5985196720213369,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1236,
+          "reference_entropy": 2.8229849027632716,
+          "reference_margin": 0.3137605196538838
+        },
+        {
+          "d_ch": 2.1489617239840704,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1239,
+          "reference_entropy": 0.8555962906622179,
+          "reference_margin": 0.593750474108035
+        },
+        {
+          "d_ch": 1.2757100226778448,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1244,
+          "reference_entropy": 1.2573952372828434,
+          "reference_margin": 0.5066905467282983
+        },
+        {
+          "d_ch": 0.6621588201307234,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1258,
+          "reference_entropy": 1.4659160706362644,
+          "reference_margin": 0.49426077042696936
+        },
+        {
+          "d_ch": 1.270343785653519,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1271,
+          "reference_entropy": 0.552675150589361,
+          "reference_margin": 0.7956413512112628
+        },
+        {
+          "d_ch": 0.8771038563100588,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1275,
+          "reference_entropy": 0.5056521807003271,
+          "reference_margin": 0.8701884611504407
+        },
+        {
+          "d_ch": 0.6955870593517051,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1277,
+          "reference_entropy": 1.2857812673692621,
+          "reference_margin": 0.7235407762361143
+        },
+        {
+          "d_ch": 2.6537184429070786,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1280,
+          "reference_entropy": 0.17559124150318148,
+          "reference_margin": 0.9572493152535556
+        },
+        {
+          "d_ch": 0.46142093086780533,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1290,
+          "reference_entropy": 1.3188042197100474,
+          "reference_margin": 0.060617246955802506
+        },
+        {
+          "d_ch": 0.4841633565618091,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1320,
+          "reference_entropy": 1.4602910895809171,
+          "reference_margin": 0.6084390074639139
+        },
+        {
+          "d_ch": 0.48894178880537353,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1414,
+          "reference_entropy": 0.5105617921133435,
+          "reference_margin": 0.7134400710171165
+        },
+        {
+          "d_ch": 0.4827656093482091,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1444,
+          "reference_entropy": 1.713175971239858,
+          "reference_margin": 0.07370257477126813
+        },
+        {
+          "d_ch": 1.6220672057454157,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1471,
+          "reference_entropy": 1.7477938820091636,
+          "reference_margin": 0.5064404289555784
+        },
+        {
+          "d_ch": 0.6056234998977909,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1495,
+          "reference_entropy": 0.026765461025961897,
+          "reference_margin": 0.9928848908781375
+        },
+        {
+          "d_ch": 2.2983697743889815,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1508,
+          "reference_entropy": 0.802641064648344,
+          "reference_margin": 0.8910295717635492
+        },
+        {
+          "d_ch": 2.0725908364837404,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1538,
+          "reference_entropy": 0.16292148550112376,
+          "reference_margin": 0.9301849328990749
+        },
+        {
+          "d_ch": 0.6842963391469586,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1582,
+          "reference_entropy": 1.3861655144804632,
+          "reference_margin": 0.5992179567951147
+        },
+        {
+          "d_ch": 0.9504275966658609,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1599,
+          "reference_entropy": 1.028760192959657,
+          "reference_margin": 0.3888124373375514
+        },
+        {
+          "d_ch": 0.4899050809561381,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1617,
+          "reference_entropy": 0.8233818851185374,
+          "reference_margin": 0.8356246885149299
+        },
+        {
+          "d_ch": 0.592491100312807,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1631,
+          "reference_entropy": 2.881378449269112,
+          "reference_margin": 0.0731324268730652
+        },
+        {
+          "d_ch": 0.8667699842223755,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1658,
+          "reference_entropy": 0.8961682232253886,
+          "reference_margin": 0.4033061407588248
+        },
+        {
+          "d_ch": 1.0437076937627383,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1670,
+          "reference_entropy": 2.4890025943607355,
+          "reference_margin": 0.3230461465612764
+        },
+        {
+          "d_ch": 0.9000719236862598,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1730,
+          "reference_entropy": 1.21164019154437,
+          "reference_margin": 0.2641477022594264
+        },
+        {
+          "d_ch": 2.4032453187936964,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1825,
+          "reference_entropy": 2.339745847500231,
+          "reference_margin": 0.10902662648965347
+        },
+        {
+          "d_ch": 1.883137756528359,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1852,
+          "reference_entropy": 1.5097274543426147,
+          "reference_margin": 0.3180492383018725
+        },
+        {
+          "d_ch": 1.6475211296890566,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1853,
+          "reference_entropy": 0.45015555949370367,
+          "reference_margin": 0.8088313421286729
+        },
+        {
+          "d_ch": 1.65828750640195,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1869,
+          "reference_entropy": 3.86449243951413,
+          "reference_margin": 0.02245362508374546
+        },
+        {
+          "d_ch": 0.5159582483416083,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1890,
+          "reference_entropy": 1.4260649376066135,
+          "reference_margin": 0.21940992705756773
+        },
+        {
+          "d_ch": 0.6441055417185242,
+          "maps_sharing": 0,
+          "of": 1,
+          "position": 1923,
+          "reference_entropy": 1.1227276429109347,
+          "reference_margin": 0.1867915059426586
+        },
+        {
+          "d_ch": 0.5984705001786832,
+          "maps_sharing": 1,
+          "of": 1,
+          "position": 1928,
+          "reference_entropy": 1.1202387731295544,
+          "reference_margin": 0.32027925089370146
+        }
+      ],
+      "maps": [
+        {
+          "exact_fraction": 0.0,
+          "explained_narrow": 1.0,
+          "explained_wide": 1.0,
+          "mean_d": 0.07122120317671592,
+          "name": "ch_full",
+          "p99_d": 2.0537942116210823,
+          "spec": "all:kv:all",
+          "tail_overlap_with_ch": 1.0,
+          "top1_agreement": 0.7783203125
+        },
+        {
+          "exact_fraction": 0.10897435897435898,
+          "explained_narrow": -0.05827228112647202,
+          "explained_wide": 0.061187040139356066,
+          "mean_d": 0.01608769530425311,
+          "name": "p_recent256",
+          "p99_d": 0.6556931492880771,
+          "spec": "p_recent256=all:v:all|all:k:older256",
+          "tail_overlap_with_ch": 0.20930232558139536,
+          "top1_agreement": 0.802734375
+        }
+      ],
+      "programme": "CONTINUATION-CODEC-MAP-1 reconnaissance",
+      "rung": 2048,
+      "sim0": {
+        "logits_bit_identical": true,
+        "passed": true,
+        "seconds": 180.266487083,
+        "trace": [
+          "8703731738432488517",
+          210188
+        ],
+        "trace_identical": true
+      },
+      "tail_wide_positions": 52
+    }
+  },
+  "store_file_sha256": {
+    "localisation": {
+      "authorities.json": "8b82d64d43e9e31f061b6d5afdae995199599fdb0856a4e02b0ebd1d7fa37ede",
+      "n2048-c.json": "b891630a3775ef00031998fb90fdb0a6d5734fc1f746f50a295bad8327745fc1",
+      "n2048-c.logits.f32": "cf6d5432b6ad715baade29cb5322c939c962256fe1be3faa66a88cb5cea39905",
+      "n2048-c.logits.json": "555a0ed847a94749a89be9fe6de922311bfd9dd1ba6f964921d17a91d6c5654c",
+      "n2048-ch.json": "564b71eba353aab1ed63b6d1c96c662d0a583625db33eb6d96f571a6d809762f",
+      "n2048-map-k.json": "dde25617df0a7a9175ddaf38b1d305effdc856394fa69a6f32e8e57ddd018962",
+      "n2048-map-k_full.json": "2463475667972ff84f5573ad5839811b3a55d182729ce58b132413cac41b760e",
+      "n2048-map-k_inv256.json": "f8c7a086fc557c00bd70f209dfd8423f78ffcd71ef890b7983f760f242075a10",
+      "n2048-map-k_q1.json": "50457393c868fa78ee6b84c85a8ff449e48f99922c01a26d27dd1711c4dc03c0",
+      "n2048-map-k_q2.json": "4bffabaf4a91a995ca100978cd061ba01293d633c0ebf03cb64908c9f5b7cd7c",
+      "n2048-map-k_q3.json": "f8007b8040fcf85be8ff75e104cf59e09e2acdc2f9725e441d11212c6cda94cd",
+      "n2048-map-k_q4.json": "cfdacf5a39c1c2c5bbea06f766122cbec82acfc021785f3787bbde2bb90fbef8",
+      "n2048-map-k_recent256.json": "502d641d8d130d9324b2b1a6df0f5e337ef48b1924eb4006a4f2760a49aa76d1",
+      "n2048-map-k_recent64.json": "e893e7de93739659527731609cf7c8535ab605c8e55d5a99a6ecaba6c08beb0b",
+      "n2048-map-k_sliding.json": "5c43768b0a89ab4f36bba9fbb71b9c9e43f5131a00ebad839a0a6dd3130d3cd3",
+      "n2048-map-v.json": "87071f7ce4e53596955275daea744820198006c3a4ee435a49adf26d83fd5a7e",
+      "n2048-r.logits.f32": "bf6fa84adb62213b2d6d80b31fbe16dd3543b51bc8699394697b4aecc0ef1a23",
+      "n2048-r.logits.json": "555a0ed847a94749a89be9fe6de922311bfd9dd1ba6f964921d17a91d6c5654c",
+      "n2048-sim0.json": "5094c485751744d7a17d86dc7d228e1c32aec3c934dfd15eea5e51591e3e6186",
+      "report.json": "985773750be39a88058464cec1e5dc7180d84263741c56bd4ddda607013416ca"
+    },
+    "protection": {
+      "authorities.json": "3d0db383ed228d36d4abd7adacc15b80c1456ec2ad1b98938efe30cc0c2fd0c2",
+      "n2048-c.json": "45c89dafb0745bd58c200b48a17b75d6e9cc352f9f32b8e690aea880f929cb02",
+      "n2048-c.logits.f32": "cf6d5432b6ad715baade29cb5322c939c962256fe1be3faa66a88cb5cea39905",
+      "n2048-c.logits.json": "555a0ed847a94749a89be9fe6de922311bfd9dd1ba6f964921d17a91d6c5654c",
+      "n2048-ch.json": "a0244df06abddd109d3097f495fe7a735fde3c88576a659188e8e8aaa2c9a0de",
+      "n2048-map-p_recent256.json": "5983700aea5707cbb8ebcf4e63f2f7c5324b2813ac17f6828f65664d1682d095",
+      "n2048-r.logits.f32": "bf6fa84adb62213b2d6d80b31fbe16dd3543b51bc8699394697b4aecc0ef1a23",
+      "n2048-r.logits.json": "555a0ed847a94749a89be9fe6de922311bfd9dd1ba6f964921d17a91d6c5654c",
+      "n2048-sim0.json": "c8fc45e70481b0f282f29b8b40d84d1f462fff338614f563d88e07079392e087",
+      "report.json": "a4c3667e2081a6eaa05f0ffcb0f501d0d2ca035a895c43208752f056083b0628"
+    }
+  }
+}

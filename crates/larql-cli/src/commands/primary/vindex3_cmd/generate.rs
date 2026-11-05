@@ -28,8 +28,13 @@ use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
 use super::decode::{greedy_decode, DecodeReport, Flow};
 
+pub(super) mod admission;
+pub(super) mod execution_evidence;
+pub(super) mod instance_evidence;
 mod residency_curve;
 pub(super) use residency_curve::*;
+pub(super) mod residency_record;
+pub(super) mod sealed_latency;
 
 /// Greedy decode with the exec verb's report. Returns the generated ids
 /// (the prompt excluded), so a caller has them as data and not only as

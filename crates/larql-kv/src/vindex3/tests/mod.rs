@@ -20,6 +20,7 @@
 //! anywhere on this path.
 
 mod codec;
+mod codec_recent;
 mod registry_parity;
 mod resume_anti_cheat;
 mod window;
@@ -562,7 +563,8 @@ fn canonical_states_a_valid_identity_distinct_from_row() {
 /// C2: the shipped registry is a fresh VALUE on every call — registering
 /// into one leaves the next untouched — and it holds exactly the shipped
 /// built-ins (row/v1, canonical/v1 and, since CONTINUATION-WINDOW-1,
-/// window/v1, and since CONTINUATION-CODEC-1, codec/v1), each selectable
+/// window/v1, since CONTINUATION-CODEC-1, codec/v1, and since the
+/// CONTINUATION-CODEC-3 reconnaissance, codec-recent/v1), each selectable
 /// against a real plan's geometry under the configuration it requires.
 #[test]
 fn shipped_continuations_is_a_fresh_value_holding_every_built_in() {
@@ -576,21 +578,25 @@ fn shipped_continuations_is_a_fresh_value_holding_every_built_in() {
             RowKvState::identity(),
             CanonicalKvState::identity(),
             WindowKvState::identity(),
-            crate::CodecKvState::identity()
+            crate::CodecKvState::identity(),
+            crate::CodecRecentKvState::identity()
         ]
     );
     let dup = first
         .register(Box::new(crate::CanonicalFactory))
         .unwrap_err();
     assert!(dup.to_string().contains("canonical/v1"), "{dup}");
-    assert_eq!(crate::shipped_continuations().len(), 4);
+    assert_eq!(crate::shipped_continuations().len(), 5);
 
     let (_dir, plan, _store) = fixture();
     let geometry = plan_continuation_geometry(&plan).unwrap();
     for identity in first.identities() {
-        // codec/v1 names its width; every other built-in takes no options.
+        // codec/v1 names its width, codec-recent/v1 its width and window;
+        // every other built-in takes no options.
         let config = if identity == crate::CodecKvState::identity() {
             ContinuationConfig::parse(&["bits=4"]).unwrap()
+        } else if identity == crate::CodecRecentKvState::identity() {
+            ContinuationConfig::parse(&["bits=4", "exact_recent_k=8"]).unwrap()
         } else {
             ContinuationConfig::empty()
         };

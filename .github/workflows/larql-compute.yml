@@ -44,7 +44,7 @@ concurrency:
 
 # Route the ambient decode paths through rayon rather than the spin pool.
 # A spin barrier needs a free core to spin on; a CI runner (2 cores on
-# ubuntu/windows, 3 on macos-14) has none to spare, so the pool's idle
+# ubuntu/windows, 3 on macos-15) has none to spare, so the pool's idle
 # backoff burns CPU without buying the decode win it exists for.
 #
 # Measured on the full `--lib` suite (805 tests, 2026-07-30):
@@ -68,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - uses: actions/checkout@v7

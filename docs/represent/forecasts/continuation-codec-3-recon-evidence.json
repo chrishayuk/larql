@@ -1,0 +1,310 @@
+{
+  "programme": "CONTINUATION-CODEC-3 reconnaissance",
+  "status": "reconnaissance, calibration only (bank 1); not a freeze",
+  "provenance": [
+    "programme CONTINUATION-CODEC-3 reconnaissance \u2014 real recent-K provider codec-recent/v1 (calibration only, bank 1)",
+    "implementation_sha 21110ae62e5d8f1c701ed3d2d61e177f3e15afd6 (detached worktree ccodec3-run)",
+    "binary_sha256 ee6fa513badac6b1600804290675c00a70ba3e585bc0da269b20507a5f7de044",
+    "controls_with_this_binary codec_3 6 passed; codec_map 9 passed",
+    "store FRESH: stage 0 (R, C, CH, W0) under this binary; reference store (read only) ccmap1-prot/target/cmap1-prot/store @958d69c6",
+    "prior attempt @60e75d76 (target/cr3-run-60e75d76-stopped): stage 0 PASSED (W0 == CH bit+trace, CH == CODEC-MAP-1 CH); stopped at w256 on an instrument fault (reference spec format), before SIM-W was evaluated; not adjudicated, not resumed",
+    "selection rule declared pre-run: smallest swept w with removal of CH worst-5% and worst-1% each >= 0.9 x sweep best",
+    "peer load at launch: 5.62 6.33 7.78",
+    "host Mac15,8; rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "stage start 2026-10-01T07:54:54Z windows [256,64,128,512] load 5.62 6.33 7.78"
+  ],
+  "authorities": {
+    "bank": "codec-1 bank 1 (calibration)",
+    "implementation_git_sha": "21110ae62e5d8f1c701ed3d2d61e177f3e15afd6"
+  },
+  "stage0": {
+    "ch_trace": [
+      "8703731738432488517",
+      210188
+    ],
+    "passed": true,
+    "seconds_w0": 501.801139583,
+    "w0_logits_bit_identical_to_ch": true,
+    "w0_trace_identical_to_ch": true
+  },
+  "report": {
+    "arms": [
+      {
+        "arm": "ch",
+        "line": {
+          "exact_fraction": 0.0,
+          "explained_narrow": 1.0,
+          "explained_wide": 1.0,
+          "mean_d": 0.07122120317671592,
+          "name": "ch",
+          "p99_d": 2.0537942116210823,
+          "spec": "codec/v1",
+          "tail_overlap_with_ch": 1.0,
+          "top1_agreement": 0.7783203125
+        },
+        "resident_bytes": 43843584.0
+      },
+      {
+        "arm": "w128",
+        "k_exact_share_of_resident": 0.29445196211096075,
+        "line": {
+          "exact_fraction": 0.0,
+          "explained_narrow": 0.0037667997744130002,
+          "explained_wide": 0.16196100114740858,
+          "mean_d": 0.018447247514057307,
+          "name": "w128",
+          "p99_d": 0.6714848205703476,
+          "spec": "all:v:all|all:k:older128",
+          "tail_overlap_with_ch": 0.2839506172839506,
+          "top1_agreement": 0.7998046875
+        },
+        "removed_narrow": 0.996233200225587,
+        "removed_wide": 0.8380389988525914,
+        "residency_holds": true,
+        "resident_bytes": 60538880.0,
+        "resident_vs_ch": 1.3807922272047832,
+        "sim_w_scores_identical": null,
+        "trace_identical_to_ch": true,
+        "window": 128
+      },
+      {
+        "arm": "w256",
+        "k_exact_share_of_resident": 0.46740414563419613,
+        "line": {
+          "exact_fraction": 0.0,
+          "explained_narrow": -0.05827228112647202,
+          "explained_wide": 0.061187040139356066,
+          "mean_d": 0.01608769530425311,
+          "name": "w256",
+          "p99_d": 0.6556931492880771,
+          "spec": "all:v:all|all:k:older256",
+          "tail_overlap_with_ch": 0.20930232558139536,
+          "top1_agreement": 0.802734375
+        },
+        "removed_narrow": 1.058272281126472,
+        "removed_wide": 0.938812959860644,
+        "residency_holds": true,
+        "resident_bytes": 76275712.0,
+        "resident_vs_ch": 1.7397234678624813,
+        "sim_w_scores_identical": true,
+        "trace_identical_to_ch": true,
+        "window": 256
+      },
+      {
+        "arm": "w512",
+        "k_exact_share_of_resident": 0.6617501710636357,
+        "line": {
+          "exact_fraction": 0.0,
+          "explained_narrow": -0.03214032363562862,
+          "explained_wide": 0.07445442198904656,
+          "mean_d": 0.011064490108822794,
+          "name": "w512",
+          "p99_d": 0.6212505053396113,
+          "spec": "all:v:all|all:k:older512",
+          "tail_overlap_with_ch": 0.23809523809523808,
+          "top1_agreement": 0.8076171875
+        },
+        "removed_narrow": 1.0321403236356286,
+        "removed_wide": 0.9255455780109534,
+        "residency_holds": true,
+        "resident_bytes": 107749376.0,
+        "resident_vs_ch": 2.4575859491778775,
+        "sim_w_scores_identical": null,
+        "trace_identical_to_ch": true,
+        "window": 512
+      },
+      {
+        "arm": "w64",
+        "k_exact_share_of_resident": 0.1692200015553309,
+        "line": {
+          "exact_fraction": 0.0,
+          "explained_narrow": 0.12651460434101766,
+          "explained_wide": 0.28928848003118773,
+          "mean_d": 0.03487251766125142,
+          "name": "w64",
+          "p99_d": 1.047598591645006,
+          "spec": "all:v:all|all:k:older64",
+          "tail_overlap_with_ch": 0.2682926829268293,
+          "top1_agreement": 0.78515625
+        },
+        "removed_narrow": 0.8734853956589823,
+        "removed_wide": 0.7107115199688123,
+        "residency_holds": true,
+        "resident_bytes": 52670464.0,
+        "resident_vs_ch": 1.2013266068759343,
+        "sim_w_scores_identical": null,
+        "trace_identical_to_ch": true,
+        "window": 64
+      }
+    ],
+    "bank": "codec-1 bank 1 (calibration)",
+    "chosen_window": 256,
+    "programme": "CONTINUATION-CODEC-3 reconnaissance",
+    "rung": 2048,
+    "selection_rule": "smallest swept w with removal of CH's worst-5% and worst-1% each >= 0.9 x the sweep's best",
+    "stage0": {
+      "ch_trace": [
+        "8703731738432488517",
+        210188
+      ],
+      "passed": true,
+      "seconds_w0": 501.801139583,
+      "w0_logits_bit_identical_to_ch": true,
+      "w0_trace_identical_to_ch": true
+    }
+  },
+  "arms": {
+    "n2048-ch.json": {
+      "append_born_live": 43843584,
+      "residency": "CodecResidency { append_born_live: 43843584, expected: 43843584, strays: 0, scratch_bytes: 16777216, scratch_bound: 16777216 }",
+      "residency_holds": true,
+      "seconds": 523.066461084,
+      "trace": [
+        "8703731738432488517",
+        210188
+      ]
+    },
+    "n2048-w128.json": {
+      "residency": {
+        "append_born_live": 60538880,
+        "expected": 60538880,
+        "k_code_bytes": 18788352,
+        "k_exact_bytes": 17825792,
+        "list_bytes": 2838528,
+        "scratch_bound": 16777216,
+        "scratch_bytes": 16777216,
+        "strays": 0,
+        "v_code_bytes": 21086208,
+        "window_mismatches": 0
+      },
+      "residency_holds": true,
+      "seconds": 485.986037833,
+      "sim_w_scores_identical": null,
+      "trace": [
+        "8703731738432488517",
+        210188
+      ],
+      "trace_identical_to_ch": true,
+      "window": 128
+    },
+    "n2048-w256.json": {
+      "residency": {
+        "append_born_live": 76275712,
+        "expected": 76275712,
+        "k_code_bytes": 16490496,
+        "k_exact_bytes": 35651584,
+        "list_bytes": 3047424,
+        "scratch_bound": 16777216,
+        "scratch_bytes": 16777216,
+        "strays": 0,
+        "v_code_bytes": 21086208,
+        "window_mismatches": 0
+      },
+      "residency_holds": true,
+      "seconds": 470.299791875,
+      "sim_w_scores_identical": true,
+      "trace": [
+        "8703731738432488517",
+        210188
+      ],
+      "trace_identical_to_ch": true,
+      "window": 256
+    },
+    "n2048-w512.json": {
+      "residency": {
+        "append_born_live": 107749376,
+        "expected": 107749376,
+        "k_code_bytes": 11894784,
+        "k_exact_bytes": 71303168,
+        "list_bytes": 3465216,
+        "scratch_bound": 16777216,
+        "scratch_bytes": 16777216,
+        "strays": 0,
+        "v_code_bytes": 21086208,
+        "window_mismatches": 0
+      },
+      "residency_holds": true,
+      "seconds": 431.308044333,
+      "sim_w_scores_identical": null,
+      "trace": [
+        "8703731738432488517",
+        210188
+      ],
+      "trace_identical_to_ch": true,
+      "window": 512
+    },
+    "n2048-w64.json": {
+      "residency": {
+        "append_born_live": 52670464,
+        "expected": 52670464,
+        "k_code_bytes": 19937280,
+        "k_exact_bytes": 8912896,
+        "list_bytes": 2734080,
+        "scratch_bound": 16777216,
+        "scratch_bytes": 16777216,
+        "strays": 0,
+        "v_code_bytes": 21086208,
+        "window_mismatches": 0
+      },
+      "residency_holds": true,
+      "seconds": 497.155866042,
+      "sim_w_scores_identical": null,
+      "trace": [
+        "8703731738432488517",
+        210188
+      ],
+      "trace_identical_to_ch": true,
+      "window": 64
+    }
+  },
+  "checkpoint_sha256": {
+    "authorities.json": "a8d1806ad304d310b457278cc81811a51675e1aa92e634626eb079e3f579f10c",
+    "n2048-c.json": "f5fcd4443145d0fff837fc121c9ff8a69637d06de454f1882b511e16fec80714",
+    "n2048-c.logits.f32": "cf6d5432b6ad715baade29cb5322c939c962256fe1be3faa66a88cb5cea39905",
+    "n2048-c.logits.json": "555a0ed847a94749a89be9fe6de922311bfd9dd1ba6f964921d17a91d6c5654c",
+    "n2048-ch.json": "87829de9acd32d662aaf7a4b03afc37528dde7e1214c62f18ac6dc078dc8e228",
+    "n2048-r.logits.f32": "bf6fa84adb62213b2d6d80b31fbe16dd3543b51bc8699394697b4aecc0ef1a23",
+    "n2048-r.logits.json": "555a0ed847a94749a89be9fe6de922311bfd9dd1ba6f964921d17a91d6c5654c",
+    "n2048-w128.json": "1fc178971eccd6946be778161052c48edcb09a1125cde88afe2120061b5e3ae4",
+    "n2048-w256.json": "2db18c03227ca26abfb23f2e8e55398467ce1f2d5e6e7f3dbec175b87b1e92ff",
+    "n2048-w512.json": "5235c86d1044da8a17f2c709a3b5dbad0dbcb128bae37d079f627e7b85391319",
+    "n2048-w64.json": "b1d661fa911a1a396cfae352c4a9ac8e4e7205a51e1276230f3fa15069b947c8",
+    "report.json": "4ec3233775b5397f7d2a40ec9d04fd3a1cb660dcb0f3f4e6b9b1deffb8b70211",
+    "stage0.json": "4d4310acab6a8a3e84c932b193b650b9f04af48e6f667cb0da8b0b82f72505a3"
+  },
+  "stopped_attempt": {
+    "implementation_sha": "60e75d76e782cf3d10f4d2524776a2b0a5c49c10",
+    "dir": "target/cr3-run-60e75d76-stopped",
+    "stage0": {
+      "ch_trace": [
+        "8703731738432488517",
+        210188
+      ],
+      "passed": true,
+      "seconds_w0": 507.140262209,
+      "w0_logits_bit_identical_to_ch": true,
+      "w0_trace_identical_to_ch": true
+    },
+    "stopped_at": "w256, before SIM-W evaluated: the reference spec is checkpointed as <name>=<clauses>; fixed in 21110ae6; not adjudicated, not resumed"
+  },
+  "revision_identity": {
+    "note": "The three commits were rebuilt to remove commit-message trailers (CI gate 'no generated attribution'). Each rebuilt commit has the IDENTICAL tree, so the code that ran is unchanged; the run's stamp, provenance and binary cite the original SHAs.",
+    "commits": [
+      {
+        "measured_as": "60e75d76e782cf3d10f4d2524776a2b0a5c49c10",
+        "on_branch_as": "8e732a8fcacd76fc5db06c51379d8c2f9705c45a",
+        "tree": "7779198cfed837321a003151dfc0d0ac38436171"
+      },
+      {
+        "measured_as": "21110ae62e5d8f1c701ed3d2d61e177f3e15afd6",
+        "on_branch_as": "69c476e46ff7065ab277ffb2cfcccafe36f15376",
+        "tree": "24ff4b5fbac35f60ba1a19accd0bf7f9f71adaf2"
+      },
+      {
+        "measured_as": "d0b12d606f3ec99b76797111479f2c8d0de54dcc",
+        "on_branch_as": "f8e9460592a96ad71bc7afb2539d50d14cb90e4d",
+        "tree": "608240b69dff39bfc22657b0ce43fca34e355545"
+      }
+    ]
+  }
+}

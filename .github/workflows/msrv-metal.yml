@@ -66,7 +66,7 @@ jobs:
     # `cfg(target_os = "macos")` while its examples `extern crate blas_src`
     # unconditionally — on Linux they fail to resolve at *any* toolchain,
     # which has nothing to do with the MSRV.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7

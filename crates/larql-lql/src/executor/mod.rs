@@ -16,6 +16,7 @@ mod relation_resolver;
 mod remote;
 mod trace;
 pub(crate) mod tuning;
+mod verify;
 mod vindex3;
 
 #[cfg(test)]
@@ -80,6 +81,10 @@ pub struct Session {
     pub(crate) mutations_since_minor: usize,
     /// Mutations since last major compaction (L1 → L2).
     pub(crate) mutations_since_major: usize,
+    /// The external verifier for `VERIFY REPRESENTATION`, if set explicitly.
+    pub(crate) verifier: Option<std::path::PathBuf>,
+    /// `VERIFY REPRESENTATION` statements in this session that reported `violated`.
+    pub(crate) contract_violations: usize,
 }
 
 impl Default for Session {
@@ -102,6 +107,8 @@ impl Session {
             epoch: 0,
             mutations_since_minor: 0,
             mutations_since_major: 0,
+            verifier: None,
+            contract_violations: 0,
         }
     }
 
@@ -117,6 +124,18 @@ impl Session {
         });
         self.auto_patch = true;
         vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
+    }
+
+    /// The verifier `VERIFY REPRESENTATION` runs, ahead of `LARQL_VERIFIER` and
+    /// discovery. An empty path turns discovery off, so the statement refuses.
+    pub fn set_verifier(&mut self, verifier: impl Into<std::path::PathBuf>) {
+        self.verifier = Some(verifier.into());
+    }
+
+    /// How many `VERIFY REPRESENTATION` statements in this session reported
+    /// `violated`. They return normally, so this is the way to tell.
+    pub fn contract_violations(&self) -> usize {
+        self.contract_violations
     }
 
     /// Constrain every subsequent `execute` to `profile`. Judged at
@@ -151,6 +170,17 @@ impl Session {
             }
             Statement::Use { target } => self.exec_use(target),
             Statement::Stats { vindex } => self.exec_stats(vindex.as_deref()),
+            Statement::VerifyOperator {
+                operator,
+                contract,
+                witness,
+                container,
+            } => self.exec_verify_operator(operator, contract, witness, container),
+            Statement::VerifyRepresentation {
+                container,
+                contract,
+                source,
+            } => self.exec_verify_representation(container, contract, source),
             Statement::Walk {
                 prompt,
                 top,
@@ -297,6 +327,14 @@ impl Session {
                 self.advance_epoch();
                 Ok(out)
             }
+            // A direct weight edit stages without starting an anonymous patch:
+            // it is recorded only when a named BEGIN PATCH recording is open.
+            Statement::UpdateWeights {
+                tensor,
+                row,
+                cols,
+                delta,
+            } => self.exec_update_weights(tensor, *row, cols, *delta),
             Statement::Merge {
                 source,
                 target,
@@ -431,8 +469,18 @@ impl Session {
             _ => "unknown".into(),
         };
 
+        // A patch that carries stored-weight edits is version 2: the op is
+        // additive, and a reader that does not know it refuses the file.
+        let weight_edits: usize = recording
+            .operations
+            .iter()
+            .map(|op| match op {
+                larql_vindex::PatchOp::WeightDelta(w) => w.edits.len(),
+                _ => 0,
+            })
+            .sum();
         let patch = larql_vindex::VindexPatch {
-            version: 1,
+            version: if weight_edits > 0 { 2 } else { 1 },
             base_model: model_name,
             base_checksum: None,
             created_at: String::new(),
@@ -450,8 +498,13 @@ impl Session {
 
         self.auto_patch = false;
 
+        let weights = if weight_edits > 0 {
+            format!(", {weight_edits} weight edit(s) bound to the source container")
+        } else {
+            String::new()
+        };
         Ok(vec![format!(
-            "Saved: {} ({} inserts, {} updates, {} deletes)",
+            "Saved: {} ({} inserts, {} updates, {} deletes{weights})",
             path.display(),
             ins,
             upd,
@@ -479,6 +532,39 @@ impl Session {
             patch.description = Some(path.to_string());
         }
 
+        // Stored-weight ops are bound to the exact container they were written
+        // against. Check that before anything is applied.
+        let weight_ops: Vec<&larql_vindex::format::vindex3::weight_patch::WeightDeltaOp> = patch
+            .operations
+            .iter()
+            .filter_map(|op| match op {
+                larql_vindex::PatchOp::WeightDelta(w) => Some(w),
+                _ => None,
+            })
+            .collect();
+        let weight_edits: usize = weight_ops.iter().map(|w| w.edits.len()).sum();
+        if !weight_ops.is_empty() {
+            match &self.backend {
+                Backend::Vindex3 {
+                    path: container, ..
+                } => {
+                    for op in &weight_ops {
+                        op.check_intact()
+                            .and_then(|()| op.check_binding(container))
+                            .map_err(|e| {
+                                LqlError::Execution(format!("failed to apply patch: {e}"))
+                            })?;
+                    }
+                }
+                Backend::Vindex { .. } => return Err(LqlError::Execution(
+                    "failed to apply patch: it edits the stored weights of a VINDEX3 container, \
+                         and this session is bound to a VINDEX2 vindex"
+                        .into(),
+                )),
+                _ => return Err(LqlError::NoBackend),
+            }
+        }
+
         // Apply through the session overlay (base files untouched).
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {
@@ -496,8 +582,13 @@ impl Session {
             _ => return Err(LqlError::NoBackend),
         }
 
+        let weights = if weight_edits > 0 {
+            format!("; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE")
+        } else {
+            String::new()
+        };
         Ok(vec![format!(
-            "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes)"
+            "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes{weights})"
         )])
     }
 
@@ -542,6 +633,17 @@ impl Session {
                 out.push(format!(
                     "  Total: {} from files, {} in session",
                     file_total, overlay_total
+                ));
+            }
+        }
+
+        if let Backend::Vindex3 { overlay, .. } = &self.backend {
+            let ops = overlay.weight_ops();
+            if !ops.is_empty() {
+                out.push(format!(
+                    "  Stored-weight edits: {} element(s) in {} op(s), pending COMPILE",
+                    overlay.weight_edit_count(),
+                    ops.len()
                 ));
             }
         }

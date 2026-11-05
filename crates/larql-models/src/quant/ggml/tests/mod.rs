@@ -123,4 +123,6 @@ fn synth_q4k_block(seed: u32) -> Vec<u8> {
 }
 
 mod dequantize_and_row_dot;
+mod q8_0_ggml_golden;
+mod q8_0_matches_ggml;
 mod row_scaled_add;

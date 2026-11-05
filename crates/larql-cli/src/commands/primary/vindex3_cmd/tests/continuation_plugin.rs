@@ -200,13 +200,17 @@ mod unix {
         assert_eq!(plugins.continuations.identities(), expected);
         // The shipped providers still select from the composed registry,
         // each under the configuration it requires: codec/v1 names its
-        // width (CONTINUATION-CODEC-1), the others take no options.
+        // width (CONTINUATION-CODEC-1), codec-recent/v1 its width and window
+        // (CONTINUATION-CODEC-3 reconnaissance), the others take no options.
         let codec_width = ["bits=4".to_string()];
+        let recent = ["bits=4".to_string(), "exact_recent_k=8".to_string()];
         for identity in &shipped {
             let spec = identity.to_string();
             let mut choice = named(&spec);
             if *identity == larql_kv::CodecKvState::identity() {
                 choice.options = &codec_width;
+            } else if *identity == larql_kv::CodecRecentKvState::identity() {
+                choice.options = &recent;
             }
             let selected = select_in(&plugins.continuations, &program.plan, &choice).unwrap();
             assert_eq!(&selected.authority().identity, identity);
