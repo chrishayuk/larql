@@ -18,6 +18,9 @@
 //!   PRIOR_FLOOR, shrink THIS install ×0.7, capped at CROSS_ITERS.
 
 use crate::error::LqlError;
+use crate::executor::balance_trace::{
+    BalanceDecision, BalanceEnd, BalanceStep, BalanceTermination, ObserverSlot, StepContext,
+};
 use crate::executor::helpers::target_token_matches;
 use crate::executor::tuning::{
     canonical_prompt, BALANCE_ITERS, BALANCE_PROBE_TOP_K, CROSS_ITERS, DOWN_SCALE,
@@ -29,6 +32,11 @@ use crate::executor::vindex3::{
 use crate::executor::{Backend, Session};
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
 use larql_vindex::tokenizers::Tokenizer;
+
+/// L2 norm of a down vector, 0 when the slot has none.
+fn down_norm(down: Option<Vec<f32>>) -> f32 {
+    down.map_or(0.0, |v| v.iter().map(|x| x * x).sum::<f32>().sqrt())
+}
 
 /// The probe: the target token's probability on `prompt_ids` through
 /// the COMPOSED program — V2's statistic (top BALANCE_PROBE_TOP_K
@@ -76,7 +84,28 @@ impl Session {
         relation: &str,
         target: &str,
     ) -> Result<(), LqlError> {
+        // The observer is taken out for the pass so its context can borrow the backend while the
+        // loop keeps `&mut self`, and put back whether or not the pass succeeds.
+        let mut trace = std::mem::take(&mut self.balance_trace);
+        let result = self.balance_pass_v3(layer, feature, entity, relation, target, &mut trace);
+        self.balance_trace = trace;
+        result
+    }
+
+    /// The pass itself. `trace` only ever receives what the controller has already read and
+    /// decided; no branch below depends on it.
+    fn balance_pass_v3(
+        &mut self,
+        layer: usize,
+        feature: usize,
+        entity: &str,
+        relation: &str,
+        target: &str,
+        trace: &mut ObserverSlot,
+    ) -> Result<(), LqlError> {
         let prompt = canonical_prompt(relation, entity);
+        let mut termination = BalanceTermination::IterationsExhausted;
+        let mut iterations = 0usize;
 
         let mut best_prob: f64 = 0.0;
         let mut best_down: Option<Vec<f32>> = None;
@@ -99,7 +128,15 @@ impl Session {
                 probe_target_prob(runtime, tokenizer, overlay, &prompt_ids, target)?
             };
 
+            iterations += 1;
+            let fact = (entity, relation, target);
             if (PROB_FLOOR..=PROB_CEILING).contains(&target_prob) {
+                self.trace_step(
+                    trace,
+                    (layer, feature, &prompt, fact),
+                    (_iter, target_prob, BalanceDecision::InBand),
+                );
+                termination = BalanceTermination::InBand;
                 best_down = None;
                 break;
             }
@@ -114,21 +151,131 @@ impl Session {
                     stale_iters += 1;
                 }
                 if stale_iters >= MAX_STALE {
+                    self.trace_step(
+                        trace,
+                        (layer, feature, &prompt, fact),
+                        (_iter, target_prob, BalanceDecision::Saturated),
+                    );
+                    termination = BalanceTermination::Saturated;
                     break;
                 }
             }
 
             let scale: f32 = if amplify_mode { UP_SCALE } else { DOWN_SCALE };
+            let decision = if amplify_mode {
+                BalanceDecision::Amplify { factor: scale }
+            } else {
+                BalanceDecision::Shrink { factor: scale }
+            };
+            self.trace_step(
+                trace,
+                (layer, feature, &prompt, fact),
+                (_iter, target_prob, decision),
+            );
             self.scale_overlay_down(layer, feature, scale);
         }
 
+        let rolled_back = best_down.is_some();
         if let Some(best) = best_down {
             let Backend::Vindex3 { overlay, .. } = &mut self.backend else {
                 unreachable!("caller matched the backend");
             };
             overlay.set_down_vector(layer, feature, best);
         }
+        self.trace_end(
+            trace,
+            (layer, feature, &prompt, (entity, relation, target)),
+            (iterations, termination, rolled_back),
+        );
         Ok(())
+    }
+
+    /// Reports one iteration to the observer, if there is one. Reads state; writes none.
+    fn trace_step(
+        &self,
+        trace: &mut ObserverSlot,
+        (layer, feature, prompt, (entity, relation, target)): (
+            usize,
+            usize,
+            &str,
+            (&str, &str, &str),
+        ),
+        (iteration, controller_target_prob, decision): (usize, f64, BalanceDecision),
+    ) {
+        if !trace.is_set() {
+            return;
+        }
+        let Backend::Vindex3 {
+            runtime,
+            tokenizer: Some(tokenizer),
+            overlay,
+            ..
+        } = &self.backend
+        else {
+            return;
+        };
+        let step = BalanceStep {
+            iteration,
+            layer,
+            feature,
+            controller_target_prob,
+            down_norm: down_norm(self.overlay_down_at(layer, feature)),
+            decision,
+        };
+        let context = StepContext::new(
+            runtime,
+            tokenizer,
+            overlay,
+            self.v3_bos_token(),
+            entity,
+            relation,
+            target,
+            prompt,
+        );
+        trace.step(&step, &context);
+    }
+
+    /// Reports the end of the pass to the observer, if there is one.
+    fn trace_end(
+        &self,
+        trace: &mut ObserverSlot,
+        (layer, feature, prompt, (entity, relation, target)): (
+            usize,
+            usize,
+            &str,
+            (&str, &str, &str),
+        ),
+        (iterations, termination, rolled_back): (usize, BalanceTermination, bool),
+    ) {
+        if !trace.is_set() {
+            return;
+        }
+        let Backend::Vindex3 {
+            runtime,
+            tokenizer: Some(tokenizer),
+            overlay,
+            ..
+        } = &self.backend
+        else {
+            return;
+        };
+        let end = BalanceEnd {
+            iterations,
+            termination,
+            rolled_back,
+            final_down_norm: down_norm(self.overlay_down_at(layer, feature)),
+        };
+        let context = StepContext::new(
+            runtime,
+            tokenizer,
+            overlay,
+            self.v3_bos_token(),
+            entity,
+            relation,
+            target,
+            prompt,
+        );
+        trace.end(&end, &context);
     }
 
     /// V2's `cross_fact_regression_check`: while any prior install's
