@@ -681,6 +681,64 @@ COMPILE CURRENT INTO MODEL "gemma3-4b-edited/" FORMAT safetensors;
 > regardless of the strategy chosen, but FAIL fully detects collisions
 > and HIGHEST_CONFIDENCE is accepted for forward compatibility.
 
+### 3.5.1 Stored-weight edits (VINDEX3)
+
+```sql
+UPDATE WEIGHTS SET DELTA = <number>
+  WHERE TENSOR = "<name>" AND ROW = <n> AND COL = <n>;
+UPDATE WEIGHTS SET DELTA = <number>
+  WHERE TENSOR = "<name>" AND ROW = <n> AND COL IN (<n>, <n>, …);
+```
+
+Edits real elements of one stored BF16 matrix in the bound VINDEX3 container. It is **not** a
+knowledge edit: no retrieval entry, no feature slot, no overlay that execution reads. The edit exists
+only in the container `COMPILE CURRENT INTO VINDEX "<out>"` writes; `INFER` in the staging session does
+not see it.
+
+- **Tensor** is the name in the container's segment table (for example `26.mlp.down_proj.weight`),
+  held by exactly one canonical representation. `ROW` and `COL` index the matrix.
+- **Rounding.** A patched element is `RNE_bf16(old + delta)`: the stored bfloat16 and the `f32` delta are
+  added as real numbers and rounded **once** to the nearest bfloat16, ties to even. The delta applies to
+  the value in the bound container, so staging never accumulates. The delta's exact `f32` bits are what
+  is recorded; the lexer reads the number as a double and narrows it.
+- **Bounded and restrictive.** One tensor per compile, at most 4096 elements, finite deltas, no
+  duplicate elements, no edits that overflow bfloat16. Anything else is refused by name, at staging, and
+  stages nothing. The source must be a canonical container with no alternate variants and no prior
+  weight-patch ledger.
+- **Conflicts.** Two edits to one element, whether staged directly or carried by applied patches, are
+  refused. Edits are not composed.
+- **Not combined with knowledge edits.** `COMPILE` refuses to write stored-weight edits and
+  `INSERT`/`UPDATE EDGES`/`DELETE` state into one container.
+- **Direct or in a patch.** A staged edit is also recorded into a `BEGIN PATCH` recording when one is
+  open (a direct edit does not start an anonymous patch). `SAVE PATCH` writes it as a `weight_delta`
+  operation and the patch file is version 2.
+
+#### The `weight_delta` patch operation
+
+A `.vlp` operation `{"op": "weight_delta", …}` carries the tensor, every `(row, col, delta, delta_bits)`,
+the rounding rule, and a **source binding**: the SHA-256 of the source container's `index.json`, the
+canonical representation id, and the SHA-256 of its payload. It also carries a digest over its own
+fields. `APPLY PATCH` refuses an op whose digest does not match its contents, whose rounding rule this
+build does not implement, or whose binding is not the bound container: the model name alone is not an
+identity. A reader that does not know the op refuses the whole patch. The digest detects damage and
+casual edits; it is not a signature. A VINDEX2 session refuses a patch that carries the op.
+
+#### What `COMPILE` writes
+
+The edited canonical segment is rewritten; every other segment is hard-linked. Derived representations of
+that object (for example the Q8_0 pack) are re-derived from the **edited** weights by the compiler that
+made them, so a derived pack never describes weights the container does not hold. The result is
+inspected, then renamed into place: complete, or nothing. The `model` identity is unchanged.
+`weight_patches.json` (named by the index's `weight_patches` field) records the source, every edit with
+its exact old and new bits, the digests of the edited canonical and re-derived representations, and the
+digests of the patch operations the edit came from.
+
+`inspect_container` checks the ledger against the catalogue and the stored bytes at the edited elements.
+That is **consistency of the description**, not a verdict on the patch. Whether the container implements
+the declared edit is a claim for an independent verifier, and a representation contract measured against
+the **unedited** upstream checkpoint (for example `Q8_0_T2`) will correctly report the edited elements:
+measure the new representation against the edited canonical weights the ledger names.
+
 ### 3.6 Schema Introspection Statements
 
 ```

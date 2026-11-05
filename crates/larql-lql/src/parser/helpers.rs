@@ -437,6 +437,18 @@ impl Parser {
         }
     }
 
+    /// A number that may be negative. The lexer emits `-` as its own token
+    /// (ranges like `0-33` are far more common than negative literals), so a
+    /// leading `-` is read here, where a sign is meant.
+    pub(crate) fn expect_signed_f32(&mut self) -> Result<f32, ParseError> {
+        if matches!(self.peek(), Token::Dash) {
+            self.advance();
+            Ok(-self.expect_f32()?)
+        } else {
+            self.expect_f32()
+        }
+    }
+
     pub(crate) fn expect_token(&mut self, expected: &Token) -> Result<(), ParseError> {
         let tok = self.peek();
         if std::mem::discriminant(&tok) == std::mem::discriminant(expected) {
