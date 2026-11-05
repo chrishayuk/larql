@@ -12,6 +12,27 @@ use larql_inference::ndarray::Array1;
 /// the per-relation candidate sets that balance/rebalance probe.
 pub(crate) const TARGET_PREFIX_CHARS: usize = 3;
 
+/// Does one decoded vocabulary token stand for the fact's target?
+///
+/// The balance and rebalance probes ask this of each of the model's top
+/// predictions: the token matches when it contains the whole target, or
+/// starts with its first [`TARGET_PREFIX_CHARS`] characters.
+///
+/// Leading whitespace is ignored. A byte-level BPE vocabulary (Qwen, GPT,
+/// Llama 3) spells a word that follows a space as its own token, and decoding
+/// that token on its own keeps the space: the continuation of "The capital of
+/// Atlantis is" decodes as `" Pose"`, not `"Pose"`. Without the trim, a
+/// prediction of 99.99% for the target read as 0.01%, so a probe that was
+/// meant to shrink an over-strong install saw a weak one and amplified it.
+/// SentencePiece vocabularies (Gemma) have their leading space stripped by
+/// the decoder, which is why the defect did not show there.
+///
+/// Only leading whitespace is dropped; no other token is newly accepted.
+pub(crate) fn target_token_matches(decoded: &str, target: &str) -> bool {
+    let token = decoded.trim_start();
+    token.contains(target) || token.starts_with(target_prefix(target, TARGET_PREFIX_CHARS))
+}
+
 /// Take the first `n` characters of `s`, slicing on a UTF-8 character
 /// boundary. The previous `&s[..s.len().min(3)]` shape panicked on any
 /// multi-byte target ("Köln", emoji, CJK).
@@ -152,6 +173,124 @@ pub(crate) fn is_readable_token(tok: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── target_token_matches ─────────────────────────────────────────
+
+    /// The rule before the leading-space fix, kept here as the yardstick the
+    /// new rule must not exceed.
+    fn matches_before_the_fix(token: &str, target: &str) -> bool {
+        token.contains(target) || token.starts_with(target_prefix(target, TARGET_PREFIX_CHARS))
+    }
+
+    #[test]
+    fn a_leading_space_token_is_recognised_as_the_target() {
+        // " Pose" is how a byte-level BPE vocabulary spells the continuation.
+        assert!(target_token_matches(" Pose", "Poseidon"));
+        assert!(target_token_matches("  Pose", "Poseidon"));
+        assert!(target_token_matches("\tPose", "Poseidon"));
+        assert!(target_token_matches("\n Poseidon", "Poseidon"));
+        assert!(!matches_before_the_fix(" Pose", "Poseidon"));
+    }
+
+    #[test]
+    fn tokens_without_leading_space_match_as_before() {
+        for token in ["Pose", "Pos", "Poseidon", "Poseidon's", "the Poseidon"] {
+            assert!(target_token_matches(token, "Poseidon"), "{token:?}");
+        }
+    }
+
+    #[test]
+    fn a_similar_but_wrong_token_is_still_refused() {
+        for token in [
+            " Zeus", " Paris", " Po", " Pe", " Pa", " pose", " POS", "Zeus", "", " ", "  \n",
+        ] {
+            assert!(!target_token_matches(token, "Poseidon"), "{token:?}");
+        }
+    }
+
+    #[test]
+    fn leading_space_is_the_only_new_acceptance() {
+        let targets = ["Poseidon", "Paris", "Köln", "東京タワー", "Hi", "x"];
+        let tokens = [
+            "Pose",
+            " Pose",
+            "Pos",
+            " Pos",
+            "Po",
+            " Po",
+            "Paris",
+            " Paris",
+            "Par",
+            " Par",
+            "Köln",
+            " Köln",
+            "Köl",
+            " Köl",
+            "東京タ",
+            " 東京タ",
+            "Hi",
+            " Hi",
+            "H",
+            " H",
+            "x",
+            " x",
+            "",
+            " ",
+            "Zeus",
+            " Zeus",
+            "the",
+            " the",
+            " Pose idon",
+            "\u{a0}Pose",
+        ];
+        for target in targets {
+            for token in tokens {
+                let now = target_token_matches(token, target);
+                // Nothing is accepted that the old rule refused on the same
+                // token once its leading whitespace is removed.
+                assert_eq!(
+                    now,
+                    matches_before_the_fix(token.trim_start(), target),
+                    "{token:?} vs {target:?}"
+                );
+                // A token with no leading whitespace is judged exactly as before.
+                if token.trim_start() == token {
+                    assert_eq!(
+                        now,
+                        matches_before_the_fix(token, target),
+                        "{token:?} vs {target:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A byte-level BPE tokenizer, as Qwen ships: `Ġ` is the byte-level
+    /// spelling of a space, and the decoder maps it back.
+    fn byte_level_tokenizer() -> larql_vindex::tokenizers::Tokenizer {
+        let json = r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],
+            "normalizer":null,
+            "pre_tokenizer":{"type":"ByteLevel","add_prefix_space":false,"trim_offsets":true,"use_regex":true},
+            "post_processor":null,
+            "decoder":{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true},
+            "model":{"type":"WordLevel","vocab":{"ĠPose":0,"Pose":1,"ĠZeus":2,"[UNK]":3},"unk_token":"[UNK]"}}"#;
+        larql_vindex::tokenizers::Tokenizer::from_bytes(json.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a_byte_level_tokenizer_decodes_a_continuation_token_with_its_space() {
+        let tokenizer = byte_level_tokenizer();
+        let spaced = tokenizer.decode(&[0], false).unwrap();
+        let bare = tokenizer.decode(&[1], false).unwrap();
+        // The premise of the fix: decoding the token alone keeps the space.
+        assert_eq!(spaced, " Pose");
+        assert_eq!(bare, "Pose");
+        assert!(target_token_matches(&spaced, "Poseidon"));
+        assert!(target_token_matches(&bare, "Poseidon"));
+        let other = tokenizer.decode(&[2], false).unwrap();
+        assert_eq!(other, " Zeus");
+        assert!(!target_token_matches(&other, "Poseidon"));
+    }
 
     #[test]
     fn knn_override_summary_names_post_logits_source_and_model_top1() {
