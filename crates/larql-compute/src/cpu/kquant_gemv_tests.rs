@@ -435,3 +435,94 @@ mod worker_panics {
         }
     }
 }
+
+/// The scheduling decisions the output cannot reveal: a wrong chunk size, helper count or
+/// dispatch choice still produces the right numbers, only slower or with more threads
+/// than intended, so each is checked against its own specification.
+mod scheduling {
+    use super::super::{
+        chunk_rows, helper_seats, q8_0_gemv, CHUNK_ELEMS, GEMV_GATE, GENERATION, GROUP_ROWS,
+        IN_EXCLUSIVE_SCENARIO,
+    };
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn a_chunk_is_whole_row_groups_that_fill_the_target_size() {
+        for k in [32, 64, 96, 128, 1024, 2048, 4096, 8192, 14336] {
+            let rows = chunk_rows(k);
+            assert!(
+                rows >= GROUP_ROWS && rows.is_multiple_of(GROUP_ROWS),
+                "k={k}: {rows} rows"
+            );
+            if k * GROUP_ROWS <= CHUNK_ELEMS {
+                // As many whole groups as fit: one more would pass the target.
+                assert!(rows * k <= CHUNK_ELEMS, "k={k}: {rows} rows overshoot");
+                assert!(
+                    (rows + GROUP_ROWS) * k > CHUNK_ELEMS,
+                    "k={k}: {rows} rows undershoot"
+                );
+            } else {
+                // A single group is already past the target: the smallest chunk there is.
+                assert_eq!(rows, GROUP_ROWS, "k={k}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_job_admits_every_other_pool_thread_as_a_helper() {
+        // A row count the failpoint tests never use, so their zero-helper rule is not in play.
+        let n = usize::MAX - 7;
+        for threads in 2..=64 {
+            assert_eq!(
+                helper_seats(n, threads),
+                threads as isize - 1,
+                "threads={threads}"
+            );
+        }
+    }
+
+    /// Runs one gemv as its own exclusive scenario on a pool of `threads` and reports whether
+    /// it published a job for helpers (each publication advances `GENERATION`).
+    fn publishes(threads: usize, n: usize) -> bool {
+        let k = 32;
+        let blocks = vec![0u8; n * (k / 32) * 34];
+        let x = vec![1.0f32; k];
+        let _exclusive = GEMV_GATE.write().unwrap_or_else(|e| e.into_inner());
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        let before = GENERATION.0.load(Ordering::SeqCst);
+        pool.install(|| {
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(true));
+            let out = q8_0_gemv(&blocks, &x, n, k);
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(false));
+            assert_eq!(out.map(|v| v.len()), Some(n));
+        });
+        let advanced = GENERATION.0.load(Ordering::SeqCst) - before;
+        assert!(
+            advanced <= 1,
+            "one call publishes at most once, saw {advanced}"
+        );
+        advanced == 1
+    }
+
+    #[test]
+    fn only_a_matrix_wider_than_one_chunk_on_a_multi_thread_pool_is_published() {
+        let rows = chunk_rows(32);
+        assert!(
+            !publishes(1, rows * 5),
+            "a one-thread pool has no helpers to publish to"
+        );
+        assert!(
+            !publishes(4, rows / 2),
+            "a matrix inside one chunk is not worth sharing"
+        );
+        assert!(!publishes(4, rows), "exactly one chunk is still one chunk");
+        assert!(
+            publishes(4, rows + 1),
+            "past one chunk, helpers are invited"
+        );
+        assert!(publishes(4, rows * 5));
+    }
+}
