@@ -28,6 +28,8 @@ use crate::ast::*;
 use crate::capability::CapabilityProfile;
 use crate::error::LqlError;
 
+pub mod balance_trace;
+
 pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
 
 /// Session state for the REPL / batch executor.
@@ -85,6 +87,8 @@ pub struct Session {
     pub(crate) verifier: Option<std::path::PathBuf>,
     /// `VERIFY REPRESENTATION` statements in this session that reported `violated`.
     pub(crate) contract_violations: usize,
+    /// Observer of COMPOSE balance passes, if one is set. See [`crate::balance_trace`].
+    pub(crate) balance_trace: crate::executor::balance_trace::ObserverSlot,
 }
 
 impl Default for Session {
@@ -109,7 +113,22 @@ impl Session {
             mutations_since_major: 0,
             verifier: None,
             contract_violations: 0,
+            balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
         }
+    }
+
+    /// Sets (or, with `None`, removes) the observer of COMPOSE balance passes. It only observes:
+    /// installs are bit-identical with and without it. See [`crate::balance_trace`].
+    pub fn set_balance_observer(
+        &mut self,
+        observer: Option<Box<dyn crate::executor::balance_trace::BalanceObserver>>,
+    ) {
+        self.balance_trace.set(observer);
+    }
+
+    /// How many times a balance observer panicked and was detached in this session.
+    pub fn balance_observer_failures(&self) -> usize {
+        self.balance_trace.failures()
     }
 
     /// Ensure a patch session is active. If not, auto-start an anonymous one.
