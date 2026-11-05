@@ -63,7 +63,11 @@ jobs:
 
   cross-plugin:
     name: x86_64 plugin fixture from an ARM64 host
-    runs-on: macos-14
+    # macos-14 was retired 2026-11-02 and no longer provisions; macos-15 is Apple silicon too.
+    # This is an ARM64 host running an x86_64 binary under Rosetta translation. It tests that the
+    # target-matched plugin builds and loads across that boundary; it is not a test on native
+    # x86_64 hardware, which the ubuntu and windows jobs cover.
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
