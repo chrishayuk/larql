@@ -99,6 +99,9 @@ impl Parser {
 
     pub(crate) fn parse_update(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Update)?;
+        if matches!(self.peek(), Token::Keyword(Keyword::Weights)) {
+            return self.parse_update_weights();
+        }
         self.expect_keyword(Keyword::Edges)?;
         self.expect_keyword(Keyword::Set)?;
 
@@ -173,6 +176,52 @@ impl Parser {
             source,
             target,
             conflict,
+        })
+    }
+}
+
+impl Parser {
+    /// `UPDATE WEIGHTS SET DELTA = <f> WHERE TENSOR = "<name>" AND ROW = <n>
+    /// AND COL = <n> | COL IN (<n>, …)`; the `UPDATE` is already consumed.
+    ///
+    /// `DELTA`, `TENSOR`, `ROW` and `COL` are read as words in this position,
+    /// not reserved, so they stay usable as names everywhere else.
+    fn parse_update_weights(&mut self) -> Result<Statement, ParseError> {
+        self.expect_keyword(Keyword::Weights)?;
+        self.expect_keyword(Keyword::Set)?;
+        self.expect_ident_eq("DELTA")?;
+        self.expect_token(&Token::Eq)?;
+        let delta = self.expect_signed_f32()?;
+        self.expect_keyword(Keyword::Where)?;
+        self.expect_ident_eq("TENSOR")?;
+        self.expect_token(&Token::Eq)?;
+        let tensor = self.expect_string()?;
+        self.expect_keyword(Keyword::And)?;
+        self.expect_ident_eq("ROW")?;
+        self.expect_token(&Token::Eq)?;
+        let row = self.expect_u32()? as usize;
+        self.expect_keyword(Keyword::And)?;
+        self.expect_ident_eq("COL")?;
+        let cols = if matches!(self.peek(), Token::Keyword(Keyword::In)) {
+            self.advance();
+            self.expect_token(&Token::LParen)?;
+            let mut cols = vec![self.expect_u32()? as usize];
+            while matches!(self.peek(), Token::Comma) {
+                self.advance();
+                cols.push(self.expect_u32()? as usize);
+            }
+            self.expect_token(&Token::RParen)?;
+            cols
+        } else {
+            self.expect_token(&Token::Eq)?;
+            vec![self.expect_u32()? as usize]
+        };
+        self.eat_semicolon();
+        Ok(Statement::UpdateWeights {
+            tensor,
+            row,
+            cols,
+            delta,
         })
     }
 }

@@ -26,7 +26,14 @@ impl Session {
             VindexRef::Current => {
                 if matches!(self.backend, Backend::Vindex3 { .. }) {
                     return match target {
-                        CompileTarget::Vindex => self.exec_compile_into_vindex_v3(output),
+                        CompileTarget::Vindex => {
+                            let weights = matches!(&self.backend, Backend::Vindex3 { overlay, .. } if overlay.weight_edit_count() > 0);
+                            if weights {
+                                self.exec_compile_weights(output)
+                            } else {
+                                self.exec_compile_into_vindex_v3(output)
+                            }
+                        }
                         CompileTarget::Model => Err(crate::executor::vindex3::unsupported(
                             "COMPILE INTO MODEL (container → checkpoint export)",
                         )),
