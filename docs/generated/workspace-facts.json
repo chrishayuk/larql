@@ -567,6 +567,10 @@
       ],
       "examples": [
         {
+          "name": "compose_harness",
+          "path": "examples/lql/compose_harness/main.rs"
+        },
+        {
           "name": "encode_decode",
           "path": "examples/boundary/encode_decode.rs"
         },
