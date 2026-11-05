@@ -32,6 +32,13 @@ The harness is built once per arm and records which it was built for; it does no
 time. A0 is the commit before the leading-space matcher fix (#701), A1 is A0 plus #701, both with the
 balance observer (#704).
 
+### Pinning at freeze
+
+For a registered run each arm is built from a single commit that contains this harness, and the run's
+provenance must report that commit with zero tracked changes. A0 is the pre-#701 library plus the
+observer plus this harness; A1 is the same with #701. A binary built from a checkout with tracked
+changes says so in its provenance block and is not admissible for a registered run.
+
 ## What a run records
 
 Per fact: the prompt the install actually captured its residual from, the evaluation prompt, and
