@@ -327,6 +327,14 @@ impl Session {
                 self.advance_epoch();
                 Ok(out)
             }
+            // A direct weight edit stages without starting an anonymous patch:
+            // it is recorded only when a named BEGIN PATCH recording is open.
+            Statement::UpdateWeights {
+                tensor,
+                row,
+                cols,
+                delta,
+            } => self.exec_update_weights(tensor, *row, cols, *delta),
             Statement::Merge {
                 source,
                 target,
@@ -461,8 +469,18 @@ impl Session {
             _ => "unknown".into(),
         };
 
+        // A patch that carries stored-weight edits is version 2: the op is
+        // additive, and a reader that does not know it refuses the file.
+        let weight_edits: usize = recording
+            .operations
+            .iter()
+            .map(|op| match op {
+                larql_vindex::PatchOp::WeightDelta(w) => w.edits.len(),
+                _ => 0,
+            })
+            .sum();
         let patch = larql_vindex::VindexPatch {
-            version: 1,
+            version: if weight_edits > 0 { 2 } else { 1 },
             base_model: model_name,
             base_checksum: None,
             created_at: String::new(),
@@ -480,8 +498,13 @@ impl Session {
 
         self.auto_patch = false;
 
+        let weights = if weight_edits > 0 {
+            format!(", {weight_edits} weight edit(s) bound to the source container")
+        } else {
+            String::new()
+        };
         Ok(vec![format!(
-            "Saved: {} ({} inserts, {} updates, {} deletes)",
+            "Saved: {} ({} inserts, {} updates, {} deletes{weights})",
             path.display(),
             ins,
             upd,
@@ -509,6 +532,39 @@ impl Session {
             patch.description = Some(path.to_string());
         }
 
+        // Stored-weight ops are bound to the exact container they were written
+        // against. Check that before anything is applied.
+        let weight_ops: Vec<&larql_vindex::format::vindex3::weight_patch::WeightDeltaOp> = patch
+            .operations
+            .iter()
+            .filter_map(|op| match op {
+                larql_vindex::PatchOp::WeightDelta(w) => Some(w),
+                _ => None,
+            })
+            .collect();
+        let weight_edits: usize = weight_ops.iter().map(|w| w.edits.len()).sum();
+        if !weight_ops.is_empty() {
+            match &self.backend {
+                Backend::Vindex3 {
+                    path: container, ..
+                } => {
+                    for op in &weight_ops {
+                        op.check_intact()
+                            .and_then(|()| op.check_binding(container))
+                            .map_err(|e| {
+                                LqlError::Execution(format!("failed to apply patch: {e}"))
+                            })?;
+                    }
+                }
+                Backend::Vindex { .. } => return Err(LqlError::Execution(
+                    "failed to apply patch: it edits the stored weights of a VINDEX3 container, \
+                         and this session is bound to a VINDEX2 vindex"
+                        .into(),
+                )),
+                _ => return Err(LqlError::NoBackend),
+            }
+        }
+
         // Apply through the session overlay (base files untouched).
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {
@@ -526,8 +582,13 @@ impl Session {
             _ => return Err(LqlError::NoBackend),
         }
 
+        let weights = if weight_edits > 0 {
+            format!("; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE")
+        } else {
+            String::new()
+        };
         Ok(vec![format!(
-            "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes)"
+            "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes{weights})"
         )])
     }
 
@@ -572,6 +633,17 @@ impl Session {
                 out.push(format!(
                     "  Total: {} from files, {} in session",
                     file_total, overlay_total
+                ));
+            }
+        }
+
+        if let Backend::Vindex3 { overlay, .. } = &self.backend {
+            let ops = overlay.weight_ops();
+            if !ops.is_empty() {
+                out.push(format!(
+                    "  Stored-weight edits: {} element(s) in {} op(s), pending COMPILE",
+                    overlay.weight_edit_count(),
+                    ops.len()
                 ));
             }
         }
