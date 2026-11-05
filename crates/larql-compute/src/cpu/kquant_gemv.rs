@@ -103,6 +103,36 @@ impl Drop for PanicsOnDrop {
     }
 }
 
+/// Test-only: lets a panic scenario own the kernel. Every `q8_0_gemv` call in the test
+/// binary takes this for reading; a scenario that must not be disturbed takes it for
+/// writing and marks its own threads with [`IN_EXCLUSIVE_SCENARIO`] so they bypass it.
+/// Without it, any other test's concurrent gemv holds the global job slot, the scenario's
+/// call takes the fallback path, and the injected panic never fires.
+#[cfg(test)]
+pub(crate) static GEMV_GATE: std::sync::RwLock<()> = std::sync::RwLock::new(());
+#[cfg(test)]
+thread_local! {
+    pub(crate) static IN_EXCLUSIVE_SCENARIO: Cell<bool> = const { Cell::new(false) };
+}
+
+/// How many helpers a job admits: the pool's other threads.
+///
+/// A test that injects a panic into "the caller's chunk" admits none, so the
+/// calling thread runs every chunk and the panic always fires. Otherwise the
+/// helpers, already hot from the previous call, can take every chunk before the
+/// caller claims one, and the scenario would depend on that race.
+fn helper_seats(n: usize, threads: usize) -> isize {
+    #[cfg(test)]
+    if n == FAIL_N.load(Ordering::SeqCst)
+        && !FAIL_IN_HELPER.load(Ordering::SeqCst)
+        && !FAIL_TWO_PANICS.load(Ordering::SeqCst)
+    {
+        return 0;
+    }
+    let _ = n;
+    threads as isize - 1
+}
+
 #[cfg(test)]
 fn failpoint(n: usize) {
     if n != FAIL_N.load(Ordering::SeqCst) {
@@ -177,6 +207,9 @@ fn chunk_rows(k: usize) -> usize {
 /// `[n, k]`. Silently accepting a short stream would read a neighbouring
 /// row's codes as this row's and return a plausible vector.
 pub fn q8_0_gemv(blocks: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+    #[cfg(test)]
+    let _gate = (!IN_EXCLUSIVE_SCENARIO.with(Cell::get))
+        .then(|| GEMV_GATE.read().unwrap_or_else(|e| e.into_inner()));
     if k == 0 || !k.is_multiple_of(Q8_0_BLOCK_ELEMS) || x.len() != k {
         return None;
     }
@@ -203,7 +236,7 @@ pub fn q8_0_gemv(blocks: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32
         per_row,
         chunk_rows,
         chunks: n.div_ceil(chunk_rows),
-        seats: AtomicIsize::new(threads as isize - 1),
+        seats: AtomicIsize::new(helper_seats(n, threads)),
         panicked: AtomicBool::new(false),
         payload: Mutex::new(None),
         next: Padded(AtomicUsize::new(0)),

@@ -263,7 +263,10 @@ fn a_block_with_a_subnormal_scale_survives_encoding_and_execution() {
 //
 // The failpoint is keyed on the job's row count, so these tests cannot disturb the kernel tests running beside them.
 mod worker_panics {
-    use super::super::{q8_0_gemv, FAIL_IN_HELPER, FAIL_N, FAIL_TWO_PANICS, HELPER_PANICKED};
+    use super::super::{
+        q8_0_gemv, FAIL_IN_HELPER, FAIL_N, FAIL_TWO_PANICS, GEMV_GATE, HELPER_PANICKED,
+        IN_EXCLUSIVE_SCENARIO,
+    };
     use std::sync::atomic::Ordering;
     use std::sync::{mpsc, Mutex};
     use std::time::Duration;
@@ -274,8 +277,37 @@ mod worker_panics {
     /// The failpoint is process-wide state: one injected job at a time.
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
+    /// Marks the current thread as part of the exclusive scenario for as long as it lives.
+    struct InScenario;
+
+    impl InScenario {
+        fn enter() -> Self {
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(true));
+            InScenario
+        }
+    }
+
+    impl Drop for InScenario {
+        fn drop(&mut self) {
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(false));
+        }
+    }
+
+    /// `q8_0_gemv` as the scenario's own call: it bypasses the gate its owner holds.
+    fn scenario_gemv(blocks: &[u8], x: &[f32]) -> Option<Vec<f32>> {
+        let _in = InScenario::enter();
+        q8_0_gemv(blocks, x, ROWS, K)
+    }
+
+    /// Exclusive use of the kernel: waits for other tests' gemv calls to finish and holds
+    /// off new ones, so the scenario's calls never meet the fallback path.
+    fn exclusive() -> std::sync::RwLockWriteGuard<'static, ()> {
+        GEMV_GATE.write().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn run(in_helper: bool, swallow_panics: bool) {
         let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let _exclusive = exclusive();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let mut builder = rayon::ThreadPoolBuilder::new().num_threads(4);
@@ -290,7 +322,7 @@ mod worker_panics {
                 FAIL_IN_HELPER.store(in_helper, Ordering::SeqCst);
                 HELPER_PANICKED.store(false, Ordering::SeqCst);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    pool.install(|| q8_0_gemv(&blocks, &x, ROWS, K))
+                    pool.install(|| scenario_gemv(&blocks, &x))
                 }));
                 FAIL_N.store(0, Ordering::SeqCst);
                 let payload = result.expect_err(&format!(
@@ -306,7 +338,7 @@ mod worker_panics {
                     "round {round}: the original panic reaches the caller, got {text:?}"
                 );
                 let ok = pool
-                    .install(|| q8_0_gemv(&blocks, &x, ROWS, K))
+                    .install(|| scenario_gemv(&blocks, &x))
                     .expect("geometry is valid");
                 assert!(
                     ok.iter().all(|v| *v == 0.0),
@@ -339,6 +371,7 @@ mod worker_panics {
     #[test]
     fn a_payload_whose_destructor_panics_does_not_strand_the_caller() {
         let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let _exclusive = exclusive();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let pool = rayon::ThreadPoolBuilder::new()
@@ -352,7 +385,7 @@ mod worker_panics {
             FAIL_IN_HELPER.store(false, Ordering::SeqCst);
             FAIL_TWO_PANICS.store(true, Ordering::SeqCst);
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                pool.install(|| q8_0_gemv(&blocks, &x, ROWS, K))
+                pool.install(|| scenario_gemv(&blocks, &x))
             }));
             FAIL_N.store(0, Ordering::SeqCst);
             FAIL_TWO_PANICS.store(false, Ordering::SeqCst);
@@ -366,12 +399,39 @@ mod worker_panics {
                 "the first panic is the one re-raised"
             );
             assert!(
-                pool.install(|| q8_0_gemv(&blocks, &x, ROWS, K)).is_some(),
+                pool.install(|| scenario_gemv(&blocks, &x)).is_some(),
                 "the kernel still works"
             );
             tx.send(()).unwrap();
         });
         rx.recv_timeout(Duration::from_secs(20))
             .expect("the caller was left waiting for a chunk that was never counted");
+    }
+
+    /// The scenarios own the kernel: other threads calling it at the same time (as the rest of
+    /// the test binary does) must neither disturb them nor be starved.
+    #[test]
+    fn the_scenarios_hold_while_other_threads_call_the_kernel() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        let stop = Arc::new(AtomicBool::new(false));
+        let noise: Vec<_> = (0..3)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let blocks = vec![0u8; 5000 * 34];
+                    let x = vec![1.0f32; 32];
+                    while !stop.load(Ordering::Relaxed) {
+                        let _ = q8_0_gemv(&blocks, &x, 5000, 32);
+                    }
+                })
+            })
+            .collect();
+        run(false, false);
+        run(true, false);
+        stop.store(true, Ordering::Relaxed);
+        for n in noise {
+            n.join().unwrap();
+        }
     }
 }
