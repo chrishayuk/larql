@@ -1,0 +1,92 @@
+name: portability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-compute/**'
+      - 'crates/larql-cli/**'
+      - 'crates/larql-continuation-fixture/**'
+      - 'crates/larql-router/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/portability.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-compute/**'
+      - 'crates/larql-cli/**'
+      - 'crates/larql-continuation-fixture/**'
+      - 'crates/larql-router/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/portability.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  LARQL_SPIN_POOL: 0
+
+jobs:
+  arm-kernels:
+    name: generic AArch64 kernels, with and without dotprod
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Activate the pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install OpenBLAS and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev pkg-config qemu-user
+      # The explicit triple keeps the generic ARMv8-A baseline. A compile
+      # without target-cpu=native must work before either runtime is tested.
+      - name: Quantized kernel parity on the native CPU
+        run: cargo test --locked -p larql-compute --no-default-features --target aarch64-unknown-linux-gnu --lib q4k_q8k_dot
+      - name: Quantized kernel parity on ARMv8-A without dotprod
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: 'qemu-aarch64 -cpu cortex-a53 -L /'
+        run: cargo test --locked -p larql-compute --no-default-features --target aarch64-unknown-linux-gnu --lib q4k_q8k_dot
+      - name: C quantized kernel parity on ARMv8-A without dotprod
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: 'qemu-aarch64 -cpu cortex-a53 -L /'
+        run: cargo test --locked -p larql-compute --no-default-features --target aarch64-unknown-linux-gnu --lib q4_matvec
+
+  cross-plugin:
+    name: x86_64 plugin fixture from an ARM64 host
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Activate the pinned Rust toolchain
+        run: rustup show active-toolchain
+      # Run rustup inside the checkout so rust-toolchain.toml selects the
+      # pinned compiler, including when stable has advanced beyond it.
+      - name: Install the consuming test's target
+        run: rustup target add x86_64-apple-darwin
+      - name: Verify Rosetta is available
+        run: arch -x86_64 /usr/bin/true
+      - name: Build and load the target-matched plugin through the CLI
+        run: cargo test --locked -p larql-cli --no-default-features --target x86_64-apple-darwin --test test_continuation_plugin_cli
+
+  router-windows:
+    name: MoE hedge failure on Windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Activate the pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install protoc
+        run: choco install protoc -y --no-progress
+      - name: MoE hedge and failure cases
+        run: cargo test --locked -p larql-router --no-default-features --test test_http_handlers moe_hedge_and_failure

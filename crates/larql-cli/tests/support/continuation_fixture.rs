@@ -60,7 +60,8 @@ pub fn fixture_dylib() -> PathBuf {
             build
                 .current_dir(workspace_root())
                 .args(["build", "--locked", "-p", FIXTURE_PACKAGE, "--target-dir"])
-                .arg(&dir);
+                .arg(&dir)
+                .args(["--target", env!("LARQL_TEST_TARGET")]);
             // The same larql-vindex features as the CLI under test, which
             // the plugin ABI stamp checks: `test-utils` always (the CLI's
             // dev-dependencies enable it), `gpu` when the CLI has it.
@@ -82,11 +83,14 @@ pub fn fixture_dylib() -> PathBuf {
                 "c6: built {FIXTURE_PACKAGE} in {:.1} s",
                 started.elapsed().as_secs_f64()
             );
-            let lib = dir.join("debug").join(format!(
-                "{}{FIXTURE_LIB}{}",
-                std::env::consts::DLL_PREFIX,
-                std::env::consts::DLL_SUFFIX
-            ));
+            let lib = dir
+                .join(env!("LARQL_TEST_TARGET"))
+                .join("debug")
+                .join(format!(
+                    "{}{FIXTURE_LIB}{}",
+                    std::env::consts::DLL_PREFIX,
+                    std::env::consts::DLL_SUFFIX
+                ));
             assert!(
                 lib.is_file(),
                 "cargo reported success but {lib:?} is absent"
