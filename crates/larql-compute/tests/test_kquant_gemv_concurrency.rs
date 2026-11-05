@@ -11,7 +11,7 @@ use larql_compute::cpu::kquant_gemv::{q8_0_gemv, Q8_0_BLOCK_BYTES, Q8_0_BLOCK_EL
 use larql_models::quant::half::f16_to_f32;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
 
 /// A test that makes no progress for this long is a deadlock.
@@ -32,6 +32,21 @@ const SHAPES: [(usize, usize); 8] = [
     (5000, 32),
     (4099, 32),
 ];
+
+/// The saturated-pool test occupies every global-pool worker with a spinner. A gemv call from
+/// another test that holds the dispatch slot would send this test's caller to the fork-join
+/// fallback, which needs a free global worker, so the caller would wait on its own spinners and
+/// the spinners would wait on the caller. Every test here takes this lock shared, except the
+/// saturated one, which takes it exclusively and so has the process to itself.
+static PROCESS: RwLock<()> = RwLock::new(());
+
+fn shared() -> RwLockReadGuard<'static, ()> {
+    PROCESS.read().unwrap_or_else(|e| e.into_inner())
+}
+
+fn exclusive() -> RwLockWriteGuard<'static, ()> {
+    PROCESS.write().unwrap_or_else(|e| e.into_inner())
+}
 
 struct Rng(u64);
 
@@ -136,6 +151,7 @@ fn pool(threads: usize) -> rayon::ThreadPool {
 
 #[test]
 fn matches_the_declared_program_at_every_pool_size_and_shape() {
+    let _g = shared();
     let _w = watchdog("pool sweep");
     for &(n, k) in &SHAPES {
         let (blocks, x) = pack(n, k, (n * 31 + k) as u64);
@@ -151,6 +167,7 @@ fn matches_the_declared_program_at_every_pool_size_and_shape() {
 
 #[test]
 fn concurrent_callers_agree_with_the_reference() {
+    let _g = shared();
     let _w = watchdog("concurrent callers");
     let (n, k) = (4099, 96);
     let (blocks, x) = pack(n, k, 7);
@@ -181,6 +198,7 @@ fn concurrent_callers_agree_with_the_reference() {
 
 #[test]
 fn calls_nested_inside_rayon_tasks_complete_and_agree() {
+    let _g = shared();
     let _w = watchdog("nested");
     let (n, k) = (3001, 96);
     let (blocks, x) = pack(n, k, 11);
@@ -197,6 +215,7 @@ fn calls_nested_inside_rayon_tasks_complete_and_agree() {
 
 #[test]
 fn back_to_back_and_spaced_calls_agree() {
+    let _g = shared();
     let _w = watchdog("back to back");
     let (n, k) = (5000, 32);
     let (blocks, x) = pack(n, k, 13);
@@ -217,6 +236,7 @@ fn back_to_back_and_spaced_calls_agree() {
 
 #[test]
 fn a_saturated_pool_does_not_stop_the_caller() {
+    let _g = exclusive();
     let _w = watchdog("saturated pool");
     let (n, k) = (5000, 32);
     let (blocks, x) = pack(n, k, 17);
@@ -241,6 +261,7 @@ fn a_saturated_pool_does_not_stop_the_caller() {
 
 #[test]
 fn a_geometry_that_does_not_describe_the_pack_is_refused() {
+    let _g = shared();
     let (blocks, x) = pack(40, 64, 19);
     assert!(q8_0_gemv(&blocks, &x, 40, 64).is_some());
     assert!(
