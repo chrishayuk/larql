@@ -4,8 +4,12 @@
 //! production compiler, so every test exercises the real derive path.
 
 mod apply;
+mod errors;
 mod fixture;
 mod golden;
 mod inspection;
+mod op;
+mod overlay;
 mod refusals;
 mod rounding;
+mod sources;

@@ -130,6 +130,34 @@ fn each_inconsistency_between_ledger_and_container_is_reported() {
             "a tensor the segment does not hold",
             Box::new(|l| l.target.tensor = "no.such.weight".into()),
         ),
+        (
+            "a representation the container does not hold",
+            Box::new(|l| l.target.representation = "ghost@BF16".into()),
+        ),
+        (
+            "a derived representation as the edited one",
+            Box::new(|l| l.target.representation = DERIVED.into()),
+        ),
+        (
+            "a dtype the segment does not carry",
+            Box::new(|l| l.target.dtype = "F32".into()),
+        ),
+        (
+            "a target that is not a matrix",
+            Box::new(|l| l.target.shape = vec![64]),
+        ),
+        (
+            "derived digests that are not the catalogue's",
+            Box::new(|l| l.result.derived[0].digests.payload_sha256 = "2".repeat(64)),
+        ),
+        (
+            "a derived pack the container does not hold",
+            Box::new(|l| {
+                let mut ghost = l.result.derived[0].clone();
+                ghost.representation = "ghost@Q8_0".into();
+                l.result.derived.push(ghost);
+            }),
+        ),
     ];
     for (what, change) in cases {
         let (_src, out) = patched();
@@ -152,4 +180,24 @@ fn the_stored_bytes_are_checked_not_just_the_ledger() {
     bytes[at] ^= 0x01;
     std::fs::write(&segment, bytes).unwrap();
     assert!(!ledger_defects(&out).is_empty());
+}
+
+#[test]
+fn a_container_whose_graph_is_an_older_schema_is_refused_by_name() {
+    // `inspect_container` is the opening step for every consumer of a container, and
+    // reads the graph's schema before the graph. An older one is not parsed as if it
+    // were current and reported as a defect in something else.
+    let src = source_with_pack();
+    let path = src.container.join("system_graph.json");
+    let mut graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    graph["schema"] = 1.into();
+    std::fs::write(&path, serde_json::to_string_pretty(&graph).unwrap()).unwrap();
+    let err = inspect_container(&src.container, false)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("schema v1") && err.contains("re-encode the container"),
+        "{err}"
+    );
 }
