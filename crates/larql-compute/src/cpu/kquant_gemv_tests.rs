@@ -258,3 +258,120 @@ fn a_block_with_a_subnormal_scale_survives_encoding_and_execution() {
         "{got} against {exact}"
     );
 }
+
+// ---- A panic inside a worker must reach the caller; it must never wedge it or become a result ----
+//
+// The failpoint is keyed on the job's row count, so these tests cannot disturb the kernel tests running beside them.
+mod worker_panics {
+    use super::super::{q8_0_gemv, FAIL_IN_HELPER, FAIL_N, FAIL_TWO_PANICS, HELPER_PANICKED};
+    use std::sync::atomic::Ordering;
+    use std::sync::{mpsc, Mutex};
+    use std::time::Duration;
+
+    /// Rows for the injected job: past one chunk of a 32-column matrix, off the 16-row grouping, and used by no other test.
+    const ROWS: usize = 4113;
+    const K: usize = 32;
+    /// The failpoint is process-wide state: one injected job at a time.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+    fn run(in_helper: bool, swallow_panics: bool) {
+        let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut builder = rayon::ThreadPoolBuilder::new().num_threads(4);
+            if swallow_panics {
+                builder = builder.panic_handler(|_| {});
+            }
+            let pool = builder.build().unwrap();
+            let blocks = vec![0u8; ROWS * (K / 32) * 34];
+            let x = vec![1.0f32; K];
+            for round in 0..25 {
+                FAIL_N.store(ROWS, Ordering::SeqCst);
+                FAIL_IN_HELPER.store(in_helper, Ordering::SeqCst);
+                HELPER_PANICKED.store(false, Ordering::SeqCst);
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    pool.install(|| q8_0_gemv(&blocks, &x, ROWS, K))
+                }));
+                FAIL_N.store(0, Ordering::SeqCst);
+                let payload = result.expect_err(&format!(
+                    "round {round}: a panicking worker must not yield a result"
+                ));
+                let text = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_default();
+                assert!(
+                    text.starts_with("injected"),
+                    "round {round}: the original panic reaches the caller, got {text:?}"
+                );
+                let ok = pool
+                    .install(|| q8_0_gemv(&blocks, &x, ROWS, K))
+                    .expect("geometry is valid");
+                assert!(
+                    ok.iter().all(|v| *v == 0.0),
+                    "round {round}: the next call is correct"
+                );
+            }
+            tx.send(()).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(60))
+            .expect("a worker panic left the caller waiting, or the thread died");
+    }
+
+    #[test]
+    fn a_helper_panic_reaches_the_caller_on_a_stock_pool() {
+        run(true, false);
+    }
+
+    #[test]
+    fn a_helper_panic_reaches_the_caller_when_the_pool_swallows_panics() {
+        run(true, true);
+    }
+
+    #[test]
+    fn a_caller_panic_reaches_the_caller_and_the_kernel_recovers() {
+        run(false, false);
+    }
+
+    /// Two workers panic together and the second payload's destructor panics. Dropping that payload must not unwind out of
+    /// the worker: it would lose the worker's finished-chunk count and leave the caller waiting forever.
+    #[test]
+    fn a_payload_whose_destructor_panics_does_not_strand_the_caller() {
+        let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(4)
+                .panic_handler(|_| {})
+                .build()
+                .unwrap();
+            let blocks = vec![0u8; ROWS * (K / 32) * 34];
+            let x = vec![1.0f32; K];
+            FAIL_N.store(ROWS, Ordering::SeqCst);
+            FAIL_IN_HELPER.store(false, Ordering::SeqCst);
+            FAIL_TWO_PANICS.store(true, Ordering::SeqCst);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                pool.install(|| q8_0_gemv(&blocks, &x, ROWS, K))
+            }));
+            FAIL_N.store(0, Ordering::SeqCst);
+            FAIL_TWO_PANICS.store(false, Ordering::SeqCst);
+            let payload = result.expect_err("a panicking worker must not yield a result");
+            let text = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            assert_eq!(
+                text, "injected caller panic",
+                "the first panic is the one re-raised"
+            );
+            assert!(
+                pool.install(|| q8_0_gemv(&blocks, &x, ROWS, K)).is_some(),
+                "the kernel still works"
+            );
+            tx.send(()).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(20))
+            .expect("the caller was left waiting for a chunk that was never counted");
+    }
+}
