@@ -1,6 +1,6 @@
 # COMPOSE-CORRECTION-1 — Pre-registration
 
-**Status:** 📋 v0.6 DRAFT — becomes FROZEN at the commit that lands it, after the
+**Status:** 📋 v0.7 DRAFT — becomes FROZEN at the commit that lands it, after the
 open items in §10 are closed. After that commit, frozen text is never edited;
 changes land only as dated **Addendum** sections at the bottom, each stating what
 changed and why, before the affected measurement runs.
@@ -14,7 +14,8 @@ of the trace sink, so by the rule in §5 it is replaced by the first reserve and
 controls use separate development facts. v0.5: a second matcher failure mode was found on a development fact (§1.2), so every target was
 re-authored under a tokenization rule (§5); this used tokenizers only and observed no registered
 fact's behaviour. v0.6: status only (the harness's development-stage controls reproduce; the registered-set guard exists
-and its first, refused, attempt is ledgered); no design change. Nothing else was changed in response to
+and its first, refused, attempt is ledgered); no design change. v0.7: protocol revision on failure
+atomicity (user decision, 2026-11-06), made before the freeze and before any registered run; see §7. Nothing else was changed in response to
 results.
 **Contains no outputs of this experiment.** Numbers below are inputs from earlier,
 cited work, or thresholds fixed before any measurement.
@@ -219,8 +220,10 @@ All acceptance measures use **token ids and probabilities from the execution pat
   ≥ 90% of same-template neighbours keep their baseline top-1 id with |Δp| ≤ 0.05, **and**
   no neighbour's top-1 becomes the target token.
 - **Installed-unsafe:** installed, but any of those fails.
-- **Refused:** the install returned an error and left state unchanged (below).
-- **Atomicity failure:** a refused or failed install changed anything (below).
+- **Refused:** the install returned an error. Whether it left the session unchanged is not assumed:
+  it is measured and reported separately (§7.1), and the failed session is discarded.
+- **Atomicity violation:** a failed install changed any component of the session fingerprint (§7.1),
+  reported by component. Expected on both arms.
 - **Balance trajectory (recorded for every install, every arm):** each attempted scale, the target
   probability read at it, the probe's matched token, the effect on the fact's same-template
   neighbours and a fixed unrelated subset at that scale, and whether the controller accepted or
@@ -233,12 +236,30 @@ All acceptance measures use **token ids and probabilities from the execution pat
 
 ## 7. Hard gates
 
-1. **Failure atomicity (per arm, per model).** After every refused install, and after
-   faults injected at each phase (after slot insertion, after refine, during each balance
-   iteration, during the guard probe, during the cross-fact check): the overlay's
-   serialised digest, `installed_edges`, `raw_install_residuals`, the decoy cache, and the
-   logits on the atomicity probe set (bit-for-bit) are identical to their values before the
-   call. One violation disqualifies the arm on that model regardless of its other results.
+1. **Failure atomicity: a measured outcome, not a precondition.** A failed COMPOSE install is known
+   not to be atomic on **both** existing arms: the install writes the decoy cache, the fact's raw
+   residual and the overlay slot, and rewrites the layer's other slots, before the steps that can
+   fail, and never records the edit in the active patch if it fails after the slot is staged (PR #706
+   records the defect, with a real-model demonstration). Waiting for a repair would change the
+   implementations being compared, so the study runs on them as they are and **measures** atomicity.
+   - *How it is measured.* For each arm and model, with the seven fault points of PR #706 injected
+     into installs of the **development facts** (atomicity is a property of the implementation, not of
+     a fact, and development facts keep the registered ones unseen): the session's state fingerprint
+     (`Session::state_fingerprint`: overlay vectors and counts, weight edits and patches,
+     `installed_edges`, the raw-residual and decoy caches, the active patch recording, the mutation
+     counters) and the logits on the atomicity probe set (bit for bit) before and after. Any component
+     that differs is a violation, listed by name. The expectation is violations on both arms; a result
+     of none would itself need explaining.
+   - *Natural failures in registered runs.* Any registered install that returns an error is recorded
+     with the failed session's fingerprint against the one taken just before the call. It is a
+     `refused` outcome (§6), never silently dropped.
+   - *Isolation.* Every registered install runs in a fresh session. A session in which an install
+     failed is discarded: it is never reused for another install or for any later measurement.
+   - *Eligibility versus acceptance.* Atomicity does not decide whether an arm may be studied. It
+     does decide production acceptance: no COMPOSE correction is accepted for production (§8)
+     until the atomicity requirement passes. The repair (an install on isolated candidate state that
+     publishes the whole change, including the patch recording, or nothing) is a separate change with
+     its own validation. It is **not** an arm of this study and is not added to A0 or A1.
 2. **Determinism.** Installing the same fact twice from a fresh session gives a
    bit-identical overlay digest.
 3. **Wiring.** Every arm's run records which mechanisms were active as observed facts of
@@ -249,13 +270,15 @@ All acceptance measures use **token ids and probabilities from the execution pat
 
 A candidate cell is **accepted for a model** when all hold:
 
-- both hard gates pass;
+- the determinism and wiring gates pass (atomicity is reported, see §7.1);
 - installed-unsafe = 0 of 12 facts;
 - installed-safe ≥ 9 of 12 facts on Qwen3-0.6B;
 - on Gemma 3 4B: no fact that A1 installed safely becomes unsafe or refused (paired exact
   sign test on the 12 facts, reported), and installed-safe is no lower than A1's.
 
-Accepting a cell does not make it the default; that is a separate decision with its own PR.
+Accepting a cell does not make it the default; that is a separate decision with its own PR. Accepting a
+cell is a research finding, not production acceptance: production acceptance additionally requires the
+atomicity requirement of §7.1 to pass, which no arm of this study can satisfy today.
 The fixed-alpha sweep is the *non-adaptive reference*: its best alpha is chosen on the same
 12 facts and is therefore optimistic, so it is a comparison point, not a significance test.
 
@@ -278,8 +301,10 @@ refusing everything.
    ledgered (`registered-attempts.jsonl`). Remaining: build each arm from a single commit that
    contains the harness, with no tracked changes, and re-run the controls on those builds.
 4. Measure and store all baselines; confirm `INFER` is bit-deterministic on the machine used.
-5. Add a trajectory sink and the fault-injection hooks for §6 and §7.1. Both must be inert when
-   unused, and installs with and without them must give a bit-identical overlay digest.
+5. ~~Add a trajectory sink and the fault-injection hooks~~: the sink is merged (PR #704); the hooks and
+   the state fingerprint are PR #706, inert when unarmed (an install with an unreached fault armed is
+   byte-identical to a plain one, also on the real container). Remaining: the harness must record the
+   fingerprint before and after every install and run the §7.1 fault matrix on the development facts.
 6. Pin the A0 and A1 commits and the `larql` build for each run.
 
 ## 11. Limits
