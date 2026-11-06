@@ -43,7 +43,9 @@ mod tests;
 /// chat shapes than the single-turn `wrap_prompt_raw` exposes.
 pub use render::render_chat_template_multi;
 
-pub use conversation::{render_conversation, ChatTurn, PromptShape, RenderedConversation};
+pub use conversation::{
+    container_has_chat_template, render_conversation, ChatTurn, PromptShape, RenderedConversation,
+};
 use options::PromptOptions;
 
 use std::path::Path;

@@ -1,5 +1,7 @@
 use super::super::conversation::{ASSISTANT_ROLE, SYSTEM_ROLE, USER_ROLE};
-use super::super::{render_conversation, render_user_prompt, ChatTurn, PromptShape};
+use super::super::{
+    container_has_chat_template, render_conversation, render_user_prompt, ChatTurn, PromptShape,
+};
 use super::*;
 
 /// A family with no registry default system prompt and no fallback.
@@ -138,4 +140,81 @@ fn a_broken_template_is_an_error_not_a_raw_fallback() {
     write_jinja(tmp.path(), "{% for");
     let err = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap_err();
     assert!(err.contains("render chat template"), "{err}");
+}
+
+#[test]
+fn a_conversations_own_system_turn_replaces_the_environments() {
+    let _g = env(&[(ENV_SYSTEM, "ENV")]);
+    let tmp = tempfile::tempdir().unwrap();
+    write_jinja(tmp.path(), SHOW_ALL);
+    let turns = [
+        ChatTurn {
+            role: SYSTEM_ROLE.to_string(),
+            content: "OWN".to_string(),
+        },
+        ChatTurn::user("u"),
+    ];
+    let r = render_conversation(tmp.path(), SHAPED_FAMILY, &turns).unwrap();
+    // No injected system, so nothing is shaped: enable_thinking stays
+    // undefined, exactly as for a conversation the environment left alone.
+    assert_eq!(r.prompt, format!("<{SYSTEM_ROLE}>OWN<user>u<assistant>"));
+}
+
+#[test]
+fn container_template_presence_is_read_from_either_source() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(!container_has_chat_template(tmp.path()));
+    write_tokenizer_config(tmp.path(), r#"{"chat_template":"T"}"#);
+    assert!(container_has_chat_template(tmp.path()));
+    let jinja = tempfile::tempdir().unwrap();
+    write_jinja(jinja.path(), SHOW_ALL);
+    assert!(container_has_chat_template(jinja.path()));
+}
+
+/// A word-level tokenizer whose post-processor prepends `[BOS]`, so
+/// whether encoding added special tokens is visible in the ids.
+fn bos_tokenizer() -> larql_vindex::tokenizers::Tokenizer {
+    let json = serde_json::json!({
+        "version": "1.0",
+        "truncation": null,
+        "padding": null,
+        "added_tokens": [{"id": BOS_ID, "content": "[BOS]", "single_word": false,
+            "lstrip": false, "rstrip": false, "normalized": false, "special": true}],
+        "normalizer": null,
+        "pre_tokenizer": {"type": "WhitespaceSplit"},
+        "post_processor": {
+            "type": "TemplateProcessing",
+            "single": [{"SpecialToken": {"id": "[BOS]", "type_id": 0}},
+                       {"Sequence": {"id": "A", "type_id": 0}}],
+            "pair": [{"Sequence": {"id": "A", "type_id": 0}}],
+            "special_tokens": {"[BOS]": {"id": "[BOS]", "ids": [BOS_ID], "tokens": ["[BOS]"]}}
+        },
+        "decoder": null,
+        "model": {"type": "WordLevel", "vocab": {"[BOS]": BOS_ID, "u": WORD_ID, "<unk>": UNK_ID},
+                  "unk_token": "<unk>"}
+    });
+    larql_vindex::tokenizers::Tokenizer::from_bytes(json.to_string().as_bytes()).unwrap()
+}
+
+const BOS_ID: u32 = 0;
+const WORD_ID: u32 = 1;
+const UNK_ID: u32 = 2;
+
+#[test]
+fn a_templated_prompt_encodes_without_the_post_processor() {
+    let _g = env(&[]);
+    let tmp = tempfile::tempdir().unwrap();
+    write_jinja(tmp.path(), "{{ messages[0].content }}");
+    let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
+    assert!(!r.adds_special_tokens());
+    assert_eq!(r.encode(&bos_tokenizer()).unwrap(), vec![WORD_ID]);
+}
+
+#[test]
+fn a_raw_prompt_encodes_with_the_post_processor() {
+    let _g = env(&[]);
+    let tmp = tempfile::tempdir().unwrap();
+    let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
+    assert!(r.adds_special_tokens());
+    assert_eq!(r.encode(&bos_tokenizer()).unwrap(), vec![BOS_ID, WORD_ID]);
 }

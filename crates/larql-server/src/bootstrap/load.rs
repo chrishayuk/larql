@@ -522,7 +522,6 @@ pub fn discover_vindexes(dir: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod v3_option_tests {
     use super::*;
-    use larql_inference::prompt::ChatTemplate;
 
     #[test]
     fn default_options_are_all_supported() {
@@ -591,33 +590,6 @@ mod v3_option_tests {
             ..LoadVindexOptions::default()
         };
         assert_eq!(unsupported_v3_options(&opts), vec!["--no-infer"]);
-    }
-
-    #[test]
-    fn family_beats_the_id_heuristic() {
-        // The container declares what it is; the id is just a folder name.
-        assert!(matches!(
-            crate::vindex3::resolve_chat_template("gemma3", "some-container"),
-            ChatTemplate::Gemma
-        ));
-    }
-
-    #[test]
-    fn id_heuristic_still_applies_when_the_family_is_unknown() {
-        assert!(matches!(
-            crate::vindex3::resolve_chat_template("", "gemma-2-2b.vindex3"),
-            ChatTemplate::Gemma
-        ));
-    }
-
-    #[test]
-    fn an_unmapped_family_and_id_falls_back_to_plain() {
-        // Granite: declared by the container, but no renderer maps to it.
-        // The fallback is legitimate — the bind path warns about it.
-        assert!(matches!(
-            crate::vindex3::resolve_chat_template("granite", "granite-4.1-3b.vindex3"),
-            ChatTemplate::Plain
-        ));
     }
 }
 

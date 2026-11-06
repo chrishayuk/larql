@@ -10,6 +10,7 @@
 
 #![allow(dead_code, unused_imports)]
 
+pub mod chat_template;
 pub mod synthetic_q4k_vindex;
 pub mod synthetic_vindex;
 

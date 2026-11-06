@@ -18,6 +18,9 @@
 //!   `LARQL_THINKING`, or the family's registry default system prompt),
 //!   the registry's fallback template for a container that ships none,
 //!   and `enable_thinking` is stated; otherwise it is left undefined.
+//! - A conversation that opens with its own `system` turn (an HTTP
+//!   client's) keeps it: the environment's system message and the
+//!   family default are not added in front of it.
 //! - No template at all → the latest user turn, verbatim, marked
 //!   [`PromptShape::NoTemplate`] so the caller can say so.
 //!
@@ -25,9 +28,14 @@
 //! `eos_token`) always comes from the container's `tokenizer_config.json`,
 //! as `apply_chat_template` supplies it. The result is the full text the
 //! model should see, special tokens included, so a caller encodes it
-//! *without* the tokenizer's post-processor.
+//! *without* the tokenizer's post-processor —
+//! [`RenderedConversation::encode`] is that rule, shared by every entry
+//! point (`larql run`/`chat` and the server's VINDEX3 chat routes) so
+//! they cannot tokenise the same conversation differently.
 
 use std::path::Path;
+
+use larql_vindex::tokenizers::Tokenizer;
 
 use super::family_default_template;
 use super::options::PromptOptions;
@@ -90,10 +98,32 @@ impl RenderedConversation {
     pub fn templated(&self) -> bool {
         self.shape == PromptShape::Templated
     }
+
+    /// Whether encoding adds the tokenizer's special tokens. A rendered
+    /// template already carries its own (HF `apply_chat_template`
+    /// semantics); only a raw prompt gets the post-processor.
+    pub fn adds_special_tokens(&self) -> bool {
+        !self.templated()
+    }
+
+    /// The prompt's token ids under [`Self::adds_special_tokens`].
+    pub fn encode(&self, tokenizer: &Tokenizer) -> Result<Vec<u32>, String> {
+        tokenizer
+            .encode(self.prompt.as_str(), self.adds_special_tokens())
+            .map(|encoding| encoding.get_ids().to_vec())
+            .map_err(|e| format!("encode prompt: {e}"))
+    }
+}
+
+/// Whether the container at `vindex_dir` carries its own chat template
+/// (`chat_template.jinja`, else `tokenizer_config.json::chat_template`).
+pub fn container_has_chat_template(vindex_dir: &Path) -> bool {
+    container_template(vindex_dir, &load_tokenizer_config(vindex_dir)).is_some()
 }
 
 /// Render `turns` (which must end with a user turn) for the next
 /// assistant reply, through the template carried in `vindex_dir`.
+/// `turns` may open with a `system` turn.
 ///
 /// `family` is the model's declared family; it is consulted only for the
 /// architecture registry's default system message and fallback template,
@@ -122,7 +152,12 @@ pub fn render_conversation(
             shape: PromptShape::RawRequested,
         });
     }
-    let system = options.system_prompt(family);
+    // A conversation's own system turn is the caller's authority; the
+    // environment / family default only fills an absent one.
+    let has_own_system = turns.first().is_some_and(|t| t.role == SYSTEM_ROLE);
+    let system = (!has_own_system)
+        .then(|| options.system_prompt(family))
+        .flatten();
     let shaped = options.thinking || system.is_some();
     let cfg = load_tokenizer_config(vindex_dir);
     let template = container_template(vindex_dir, &cfg)

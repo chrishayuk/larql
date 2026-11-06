@@ -26,6 +26,7 @@ use super::super::token_tap::{EmitFailure, TokenTap};
 use super::super::util::{
     build_sampling_eos, build_sampling_eos_from, contains_any, trim_at_stop, SamplingParams,
 };
+use super::super::v3_prompt::encode_v3_conversation;
 
 /// The resolved runtime binding for one request, cloned out of
 /// `AppState` so generation can move onto a blocking thread.
@@ -213,12 +214,9 @@ fn generate_on_v3(
     resume: Option<V3KvHandoff>,
     on_token: &mut dyn FnMut(&str) -> bool,
 ) -> Result<GenerationOutcome, ServerError> {
-    // No `ModelWeights` on the V3 path — the container binds as an
-    // executable program — so template choice falls to the id
-    // container's declared family, then the id heuristic.
-    let template = model.chat_template();
-    let prompt = render(template, messages);
-    let prompt_ids = encode(&model.tokenizer, &prompt)?;
+    // The container's own chat template — the derivation the chat
+    // route and `larql run` share.
+    let prompt_ids = encode_v3_conversation(model, messages)?;
 
     let (sampling, eos) = build_sampling_eos_from(model.eos.clone(), params, stop_strings);
     let mut tap = TokenTap::new(stop_strings, EmitFailure::StopEmitting);
