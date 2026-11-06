@@ -148,8 +148,13 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # The README and docs/getting-started.md install from
+      # releases/latest/download/larql-<target>.*, so a larql release must
+      # always be the one GitHub marks "latest". vindex-release.yml opts its
+      # releases out of "latest" for the same reason.
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
+          make_latest: true
