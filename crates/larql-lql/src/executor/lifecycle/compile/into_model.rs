@@ -77,7 +77,7 @@ impl Session {
             let tokenizer = larql_vindex::load_vindex_tokenizer(vindex_path)
                 .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;
 
-            let ridge = std::env::var("LARQL_MEMIT_RIDGE")
+            let ridge = std::env::var(larql_inference::forward::memit::MEMIT_RIDGE_ENV)
                 .ok()
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(MEMIT_DEFAULT_RIDGE);

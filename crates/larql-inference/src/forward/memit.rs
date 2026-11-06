@@ -61,6 +61,10 @@ pub struct MemitFactResult {
 /// activation covariance C = E[k(x) k(x)^T]. Sampling across varied
 /// domains gives a well-conditioned C. Python reference used ~2000
 /// prompts with ~14K total positions.
+/// Environment variable through which callers override the MEMIT solve's
+/// ridge term. Named in the Cholesky failure so the remedy is discoverable.
+pub const MEMIT_RIDGE_ENV: &str = "LARQL_MEMIT_RIDGE";
+
 const COVARIANCE_PROMPTS: &[&str] = &[
     "Once upon a time, there was a",
     "The quick brown fox jumps over the",
@@ -427,27 +431,16 @@ fn memit_solve_layer(
         }
     }
 
-    // Adaptive ridge: if f64 accumulation still lands a negative pivot
-    // (rare — mostly defends against non-Gemma architectures we haven't
-    // profiled), escalate ridge up to 4 steps before giving up.
-    let mut current_ridge = ridge;
-    let l = loop {
-        match larql_compute::cpu::ops::linalg::cholesky(&cov_f64, current_ridge) {
-            Ok(l) => {
-                if current_ridge > ridge {
-                    eprintln!("MEMIT: Cholesky needed ridge escalation {ridge} → {current_ridge}");
-                }
-                break l;
-            }
-            Err(e) if current_ridge < ridge * 1000.0 => {
-                current_ridge *= 10.0;
-                eprintln!(
-                    "MEMIT: Cholesky pivot failed ({e}); retrying with ridge={current_ridge}"
-                );
-            }
-            Err(e) => return Err(format!("MEMIT: Cholesky failed after escalation — {e}")),
-        }
-    };
+    // One attempt at the caller's ridge. Retrying with a larger ridge would
+    // return a more heavily regularised edit than was asked for, reported as
+    // success — so a failure names the knob instead.
+    let l = larql_compute::cpu::ops::linalg::cholesky(&cov_f64, ridge).map_err(|e| {
+        format!(
+            "MEMIT: Cholesky failed at ridge={ridge} — {e}; \
+             the covariance is not positive definite at this ridge, \
+             set {MEMIT_RIDGE_ENV} to a larger value"
+        )
+    })?;
 
     // Q = K @ C⁻¹  [N × ffn_dim]
     // We compute this as: for each fact i, q_i = C⁻¹ @ k_i (column),
