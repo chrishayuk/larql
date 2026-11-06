@@ -64,4 +64,4 @@ use represent::*;
 use verify_encode::*;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -147,6 +147,20 @@ impl ContainerGeneration {
         }
     }
 
+    /// The directory suffix this generation's containers are conventionally
+    /// named with — `.vindex` (VINDEX2) / `.vindex3` (VINDEX3).
+    ///
+    /// A **naming convention only**, for deriving a display or registration
+    /// name from a directory (`larql link`). It is never a discriminator:
+    /// `index.json.version` alone decides the generation, and a container
+    /// named against its own convention is still read correctly.
+    pub const fn dir_suffix(self) -> &'static str {
+        match self {
+            Self::V2 => ".vindex",
+            Self::V3 => ".vindex3",
+        }
+    }
+
     /// Map a LYRW `format_version` to the generation that writes it.
     pub fn from_lyrw_format_version(found: u32) -> Result<Self, VindexError> {
         match found {
@@ -253,6 +267,19 @@ pub fn schema_range_label(range: std::ops::RangeInclusive<u32>, name: &str) -> S
     }
 }
 
+/// Strip whichever generation's conventional directory suffix
+/// ([`ContainerGeneration::dir_suffix`]) `name` ends with, so
+/// `gemma3-4b.vindex` and `qwen3-0.6b.vindex3` both yield their bare model
+/// name. A name carrying no recognised suffix is returned unchanged, as is
+/// a name that would be left empty (`.vindex3` alone names nothing).
+pub fn strip_container_dir_suffix(name: &str) -> &str {
+    ALL_GENERATIONS
+        .into_iter()
+        .filter_map(|g| name.strip_suffix(g.dir_suffix()))
+        .find(|stem| !stem.is_empty())
+        .unwrap_or(name)
+}
+
 /// "1-2 (VINDEX2), 3-4 (VINDEX3)" — every schema this binary reads.
 pub fn supported_schema_summary() -> String {
     ALL_GENERATIONS
@@ -320,11 +347,14 @@ pub struct ContainerSummary {
     /// The model identity the container names itself by.
     pub model: String,
     pub num_layers: usize,
+    /// Residual width, as `index.json` records it (`0` when absent).
+    pub hidden_size: usize,
 }
 
 /// Read one container's identity, whichever generation it holds.
 ///
-/// Both generations record model and layer count in `index.json`, so
+/// Both generations record model, layer count and hidden size in
+/// `index.json`, so
 /// this stays a single small read — cheap enough for a directory scan,
 /// and it never opens segments or builds a plan.
 pub fn summarize_container(dir: &Path) -> Result<ContainerSummary, VindexError> {
@@ -336,6 +366,7 @@ pub fn summarize_container(dir: &Path) -> Result<ContainerSummary, VindexError> 
         generation,
         model: probe.model.unwrap_or_default(),
         num_layers: probe.num_layers.unwrap_or(0),
+        hidden_size: probe.hidden_size.unwrap_or(0),
     })
 }
 
@@ -348,6 +379,8 @@ struct IdentityProbe {
     model: Option<String>,
     #[serde(default)]
     num_layers: Option<usize>,
+    #[serde(default)]
+    hidden_size: Option<usize>,
 }
 
 /// Minimal view over `index.json` — the version field and nothing else.

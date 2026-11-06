@@ -12,6 +12,7 @@ pub mod card_cmd;
 pub(crate) mod continuation;
 pub mod dec_bench;
 pub mod diag_cmd;
+pub mod hf_auto;
 pub mod inspect_hf_cmd;
 #[cfg(feature = "research")]
 pub mod k3_ledger;

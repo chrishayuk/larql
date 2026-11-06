@@ -10,14 +10,19 @@ Ollama-style day-to-day verbs. Models can be referenced by cache
 shorthand (`gemma-3-4b-it-vindex`), `owner/name`, `hf://owner/name`, or
 a local directory path — see [Model resolution](#model-resolution) below.
 
+`larql --help` lists the everyday verbs (`run`, `chat`, `pull`, `list`,
+`show`, `rm`, `link`, `serve`, `repl`, `lql`, `vindex3`, `bench`) first and
+groups the rest — models and cache, build, server, factory, graph-file
+query, research and diagnostics — under their own headings.
+
 | Command | Description |
 |---|---|
 | `run <model> [prompt]` | Run inference. One-shot if prompt given; chat loop if not. |
 | `chat <model>` | Alias for `run <model>` with no prompt. |
-| `pull <model>` | Download a vindex from HuggingFace and cache locally. |
+| `pull <model>` | Download a vindex from HuggingFace and cache locally (a raw checkpoint is encoded to VINDEX3 instead). |
 | `model <subcmd>` | Manage HuggingFace **model** repos (companion to `pull`, which is vindex-only). |
 | `link <path>` | Register a local vindex directory with the cache so `run` / `list` / `show` find it by shorthand. |
-| `list` | Show cached vindexes (model, size, layers, hidden). |
+| `list` | Show cached vindexes (source, generation, size, layers, hidden, and whether this build can open them). |
 | `show <model>` | Vindex metadata and file inventory. |
 | `slice <source>` | Carve a subset of a vindex (`client` / `attn` / `embed` / `server` / `browse` / `router` / `expert-server`). |
 | `publish <source>` | Publish a vindex to HuggingFace — full + slice siblings + collections. |
@@ -116,18 +121,63 @@ list.
 
 ## Model resolution
 
-The `<model>` argument on `run`, `chat`, `show`, `rm`, and `pull`
-resolves in this order:
+The `<model>` argument on `run`, `chat`, `serve`, `show`, `rm`, and
+`pull` resolves in this order:
 
-1. **`hf://owner/name[@rev]`** — download (if not cached) via HF hub API,
-   return the cache path.
+1. **`hf://owner/name[@rev]`** —
+   - already encoded (see below) → the encoded cache entry, no network;
+   - a published vindex (the repo carries `index.json`) → download (if
+     not cached) via HF hub API, return the cache path — unchanged;
+   - a raw Hugging Face checkpoint (`config.json` + safetensors, no
+     `index.json`) → **encoded to VINDEX3 on first use** and cached.
 2. **Existing local directory** — use as-is.
-3. **`owner/name`** — cache lookup first; fall back to HF download.
-4. **Plain name** — search the cache for a unique
-   `datasets--<*>--<name>` entry. Ambiguous shorthands error out and
-   list candidates.
+3. **`owner/name`** — cache lookup first; fall back to step 1 on
+   `hf://owner/name`.
+4. **Plain name** — search every cache for a unique entry: local links
+   by their name, HF and encoded entries by the `name` half of
+   `owner/name`. Ambiguous shorthands error out and list candidates.
 
 `rm` never downloads — it only resolves against the cache.
+
+### First run of a Hugging Face checkpoint
+
+```bash
+larql run hf://Qwen/Qwen3-0.6B "The capital of France is"   # encodes once, then runs
+larql run Qwen3-0.6B "The capital of France is"             # later: shorthand, no encode
+```
+
+When `hf://owner/name` is a checkpoint rather than a vindex, LARQL runs
+the `larql vindex3 encode` pipeline on it — safetensors headers staged,
+the plan gated on the text-generation capability, then only the tensors
+the plan needs fetched by byte range — and writes the container to the
+**encoded cache**:
+
+```
+$LARQL_HOME/encoded/                 (default ~/.cache/larql/encoded/)
+  models--<owner>--<name>/
+    refs/<rev>                       commit <rev> resolved to at encode
+    snapshots/<commit>/              the VINDEX3 container
+```
+
+- **Keyed by repo and commit.** The revision (default `main`) is resolved
+  to its commit before anything is encoded; a later run of the same
+  revision is answered from `refs/` with no network. To pick up a newer
+  `main`, `larql rm owner/name` and run again.
+- **Atomic.** The encode writes into a `.partial-*` directory beside
+  `snapshots/` and is renamed into place only on success; an interrupted
+  encode never leaves an entry that looks valid, and its leftovers are
+  swept by the next encode of that repo.
+- **Listed, removable, runnable by shorthand.** Entries show in
+  `larql list` with source `encoded`; `larql rm <name>` evicts the whole
+  repo; `larql run <name>` (the repo's name half, e.g. `Qwen3-0.6B`) or
+  `larql run owner/name` runs it.
+- **Refusal.** If the plan is not admissible for text generation the run
+  is refused with the blocking findings listed one per line — after
+  reading only headers, before anything is announced as encoding — and a
+  pointer to `larql vindex3 plan hf://owner/name --output plan.json` for
+  the full plan. That verb judges whole-model completeness (it has no
+  capability flag), so it can list blockers outside text generation that
+  did not gate the run.
 
 ### `larql run`
 
@@ -185,6 +235,7 @@ Examples:
 larql run gemma-3-4b-it-vindex "The capital of France is"
 larql run chrishayuk/gemma-3-4b-it-vindex           # chat mode
 larql run hf://chrishayuk/gemma-3-4b-it-vindex      # explicit HF
+larql run hf://Qwen/Qwen3-0.6B "…"                  # HF checkpoint: encoded on first run
 larql run gemma4-31b.vindex --ffn http://server:8080 "…"
 larql run qwen3-0.6b.vindex3 "The capital of France is"   # VINDEX3 container
 larql run qwen3-0.6b.vindex3 --metal --emit-ids "…"       # Metal; ids to stderr
@@ -534,7 +585,7 @@ larql link <PATH> [OPTIONS]
 | Flag | Description | Default |
 |---|---|---|
 | `<PATH>` | Path to a vindex directory (must contain `index.json`) | — |
-| `--as <NAME>` | Override the registered name (defaults to the directory basename with any `.vindex` suffix stripped) | basename |
+| `--as <NAME>` | Override the registered name (defaults to the directory basename with its container suffix — `.vindex` or `.vindex3` — stripped) | basename |
 | `-f, --force` | Replace an existing link of the same name | false |
 
 ### `larql shannon`
@@ -665,8 +716,17 @@ Show every cached vindex, one row per entry.
 larql list
 ```
 
-Columns: `MODEL`, `SIZE (MB)`, `LAYERS`, `HIDDEN`. Scans the HF hub
-cache for `datasets--<owner>--<name>/snapshots/<sha>/index.json`.
+Columns: `SOURCE`, `MODEL`, `GEN` (`v2` / `v3`), `SIZE (MB)`, `LAYERS`,
+`HIDDEN`, `STATUS`. Scans the LARQL local registry (`larql link`), the
+HF hub cache (`{models,datasets}--<owner>--<name>/snapshots/<sha>/index.json`;
+sizes follow the snapshot's symlinks to its blobs) and the encoded cache
+(`hf://` checkpoints LARQL encoded to VINDEX3 on first use; source
+`encoded`, see [First run of a Hugging Face checkpoint](#first-run-of-a-hugging-face-checkpoint)).
+Identity is read the same way for both generations, and each entry is
+checked against this build's opener without hashing payloads: one it cannot
+open (for example a VINDEX3 container whose system graph predates this
+build's schema) is listed as `unusable`, with the reason in a note under
+the table.
 
 ### `larql show`
 

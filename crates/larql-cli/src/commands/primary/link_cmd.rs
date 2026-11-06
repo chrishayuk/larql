@@ -14,11 +14,17 @@
 //!
 //! Name derivation:
 //! - `--as <name>` wins if provided.
-//! - Otherwise the basename of `<path>`, with a trailing `.vindex`
-//!   stripped (so `output/gemma3-4b-f16.vindex` → `gemma3-4b-f16`).
+//! - Otherwise the basename of `<path>`, with its container directory
+//!   suffix stripped — whichever generation's convention it carries
+//!   ([`ContainerGeneration::dir_suffix`]), so
+//!   `output/gemma3-4b-f16.vindex` → `gemma3-4b-f16` and
+//!   `qwen3-0.6b.vindex3` → `qwen3-0.6b`.
+//!
+//! [`ContainerGeneration::dir_suffix`]: larql_vindex::format::generation::ContainerGeneration::dir_suffix
 
 use larql_vindex::format::filenames::*;
-use std::path::PathBuf;
+use larql_vindex::format::generation::strip_container_dir_suffix;
+use std::path::{Path, PathBuf};
 
 use clap::Args;
 
@@ -30,7 +36,7 @@ pub struct LinkArgs {
     pub path: PathBuf,
 
     /// Override the registered name (defaults to the directory basename
-    /// with any `.vindex` suffix stripped).
+    /// with any `.vindex` / `.vindex3` suffix stripped).
     #[arg(long = "as", value_name = "NAME")]
     pub as_name: Option<String>,
 
@@ -54,20 +60,14 @@ pub fn run(args: LinkArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let name = match &args.as_name {
         Some(n) => n.clone(),
-        None => {
-            let base = target
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or_else(|| format!("cannot derive name from path {}", target.display()))?;
-            base.strip_suffix(".vindex").unwrap_or(base).to_string()
-        }
+        None => default_name(&target)?,
     };
     validate_name(&name)?;
 
     let local_dir = cache::larql_local_dir()?;
     std::fs::create_dir_all(&local_dir)?;
 
-    let link_path = local_dir.join(format!("{name}.vindex"));
+    let link_path = local_dir.join(format!("{name}{}", cache::LOCAL_LINK_SUFFIX));
     if link_path.exists() || link_path.is_symlink() {
         if !args.force {
             return Err(format!(
@@ -98,9 +98,19 @@ pub fn run(args: LinkArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// The name a container directory registers under when `--as` is not given:
+/// its basename without the container directory suffix.
+pub(crate) fn default_name(target: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let base = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("cannot derive name from path {}", target.display()))?;
+    Ok(strip_container_dir_suffix(base).to_string())
+}
+
 /// Reject names that would collide with HF `owner/name` syntax or break
 /// filesystem assumptions.
-fn validate_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn validate_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     if name.is_empty() {
         return Err("name cannot be empty".into());
     }
@@ -115,3 +125,6 @@ fn validate_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

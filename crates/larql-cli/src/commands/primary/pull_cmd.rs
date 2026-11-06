@@ -14,6 +14,10 @@
 //! discovers `-client` / `-server` / `-browse` without having to read a
 //! README.
 //!
+//! A repo that is a raw Hugging Face checkpoint rather than a vindex is
+//! encoded to VINDEX3 into the encoded cache instead of downloaded — the
+//! same first-run path `larql run hf://…` takes (`super::hf_auto`).
+//!
 //! Progress + resume: `indicatif::MultiProgress` gives one bar per file;
 //! hf-hub 0.5 handles `.incomplete` partial-file resume internally so an
 //! interrupted pull picks up where it left off on the next run.
@@ -200,19 +204,24 @@ fn pull_one(
 
     let hf_path = resolve_pull_hf_path(model)?;
     eprintln!("Pulling {hf_path}...");
-    let cached: PathBuf = download_with_indicatif(&hf_path)?;
+    let resolution = super::hf_auto::resolve_hf_model(&hf_path, &mut |spec| {
+        download_with_indicatif(spec).map_err(Into::into)
+    })?;
+    let encoded = matches!(resolution, super::hf_auto::Resolution::Encoded { .. });
+    let cached: PathBuf = resolution.into_path();
     eprintln!("Cached at: {}", cached.display());
 
     // VINDEX3 has no metadata/weight split the way VINDEX2 does — the
     // repo's own file listing IS the required download (design doc
     // §10.5), so "downloaded" must mean "usable": validate before
     // handing the result back as a success. VINDEX2 keeps its existing
-    // (unvalidated-here) behaviour.
+    // (unvalidated-here) behaviour. An encoded checkpoint was not
+    // downloaded as a container; the encoder's closure gate vouched for it.
     match larql_vindex::format::generation::detect_generation(&cached)? {
-        larql_vindex::format::generation::ContainerGeneration::V3 => {
+        larql_vindex::format::generation::ContainerGeneration::V3 if !encoded => {
             larql_vindex::format::vindex3::validate_downloaded_container(&cached)?;
         }
-        larql_vindex::format::generation::ContainerGeneration::V2 => {}
+        _ => {}
     }
 
     // If --output is set, move the downloaded vindex to the requested path.
@@ -222,7 +231,11 @@ fn pull_one(
                 std::fs::create_dir_all(parent)?;
             }
             // Try rename first (fast, same filesystem); fall back to copy.
-            if std::fs::rename(&cached, out).is_err() {
+            // An encoded entry is copied, never moved: it belongs to the
+            // encoded cache, which `run` keeps answering from.
+            if encoded {
+                copy_dir_all(&cached, out)?;
+            } else if std::fs::rename(&cached, out).is_err() {
                 eprintln!("Rename failed (cross-device?), copying...");
                 copy_dir_all(&cached, out)?;
             }

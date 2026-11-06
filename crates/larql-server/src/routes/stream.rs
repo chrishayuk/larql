@@ -741,6 +741,7 @@ mod tests {
             model_set: std::sync::RwLock::new(crate::state::ModelSet {
                 models,
                 v3_models: Vec::new(),
+                aliases: Default::default(),
             }),
             router_topology,
             lifecycle: std::sync::Mutex::new(crate::state::LifecycleState::Idle),

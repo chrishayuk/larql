@@ -4,6 +4,7 @@
 //! `state` module (see `mod.rs`) purely for file size; nothing here
 //! changed behavior.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::{AppState, LoadedModel};
@@ -26,9 +27,92 @@ pub struct ModelSet {
     /// reconstituted `ModelWeights`, and the two shapes share nothing
     /// below the serving surface.
     pub v3_models: Vec<Arc<crate::vindex3::V3Model>>,
+    /// Extra names a bound model answers to in a request's `model` field,
+    /// alias → model id (`--model-alias`; `larql serve <name>` passes the
+    /// name it was given). A model's own id always wins over an alias of
+    /// the same spelling, and matching is exact and case-sensitive, like
+    /// id matching — `Qwen3-0.6B` and `qwen3-0.6b` are different names
+    /// unless one of them is the id and the other an alias.
+    pub aliases: BTreeMap<String, String>,
 }
 
 impl ModelSet {
+    /// Whether a bound model (either generation) has exactly this id.
+    fn has_id(&self, id: &str) -> bool {
+        self.models.iter().any(|m| m.id == id) || self.v3_models.iter().any(|m| m.id == id)
+    }
+
+    /// The model id a request's `model` value names: the value itself when
+    /// it is an id, else the id it aliases, else the value unchanged (which
+    /// then matches nothing).
+    pub fn canonical_id<'a>(&'a self, requested: &'a str) -> &'a str {
+        if self.has_id(requested) {
+            return requested;
+        }
+        self.aliases
+            .get(requested)
+            .map_or(requested, String::as_str)
+    }
+
+    /// Let the bound model `id` also answer to `alias`.
+    ///
+    /// Refuses an alias for a model that is not bound, and one that would
+    /// shadow another model's id or re-point an existing alias — an alias
+    /// is a second name for one model, never a way to make a name mean
+    /// something different. An alias equal to the id is a no-op.
+    pub fn add_alias(&mut self, alias: &str, id: &str) -> Result<(), String> {
+        if !self.has_id(id) {
+            return Err(format!(
+                "cannot alias '{alias}' to '{id}': no such model is bound"
+            ));
+        }
+        if alias == id {
+            return Ok(());
+        }
+        if self.has_id(alias) {
+            return Err(format!(
+                "cannot alias '{alias}' to '{id}': '{alias}' is another model's id"
+            ));
+        }
+        match self.aliases.get(alias) {
+            Some(existing) if existing != id => Err(format!(
+                "cannot alias '{alias}' to '{id}': it already names '{existing}'"
+            )),
+            _ => {
+                self.aliases.insert(alias.to_string(), id.to_string());
+                Ok(())
+            }
+        }
+    }
+
+    /// Bind `alias` to the one model this set holds — `--model-alias`,
+    /// which names "the served model" and so means nothing when there are
+    /// zero or several.
+    pub fn alias_sole_model(&mut self, alias: &str) -> Result<(), String> {
+        let ids: Vec<String> = self
+            .models
+            .iter()
+            .map(|m| m.id.clone())
+            .chain(self.v3_models.iter().map(|m| m.id.clone()))
+            .collect();
+        match ids.as_slice() {
+            [id] => self.add_alias(alias, id),
+            _ => Err(format!(
+                "--model-alias '{alias}' needs exactly one served model; {} are bound",
+                ids.len()
+            )),
+        }
+    }
+
+    /// Every alias of the model `id`, sorted.
+    pub fn aliases_of(&self, id: &str) -> Vec<String> {
+        self.aliases
+            .iter()
+            .filter(|(_, target)| target.as_str() == id)
+            .map(|(alias, _)| alias.clone())
+            .collect()
+    }
+
     /// Bind a freshly loaded V2 model. Callers are responsible for the
     /// 0↔1 topology invariant
     /// ([`AppState::validate_lifecycle_mutation`]) *before* calling
@@ -117,9 +201,9 @@ impl AppState {
         self.with_models(|set| set.models.first().cloned())
     }
 
-    /// Get model by ID, or the only model if single-model serving.
+    /// Get model by ID (or alias), or the only model if single-model serving.
     pub fn model(&self, id: Option<&str>) -> Option<Arc<LoadedModel>> {
-        self.with_models(|set| match id {
+        self.with_models(|set| match id.map(|id| set.canonical_id(id)) {
             Some(id) => set.models.iter().find(|m| m.id == id).cloned(),
             None if set.models.len() == 1 => set.models.first().cloned(),
             None => None,
@@ -136,7 +220,7 @@ impl AppState {
     /// decided — routes match the returned binding once, at the top,
     /// and no version check leaks below it.
     pub fn served(&self, id: Option<&str>) -> Option<ServedModel> {
-        self.with_models(|set| match id {
+        self.with_models(|set| match id.map(|id| set.canonical_id(id)) {
             Some(id) => set
                 .models
                 .iter()
@@ -315,6 +399,7 @@ mod model_set_tests {
             model_set: std::sync::RwLock::new(ModelSet {
                 models,
                 v3_models: Vec::new(),
+                aliases: Default::default(),
             }),
             router_topology,
             lifecycle: std::sync::Mutex::new(crate::state::LifecycleState::Idle),

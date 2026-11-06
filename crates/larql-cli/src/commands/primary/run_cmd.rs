@@ -12,7 +12,9 @@
 //! Flag surface:
 //!   <model>         required; vindex directory, VINDEX3 container,
 //!                   `hf://owner/name`, or a cache shorthand
-//!                   (e.g. `gemma-3-4b-it-vindex`).
+//!                   (e.g. `gemma-3-4b-it-vindex`). An `hf://` repo
+//!                   that is a raw checkpoint is encoded to VINDEX3
+//!                   once (`hf_auto`) and run from the encoded cache.
 //!   [prompt]        optional; enters chat mode if omitted.
 //!   -n, --top N     number of predictions to show (default 10).
 //!   --ffn URL       route FFN to a remote larql-server.
@@ -84,7 +86,9 @@ pub fn parse_kv_cache(s: &str) -> Result<KvCacheKind, String> {
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// Vindex directory, `hf://owner/name`, or cache shorthand.
+    /// Vindex directory, `hf://owner/name`, or cache shorthand. An
+    /// `hf://` Hugging Face checkpoint (not a vindex) is encoded to
+    /// VINDEX3 on first use and cached.
     pub model: String,
 
     /// Prompt text. Omit to enter chat mode (line-by-line stdin).

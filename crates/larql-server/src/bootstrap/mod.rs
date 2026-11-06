@@ -120,11 +120,18 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
         _ => crate::state::LifecycleState::Idle,
     };
 
+    let mut model_set = crate::state::ModelSet {
+        models: models.clone(),
+        v3_models: v3_models.clone(),
+        aliases: Default::default(),
+    };
+    if let Some(alias) = cli.model_alias.as_deref() {
+        model_set.alias_sole_model(alias)?;
+        info!("  Model alias: '{alias}'");
+    }
+
     let state = Arc::new(AppState {
-        model_set: std::sync::RwLock::new(crate::state::ModelSet {
-            models: models.clone(),
-            v3_models: v3_models.clone(),
-        }),
+        model_set: std::sync::RwLock::new(model_set),
         router_topology,
         lifecycle: std::sync::Mutex::new(initial_lifecycle),
         started_at: std::time::Instant::now(),
