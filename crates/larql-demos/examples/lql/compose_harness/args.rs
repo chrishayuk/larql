@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub enum Set {
     Controls,
     Development,
+    Faults,
     Registered,
 }
 
@@ -23,7 +24,7 @@ pub struct Args {
     pub command: String,
 }
 
-const USAGE: &str = "usage: compose_harness --container DIR --tag NAME --arm A0|A1 --set controls|development|registered \\
+const USAGE: &str = "usage: compose_harness --container DIR --tag NAME --arm A0|A1 --set controls|development|faults|registered \\
     --bank bank.json --controls controls.json --out DIR [--alpha F] [--unrelated N] [--check-determinism]";
 
 pub fn parse() -> Result<Args, String> {
@@ -38,6 +39,7 @@ pub fn parse() -> Result<Args, String> {
     let set = match need(take("--set"), "--set")?.as_str() {
         "controls" => Set::Controls,
         "development" => Set::Development,
+        "faults" => Set::Faults,
         "registered" => Set::Registered,
         other => return Err(format!("unknown set {other:?}\n{USAGE}")),
     };

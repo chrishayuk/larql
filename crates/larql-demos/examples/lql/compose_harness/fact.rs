@@ -134,7 +134,9 @@ pub fn run(
         .out_dir
         .join("patches")
         .join(format!("{}-{}.vlp", fact.relation, fact.entity));
+    let fingerprint_before = session.state_fingerprint();
     let installed = install_saving(&mut session, fact, settings.alpha, &patch);
+    let fingerprint_after = session.state_fingerprint();
     let observer_failures = session.balance_observer_failures();
 
     let trajectory = events.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -151,7 +153,12 @@ pub fn run(
         "alpha": settings.alpha,
         "trajectory": trajectory,
         "observer_failures": observer_failures,
-        "atomicity": {"status": "NOT-RUN", "reason": "no arm refuses an install yet and no fault-injection hooks exist"},
+        "state_fingerprint": {
+            "before_install": fingerprint_before.components(),
+            "after_install": fingerprint_after.components(),
+            "changed_by_install": fingerprint_after.changed_since(&fingerprint_before),
+        },
+        "atomicity": "measured by --set faults (prereg §7.1), not by an ordinary install",
     });
     let digest = match installed {
         Ok(d) => d,
