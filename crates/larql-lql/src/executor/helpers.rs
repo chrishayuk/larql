@@ -28,7 +28,8 @@ pub(crate) const TARGET_PREFIX_CHARS: usize = 3;
 ///
 /// Only leading whitespace is dropped; no other token is newly accepted.
 pub(crate) fn target_token_matches(decoded: &str, target: &str) -> bool {
-    let token = decoded.trim_start();
+    // ARM A0: the matcher as it was before #701 (decoded token not trimmed).
+    let token = decoded;
     token.contains(target) || token.starts_with(target_prefix(target, TARGET_PREFIX_CHARS))
 }
 
