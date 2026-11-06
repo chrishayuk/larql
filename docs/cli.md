@@ -1366,9 +1366,13 @@ Top-level verbs for producing, converting, and publishing vindexes.
 
 ### `larql extract-index`
 
-Build a `.vindex` — the model decompiled to a standalone vector index.
-Can be queried with [`larql run`](#larql-run) or
-[`larql dev walk`](#larql-dev-walk) without the original model.
+Build a vindex from a model. **The default is VINDEX3** (since the M4 flip,
+2026-11-06; see the [generation policy](vindex-generation-policy.md)): the
+checkpoint is encoded into a `.vindex3` container through the same pipeline
+as `larql vindex3 encode`. Pass `--generation v2` for a VINDEX2 `.vindex`,
+which the transcoding flags below (`--quant`, `--level`, `--compact`, …) and
+GGUF sources require. A V2-only flag without `--generation v2` is refused by
+name; it is never silently downgraded.
 
 `larql extract` is the canonical form; `larql extract-index` is kept as
 a backwards-compatible alias.
@@ -1380,19 +1384,20 @@ larql extract-index [MODEL] --output <OUTPUT> [OPTIONS]
 | Flag | Description | Default |
 |---|---|---|
 | `<MODEL>` | Model path or HuggingFace model ID (not needed with `--from-vectors`) | — |
-| `-o, --output <OUTPUT>` | Output path for the `.vindex` directory | — |
-| `--level <LEVEL>` | `browse` / `attention` / `inference` / `all` — strict increasing tiers. See below. | `inference` |
-| `--f32` | Opt out of f16 on side-channel tensors. Rarely wanted — doubles file sizes. | off (f16) |
-| `--quant <FORMAT>` | Inline-quantise forward-pass weights: `none`, `q4k`, or `kquant` (alias). The k-quant family emits Q4_K/Q6_K Ollama-compatible blocks; implies `--level all` + f16 side-channels. | `none` |
-| `--compact` | Skip `up_weights.bin` + `down_weights.bin`; FFN weights live only in feature-major files. `WalkFfn`-only. | off |
-| `--drop-gate-vectors` | Skip `gate_vectors.bin` entirely; loader rebuilds gate from `interleaved_kquant.bin` (or legacy `interleaved_kquant.bin`) at load. Only with `--quant q4k` / `kquant`. | off |
-| `--down-q4k` | Quantise FFN down-proj as Q4_K instead of Q6_K. Saves ~1.8 GB on 31B, cuts down-matmul cost ~1.5–1.7× at decode. Introduces ~2.5× more probability-redistribution noise (top-1 + top-5 preserved). Validated by `walk_correctness`, which auto-relaxes its prob-delta gate from 0.02 to 0.035 when it detects Q4_K down. Only with `--quant q4k` / `kquant`. | off |
-| `--from-vectors <PATH>` | Build from already-extracted NDJSON vector files instead of model weights | — |
-| `--down-top-k <N>` | Top-K tokens per feature in down metadata | 10 |
-| `--include-weights` | Alias for `--level all` (deprecated — use `--level` directly) | — |
-| `--resume` | Skip stages that already have output files | off |
+| `-o, --output <OUTPUT>` | Output path for the container directory | — |
+| `--generation <v2\|v3>` | Container generation to write | `v3` |
+| `--level <LEVEL>` | V2 only. `browse` / `attention` / `inference` / `all` — strict increasing tiers. See below. | `inference` |
+| `--f32` | V2 only. Opt out of f16 on side-channel tensors. Rarely wanted — doubles file sizes. | off (f16) |
+| `--quant <FORMAT>` | V2 only. Inline-quantise forward-pass weights: `none`, `q4k`, or `kquant` (alias). The k-quant family emits Q4_K/Q6_K Ollama-compatible blocks; implies `--level all` + f16 side-channels. For VINDEX3, compile a quantised representation with `larql vindex3 represent` instead. | `none` |
+| `--compact` | V2 only. Skip `up_weights.bin` + `down_weights.bin`; FFN weights live only in feature-major files. `WalkFfn`-only. | off |
+| `--drop-gate-vectors` | V2 only. Skip `gate_vectors.bin` entirely; loader rebuilds gate from `interleaved_kquant.bin` (or legacy `interleaved_kquant.bin`) at load. Only with `--quant q4k` / `kquant`. | off |
+| `--down-q4k` | V2 only. Quantise FFN down-proj as Q4_K instead of Q6_K. Saves ~1.8 GB on 31B, cuts down-matmul cost ~1.5–1.7× at decode. Introduces ~2.5× more probability-redistribution noise (top-1 + top-5 preserved). Validated by `walk_correctness`, which auto-relaxes its prob-delta gate from 0.02 to 0.035 when it detects Q4_K down. Only with `--quant q4k` / `kquant`. | off |
+| `--from-vectors <PATH>` | V2 only. Build from already-extracted NDJSON vector files instead of model weights | — |
+| `--down-top-k <N>` | V2 only. Top-K tokens per feature in down metadata | 10 |
+| `--include-weights` | V2 only. Alias for `--level all` (deprecated — use `--level` directly) | — |
+| `--resume` | V2 only. Skip stages that already have output files | off |
 
-**Extract tiers (`--level`).** Each tier is a strict superset of the
+**V2 extract tiers (`--level`).** Each tier is a strict superset of the
 previous:
 
 | Tier | Adds | Enables |
@@ -1405,41 +1410,44 @@ previous:
 **Examples:**
 
 ```bash
-# Default — inference-ready, f16 (~6 GB for 4B)
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex
+# Default — a VINDEX3 container (check admission first with `larql vindex3 plan`)
+larql extract Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3
 
-# Browse-only (no forward pass, ~3 GB)
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --level browse
+# VINDEX2, inference-ready, f16 (~6 GB for 4B)
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2
+
+# VINDEX2 browse-only (no forward pass, ~3 GB)
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level browse
 
 # Attention-only slice for Act 2 of the demo — carve out the
 # client-side half of an FFN-over-HTTP pair
-larql extract google/gemma-4-31b-it -o gemma4-31b.client.vindex --level attention
+larql extract google/gemma-4-31b-it -o gemma4-31b.client.vindex --generation v2 --level attention
 
 # All (+ lm_head for COMPILE)
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --level all
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level all
 
 # Q4_K/Q6_K quantised inline — smallest disk footprint, Ollama-compat
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --quant q4k
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --quant q4k
 
 # Maximum size reduction on Q4K — drop the redundant f16 gate, rebuild
 # from the Q4K at load time
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex \
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 \
   --quant q4k --drop-gate-vectors
 
 # All-Q4K FFN — gate + up + down all Q4_K, faster down projection at
 # decode (~1.5–1.7× on CPU), ~30 MB/layer smaller. Trades ~2.5× more
 # softmax-probability drift; validate with `walk_correctness`.
-larql extract google/gemma-4-31b-it -o gemma4-31b.vindex \
+larql extract google/gemma-4-31b-it -o gemma4-31b.vindex --generation v2 \
   --quant q4k --down-q4k
 
 # Legacy name still works
-larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex
+larql extract-index Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3
 
-# Build from pre-extracted vectors
-larql extract -o gemma3-4b.vindex --from-vectors vectors/
+# Build from pre-extracted vectors (V2)
+larql extract -o gemma3-4b.vindex --generation v2 --from-vectors vectors/
 
-# Resume an interrupted build
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --resume
+# Resume an interrupted V2 build
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --resume
 ```
 
 **`--quant q4k` (alias `--quant kquant`) details:**

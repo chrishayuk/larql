@@ -12,7 +12,7 @@ These describe the source checkout, not the latest published binary. [Documentat
 | GRAPH_SCHEMA | `6` |
 | PLAN_SCHEMA | `6` |
 | PLANNER_SEMANTICS_VERSION | `23` |
-| DEFAULT_EXTRACTION_GENERATION | `V2` |
+| DEFAULT_EXTRACTION_GENERATION | `V3` |
 
 ## vindex commands
 

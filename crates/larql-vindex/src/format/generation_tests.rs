@@ -278,19 +278,16 @@ fn a_schema_version_displays_as_its_number() {
 }
 
 /// **The default-flip gate's pinned test.** A fresh extraction with no
-/// expressed preference writes VINDEX2 today. Flipping the programme to
-/// "VINDEX3 is the primary generation" means changing
-/// `DEFAULT_EXTRACTION_GENERATION` AND this test together — that pair is
-/// the explicit decision. If this test fails because the constant moved,
-/// the flip was made deliberately; update the assertion in the same
-/// commit that states the new policy.
+/// expressed preference writes VINDEX3: the M4 flip, decided 2026-11-06.
+/// Changing `DEFAULT_EXTRACTION_GENERATION` again means changing this
+/// test in the same commit — that pair is the explicit decision.
 #[test]
-fn auto_extraction_resolves_to_v2_until_the_default_flip_is_decided() {
+fn auto_extraction_resolves_to_v3_after_the_m4_flip() {
     assert_eq!(
         admit_extraction_generation(GenerationRequest::Auto),
-        ContainerGeneration::V2,
+        ContainerGeneration::V3,
     );
-    assert_eq!(DEFAULT_EXTRACTION_GENERATION, ContainerGeneration::V2);
+    assert_eq!(DEFAULT_EXTRACTION_GENERATION, ContainerGeneration::V3);
 }
 
 /// Explicit requests pass through admission untouched, in both
