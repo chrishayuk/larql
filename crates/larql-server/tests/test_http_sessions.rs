@@ -269,6 +269,7 @@ mod continuation {
             model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
                 models: Vec::new(),
                 v3_models: vec![v3],
+                aliases: Default::default(),
             }),
             router_topology: larql_server::state::RouterTopology::SingleModel,
             lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),

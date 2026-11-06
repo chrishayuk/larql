@@ -9,12 +9,14 @@
 //!
 //! Input shape mirrors HF's `tokenizer.apply_chat_template(..., add_generation_prompt=True)`:
 //! `messages=[{role, content}]`, `add_generation_prompt=true`, plus
-//! `bos_token` / `eos_token` from the tokenizer config. One user turn
-//! only — multi-turn rendering can be built on top but isn't needed for
-//! the one-shot prompt path.
+//! `bos_token` / `eos_token` from the tokenizer config. [`render_messages`] is the one renderer: the single-turn and
+//! multi-message entry points are shapes over it.
 
 use minijinja::{context, Environment};
 use serde_json::Value;
+
+/// The role a single-prompt render gives its one turn.
+const USER_ROLE: &str = "user";
 
 /// Render `template_str` (Jinja2) against a single-turn conversation.
 /// Returns the rendered string or a `minijinja::Error` with full diagnostic
@@ -24,10 +26,8 @@ pub(crate) fn render_chat_template(
     cfg: &Value,
     user_prompt: &str,
 ) -> Result<String, minijinja::Error> {
-    let env = build_env(template_str)?;
-    let tmpl = env.get_template("chat")?;
-    let ctx = build_context(cfg, user_prompt);
-    tmpl.render(ctx)
+    let messages = [(USER_ROLE.to_string(), user_prompt.to_string())];
+    render_messages(template_str, cfg, &messages, None)
 }
 
 /// Render `template_str` against an arbitrary multi-message conversation
@@ -46,22 +46,44 @@ pub fn render_chat_template_multi(
     messages: &[(String, String)],
     enable_thinking: bool,
 ) -> Result<String, String> {
-    let env = build_env(template_str).map_err(|e| e.to_string())?;
-    let tmpl = env.get_template("chat").map_err(|e| e.to_string())?;
-    let bos_token = cfg_string_field(cfg, "bos_token").unwrap_or_default();
-    let eos_token = cfg_string_field(cfg, "eos_token").unwrap_or_default();
+    render_messages(template_str, cfg, messages, Some(enable_thinking)).map_err(|e| e.to_string())
+}
+
+/// The one renderer every chat entry point shares: `messages` as
+/// `(role, content)` pairs, `add_generation_prompt=true`, `bos_token` /
+/// `eos_token` from `cfg`, and `enable_thinking` only when the caller
+/// states it. `None` leaves the variable *undefined*, which is what HF's
+/// `apply_chat_template` does when the caller passes nothing — templates
+/// test `enable_thinking is defined`, so an explicit `false` is not the
+/// same prompt as an absent one.
+pub(crate) fn render_messages(
+    template_str: &str,
+    cfg: &Value,
+    messages: &[(String, String)],
+    enable_thinking: Option<bool>,
+) -> Result<String, minijinja::Error> {
+    let env = build_env(template_str)?;
+    let tmpl = env.get_template("chat")?;
     let msgs: Vec<minijinja::Value> = messages
         .iter()
         .map(|(role, content)| context! { role => role.clone(), content => content.clone() })
         .collect();
-    let ctx = context! {
-        messages => msgs,
-        add_generation_prompt => true,
-        enable_thinking => enable_thinking,
-        bos_token => bos_token,
-        eos_token => eos_token,
-    };
-    tmpl.render(ctx).map_err(|e| e.to_string())
+    let mut ctx: Vec<(&str, minijinja::Value)> = vec![
+        ("messages", minijinja::Value::from(msgs)),
+        ("add_generation_prompt", minijinja::Value::from(true)),
+        (
+            "bos_token",
+            minijinja::Value::from(cfg_string_field(cfg, "bos_token").unwrap_or_default()),
+        ),
+        (
+            "eos_token",
+            minijinja::Value::from(cfg_string_field(cfg, "eos_token").unwrap_or_default()),
+        ),
+    ];
+    if let Some(flag) = enable_thinking {
+        ctx.push(("enable_thinking", minijinja::Value::from(flag)));
+    }
+    tmpl.render(minijinja::Value::from_iter(ctx))
 }
 
 /// Assemble the minijinja environment with all HF-compat shims attached.
@@ -102,22 +124,6 @@ fn build_env(template_str: &str) -> Result<Environment<'static>, minijinja::Erro
     env.add_template_owned("chat", template_owned)
         .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::SyntaxError, e.to_string()))?;
     Ok(env)
-}
-
-/// Build the minijinja context for a single-turn user→model conversation.
-/// Mirrors HF's `apply_chat_template(messages, add_generation_prompt=True)`.
-fn build_context(cfg: &Value, user_prompt: &str) -> minijinja::Value {
-    let bos_token = cfg_string_field(cfg, "bos_token").unwrap_or_default();
-    let eos_token = cfg_string_field(cfg, "eos_token").unwrap_or_default();
-
-    context! {
-        messages => vec![
-            context! { role => "user", content => user_prompt },
-        ],
-        add_generation_prompt => true,
-        bos_token => bos_token,
-        eos_token => eos_token,
-    }
 }
 
 /// Read a tokenizer_config field that may be either a plain string or a

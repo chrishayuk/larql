@@ -87,6 +87,7 @@ larql serve "hf://chrishayuk/gemma-3-4b-it-vindex" [OPTIONS]
 | `--port <PORT>` | Listen port | 8080 |
 | `--host <HOST>` | Bind address. A non-loopback address needs `--api-key`, `--insecure-public` or `--public-explorer` | 127.0.0.1 |
 | `--dir <DIR>` | Serve all .vindex directories in this folder | — |
+| `--model-alias <NAME>` | Another name the served model answers to in a request's `model` field, beside its declared id (exact, case-sensitive). `larql serve <name>` passes the name it was given. Single-model only | — |
 | `--no-infer` | Disable INFER endpoint (browse-only, reduces memory) | false |
 | `--cors` | Enable CORS for browser access | false |
 | `--max-concurrent <N>` | Max concurrent requests | 100 |
@@ -465,6 +466,12 @@ List loaded models. Response conforms to the
 shape, which means existing `openai` SDKs work unmodified. Larql-specific
 fields (`path`, `features`, `loaded`) are present as additional members —
 OpenAI clients ignore them.
+
+`id` is always the id the container declares. A model started with
+`--model-alias` (which `larql serve <name>` sets to `<name>`) also lists
+`"aliases": ["<name>"]`, and every route that takes a `model` value accepts
+either spelling. Matching is exact and case-sensitive; a request with no
+`model` field still selects the only model in single-model mode.
 
 ```json
 {

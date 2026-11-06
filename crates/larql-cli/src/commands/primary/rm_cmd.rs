@@ -11,6 +11,12 @@
 //! `{models,datasets}--<owner>--<name>` tree from the HF hub cache. The
 //! prefix is whichever one hf-hub used when the vindex was pulled —
 //! `cache::scan_hf_hub_at` recognises both.
+//!
+//! For encoded entries (a Hugging Face checkpoint LARQL encoded to
+//! VINDEX3 on first `run`) this removes the whole
+//! `models--<owner>--<name>` tree from the encoded cache — every commit
+//! encoded for that repo, and its revision refs. The next `run` of the
+//! repo re-encodes it.
 
 use clap::Args;
 
@@ -45,7 +51,7 @@ pub fn run(args: RmArgs) -> Result<(), Box<dyn std::error::Error>> {
                 is_symlink,
             )
         }
-        CacheSource::HuggingFace => {
+        CacheSource::HuggingFace | CacheSource::Encoded => {
             // Back up from `snapshots/<sha>/` → `{models,datasets}--<owner>--<name>/`.
             let hub_repo_dir = entry
                 .snapshot
@@ -55,7 +61,8 @@ pub fn run(args: RmArgs) -> Result<(), Box<dyn std::error::Error>> {
                 .to_path_buf();
             (
                 format!(
-                    "HF cache `{}` ({} MB)",
+                    "{} cache `{}` ({} MB)",
+                    entry.source.label(),
                     entry.repo,
                     entry.size_bytes as f64 / 1e6
                 ),

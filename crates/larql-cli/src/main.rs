@@ -16,12 +16,13 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::large_enum_variant)]
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 mod anyres_tiler;
 mod backend_select;
 mod commands;
 mod formatting;
+mod help_layout;
 mod image_input;
 mod trampoline;
 mod utils;
@@ -35,11 +36,7 @@ use commands::primary::*;
 use commands::query::*;
 
 #[derive(Parser)]
-#[command(
-    name = "larql",
-    version,
-    about = "LARQL — decompile transformer weights into a queryable vindex"
-)]
+#[command(name = "larql", version, about = help_layout::TAGLINE)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -48,13 +45,11 @@ struct Cli {
 // ══════════════════════════════════════════════════════════════════════
 // Top-level commands
 //
-// Grouped in --help output via `next_help_heading`:
-//   * (unspecified)   — Primary user verbs
-//   * "Build"         — Extract / compile / publish
-//   * "Query"         — Graph file introspection (legacy pre-LQL)
-//   * "LQL"           — Query-language surface
-//   * "Server"        — Serve a vindex
-//   * "Research"      — `larql dev <subcmd>`
+// The root `larql --help` is grouped by `help_layout::HELP_GROUPS`
+// (everyday verbs first, research and diagnostics last): clap 4 cannot
+// group subcommands itself — `next_help_heading` below titles only each
+// subcommand's own options. A new command must be added to a group there;
+// the help_layout tests fail until it is.
 //
 // Variants marked `#[cfg(feature = "research")]` exist only in research
 // builds (the default); tagged release binaries are built without them,
@@ -269,6 +264,11 @@ struct ChatArgs {
     #[arg(short = 'n', long = "max-tokens", default_value = "64")]
     max_tokens: usize,
 
+    /// VINDEX3 only: send each line verbatim (plain completion, no
+    /// history) instead of through the container's chat template.
+    #[arg(long)]
+    raw: bool,
+
     /// Route FFN to a remote larql-server.
     #[arg(long, value_name = "URL")]
     ffn: Option<String>,
@@ -289,6 +289,7 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             model: c.model,
             prompt: None,
             max_tokens: c.max_tokens,
+            raw: c.raw,
             top: 1,
             kv_cache: run_cmd::KvCacheKind::Standard,
             context_window: 0,
@@ -391,7 +392,10 @@ fn real_main() -> i32 {
             return trampoline::RESEARCH_UNAVAILABLE_EXIT_CODE;
         }
     };
-    let cli = match Cli::try_parse_from(&args) {
+    let cli = match help_layout::apply(Cli::command())
+        .try_get_matches_from(&args)
+        .and_then(|matches| Cli::from_arg_matches(&matches))
+    {
         Ok(cli) => cli,
         Err(e) => return usage_exit(e, &args),
     };

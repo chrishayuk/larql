@@ -10,14 +10,19 @@ Ollama-style day-to-day verbs. Models can be referenced by cache
 shorthand (`gemma-3-4b-it-vindex`), `owner/name`, `hf://owner/name`, or
 a local directory path — see [Model resolution](#model-resolution) below.
 
+`larql --help` lists the everyday verbs (`run`, `chat`, `pull`, `list`,
+`show`, `rm`, `link`, `serve`, `repl`, `lql`, `vindex3`, `bench`) first and
+groups the rest — models and cache, build, server, factory, graph-file
+query, research and diagnostics — under their own headings.
+
 | Command | Description |
 |---|---|
 | `run <model> [prompt]` | Run inference. One-shot if prompt given; chat loop if not. |
 | `chat <model>` | Alias for `run <model>` with no prompt. |
-| `pull <model>` | Download a vindex from HuggingFace and cache locally. |
+| `pull <model>` | Download a vindex from HuggingFace and cache locally (a raw checkpoint is encoded to VINDEX3 instead). |
 | `model <subcmd>` | Manage HuggingFace **model** repos (companion to `pull`, which is vindex-only). |
 | `link <path>` | Register a local vindex directory with the cache so `run` / `list` / `show` find it by shorthand. |
-| `list` | Show cached vindexes (model, size, layers, hidden). |
+| `list` | Show cached vindexes (source, generation, size, layers, hidden, and whether this build can open them). |
 | `show <model>` | Vindex metadata and file inventory. |
 | `slice <source>` | Carve a subset of a vindex (`client` / `attn` / `embed` / `server` / `browse` / `router` / `expert-server`). |
 | `publish <source>` | Publish a vindex to HuggingFace — full + slice siblings + collections. |
@@ -116,18 +121,63 @@ list.
 
 ## Model resolution
 
-The `<model>` argument on `run`, `chat`, `show`, `rm`, and `pull`
-resolves in this order:
+The `<model>` argument on `run`, `chat`, `serve`, `show`, `rm`, and
+`pull` resolves in this order:
 
-1. **`hf://owner/name[@rev]`** — download (if not cached) via HF hub API,
-   return the cache path.
+1. **`hf://owner/name[@rev]`** —
+   - already encoded (see below) → the encoded cache entry, no network;
+   - a published vindex (the repo carries `index.json`) → download (if
+     not cached) via HF hub API, return the cache path — unchanged;
+   - a raw Hugging Face checkpoint (`config.json` + safetensors, no
+     `index.json`) → **encoded to VINDEX3 on first use** and cached.
 2. **Existing local directory** — use as-is.
-3. **`owner/name`** — cache lookup first; fall back to HF download.
-4. **Plain name** — search the cache for a unique
-   `datasets--<*>--<name>` entry. Ambiguous shorthands error out and
-   list candidates.
+3. **`owner/name`** — cache lookup first; fall back to step 1 on
+   `hf://owner/name`.
+4. **Plain name** — search every cache for a unique entry: local links
+   by their name, HF and encoded entries by the `name` half of
+   `owner/name`. Ambiguous shorthands error out and list candidates.
 
 `rm` never downloads — it only resolves against the cache.
+
+### First run of a Hugging Face checkpoint
+
+```bash
+larql run hf://Qwen/Qwen3-0.6B "The capital of France is"   # encodes once, then runs
+larql run Qwen3-0.6B "The capital of France is"             # later: shorthand, no encode
+```
+
+When `hf://owner/name` is a checkpoint rather than a vindex, LARQL runs
+the `larql vindex3 encode` pipeline on it — safetensors headers staged,
+the plan gated on the text-generation capability, then only the tensors
+the plan needs fetched by byte range — and writes the container to the
+**encoded cache**:
+
+```
+$LARQL_HOME/encoded/                 (default ~/.cache/larql/encoded/)
+  models--<owner>--<name>/
+    refs/<rev>                       commit <rev> resolved to at encode
+    snapshots/<commit>/              the VINDEX3 container
+```
+
+- **Keyed by repo and commit.** The revision (default `main`) is resolved
+  to its commit before anything is encoded; a later run of the same
+  revision is answered from `refs/` with no network. To pick up a newer
+  `main`, `larql rm owner/name` and run again.
+- **Atomic.** The encode writes into a `.partial-*` directory beside
+  `snapshots/` and is renamed into place only on success; an interrupted
+  encode never leaves an entry that looks valid, and its leftovers are
+  swept by the next encode of that repo.
+- **Listed, removable, runnable by shorthand.** Entries show in
+  `larql list` with source `encoded`; `larql rm <name>` evicts the whole
+  repo; `larql run <name>` (the repo's name half, e.g. `Qwen3-0.6B`) or
+  `larql run owner/name` runs it.
+- **Refusal.** If the plan is not admissible for text generation the run
+  is refused with the blocking findings listed one per line — after
+  reading only headers, before anything is announced as encoding — and a
+  pointer to `larql vindex3 plan hf://owner/name --output plan.json` for
+  the full plan. That verb judges whole-model completeness (it has no
+  capability flag), so it can list blockers outside text generation that
+  did not gate the run.
 
 ### `larql run`
 
@@ -142,6 +192,7 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 | `<MODEL>` | Vindex dir, VINDEX3 container, `hf://owner/name`, `owner/name`, or cache shorthand | — |
 | `[PROMPT]` | Prompt text; omit to enter chat mode | — |
 | `-n, --max-tokens <N>` | Max tokens to generate autoregressively | 64 |
+| `--raw` | VINDEX3 only: send the prompt verbatim (plain completion) instead of through the container's chat template. VINDEX2 runs refuse it; set `LARQL_RAW_PROMPT=1` there | false |
 | `--top <N>` | Show the top-K prediction table per step instead of just the argmax (implied by `--verbose`) | 1 |
 | `--kv-cache <KIND>` | KV cache strategy: `standard` (full FP32, unbounded), `markov-bounded` (sliding window), `none` (no cache, O(N²)) | standard |
 | `--context-window <N>` | Sliding-window size when `--kv-cache markov-bounded`; `0` = unbounded | 0 |
@@ -165,13 +216,20 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 detected from its `index.json` generation and routed to its own arm: the
 container's program runs through the VINDEX3 interpreter — the same one
 `larql vindex3 exec` reports on, prepared by the same code — with the
-tokenizer the container carries. Decode is greedy, the prompt is encoded
-raw (no chat template), and generation stops at the first EOS from the
-container's `generation_config.json` or at `--max-tokens`. `--metal`
+tokenizer the container carries. Decode is greedy. The prompt goes
+through the chat template the container carries (`chat_template.jinja`,
+else `tokenizer_config.json::chat_template`), rendered by the same
+`larql_inference::chat` machinery the VINDEX2 run uses; `--raw` sends it
+verbatim instead, and a container with no template runs raw and says so
+once on stderr. Generation stops at the first EOS from the container's
+`generation_config.json` (for an instruct model, its end-of-turn token)
+or at `--max-tokens`. `--metal`
 selects the Metal realisation (macOS, `gpu` feature); otherwise the
 `larql-compute` CPU kernels run. Weights load once; each prompt — one on
 the command line, or every line of chat mode — starts from a fresh
-continuation state. Flags that describe the dense VINDEX2 engine
+continuation state; in chat mode the conversation so far is re-rendered
+through the template every turn, so earlier turns reach the model as
+text (a VINDEX2 chat loop answers each line on its own). Flags that describe the dense VINDEX2 engine
 (`--top`, `--kv-cache`, `--engine`, `--ffn`, `--routed-from`,
 `--moe-shards`, `--moe-units-manifest`, `--experts`, `--experts-dir`,
 `--ops`, `--constrained`, `--image`, `--mm-weights`) are refused by name
@@ -185,8 +243,10 @@ Examples:
 larql run gemma-3-4b-it-vindex "The capital of France is"
 larql run chrishayuk/gemma-3-4b-it-vindex           # chat mode
 larql run hf://chrishayuk/gemma-3-4b-it-vindex      # explicit HF
+larql run hf://Qwen/Qwen3-0.6B "…"                  # HF checkpoint: encoded on first run
 larql run gemma4-31b.vindex --ffn http://server:8080 "…"
-larql run qwen3-0.6b.vindex3 "The capital of France is"   # VINDEX3 container
+larql run qwen3-0.6b.vindex3 "Write a haiku about Rust."  # VINDEX3, chat template
+larql run qwen3-0.6b.vindex3 --raw "The capital of France is"  # plain completion
 larql run qwen3-0.6b.vindex3 --metal --emit-ids "…"       # Metal; ids to stderr
 ```
 
@@ -202,6 +262,7 @@ larql chat <MODEL> [OPTIONS]
 |---|---|---|
 | `<MODEL>` | Vindex dir, `hf://owner/name`, or cache shorthand | — |
 | `-n, --max-tokens <N>` | Max tokens per chat response | 64 |
+| `--raw` | VINDEX3 only: send each line verbatim (no template, no history) | false |
 | `--ffn <URL>` | Route FFN to a remote larql-server | — |
 | `--ffn-timeout-secs <N>` | HTTP timeout for `--ffn` | 60 |
 | `-v, --verbose` | Verbose load / timing output | false |
@@ -534,7 +595,7 @@ larql link <PATH> [OPTIONS]
 | Flag | Description | Default |
 |---|---|---|
 | `<PATH>` | Path to a vindex directory (must contain `index.json`) | — |
-| `--as <NAME>` | Override the registered name (defaults to the directory basename with any `.vindex` suffix stripped) | basename |
+| `--as <NAME>` | Override the registered name (defaults to the directory basename with its container suffix — `.vindex` or `.vindex3` — stripped) | basename |
 | `-f, --force` | Replace an existing link of the same name | false |
 
 ### `larql shannon`
@@ -665,8 +726,17 @@ Show every cached vindex, one row per entry.
 larql list
 ```
 
-Columns: `MODEL`, `SIZE (MB)`, `LAYERS`, `HIDDEN`. Scans the HF hub
-cache for `datasets--<owner>--<name>/snapshots/<sha>/index.json`.
+Columns: `SOURCE`, `MODEL`, `GEN` (`v2` / `v3`), `SIZE (MB)`, `LAYERS`,
+`HIDDEN`, `STATUS`. Scans the LARQL local registry (`larql link`), the
+HF hub cache (`{models,datasets}--<owner>--<name>/snapshots/<sha>/index.json`;
+sizes follow the snapshot's symlinks to its blobs) and the encoded cache
+(`hf://` checkpoints LARQL encoded to VINDEX3 on first use; source
+`encoded`, see [First run of a Hugging Face checkpoint](#first-run-of-a-hugging-face-checkpoint)).
+Identity is read the same way for both generations, and each entry is
+checked against this build's opener without hashing payloads: one it cannot
+open (for example a VINDEX3 container whose system graph predates this
+build's schema) is listed as `unusable`, with the reason in a note under
+the table.
 
 ### `larql show`
 
@@ -1366,9 +1436,13 @@ Top-level verbs for producing, converting, and publishing vindexes.
 
 ### `larql extract-index`
 
-Build a `.vindex` — the model decompiled to a standalone vector index.
-Can be queried with [`larql run`](#larql-run) or
-[`larql dev walk`](#larql-dev-walk) without the original model.
+Build a vindex from a model. **The default is VINDEX3** (since the M4 flip,
+2026-11-06; see the [generation policy](vindex-generation-policy.md)): the
+checkpoint is encoded into a `.vindex3` container through the same pipeline
+as `larql vindex3 encode`. Pass `--generation v2` for a VINDEX2 `.vindex`,
+which the transcoding flags below (`--quant`, `--level`, `--compact`, …) and
+GGUF sources require. A V2-only flag without `--generation v2` is refused by
+name; it is never silently downgraded.
 
 `larql extract` is the canonical form; `larql extract-index` is kept as
 a backwards-compatible alias.
@@ -1380,19 +1454,20 @@ larql extract-index [MODEL] --output <OUTPUT> [OPTIONS]
 | Flag | Description | Default |
 |---|---|---|
 | `<MODEL>` | Model path or HuggingFace model ID (not needed with `--from-vectors`) | — |
-| `-o, --output <OUTPUT>` | Output path for the `.vindex` directory | — |
-| `--level <LEVEL>` | `browse` / `attention` / `inference` / `all` — strict increasing tiers. See below. | `inference` |
-| `--f32` | Opt out of f16 on side-channel tensors. Rarely wanted — doubles file sizes. | off (f16) |
-| `--quant <FORMAT>` | Inline-quantise forward-pass weights: `none`, `q4k`, or `kquant` (alias). The k-quant family emits Q4_K/Q6_K Ollama-compatible blocks; implies `--level all` + f16 side-channels. | `none` |
-| `--compact` | Skip `up_weights.bin` + `down_weights.bin`; FFN weights live only in feature-major files. `WalkFfn`-only. | off |
-| `--drop-gate-vectors` | Skip `gate_vectors.bin` entirely; loader rebuilds gate from `interleaved_kquant.bin` (or legacy `interleaved_kquant.bin`) at load. Only with `--quant q4k` / `kquant`. | off |
-| `--down-q4k` | Quantise FFN down-proj as Q4_K instead of Q6_K. Saves ~1.8 GB on 31B, cuts down-matmul cost ~1.5–1.7× at decode. Introduces ~2.5× more probability-redistribution noise (top-1 + top-5 preserved). Validated by `walk_correctness`, which auto-relaxes its prob-delta gate from 0.02 to 0.035 when it detects Q4_K down. Only with `--quant q4k` / `kquant`. | off |
-| `--from-vectors <PATH>` | Build from already-extracted NDJSON vector files instead of model weights | — |
-| `--down-top-k <N>` | Top-K tokens per feature in down metadata | 10 |
-| `--include-weights` | Alias for `--level all` (deprecated — use `--level` directly) | — |
-| `--resume` | Skip stages that already have output files | off |
+| `-o, --output <OUTPUT>` | Output path for the container directory | — |
+| `--generation <v2\|v3>` | Container generation to write | `v3` |
+| `--level <LEVEL>` | V2 only. `browse` / `attention` / `inference` / `all` — strict increasing tiers. See below. | `inference` |
+| `--f32` | V2 only. Opt out of f16 on side-channel tensors. Rarely wanted — doubles file sizes. | off (f16) |
+| `--quant <FORMAT>` | V2 only. Inline-quantise forward-pass weights: `none`, `q4k`, or `kquant` (alias). The k-quant family emits Q4_K/Q6_K Ollama-compatible blocks; implies `--level all` + f16 side-channels. For VINDEX3, compile a quantised representation with `larql vindex3 represent` instead. | `none` |
+| `--compact` | V2 only. Skip `up_weights.bin` + `down_weights.bin`; FFN weights live only in feature-major files. `WalkFfn`-only. | off |
+| `--drop-gate-vectors` | V2 only. Skip `gate_vectors.bin` entirely; loader rebuilds gate from `interleaved_kquant.bin` (or legacy `interleaved_kquant.bin`) at load. Only with `--quant q4k` / `kquant`. | off |
+| `--down-q4k` | V2 only. Quantise FFN down-proj as Q4_K instead of Q6_K. Saves ~1.8 GB on 31B, cuts down-matmul cost ~1.5–1.7× at decode. Introduces ~2.5× more probability-redistribution noise (top-1 + top-5 preserved). Validated by `walk_correctness`, which auto-relaxes its prob-delta gate from 0.02 to 0.035 when it detects Q4_K down. Only with `--quant q4k` / `kquant`. | off |
+| `--from-vectors <PATH>` | V2 only. Build from already-extracted NDJSON vector files instead of model weights | — |
+| `--down-top-k <N>` | V2 only. Top-K tokens per feature in down metadata | 10 |
+| `--include-weights` | V2 only. Alias for `--level all` (deprecated — use `--level` directly) | — |
+| `--resume` | V2 only. Skip stages that already have output files | off |
 
-**Extract tiers (`--level`).** Each tier is a strict superset of the
+**V2 extract tiers (`--level`).** Each tier is a strict superset of the
 previous:
 
 | Tier | Adds | Enables |
@@ -1405,41 +1480,44 @@ previous:
 **Examples:**
 
 ```bash
-# Default — inference-ready, f16 (~6 GB for 4B)
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex
+# Default — a VINDEX3 container (check admission first with `larql vindex3 plan`)
+larql extract Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3
 
-# Browse-only (no forward pass, ~3 GB)
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --level browse
+# VINDEX2, inference-ready, f16 (~6 GB for 4B)
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2
+
+# VINDEX2 browse-only (no forward pass, ~3 GB)
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level browse
 
 # Attention-only slice for Act 2 of the demo — carve out the
 # client-side half of an FFN-over-HTTP pair
-larql extract google/gemma-4-31b-it -o gemma4-31b.client.vindex --level attention
+larql extract google/gemma-4-31b-it -o gemma4-31b.client.vindex --generation v2 --level attention
 
 # All (+ lm_head for COMPILE)
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --level all
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level all
 
 # Q4_K/Q6_K quantised inline — smallest disk footprint, Ollama-compat
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --quant q4k
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --quant q4k
 
 # Maximum size reduction on Q4K — drop the redundant f16 gate, rebuild
 # from the Q4K at load time
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex \
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 \
   --quant q4k --drop-gate-vectors
 
 # All-Q4K FFN — gate + up + down all Q4_K, faster down projection at
 # decode (~1.5–1.7× on CPU), ~30 MB/layer smaller. Trades ~2.5× more
 # softmax-probability drift; validate with `walk_correctness`.
-larql extract google/gemma-4-31b-it -o gemma4-31b.vindex \
+larql extract google/gemma-4-31b-it -o gemma4-31b.vindex --generation v2 \
   --quant q4k --down-q4k
 
 # Legacy name still works
-larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex
+larql extract-index Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3
 
-# Build from pre-extracted vectors
-larql extract -o gemma3-4b.vindex --from-vectors vectors/
+# Build from pre-extracted vectors (V2)
+larql extract -o gemma3-4b.vindex --generation v2 --from-vectors vectors/
 
-# Resume an interrupted build
-larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --resume
+# Resume an interrupted V2 build
+larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --resume
 ```
 
 **`--quant q4k` (alias `--quant kquant`) details:**
