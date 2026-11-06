@@ -12,10 +12,26 @@
 //! `push`. Equivalent semantics to llama.cpp's `llama_token_to_piece` and
 //! HF Python's `decode_stream`.
 //!
-//! Multi-byte UTF-8 characters that straddle a token boundary are handled
-//! by snapping the slice point to the next char boundary before emitting.
+//! Multi-byte UTF-8 characters that straddle a token boundary are held
+//! back, never printed in part. A byte-level decoder renders the bytes of
+//! an incomplete character as U+FFFD, so a decode that ends in U+FFFD
+//! ends in a character that is not finished yet: [`Detokenizer::push`]
+//! emits only up to it and keeps it pending. When the next token completes
+//! the character, the decode replaces the U+FFFD with it and it is emitted
+//! whole; when generation stops first, the pending bytes are simply never
+//! emitted. (A model that genuinely generates U+FFFD at the very end of a
+//! stream loses it from the *stream*; [`Detokenizer::cumulative`] still has it.)
 
 use tokenizers::Tokenizer;
+
+/// How a decoder renders the bytes of a character that is not complete.
+const INCOMPLETE_CHAR: char = char::REPLACEMENT_CHARACTER;
+
+/// Length in bytes of the part of `decoded` that can no longer change:
+/// everything before a trailing run of [`INCOMPLETE_CHAR`].
+fn stable_len(decoded: &str) -> usize {
+    decoded.trim_end_matches(INCOMPLETE_CHAR).len()
+}
 
 /// Stateful, single-stream incremental detokeniser.
 ///
@@ -58,7 +74,7 @@ impl<'a> Detokenizer<'a> {
         self.emitted = self
             .tokenizer
             .decode(&self.ids, self.skip_special)
-            .map(|s| s.len())
+            .map(|s| stable_len(&s))
             .unwrap_or(0);
     }
 
@@ -66,27 +82,30 @@ impl<'a> Detokenizer<'a> {
     ///
     /// Returns an empty string in two cases:
     /// 1. The decode failed (rare — only seen on tokenizer-level errors).
-    /// 2. The token completes part of a multi-byte UTF-8 character and
-    ///    the next char boundary hasn't been reached yet.
+    /// 2. The token carries part of a multi-byte UTF-8 character that
+    ///    is not complete yet — it is emitted whole by the push that
+    ///    completes it, or never, if generation stops first.
     pub fn push(&mut self, id: u32) -> String {
         self.ids.push(id);
         let full = match self.tokenizer.decode(&self.ids, self.skip_special) {
             Ok(s) => s,
             Err(_) => return String::new(),
         };
-        if full.len() <= self.emitted {
-            // Token didn't grow the string (e.g. reserved/special token
-            // that decodes to "" under skip_special_tokens=true).
+        let stable = stable_len(&full);
+        if stable <= self.emitted {
+            // Nothing new is final: the token decoded to "" (a special
+            // token under skip_special_tokens=true) or only extended an
+            // incomplete character.
             return String::new();
         }
-        // Snap `emitted` forward to a char boundary if a multi-byte UTF-8
-        // char straddled the previous emit. In ~all cases `emitted` is
-        // already a boundary; the loop runs zero times.
-        let start = (self.emitted..=full.len())
+        // `emitted` is a char boundary whenever the decode of earlier ids
+        // is a prefix of this one; snap forward defensively if a
+        // normaliser rewrote earlier text.
+        let start = (self.emitted..=stable)
             .find(|&i| full.is_char_boundary(i))
-            .unwrap_or(full.len());
-        let delta = full[start..].to_string();
-        self.emitted = full.len();
+            .unwrap_or(stable);
+        let delta = full[start..stable].to_string();
+        self.emitted = stable;
         delta
     }
 

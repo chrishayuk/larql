@@ -264,6 +264,11 @@ struct ChatArgs {
     #[arg(short = 'n', long = "max-tokens", default_value = "64")]
     max_tokens: usize,
 
+    /// VINDEX3 only: send each line verbatim (plain completion, no
+    /// history) instead of through the container's chat template.
+    #[arg(long)]
+    raw: bool,
+
     /// Route FFN to a remote larql-server.
     #[arg(long, value_name = "URL")]
     ffn: Option<String>,
@@ -284,6 +289,7 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             model: c.model,
             prompt: None,
             max_tokens: c.max_tokens,
+            raw: c.raw,
             top: 1,
             kv_cache: run_cmd::KvCacheKind::Standard,
             context_window: 0,

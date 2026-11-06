@@ -105,6 +105,14 @@ pub struct RunArgs {
     #[arg(short = 'n', long = "max-tokens", default_value = "64")]
     pub max_tokens: usize,
 
+    /// VINDEX3 only: send the prompt verbatim as a plain completion,
+    /// without the chat template the container carries. By default a
+    /// VINDEX3 run (one-shot and chat) renders each turn through that
+    /// template. VINDEX2 runs read `LARQL_RAW_PROMPT=1` for the same
+    /// choice and refuse this flag.
+    #[arg(long)]
+    pub raw: bool,
+
     /// KV cache strategy for autoregressive decode (legacy flag).
     ///
     ///   standard         — Full FP32 K/V, unbounded. Correct over any
@@ -444,6 +452,13 @@ pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     if !args.v3_shards.is_empty() || !args.v3_ffn_shards.is_empty() || args.v3_profile.is_some() {
         return Err(
             "--v3-shards, --v3-ffn-shards and --v3-profile require a VINDEX3 container".into(),
+        );
+    }
+    if args.raw {
+        return Err(
+            "--raw applies to a VINDEX3 container; a VINDEX2 run reads LARQL_RAW_PROMPT=1 \
+             to send the prompt without its chat template"
+                .into(),
         );
     }
 
