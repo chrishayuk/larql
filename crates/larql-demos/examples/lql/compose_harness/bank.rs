@@ -19,6 +19,8 @@ pub struct Bank {
     pub development: Vec<Fact>,
     pub facts: Vec<Fact>,
     pub unrelated: Vec<String>,
+    /// The prompts whose predictions an atomicity check compares before and after a failed install.
+    pub atomicity_probe: Vec<String>,
 }
 
 pub struct LoadedBank {

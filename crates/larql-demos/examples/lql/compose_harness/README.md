@@ -8,7 +8,7 @@ PR #702). It uses only the public `larql_lql` API
 cargo build --release -p larql-demos --example compose_harness
 target/release/examples/compose_harness \
   --container ~/chris-models/q8enc-ad82acba/qwen3-0.6b-q8_0.vindex3 --tag qwen --arm A1 \
-  --set controls|development \
+  --set controls|development|faults \
   --bank bench/compose-correction-1/bank.json \
   --controls crates/larql-demos/examples/lql/compose_harness/controls.json \
   --out DIR [--alpha F] [--unrelated N] [--check-determinism]
@@ -21,7 +21,8 @@ Exit status: 0 success, 1 a control did not reproduce, 2 refused or failed to ru
 | `--set` | Reads | Purpose |
 |---|---|---|
 | `controls` | `controls.json` | Replay outcomes observed before the harness existed. Must reproduce under the arm the binary was built for. |
-| `development` | the bank's two `development` facts | Build and debug the harness. Never scored. |
+| `development` | the bank's two `development` facts | Build and debug the harness. Never scored. Every install records the session's state fingerprint before and after. |
+| `faults` | the bank's two `development` facts | Failure atomicity (prereg §7.1): each of the seven fault points of `larql_lql::install_fault` is injected in a fresh session, alone and after an earlier successful install; the cell reports which fingerprint components changed and which of the bank's 50 atomicity-probe prompts moved. Measures the implementation; it is not used to tune anything. |
 | `registered` | the bank's registered facts | **Unreachable until the pre-registration is frozen.** Requires a `FROZEN` file beside the bank holding exactly the bank's SHA-256. Every attempt, allowed or refused, is appended to `registered-attempts.jsonl` beside the bank. |
 
 Registered facts are read on no other path (`main.rs`, behind `guard::admit_registered`).
@@ -54,6 +55,6 @@ command.
 
 ## Not yet measured
 
-Failure atomicity is reported as `NOT-RUN`: no arm refuses an install yet and there are no
-fault-injection hooks. It must not be read as a pass. KL divergence is not computed; the harness
-sees the top 20 candidates, not full distributions.
+Predictions in the fault matrix are compared as the printed top 20 (ids and probabilities to two
+decimals), not as raw logits. KL divergence is not computed; the harness sees the top 20 candidates,
+not full distributions.

@@ -10,6 +10,7 @@ mod bank;
 mod consts;
 mod controls;
 mod fact;
+mod faults;
 mod guard;
 mod infer;
 mod observer;
@@ -59,6 +60,10 @@ fn run() -> Result<bool, String> {
             let (ok, results) =
                 controls::run(&args.controls, &args.container, &args.tag, &args.arm)?;
             (ok, json!({"controls": results, "all_reproduce": ok}))
+        }
+        Set::Faults => {
+            let matrix = faults::run(&args.container, &loaded.bank)?;
+            (true, json!({"fault_matrix": matrix}))
         }
         Set::Development | Set::Registered => {
             let tokenizer = Tokenizer::from_file(args.container.join("tokenizer.json"))

@@ -15,6 +15,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("consts.rs", include_str!("consts.rs")),
     ("controls.rs", include_str!("controls.rs")),
     ("fact.rs", include_str!("fact.rs")),
+    ("faults.rs", include_str!("faults.rs")),
     ("guard.rs", include_str!("guard.rs")),
     ("infer.rs", include_str!("infer.rs")),
     ("observer.rs", include_str!("observer.rs")),
