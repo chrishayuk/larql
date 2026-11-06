@@ -52,7 +52,7 @@ fn write_word_tokenizer(dir: &std::path::Path, words: &[&str]) {
 
 /// `judged` controls whether the config carries a key no registry has
 /// seen — the difference between an admissible and a blocked plan.
-fn fixture_dir(judged: bool) -> tempfile::TempDir {
+pub(crate) fn fixture_dir(judged: bool) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let mut text_config = serde_json::json!({
         "model_type": "muse_glimmer_text",

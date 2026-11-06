@@ -493,6 +493,7 @@ mod tests {
             model_set: std::sync::RwLock::new(ModelSet {
                 models,
                 v3_models: Vec::new(),
+                aliases: Default::default(),
             }),
             router_topology: topology,
             lifecycle: std::sync::Mutex::new(lifecycle),

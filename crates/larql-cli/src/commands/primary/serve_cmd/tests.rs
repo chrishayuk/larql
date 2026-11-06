@@ -76,3 +76,53 @@ fn only_the_first_argument_can_be_the_model() {
     let argv = ["--layers", "0-14", "--join", "grpc://router:50052"];
     assert_eq!(forwarded(&argv), argv);
 }
+
+fn strings(argv: &[&str]) -> Vec<String> {
+    argv.iter().map(|s| s.to_string()).collect()
+}
+
+fn fake_resolve(_: &str) -> Result<String, Box<dyn std::error::Error>> {
+    Ok("/cache/local/qwen3-0.6b.vindex".to_string())
+}
+
+/// A model served by name is also forwarded as `--model-alias <name>`, so
+/// a request can use the name it was served under.
+#[test]
+fn a_named_model_is_forwarded_as_its_own_alias() {
+    let out = forward_args(&strings(&["qwen3-0.6b", "--port", "9000"]), fake_resolve).unwrap();
+    assert_eq!(
+        out,
+        [
+            "/cache/local/qwen3-0.6b.vindex",
+            "--model-alias",
+            "qwen3-0.6b",
+            "--port",
+            "9000"
+        ]
+    );
+}
+
+/// An explicit `--model-alias`, in either spelling, is the caller's choice
+/// and is not doubled.
+#[test]
+fn an_explicit_alias_is_not_overridden() {
+    for argv in [
+        &["qwen3-0.6b", "--model-alias", "mine"][..],
+        &["qwen3-0.6b", "--model-alias=mine"][..],
+    ] {
+        let out = forward_args(&strings(argv), fake_resolve).unwrap();
+        assert_eq!(out[0], "/cache/local/qwen3-0.6b.vindex");
+        assert_eq!(out[1..], argv[1..]);
+    }
+}
+
+/// A directory path is not a name: nothing is aliased, and a flag that
+/// merely starts with the alias flag's spelling is not mistaken for it.
+#[test]
+fn a_path_gets_no_alias() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_str().unwrap();
+    let out = forward_args(&strings(&[path]), |p| Ok(p.to_string())).unwrap();
+    assert_eq!(out, [path]);
+    assert!(!has_explicit_alias(&strings(&["--model-aliasx"])));
+}
