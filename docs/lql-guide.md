@@ -21,27 +21,32 @@ cargo run -p larql-cli -- lql 'SHOW MODELS;'
 ### 1. Extract a model
 
 ```sql
+-- Default: a VINDEX3 container, executable and queryable, session left bound
+EXTRACT MODEL "Qwen/Qwen3-0.6B" INTO "qwen3-0.6b.vindex3";
+
+-- VINDEX2 (the compatibility generation) must be asked for by name.
 -- Browse-only (~3 GB f16 / ~6 GB f32, fast queries, no inference)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex";
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" FORMAT VINDEX2;
 
--- With inference support (~6 GB f16 / ~12 GB f32, enables INFER)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE;
+-- VINDEX2 with inference support (~6 GB f16 / ~12 GB f32, enables INFER)
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE FORMAT VINDEX2;
 
--- Full (~10 GB f16 / ~18 GB f32, enables COMPILE for recompilation)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL;
-
--- Pick the container generation explicitly. Omitted = no preference,
--- resolved by the extraction-generation policy (docs/vindex-generation-policy.md).
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" FORMAT VINDEX3;
+-- VINDEX2 full (~10 GB f16 / ~18 GB f32, enables COMPILE for recompilation)
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL FORMAT VINDEX2;
 ```
 
-A `FORMAT VINDEX3` extraction encodes the checkpoint's own bytes into a
-VINDEX3 container (HF checkpoint artifacts only — GGUF sources refuse by
-name rather than transcoding on the way in), carries the tokenizer and
-HF metadata in beside it, and leaves the session bound: no `USE` needed.
+With no `FORMAT`, the [extraction-generation policy](vindex-generation-policy.md)
+decides, and since 2026-11-06 it decides VINDEX3. A VINDEX3 extraction
+encodes the checkpoint's own bytes into a container (HF checkpoint artifacts
+only — GGUF sources refuse by name rather than transcoding on the way in),
+carries the tokenizer and HF metadata in beside it, and leaves the session
+bound: no `USE` needed. `WITH BROWSE | INFERENCE | ALL` shape a VINDEX2
+extraction only. Not every architecture is admitted yet — check with
+`larql vindex3 plan <model>`; Gemma 3, for example, still needs `FORMAT VINDEX2`.
 
-CLI equivalent: `larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex --level inference --f16`
-(add `--generation v3` for a VINDEX3 container).
+CLI equivalent: `larql extract Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3`, or
+`larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level inference`
+for VINDEX2.
 
 ### 2. Connect
 

@@ -306,7 +306,7 @@ fn run_v3(args: &ExtractIndexArgs) -> Result<(), Box<dyn std::error::Error>> {
     let model = args
         .model
         .as_deref()
-        .ok_or("a model path or HF id is required for --generation v3")?;
+        .ok_or("a model path or HF id is required for a VINDEX3 extraction")?;
     let model_path = larql_models::resolve_model_path(model)?;
     if model_path.is_file() {
         return Err(format!(

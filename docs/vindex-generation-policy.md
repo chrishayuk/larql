@@ -1,17 +1,16 @@
 # Container-generation policy: the VINDEX2 → VINDEX3 transition
 
-Status: **contract adopted; default not yet flipped.**
+Status: **default flipped to VINDEX3 (M4, 2026-11-06).**
 The semantic catch-up phase closed 2026-08-22: VINDEX3 reached full LQL
 parity with VINDEX2 (execution, inference, browse, mutation, patching,
 compose + parity, COMPILE, logical DIFF, COMPACT), gated cross-platform,
 with a real-model compose smoke green on granite-4.1-3b. VINDEX3 is the
-**candidate primary generation**; VINDEX2 is the **compatibility
-generation**.
+**primary generation**; VINDEX2 is the **compatibility generation**.
 
 ## The migration contract
 
 ```text
-New extraction        → VINDEX3 by default            (after the flip)
+New extraction        → VINDEX3 by default            (since 2026-11-06)
 Existing VINDEX2      → continues to open and run
 Generation detection  → bind once at load
 Higher layers         → never care which generation was bound
@@ -28,9 +27,9 @@ fallback:
 
 - `crates/larql-vindex/src/format/generation.rs` —
   `DEFAULT_EXTRACTION_GENERATION` is the generation an extraction with no
-  expressed preference writes. It is `V2` today.
+  expressed preference writes. It is `V3` since the M4 flip.
 - `crates/larql-vindex/src/format/generation_tests.rs` —
-  `auto_extraction_resolves_to_v2_until_the_default_flip_is_decided` pins
+  `auto_extraction_resolves_to_v3_after_the_m4_flip` pins
   it. Flipping means changing the constant **and** this test in the same
   commit; that pair is the decision.
 
@@ -43,7 +42,7 @@ surface that cannot produce the requested generation refuses by name.
 
 ## Surfaces
 
-| Surface | Request spelling | Today (`Auto` → V2) |
+| Surface | Request spelling | Behaviour (`Auto` → V3) |
 |---|---|---|
 | LQL | `EXTRACT MODEL "m" INTO "o" [FORMAT VINDEX2\|VINDEX3]` | `FORMAT VINDEX3` encodes + auto-binds; `FORMAT VINDEX2` explicit; absent = policy |
 | CLI | `larql extract --generation {v2\|v3}` | `--generation v3` encodes; omitted = policy |
@@ -183,8 +182,11 @@ named below.
   `USE`'s own binding block.
 - **M3 — consumer readiness. DONE**: every consumer supports V3 or
   refuses naming the generation; see the consumer matrix above.
-- **M4 — the flip.** `DEFAULT_EXTRACTION_GENERATION = V3` + the pinned
-  test, in one commit. V2 becomes the explicitly-requested compatibility
+- **M4 — the flip. DONE** (2026-11-06): `DEFAULT_EXTRACTION_GENERATION = V3` + the pinned
+  test, in one commit. V2-only transcoding flags (`--quant`, `--compact`, …)
+  and GGUF sources now need an explicit `--generation v2` / `FORMAT VINDEX2`,
+  and refuse by name without it; factory recipes that use V2 knobs must pin
+  `extractor.options.generation: "v2"`. V2 becomes the explicitly-requested compatibility
   generation. Evidence rows required by then: the real-model compose
   smoke (done — granite-4.1-3b) and whatever Metal-path/scale rows the
   release checklist names.

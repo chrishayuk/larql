@@ -215,10 +215,10 @@ pub enum GenerationRequest {
 /// generation" decision. It is made here, once, together with the pinned
 /// test in `generation_tests.rs` that names the decision — never as a
 /// side effect of a CLI default, a recipe template, or a surface-local
-/// fallback. Until the flip: V3 stays the explicitly-requested
-/// generation, V2 the default; after it: V2 becomes the explicitly-
-/// requested compatibility generation.
-pub const DEFAULT_EXTRACTION_GENERATION: ContainerGeneration = ContainerGeneration::V2;
+/// fallback. The flip (migration rung M4) was made on 2026-11-06: VINDEX3
+/// is the default, and V2 is the explicitly-requested compatibility
+/// generation (`--generation v2`, `FORMAT VINDEX2`).
+pub const DEFAULT_EXTRACTION_GENERATION: ContainerGeneration = ContainerGeneration::V3;
 
 /// Resolve a caller's extraction-generation request to a decision.
 ///

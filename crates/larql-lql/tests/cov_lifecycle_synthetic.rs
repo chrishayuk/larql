@@ -138,6 +138,9 @@ fn extract_model_from_synthetic_dir() {
     // model by hand is out of scope for a plumbing test in a tests/
     // file (the writer would belong in larql-inference test_utils, which
     // this task must not modify). So lines 30-111 stay uncovered here.
+    //
+    // FORMAT VINDEX2 is explicit: since the M4 flip an unqualified EXTRACT
+    // resolves to VINDEX3, and these tests exist to drive the V2 branch.
     let dir = tempfile::tempdir().expect("tempdir");
     write_synthetic_model_dir(dir.path()).expect("fixture write");
     let out_dir = tempfile::tempdir().expect("out tempdir");
@@ -147,7 +150,7 @@ fn extract_model_from_synthetic_dir() {
     let _ = try_run(
         &mut session,
         &format!(
-            r#"EXTRACT MODEL "{}" INTO "{}";"#,
+            r#"EXTRACT MODEL "{}" INTO "{}" FORMAT VINDEX2;"#,
             sql_path(dir.path()),
             sql_path(&out_vindex),
         ),
@@ -168,7 +171,7 @@ fn extract_model_with_all_level() {
     let _ = try_run(
         &mut session,
         &format!(
-            r#"EXTRACT MODEL "{}" INTO "{}" WITH ALL;"#,
+            r#"EXTRACT MODEL "{}" INTO "{}" WITH ALL FORMAT VINDEX2;"#,
             sql_path(dir.path()),
             sql_path(&out_vindex),
         ),
@@ -187,7 +190,7 @@ fn extract_model_with_inference_level() {
     let _ = try_run(
         &mut session,
         &format!(
-            r#"EXTRACT MODEL "{}" INTO "{}" WITH INFERENCE;"#,
+            r#"EXTRACT MODEL "{}" INTO "{}" WITH INFERENCE FORMAT VINDEX2;"#,
             sql_path(dir.path()),
             sql_path(&out_vindex),
         ),
