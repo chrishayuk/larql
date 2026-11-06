@@ -142,6 +142,7 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 | `<MODEL>` | Vindex dir, VINDEX3 container, `hf://owner/name`, `owner/name`, or cache shorthand | — |
 | `[PROMPT]` | Prompt text; omit to enter chat mode | — |
 | `-n, --max-tokens <N>` | Max tokens to generate autoregressively | 64 |
+| `--raw` | VINDEX3 only: send the prompt verbatim (plain completion) instead of through the container's chat template. VINDEX2 runs refuse it; set `LARQL_RAW_PROMPT=1` there | false |
 | `--top <N>` | Show the top-K prediction table per step instead of just the argmax (implied by `--verbose`) | 1 |
 | `--kv-cache <KIND>` | KV cache strategy: `standard` (full FP32, unbounded), `markov-bounded` (sliding window), `none` (no cache, O(N²)) | standard |
 | `--context-window <N>` | Sliding-window size when `--kv-cache markov-bounded`; `0` = unbounded | 0 |
@@ -165,13 +166,20 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 detected from its `index.json` generation and routed to its own arm: the
 container's program runs through the VINDEX3 interpreter — the same one
 `larql vindex3 exec` reports on, prepared by the same code — with the
-tokenizer the container carries. Decode is greedy, the prompt is encoded
-raw (no chat template), and generation stops at the first EOS from the
-container's `generation_config.json` or at `--max-tokens`. `--metal`
+tokenizer the container carries. Decode is greedy. The prompt goes
+through the chat template the container carries (`chat_template.jinja`,
+else `tokenizer_config.json::chat_template`), rendered by the same
+`larql_inference::chat` machinery the VINDEX2 run uses; `--raw` sends it
+verbatim instead, and a container with no template runs raw and says so
+once on stderr. Generation stops at the first EOS from the container's
+`generation_config.json` (for an instruct model, its end-of-turn token)
+or at `--max-tokens`. `--metal`
 selects the Metal realisation (macOS, `gpu` feature); otherwise the
 `larql-compute` CPU kernels run. Weights load once; each prompt — one on
 the command line, or every line of chat mode — starts from a fresh
-continuation state. Flags that describe the dense VINDEX2 engine
+continuation state; in chat mode the conversation so far is re-rendered
+through the template every turn, so earlier turns reach the model as
+text (a VINDEX2 chat loop answers each line on its own). Flags that describe the dense VINDEX2 engine
 (`--top`, `--kv-cache`, `--engine`, `--ffn`, `--routed-from`,
 `--moe-shards`, `--moe-units-manifest`, `--experts`, `--experts-dir`,
 `--ops`, `--constrained`, `--image`, `--mm-weights`) are refused by name
@@ -186,7 +194,8 @@ larql run gemma-3-4b-it-vindex "The capital of France is"
 larql run chrishayuk/gemma-3-4b-it-vindex           # chat mode
 larql run hf://chrishayuk/gemma-3-4b-it-vindex      # explicit HF
 larql run gemma4-31b.vindex --ffn http://server:8080 "…"
-larql run qwen3-0.6b.vindex3 "The capital of France is"   # VINDEX3 container
+larql run qwen3-0.6b.vindex3 "Write a haiku about Rust."  # VINDEX3, chat template
+larql run qwen3-0.6b.vindex3 --raw "The capital of France is"  # plain completion
 larql run qwen3-0.6b.vindex3 --metal --emit-ids "…"       # Metal; ids to stderr
 ```
 
@@ -202,6 +211,7 @@ larql chat <MODEL> [OPTIONS]
 |---|---|---|
 | `<MODEL>` | Vindex dir, `hf://owner/name`, or cache shorthand | — |
 | `-n, --max-tokens <N>` | Max tokens per chat response | 64 |
+| `--raw` | VINDEX3 only: send each line verbatim (no template, no history) | false |
 | `--ffn <URL>` | Route FFN to a remote larql-server | — |
 | `--ffn-timeout-secs <N>` | HTTP timeout for `--ffn` | 60 |
 | `-v, --verbose` | Verbose load / timing output | false |

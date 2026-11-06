@@ -1,6 +1,8 @@
 //! `larql run` on a VINDEX3 container: detection, the refusals, and text
 //! out of the dense fixture through the container's own tokenizer.
 
+mod chat_template;
+mod conversation;
 mod images;
 
 use std::path::{Path, PathBuf};

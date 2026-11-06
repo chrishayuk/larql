@@ -30,27 +30,33 @@
 //! a vindex directory is available because it renders the model's *own*
 //! Jinja template rather than a hand-coded approximation.
 
+pub mod conversation;
 pub(crate) mod fallback;
+mod options;
 pub(crate) mod render;
 pub(crate) mod source;
+#[cfg(test)]
+mod tests;
 
 /// Re-export of the multi-message renderer for diagnostic CLI flags
 /// (`--system`, `--thinking`) and external callers that need richer
 /// chat shapes than the single-turn `wrap_prompt_raw` exposes.
 pub use render::render_chat_template_multi;
 
+pub use conversation::{render_conversation, ChatTurn, PromptShape, RenderedConversation};
+use options::PromptOptions;
+
 use std::path::Path;
 
+#[cfg(test)]
 use larql_vindex::format::filenames::TOKENIZER_CONFIG_JSON;
 use serde_json::Value;
 
 use fallback::fallback_template_for;
 use source::try_hf_template;
 
-const ENV_RAW_PROMPT: &str = "LARQL_RAW_PROMPT";
-const ENV_THINKING: &str = "LARQL_THINKING";
-const ENV_SYSTEM: &str = "LARQL_SYSTEM";
-const ENV_NO_DEFAULT_SYSTEM: &str = "LARQL_NO_DEFAULT_SYSTEM";
+#[cfg(test)]
+use options::{ENV_NO_DEFAULT_SYSTEM, ENV_RAW_PROMPT, ENV_SYSTEM, ENV_THINKING};
 
 /// Outcome of applying (or not applying) a chat template to the user's
 /// prompt. Returned wholesale so callers can both use the rendered string
@@ -168,30 +174,13 @@ pub fn render_user_prompt(
     family: &str,
     user_prompt: &str,
 ) -> Result<String, String> {
-    // Read through the override-aware helpers (NOT raw `std::env::var`) so
-    // tests can toggle these per-thread without `std::env::set_var`, which
-    // races concurrent `getenv` on the decode path and SIGSEGVs libc.
-    // `env_flag` matches the old `var(_).is_ok()` (set, even empty) and
-    // `env_value` matches `var(_).ok()`.
-    use larql_compute::options::{env_flag, env_value};
-    let raw_prompt = env_flag(ENV_RAW_PROMPT);
-    let enable_thinking = env_flag(ENV_THINKING);
-    let user_system = env_value(ENV_SYSTEM);
-    let suppress_default = env_flag(ENV_NO_DEFAULT_SYSTEM);
-
-    if raw_prompt {
+    let options = PromptOptions::from_env();
+    if options.raw {
         return Ok(user_prompt.to_string());
     }
 
-    let system_prompt = user_system.or_else(|| {
-        if suppress_default {
-            None
-        } else {
-            default_system_prompt_for_family(family).map(str::to_string)
-        }
-    });
-
-    if enable_thinking || system_prompt.is_some() {
+    let system_prompt = options.system_prompt(family);
+    if options.thinking || system_prompt.is_some() {
         // Multi-message render path. Prefer the vindex's own template when
         // available; fall back to a family-default for vindexes extracted
         // before the chat-template snapshot was added (early Gemma 4 31B
@@ -212,8 +201,13 @@ pub fn render_user_prompt(
             messages.push(("system".to_string(), sys.to_string()));
         }
         messages.push(("user".to_string(), user_prompt.to_string()));
-        return render::render_chat_template_multi(&template_str, &cfg, &messages, enable_thinking)
-            .map_err(|e| format!("render chat template: {e}"));
+        return render::render_chat_template_multi(
+            &template_str,
+            &cfg,
+            &messages,
+            options.thinking,
+        )
+        .map_err(|e| format!("render chat template: {e}"));
     }
 
     // Default path: single-user-turn chat template (the existing wrap).
@@ -225,7 +219,7 @@ fn chat_format_for_family(family: &str) -> Option<larql_models::detect::ChatForm
     larql_models::detect::find_architecture(family).and_then(|entry| entry.chat_format)
 }
 
-fn default_system_prompt_for_family(family: &str) -> Option<&'static str> {
+pub(super) fn default_system_prompt_for_family(family: &str) -> Option<&'static str> {
     chat_format_for_family(family).and_then(|f| f.default_system_prompt())
 }
 
@@ -233,20 +227,13 @@ fn default_system_prompt_for_family(family: &str) -> Option<&'static str> {
 /// (newer convention — Gemma 4) then `tokenizer_config.json::chat_template`
 /// (older — Gemma 2/3, Llama 3). Returns None when neither is present.
 fn read_chat_template(vindex_dir: &Path) -> Option<String> {
-    let jinja = vindex_dir.join("chat_template.jinja");
-    if let Ok(s) = std::fs::read_to_string(&jinja) {
-        return Some(s);
-    }
-    let cfg_path = vindex_dir.join(TOKENIZER_CONFIG_JSON);
-    let cfg_bytes = std::fs::read(cfg_path).ok()?;
-    let cfg: Value = serde_json::from_slice(&cfg_bytes).ok()?;
-    cfg.get("chat_template")?.as_str().map(|s| s.to_string())
+    source::container_template(vindex_dir, &source::load_tokenizer_config(vindex_dir))
 }
 
 /// Built-in chat-template fallback for a family whose extracted vindexes
 /// sometimes ship without the template files: the one its registry row's
 /// chat format carries (`larql_models`), system + user turns only.
-fn family_default_template(family: &str) -> Option<String> {
+pub(super) fn family_default_template(family: &str) -> Option<String> {
     chat_format_for_family(family)
         .and_then(|f| f.fallback_template())
         .map(str::to_string)

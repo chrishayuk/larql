@@ -8,15 +8,10 @@ use crate::commands::primary::continuation::{select_in, REPLAY_ENGINE};
 
 pub(super) fn generate<B: PlanBackend>(
     model: &ResidentModel<'_, B>,
-    prompt: &str,
+    ids: &[u32],
     out: &mut dyn Write,
     status: &mut dyn Write,
-) -> Result<(), BoxErr> {
-    let encoded = model
-        .tokenizer
-        .encode(prompt, true)
-        .map_err(|e| format!("encode prompt: {e}"))?;
-    let ids = encoded.get_ids();
+) -> Result<Vec<u32>, BoxErr> {
     let inputs = if model.args.image.is_empty() {
         ids.iter().copied().map(InputPosition::Token).collect()
     } else {
@@ -113,7 +108,7 @@ pub(super) fn emit<B: PlanBackend, S: LogitsSession>(
     out: &mut dyn Write,
     status: &mut dyn Write,
     mode: &str,
-) -> Result<(), BoxErr> {
+) -> Result<Vec<u32>, BoxErr> {
     let mut detok = Detokenizer::new(model.tokenizer);
     detok.seed(ids);
     let prompt_positions = session.position();
@@ -149,7 +144,7 @@ pub(super) fn emit<B: PlanBackend, S: LogitsSession>(
             model.engine, prompt_positions
         )?;
     }
-    Ok(())
+    Ok(generated)
 }
 
 pub(super) fn image_inputs<B: PlanBackend>(
