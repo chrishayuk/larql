@@ -154,7 +154,7 @@ this contract, not neutral outcomes.
 | `/v1/models` | supports | `generation` reported for **both** classes |
 | `larql vindex3 *` | supports | V3-native verbs |
 | `link` | supports | aliasing is generation-agnostic |
-| `run` | explicit refuse | `load_vindex_config` names the generation |
+| `run` / `chat` / `serve` / `bench` | supports | V3 dispatch in `run_cmd_vindex3`; verified end to end on Qwen3-0.6B, 2026-11-06 ([getting started](getting-started.md)) |
 | Vindexfile `FROM` | explicit refuse | `load_vindex_config` names the generation |
 | `publish` | explicit refuse | `load_vindex_config` names the generation |
 | `slice` | explicit refuse | `unsupported_generation("slice", …)` |
