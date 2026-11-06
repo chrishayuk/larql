@@ -4,6 +4,7 @@ mod auto_rep;
 mod calibration_digest;
 mod continuation_plugin;
 mod decode;
+mod exec_args;
 mod exec_resume;
 mod execution_evidence;
 mod generate;

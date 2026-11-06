@@ -3,6 +3,10 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 
+mod gguf_tokenizer;
+#[cfg(test)]
+mod tests;
+
 #[derive(Args)]
 pub struct ConvertArgs {
     #[command(subcommand)]
@@ -491,6 +495,10 @@ fn run_gguf_to_vindex(
             .into());
     }
 
+    // Before the tensor load: a missing or unparseable tokenizer should
+    // fail in seconds, not after dequantising every tensor.
+    let tokenizer = gguf_tokenizer::load_sibling_tokenizer(input)?;
+
     eprintln!("  Loading and dequantizing tensors...");
     let weights = if do_keep_quant {
         // Retain raw bytes for I2_S BitLinear tensors so the
@@ -539,19 +547,7 @@ fn run_gguf_to_vindex(
         .unwrap_or("gguf-model")
         .to_string();
 
-    // Find tokenizer — check same directory as GGUF file
-    let tokenizer = input.parent().and_then(|dir| {
-        let tok_path = dir.join(TOKENIZER_JSON);
-        if tok_path.exists() {
-            larql_vindex::tokenizers::Tokenizer::from_file(&tok_path).ok()
-        } else {
-            None
-        }
-    });
-
-    let tokenizer_ref = tokenizer
-        .as_ref()
-        .ok_or("tokenizer.json not found next to GGUF file. Place it in the same directory.")?;
+    let tokenizer_ref = &tokenizer;
 
     eprintln!("\nExtracting to {}", output.display());
 

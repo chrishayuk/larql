@@ -28,6 +28,8 @@ on:
       # provider from crates/larql-kv/tests, already covered above)
       - 'crates/larql-continuation-fixture/**'
       - 'crates/larql-vindex/**'
+      # the macOS `gpu` check compiles against larql-compute-metal's API (#508)
+      - 'crates/larql-compute-metal/**'
       - 'crates/larql-models/**'
       - 'crates/larql-inference/src/**'
       - 'Cargo.toml'
@@ -46,6 +48,8 @@ on:
       # provider from crates/larql-kv/tests, already covered above)
       - 'crates/larql-continuation-fixture/**'
       - 'crates/larql-vindex/**'
+      # the macOS `gpu` check compiles against larql-compute-metal's API (#508)
+      - 'crates/larql-compute-metal/**'
       - 'crates/larql-models/**'
       - 'crates/larql-inference/src/**'
       - 'Cargo.toml'
