@@ -13,7 +13,7 @@
     "crates/larql-lql/src/executor/lifecycle/use_cmd.rs": 73.0,
     "crates/larql-lql/src/executor/lifecycle/compile/into_model.rs": 77.0,
     "crates/larql-lql/src/repl.rs": 79.0,
-    "crates/larql-lql/src/executor/backend.rs": 80.0,
+    "crates/larql-lql/src/executor/backend.rs": 85.0,
     "crates/larql-lql/src/executor/query/infer.rs": 81.0
   }
 }
