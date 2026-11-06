@@ -54,9 +54,15 @@ pub fn detect_ffn_pattern(tensors: &HashMap<String, ArcArray2<f32>>, component: 
     };
     // Fallback by substring — restricted to the TEXT FFN. A vision tower, an
     // audio encoder or a per-layer-input projection all contain "gate"/"up"/
-    // "down" in their names and are not the FFN being edited.
+    // "down" in their names and are not the FFN being edited. Candidates must
+    // also contain "mlp": `ffn` / `feed_forward` namings are covered by the
+    // explicit patterns above, and any other naming falls through to the
+    // default below rather than being guessed by substring.
     let excluded = |k: &str| {
-        k.contains("vision") || k.contains("audio") || k.contains("per_layer") || k.contains("embed")
+        k.contains("vision")
+            || k.contains("audio")
+            || k.contains("per_layer")
+            || k.contains("embed")
     };
     let mut candidates: Vec<&String> = tensors
         .keys()
@@ -116,9 +122,18 @@ mod tests {
             "model.vision_tower.encoder.layers.0.mlp.up_proj.linear.weight",
             "model.vision_tower.encoder.layers.0.mlp.down_proj.linear.weight",
         ]);
-        assert_eq!(detect_ffn_pattern(&t, "gate"), "model.language_model.layers.{}.mlp.gate_proj.weight");
-        assert_eq!(detect_ffn_pattern(&t, "up"), "model.language_model.layers.{}.mlp.up_proj.weight");
-        assert_eq!(detect_ffn_pattern(&t, "down"), "model.language_model.layers.{}.mlp.down_proj.weight");
+        assert_eq!(
+            detect_ffn_pattern(&t, "gate"),
+            "model.language_model.layers.{}.mlp.gate_proj.weight"
+        );
+        assert_eq!(
+            detect_ffn_pattern(&t, "up"),
+            "model.language_model.layers.{}.mlp.up_proj.weight"
+        );
+        assert_eq!(
+            detect_ffn_pattern(&t, "down"),
+            "model.language_model.layers.{}.mlp.down_proj.weight"
+        );
     }
 
     #[test]
@@ -128,14 +143,23 @@ mod tests {
             "model.language_model.layers.0.per_layer_input_gate.weight",
             "odd.prefix.layers.0.mlp.up_proj.weight",
         ]);
-        assert_eq!(detect_ffn_pattern(&t, "up"), "odd.prefix.layers.{}.mlp.up_proj.weight");
+        assert_eq!(
+            detect_ffn_pattern(&t, "up"),
+            "odd.prefix.layers.{}.mlp.up_proj.weight"
+        );
         // Nothing text-FFN-shaped for gate: the documented default, not the PLE gate.
-        assert_eq!(detect_ffn_pattern(&t, "gate"), "model.layers.{}.mlp.gate_proj.weight");
+        assert_eq!(
+            detect_ffn_pattern(&t, "gate"),
+            "model.layers.{}.mlp.gate_proj.weight"
+        );
     }
 
     #[test]
     fn plain_llama_names_still_resolve() {
         let t = tensors(&["model.layers.0.mlp.gate_proj.weight"]);
-        assert_eq!(detect_ffn_pattern(&t, "gate"), "model.layers.{}.mlp.gate_proj.weight");
+        assert_eq!(
+            detect_ffn_pattern(&t, "gate"),
+            "model.layers.{}.mlp.gate_proj.weight"
+        );
     }
 }
