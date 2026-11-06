@@ -5,6 +5,7 @@
 
 mod backend;
 mod compact;
+mod extract_hint;
 mod helpers;
 mod introspection;
 mod knowledge;

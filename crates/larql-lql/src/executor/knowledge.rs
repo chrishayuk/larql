@@ -292,12 +292,9 @@ impl Session {
                     source: KnowledgeSource::V3 { view, overlay },
                 })
             }
-            Backend::Weight { model_id, .. } => Err(LqlError::Execution(format!(
-                "this operation requires a vindex. Extract first:\n  \
-                 EXTRACT MODEL \"{}\" INTO \"{}.vindex\"",
-                model_id,
-                model_id.split('/').next_back().unwrap_or(model_id),
-            ))),
+            Backend::Weight { model_id, .. } => Err(LqlError::Execution(
+                super::extract_hint::extract_first("this operation requires a vindex", model_id),
+            )),
             _ => Err(LqlError::NoBackend),
         }
     }
