@@ -467,7 +467,18 @@ where
                 }
             }
             ContainerGeneration::V2 => {
-                for filename in vindex_core_files() {
+                // The fixed core list, then whatever else the index requires
+                // (`completeness::required_files`) — so a pull fetches every
+                // file `larql list` will check for.
+                let declared = crate::format::load::load_vindex_config_unchecked(&vindex_dir)
+                    .map(|cfg| crate::format::completeness::required_files(&cfg))
+                    .unwrap_or_default();
+                let core = vindex_core_files();
+                let extra = declared
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|f| !core.contains(f));
+                for filename in core.iter().copied().chain(extra) {
                     if filename == INDEX_JSON {
                         continue;
                     }

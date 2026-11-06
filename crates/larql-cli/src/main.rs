@@ -65,12 +65,20 @@ enum Commands {
     /// Interactive chat — alias for `run <model>` with no prompt.
     Chat(ChatArgs),
 
-    /// Download a vindex from HuggingFace and cache it locally.
+    /// Cache or refresh a Hugging Face repo (download a vindex, encode a checkpoint).
+    ///
+    /// A published vindex is downloaded into the HF hub cache. A raw
+    /// checkpoint is encoded to VINDEX3 into the encoded cache, as `larql
+    /// run hf://…` does on first use. For a checkpoint already encoded,
+    /// `pull` is the explicit refresh: its revision is re-resolved against
+    /// the hub and re-encoded only if it moved (`run` never checks).
     Pull(pull_cmd::PullArgs),
 
     /// Manage HuggingFace *model* repos (safetensors + tokenizer + config).
-    /// Companion to `pull` (which is vindex-only). Use `model pull` to
-    /// stage a raw HF model for `convert safetensors-to-vindex`.
+    ///
+    /// Companion to `pull` (which caches vindexes and encodes checkpoints).
+    /// Use `model pull` to stage a raw HF model's own files for
+    /// `convert safetensors-to-vindex`.
     Model(model_cmd::ModelArgs),
 
     /// Register a local vindex directory with the cache so `run` / `list`

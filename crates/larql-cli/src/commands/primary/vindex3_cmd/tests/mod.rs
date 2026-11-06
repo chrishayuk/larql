@@ -148,6 +148,7 @@ fn inadmissible_plan_is_an_error_and_still_writes_the_report() {
     let dir = fixture_dir(false);
     let out = dir.path().join("plan.json");
     let result = run(Vindex3Command::Plan(PlanArgs {
+        capability: None,
         artifacts: vec![dir.path().to_path_buf()],
         output: Some(out.clone()),
     }));
@@ -163,6 +164,7 @@ fn admissible_plan_exits_clean() {
     let dir = fixture_dir(true);
     let out = dir.path().join("plan.json");
     let result = run(Vindex3Command::Plan(PlanArgs {
+        capability: None,
         artifacts: vec![dir.path().to_path_buf()],
         output: Some(out.clone()),
     }));
@@ -184,6 +186,7 @@ fn accepts_a_saved_inventory_json() {
     std::fs::write(&saved, serde_json::to_string(&inventory).unwrap()).unwrap();
     let out = dir.path().join("plan.json");
     let result = run(Vindex3Command::Plan(PlanArgs {
+        capability: None,
         artifacts: vec![saved],
         output: Some(out.clone()),
     }));
@@ -321,6 +324,7 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
 fn plan_without_an_output_path_prints_to_stdout() {
     let dir = fixture_dir(true);
     run(Vindex3Command::Plan(PlanArgs {
+        capability: None,
         artifacts: vec![dir.path().to_path_buf()],
         output: None,
     }))
@@ -432,8 +436,71 @@ fn inspect_exits_nonzero_on_an_incoherent_container() {
 #[test]
 fn missing_artifact_errors_before_planning() {
     let result = run(Vindex3Command::Plan(PlanArgs {
+        capability: None,
         artifacts: vec![PathBuf::from("/nonexistent/model")],
         output: None,
     }));
     assert!(result.is_err());
+}
+
+// ── plan --capability: the gate encode --capability applies ───────────
+
+#[test]
+fn a_scoped_plan_passes_exactly_when_the_scoped_encode_gate_would() {
+    use larql_vindex::format::vindex3::plan::capability::Capability;
+    for judged in [true, false] {
+        let dir = fixture_dir(judged);
+        let out = dir.path().join("plan.json");
+        let result = run(Vindex3Command::Plan(PlanArgs {
+            capability: Some(EncodeCapability::TextGeneration),
+            artifacts: vec![dir.path().to_path_buf()],
+            output: Some(out.clone()),
+        }));
+        let plan: larql_vindex::format::vindex3::plan::SystemPlan =
+            serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        let gate = larql_vindex::format::vindex3::plan::admission::admit(
+            &plan,
+            Some(Capability::TextGeneration),
+        );
+        assert_eq!(result.is_ok(), gate.is_ok(), "judged={judged}: {result:?}");
+        if let Err(err) = result {
+            let message = err.to_string();
+            assert!(
+                message.contains("refusing to encode for TextGeneration"),
+                "{message}"
+            );
+            assert!(message.contains("\n  - ["), "blockers listed: {message}");
+        }
+    }
+}
+
+#[test]
+fn the_admitted_line_says_what_the_whole_model_verdict_still_is() {
+    use larql_vindex::format::vindex3::plan::capability::Capability;
+    let dir = fixture_dir(true);
+    let inventory = larql_models::inventory::build_inventory(dir.path()).unwrap();
+    let mut plan =
+        larql_vindex::format::vindex3::plan::plan_system(&[("fixture".to_string(), inventory)]);
+    let status = plan
+        .capabilities
+        .iter()
+        .find(|c| c.capability == Capability::TextGeneration)
+        .cloned();
+    let line = plan::admitted_line(&plan, Capability::TextGeneration, status.as_ref());
+    assert!(
+        line.starts_with("admissible for TextGeneration: 0 of "),
+        "{line}"
+    );
+    assert!(line.ends_with("whole model admissible too"), "{line}");
+
+    plan.admissible = false;
+    plan.summary.blocking = 1;
+    let line = plan::admitted_line(&plan, Capability::TextGeneration, None);
+    assert!(line.contains("0 of 0 finding(s)"), "{line}");
+    assert!(
+        line.ends_with(
+            "whole-model completeness NOT asserted (1 blocking finding(s) outside this closure)"
+        ),
+        "{line}"
+    );
 }

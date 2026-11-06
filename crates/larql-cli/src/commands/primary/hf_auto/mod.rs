@@ -12,10 +12,14 @@
 //!
 //! Repos that ARE vindexes, local paths and existing shorthands take
 //! exactly the paths they took before; see [`resolve`] for the order.
+//!
+//! An encode is never refreshed behind the user's back: `run` stays
+//! offline-first. `larql pull` is the explicit refresh ([`refresh`]).
 
 pub mod classify;
 pub mod encode;
 mod live_runtime;
+pub mod refresh;
 pub mod refusal;
 pub mod resolve;
 pub mod store;
@@ -23,7 +27,7 @@ pub mod store;
 #[cfg(test)]
 mod tests;
 
-pub use live_runtime::resolve_hf_model;
+pub use live_runtime::{pull_hf_model, resolve_hf_model};
 pub use resolve::Resolution;
 pub use store::EncodedStore;
 

@@ -3,6 +3,7 @@
 
 pub mod capability;
 pub mod checksums;
+pub mod completeness;
 pub mod describes;
 pub mod down_meta;
 pub mod filenames;

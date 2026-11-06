@@ -503,6 +503,23 @@ impl From<EncodeCapability> for larql_vindex::format::vindex3::plan::capability:
     }
 }
 
+impl EncodeCapability {
+    /// How `--capability` spells `capability`, when this build offers it
+    /// — clap's own value name, so a hint can never drift from the flag.
+    pub fn flag_value(
+        capability: larql_vindex::format::vindex3::plan::capability::Capability,
+    ) -> Option<String> {
+        use clap::ValueEnum;
+        Self::value_variants()
+            .iter()
+            .find(|v| {
+                larql_vindex::format::vindex3::plan::capability::Capability::from(**v) == capability
+            })
+            .and_then(ValueEnum::to_possible_value)
+            .map(|v| v.get_name().to_string())
+    }
+}
+
 #[derive(Args)]
 pub struct RepresentArgs {
     /// Container directory to compile from.
@@ -632,6 +649,17 @@ pub struct PlanArgs {
     /// Write the plan JSON here instead of stdout.
     #[arg(long)]
     pub output: Option<PathBuf>,
+
+    /// Judge admission on ONE capability's execution closure — the gate
+    /// `encode --capability` applies — instead of whole-model
+    /// completeness.
+    ///
+    /// The plan written is the same either way (its own `admissible`
+    /// field stays the whole-model verdict); only the exit status and the
+    /// closing verdict line change. Exits zero exactly when `encode` with
+    /// the same `--capability` would pass its gate.
+    #[arg(long, value_enum)]
+    pub capability: Option<EncodeCapability>,
 }
 
 fn at_least_one(text: &str) -> Result<usize, String> {

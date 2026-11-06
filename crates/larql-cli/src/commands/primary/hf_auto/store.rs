@@ -103,8 +103,62 @@ impl EncodedStore {
         self.complete(repo, &commit)
     }
 
+    /// Whether `repo` has any complete encoded snapshot.
+    pub fn holds(&self, repo: &str) -> bool {
+        !self.snapshots(repo).is_empty()
+    }
+
+    /// Commits `repo` has a complete snapshot of, in name order.
+    pub fn snapshots(&self, repo: &str) -> Vec<String> {
+        let Ok(dir) = self.repo_dir(repo) else {
+            return Vec::new();
+        };
+        let mut commits: Vec<String> = std::fs::read_dir(dir.join(HUB_SNAPSHOTS_DIR))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|commit| self.complete(repo, commit).is_some())
+            .collect();
+        commits.sort();
+        commits
+    }
+
+    /// Every `(revision, commit)` pin recorded for `repo`, by revision.
+    pub fn refs(&self, repo: &str) -> Vec<(String, String)> {
+        let Ok(dir) = self.repo_dir(repo) else {
+            return Vec::new();
+        };
+        let mut pins: Vec<(String, String)> = std::fs::read_dir(dir.join(REFS_DIR))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|e| {
+                let revision = e.file_name().to_string_lossy().into_owned();
+                let commit = self.read_ref(repo, &revision)?;
+                Some((revision, commit))
+            })
+            .collect();
+        pins.sort();
+        pins
+    }
+
+    /// Remove `repo`'s snapshot of `commit` unless a recorded ref still
+    /// names it. Returns the removed directory, `None` when it was kept
+    /// (still referenced) or was never there.
+    pub fn prune(&self, repo: &str, commit: &str) -> Result<Option<PathBuf>, BoxErr> {
+        if self.refs(repo).iter().any(|(_, pinned)| pinned == commit) {
+            return Ok(None);
+        }
+        let Some(dir) = self.complete(repo, commit) else {
+            return Ok(None);
+        };
+        std::fs::remove_dir_all(&dir)?;
+        Ok(Some(dir))
+    }
+
     /// The commit `revision` resolved to when `repo` was last encoded.
-    fn read_ref(&self, repo: &str, revision: &str) -> Option<String> {
+    pub fn read_ref(&self, repo: &str, revision: &str) -> Option<String> {
         let path = self.ref_path(repo, revision)?;
         let text = std::fs::read_to_string(path).ok()?;
         let commit = text.trim();

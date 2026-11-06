@@ -1,6 +1,10 @@
 //! `vindex3 plan`: the G1 semantic representability gate.
 
-use larql_vindex::format::vindex3::plan::plan_resolved;
+use larql_vindex::format::vindex3::plan::admission::admit;
+use larql_vindex::format::vindex3::plan::capability::{Capability, CapabilityStatus};
+use larql_vindex::format::vindex3::plan::{plan_resolved, SystemPlan};
+
+use crate::commands::primary::hf_auto::refusal;
 
 #[allow(unused_imports)]
 use super::*;
@@ -28,14 +32,54 @@ pub(super) fn run_plan(args: PlanArgs) -> Result<(), Box<dyn std::error::Error>>
         summary.interfaces,
         summary.blocking,
     );
-    if plan.admissible {
-        Ok(())
-    } else {
-        Err(format!(
+    match args.capability.map(Capability::from) {
+        None if plan.admissible => Ok(()),
+        None => Err(format!(
             "plan not admissible: {} blocking finding(s); \
              every one is a schema or resolution gap to close before conversion",
             summary.blocking
         )
-        .into())
+        .into()),
+        Some(capability) => judge_capability(&plan, capability),
     }
+}
+
+/// The scoped verdict, from the same gate `encode --capability` applies.
+/// A refusal lists the blockers inside the closure, one per line.
+fn judge_capability(
+    plan: &SystemPlan,
+    capability: Capability,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match admit(plan, Some(capability)) {
+        Ok(status) => {
+            eprintln!("{}", admitted_line(plan, capability, status));
+            Ok(())
+        }
+        Err(refused) => {
+            let (_, blockers) = refusal::judge(plan, Some(capability));
+            Err(format!("{refused}{}", refusal::blocker_lines(&blockers)).into())
+        }
+    }
+}
+
+/// The closing line of an admissible scoped plan: the capability, its
+/// closure, and what the whole-model verdict still says.
+pub(crate) fn admitted_line(
+    plan: &SystemPlan,
+    capability: Capability,
+    status: Option<&CapabilityStatus>,
+) -> String {
+    let required = status.map_or(0, |s| s.required);
+    let whole_model = if plan.admissible {
+        "whole model admissible too".to_string()
+    } else {
+        format!(
+            "whole-model completeness NOT asserted ({} blocking finding(s) outside this closure)",
+            plan.summary.blocking
+        )
+    };
+    format!(
+        "admissible for {capability:?}: 0 of {required} finding(s) in its closure block; \
+         {whole_model}"
+    )
 }

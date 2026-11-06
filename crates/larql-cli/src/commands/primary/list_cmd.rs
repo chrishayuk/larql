@@ -11,12 +11,16 @@
 //! reads — so a VINDEX3 container is never listed as a 0-layer VINDEX2 one.
 //! Readiness is asked of each generation's own opener, without hashing
 //! payloads: an entry this build cannot open is listed as `unusable` with
-//! the opener's own reason, never as a row of zeros.
+//! the opener's own reason, never as a row of zeros. A VINDEX2 entry is
+//! also checked against the files its `index.json` declares, so a
+//! download that stopped after the metadata lists as `unusable`, not
+//! `ready`.
 
 use clap::Args;
+use larql_vindex::format::completeness::{check_declared_files, IncompleteVindex};
 use larql_vindex::format::generation::{summarize_container, ContainerGeneration};
 
-use crate::commands::primary::cache::{self, CachedVindex};
+use crate::commands::primary::cache::{self, CacheSource, CachedVindex};
 
 /// The size column's unit: decimal megabytes, as `SIZE (MB)` says.
 const BYTES_PER_MB: f64 = 1e6;
@@ -86,7 +90,7 @@ pub(crate) fn describe(entry: &CachedVindex) -> ListRow {
             row.generation = Some(summary.generation);
             row.layers = Some(summary.num_layers);
             row.hidden = Some(summary.hidden_size);
-            if let Err(why) = readiness(&entry.snapshot, summary.generation) {
+            if let Err(why) = readiness(entry, summary.generation) {
                 row.status = EntryStatus::Unusable(why);
             }
         }
@@ -96,14 +100,32 @@ pub(crate) fn describe(entry: &CachedVindex) -> ListRow {
 }
 
 /// Ask the generation's own opener whether it accepts this directory.
-fn readiness(path: &std::path::Path, generation: ContainerGeneration) -> Result<(), String> {
+/// A VINDEX2 index opens on `index.json` alone, so it is also checked
+/// against the files it declares — a metadata-only download is not ready.
+fn readiness(entry: &CachedVindex, generation: ContainerGeneration) -> Result<(), String> {
+    let path = &entry.snapshot;
     match generation {
-        ContainerGeneration::V2 => larql_vindex::load_vindex_config(path).map(|_| ()),
+        ContainerGeneration::V2 => {
+            let config = larql_vindex::load_vindex_config(path).map_err(|e| e.to_string())?;
+            check_declared_files(path, &config).map_err(|gap| incomplete_reason(entry, &gap))
+        }
         ContainerGeneration::V3 => {
             larql_vindex::format::vindex3::check_container_structure(path, false)
+                .map_err(|e| e.to_string())
         }
     }
-    .map_err(|e| e.to_string())
+}
+
+/// Why an entry missing declared files is unusable, and — for a hub
+/// download, the one case a re-run repairs — how to finish it.
+pub(crate) fn incomplete_reason(entry: &CachedVindex, gap: &IncompleteVindex) -> String {
+    match entry.source {
+        CacheSource::HuggingFace => format!(
+            "incomplete download: {gap} — re-run `larql pull {}`",
+            entry.repo
+        ),
+        CacheSource::Local | CacheSource::Encoded => format!("incomplete vindex: {gap}"),
+    }
 }
 
 /// The first sentence of an opener's refusal.

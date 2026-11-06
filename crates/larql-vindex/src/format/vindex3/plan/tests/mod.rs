@@ -1,5 +1,6 @@
 //! Tests for the semantic representability plan.
 
+mod admission;
 mod architecture_identity;
 mod capability;
 mod carriage;
