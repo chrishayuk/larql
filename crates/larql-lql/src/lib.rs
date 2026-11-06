@@ -12,6 +12,7 @@ pub use ast::Statement;
 pub use capability::CapabilityProfile;
 pub use error::LqlError;
 pub use executor::balance_trace;
+pub use executor::install_fault;
 pub use executor::Session;
 pub use parser::parse;
 pub use repl::{

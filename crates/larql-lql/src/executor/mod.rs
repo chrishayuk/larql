@@ -29,6 +29,7 @@ use crate::capability::CapabilityProfile;
 use crate::error::LqlError;
 
 pub mod balance_trace;
+pub mod install_fault;
 
 pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
 
@@ -89,6 +90,8 @@ pub struct Session {
     pub(crate) contract_violations: usize,
     /// Observer of COMPOSE balance passes, if one is set. See [`crate::balance_trace`].
     pub(crate) balance_trace: crate::executor::balance_trace::ObserverSlot,
+    /// Fault armed for the next COMPOSE install, if any. See [`crate::install_fault`].
+    pub(crate) install_fault: crate::executor::install_fault::FaultSlot,
 }
 
 impl Default for Session {
@@ -114,6 +117,7 @@ impl Session {
             verifier: None,
             contract_violations: 0,
             balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
+            install_fault: crate::executor::install_fault::FaultSlot::default(),
         }
     }
 
