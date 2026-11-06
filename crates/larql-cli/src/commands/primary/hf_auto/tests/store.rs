@@ -132,6 +132,9 @@ fn a_concurrent_winner_is_kept_and_the_loser_discarded() {
 /// A pid no process can have (beyond every platform's pid range).
 const DEAD_PID: u32 = i32::MAX as u32;
 
+/// Needs a liveness probe, which only Unix has; see
+/// `begin_never_sweeps_without_a_liveness_probe` for the other platforms.
+#[cfg(unix)]
 #[test]
 fn begin_sweeps_partials_of_exited_processes_only() {
     let (_tmp, store) = store();
@@ -157,9 +160,28 @@ fn partial_owner_parses_only_our_names() {
     assert_eq!(partial_owner(&format!("{PARTIAL_PREFIX}42-7")), Some(42));
     assert_eq!(partial_owner(&format!("{PARTIAL_PREFIX}42")), None);
     assert_eq!(partial_owner("snapshots"), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn liveness_tells_a_running_process_from_an_impossible_pid() {
     assert!(process_alive(std::process::id()));
     assert!(!process_alive(DEAD_PID));
     assert!(!process_alive(u32::MAX));
+}
+
+/// Without a liveness probe every partial is presumed to belong to a
+/// running encode, so nothing is swept — `larql rm` is the remedy.
+#[cfg(not(unix))]
+#[test]
+fn begin_never_sweeps_without_a_liveness_probe() {
+    assert!(process_alive(DEAD_PID));
+    let (_tmp, store) = store();
+    let repo_dir = store.repo_dir(REPO).unwrap();
+    let orphan = repo_dir.join(format!("{PARTIAL_PREFIX}{DEAD_PID}-0"));
+    std::fs::create_dir_all(&orphan).unwrap();
+    let _partial = store.begin(REPO).unwrap();
+    assert!(orphan.exists(), "a partial is never swept without a probe");
 }
 
 #[test]
