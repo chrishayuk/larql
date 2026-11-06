@@ -1,6 +1,7 @@
 //! Tracing and calibration — capture residuals, activations, and attention weights.
 
 use super::embed::embed_tokens;
+use super::ffn_covariance::FfnGramAccumulator;
 use super::hooks::{LayerHook, NoopHook};
 use super::layer::{
     apply_layer_scalar, run_attention, run_ffn, run_layer_with_capture_hooked, run_layer_with_ffn,
@@ -291,66 +292,22 @@ pub fn estimate_ffn_covariance(
     token_ids_per_prompt: &[Vec<u32>],
     layer: usize,
 ) -> Option<(Array2<f32>, usize)> {
-    // First pass: discover ffn_dim from the first successful capture.
-    let first = token_ids_per_prompt
+    // Discover ffn_dim from the first prompt whose capture succeeds, then
+    // accumulate that capture and every LATER prompt exactly once.
+    let (first_idx, first) = token_ids_per_prompt
         .iter()
-        .find_map(|tokens| capture_ffn_activation_matrix(weights, tokens, layer))?;
-    let ffn_dim = first.shape()[1];
-
-    // Accumulator — K^T K across all sampled token positions.
-    // Float64 would be safer but Array2<f32> suffices at our scales
-    // (we'll round to f32 when writing to disk anyway).
-    let mut ktk = Array2::<f32>::zeros((ffn_dim, ffn_dim));
-    let mut total_samples: usize = 0;
-
-    // Re-process the first capture so we don't double-count it.
-    // `K^T K` for a (seq, ffn_dim) matrix: each row's outer product
-    // with itself, summed across rows.
-    for row in first.rows() {
-        for i in 0..ffn_dim {
-            let vi = row[i];
-            if vi == 0.0 {
-                continue;
-            }
-            for j in 0..ffn_dim {
-                ktk[[i, j]] += vi * row[j];
-            }
-        }
-        total_samples += 1;
-    }
-
-    // Process the remaining prompts.
-    let mut seen_first = false;
-    for tokens in token_ids_per_prompt {
-        if !seen_first {
-            seen_first = true;
-            continue;
-        }
-        let Some(k) = capture_ffn_activation_matrix(weights, tokens, layer) else {
-            continue;
-        };
-        for row in k.rows() {
-            for i in 0..ffn_dim {
-                let vi = row[i];
-                if vi == 0.0 {
-                    continue;
-                }
-                for j in 0..ffn_dim {
-                    ktk[[i, j]] += vi * row[j];
-                }
-            }
-            total_samples += 1;
+        .enumerate()
+        .find_map(|(i, tokens)| {
+            capture_ffn_activation_matrix(weights, tokens, layer).map(|k| (i, k))
+        })?;
+    let mut acc = FfnGramAccumulator::new(first.shape()[1]);
+    acc.add(first.view());
+    for tokens in &token_ids_per_prompt[first_idx + 1..] {
+        if let Some(k) = capture_ffn_activation_matrix(weights, tokens, layer) {
+            acc.add(k.view());
         }
     }
-
-    if total_samples == 0 {
-        return None;
-    }
-
-    // C = (K^T K) / N
-    let scale = 1.0 / total_samples as f32;
-    ktk.mapv_inplace(|v| v * scale);
-    Some((ktk, total_samples))
+    acc.finish()
 }
 
 /// Run a forward pass and capture both residuals and sparse activations.

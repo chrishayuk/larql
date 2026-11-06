@@ -23,6 +23,7 @@
 
 pub mod dump_config;
 pub mod embed;
+pub mod ffn_covariance;
 pub mod hooks;
 pub mod infer_patched;
 pub mod inference_weights;
