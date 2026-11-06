@@ -332,8 +332,10 @@ pub struct ExecArgs {
     #[arg(long, value_name = "JSONL")]
     pub bank: Option<PathBuf>,
 
-    /// Where `--bank` writes its per-entry logit dumps.
-    #[arg(long, value_name = "DIR")]
+    /// Where `--bank` writes its per-entry logit dumps. Only `--bank`
+    /// reads it, so it is refused without `--bank` rather than accepted
+    /// and ignored.
+    #[arg(long, value_name = "DIR", requires = "bank")]
     pub dump_dir: Option<PathBuf>,
 
     /// Step the given tokens through the plan one position at a time and
