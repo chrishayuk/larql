@@ -124,7 +124,7 @@
   "test_cases": {
     "prompt_bank_chat": {
       "template": "the checkpoint's chat_template.jinja (blob pinned above), a single user turn, add_generation_prompt=True",
-      "token_ids_authority": "LARQL tokenises once with the pinned tokenizer; the ids are written to gemma4-e4b-1-token-bank.json and committed BEFORE the first oracle comparison, and both sides consume those ids (the dump_layers_hf.py rule: only one side chooses tokens)",
+      "token_ids_authority": "LARQL tokenises once with the pinned tokenizer; the ids are written to gemma4-e4b-1-token-bank.json and committed in their own commit BEFORE any oracle output is generated (not merely before results are inspected); the harness records that commit and refuses a differing bank; both sides consume those ids (the dump_layers_hf.py rule: only one side chooses tokens); no sequence is replaced, dropped or re-drawn after any result is seen; any bank change bumps harness_version, records its reason and keeps all earlier evidence",
       "prompts": [
         "What is the capital of France?",
         "Write a haiku about autumn rain.",
@@ -153,7 +153,7 @@
         "C-DECODE: LARQL cached decode at each decode position vs HF fresh forward over the same full sequence, at the matching absolute position",
         "C-SELF: LARQL cached decode vs LARQL fresh prefill at the same position (V4 internal)",
         "C-CHUNK: each chunking vs whole prefill, LARQL internal, V4 tolerances",
-        "C-ORACLE-SELF: HF cached decode vs HF fresh, report-only"
+        "C-ORACLE-SELF: HF cached decode vs HF fresh, report-only. Where it exceeds the C-SELF tolerance the position is recorded as oracle_inconsistent; LARQL gates stay against HF fresh at the frozen tolerances, so a LARQL miss there is still a failure (annotated, never excused) and no tolerance moves; gate failures and oracle discrepancies are reported as distinct outcomes"
       ]
     },
     "controls_that_must_fail": {

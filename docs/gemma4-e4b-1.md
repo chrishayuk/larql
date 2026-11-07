@@ -234,7 +234,8 @@ Everything below is fixed in the JSON under `metric_definitions`,
   - LARQL cached vs LARQL fresh;
   - each chunking vs whole;
   - HF cached vs HF fresh, report-only.
-- **Token ids** are chosen once, by LARQL's pinned tokenizer, and committed before any comparison.
+- **Oracle self-consistency is classified, never absorbed.** HF cached vs HF fresh can disagree on its own. Where it exceeds the LARQL-internal cached-vs-fresh tolerance, that position is recorded as `oracle_inconsistent`. LARQL's gates still compare against HF *fresh* at the frozen tolerances, so a LARQL miss there remains a failure. It is annotated, never excused, and no tolerance moves because of it. A gate failure is reported separately from an oracle discrepancy.
+- **Token ids** are chosen once, by LARQL's pinned tokenizer. The token bank (`gemma4-e4b-1-token-bank.json`) is committed **in its own commit, before any oracle output is generated**, not merely before results are read. The harness records that commit and refuses a bank that differs from it. No sequence is replaced, dropped or re-drawn after a result is seen. Any change to the bank bumps `harness_version`, records its reason, and keeps every earlier run's evidence.
 
 **Controls that must fail**
 
