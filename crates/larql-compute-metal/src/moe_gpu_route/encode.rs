@@ -2,6 +2,9 @@
 //! bindings (selected by `scratch.format` + the kernel registry's
 //! `ExpertScaleBinding` — architecture facts, never model names).
 
+use super::options::{
+    expert_down_combine_enabled, expert_gu_fusion_enabled, expert_x2_enabled, moe_ablation,
+};
 use super::transform::{router_input_transform, RouterInputTransform};
 use crate::moe_descriptor::MoeExpertDescriptorTable;
 use crate::moe_dispatch::MoeScratch;
@@ -63,9 +66,42 @@ impl MetalBackend {
         h_post_attn: &Buffer,
         new_h: &Buffer,
     ) {
+        self.encode_experts_and_combine_descriptor_x_buf_at(
+            enc,
+            x_buf,
+            moe,
+            scratch,
+            table,
+            selected_ids,
+            selected_weights,
+            (h_post_attn, 0),
+            (new_h, 0),
+            SlotLayout::single(scratch),
+        );
+    }
+
+    /// [`Self::encode_experts_and_combine_descriptor_x_buf`] with the
+    /// residual read and the output written at byte offsets — one row of a
+    /// `[rows, hidden]` VERIFY-N block. Only the residual/combine bindings
+    /// move; the expert input is `x_buf` as before.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn encode_experts_and_combine_descriptor_x_buf_at(
+        &self,
+        enc: &metal::ComputeCommandEncoderRef,
+        x_buf: &Buffer,
+        moe: &MoeLayerWeights<'_>,
+        scratch: &MoeScratch,
+        table: &MoeExpertDescriptorTable,
+        selected_ids: &Buffer,
+        selected_weights: &Buffer,
+        (h_post_attn, h_offset): (&Buffer, u64),
+        (new_h, out_offset): (&Buffer, u64),
+        layout: SlotLayout,
+    ) {
         assert!(
             x_buf.gpu_address() == scratch.x_buf.gpu_address()
-                || scratch.weight_cols == scratch.hidden,
+                || scratch.weight_cols == scratch.hidden
+                || layout.x_stride as usize == scratch.weight_cols,
             "chained x binding needs weight_cols == hidden: a padded row \
              width relies on the staging buffer's zero tail"
         );
@@ -95,7 +131,12 @@ impl MetalBackend {
         let hidden = scratch.hidden;
         let inter = scratch.inter;
         let inter_padded = scratch.inter_padded;
-        let n_slots = scratch.top_k;
+        let n_slots = layout.n_slots;
+        assert!(
+            n_slots <= scratch.top_k && layout.top_k > 0 && n_slots.is_multiple_of(layout.top_k),
+            "slot layout {layout:?} does not fit a scratch of {} slots",
+            scratch.top_k
+        );
         let gate_half_bytes = inter * scratch.row_bytes;
         assert_eq!(
             table.gate_up_expert_bytes,
@@ -111,6 +152,22 @@ impl MetalBackend {
             n_slots,
             gate_half_bytes as u32,
         );
+
+        // Rung 5b: a block on the MXFP4 x2 arm reads each distinct expert
+        // once — group its slots by expert, then run the multi arm.
+        let groups = layout
+            .dedupe
+            .filter(|_| {
+                scratch.format == larql_compute::QuantFormat::MXFP4
+                    && std::ptr::eq(
+                        self.mxfp4_grouped_for_table(table).0,
+                        &self.quant.mxfp4_grouped_x2_pipeline,
+                    )
+            })
+            .map(|arm| {
+                let rows = layout.rows();
+                self.encode_slots_by_expert(enc, selected_ids, n_slots, moe.num_experts, rows, arm)
+            });
 
         let ablate = moe_ablation();
         // E3: bias presence is a layer fact, stated by the table.
@@ -131,7 +188,9 @@ impl MetalBackend {
         // instead of set_bytes.
         let n_rows = inter as u32;
         let k_cols = scratch.weight_cols as u32;
-        let xstride_shared: u32 = 0;
+        // Per-slot input stride: 0 = every slot reads the one position's x;
+        // a block lays its rows out one per slot (`SlotLayout::block`).
+        let xstride_shared: u32 = layout.x_stride;
         match scratch.format {
             larql_compute::QuantFormat::MXFP4 => {
                 use larql_models::quant::mxfp4::FusedHalf;
@@ -148,7 +207,8 @@ impl MetalBackend {
                 let fused_gu = std::ptr::eq(
                     kh as *const _,
                     &self.quant.mxfp4_grouped_x2_pipeline as *const _,
-                ) && expert_gu_fusion_enabled();
+                ) && expert_gu_fusion_enabled()
+                    && groups.is_none();
                 if fused_gu {
                     // A-12 expert pass: both halves in ONE dispatch — one
                     // GEMV α per layer instead of two, and twice the
@@ -180,7 +240,13 @@ impl MetalBackend {
                         MTLSize::new(khgu.threads_per_tg, 1, 1),
                     );
                 } else {
+                    let kh = groups.as_ref().map_or(kh, |g| g.pipeline(self));
                     let row_tiles = (inter as u64).div_ceil(kh.rows_per_tg);
+                    let grid = groups
+                        .as_ref()
+                        .map_or(MTLSize::new(row_tiles, n_slots as u64, 1), |g| {
+                            g.grid(row_tiles, n_slots)
+                        });
                     for half in [FusedHalf::Gate, FusedHalf::Up] {
                         // Halves are selected by WHICH ROWS the kernel
                         // walks — one payload table and one scale table
@@ -203,10 +269,10 @@ impl MetalBackend {
                         enc.set_bytes(8, 4, &xstride_shared as *const u32 as *const c_void);
                         enc.set_bytes(9, 4, &row_base as *const u32 as *const c_void);
                         enc.set_bytes(10, 4, &row_stride as *const u32 as *const c_void);
-                        enc.dispatch_thread_groups(
-                            MTLSize::new(row_tiles, n_slots as u64, 1),
-                            MTLSize::new(kh.threads_per_tg, 1, 1),
-                        );
+                        if let Some(g) = &groups {
+                            g.bind(enc);
+                        }
+                        enc.dispatch_thread_groups(grid, MTLSize::new(kh.threads_per_tg, 1, 1));
                     }
                 }
             }
@@ -341,11 +407,11 @@ impl MetalBackend {
             enc.set_buffer(2, Some(scale_base), 0);
             enc.set_buffer(3, Some(&bindings.dn_scale_offs), 0);
             enc.set_buffer(4, Some(&scratch.act_buf), 0);
-            enc.set_buffer(5, Some(new_h), 0);
+            enc.set_buffer(5, Some(new_h), out_offset);
             enc.set_bytes(6, 4, &n_out as *const u32 as *const c_void);
             enc.set_bytes(7, 4, &k_in as *const u32 as *const c_void);
             enc.set_bytes(8, 4, &xstride_own as *const u32 as *const c_void);
-            enc.set_buffer(9, Some(h_post_attn), 0);
+            enc.set_buffer(9, Some(h_post_attn), h_offset);
             enc.set_buffer(10, Some(selected_weights), 0);
             enc.set_buffer(11, Some(&scratch.down_bias_staged), 0);
             enc.set_bytes(12, 4, &has_bias_u as *const u32 as *const c_void);
@@ -361,6 +427,7 @@ impl MetalBackend {
                     ROW_BASE_IDENTITY, ROW_STRIDE_IDENTITY,
                 };
                 let (kh, _) = self.mxfp4_grouped_for_table(table);
+                let kh = groups.as_ref().map_or(kh, |g| g.pipeline(self));
                 let scale_base = table
                     .down_scale_base
                     .as_ref()
@@ -378,10 +445,15 @@ impl MetalBackend {
                 enc.set_bytes(8, 4, &xstride_own as *const u32 as *const c_void);
                 enc.set_bytes(9, 4, &ROW_BASE_IDENTITY as *const u32 as *const c_void);
                 enc.set_bytes(10, 4, &ROW_STRIDE_IDENTITY as *const u32 as *const c_void);
-                enc.dispatch_thread_groups(
-                    MTLSize::new(row_tiles_down, n_slots as u64, 1),
-                    MTLSize::new(kh.threads_per_tg, 1, 1),
-                );
+                if let Some(g) = &groups {
+                    g.bind(enc);
+                }
+                let grid = groups
+                    .as_ref()
+                    .map_or(MTLSize::new(row_tiles_down, n_slots as u64, 1), |g| {
+                        g.grid(row_tiles_down, n_slots)
+                    });
+                enc.dispatch_thread_groups(grid, MTLSize::new(kh.threads_per_tg, 1, 1));
             }
             _ => {
                 let kh = &self.quant.q6k_grouped_experts_pipeline;
@@ -424,26 +496,66 @@ impl MetalBackend {
         }
         // Combine — same kernel, routing weights from rung B's GPU buffer
         // (E2: the set_bytes → set_buffer flip, kernel signature unchanged).
+        // One dispatch per position: a block's row `r` combines its own
+        // `top_k` slots into its own residual row.
         let hidden_u = hidden as u32;
-        let k_u = n_slots as u32;
+        let k_u = layout.top_k as u32;
         let has_bias_u: u32 = u32::from(has_down_bias);
-        enc.set_compute_pipeline_state(&self.ffn.moe_weighted_combine_pipeline);
-        enc.set_buffer(0, Some(&scratch.expert_outs), 0);
-        enc.set_buffer(1, Some(h_post_attn), 0);
-        enc.set_buffer(2, Some(new_h), 0);
-        enc.set_bytes(3, 4, &hidden_u as *const u32 as *const c_void);
-        enc.set_bytes(4, 4, &k_u as *const u32 as *const c_void);
-        enc.set_buffer(5, Some(selected_weights), 0);
-        enc.set_buffer(6, Some(&scratch.down_bias_staged), 0);
-        enc.set_bytes(7, 4, &has_bias_u as *const u32 as *const c_void);
-        enc.dispatch_threads(
-            MTLSize::new(hidden as u64, 1, 1),
-            MTLSize::new(
-                crate::kernels::DISPATCH_TG_MAX_THREADS.min(hidden as u64),
-                1,
-                1,
-            ),
-        );
+        let f = std::mem::size_of::<f32>() as u64;
+        for r in 0..(n_slots / layout.top_k) as u64 {
+            let slot0 = r * layout.top_k as u64;
+            enc.set_compute_pipeline_state(&self.ffn.moe_weighted_combine_pipeline);
+            enc.set_buffer(0, Some(&scratch.expert_outs), slot0 * hidden as u64 * f);
+            enc.set_buffer(1, Some(h_post_attn), h_offset + r * hidden as u64 * f);
+            enc.set_buffer(2, Some(new_h), out_offset + r * hidden as u64 * f);
+            enc.set_bytes(3, 4, &hidden_u as *const u32 as *const c_void);
+            enc.set_bytes(4, 4, &k_u as *const u32 as *const c_void);
+            enc.set_buffer(5, Some(selected_weights), slot0 * f);
+            enc.set_buffer(
+                6,
+                Some(&scratch.down_bias_staged),
+                slot0 * hidden as u64 * f,
+            );
+            enc.set_bytes(7, 4, &has_bias_u as *const u32 as *const c_void);
+            enc.dispatch_threads(
+                MTLSize::new(hidden as u64, 1, 1),
+                MTLSize::new(
+                    crate::kernels::DISPATCH_TG_MAX_THREADS.min(hidden as u64),
+                    1,
+                    1,
+                ),
+            );
+        }
+    }
+}
+
+/// How the expert pass's slots map onto positions: `n_slots` slots, each
+/// reading its input at `slot * x_stride` (0 = one shared position), and
+/// every `top_k` consecutive slots combining into one position's residual.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SlotLayout {
+    pub(crate) n_slots: usize,
+    pub(crate) x_stride: u32,
+    pub(crate) top_k: usize,
+    /// Rung 5b: share each distinct expert's reads across its slots, by
+    /// this arm (MXFP4 x2 only; other arms ignore it).
+    pub(crate) dedupe: Option<super::options::DedupeArm>,
+}
+
+impl SlotLayout {
+    /// One position: the scratch's own slots over one shared input.
+    pub(crate) fn single(scratch: &MoeScratch) -> Self {
+        Self {
+            n_slots: scratch.top_k,
+            x_stride: 0,
+            top_k: scratch.top_k,
+            dedupe: None,
+        }
+    }
+
+    /// Positions the slots belong to.
+    pub(crate) fn rows(self) -> usize {
+        self.n_slots / self.top_k
     }
 }
 
@@ -567,6 +679,37 @@ impl MetalBackend {
         new_h: &Buffer,
         eps: f32,
     ) {
+        self.encode_moe_layer_gpu_route_at(
+            enc,
+            moe,
+            scratch,
+            table,
+            (h_post_attn, 0),
+            (new_h, 0),
+            eps,
+        );
+    }
+
+    /// [`Self::encode_moe_layer_gpu_route`] for one row of a `[rows, hidden]`
+    /// VERIFY-N block: the residual is read, and the layer output written,
+    /// at byte offsets. Everything else is the single-position encode,
+    /// dispatch for dispatch.
+    ///
+    /// A nonzero `h_offset` needs the pre-experts norm transform: under
+    /// `Identity` the residual itself is the router and expert input, bound
+    /// at offset 0 inside those kernels. Callers refuse that case first
+    /// ([`Self::routed_rows_supported`]).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn encode_moe_layer_gpu_route_at(
+        &self,
+        enc: &metal::ComputeCommandEncoderRef,
+        moe: &MoeLayerWeights<'_>,
+        scratch: &MoeScratch,
+        table: &MoeExpertDescriptorTable,
+        (h_post_attn, h_offset): (&Buffer, u64),
+        (new_h, out_offset): (&Buffer, u64),
+        eps: f32,
+    ) {
         use larql_compute::{MoeExpertScalePolicy, MoeTopKWeightPolicy};
         let hidden = scratch.hidden;
         let num_experts = moe.num_experts;
@@ -574,7 +717,14 @@ impl MetalBackend {
         // Router-input transform, stated explicitly.
         let x_route =
             match router_input_transform(moe).expect("gpu_route_supported checked the policy") {
-                RouterInputTransform::Identity => h_post_attn.clone(),
+                RouterInputTransform::Identity => {
+                    assert!(
+                        h_offset == 0,
+                        "an offset residual needs the pre-experts norm; callers check \
+                         routed_rows_supported first"
+                    );
+                    h_post_attn.clone()
+                }
                 RouterInputTransform::PreExpertsRmsNorm => {
                     // Norm INTO the scratch staging buffer: it is weight_cols
                     // wide with a permanently-zero tail (the same invariant
@@ -586,7 +736,7 @@ impl MetalBackend {
                     let hidden_u = hidden as u32;
                     let norm_offset: f32 = 0.0;
                     enc.set_compute_pipeline_state(&self.norms.rms_norm_pipeline);
-                    enc.set_buffer(0, Some(h_post_attn), 0);
+                    enc.set_buffer(0, Some(h_post_attn), h_offset);
                     enc.set_buffer(1, Some(&weight_buf), 0);
                     enc.set_buffer(2, Some(&normed), 0);
                     enc.set_bytes(3, 4, &hidden_u as *const u32 as *const c_void);
@@ -628,7 +778,7 @@ impl MetalBackend {
             moe.top_k,
             renormalize,
         );
-        self.encode_experts_and_combine_descriptor_x_buf(
+        self.encode_experts_and_combine_descriptor_x_buf_at(
             enc,
             &x_route,
             moe,
@@ -636,79 +786,12 @@ impl MetalBackend {
             table,
             &ids_buf,
             &weights_buf,
-            h_post_attn,
-            new_h,
+            (h_post_attn, h_offset),
+            (new_h, out_offset),
+            SlotLayout::single(scratch),
         );
     }
 }
 
 #[cfg(test)]
 mod tests;
-
-/// Timing-only ablation of the expert tail machinery, for the A-12
-/// in-situ decomposition: `LARQL_ABLATE_MOE=bias,act,combine` (any
-/// subset). **Numbers are wrong by construction** — the run exists to
-/// price a component's wall time, never to produce output — and the
-/// switch announces itself once on stderr so no measurement can quietly
-/// inherit it.
-#[derive(Clone, Copy, Default)]
-struct MoeAblation {
-    bias: bool,
-    act: bool,
-    combine: bool,
-}
-
-fn moe_ablation() -> MoeAblation {
-    static A: std::sync::OnceLock<MoeAblation> = std::sync::OnceLock::new();
-    *A.get_or_init(|| {
-        let Ok(spec) = std::env::var("LARQL_ABLATE_MOE") else {
-            return MoeAblation::default();
-        };
-        let mut a = MoeAblation::default();
-        for part in spec.split(',') {
-            match part.trim() {
-                "bias" => a.bias = true,
-                "act" => a.act = true,
-                "combine" => a.combine = true,
-                "" => {}
-                other => eprintln!("[moe] unknown LARQL_ABLATE_MOE part: {other}"),
-            }
-        }
-        if a.bias || a.act || a.combine {
-            eprintln!(
-                "[moe] ABLATED RUN — skipping{}{}{}; numbers are wrong by construction, timing only",
-                if a.bias { " bias" } else { "" },
-                if a.act { " act" } else { "" },
-                if a.combine { " combine" } else { "" },
-            );
-        }
-        a
-    })
-}
-
-/// Opt-in for the fused down+combine dispatch (`LARQL_MXFP4_EXPERT_DC=1`).
-/// A/B/A/B on gpt-oss read −0.21 then +0.12 ms under battery drift —
-/// ambiguous, so the split form stays the default until a rested AC
-/// re-run decides. (The in-situ ablation's −0.32 ms for `combine` was
-/// mostly a dependency-break artifact: skipping the kernel also freed
-/// the next layer from waiting on the down projection.)
-fn expert_down_combine_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("LARQL_MXFP4_EXPERT_DC").as_deref() == Ok("1"))
-}
-
-/// Control for the x2 expert GEMV arm: `LARQL_MXFP4_EXPERT_X2=0` keeps
-/// the single-row vec kernel. Read once.
-fn expert_x2_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("LARQL_MXFP4_EXPERT_X2").as_deref() != Ok("0"))
-}
-
-/// Opt-in for the fused gate+up expert dispatch (`LARQL_MXFP4_EXPERT_GU=1`).
-/// Measured NULL on gpt-oss (−0.04 ms, within noise): the second GEMV's α
-/// is hidden behind the first's tail and 1440 threadgroups already fill
-/// the machine — the class-aware α model's prediction. Retained as an arm.
-fn expert_gu_fusion_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("LARQL_MXFP4_EXPERT_GU").as_deref() == Ok("1"))
-}

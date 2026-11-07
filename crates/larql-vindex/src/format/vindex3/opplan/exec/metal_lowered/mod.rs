@@ -143,6 +143,9 @@ pub struct LoweredSession<'a> {
     ablate: Ablation,
     /// `Some` while `--profile` is recording decode tokens.
     ledger: Option<StageLedger>,
+    /// `Some` while `--profile` is recording VERIFY-N blocks — a separate
+    /// ledger, since a block is not a token.
+    verify_ledger: Option<StageLedger>,
     /// GPU span of the most recent step's command buffer, in ms — the
     /// token's device time, so wall minus this is host time.
     last_gpu_ms: f64,
@@ -229,6 +232,20 @@ impl<'a> LoweredSession<'a> {
             bytes: self.stage_bytes(),
             ..Default::default()
         });
+        self.verify_ledger = Some(StageLedger::default());
+    }
+
+    /// The VERIFY-N block ledger, rendered per block; `None` if profiling
+    /// never started or no block was verified.
+    pub fn verify_profile_report(&self) -> Option<Vec<String>> {
+        let ledger = self.verify_ledger.as_ref().filter(|l| l.tokens > 0)?;
+        let mut lines = ledger.render();
+        if let Some(first) = lines.first_mut() {
+            *first = first
+                .replace("token(s)", "verify block(s)")
+                .replace("per token", "per verify block");
+        }
+        Some(lines)
     }
 
     /// The recorded ledger, rendered; `None` if profiling never started.
