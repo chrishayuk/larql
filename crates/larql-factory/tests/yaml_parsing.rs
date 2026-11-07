@@ -104,6 +104,9 @@ fn the_recipe_inlined_in_a_card_parses_back_to_the_same_recipe() {
 
 #[test]
 fn malformed_yaml_is_refused_with_a_located_error() {
+    // A Windows checkout gives the fixture CRLF endings; the mutations below
+    // match LF, so normalise first or they silently do nothing.
+    let base = SINGLE_OUTPUT_RECIPE_YAML.replace("\r\n", "\n");
     let cases = [
         (
             "unclosed flow sequence",
@@ -111,31 +114,30 @@ fn malformed_yaml_is_refused_with_a_located_error() {
         ),
         (
             "tab indentation",
-            SINGLE_OUTPUT_RECIPE_YAML.replace("  name: tiny-model\n", "\tname: tiny-model\n"),
+            mutate(&base, "  name: tiny-model\n", "\tname: tiny-model\n"),
         ),
         (
             "duplicate key",
-            SINGLE_OUTPUT_RECIPE_YAML.replace(
+            mutate(
+                &base,
                 "  name: tiny-model\n",
                 "  name: tiny-model\n  name: other\n",
             ),
         ),
-        (
-            "two documents",
-            format!("{SINGLE_OUTPUT_RECIPE_YAML}---\n{SINGLE_OUTPUT_RECIPE_YAML}"),
-        ),
+        ("two documents", format!("{base}---\n{base}")),
         (
             "wrong type",
-            SINGLE_OUTPUT_RECIPE_YAML.replace("    - preset: full\n", "    5\n"),
+            mutate(&base, "    - preset: full\n", "    5\n"),
         ),
         (
             "missing required field",
-            SINGLE_OUTPUT_RECIPE_YAML.replace("    licence: mit\n", ""),
+            mutate(&base, "    licence: mit\n", ""),
         ),
         (
             // `serde_yaml` silently turned this into `null` in `options`.
             "non-finite float",
-            SINGLE_OUTPUT_RECIPE_YAML.replace(
+            mutate(
+                &base,
                 "    dtype: f16\n",
                 "    dtype: f16\n    options:\n      scale: .inf\n",
             ),
@@ -152,4 +154,14 @@ fn malformed_yaml_is_refused_with_a_located_error() {
             "{name}: error has no location: {err}"
         );
     }
+}
+
+/// Replaces `from` with `to` in `src`, failing if `from` is absent so a
+/// mutation can never quietly leave the valid recipe unchanged.
+fn mutate(src: &str, from: &str, to: &str) -> String {
+    assert!(
+        src.contains(from),
+        "mutation target not in fixture: {from:?}"
+    );
+    src.replace(from, to)
 }
