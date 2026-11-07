@@ -76,6 +76,9 @@ larql pull granite-4.1-3b
 larql run  granite-4.1-3b "Write a haiku about Rust."
 ```
 
+`gemma-3-4b-it`, `gemma-3-12b-it` and `gemma-4-12b-it` are ready to pull the
+same way.
+
 **2. Serve it** over an OpenAI-compatible API:
 
 ```bash
@@ -126,7 +129,7 @@ it downloads the weights. If something is missing, `larql run` refuses and
 lists exactly what, after reading only the file headers, rather than
 producing something that runs wrong.
 
-Models run end to end so far include Qwen3, Gemma 3 4B and Granite 4.1;
+Models run end to end so far include Qwen3, Gemma 3, Gemma 4 and Granite 4.1;
 [Getting started](docs/getting-started.md#which-models-work) has the current
 list. Older VINDEX2 `.vindex` files still open and run; new work uses VINDEX3.
 
