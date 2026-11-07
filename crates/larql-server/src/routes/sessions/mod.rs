@@ -114,8 +114,8 @@ pub async fn handle_list_sessions(State(state): State<Arc<AppState>>) -> Json<se
     tag = "sessions",
     params(("session_id" = String, Path, description = "Value of the `X-Session-Id` header.")),
     responses(
-        (status = 200, body = crate::openapi::schemas::SessionResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::SessionResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_get_session(
