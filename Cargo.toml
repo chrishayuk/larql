@@ -61,7 +61,7 @@ default-members = [
 chunks_exact_to_as_chunks = "allow"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 # MSRV. The NEON dot-product intrinsics (`vdotq_s32` and friends,
 # `stdarch_neon_dotprod`) that the VINDEX3 CPU integer path and the

@@ -2129,7 +2129,7 @@ dependencies = [
 
 [[package]]
 name = "larql-boundary"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "criterion",
  "serde",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "larql-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "larql-compute"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blas-src",
  "cc",
@@ -2190,7 +2190,7 @@ dependencies = [
 
 [[package]]
 name = "larql-compute-metal"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blas-src",
  "criterion",
@@ -2208,14 +2208,14 @@ dependencies = [
 
 [[package]]
 name = "larql-continuation-fixture"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "larql-vindex",
 ]
 
 [[package]]
 name = "larql-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "assert_approx_eq",
  "criterion",
@@ -2228,7 +2228,7 @@ dependencies = [
 
 [[package]]
 name = "larql-demos"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "blas-src",
@@ -2259,11 +2259,11 @@ dependencies = [
 
 [[package]]
 name = "larql-execution"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "larql-factory"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "larql-models",
  "larql-vindex-spec",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "larql-inference"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "assert_approx_eq",
@@ -2323,7 +2323,7 @@ dependencies = [
 
 [[package]]
 name = "larql-kv"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blas-src",
  "crc32fast",
@@ -2349,7 +2349,7 @@ dependencies = [
 
 [[package]]
 name = "larql-lql"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "criterion",
  "larql-compute",
@@ -2372,7 +2372,7 @@ dependencies = [
 
 [[package]]
 name = "larql-models"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "criterion",
  "larql-vindex-spec",
@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "larql-python"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "larql-core",
  "larql-inference",
@@ -2406,7 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "larql-router"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "clap",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "larql-router-protocol"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "bytes",
@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "larql-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-stream",
  "axum",
@@ -2517,7 +2517,7 @@ dependencies = [
 
 [[package]]
 name = "larql-vindex"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2554,7 +2554,7 @@ dependencies = [
 
 [[package]]
 name = "larql-vindex-spec"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2848,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "model-compute"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "criterion",
