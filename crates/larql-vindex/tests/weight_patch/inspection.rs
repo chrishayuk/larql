@@ -157,6 +157,10 @@ fn each_inconsistency_between_ledger_and_container_is_reported() {
             }),
         ),
         (
+            "a tensor listed with no edited element",
+            Box::new(|l| l.targets[0].edits.clear()),
+        ),
+        (
             "one tensor listed twice",
             Box::new(|l| {
                 let t = l.targets[0].clone();

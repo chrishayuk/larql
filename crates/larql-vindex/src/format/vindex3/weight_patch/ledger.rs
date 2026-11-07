@@ -305,6 +305,14 @@ fn check_derived(index: &Vindex3Index, canonical: &str, ledger: &WeightPatchLedg
 }
 
 fn check_edits(root: &Path, segment: &str, target: &LedgerTarget) -> Vec<String> {
+    if target.edits.is_empty() {
+        // A writer never records a tensor it did not edit; a ledger that does
+        // names an edit that is not there.
+        return vec![format!(
+            "ledger lists tensor `{}` with no edited element",
+            target.tensor
+        )];
+    }
     let path = root.join(segment);
     let (header, payload_start) = match read_segment_header(&path) {
         Ok(h) => h,

@@ -73,6 +73,48 @@ fn two_tensors_are_edited_in_one_container_and_nothing_else_moves() {
     assert!(ledger.targets.iter().all(|t| t.representation == CANONICAL));
 }
 
+/// Layer 0's up projection, `[256, 64]`: transposed relative to the down
+/// projection, so a wrong per-tensor column count lands somewhere else.
+const UP: &str = "0.mlp.up_proj.weight";
+
+#[test]
+fn each_tensor_is_addressed_with_its_own_shape() {
+    let src = source_with_pack();
+    let out = src.out("shapes.vindex3");
+    // Row 3, column 7 of a [64, 256] and of a [256, 64] matrix are different
+    // byte offsets; editing both checks each tensor uses its own column count.
+    let (row, col, delta) = (3, 7, 0.25);
+    let patches = vec![
+        on(TENSOR, vec![edit(row, col, delta)]),
+        on(UP, vec![edit(row, col, delta)]),
+    ];
+    let report = apply_weight_patches(&src.container, &patches, &[], &out).unwrap();
+    let ledger =
+        parse_ledger(&std::fs::read_to_string(out.join("weight_patches.json")).unwrap()).unwrap();
+    for (name, cols) in [(TENSOR, TENSOR_COLS), (UP, TENSOR_ROWS)] {
+        let (before, after) = (
+            tensor_bytes(&src.container, CANONICAL, name),
+            tensor_bytes(&out, CANONICAL, name),
+        );
+        let changed: Vec<usize> = (0..before.len() / 2)
+            .filter(|&i| before[2 * i..2 * i + 2] != after[2 * i..2 * i + 2])
+            .collect();
+        assert_eq!(
+            changed,
+            vec![row * cols + col],
+            "{name}: exactly the declared element"
+        );
+        let target = ledger.targets.iter().find(|t| t.tensor == name).unwrap();
+        let at = 2 * (row * cols + col);
+        assert_eq!(
+            u16::from_le_bytes([after[at], after[at + 1]]),
+            target.edits[0].new_bits,
+            "{name}: holds the ledger's new bits"
+        );
+    }
+    assert_eq!(report.tensors, vec![TENSOR.to_string(), UP.to_string()]);
+}
+
 #[test]
 fn one_compile_of_two_tensors_equals_the_same_edits_as_one_tensor_each_where_they_overlap() {
     // The edited bytes of each tensor do not depend on what else the patch edits.
