@@ -13,10 +13,17 @@
 //!
 //! The layout/order mutation table (`ContiguousHalves`, `SwapPerHeadQGate`,
 //! `GateGetsQNorm`, `GateGetsRoPe`, `SiluGate`, `GateAfterOProj`, `NoGate`)
-//! is NOT here yet, and until it is, this file proves geometry and closure
-//! only — not that the runtime reads those 128 rows as
-//! `[q_h0 | gate_h0 | q_h1 | …]` rather than the equally well-shaped
-//! `[all q | all gate]`. Said plainly so the coverage is not overread.
+//! is in `mutation_table` below. Each arm is threaded through the shipped
+//! attention path and must move its output, so the runtime is shown to
+//! read the projection as `[q_h0 | gate_h0 | q_h1 | …]` and not as the
+//! equally well-shaped `[all q | all gate]` — at the dense fixture's
+//! head dim 8, and (for the two layout arms) at Qwen3.5-0.8B's
+//! full-attention head dim 256 with its quarter-width rotary.
+//!
+//! What it does NOT prove: that the shipped output is numerically correct
+//! for a real checkpoint. The weights are `lcg_values`; correctness on the
+//! real model is HF parity's job. These tests show only that each broken
+//! semantics is distinguishable from the shipped one.
 
 use crate::format::vindex3::encode::encode_system_unenforced as encode_system;
 use crate::format::vindex3::fixtures::{gated_q_f32_model, DENSE_HEAD_DIM, DENSE_Q_HEADS};
@@ -126,6 +133,10 @@ fn a_declared_gate_without_the_rows_to_hold_it_is_refused() {
 /// actually means.
 mod mutation_table {
     use super::*;
+    use crate::format::vindex3::fixtures::{
+        gated_q_f32_model_with_geometry, GatedQGeometry, GATED_Q_DENSE_GEOMETRY,
+        GATED_Q_QWEN35_GEOMETRY,
+    };
     use crate::format::vindex3::opplan::exec::kernels::GateMutation;
     use crate::format::vindex3::opplan::exec::operands::OperandStore;
     use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -133,8 +144,13 @@ mod mutation_table {
 
     /// Control plus every arm, run through one gated layer.
     fn outputs_for(mutation: GateMutation) -> Vec<f32> {
+        outputs_for_geometry(GATED_Q_DENSE_GEOMETRY, mutation)
+    }
+
+    /// [`outputs_for`] on the gated fixture at a chosen per-head geometry.
+    fn outputs_for_geometry(geometry: GatedQGeometry, mutation: GateMutation) -> Vec<f32> {
         let dir = tempfile::tempdir().unwrap();
-        gated_q_f32_model(dir.path());
+        gated_q_f32_model_with_geometry(dir.path(), geometry);
         let inventory = larql_models::inventory::build_inventory(dir.path()).unwrap();
         let container = tempfile::tempdir().unwrap();
         encode_system(&[("gated".to_string(), inventory)], container.path()).unwrap();
@@ -146,6 +162,13 @@ mod mutation_table {
         let store = OperandStore::open(container.path(), &inspection).unwrap();
         let layer = &plan.layers[0];
         let op = layer.attention.softmax().unwrap();
+        // The geometry must reach the planned op, or a head-dim-256 run
+        // would silently be measuring some other position policy.
+        assert_eq!(
+            op.position.rotary_fraction(),
+            geometry.partial_rotary_factor,
+            "the declared rotary fraction must be the planned one"
+        );
 
         // Eight positions, not three: the rotary arms are position-driven
         // and a 3-token batch (positions 0,1,2 — one of which does not
@@ -276,5 +299,49 @@ mod mutation_table {
             "GateAfterOProj is quiet in rel_rms; cosine is what carries it"
         );
         assert!(cosine(&after, &control) < 0.99999);
+    }
+    /// The rel-RMS a layout arm must exceed at head dim 256 — the same bar
+    /// `a_contiguous_split_is_loudly_wrong` holds the dense fixture to: a
+    /// misread interleave swaps whole query/gate blocks (an O(1) change),
+    /// so 1e-2 is far above rounding and far below the expected error.
+    const MIN_LOUD_REL_RMS_AT_QWEN35_HEAD_DIM: f32 = 1e-2;
+
+    /// **The headline at Qwen3.5-0.8B's head dim.** With a 256-wide
+    /// per-head stride (and RoPE on only the first quarter of it), a
+    /// contiguous split and a per-head q/gate swap must both stay
+    /// well-shaped and both be loudly wrong. The dense fixture's head dim
+    /// of 8 cannot show that the stride, not just the interleave, is read
+    /// from the declared geometry.
+    #[test]
+    fn layout_mutations_are_loudly_wrong_at_qwen35_head_dim() {
+        assert_eq!(
+            GATED_Q_QWEN35_GEOMETRY.head_dim,
+            crate::format::vindex3::fixtures::QWEN35_FULL_ATTENTION_HEAD_DIM
+        );
+        let control = outputs_for_geometry(GATED_Q_QWEN35_GEOMETRY, GateMutation::None);
+        assert!(
+            control.iter().any(|v| v.abs() > 1e-6),
+            "an all-zero control cannot discriminate anything"
+        );
+        for arm in [
+            GateMutation::ContiguousHalves,
+            GateMutation::SwapPerHeadQGate,
+        ] {
+            let got = outputs_for_geometry(GATED_Q_QWEN35_GEOMETRY, arm);
+            assert_eq!(
+                got.len(),
+                control.len(),
+                "{arm:?} must stay well-shaped — that is what makes it dangerous"
+            );
+            let (r, c) = (rel_rms(&got, &control), cosine(&got, &control));
+            println!(
+                "  head_dim 256  {:<18}  rel_rms {r:.3e}  cos {c:.7}",
+                format!("{arm:?}")
+            );
+            assert!(
+                r > MIN_LOUD_REL_RMS_AT_QWEN35_HEAD_DIM,
+                "{arm:?} must be loud at head dim 256, not marginal: rel_rms {r:e} cos {c:.7}"
+            );
+        }
     }
 }

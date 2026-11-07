@@ -172,8 +172,30 @@ pub enum Mutation {
     CentredConv,
     /// Tile q/k across heads (`h + j*Hk`) instead of `repeat_interleave`
     /// (`h*3 + j`). Same shape, different pairing with the value heads.
+    ///
+    /// **Silent at repeat 1.** When `Hv == Hk` (Qwen3.5-0.8B: 16/16),
+    /// `e % Hk == e / 1 == e`, so this arm is bit-identical to the shipped
+    /// path and cannot falsify anything there. See
+    /// [`Mutation::AssumedTripleExpansion`].
     TiledHeadExpansion,
+    /// Expand q/k as if `Hv = 3·Hk` — Qwen3.8's ratio — whatever the op
+    /// declares: head `e` takes source head `e / 3`, not `e / (Hv/Hk)`.
+    /// The failure an implementation hard-wired to Qwen3.8 would have.
+    ///
+    /// Distinguishable only where the declared repeat is NOT 3, which is
+    /// the point: it is the head-expansion falsifier for repeat-1
+    /// geometries (Qwen3.5-0.8B), where [`Mutation::TiledHeadExpansion`]
+    /// is a no-op. In bounds exactly when the declared repeat is <= 3
+    /// (`e <= Hv - 1 < 3·Hk`, so `e / 3 < Hk`), which covers Hk == Hv;
+    /// beyond that the arm panics rather than silently reading the key
+    /// block's channels as query ones.
+    AssumedTripleExpansion,
 }
+
+/// The repeat factor [`Mutation::AssumedTripleExpansion`] wrongly assumes:
+/// Qwen3.8's `Hv / Hk`, the ratio an implementation tuned on it would
+/// hard-wire.
+const ASSUMED_QWEN38_REPEAT: usize = 3;
 
 /// The delta rule, with the geometry and the state slice lifted OUT of
 /// the inner loops.
@@ -542,8 +564,10 @@ fn softplus(x: f32) -> f32 {
 /// Stage order is the specification. Three of these are places a plausible
 /// implementation goes wrong without looking wrong:
 /// the convolution is causal by left-pad and right-truncate (not centred),
-/// SiLU comes AFTER it, and q/k are `repeat_interleave`d 3x — head `e`
-/// takes original head `e / 3`, not `e % Hk`.
+/// SiLU comes AFTER it, and q/k are `repeat_interleave`d by `Hv / Hk` —
+/// head `e` takes original head `e / (Hv / Hk)`, not `e % Hk`. That ratio
+/// is 3 on Qwen3.8 and 1 on Qwen3.5-0.8B; it is read from the op, never
+/// assumed.
 pub fn layer_forward(
     op: &GatedDeltaOp,
     w: &GatedDeltaWeights<'_>,
@@ -672,10 +696,17 @@ pub fn layer_forward_with(
         let mut q = vec![0.0f32; hv * dk];
         let mut k = vec![0.0f32; hv * dk];
         for e in 0..hv {
-            let src = if mutation == Mutation::TiledHeadExpansion {
-                e % hk
-            } else {
-                e / repeat
+            let src = match mutation {
+                Mutation::TiledHeadExpansion => e % hk,
+                Mutation::AssumedTripleExpansion => {
+                    let src = e / ASSUMED_QWEN38_REPEAT;
+                    assert!(
+                        src < hk,
+                        "AssumedTripleExpansion needs Hv <= 3*Hk; head {e} maps to {src} of {hk}"
+                    );
+                    src
+                }
+                _ => e / repeat,
             };
             for d in 0..dk {
                 q[e * dk + d] = conv[t][src * dk + d];
