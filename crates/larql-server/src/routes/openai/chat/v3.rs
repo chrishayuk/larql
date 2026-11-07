@@ -29,7 +29,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
 
 use crate::error::ServerError;
-use crate::routes::openai::prompt::{render, ASSISTANT_ROLE};
+use crate::routes::openai::prompt::ASSISTANT_ROLE;
 use crate::routes::openai::schema::Schema;
 use crate::routes::openai::token_tap::{EmitFailure, TokenTap};
 use crate::routes::openai::util::{
@@ -37,6 +37,7 @@ use crate::routes::openai::util::{
     trim_at_stop, unix_now, SamplingParams, FINISH_REASON_LENGTH, FINISH_REASON_STOP,
     SSE_CHANNEL_DEPTH, SSE_DONE,
 };
+use crate::routes::openai::v3_prompt::encode_v3_conversation;
 use crate::routes::openai::OpenAIError;
 use crate::vindex3::{generate_v3, generate_v3_constrained, V3Generation, V3Model};
 
@@ -145,26 +146,6 @@ pub(super) async fn respond(
     .into_response())
 }
 
-/// Render + tokenise the conversation for the V3 runtime. No
-/// `ModelWeights` exists on this path, so template choice falls to the
-/// container's declared family, then the id heuristic
-/// (`V3Model::chat_template`).
-fn encode_chat_prompt(model: &V3Model, messages: &[ChatMessage]) -> Result<Vec<u32>, ServerError> {
-    let template = model.chat_template();
-    let prompt = render(template, messages);
-    let encoding = model
-        .tokenizer
-        .encode(prompt.as_str(), true)
-        .map_err(|e| ServerError::Internal(format!("tokenize: {e}")))?;
-    let ids: Vec<u32> = encoding.get_ids().to_vec();
-    if ids.is_empty() {
-        return Err(ServerError::BadRequest(
-            "rendered prompt tokenises to empty".into(),
-        ));
-    }
-    Ok(ids)
-}
-
 type BufferedChat = (String, Vec<(String, f64)>, &'static str, usize);
 
 /// Buffered generation: returns `(text, scored_tokens, finish_reason,
@@ -180,7 +161,7 @@ fn run_v3_chat(
     constrained_schema: Option<Schema>,
     tally: &mut crate::runtime_stats::GenerationTally,
 ) -> Result<BufferedChat, ServerError> {
-    let prompt_ids = encode_chat_prompt(model, messages)?;
+    let prompt_ids = encode_v3_conversation(model, messages)?;
     let (sampling, eos) = build_sampling_eos_from(model.eos.clone(), sampling_params, stop_strings);
     let generation = generate_maybe_masked(
         model,
@@ -273,7 +254,7 @@ fn stream_v3_chat(
 
     tokio::task::spawn_blocking(move || {
         let _gen_guard = runtime.clone().enter_generation();
-        let prompt_ids = match encode_chat_prompt(&model, &messages) {
+        let prompt_ids = match encode_v3_conversation(&model, &messages) {
             Ok(ids) => ids,
             Err(e) => {
                 let _ = tx.blocking_send(error_chunk(&e.to_string()));

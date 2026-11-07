@@ -51,6 +51,7 @@ fn v3_container() -> tempfile::TempDir {
         synthetic_tokenizer_json(G_VOCAB),
     )
     .unwrap();
+    common::chat_template::write_transcript_template(container.path());
     container
 }
 
@@ -92,23 +93,20 @@ fn v3_state_with_kv_entries(container: &Path, kv_entries: usize) -> Arc<AppState
     })
 }
 
-/// The exact prompt string the responses endpoint builds for this
-/// model: an unknown model id falls to the Plain chat template.
-fn rendered_prompt() -> String {
-    larql_inference::prompt::ChatTemplate::Plain
-        .render_messages([("user", USER_INPUT)].iter().map(|(r, c)| (*r, *c)))
-}
-
-/// Arm A: direct runtime, fed the endpoint's rendered prompt. Returns
-/// the concatenated emission text.
+/// Arm A: direct runtime, fed the prompt ids the shared derivation
+/// (`render_conversation` through the container's own template, then
+/// `encode`) gives the user turn. Returns the concatenated emission text.
 fn direct_arm_text(container: &Path, max_tokens: usize) -> String {
     let runtime = Vindex3Runtime::open(container, COMPONENT, ProductionBackend::new()).unwrap();
     let tokenizer = larql_vindex::load_vindex_tokenizer(container).unwrap();
-    let prompt_ids: Vec<u32> = tokenizer
-        .encode(rendered_prompt().as_str(), true)
-        .unwrap()
-        .get_ids()
-        .to_vec();
+    let prompt_ids: Vec<u32> = larql_inference::chat::render_conversation(
+        container,
+        runtime.family(),
+        &[larql_inference::chat::ChatTurn::user(USER_INPUT)],
+    )
+    .unwrap()
+    .encode(&tokenizer)
+    .unwrap();
     assert!(!prompt_ids.is_empty(), "rendered prompt must tokenise");
 
     let mut kv = CanonicalKvState::new();

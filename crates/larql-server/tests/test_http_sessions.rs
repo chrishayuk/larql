@@ -255,6 +255,7 @@ mod continuation {
             synthetic_tokenizer_json(G_VOCAB),
         )
         .unwrap();
+        crate::common::chat_template::write_transcript_template(&container);
         container
     }
 

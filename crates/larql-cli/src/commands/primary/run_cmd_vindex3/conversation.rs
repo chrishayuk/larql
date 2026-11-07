@@ -20,12 +20,15 @@
 //! so it is encoded without the tokenizer's post-processor — HF's
 //! `apply_chat_template(tokenize=True)` contract, and the one
 //! `larql bench` uses for VINDEX3. A raw prompt keeps the post-processor,
-//! exactly as before templates were applied here.
+//! exactly as before templates were applied here. The rule is
+//! [`larql_inference::chat::RenderedConversation::encode`], which the
+//! server's VINDEX3 chat routes call too, so `larql run` and `larql serve`
+//! give the same conversation the same ids.
 
 use std::io::Write;
 use std::path::Path;
 
-use larql_inference::chat::{render_conversation, ChatTurn, PromptShape};
+use larql_inference::chat::{render_conversation, ChatTurn, PromptShape, RenderedConversation};
 use larql_vindex::tokenizers::Tokenizer;
 
 use super::BoxErr;
@@ -76,8 +79,11 @@ impl<'a> Conversation<'a> {
         status: &mut dyn Write,
     ) -> Result<PreparedPrompt, BoxErr> {
         let turn = ChatTurn::user(user);
-        let (text, templated) = if self.raw {
-            (user.to_string(), false)
+        let rendered = if self.raw {
+            RenderedConversation {
+                prompt: user.to_string(),
+                shape: PromptShape::RawRequested,
+            }
         } else {
             let mut turns = self.history.clone();
             turns.push(turn.clone());
@@ -87,17 +93,12 @@ impl<'a> Conversation<'a> {
                 writeln!(status, "{} {NO_TEMPLATE_NOTE}", self.container.display())?;
                 self.noted_raw = true;
             }
-            let templated = rendered.templated();
-            (rendered.prompt, templated)
+            rendered
         };
-        // A rendered template carries its own special tokens; only a raw
-        // prompt gets the tokenizer's post-processor.
-        let add_special_tokens = !templated;
-        let ids = tokenizer
-            .encode(text.as_str(), add_special_tokens)
-            .map_err(|e| format!("encode prompt: {e}"))?
-            .get_ids()
-            .to_vec();
+        // The encoding rule is the shared one: a rendered template carries
+        // its own special tokens; only a raw prompt gets the post-processor.
+        let templated = rendered.templated();
+        let ids = rendered.encode(tokenizer)?;
         if ids.is_empty() {
             return Err("prompt encodes to no tokens — nothing to condition on".into());
         }
