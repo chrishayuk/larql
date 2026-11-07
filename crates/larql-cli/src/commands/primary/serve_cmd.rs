@@ -22,6 +22,13 @@
 //! the id inside the container (`Qwen3-0.6B` for a model served as
 //! `qwen3-0.6b`). So the name is also forwarded as `--model-alias`, and a
 //! request's `"model"` may use either. An explicit `--model-alias` wins.
+//!
+//! On Unix the hand-off is a real `exec`: `larql-server` replaces this
+//! process, keeping its PID, so a supervisor or script that signals
+//! `larql serve` signals the server, and killing it cannot orphan one.
+//! Windows has no `exec`, so there the server runs as a child and `larql`
+//! waits for it: Ctrl-C reaches both (one console group), but a
+//! `TerminateProcess` on `larql` alone leaves the server running.
 
 #[derive(clap::Args)]
 pub(crate) struct ServeArgs {
@@ -131,20 +138,59 @@ pub(crate) fn server_program(exe: Option<&std::path::Path>) -> String {
 pub(crate) fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let cmd_args = serve_command_args(&args)?;
     let exe = std::env::current_exe().ok();
-    let bin = server_program(exe.as_deref());
-
-    let status = std::process::Command::new(&bin).args(&cmd_args).status();
-
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(format!("{SERVER_BINARY} exited with: {s}").into()),
-        Err(e) => {
-            eprintln!("Failed to exec {SERVER_BINARY}: {e}");
-            eprintln!(
-                "Make sure {SERVER_BINARY} is installed (cargo install --path crates/larql-server)"
-            );
+    let mut command = server_command(&server_program(exe.as_deref()), &cmd_args);
+    match hand_off(&mut command) {
+        Ok(()) => Ok(()),
+        Err(HandOff::Exited(status)) => {
+            Err(format!("{SERVER_BINARY} exited with: {status}").into())
+        }
+        Err(HandOff::NotStarted(e)) => {
+            eprintln!("{}", exec_failure_message(&e));
             std::process::exit(1);
         }
+    }
+}
+
+/// The server invocation: `program` with the forwarded arguments.
+pub(crate) fn server_command(program: &str, args: &[String]) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    command
+}
+
+/// Why the hand-off to the server did not end cleanly.
+#[derive(Debug)]
+pub(crate) enum HandOff {
+    /// The server could not be started at all.
+    NotStarted(std::io::Error),
+    /// The server ran and exited unsuccessfully (Windows only: on Unix
+    /// this process *is* the server by then).
+    #[cfg_attr(unix, allow(dead_code))]
+    Exited(std::process::ExitStatus),
+}
+
+/// What to tell the user when the server could not be started.
+pub(crate) fn exec_failure_message(e: &std::io::Error) -> String {
+    format!(
+        "Failed to exec {SERVER_BINARY}: {e}\n\
+         Make sure {SERVER_BINARY} is installed (cargo install --path crates/larql-server)"
+    )
+}
+
+/// Replace this process with the server. Returns only if it could not.
+#[cfg(unix)]
+fn hand_off(command: &mut std::process::Command) -> Result<(), HandOff> {
+    use std::os::unix::process::CommandExt;
+    Err(HandOff::NotStarted(command.exec()))
+}
+
+/// Run the server as a child and wait for it: Windows has no `exec`.
+#[cfg(not(unix))]
+fn hand_off(command: &mut std::process::Command) -> Result<(), HandOff> {
+    match command.status() {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(HandOff::Exited(s)),
+        Err(e) => Err(HandOff::NotStarted(e)),
     }
 }
 

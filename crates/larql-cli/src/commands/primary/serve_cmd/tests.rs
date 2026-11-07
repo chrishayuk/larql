@@ -176,3 +176,41 @@ fn the_server_file_name_carries_the_platform_suffix() {
         format!("larql-server{}", std::env::consts::EXE_SUFFIX)
     );
 }
+
+// ── Hand-off to the server ──────────────────────────────────────────
+
+#[test]
+fn the_server_command_carries_the_forwarded_arguments() {
+    let args = vec![
+        "/models/q".to_string(),
+        "--port".to_string(),
+        "9000".to_string(),
+    ];
+    let command = server_command("/bin/larql-server", &args);
+    assert_eq!(command.get_program(), "/bin/larql-server");
+    let got: Vec<_> = command.get_args().collect();
+    assert_eq!(got, ["/models/q", "--port", "9000"]);
+}
+
+#[test]
+fn a_failed_exec_names_the_error_and_the_fix() {
+    let e = std::io::Error::new(std::io::ErrorKind::NotFound, "No such file");
+    let msg = exec_failure_message(&e);
+    assert!(
+        msg.starts_with("Failed to exec larql-server: No such file"),
+        "{msg}"
+    );
+    assert!(msg.contains("cargo install --path crates/larql-server"));
+}
+
+/// `hand_off` returns only when the server could not be started — on Unix
+/// a successful exec never returns, so only the failure is testable here.
+#[test]
+fn a_missing_server_is_reported_not_started() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut command = server_command(dir.path().join("no-such-server").to_str().unwrap(), &[]);
+    assert!(matches!(
+        hand_off(&mut command),
+        Err(HandOff::NotStarted(_))
+    ));
+}

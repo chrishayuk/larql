@@ -826,6 +826,12 @@ registry name). Put the model first — a model given after a flag is passed
 to the server unresolved. The server owns the flag list, and
 `larql serve --help` prints it; the tables below are a guide.
 
+The server is looked for beside `larql` (`larql-server.exe` on Windows), then
+on `PATH`. On Unix it replaces the `larql` process, keeping its PID, so a
+signal sent to `larql serve` reaches the server and cannot orphan it. Windows
+has no `exec`: the server runs as a child that `larql` waits on; Ctrl-C stops
+both, but terminating `larql` alone leaves the server running.
+
 | Flag | Description | Default |
 |---|---|---|
 | `<VINDEX_PATH>` | Path to .vindex directory or `hf://` URL | — |
