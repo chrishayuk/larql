@@ -2,8 +2,13 @@
  "frozen_at_utc": "2026-11-07T23:42:20+00:00",
  "statement": "VLP numerics v1 conformance suite, frozen after independent review (77/77 cases reproduced by an evaluator written from SPEC.md alone). An implementation gate for LARQL's structured ops and the independent verifier.",
  "sha256": {
-  "SPEC.md": "cb0d8538e9f7ba1d82fde669f9d5808200d4b20ffdd64179c1236d88d12c205f",
+  "SPEC.md": "0f97f2206027185b23163b10a9910656bde6f783d97d5555d5b480a23b8a22e1",
   "vectors.json": "4ce5df4e5ae743ff90ee28adebc1f315621c3c44430dd193bcc430c139ac24ed",
   "generate.py": "a293835f5d3c579082c81ac06d9d4f4f06141d55606a7083e8ead4dbe55951c2"
+ },
+ "refrozen_before_merge": {
+  "at_utc": "2026-11-07T23:48:29+00:00",
+  "reason": "SPEC.md cited two research-branch documents by repository path, which main's documentation-integrity check rejects as missing. They are now cited by file name, sha256 prefix and commit. Citation only: no rule, case or code changed; vectors.json and generate.py are unchanged.",
+  "superseded_spec_sha256": "cb0d8538e9f7ba1d82fde669f9d5808200d4b20ffdd64179c1236d88d12c205f"
  }
 }

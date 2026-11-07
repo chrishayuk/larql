@@ -11,10 +11,10 @@ An implementation that cannot guarantee these semantics on its platform, for exa
 flush-to-zero mode, must refuse to run. It must never produce different bytes.
 
 **Its source.** The contract restates, and does not change:
-- WSP-001 stage-2 amendment 1, A1: the profiles (`docs/wsp-001-stage2-amendment-1.md`);
-- the G2 design r3, §1–§4: the ops, the refusals and the phases (`docs/wsp-001-g2-design.md`).
+- WSP-001 stage-2 amendment 1, A1: the profiles (file wsp-001-stage2-amendment-1.md, sha256 `781e8da0…`);
+- the G2 design r3, §1–§4: the ops, the refusals and the phases (file wsp-001-g2-design.md, sha256 `f47de21f…`).
 
-Both were frozen on 2026-11-07 on the research branch. Where this document fixes a detail those texts leave
+Both were frozen on 2026-11-07, in commit `7dbb6150` of the WSP-001 research branch, which is not on `main`. Where this document fixes a detail those texts leave
 open, it says so under "Choices made here".
 
 **The files:**
