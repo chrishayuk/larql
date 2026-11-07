@@ -125,6 +125,7 @@ mod wave19_hc_substrate;
 #[rustfmt::skip]
 mod qw2_tiny_fixture;
 mod gated_delta_refusal;
+mod gated_delta_repeat_one;
 mod gemma4;
 mod gemma4_refusals;
 mod generate_baseline;
