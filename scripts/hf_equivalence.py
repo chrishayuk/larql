@@ -325,7 +325,7 @@ def compare(arm: str, arm_rows: np.ndarray, hf_rows: np.ndarray, positions: list
             mass_bearing.append(m.max_abs_logprob_mass_bearing(h[offset], a[offset]))
             # strict-f32 gates the full vocabulary; bf16-large the
             # mass-bearing tokens (the bf16 oracle's tail is rounding).
-            gated = max_abs[-1] if PROFILE[0] == m.STRICT_F32 else mass_bearing[-1]
+            gated = max_abs[start + offset] if PROFILE[0] == m.STRICT_F32 else mass_bearing[-1]
             if error_gate is not None and gated > error_gate:
                 error_exceeded.append(position)
             if int(np.argmax(a[offset])) != int(np.argmax(h[offset])):
