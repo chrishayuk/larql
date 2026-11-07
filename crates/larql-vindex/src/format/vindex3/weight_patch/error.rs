@@ -71,8 +71,15 @@ pub enum WeightPatchError {
     WrongSource { expected: String, found: String },
     #[error("weight edit in a patch: {0}")]
     PatchOp(String),
-    #[error("a compile carries edits to one tensor; the session holds edits to {0:?}")]
-    MoreThanOneTensor(Vec<String>),
+    #[error("tensor `{0}` is edited by two parts of one patch; give each tensor once")]
+    DuplicateTensor(String),
+    #[error("one patch edits one canonical representation: `{}` is in `{}`, `{}` is in `{}`", .first.0, .first.1, .other.0, .other.1)]
+    SpansRepresentations {
+        /// (tensor, representation) of the first edited tensor.
+        first: (String, String),
+        /// (tensor, representation) of one held elsewhere.
+        other: (String, String),
+    },
     #[error(transparent)]
     Vindex(#[from] VindexError),
     #[error(transparent)]
