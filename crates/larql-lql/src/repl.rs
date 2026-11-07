@@ -197,6 +197,13 @@ pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>>
 
 /// Run a batch of LQL statements, continuing after a failed statement, and
 /// report what happened.
+///
+/// After any statement has failed, a statement that writes an artifact
+/// ([`crate::ast::Statement::writes_artifact`]: `COMPILE`, `EXTRACT`, `SAVE PATCH`, ...)
+/// is refused rather than run, and counts as a failure. A batch never writes
+/// an output built on a session its author did not intend, such as a
+/// container compiled after its `APPLY PATCH` was refused. Statements that
+/// write nothing still run, so every diagnostic is still reported.
 pub fn run_batch_outcome(input: &str) -> BatchOutcome {
     let mut session = Session::new();
     let mut outcome = BatchOutcome::default();
@@ -214,6 +221,15 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
             continue;
         }
         match parser::parse(trimmed) {
+            Ok(stmt) if outcome.errors > 0 && stmt.writes_artifact() => {
+                outcome.lines.push(format!(
+                    "Error: refused `{}`: {} earlier statement(s) in this batch failed, \
+                     and a batch writes nothing after a failure",
+                    first_word(trimmed),
+                    outcome.errors
+                ));
+                outcome.errors += 1;
+            }
             Ok(stmt) => match session.execute(&stmt) {
                 Ok(lines) => outcome.lines.extend(lines),
                 Err(e) => {
@@ -230,6 +246,11 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
 
     outcome.contract_violations = session.contract_violations();
     outcome
+}
+
+/// The statement's keyword, for a refusal message.
+fn first_word(statement: &str) -> &str {
+    statement.split_whitespace().next().unwrap_or(statement)
 }
 
 fn is_complete_statement(s: &str) -> bool {

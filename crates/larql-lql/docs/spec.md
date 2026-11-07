@@ -962,6 +962,13 @@ An error outranks a violation, so a script with both exits 1. A script keeps run
 statement, as it always has, and the status reflects all of them. So a contract that could not be
 evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
 
+**After a failure, a script writes nothing.** Once any statement has failed, every later statement that
+would write an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `SAVE PATCH`, `DIFF … INTO PATCH`,
+`TRACE … SAVE`, or a pipe containing one) is refused with `Error: refused ...` and counts as a failure.
+Statements that write nothing still run, so every diagnostic is still reported. Without this, a `COMPILE`
+after a refused `APPLY PATCH` wrote an unedited container at the path meant for the edited one, and only
+the exit status said so.
+
 ### 3.8 Comparison Operators
 
 ```
