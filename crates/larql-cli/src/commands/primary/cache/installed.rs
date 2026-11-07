@@ -10,7 +10,8 @@
 //!   `bench`, `show`, `pull`, …). A miss goes to the hub: a published
 //!   vindex is downloaded, a raw checkpoint is encoded on first use.
 //! - [`resolve_installed_model`] — every inspection and research verb
-//!   (`larql vindex3 …`, `shannon decode-diff`). It never touches the
+//!   (`larql vindex3 …`, `shannon decode-diff`, and LQL's `USE` in
+//!   `larql lql` / `larql repl`). It never touches the
 //!   network and never encodes; a miss is an error naming the front-door
 //!   command that would fetch it. Pointing `vindex3 inspect` at a name
 //!   must not start a multi-GB download as a side effect.

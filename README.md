@@ -90,14 +90,11 @@ curl http://localhost:8080/v1/chat/completions -H 'Content-Type: application/jso
   -d '{"model":"Qwen3-0.6B","messages":[{"role":"user","content":"Write a haiku about Rust."}]}'
 ```
 
-**3. Look inside it.** This is what most runtimes can't do. `larql vindex3`
-commands take the model's name; LQL's `USE` takes its directory, which
-`larql show` prints:
+**3. Look inside it.** This is what most runtimes can't do. These commands
+take the same model name:
 
 ```console
-$ M=$(larql show Qwen3-0.6B | awk '/^Path:/ {print $2}')
-
-$ larql lql "USE \"$M\"; INFER \"The capital of France is\" TOP 3;"
+$ larql lql 'USE "Qwen3-0.6B"; INFER "The capital of France is" TOP 3;'
    1.  Paris               (74.36%)  [id 12095]
    2.  the                 (2.18%)  [id 279]
    3.  in                  (2.07%)  [id 304]

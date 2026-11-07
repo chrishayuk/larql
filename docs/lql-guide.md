@@ -55,6 +55,10 @@ for VINDEX2.
 USE "gemma3-4b.vindex";
 STATS;
 
+-- Or, from `larql lql` / `larql repl`, a model already in the cache by name
+-- (the name `larql run` takes; never downloads)
+USE "Qwen3-0.6B";
+
 -- Or point directly at model weights (no extraction needed)
 USE MODEL "google/gemma-3-4b-it";
 STATS;

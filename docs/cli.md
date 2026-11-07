@@ -172,8 +172,10 @@ larql vindex3 inspect Qwen3-0.6B           # later: by name, no network
 larql vindex3 observe Qwen3-0.6B --prompt "The capital of France is" --record run.jsonl
 ```
 
-LQL's `USE "<path>"` still takes a directory (or a published-vindex
-`hf://` URI); `larql show <model>` prints a cached model's directory.
+`larql lql` and `larql repl` apply the same rule to LQL's `USE`, so
+`USE "Qwen3-0.6B";` binds the cached model and an uncached name gives the
+same fetch guidance. An `hf://` URI in `USE` keeps LQL's own behaviour
+(it downloads a published vindex).
 
 ### First run of a Hugging Face checkpoint
 
@@ -1066,6 +1068,7 @@ See `crates/larql-server/README.md` for full API documentation.
 ### `larql repl`
 
 Launch the LQL interactive REPL. Tab completion, history, multi-line input.
+`USE` takes a path or a cached model name, as `larql lql` does.
 
 ```bash
 larql repl
@@ -1094,7 +1097,9 @@ larql> DESCRIBE "France";
 
 ### `larql lql`
 
-Execute a single LQL statement from the command line.
+Execute a single LQL statement from the command line. `USE` takes a path or
+a cached model name, as `larql vindex3` does
+([rule](#inspection-and-research-verbs-never-download)).
 
 ```bash
 larql lql 'USE "gemma3-4b.vindex"; DESCRIBE "France";'

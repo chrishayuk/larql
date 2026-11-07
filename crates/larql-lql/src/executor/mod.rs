@@ -11,6 +11,7 @@ mod introspection;
 mod knowledge;
 mod lifecycle;
 mod memit_persist;
+pub mod model_resolver;
 mod mutation;
 pub(crate) mod query;
 mod relation_resolver;
@@ -93,6 +94,8 @@ pub struct Session {
     pub(crate) balance_trace: crate::executor::balance_trace::ObserverSlot,
     /// Fault armed for the next COMPOSE install, if any. See [`crate::install_fault`].
     pub(crate) install_fault: crate::executor::install_fault::FaultSlot,
+    /// Resolves a `USE` literal that is not a path. See [`model_resolver`].
+    pub(crate) model_resolver: Option<model_resolver::ModelResolver>,
 }
 
 impl Default for Session {
@@ -119,7 +122,14 @@ impl Session {
             contract_violations: 0,
             balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
             install_fault: crate::executor::install_fault::FaultSlot::default(),
+            model_resolver: None,
         }
+    }
+
+    /// Sets (or, with `None`, removes) the hook `USE` asks about a literal
+    /// that is not an existing path. See [`model_resolver`].
+    pub fn set_model_resolver(&mut self, resolver: Option<model_resolver::ModelResolver>) {
+        self.model_resolver = resolver;
     }
 
     /// Sets (or, with `None`, removes) the observer of COMPOSE balance passes. It only observes:
