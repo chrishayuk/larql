@@ -50,7 +50,7 @@ const SUPPLIED_ROWS_PROVIDER: &str = "cli-supplied-rows";
 
 #[derive(Args)]
 pub struct ObserveArgs {
-    /// VINDEX3 container directory.
+    /// VINDEX3 container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Component to execute.

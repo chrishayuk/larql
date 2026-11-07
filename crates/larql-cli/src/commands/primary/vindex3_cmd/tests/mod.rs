@@ -11,6 +11,7 @@ mod generate;
 mod instance_evidence;
 mod lowerings;
 mod measure;
+mod model_names;
 mod observe;
 mod realizations;
 mod residency_admission;

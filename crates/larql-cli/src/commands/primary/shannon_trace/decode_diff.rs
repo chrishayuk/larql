@@ -47,7 +47,7 @@ pub fn run_decode_diff(_args: DecodeDiffArgs) -> Result<(), Box<dyn std::error::
 
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub fn run_decode_diff(args: DecodeDiffArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let vindex = &args.vindex;
+    let vindex = &crate::commands::primary::cache::resolve_installed_model(&args.vindex)?;
     if !vindex.is_dir() {
         return Err(format!("not a vindex dir: {}", vindex.display()).into());
     }

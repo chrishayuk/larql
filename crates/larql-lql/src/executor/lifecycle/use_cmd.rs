@@ -1,7 +1,5 @@
 //! `USE` — point the session at a vindex, model weights, or remote server.
 
-use std::path::PathBuf;
-
 use crate::ast::UseTarget;
 use crate::error::LqlError;
 use crate::executor::helpers::{dir_size, format_number};
@@ -19,7 +17,11 @@ impl Session {
                     larql_vindex::resolve_hf_vindex(path_str)
                         .map_err(|e| LqlError::exec("HuggingFace download failed", e))?
                 } else {
-                    let p = PathBuf::from(path_str);
+                    let p = super::super::model_resolver::resolve_use_literal(
+                        path_str,
+                        self.model_resolver.as_ref(),
+                    )
+                    .map_err(LqlError::Execution)?;
                     if !p.exists() {
                         return Err(LqlError::Execution(format!(
                             "vindex not found: {}",

@@ -27,15 +27,20 @@ fn dirs_or_home() -> Option<std::path::PathBuf> {
 
 /// Run the interactive REPL.
 pub fn run_repl() {
+    run_repl_in(Session::new());
+}
+
+/// Run the interactive REPL in `session`, configured by the embedder (e.g.
+/// with a [`crate::ModelResolver`]).
+pub fn run_repl_in(mut session: Session) {
     println!("{BANNER}");
 
-    let mut session = Session::new();
     let mut rl = match DefaultEditor::new() {
         Ok(rl) => rl,
         Err(e) => {
             eprintln!("Failed to initialise line editor: {e}");
             eprintln!("Falling back to basic mode.");
-            run_repl_basic();
+            run_repl_basic(session);
             return;
         }
     };
@@ -100,10 +105,9 @@ pub fn run_repl() {
 }
 
 /// Basic fallback REPL without line editing (used if rustyline fails).
-fn run_repl_basic() {
+fn run_repl_basic(mut session: Session) {
     use std::io::{self, BufRead, Write};
 
-    let mut session = Session::new();
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     let mut line_buf = String::new();
@@ -205,7 +209,12 @@ pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>>
 /// container compiled after its `APPLY PATCH` was refused. Statements that
 /// write nothing still run, so every diagnostic is still reported.
 pub fn run_batch_outcome(input: &str) -> BatchOutcome {
-    let mut session = Session::new();
+    run_batch_outcome_in(&mut Session::new(), input)
+}
+
+/// [`run_batch_outcome`] in a session the embedder configured (e.g. with a
+/// [`crate::ModelResolver`]).
+pub fn run_batch_outcome_in(session: &mut Session, input: &str) -> BatchOutcome {
     let mut outcome = BatchOutcome::default();
 
     // Split on semicolons, handling strings
