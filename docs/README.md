@@ -1,8 +1,35 @@
-# docs/
+# LARQL documentation
 
-**Class: CURRENT — index.** Start with the maintained VINDEX3 overview below.
-Linked specifications and research records retain their own dates and status;
-indexing a proposal does not make it an implemented capability.
+**Class: CURRENT — index.**
+
+## Start here
+
+| Guide | For |
+|---|---|
+| [Getting started](getting-started.md) | Install, get a model, run, serve and look inside it, with expected output at each step |
+| [LQL guide](lql-guide.md) | Querying and editing a model with LQL |
+| [Glossary](glossary.md) | What VINDEX3, carrier, representation, lens and the other terms mean |
+| [What is VINDEX3?](vindex3/what-is-vindex3.md) | The idea behind the format, in one page |
+| [Status](vindex3/status.md) | What works today and what is still research |
+
+## Using LARQL
+
+| Guide | Purpose |
+|---|---|
+| [Execution](vindex3/execution.md) | Encode, execute, record and serve a VINDEX3 model |
+| [Runtime and serving](vindex3-runtime.md) | The runtime stack and the OpenAI-compatible HTTP API |
+| [Representation](vindex3/representation.md) | Compile smaller representations (`represent`) and measure their cost (`token-bank`, `measure`) |
+| [Observation and intervention](vindex3/observation-and-intervention.md) | Run records, lenses, and what they can and can't establish |
+| [Plugins](vindex3/plugins.md) | Codecs, encoders and backends loaded from shared libraries (`--plugin`) |
+| [CLI guide](cli.md) | The broader `larql` command reference |
+| [Python](../crates/larql-python/README.md) | Python bindings |
+
+## Reference
+
+Everything below is reference material: architecture, specifications, and
+the project's research record. Research protocols and results keep their own
+dates and status; a document appearing here does not mean the capability it
+describes is implemented.
 
 | Workspace guide | Purpose |
 |---|---|
@@ -30,7 +57,7 @@ reports), [diagnoses/](diagnoses/) (root-cause write-ups),
 [ffn/](ffn/README.md) (FFN backend docs — weight, sparse, walk,
 distributed).
 
-## Formats and specs
+## Formats, specs and research records
 
 | Doc | One line |
 |---|---|
@@ -102,7 +129,7 @@ distributed).
 | [findings.md](findings.md) | Research findings from querying Gemma 3 4B weight vectors |
 | [walk-boundary-sweep.md](walk-boundary-sweep.md) | Walk boundary sweep — correctness across all layer boundaries |
 
-## Programmes and funnels
+## Research programmes and funnels
 
 | Doc | One line |
 |---|---|
