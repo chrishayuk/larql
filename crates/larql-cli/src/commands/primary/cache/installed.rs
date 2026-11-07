@@ -51,6 +51,10 @@ const HOME_PATH_PREFIX: char = '~';
 /// Windows' path separator. No repo id or shorthand contains it, so it
 /// marks a path on every host — a Windows path typed on Unix included.
 const WINDOWS_SEPARATOR: char = '\\';
+/// Prefix of a rooted path (`/x`). No repo id or shorthand starts with it,
+/// so it marks a path on every host, including Windows, where `/x` has no
+/// drive letter and so is not `Path::is_absolute`.
+const ROOTED_PATH_PREFIX: char = '/';
 
 /// The three cache roots a name can resolve into.
 #[derive(Debug, Clone)]
@@ -138,6 +142,7 @@ fn looks_like_path(spec: &str) -> bool {
     Path::new(spec).is_absolute()
         || spec.starts_with(RELATIVE_PATH_PREFIX)
         || spec.starts_with(HOME_PATH_PREFIX)
+        || spec.starts_with(ROOTED_PATH_PREFIX)
         || spec.contains(WINDOWS_SEPARATOR)
 }
 

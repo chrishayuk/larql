@@ -174,6 +174,7 @@ fn a_missing_path_passes_through_unchanged_and_is_not_looked_up_as_a_name() {
         "~/model",
         r"C:\models\model",
         r"models\model",
+        "/absent/model",
     ] {
         assert_eq!(
             resolve(spec, &roots).unwrap(),
