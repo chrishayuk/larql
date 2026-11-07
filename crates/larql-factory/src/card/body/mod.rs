@@ -32,7 +32,7 @@ pub fn render_body(inputs: &CardInputs, revision_tag: &str) -> String {
 /// Inline the exact recipe that produced this build, so the card is a
 /// self-contained reproduction instruction.
 fn render_recipe(recipe: &crate::Recipe) -> String {
-    let yaml = serde_yaml::to_string(recipe).unwrap_or_default();
+    let yaml = serde_saphyr::to_string(recipe).unwrap_or_default();
     format!("## Recipe\n\n```yaml\n{}```", yaml)
 }
 
