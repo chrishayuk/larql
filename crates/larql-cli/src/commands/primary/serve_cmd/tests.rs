@@ -201,6 +201,7 @@ fn a_failed_exec_names_the_error_and_the_fix() {
         "{msg}"
     );
     assert!(msg.contains("cargo install --path crates/larql-server"));
+    assert!(msg.contains("larql doctor"));
 }
 
 /// `hand_off` returns only when the server could not be started — on Unix

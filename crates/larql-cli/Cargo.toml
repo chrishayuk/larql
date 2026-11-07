@@ -46,6 +46,11 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # is omitted — not test-only, the CLI needs this at runtime.
 tempfile = "3"
 
+[target.'cfg(windows)'.dependencies]
+# `larql doctor`'s free-disk check (GetDiskFreeSpaceExW). Already in the
+# lockfile through larql-vindex, which uses it for physical memory.
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+
 [features]
 default = ["gpu", "research"]
 # Research / interpretability tooling: the `larql dev` tree (incl. ov-rd),

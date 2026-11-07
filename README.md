@@ -34,6 +34,8 @@ sudo mv larql-x86_64-unknown-linux-gnu/larql* /usr/local/bin/
 Windows: download `larql-x86_64-pc-windows-msvc.zip` from the
 [latest release](https://github.com/chrishayuk/larql/releases/latest).
 Each archive contains `larql` and `larql-server` (used by `larql serve`).
+Then run `larql doctor` to check the install, hardware, backends, caches and
+Hugging Face access before the quick start.
 
 <details>
 <summary>Build from source instead</summary>

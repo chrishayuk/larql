@@ -11,7 +11,7 @@ shorthand (`gemma-3-4b-it-vindex`), `owner/name`, `hf://owner/name`, or
 a local directory path — see [Model resolution](#model-resolution) below.
 
 `larql --help` lists the everyday verbs (`run`, `chat`, `pull`, `list`,
-`show`, `rm`, `link`, `serve`, `repl`, `lql`, `vindex3`, `bench`) first and
+`show`, `rm`, `link`, `serve`, `repl`, `lql`, `vindex3`, `bench`, `doctor`) first and
 groups the rest — models and cache, build, server, factory, graph-file
 query, research and diagnostics — under their own headings.
 
@@ -33,6 +33,7 @@ query, research and diagnostics — under their own headings.
 | `k3-ledger <subcmd>` | K3 serving ledger — miss budget, weight touch, dense-precision frontier and speculative block economics, derived from the checkpoint's own tensor table. *(research builds only — see [the `research` feature](#research-tooling-and-the-research-feature))* |
 | `shannon <subcmd>` | Next-token bit scoring, slot probes, repetition probes, layer lens, demo arithmetic coding. `shannon verify` is research builds only. |
 | `serve <model>` | Serve a vindex over HTTP + gRPC. |
+| `doctor` | Check this install is ready for the quick start: version, hardware, backends, `larql-server`, caches, Hugging Face access. |
 
 ## Build / extract
 
@@ -758,6 +759,35 @@ declared layers. A download that stopped after the metadata is `unusable` —
 (first: …) — re-run larql pull <repo>`. Published slices, whose checksums
 still list their source's files, are judged by their level and list
 `ready`.
+
+### `larql doctor`
+
+A first-run self-check. Run it after installing, and first when something
+does not work.
+
+```
+larql doctor [--offline] [--json]
+```
+
+Prints a checklist — `✓` fine, `!` worth fixing, `✗` stops the quick start,
+`-` not checked — with a one-line fix under every line that is not fine:
+
+| Group | Checks |
+|---|---|
+| LARQL | Version, build target, Metal + CPU or portable CPU build, research tools |
+| Platform | OS and architecture; the CPU features the kernels dispatch on (NEON/dotprod on arm64, AVX2 on x86_64) and the kernel classes selected; physical memory against the quick start's 4 GB; on macOS, whether the Metal backend finds a device (the same registry `--backend metal` uses) |
+| Server | `larql-server`, found as `larql serve` finds it (beside `larql`, then on `PATH`), and whether its `--version` matches |
+| Caches | The HF hub cache (`HF_HOME`) and the encoded-model cache (`LARQL_HOME`) — location, size, whether writable — and free disk under the encoded cache against the quick start's 3 GB |
+| Hugging Face | Whether a token is configured (`HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` or the `hf auth login` token file — the source is shown, never the token; gated models such as Llama and Gemma need one), and whether the hub (`HF_ENDPOINT` honoured) serves the quick start model |
+| Updates | Whether a newer LARQL release exists on GitHub |
+
+It exits `1` only on a `✗`: too little memory or disk, no `larql-server`,
+an unwritable encoded cache, or an unreachable hub. Warnings exit `0`.
+
+| Flag | Effect |
+|---|---|
+| `--offline` | Skip the two network checks (hub reachability, newest release) |
+| `--json` | Print the checklist as JSON: `larql_version`, `ready`, `problems`, `warnings` and `checks` (each with `group`, `name`, `status` `ok`/`warn`/`fail`/`skip`, `summary` and, when not fine, `hint`) |
 
 ### `larql show`
 

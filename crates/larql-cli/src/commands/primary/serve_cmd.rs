@@ -173,7 +173,8 @@ pub(crate) enum HandOff {
 pub(crate) fn exec_failure_message(e: &std::io::Error) -> String {
     format!(
         "Failed to exec {SERVER_BINARY}: {e}\n\
-         Make sure {SERVER_BINARY} is installed (cargo install --path crates/larql-server)"
+         Make sure {SERVER_BINARY} is installed (cargo install --path crates/larql-server); \
+         `larql doctor` shows where it is looked for"
     )
 }
 
