@@ -180,7 +180,7 @@ pub enum ExecBackend {
 
 #[derive(Args)]
 pub struct ExecArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Component to execute.
@@ -391,7 +391,7 @@ pub struct ExecArgs {
 
 #[derive(Args)]
 pub struct OpsArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Component to plan.
@@ -444,7 +444,7 @@ pub struct VerifyArgs {
     #[arg(required = true)]
     pub artifacts: Vec<PathBuf>,
 
-    /// Container directory to verify against.
+    /// Container to verify against: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub container: PathBuf,
 
@@ -522,7 +522,7 @@ impl EncodeCapability {
 
 #[derive(Args)]
 pub struct RepresentArgs {
-    /// Container directory to compile from.
+    /// Container to compile from: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Container directory to write. The canonical segments are
@@ -606,7 +606,7 @@ pub struct RepresentArgs {
 
 #[derive(Args)]
 pub struct InspectArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Additionally re-hash every segment against the directory.
@@ -626,7 +626,7 @@ pub struct InspectArgs {
 
 #[derive(Args)]
 pub struct ReferencesArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Derive the table from the segment headers and write it. Refuses a

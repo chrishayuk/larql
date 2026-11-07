@@ -42,7 +42,7 @@ const DEFAULT_CANDIDATE_SOURCE: &str = "stored";
 
 #[derive(Args)]
 pub struct MeasureArgs {
-    /// Reference container.
+    /// Reference container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub reference: PathBuf,
     /// Reference execution arm, as `vindex3 exec --backend` spells it.
@@ -51,7 +51,7 @@ pub struct MeasureArgs {
     /// Reference representation source: auto, stored or transient.
     #[arg(long, default_value = DEFAULT_REFERENCE_SOURCE)]
     pub reference_source: String,
-    /// Candidate container.
+    /// Candidate container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub candidate: PathBuf,
     /// Candidate execution arm.

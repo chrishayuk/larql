@@ -38,7 +38,7 @@ pub enum TokenBankCommand {
 
 #[derive(Args)]
 pub struct ExportArgs {
-    /// Container whose `tokenizer.json` tokenises the prompts.
+    /// Container whose `tokenizer.json` tokenises the prompts: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
     /// Prompt file, e.g. `bench/prompts/quality-bank-1/prompts.json`.
     #[arg(long)]
@@ -53,7 +53,7 @@ pub struct ExportArgs {
 
 #[derive(Args)]
 pub struct ImportArgs {
-    /// Container whose tokenizer the ids belong to.
+    /// Container whose tokenizer the ids belong to: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
     /// Id file: `{"bank": NAME, "samples": [{"id", "category", "ids": [..]}]}`.
     #[arg(long)]
@@ -67,7 +67,7 @@ pub struct ImportArgs {
 pub struct CheckArgs {
     /// Bank directory.
     pub bank: PathBuf,
-    /// Container the bank must belong to.
+    /// Container the bank must belong to: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub container: PathBuf,
 }

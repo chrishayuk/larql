@@ -40,7 +40,7 @@ use super::reconstruction::ReconstructionExport;
 
 #[derive(Args)]
 pub struct SensitivityArgs {
-    /// Canonical container to screen.
+    /// Canonical container to screen: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Write per-tensor scores here as JSON.

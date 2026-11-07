@@ -40,11 +40,18 @@
 //!    encoded entries match on the `name` half of `owner/name` (so
 //!    `hf://Qwen/Qwen3-0.6B` is afterwards runnable as `Qwen3-0.6B`).
 //!    Ambiguous shorthands error out and list candidates.
+//!
+//! That order may download or encode. Inspection and research verbs use
+//! [`resolve_installed_model`] instead: the same identifiers, answered
+//! from these caches only (see [`installed`]).
 
 use larql_vindex::format::filenames::*;
 use std::path::{Path, PathBuf};
 
 use super::hf_auto::HF_SCHEME;
+
+pub mod installed;
+pub use installed::resolve_installed_model;
 
 /// Suffix every entry in the LARQL local cache carries
 /// (`~/.cache/larql/local/<name>.vindex`), whatever generation the linked
@@ -394,32 +401,53 @@ pub fn resolve_cached_from(
     cache: &[CachedVindex],
 ) -> Result<CachedVindex, Box<dyn std::error::Error>> {
     let key = model.strip_prefix(HF_SCHEME).unwrap_or(model);
-
-    // Full owner/name match (HF entries only have this form).
-    if key.contains('/') {
-        if let Some(hit) = cache.iter().find(|c| c.repo == key) {
-            return Ok(hit.clone());
-        }
-        return Err(format!("not cached: {key}").into());
+    match lookup_cached(key, cache) {
+        CacheLookup::Hit(hit) => Ok(hit.clone()),
+        CacheLookup::Miss => Err(format!("not cached: {key}").into()),
+        CacheLookup::Ambiguous(multiple) => Err(ambiguous(key, &multiple)),
     }
+}
 
-    // Shorthand match — hits local entries by name, HF entries by name half.
-    let matches: Vec<_> = cache
+/// What a cache lookup by name found.
+#[derive(Debug)]
+pub enum CacheLookup<'a> {
+    /// Exactly one entry.
+    Hit(&'a CachedVindex),
+    /// No entry.
+    Miss,
+    /// A shorthand more than one entry answers to.
+    Ambiguous(Vec<&'a CachedVindex>),
+}
+
+/// Look `key` up in `cache` with no network: `owner/name` matches an
+/// entry's full repo, a plain name matches its shorthand (local entries
+/// by name, HF and encoded entries by the name half).
+pub fn lookup_cached<'a>(key: &str, cache: &'a [CachedVindex]) -> CacheLookup<'a> {
+    if key.contains('/') {
+        return cache
+            .iter()
+            .find(|c| c.repo == key)
+            .map_or(CacheLookup::Miss, CacheLookup::Hit);
+    }
+    let mut matches: Vec<_> = cache
         .iter()
         .filter(|c| shorthand_key(&c.repo) == key)
         .collect();
-    match matches.as_slice() {
-        [hit] => Ok((*hit).clone()),
-        [] => Err(format!("not cached: {key}").into()),
-        multiple => {
-            let candidates = multiple
-                .iter()
-                .map(|c| format!("  - {} [{}]", c.repo, c.source.label()))
-                .collect::<Vec<_>>()
-                .join("\n");
-            Err(format!("shorthand `{key}` is ambiguous — matches:\n{candidates}").into())
-        }
+    match matches.len() {
+        0 => CacheLookup::Miss,
+        1 => CacheLookup::Hit(matches.remove(0)),
+        _ => CacheLookup::Ambiguous(matches),
     }
+}
+
+/// The error for a shorthand that names several cache entries.
+pub fn ambiguous(key: &str, matches: &[&CachedVindex]) -> Box<dyn std::error::Error> {
+    let candidates = matches
+        .iter()
+        .map(|c| format!("  - {} [{}]", c.repo, c.source.label()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("shorthand `{key}` is ambiguous — matches:\n{candidates}").into()
 }
 
 /// Total bytes of the files under `path`.

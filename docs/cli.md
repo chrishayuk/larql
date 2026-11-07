@@ -140,6 +140,41 @@ The `<model>` argument on `run`, `chat`, `serve`, `show`, `rm`, and
 
 `rm` never downloads — it only resolves against the cache.
 
+### Inspection and research verbs never download
+
+Every `larql vindex3` verb that reads an existing container (`inspect`,
+`references`, `verify --container`, `ops`, `exec`, `represent`, `observe`,
+`sensitivity`, `consequence`, `token-bank`, `measure --reference/--candidate`,
+`auto-rep`), and `larql shannon decode-diff`, takes the same identifier as
+`run`: a directory, `hf://owner/name[@rev]`, `owner/name`, or a cache
+shorthand. They resolve against what is already on this machine and never
+fetch or encode:
+
+1. **An existing path** is used unchanged, even if a cached entry shares
+   its name.
+2. **Something that can only be a path** (absolute, `./`, `../`, `~`, or
+   containing `\`) is passed to the verb unchanged even when it does not
+   exist, never looked up as a name.
+3. **`hf://owner/name[@rev]`** — the encoded cache at that revision; for
+   the default revision, also a cached vindex of that repo.
+4. **`owner/name`** and **plain names** — the cache lookup of
+   [Model resolution](#model-resolution) steps 3–4 without its download
+   fallback, with the same ambiguity error.
+
+A name that is not on this machine is an error naming the commands that
+fetch it (`larql run hf://…`, `larql pull hf://…`, `larql link <dir>`), so
+pointing an inspection verb at a name never starts a multi-gigabyte
+download.
+
+```bash
+larql run hf://Qwen/Qwen3-0.6B "Hello"     # first run: fetch and encode
+larql vindex3 inspect Qwen3-0.6B           # later: by name, no network
+larql vindex3 observe Qwen3-0.6B --prompt "The capital of France is" --record run.jsonl
+```
+
+LQL's `USE "<path>"` still takes a directory (or a published-vindex
+`hf://` URI); `larql show <model>` prints a cached model's directory.
+
 ### First run of a Hugging Face checkpoint
 
 ```bash
@@ -2149,7 +2184,10 @@ larql inspect-hf <PATH> [OPTIONS]
 
 VINDEX3 container programme verbs. Each artifact argument is either an
 HF checkpoint directory or a saved `inspect-hf` inventory JSON; multiple
-artifacts are treated together as one model system.
+artifacts are treated together as one model system. Each container
+argument takes the same identifier as `larql run` — a directory,
+`hf://owner/name`, `owner/name` or a cache shorthand — resolved without
+network ([details](#inspection-and-research-verbs-never-download)).
 
 ```
 larql vindex3 <SUBCOMMAND> [OPTIONS]
@@ -2172,7 +2210,7 @@ larql vindex3 <SUBCOMMAND> [OPTIONS]
 
 | Flag | Description | Default |
 |---|---|---|
-| `<CONTAINER>` | Container directory | — |
+| `<CONTAINER>` | Container directory, `hf://owner/name`, `owner/name`, or cache shorthand (never downloaded) | — |
 | `--component <ID>` | Component to execute | target |
 | `--tokens <IDS>` | Comma-separated token ids. Given, never tokenised here: a tokenizer is part of the fixture and only one side may choose it | — |
 | `--backend <B>` | Numerical realisation: `reference` (naive f32), `production` (`larql-compute` kernels), plus Metal arms on macOS with the `gpu` feature (`metal`, `metal-mxfp4`, `metal-nvfp4`, `metal-lowered`, …) — same program, same interpreter, only the arithmetic differs | reference |

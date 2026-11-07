@@ -152,7 +152,7 @@ covers backends and options.
 This is where LARQL differs from other runtimes. A VINDEX3 file describes the
 model's structure as well as storing its weights, so you can query it.
 
-These commands take the model's directory. `larql show` prints it:
+LQL's `USE` takes the model's directory, which `larql show` prints:
 
 ```bash
 M=$(larql show Qwen3-0.6B | awk '/^Path:/ {print $2}')
@@ -186,10 +186,11 @@ Continuation:    KV rows (kv_dim 1024), growing with the prefix
 interactive shell so you don't need to retype `USE` each time.
 
 **Record a run.** `observe` runs a prompt and writes down what every layer
-wrote into the model's internal state, along with the final prediction:
+wrote into the model's internal state, along with the final prediction. Like
+every `larql vindex3` command, it takes the same model name `larql run` does:
 
 ```console
-$ larql vindex3 observe "$M" --backend production \
+$ larql vindex3 observe Qwen3-0.6B --backend production \
     --prompt "The capital of France is" --record run.jsonl
   ...
   final position, top 10:
