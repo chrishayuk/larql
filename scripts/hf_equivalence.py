@@ -69,6 +69,7 @@ DEFAULT_DECODE_STEPS = 40
 DEFAULT_QUESTION = "What is the capital of France? Answer in one sentence."
 DEFAULT_RAW_PROMPT = "The capital of France is"
 EXPECTED_ANSWER = "Paris"
+TEXT_GENERATION_CAPABILITY = "text_generation"
 TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja")
 #: A natural-language passage, repeated to build long valid sequences.
 PASSAGE = (
@@ -375,11 +376,17 @@ def evaluate_decode(hf: Transformers, larql: Larql, tokenizer, window: int, step
 def admissible_stage(larql: Path, repo: str, revision: str) -> dict:
     done = run([str(larql), "vindex3", "plan", f"hf://{repo}@{revision}", "--capability", "text-generation"])
     try:
-        summary = json.loads(done.stdout)["summary"]
-    except (json.JSONDecodeError, KeyError):
-        summary = None
-    ok = done.returncode == 0 and summary is not None and summary["blocking"] == 0
-    return m.stage("PASS" if ok else "FAIL", {"exit": done.returncode, "summary": summary})
+        plan = json.loads(done.stdout)
+        summary = plan["summary"]
+        text_generation = next(c["admissible"] for c in plan["capabilities"]
+                               if c["capability"] == TEXT_GENERATION_CAPABILITY)
+    except (json.JSONDecodeError, KeyError, StopIteration):
+        summary, text_generation = None, False
+    # The capability verdict, not the whole-model count: a composite
+    # checkpoint's vision tower blocks the whole model and not its text.
+    ok = done.returncode == 0 and text_generation
+    return m.stage("PASS" if ok else "FAIL", {"exit": done.returncode, "summary": summary,
+                                              "text_generation_admissible": text_generation})
 
 
 def encoded_stage(larql: Path, container: Path) -> dict:
