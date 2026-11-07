@@ -7,6 +7,7 @@ pub(crate) mod lexer;
 pub mod parser;
 pub mod relations;
 pub mod repl;
+mod statement_effects;
 
 pub use ast::Statement;
 pub use capability::CapabilityProfile;
