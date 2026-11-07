@@ -3,7 +3,7 @@
 usage:
   python3 -I scripts/hf_equivalence.py --repo google/gemma-3-270m-it \
       --revision <sha> --container <dir>.vindex3 --larql <binary> \
-      --name gemma-3-270m-it --out-dir <dir> [--hf-dtype f32]
+      --name gemma-3-270m-it --out-dir <dir> --profile strict-f32|bf16-large
 
 Feeds BOTH sides the exact same token ids (no attention mask, no padding)
 and compares logits, never text. Arms:
@@ -43,6 +43,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import equivalence_metrics as m  # noqa: E402
+import oracle_loading  # noqa: E402
 
 # The installed torchvision does not match torch; transformers imports it
 # lazily for image processors this text harness never uses.
@@ -70,6 +71,9 @@ DEFAULT_QUESTION = "What is the capital of France? Answer in one sentence."
 DEFAULT_RAW_PROMPT = "The capital of France is"
 EXPECTED_ANSWER = "Paris"
 TEXT_GENERATION_CAPABILITY = "text_generation"
+INSPECT_COHERENT = "container coherent"
+SHARD_INDEX = "model.safetensors.index.json"
+SINGLE_SHARD = "model.safetensors"
 TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja")
 #: A natural-language passage, repeated to build long valid sequences.
 PASSAGE = (
@@ -180,8 +184,19 @@ def build_cases(tokenizer, window: int, question: str, raw_prompt: str) -> list[
 # ── the two sides ──────────────────────────────────────────────────────
 
 
+def checkpoint_keys(repo: str, revision: str) -> list[str]:
+    """Every tensor name the checkpoint ships: the shard index when there
+    is one, the single file's header otherwise."""
+    try:
+        index = json.loads(Path(hf_hub_download(repo, SHARD_INDEX, revision=revision)).read_text())
+        return oracle_loading.index_keys(index)
+    except Exception:  # noqa: BLE001 — unsharded checkpoint
+        return oracle_loading.safetensors_header_keys(
+            Path(hf_hub_download(repo, SINGLE_SHARD, revision=revision)))
+
+
 class Transformers:
-    def __init__(self, repo: str, revision: str, dtype_name: str):
+    def __init__(self, repo: str, revision: str, dtype_name: str, boundary: dict):
         config = AutoConfig.from_pretrained(repo, revision=revision)
         kwargs = {}
         # A composite checkpoint is loaded as its text model alone, through
@@ -193,8 +208,19 @@ class Transformers:
             repo, revision=revision, dtype=DTYPES[dtype_name], attn_implementation="eager",
             output_loading_info=True, **kwargs
         )
-        if info.get("missing_keys"):
-            raise SystemExit(f"missing weights: {sorted(info['missing_keys'])[:10]}")
+        text_config = kwargs.get("config", config)
+        # Recorded and gated before any forward pass: see oracle_loading.
+        self.loading = oracle_loading.loading_facts(
+            model_class=type(model).__name__,
+            expected_keys=model.state_dict().keys(),
+            checkpoint_keys=checkpoint_keys(repo, revision),
+            missing=info.get("missing_keys", []),
+            unexpected=info.get("unexpected_keys", []),
+            mismatched=info.get("mismatched_keys", []),
+            tie_word_embeddings=bool(getattr(text_config, "tie_word_embeddings", False)),
+            key_mapping=kwargs.get("key_mapping"),
+            boundary=boundary,
+        )
         self.model = model.to(DTYPES[dtype_name]).eval()
         self.dtype = dtype_name
 
@@ -262,11 +288,18 @@ class Larql:
 # ── comparison ─────────────────────────────────────────────────────────
 
 
+#: The profile this run is measured under (`--profile`). Set once in `main`.
+PROFILE: list[str] = [m.STRICT_F32]
+#: The arms this run executes (`--arms`; the reference arm is dropped for
+#: a non-f32 oracle). Set once in `main`.
+SELECTED_ARMS: list[str] = list(ARMS)
+
+
 def arms_for(length: int, reference_limit: int | None) -> list[str]:
-    """The arms a sequence of `length` runs on: the f32 reference
-    interpreter is skipped above `reference_limit` (recorded, never
-    silently), every production arm always runs."""
-    return [arm for arm in ARMS
+    """The arms a sequence of `length` runs on: the selected arms, with the
+    f32 reference interpreter skipped above `reference_limit` (recorded,
+    never silently)."""
+    return [arm for arm in SELECTED_ARMS
             if not (ARMS[arm][2] == "reference" and reference_limit is not None and length > reference_limit)]
 
 
@@ -276,15 +309,25 @@ def compare(arm: str, arm_rows: np.ndarray, hf_rows: np.ndarray, positions: list
     if arm_rows.shape[1] != hf_rows.shape[1]:
         raise ValueError(f"vocabulary width differs: larql {arm_rows.shape[1]} vs hf {hf_rows.shape[1]}")
     max_abs, mass_bearing, verdicts, detail, top1_mismatch = [], [], [], {}, []
+    error_exceeded, tie_tolerances = [], []
+    family = ARMS[arm][2]
     for start in range(0, len(positions), LOGIT_CHUNK):
+        raw = hf_rows[start:start + LOGIT_CHUNK]
         a = m.log_softmax64(arm_rows[start:start + LOGIT_CHUNK])
-        h = m.log_softmax64(hf_rows[start:start + LOGIT_CHUNK])
+        h = m.log_softmax64(raw)
         max_abs.extend(np.abs(a - h).max(axis=-1).tolist())
         for offset in range(a.shape[0]):
             position = positions[start + offset]
-            verdict, diffs = m.order_verdict(h[offset], a[offset], m.TIE_TOLERANCE[ARMS[arm][2]])
+            tie, error_gate = m.tolerances(PROFILE[0], family, raw[offset])
+            tie_tolerances.append(tie)
+            verdict, diffs = m.order_verdict(h[offset], a[offset], tie)
             verdicts.append(verdict)
             mass_bearing.append(m.max_abs_logprob_mass_bearing(h[offset], a[offset]))
+            # strict-f32 gates the full vocabulary; bf16-large the
+            # mass-bearing tokens (the bf16 oracle's tail is rounding).
+            gated = max_abs[-1] if PROFILE[0] == m.STRICT_F32 else mass_bearing[-1]
+            if error_gate is not None and gated > error_gate:
+                error_exceeded.append(position)
             if int(np.argmax(a[offset])) != int(np.argmax(h[offset])):
                 top1_mismatch.append(position)
             if verdict != m.PASS or position in record_top_at:
@@ -301,6 +344,8 @@ def compare(arm: str, arm_rows: np.ndarray, hf_rows: np.ndarray, positions: list
         "max_abs_logprob_mass_bearing": mass_bearing,
         "max_abs_logprob_mass_bearing_overall": max(mass_bearing),
         "top5_verdict": m.worst(verdicts),
+        "tie_tolerance_range": [min(tie_tolerances), max(tie_tolerances)],
+        "error_gate_exceeded_positions": error_exceeded,
         "top1_mismatch_positions": top1_mismatch,
         "verdict_counts": {v: verdicts.count(v) for v in (m.PASS, m.TIE_SWAP, m.FAIL)},
         "recorded_positions": detail,
@@ -308,9 +353,7 @@ def compare(arm: str, arm_rows: np.ndarray, hf_rows: np.ndarray, positions: list
 
 
 def arm_gate(arm: str, result: dict) -> str:
-    if result["top5_verdict"] == m.FAIL:
-        return m.FAIL
-    if ARMS[arm][2] == "reference" and result["max_abs_logprob_overall"] > m.REFERENCE_MAX_ABS_LOGPROB:
+    if result["top5_verdict"] == m.FAIL or result["error_gate_exceeded_positions"]:
         return m.FAIL
     return result["top5_verdict"]
 
@@ -373,8 +416,11 @@ def evaluate_decode(hf: Transformers, larql: Larql, tokenizer, window: int, step
 # ── ladder stages ──────────────────────────────────────────────────────
 
 
-def admissible_stage(larql: Path, repo: str, revision: str) -> dict:
-    done = run([str(larql), "vindex3", "plan", f"hf://{repo}@{revision}", "--capability", "text-generation"])
+def run_plan(larql: Path, repo: str, revision: str) -> subprocess.CompletedProcess:
+    return run([str(larql), "vindex3", "plan", f"hf://{repo}@{revision}", "--capability", "text-generation"])
+
+
+def admissible_stage(done: subprocess.CompletedProcess) -> dict:
     try:
         plan = json.loads(done.stdout)
         summary = plan["summary"]
@@ -391,9 +437,10 @@ def admissible_stage(larql: Path, repo: str, revision: str) -> dict:
 
 def encoded_stage(larql: Path, container: Path) -> dict:
     done = run([str(larql), "vindex3", "inspect", str(container)])
-    last = done.stdout.strip().splitlines()[-1] if done.stdout.strip() else ""
-    return m.stage("PASS" if done.returncode == 0 and last == "container coherent" else "FAIL",
-                   {"exit": done.returncode, "verdict": last})
+    # The verdict line goes to stderr; the listing to stdout.
+    verdict = (done.stderr.strip().splitlines() or [""])[-1]
+    return m.stage("PASS" if done.returncode == 0 and verdict == INSPECT_COHERENT else "FAIL",
+                   {"exit": done.returncode, "verdict": verdict})
 
 
 def operational_stage(larql: Path, container: Path, question: str) -> dict:
@@ -422,9 +469,9 @@ def equivalent_stage(cases: list[dict], decode: dict) -> dict:
     """FAIL on any failed gate; PENDING when the worst is a tie swap (it
     needs adjudication, and is not a pass) or an arm skipped a case; PASS
     only when every arm ran every case and passed."""
-    per_arm = {arm: m.worst(_gates(cases, decode, arm)) for arm in ARMS}
+    per_arm = {arm: m.worst(_gates(cases, decode, arm)) for arm in SELECTED_ARMS}
     skipped = {arm: [c["name"] for c in cases if arm not in c["arms"]]
-               + (["decode"] if arm not in decode["arms"] else []) for arm in ARMS}
+               + (["decode"] if arm not in decode["arms"] else []) for arm in SELECTED_ARMS}
     verdict = m.worst(per_arm.values())
     if verdict == m.FAIL:
         status = "FAIL"
@@ -433,17 +480,19 @@ def equivalent_stage(cases: list[dict], decode: dict) -> dict:
     else:
         status = "PASS"
     return m.stage(status, {
+        "profile": PROFILE[0],
         "verdict": verdict,
         "gate_per_arm": per_arm,
         "skipped_per_arm": skipped,
         "max_abs_logprob_per_arm": {
             arm: max((r["max_abs_logprob_overall"] for r in _runs(cases, decode, arm)), default=None)
-            for arm in ARMS},
+            for arm in SELECTED_ARMS},
         "max_abs_logprob_mass_bearing_per_arm": {
             arm: max((r["max_abs_logprob_mass_bearing_overall"] for r in _runs(cases, decode, arm)), default=None)
-            for arm in ARMS},
+            for arm in SELECTED_ARMS},
         "top1_mismatches_per_arm": {
-            arm: sum(len(r["top1_mismatch_positions"]) for r in _runs(cases, decode, arm)) for arm in ARMS},
+            arm: sum(len(r["top1_mismatch_positions"]) for r in _runs(cases, decode, arm))
+            for arm in SELECTED_ARMS},
         "hf_noise_floor_sdpa_vs_eager": max(c["hf_noise_floor_sdpa_vs_eager"] for c in cases),
         "cache_steps": decode["steps"],
         "decode_crosses_window": decode["crosses_window"],
@@ -454,7 +503,7 @@ def equivalent_stage(cases: list[dict], decode: dict) -> dict:
 
 
 def markdown(name: str, run_record: dict) -> str:
-    lines = [f"# {name} — HF equivalence (harness {m.HARNESS_VERSION})", "",
+    lines = [f"# {name} — HF equivalence, profile `{run_record['profile']}` (harness {m.HARNESS_VERSION})", "",
              f"- checkpoint: `{run_record['identity']['repo']}@{run_record['identity']['revision']}`",
              f"- LARQL: `{run_record['larql']['commit']}` (dirty: {run_record['larql']['dirty']})",
              f"- transformers {run_record['environment']['transformers']}, torch "
@@ -463,12 +512,21 @@ def markdown(name: str, run_record: dict) -> str:
              f"{run_record['environment']['hardware']['os']}", "",
              "| stage | status |", "|---|---|"]
     lines += [f"| {k} | {v['status']} |" for k, v in run_record["ladder"].items()]
+    load = run_record["oracle_loading"]
+    lines += ["", f"Oracle load: `{load['transformers_class']}`, {load['expected_parameter_keys']} expected keys, "
+              f"{load['checkpoint_tensors']} checkpoint tensors, missing {load['missing'] or 'none'}, "
+              f"unexpected by prefix {load['unexpected_by_prefix'] or 'none'}, tied head "
+              f"{load['tie_word_embeddings']} — gate {load['gate']}.",
+              f"Arms: {', '.join(run_record['arms_selected'])}. {run_record['oracle_dtype_implication']}."]
+    if run_record["decode"] is None:
+        return "\n".join(lines) + "\n"
     lines += ["", "max |Δ logprob| vs transformers (cached / prefill) and gate, per arm:", "",
-              "| case | n | BOS | " + " | ".join(ARMS) + " |", "|---|---|---|" + "---|" * len(ARMS)]
+              "| case | n | BOS | " + " | ".join(run_record["arms_selected"]) + " |",
+              "|---|---|---|" + "---|" * len(run_record["arms_selected"])]
     for c in run_record["cases"]:
         cells = [f"{c['arms'][a]['cached']['max_abs_logprob_overall']:.2e} / "
                  f"{c['arms'][a]['prefill']['max_abs_logprob_overall']:.2e} {c['arms'][a]['gate']}"
-                 if a in c["arms"] else "skipped" for a in ARMS]
+                 if a in c["arms"] else "skipped" for a in run_record["arms_selected"]]
         lines.append(f"| {c['name']} | {c['length']} | {c['bos_present']} | " + " | ".join(cells) + " |")
     d = run_record["decode"]
     lines += ["", f"Decode: prompt {d['prompt_length']} + {d['steps']} greedy steps (window {d['window']}, "
@@ -479,8 +537,9 @@ def markdown(name: str, run_record: dict) -> str:
         lines.append(f"- {arm}: cached vs HF {a['cached_vs_hf']['max_abs_logprob_overall']:.2e}, prefill vs HF "
                      f"{a['prefill_vs_hf']['max_abs_logprob_overall']:.2e}, cached vs prefill "
                      f"{a['cached_vs_prefill_max_abs_logprob']:.2e} — {a['gate']}")
-    lines += ["", f"Gates: reference max |Δ logprob| ≤ {m.REFERENCE_MAX_ABS_LOGPROB}; ordered top-{m.GATED_TOP_K} "
-              f"vs transformers with tie tolerance {m.TIE_TOLERANCE} (tie swaps reported, not passed)."]
+    prof = run_record["profile_definition"]
+    lines += ["", f"Gates ({run_record['profile']}): {prof['error_gate']}; ordered top-{m.GATED_TOP_K} vs "
+              f"transformers with tie tolerance {prof['tie_tolerance']} (tie swaps reported, not passed)."]
     return "\n".join(lines) + "\n"
 
 
@@ -492,14 +551,28 @@ def main() -> None:
     ap.add_argument("--larql", required=True, type=Path)
     ap.add_argument("--name", required=True)
     ap.add_argument("--out-dir", required=True, type=Path)
-    ap.add_argument("--hf-dtype", default="f32", choices=sorted(DTYPES))
+    ap.add_argument("--profile", required=True, choices=sorted(m.PROFILES),
+                    help="strict-f32: f32 transformers, reference + production arms; "
+                         "bf16-large: bf16 transformers where f32 cannot fit, production arms")
     ap.add_argument("--decode-steps", type=int, default=DEFAULT_DECODE_STEPS)
     ap.add_argument("--question", default=DEFAULT_QUESTION)
     ap.add_argument("--raw-prompt", default=DEFAULT_RAW_PROMPT)
     ap.add_argument("--reference-max-length", type=int, default=None,
                     help="skip the f32 reference arm on sequences longer than this "
                          "(recorded; the equivalent stage then reads PENDING, never PASS)")
+    ap.add_argument("--arms", default=None,
+                    help="comma-separated subset of the profile's arms (default: all of them)")
     args = ap.parse_args()
+    profile = m.PROFILES[args.profile]
+    PROFILE[0] = args.profile
+    args.hf_dtype = profile["oracle_dtype"]
+    requested = ([a.strip() for a in args.arms.split(",") if a.strip()]
+                 if args.arms else list(profile["arms"]))
+    outside = [a for a in requested if a not in profile["arms"]]
+    if outside or not requested:
+        raise SystemExit(f"--arms: {outside or 'none'} not in profile {args.profile} arms {profile['arms']}")
+    dropped = [a for a in ARMS if a not in requested]
+    SELECTED_ARMS[:] = requested
 
     identity = {"repo": args.repo, "revision": args.revision}
     tokenizer = AutoTokenizer.from_pretrained(args.repo, revision=args.revision)
@@ -509,14 +582,22 @@ def main() -> None:
     fixed = {"tokenizer_sha256": tokenizer_digests(args.repo, args.revision),
              "container": container_identity(args.container),
              "larql": larql_commit(args.larql)}
-    hf = Transformers(args.repo, args.revision, args.hf_dtype)
+    planned = run_plan(args.larql, args.repo, args.revision)
+    try:
+        boundary = oracle_loading.capability_boundary(json.loads(planned.stdout))
+    except (json.JSONDecodeError, KeyError) as e:
+        raise SystemExit(f"the plan names no capability boundary to gate the oracle load against: {e}")
+    hf = Transformers(args.repo, args.revision, args.hf_dtype, boundary)
     started = datetime.now(timezone.utc).isoformat()
-    with tempfile.TemporaryDirectory() as work:
-        larql = Larql(args.larql, args.container, Path(work))
-        print(f"{args.name}: window {window}", flush=True)
-        cases = evaluate_cases(hf, larql, build_cases(tokenizer, window, args.question, args.raw_prompt),
-                               args.reference_max_length)
-        decode = evaluate_decode(hf, larql, tokenizer, window, args.decode_steps, args.reference_max_length)
+    print(f"{args.name}: window {window}; oracle load {hf.loading['transformers_class']} "
+          f"gate {hf.loading['gate']} {hf.loading['gate_problems']}", flush=True)
+    cases, decode = [], None
+    if hf.loading["gate"] == "pass":
+        with tempfile.TemporaryDirectory() as work:
+            larql = Larql(args.larql, args.container, Path(work))
+            cases = evaluate_cases(hf, larql, build_cases(tokenizer, window, args.question, args.raw_prompt),
+                                   args.reference_max_length)
+            decode = evaluate_decode(hf, larql, tokenizer, window, args.decode_steps, args.reference_max_length)
     run_record = {
         "harness_version": m.HARNESS_VERSION,
         "started": started,
@@ -534,8 +615,20 @@ def main() -> None:
                        "larql_production-stored": "larql-compute CPU kernels, --representation-source "
                                                   "stored (no runtime manufacture; stored BF16 bytes)"},
         "arms": {arm: {"backend": b, "flags": f, "tolerance_family": t} for arm, (b, f, t) in ARMS.items()},
+        "arms_selected": list(SELECTED_ARMS),
+        "arms_not_run": dropped,
+        "profile": args.profile,
+        "profile_definition": profile,
+        "oracle_dtype_implication": (
+            "f32 oracle: the reference arm is gated at full-vocabulary max |Δ logprob| <= "
+            f"{m.REFERENCE_MAX_ABS_LOGPROB}" if args.profile == m.STRICT_F32 else
+            "bf16 oracle: transformers' own bf16 rounding sets the error floor, so tolerances scale with "
+            "the bf16 spacing at the oracle's logit magnitude; the f32 reference arm is not run (no f32 "
+            "oracle to gate it against); a bf16-large pass is not a strict-f32 pass"),
+        "oracle_loading": hf.loading,
         "method": {"metric": "max over full vocab of |log_softmax64(a) - log_softmax64(b)|",
                    "reference_max_abs_logprob": m.REFERENCE_MAX_ABS_LOGPROB,
+                   "bf16_tie_spacings": m.BF16_TIE_SPACINGS, "bf16_error_spacings": m.BF16_ERROR_SPACINGS,
                    "mass_bearing_logprob_floor_informational": m.MASS_BEARING_LOGPROB,
                    "gated_top_k": m.GATED_TOP_K, "recorded_top_k": m.RECORDED_TOP_K,
                    "tie_tolerance": m.TIE_TOLERANCE,
@@ -548,9 +641,10 @@ def main() -> None:
         "decode": decode,
     }
     run_record["ladder"] = {
-        "admissible": admissible_stage(args.larql, args.repo, args.revision),
+        "admissible": admissible_stage(planned),
         "encoded": encoded_stage(args.larql, args.container),
-        "equivalent": equivalent_stage(cases, decode),
+        "equivalent": equivalent_stage(cases, decode) if decode is not None else m.stage(
+            "FAIL", {"oracle_loading_gate": hf.loading["gate_problems"]}),
         "operational": operational_stage(args.larql, args.container, args.question),
         "published": m.stage("PENDING", None),
     }
@@ -559,7 +653,7 @@ def main() -> None:
     record = json.loads(path.read_text()) if path.exists() else None
     record = m.append_run(record, run_record, identity)
     path.write_text(json.dumps(record, indent=1) + "\n")
-    (args.out_dir / f"{args.name}.equivalence.md").write_text(markdown(args.name, run_record))
+    (args.out_dir / f"{args.name}.equivalence.{args.profile}.md").write_text(markdown(args.name, run_record))
     print(json.dumps({k: v["status"] for k, v in run_record["ladder"].items()}))
     print(f"wrote {path}")
 

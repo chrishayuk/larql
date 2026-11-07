@@ -77,6 +77,30 @@ class OrderVerdictTests(unittest.TestCase):
         self.assertEqual(m.worst([]), m.PASS)
 
 
+class ProfileTests(unittest.TestCase):
+    def test_bf16_spacing_at_typical_logit_magnitudes(self):
+        self.assertEqual(m.bf16_spacing(40.0), 0.25)
+        self.assertEqual(m.bf16_spacing(1.0), 2.0 ** -7)
+        self.assertEqual(m.bf16_spacing(0.0), 0.0)
+
+    def test_strict_gates_error_on_the_reference_arm_only(self):
+        logits = np.array([40.0, 1.0])
+        self.assertEqual(m.tolerances(m.STRICT_F32, "reference", logits), (1e-3, 1e-3))
+        self.assertEqual(m.tolerances(m.STRICT_F32, "production", logits), (5e-2, None))
+
+    def test_bf16_tolerances_scale_with_the_oracle_magnitude(self):
+        tie, error = m.tolerances(m.BF16_LARGE, "production", np.array([-40.0, 3.0]))
+        self.assertEqual((tie, error), (0.5, 1.0))
+
+    def test_an_unknown_profile_is_refused(self):
+        with self.assertRaises(ValueError):
+            m.tolerances("loose", "production", np.zeros(2))
+
+    def test_profiles_never_share_arms_or_dtype_silently(self):
+        self.assertNotEqual(m.PROFILES[m.STRICT_F32]["oracle_dtype"], m.PROFILES[m.BF16_LARGE]["oracle_dtype"])
+        self.assertNotIn("reference", m.PROFILES[m.BF16_LARGE]["arms"])
+
+
 class RecordTests(unittest.TestCase):
     IDENTITY = {"repo": "org/model", "revision": "abc"}
 
@@ -89,6 +113,11 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(len(record["runs"]), 2)
         self.assertEqual(record["ever_failed"], ["equivalent"])
         self.assertEqual(record["runs"][0]["ladder"]["equivalent"]["status"], "FAIL")
+
+    def test_equivalence_failures_are_kept_per_profile(self):
+        run = {"profile": m.BF16_LARGE, "ladder": {"equivalent": m.stage("FAIL", {})}}
+        record = m.append_run(None, run, self.IDENTITY)
+        self.assertEqual(record["ever_failed"], [f"equivalent:{m.BF16_LARGE}"])
 
     def test_a_record_refuses_another_checkpoint(self):
         record = m.append_run(None, self.run_with("PASS"), self.IDENTITY)

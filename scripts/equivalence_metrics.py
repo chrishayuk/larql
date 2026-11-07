@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 
-HARNESS_VERSION = "1.1.1"
+HARNESS_VERSION = "2.0.0"
 
 #: Gate: LARQL reference (f32 interpreter) vs transformers f32.
 REFERENCE_MAX_ABS_LOGPROB = 1e-3
@@ -39,6 +39,67 @@ RECORDED_TOP_K = GATED_TOP_K + 1
 TIE_TOLERANCE = {"reference": REFERENCE_MAX_ABS_LOGPROB, "production": 5e-2}
 #: Production error above this is explained in the record, not gated.
 PRODUCTION_EXPLAIN_ABOVE = 0.1
+
+#: bf16 keeps 7 explicit mantissa bits: the spacing of representable
+#: values at magnitude |x| is 2^(floor(log2|x|) - 7).
+BF16_MANTISSA_BITS = 7
+#: `bf16-large` tolerances, in units of the bf16 spacing at the oracle's
+#: largest |logit| at that position (frozen before any bf16 run). A bf16
+#: transformers forward emits its logits in bf16, so each logit already
+#: carries up to half a spacing of output rounding, and a logprob — a
+#: difference against the log-sum-exp — up to one spacing, before any of
+#: the stack's accumulated bf16 activation rounding. Two spacings is the
+#: near-tie band an ordering is not resolvable inside; four is the error
+#: allowance on mass-bearing tokens (output rounding plus three spacings of
+#: accumulated activation rounding).
+BF16_TIE_SPACINGS = 2
+BF16_ERROR_SPACINGS = 4
+
+#: The two equivalence profiles. Same evidence fields, never conflated:
+#: a record names its profile, and passing `bf16-large` is never a
+#: `strict-f32` pass.
+STRICT_F32 = "strict-f32"
+BF16_LARGE = "bf16-large"
+PROFILES = {
+    STRICT_F32: {
+        "oracle_dtype": "f32",
+        "arms": ["reference", "production", "production-stored"],
+        "error_gate": f"reference arm: full-vocabulary max |Δ logprob| <= {1e-3}",
+        "tie_tolerance": "reference arm 1e-3; production arms 5e-2 (absolute logprob)",
+    },
+    BF16_LARGE: {
+        "oracle_dtype": "bf16",
+        "arms": ["production", "production-stored"],
+        "error_gate": f"every arm: mass-bearing max |Δ logprob| <= {BF16_ERROR_SPACINGS} bf16 spacings "
+                      "at the oracle's max |logit| for that position",
+        "tie_tolerance": f"{BF16_TIE_SPACINGS} bf16 spacings at the oracle's max |logit| for that position",
+    },
+}
+
+
+def bf16_spacing(magnitude: float) -> float:
+    """The gap between adjacent bf16 values at `magnitude`."""
+    if magnitude <= 0:
+        return 0.0
+    return 2.0 ** (np.floor(np.log2(magnitude)) - BF16_MANTISSA_BITS)
+
+
+def tolerances(profile: str, family: str, oracle_logits: np.ndarray) -> tuple[float, float | None]:
+    """`(tie tolerance, error gate or None)` for one position.
+
+    `strict-f32`: fixed absolute values per arm family, the error gate on
+    the reference arm only (full vocabulary). `bf16-large`: scaled by the
+    bf16 spacing at the oracle's largest |logit|, the error gate (on
+    mass-bearing tokens) applying to every arm.
+    """
+    if profile == STRICT_F32:
+        error = REFERENCE_MAX_ABS_LOGPROB if family == "reference" else None
+        return TIE_TOLERANCE[family], error
+    if profile == BF16_LARGE:
+        spacing = bf16_spacing(float(np.abs(oracle_logits).max()))
+        return BF16_TIE_SPACINGS * spacing, BF16_ERROR_SPACINGS * spacing
+    raise ValueError(f"unknown profile {profile!r}")
+
 
 #: Informational, never gated: the error restricted to tokens the
 #: reference gives at least this logprob. The full-vocabulary maximum is
@@ -151,6 +212,9 @@ def append_run(record: dict | None, run: dict, identity: dict) -> dict:
     failed = set(record.get("ever_failed", []))
     for name, result in run["ladder"].items():
         if result["status"] == "FAIL":
-            failed.add(name)
+            # The equivalent stage fails per PROFILE: a strict-f32 failure
+            # is not erased by a bf16-large pass, nor the reverse.
+            profile = run.get("profile")
+            failed.add(f"{name}:{profile}" if name == "equivalent" and profile else name)
     record["ever_failed"] = sorted(failed)
     return record
