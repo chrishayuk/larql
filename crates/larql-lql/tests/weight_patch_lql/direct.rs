@@ -31,8 +31,11 @@ fn staging_writes_nothing_and_compile_writes_a_clean_container() {
         assert_ne!(a[id], b[id], "{id} changed");
     }
     let ledger = ledger(&out);
-    assert_eq!(ledger["target"]["tensor"], TENSOR);
-    assert_eq!(ledger["edits"].as_array().unwrap().len(), COLS.len());
+    assert_eq!(ledger["targets"][0]["tensor"], TENSOR);
+    assert_eq!(
+        ledger["targets"][0]["edits"].as_array().unwrap().len(),
+        COLS.len()
+    );
     assert_eq!(
         ledger["origins"].as_array().unwrap().len(),
         1,
@@ -101,4 +104,43 @@ fn compiling_with_no_pending_weight_edit_is_the_unchanged_bake() {
     );
     assert_eq!(digests(&fx.container)[CANONICAL], digests(&out)[CANONICAL]);
     assert!(!out.join("weight_patches.json").exists());
+}
+
+/// Layer 0's down projection: another tensor of the same canonical segment.
+const OTHER: &str = "0.mlp.down_proj.weight";
+
+#[test]
+fn edits_to_two_tensors_compile_into_one_container_and_one_ledger() {
+    let fx = Fixture::new();
+    let mut s = session_on(&fx.container);
+    run(&mut s, &update(&COLS, DELTA));
+    run(&mut s, &format!("UPDATE WEIGHTS SET DELTA = {DELTA} WHERE TENSOR = \"{OTHER}\" AND ROW = 1 AND COL IN (1, 2);"));
+    let out = fx.path("two.vindex3");
+    let reply = run(
+        &mut s,
+        &format!("COMPILE CURRENT INTO VINDEX \"{}\";", q(&out)),
+    );
+    assert!(
+        reply[0].contains(&format!(
+            "{} element(s) of {TENSOR}, {OTHER}",
+            COLS.len() + 2
+        )),
+        "{reply:?}"
+    );
+    assert!(is_coherent(&out));
+    let ledger = ledger(&out);
+    assert_eq!(ledger["schema"], "weight-patches/v2");
+    let targets = ledger["targets"].as_array().unwrap();
+    assert_eq!(targets.len(), 2);
+    assert_eq!(targets[0]["tensor"], TENSOR);
+    assert_eq!(targets[0]["edits"].as_array().unwrap().len(), COLS.len());
+    assert_eq!(targets[1]["tensor"], OTHER);
+    assert_eq!(targets[1]["edits"].as_array().unwrap().len(), 2);
+    for (tensor, n) in [(TENSOR, COLS.len()), (OTHER, 2)] {
+        let changed = elements_differing(
+            &tensor_bytes(&fx.container, CANONICAL, tensor),
+            &tensor_bytes(&out, CANONICAL, tensor),
+        );
+        assert_eq!(changed, n, "{tensor}");
+    }
 }

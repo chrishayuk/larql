@@ -1,6 +1,6 @@
 //! Apply a declared weight edit to a container and assemble the result.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -41,7 +41,9 @@ pub struct WeightEdit {
     pub delta: f32,
 }
 
-/// A declared edit of one tensor.
+/// A declared edit of one tensor. Several, of distinct tensors in one
+/// canonical representation, compile into one container
+/// ([`apply_weight_patches`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeightPatch {
     /// The tensor's name in the segment table, e.g. `26.mlp.down_proj.weight`.
@@ -52,7 +54,10 @@ pub struct WeightPatch {
 /// What an applied patch produced.
 #[derive(Debug, Clone)]
 pub struct PatchReport {
+    /// Edited elements, across every tensor.
     pub elements: usize,
+    /// The edited tensors, in the order given.
+    pub tensors: Vec<String>,
     pub object: String,
     pub canonical: DigestPair,
     pub rederived: Vec<String>,
@@ -102,7 +107,21 @@ pub fn apply_weight_patch_with_origins(
     origins: &[String],
     out: &Path,
 ) -> Result<PatchReport, WeightPatchError> {
-    validate(patch)?;
+    apply_weight_patches(src, std::slice::from_ref(patch), origins, out)
+}
+
+/// Apply edits of several tensors as ONE patch: one new container, one
+/// ledger, one re-derivation. The tensors must be distinct and held by one
+/// canonical representation, and the elements across all of them count
+/// against [`MAX_PATCH_ELEMENTS`]. Either every edit lands or nothing is
+/// written.
+pub fn apply_weight_patches(
+    src: &Path,
+    patches: &[WeightPatch],
+    origins: &[String],
+    out: &Path,
+) -> Result<PatchReport, WeightPatchError> {
+    validate_all(patches)?;
     if out.exists() {
         return Err(WeightPatchError::OutputExists(out.to_path_buf()));
     }
@@ -117,14 +136,14 @@ pub fn apply_weight_patch_with_origins(
         )));
     }
     require_patchable(&index)?;
-    let at = locate(src, &index, patch)?;
-    let edits = resolve_edits(src, &at, patch)?;
+    let edited = locate_all(src, &index, patches)?;
+    let at = &edited[0].0;
 
     let stage_a = sibling(out, "a")?;
     let stage_b = sibling(out, "b")?;
     let mut scratch = Scratch(vec![stage_a.clone(), stage_b.clone()]);
 
-    let written = write_stage(src, &index, &at, &edits, &stage_a)?;
+    let written = write_stage(src, &index, &edited, &stage_a)?;
     let derived_encodings: Vec<String> = at
         .derived
         .iter()
@@ -132,9 +151,9 @@ pub fn apply_weight_patch_with_origins(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let assembled = rederive(&stage_a, &stage_b, &at, &derived_encodings, &index)?;
+    let assembled = rederive(&stage_a, &stage_b, at, &derived_encodings, &index)?;
 
-    let mut ledger = build_ledger(&index, &raw, &at, &edits, &written, &assembled);
+    let mut ledger = build_ledger(&index, &raw, &edited, &written, &assembled);
     ledger.origins = origins.to_vec();
     std::fs::write(
         assembled.join(WEIGHT_PATCHES_JSON),
@@ -155,7 +174,8 @@ pub fn apply_weight_patch_with_origins(
     std::fs::rename(&assembled, out)?;
     scratch.0.retain(|p| p != &assembled);
     Ok(PatchReport {
-        elements: edits.len(),
+        elements: ledger.edit_count(),
+        tensors: ledger.targets.iter().map(|t| t.tensor.clone()).collect(),
         object: at.entry.object.clone(),
         canonical: ledger.result.canonical.clone(),
         rederived: ledger
@@ -186,6 +206,53 @@ pub fn plan_weight_patch(
     require_patchable(&index)?;
     let at = locate(src, &index, patch)?;
     resolve_edits(src, &at, patch)
+}
+
+/// What only the set can break, cheapest first: the element total within
+/// the limit, then [`validate`] for each patch, and no tensor twice.
+fn validate_all(patches: &[WeightPatch]) -> Result<(), WeightPatchError> {
+    if patches.is_empty() {
+        return Err(WeightPatchError::Empty);
+    }
+    let count: usize = patches.iter().map(|p| p.edits.len()).sum();
+    if count > MAX_PATCH_ELEMENTS {
+        return Err(WeightPatchError::TooManyElements {
+            count,
+            limit: MAX_PATCH_ELEMENTS,
+        });
+    }
+    let mut names = BTreeSet::new();
+    for p in patches {
+        validate(p)?;
+        if !names.insert(p.tensor.as_str()) {
+            return Err(WeightPatchError::DuplicateTensor(p.tensor.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Locate and resolve every patch; refuse unless one canonical
+/// representation holds them all, since the re-derivation and the result
+/// digests belong to one representation.
+fn locate_all(
+    src: &Path,
+    index: &Vindex3Index,
+    patches: &[WeightPatch],
+) -> Result<Vec<(Located, Vec<LedgerEdit>)>, WeightPatchError> {
+    let mut out = Vec::with_capacity(patches.len());
+    for p in patches {
+        let at = locate(src, index, p)?;
+        let edits = resolve_edits(src, &at, p)?;
+        out.push((at, edits));
+    }
+    let first = out[0].0.canonical_id.clone();
+    if let Some((other, _)) = out.iter().find(|(a, _)| a.canonical_id != first) {
+        return Err(WeightPatchError::SpansRepresentations {
+            first: (patches[0].tensor.clone(), first),
+            other: (other.tensor.name.clone(), other.canonical_id.clone()),
+        });
+    }
+    Ok(out)
 }
 
 fn validate(patch: &WeightPatch) -> Result<(), WeightPatchError> {
@@ -393,10 +460,10 @@ fn write_index(root: &Path, index: &Vindex3Index) -> Result<(), WeightPatchError
 fn write_stage(
     src: &Path,
     index: &Vindex3Index,
-    at: &Located,
-    edits: &[LedgerEdit],
+    edited: &[(Located, Vec<LedgerEdit>)],
     stage: &Path,
 ) -> Result<crate::format::vindex3::encode::segment::WrittenSegment, WeightPatchError> {
+    let at = &edited[0].0;
     std::fs::create_dir_all(stage.join(SEGMENTS_DIR))?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -423,7 +490,7 @@ fn write_stage(
             std::fs::copy(&from, &to)?;
         }
     }
-    let written = write_patched_segment(src, stage, at, edits)?;
+    let written = write_patched_segment(src, stage, edited)?;
     let mut staged = index.clone();
     for (id, e) in &at.derived {
         staged.representations.remove(id);
@@ -447,9 +514,18 @@ fn write_stage(
 fn write_patched_segment(
     src: &Path,
     stage: &Path,
-    at: &Located,
-    edits: &[LedgerEdit],
+    edited: &[(Located, Vec<LedgerEdit>)],
 ) -> Result<crate::format::vindex3::encode::segment::WrittenSegment, WeightPatchError> {
+    let at = &edited[0].0;
+    let by_tensor: BTreeMap<&str, (u64, &[LedgerEdit])> = edited
+        .iter()
+        .map(|(a, e)| {
+            (
+                a.tensor.name.as_str(),
+                (a.tensor.shape[1] as u64, e.as_slice()),
+            )
+        })
+        .collect();
     let planned: Vec<PlannedTensor> = at
         .header
         .tensors
@@ -463,7 +539,6 @@ fn write_patched_segment(
         })
         .collect();
     let mut source = File::open(src.join(&at.entry.segment))?;
-    let cols = at.tensor.shape[1] as u64;
     Ok(write_segment(
         &stage.join(&at.entry.segment),
         &at.canonical_id,
@@ -476,7 +551,7 @@ fn write_patched_segment(
                 .find(|t| t.name == name)
                 .expect("planned from this header");
             source.seek(SeekFrom::Start(at.payload_start + t.offset))?;
-            if name == at.tensor.name {
+            if let Some(&(cols, edits)) = by_tensor.get(name) {
                 let mut bytes = vec![0u8; t.len as usize];
                 source.read_exact(&mut bytes)?;
                 for e in edits {
@@ -568,12 +643,12 @@ fn encoder_of(e: &RepresentationEntry) -> Option<serde_json::Value> {
 fn build_ledger(
     source_index: &Vindex3Index,
     raw_source_index: &str,
-    at: &Located,
-    edits: &[LedgerEdit],
+    edited: &[(Located, Vec<LedgerEdit>)],
     written: &crate::format::vindex3::encode::segment::WrittenSegment,
     assembled: &Path,
 ) -> WeightPatchLedger {
     let rebuilt = read_index(assembled).expect("assembled above");
+    let at = &edited[0].0;
     let canonical = DigestPair {
         payload_sha256: written.payload_sha256.clone(),
         segment_sha256: written.segment_sha256.clone(),
@@ -597,14 +672,17 @@ fn build_ledger(
                 })
                 .collect(),
         },
-        target: LedgerTarget {
-            object: at.entry.object.clone(),
-            representation: at.canonical_id.clone(),
-            tensor: at.tensor.name.clone(),
-            dtype: at.tensor.dtype.clone(),
-            shape: at.tensor.shape.clone(),
-        },
-        edits: edits.to_vec(),
+        targets: edited
+            .iter()
+            .map(|(a, edits)| LedgerTarget {
+                object: a.entry.object.clone(),
+                representation: a.canonical_id.clone(),
+                tensor: a.tensor.name.clone(),
+                dtype: a.tensor.dtype.clone(),
+                shape: a.tensor.shape.clone(),
+                edits: edits.clone(),
+            })
+            .collect(),
         origins: Vec::new(),
         result: LedgerResult {
             derived: at

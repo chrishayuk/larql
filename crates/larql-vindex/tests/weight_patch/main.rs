@@ -8,6 +8,7 @@ mod errors;
 mod fixture;
 mod golden;
 mod inspection;
+mod multi;
 mod op;
 mod overlay;
 mod refusals;

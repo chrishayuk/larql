@@ -2,7 +2,9 @@
 //!
 //! A weight edit names real elements of one stored tensor. It is staged in the
 //! session overlay, bound to the exact container it was written against, and
-//! written into a new container by `COMPILE CURRENT INTO VINDEX`. Staging
+//! written into a new container by `COMPILE CURRENT INTO VINDEX`, together
+//! with every other pending edit (of any tensor of the same canonical
+//! representation) as one patch. Staging
 //! writes nothing and leaves the container untouched; nothing in this session
 //! sees the edit until it is compiled.
 //!
@@ -123,36 +125,31 @@ impl Session {
             ));
         }
         let ops = overlay.weight_ops();
-        let mut tensors: Vec<String> = ops.iter().map(|(_, o)| o.tensor.clone()).collect();
-        tensors.sort();
-        tensors.dedup();
-        if tensors.len() > 1 {
-            return Err(LqlError::Execution(
-                wp::WeightPatchError::MoreThanOneTensor(tensors).to_string(),
-            ));
-        }
-        let tensor = tensors.remove(0);
         // The container may have changed since staging; re-check every binding.
         for (_, op) in &ops {
             op.check_binding(path)
                 .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
         }
-        let edits: Vec<WeightEdit> = ops.iter().flat_map(|(_, o)| o.weight_edits()).collect();
+        // One patch per tensor, in the order each tensor was first edited.
+        let mut patches: Vec<WeightPatch> = Vec::new();
+        for (_, op) in &ops {
+            let edits = op.weight_edits();
+            match patches.iter_mut().find(|p| p.tensor == op.tensor) {
+                Some(p) => p.edits.extend(edits),
+                None => patches.push(WeightPatch {
+                    tensor: op.tensor.clone(),
+                    edits,
+                }),
+            }
+        }
         let origins: Vec<String> = ops.iter().map(|(_, o)| o.digest.clone()).collect();
-        let report = wp::apply_weight_patch_with_origins(
-            path,
-            &WeightPatch {
-                tensor: tensor.clone(),
-                edits,
-            },
-            &origins,
-            Path::new(output),
-        )
-        .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
+        let report = wp::apply_weight_patches(path, &patches, &origins, Path::new(output))
+            .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
         Ok(vec![
             format!(
-                "Compiled: {output} (VINDEX3, clean container; weight patch of {} element(s) of {tensor})",
-                report.elements
+                "Compiled: {output} (VINDEX3, clean container; weight patch of {} element(s) of {})",
+                report.elements,
+                report.tensors.join(", ")
             ),
             format!("  re-derived: {}", if report.rederived.is_empty() { "(none)".into() } else { report.rederived.join(", ") }),
             format!("  edited source (canonical) payload {}", &report.canonical.payload_sha256[..16]),

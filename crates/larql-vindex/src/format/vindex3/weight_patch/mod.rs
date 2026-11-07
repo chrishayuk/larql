@@ -10,9 +10,9 @@
 //!     → inspect the assembly; rename into place, or leave nothing
 //! ```
 //!
-//! This is deliberately restrictive: one source, one named BF16 matrix,
-//! explicit coordinates, at most [`MAX_PATCH_ELEMENTS`] elements, finite
-//! deltas. It refuses anything it cannot apply exactly as declared, and it
+//! This is deliberately restrictive: one source, named BF16 matrices of one
+//! canonical representation, explicit coordinates, at most
+//! [`MAX_PATCH_ELEMENTS`] elements in all, finite deltas. It refuses anything it cannot apply exactly as declared, and it
 //! refuses rather than guessing which representation an edit was meant for.
 //!
 //! The edit is defined on the canonical weights: a patched element is
@@ -35,13 +35,19 @@ pub mod op;
 mod apply;
 
 pub use apply::{
-    apply_weight_patch, apply_weight_patch_with_origins, plan_weight_patch, PatchReport,
-    WeightEdit, WeightPatch,
+    apply_weight_patch, apply_weight_patch_with_origins, apply_weight_patches, plan_weight_patch,
+    PatchReport, WeightEdit, WeightPatch,
 };
 pub use error::WeightPatchError;
-pub use ledger::{check_ledger, LedgerEdit, WeightPatchLedger, WEIGHT_PATCHES_SCHEMA};
+pub use ledger::{
+    check_ledger, parse_ledger, LedgerEdit, LedgerTarget, WeightPatchLedger, WEIGHT_PATCHES_SCHEMA,
+    WEIGHT_PATCHES_SCHEMA_V1,
+};
 pub use op::{bind_source, record_op, DeltaEdit, SourceBinding, WeightDeltaOp};
 
-/// The most elements one patch may edit. A patch is a bounded, reviewable
-/// change; a rewrite of a tensor is a different operation.
-pub const MAX_PATCH_ELEMENTS: usize = 4096;
+/// The most elements one patch may edit, across all its tensors. A patch is
+/// a bounded, reviewable change; a rewrite of a tensor is a different
+/// operation. Sized (2^18) to carry an enumerated import of a published,
+/// structured edit, such as WSP-001's p50c (130,188 BF16 elements over two
+/// `[1024, 3584]` matrices), with headroom; one such matrix is 3,670,016.
+pub const MAX_PATCH_ELEMENTS: usize = 1 << 18;
