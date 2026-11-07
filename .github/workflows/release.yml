@@ -143,10 +143,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Before the download: checkout cleans the workspace.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+
+      # The workspace version must be bumped to the tag before tagging. The
+      # version is workspace-wide, so this host's (Linux) archive speaks for
+      # all three; a mismatch stops here, before anything is published.
+      - name: Archived binaries report the tag's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: bash scripts/release-smoke.sh archive "$GITHUB_REF_NAME" dist "$RUNNER_TEMP/release-archive"
 
       # The README and docs/getting-started.md install from
       # releases/latest/download/larql-<target>.*, so a larql release must
@@ -158,3 +170,16 @@ jobs:
           files: dist/*
           generate_release_notes: true
           make_latest: true
+
+  # Post-publish gate: install the archives just published, the README way,
+  # on every platform, and run + serve an offline fixture with them. A red
+  # leg here means the release is live but broken for new users. Re-run
+  # just this job (`gh run rerun <id> --failed`) after a transient
+  # download error; it never rebuilds or republishes.
+  smoke:
+    name: post-publish smoke
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
