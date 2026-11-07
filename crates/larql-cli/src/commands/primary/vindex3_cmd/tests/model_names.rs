@@ -194,7 +194,9 @@ fn run_hands_a_missing_path_to_the_verb_unchanged() {
     let cmd = parse(&["inspect", "./larql-test-no-such-container"]);
     let err = run(cmd).unwrap_err().to_string();
     assert!(!err.contains("never downloads"), "{err}");
-    assert!(err.contains("No such file or directory"), "{err}");
+    // The verb's own open fails; the OS words "not found" differently
+    // (Unix: "No such file or directory", Windows: "cannot find the path").
+    assert!(err.starts_with("IO error:"), "{err}");
 }
 
 /// The fixture encoded straight into a hub-layout cache as `REPO`, and
