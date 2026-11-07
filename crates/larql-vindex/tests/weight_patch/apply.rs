@@ -167,8 +167,8 @@ fn the_ledger_binds_source_edits_and_result() {
             .as_deref(),
         Some(derived.source_representation_digest.as_str())
     );
-    assert_eq!(on_disk.edits.len(), COLS.len());
-    for e in &on_disk.edits {
+    assert_eq!(on_disk.targets[0].edits.len(), COLS.len());
+    for e in &on_disk.targets[0].edits {
         assert_eq!(e.delta.to_bits(), e.delta_bits);
         assert_ne!(e.old_bits, e.new_bits);
     }

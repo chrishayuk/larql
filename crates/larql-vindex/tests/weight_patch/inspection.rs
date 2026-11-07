@@ -109,42 +109,59 @@ fn each_inconsistency_between_ledger_and_container_is_reported() {
         ),
         (
             "an edit whose new value is not what is stored",
-            Box::new(|l| l.edits[0].new_bits ^= 1),
+            Box::new(|l| l.targets[0].edits[0].new_bits ^= 1),
         ),
         (
             "an edit outside the tensor",
-            Box::new(|l| l.edits[0].row = 10_000),
+            Box::new(|l| l.targets[0].edits[0].row = 10_000),
         ),
         (
             "an element listed twice",
             Box::new(|l| {
-                let e = l.edits[0].clone();
-                l.edits.push(e);
+                let e = l.targets[0].edits[0].clone();
+                l.targets[0].edits.push(e);
             }),
         ),
         (
             "a delta that disagrees with its bits",
-            Box::new(|l| l.edits[0].delta = 3.0),
+            Box::new(|l| l.targets[0].edits[0].delta = 3.0),
         ),
         (
             "a tensor the segment does not hold",
-            Box::new(|l| l.target.tensor = "no.such.weight".into()),
+            Box::new(|l| l.targets[0].tensor = "no.such.weight".into()),
         ),
         (
             "a representation the container does not hold",
-            Box::new(|l| l.target.representation = "ghost@BF16".into()),
+            Box::new(|l| l.targets[0].representation = "ghost@BF16".into()),
         ),
         (
             "a derived representation as the edited one",
-            Box::new(|l| l.target.representation = DERIVED.into()),
+            Box::new(|l| l.targets[0].representation = DERIVED.into()),
         ),
         (
             "a dtype the segment does not carry",
-            Box::new(|l| l.target.dtype = "F32".into()),
+            Box::new(|l| l.targets[0].dtype = "F32".into()),
         ),
         (
             "a target that is not a matrix",
-            Box::new(|l| l.target.shape = vec![64]),
+            Box::new(|l| l.targets[0].shape = vec![64]),
+        ),
+        ("no edited tensor at all", Box::new(|l| l.targets.clear())),
+        (
+            "two canonical representations",
+            Box::new(|l| {
+                let mut t = l.targets[0].clone();
+                t.representation = "target.embedding@BF16".into();
+                t.tensor = "elsewhere.weight".into();
+                l.targets.push(t);
+            }),
+        ),
+        (
+            "one tensor listed twice",
+            Box::new(|l| {
+                let t = l.targets[0].clone();
+                l.targets.push(t);
+            }),
         ),
         (
             "derived digests that are not the catalogue's",

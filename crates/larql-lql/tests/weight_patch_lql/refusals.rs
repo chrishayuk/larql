@@ -49,22 +49,6 @@ fn staging_an_element_twice_is_refused_and_never_doubles_the_edit() {
 }
 
 #[test]
-fn edits_to_two_tensors_cannot_be_compiled_together_yet() {
-    let fx = Fixture::new();
-    let mut s = session_on(&fx.container);
-    run(&mut s, &update(&[33], DELTA));
-    run(&mut s, "UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = \"0.mlp.down_proj.weight\" AND ROW = 1 AND COL = 1;");
-    let out = fx.path("two.vindex3");
-    let err = try_run(
-        &mut s,
-        &format!("COMPILE CURRENT INTO VINDEX \"{}\";", q(&out)),
-    )
-    .unwrap_err();
-    assert!(err.contains("one tensor"), "{err}");
-    assert!(!out.exists(), "nothing written");
-}
-
-#[test]
 fn compile_into_an_existing_path_is_refused_and_leaves_it_alone() {
     let fx = Fixture::new();
     let mut s = session_on(&fx.container);

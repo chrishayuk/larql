@@ -61,7 +61,11 @@ fn every_refusal() -> Vec<E> {
             found: "cc / dd".into(),
         },
         E::PatchOp("x".into()),
-        E::MoreThanOneTensor(vec!["a".into(), "b".into()]),
+        E::DuplicateTensor("t".into()),
+        E::SpansRepresentations {
+            first: ("a".into(), "r1".into()),
+            other: ("b".into(), "r2".into()),
+        },
         E::Io(std::io::Error::other("disk")),
     ]
 }
