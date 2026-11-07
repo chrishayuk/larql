@@ -261,6 +261,14 @@ class Larql:
 # ── comparison ─────────────────────────────────────────────────────────
 
 
+def arms_for(length: int, reference_limit: int | None) -> list[str]:
+    """The arms a sequence of `length` runs on: the f32 reference
+    interpreter is skipped above `reference_limit` (recorded, never
+    silently), every production arm always runs."""
+    return [arm for arm in ARMS
+            if not (ARMS[arm][2] == "reference" and reference_limit is not None and length > reference_limit)]
+
+
 def compare(arm: str, arm_rows: np.ndarray, hf_rows: np.ndarray, positions: list[int],
             record_top_at: set[int]) -> dict:
     """Arm rows vs transformers rows at the same positions."""
@@ -306,13 +314,14 @@ def arm_gate(arm: str, result: dict) -> str:
     return result["top5_verdict"]
 
 
-def evaluate_cases(hf: Transformers, larql: Larql, cases: list[dict]) -> list[dict]:
+def evaluate_cases(hf: Transformers, larql: Larql, cases: list[dict],
+                   reference_limit: int | None) -> list[dict]:
     for case in cases:
         ids, n = case["ids"], case["length"]
         hf_rows = hf.logits(ids)
         case["hf_noise_floor_sdpa_vs_eager"] = hf.noise_floor(ids, hf_rows)
         case["arms"] = {}
-        for arm in ARMS:
+        for arm in arms_for(n, reference_limit):
             cached = compare(arm, larql.cached(arm, ids, case["name"]), hf_rows,
                              list(range(n)), {n - 1})
             prefill = compare(arm, larql.prefill(arm, ids, [n], case["name"]),
@@ -322,11 +331,12 @@ def evaluate_cases(hf: Transformers, larql: Larql, cases: list[dict]) -> list[di
         print(f"  {case['name']:>18} n={n:<5}" + "".join(
             f"  {arm}: cached {case['arms'][arm]['cached']['max_abs_logprob_overall']:.2e}"
             f" prefill {case['arms'][arm]['prefill']['max_abs_logprob_overall']:.2e}"
-            f" [{case['arms'][arm]['gate']}]" for arm in ARMS), flush=True)
+            f" [{case['arms'][arm]['gate']}]" for arm in case["arms"]), flush=True)
     return cases
 
 
-def evaluate_decode(hf: Transformers, larql: Larql, tokenizer, window: int, steps: int) -> dict:
+def evaluate_decode(hf: Transformers, larql: Larql, tokenizer, window: int, steps: int,
+                    reference_limit: int | None) -> dict:
     prompt = passage_ids(tokenizer, window - steps // 2)
     generated = larql.generate(prompt, steps)
     sequence = prompt + generated
@@ -343,7 +353,7 @@ def evaluate_decode(hf: Transformers, larql: Larql, tokenizer, window: int, step
         "arms": {},
     }
     lengths = [q + 1 for q in positions]
-    for arm in ARMS:
+    for arm in arms_for(len(sequence), reference_limit):
         cached_rows = larql.cached(arm, sequence, "decode")[positions]
         prefill_rows = larql.prefill(arm, sequence, lengths, "decode")
         record = set(positions)
@@ -387,35 +397,47 @@ def operational_stage(larql: Path, container: Path, question: str) -> dict:
                                               "criterion": f"contains {EXPECTED_ANSWER!r}"})
 
 
+def _runs(cases: list[dict], decode: dict, arm: str, case_keys=("cached", "prefill"),
+          decode_keys=("cached_vs_hf", "prefill_vs_hf")) -> list[dict]:
+    """Every comparison result an arm produced (skipped cases contribute none)."""
+    out = [c["arms"][arm][k] for c in cases if arm in c["arms"] for k in case_keys]
+    if arm in decode["arms"]:
+        out += [decode["arms"][arm][k] for k in decode_keys]
+    return out
+
+
+def _gates(cases: list[dict], decode: dict, arm: str) -> list[str]:
+    gates = [c["arms"][arm]["gate"] for c in cases if arm in c["arms"]]
+    return gates + ([decode["arms"][arm]["gate"]] if arm in decode["arms"] else [])
+
+
 def equivalent_stage(cases: list[dict], decode: dict) -> dict:
-    gates = [c["arms"][a]["gate"] for c in cases for a in ARMS]
-    gates += [decode["arms"][a]["gate"] for a in ARMS]
-    reference_max = max(
-        [c["arms"]["reference"][k]["max_abs_logprob_overall"] for c in cases for k in ("cached", "prefill")]
-        + [decode["arms"]["reference"][k]["max_abs_logprob_overall"] for k in ("cached_vs_hf", "prefill_vs_hf")])
-    production_max = {
-        arm: max(
-            [c["arms"][arm][k]["max_abs_logprob_overall"] for c in cases for k in ("cached", "prefill")]
-            + [decode["arms"][arm][k]["max_abs_logprob_overall"] for k in ("cached_vs_hf", "prefill_vs_hf")])
-        for arm in ARMS if ARMS[arm][2] == "production"
-    }
-    reference_mass_bearing = max(
-        [c["arms"]["reference"][k]["max_abs_logprob_mass_bearing_overall"] for c in cases for k in ("cached", "prefill")]
-        + [decode["arms"]["reference"][k]["max_abs_logprob_mass_bearing_overall"]
-           for k in ("cached_vs_hf", "prefill_vs_hf")])
-    verdict = m.worst(gates)
-    return m.stage("FAIL" if verdict == m.FAIL else "PASS", {
+    """FAIL on any failed gate; PENDING when the worst is a tie swap (it
+    needs adjudication, and is not a pass) or an arm skipped a case; PASS
+    only when every arm ran every case and passed."""
+    per_arm = {arm: m.worst(_gates(cases, decode, arm)) for arm in ARMS}
+    skipped = {arm: [c["name"] for c in cases if arm not in c["arms"]]
+               + (["decode"] if arm not in decode["arms"] else []) for arm in ARMS}
+    verdict = m.worst(per_arm.values())
+    if verdict == m.FAIL:
+        status = "FAIL"
+    elif verdict == m.TIE_SWAP or any(skipped.values()):
+        status = "PENDING"
+    else:
+        status = "PASS"
+    return m.stage(status, {
         "verdict": verdict,
-        "reference_max_abs_logprob": reference_max,
-        "reference_max_abs_logprob_mass_bearing": reference_mass_bearing,
-        "hf_noise_floor_sdpa_vs_eager": max(c["hf_noise_floor_sdpa_vs_eager"] for c in cases),
-        "production_max_abs_logprob": production_max,
-        "gate_per_arm": {arm: m.worst([c["arms"][arm]["gate"] for c in cases] + [decode["arms"][arm]["gate"]])
-                         for arm in ARMS},
-        "top1_mismatches_per_arm": {
-            arm: sum(len(c["arms"][arm][k]["top1_mismatch_positions"]) for c in cases for k in ("cached", "prefill"))
-            + sum(len(decode["arms"][arm][k]["top1_mismatch_positions"]) for k in ("cached_vs_hf", "prefill_vs_hf"))
+        "gate_per_arm": per_arm,
+        "skipped_per_arm": skipped,
+        "max_abs_logprob_per_arm": {
+            arm: max((r["max_abs_logprob_overall"] for r in _runs(cases, decode, arm)), default=None)
             for arm in ARMS},
+        "max_abs_logprob_mass_bearing_per_arm": {
+            arm: max((r["max_abs_logprob_mass_bearing_overall"] for r in _runs(cases, decode, arm)), default=None)
+            for arm in ARMS},
+        "top1_mismatches_per_arm": {
+            arm: sum(len(r["top1_mismatch_positions"]) for r in _runs(cases, decode, arm)) for arm in ARMS},
+        "hf_noise_floor_sdpa_vs_eager": max(c["hf_noise_floor_sdpa_vs_eager"] for c in cases),
         "cache_steps": decode["steps"],
         "decode_crosses_window": decode["crosses_window"],
     })
@@ -438,13 +460,14 @@ def markdown(name: str, run_record: dict) -> str:
               "| case | n | BOS | " + " | ".join(ARMS) + " |", "|---|---|---|" + "---|" * len(ARMS)]
     for c in run_record["cases"]:
         cells = [f"{c['arms'][a]['cached']['max_abs_logprob_overall']:.2e} / "
-                 f"{c['arms'][a]['prefill']['max_abs_logprob_overall']:.2e} {c['arms'][a]['gate']}" for a in ARMS]
+                 f"{c['arms'][a]['prefill']['max_abs_logprob_overall']:.2e} {c['arms'][a]['gate']}"
+                 if a in c["arms"] else "skipped" for a in ARMS]
         lines.append(f"| {c['name']} | {c['length']} | {c['bos_present']} | " + " | ".join(cells) + " |")
     d = run_record["decode"]
     lines += ["", f"Decode: prompt {d['prompt_length']} + {d['steps']} greedy steps (window {d['window']}, "
               f"crosses: {d['crosses_window']}); HF greedy agrees on {sum(d['hf_greedy_agrees'])}/{d['steps']}; "
               f"HF cache vs no-cache max |Δ| {d['hf_cache_vs_nocache_max_abs_logprob']:.2e}."]
-    for arm in ARMS:
+    for arm in d["arms"]:
         a = d["arms"][arm]
         lines.append(f"- {arm}: cached vs HF {a['cached_vs_hf']['max_abs_logprob_overall']:.2e}, prefill vs HF "
                      f"{a['prefill_vs_hf']['max_abs_logprob_overall']:.2e}, cached vs prefill "
@@ -466,6 +489,9 @@ def main() -> None:
     ap.add_argument("--decode-steps", type=int, default=DEFAULT_DECODE_STEPS)
     ap.add_argument("--question", default=DEFAULT_QUESTION)
     ap.add_argument("--raw-prompt", default=DEFAULT_RAW_PROMPT)
+    ap.add_argument("--reference-max-length", type=int, default=None,
+                    help="skip the f32 reference arm on sequences longer than this "
+                         "(recorded; the equivalent stage then reads PENDING, never PASS)")
     args = ap.parse_args()
 
     identity = {"repo": args.repo, "revision": args.revision}
@@ -481,8 +507,9 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as work:
         larql = Larql(args.larql, args.container, Path(work))
         print(f"{args.name}: window {window}", flush=True)
-        cases = evaluate_cases(hf, larql, build_cases(tokenizer, window, args.question, args.raw_prompt))
-        decode = evaluate_decode(hf, larql, tokenizer, window, args.decode_steps)
+        cases = evaluate_cases(hf, larql, build_cases(tokenizer, window, args.question, args.raw_prompt),
+                               args.reference_max_length)
+        decode = evaluate_decode(hf, larql, tokenizer, window, args.decode_steps, args.reference_max_length)
     run_record = {
         "harness_version": m.HARNESS_VERSION,
         "started": started,
@@ -506,7 +533,9 @@ def main() -> None:
                    "gated_top_k": m.GATED_TOP_K, "recorded_top_k": m.RECORDED_TOP_K,
                    "tie_tolerance": m.TIE_TOLERANCE,
                    "production_explain_above": m.PRODUCTION_EXPLAIN_ABOVE,
-                   "inputs": "identical token ids both sides; no attention mask; no padding"},
+                   "inputs": "identical token ids both sides; no attention mask; no padding",
+                   "reference_max_length": args.reference_max_length,
+                   "equivalent_stage_rule": "FAIL on any fail; PENDING on a tie swap or a skipped arm; else PASS"},
         "sliding_window": window,
         "cases": cases,
         "decode": decode,

@@ -3,7 +3,7 @@
 //! the same position — the two independent paths an equivalence harness
 //! compares against an outside reference.
 
-use super::super::prefill_dump::parse_lengths;
+use super::super::prefill_dump::{parse_lengths, same_vocabulary};
 use super::super::{run, EncodeArgs, ExecArgs, ExecBackend, Vindex3Command};
 use super::fixture_dir;
 
@@ -74,6 +74,14 @@ fn lengths_outside_the_sequence_are_refused_not_clamped() {
     for bad in ["0", "4", "1,x", ""] {
         assert!(parse_lengths(Some(bad), SEQUENCE).is_err(), "{bad:?}");
     }
+}
+
+#[test]
+fn a_dump_refuses_rows_of_different_widths() {
+    let mut vocab = None;
+    assert!(same_vocabulary(&mut vocab, 4, 1).is_ok());
+    assert!(same_vocabulary(&mut vocab, 4, 2).is_ok());
+    assert!(same_vocabulary(&mut vocab, 5, 3).is_err());
 }
 
 #[test]

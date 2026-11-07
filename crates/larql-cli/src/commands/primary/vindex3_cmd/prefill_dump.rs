@@ -41,9 +41,6 @@ pub(super) fn parse_lengths(
         .map(|s| s.trim().parse::<usize>())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("--prefill-lengths: {e}"))?;
-    if lengths.is_empty() {
-        return Err("--prefill-lengths names no length".into());
-    }
     if let Some(bad) = lengths.iter().find(|&&n| n == 0 || n > sequence) {
         return Err(format!(
             "--prefill-lengths: {bad} is outside 1..={sequence} (the given token count)"
@@ -51,6 +48,21 @@ pub(super) fn parse_lengths(
         .into());
     }
     Ok(lengths)
+}
+
+/// Every row of one dump must have the first row's width: a reader
+/// reshapes the file by it.
+pub(super) fn same_vocabulary(
+    vocab: &mut Option<usize>,
+    width: usize,
+    length: usize,
+) -> Result<(), String> {
+    match *vocab.get_or_insert(width) == width {
+        true => Ok(()),
+        false => Err(format!(
+            "prefix {length}: vocabulary changed between prefills"
+        )),
+    }
 }
 
 /// Prefill `tokens[..n]` for each `n` in `lengths`, writing each final
@@ -76,9 +88,7 @@ pub(super) fn run_prefill_dump<B: PlanBackend>(
         let logits = trace
             .logits
             .ok_or("plan carries no output head — cannot score")?;
-        if *vocab.get_or_insert(logits.len()) != logits.len() {
-            return Err(format!("prefix {length}: vocabulary changed between prefills").into());
-        }
+        same_vocabulary(&mut vocab, logits.len(), length)?;
         for value in &logits {
             file.write_all(&value.to_le_bytes())?;
         }
