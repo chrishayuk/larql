@@ -154,29 +154,70 @@ pub fn encode_fixture_container(
 /// `model_type: "qwen3_5"` because the fused gate is judged on the Qwen
 /// family; nothing else about the fixture is Qwen-specific.
 pub fn gated_q_f32_model(dir: &Path) {
-    std::fs::write(
-        dir.join("config.json"),
-        serde_json::json!({
-            "architectures": ["Qwen3_5ForCausalLM"],
-            "torch_dtype": "float32",
-            "model_type": "qwen3_5",
-            "hidden_size": DENSE_HIDDEN,
-            "num_hidden_layers": DENSE_LAYERS,
-            "intermediate_size": DENSE_INTERMEDIATE,
-            "num_attention_heads": DENSE_Q_HEADS,
-            "num_key_value_heads": DENSE_KV_HEADS,
-            "head_dim": DENSE_HEAD_DIM,
-            "vocab_size": DENSE_VOCAB,
-            "rms_norm_eps": 1e-5,
-            "rope_theta": 10000.0,
-            "attn_output_gate": true
-        })
-        .to_string(),
-    )
-    .unwrap();
+    gated_q_f32_model_with_geometry(dir, GATED_Q_DENSE_GEOMETRY);
+}
 
-    let q_rows = DENSE_Q_HEADS * DENSE_HEAD_DIM;
-    let kv_rows = DENSE_KV_HEADS * DENSE_HEAD_DIM;
+/// The per-head geometry [`gated_q_f32_model_with_geometry`] varies.
+/// Everything else (hidden size, head counts, layers) stays the dense
+/// fixture's.
+#[derive(Debug, Clone, Copy)]
+pub struct GatedQGeometry {
+    pub head_dim: usize,
+    /// Written as the top-level `partial_rotary_factor` when present.
+    pub partial_rotary_factor: Option<f64>,
+}
+
+/// [`gated_q_f32_model`]'s own geometry: the dense fixture's head dim,
+/// full rotary (no `partial_rotary_factor` key).
+pub const GATED_Q_DENSE_GEOMETRY: GatedQGeometry = GatedQGeometry {
+    head_dim: DENSE_HEAD_DIM,
+    partial_rotary_factor: None,
+};
+
+/// Qwen3.5-0.8B's full-attention per-head geometry: head dim 256, a
+/// quarter of it rotary. The 256-wide per-head stride is what the fused
+/// gate split has to get right at the real model's scale.
+pub const GATED_Q_QWEN35_GEOMETRY: GatedQGeometry = GatedQGeometry {
+    head_dim: QWEN35_FULL_ATTENTION_HEAD_DIM,
+    partial_rotary_factor: Some(QWEN35_PARTIAL_ROTARY_FACTOR),
+};
+
+/// Qwen3.5-0.8B's `head_dim` for its full (softmax) attention layers.
+pub const QWEN35_FULL_ATTENTION_HEAD_DIM: usize = 256;
+
+/// Qwen3.5-0.8B's `partial_rotary_factor`: RoPE covers 64 of 256 dims.
+pub const QWEN35_PARTIAL_ROTARY_FACTOR: f64 = 0.25;
+
+/// [`gated_q_f32_model`] at a chosen per-head geometry. The tensors are
+/// sized from `geometry.head_dim`, so the q_proj interleave stride, the
+/// `q_norm`/`k_norm` widths and `o_proj`'s input all follow it.
+pub fn gated_q_f32_model_with_geometry(dir: &Path, geometry: GatedQGeometry) {
+    let head_dim = geometry.head_dim;
+    let mut config = serde_json::json!({
+        "architectures": ["Qwen3_5ForCausalLM"],
+        "torch_dtype": "float32",
+        "model_type": "qwen3_5",
+        "hidden_size": DENSE_HIDDEN,
+        "num_hidden_layers": DENSE_LAYERS,
+        "intermediate_size": DENSE_INTERMEDIATE,
+        "num_attention_heads": DENSE_Q_HEADS,
+        "num_key_value_heads": DENSE_KV_HEADS,
+        "head_dim": head_dim,
+        "vocab_size": DENSE_VOCAB,
+        "rms_norm_eps": 1e-5,
+        "rope_theta": 10000.0,
+        "attn_output_gate": true
+    });
+    if let Some(factor) = geometry.partial_rotary_factor {
+        config["partial_rotary_factor"] = serde_json::json!(factor);
+    }
+    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
+    gated_q_shards(dir, head_dim);
+}
+
+fn gated_q_shards(dir: &Path, head_dim: usize) {
+    let q_rows = DENSE_Q_HEADS * head_dim;
+    let kv_rows = DENSE_KV_HEADS * head_dim;
     let mut shard = ShardBuilder::new();
     shard.push(
         "model.embed_tokens.weight",
@@ -220,13 +261,13 @@ pub fn gated_q_f32_model(dir: &Path) {
         );
         shard.push(
             &format!("{prefix}.self_attn.q_norm.weight"),
-            &[DENSE_HEAD_DIM],
-            &norm_values(DENSE_HEAD_DIM, seed + 9),
+            &[head_dim],
+            &norm_values(head_dim, seed + 9),
         );
         shard.push(
             &format!("{prefix}.self_attn.k_norm.weight"),
-            &[DENSE_HEAD_DIM],
-            &norm_values(DENSE_HEAD_DIM, seed + 10),
+            &[head_dim],
+            &norm_values(head_dim, seed + 10),
         );
         shard.push(
             &format!("{prefix}.input_layernorm.weight"),

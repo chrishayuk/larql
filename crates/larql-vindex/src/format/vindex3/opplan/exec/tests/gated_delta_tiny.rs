@@ -39,9 +39,17 @@ fn operand() -> OperandRef {
 }
 
 fn op() -> GatedDeltaOp {
+    op_with_heads(fx::KEY_HEADS, fx::VALUE_HEADS)
+}
+
+/// The fixture's operator with its head counts replaced — every other
+/// dimension stays the pinned fixture's. Exists so a repeat factor other
+/// than the fixture's 3 (`gated_delta_repeat_one`) runs through this same
+/// harness; nothing built with it is compared against pinned HF values.
+pub(super) fn op_with_heads(key_heads: usize, value_heads: usize) -> GatedDeltaOp {
     GatedDeltaOp {
-        num_key_heads: fx::KEY_HEADS,
-        num_value_heads: fx::VALUE_HEADS,
+        num_key_heads: key_heads,
+        num_value_heads: value_heads,
         key_head_dim: fx::KEY_HEAD_DIM,
         value_head_dim: fx::VALUE_HEAD_DIM,
         conv_kernel: fx::CONV_KERNEL,
@@ -58,7 +66,7 @@ fn op() -> GatedDeltaOp {
     }
 }
 
-struct Store {
+pub(super) struct Store {
     qkv: Vec<f32>,
     a: Vec<f32>,
     b: Vec<f32>,
@@ -71,23 +79,29 @@ struct Store {
 }
 
 fn store() -> Store {
-    let key = fx::KEY_HEADS * fx::KEY_HEAD_DIM;
-    let value = fx::VALUE_HEADS * fx::VALUE_HEAD_DIM;
+    store_with_heads(fx::KEY_HEADS, fx::VALUE_HEADS)
+}
+
+/// Weights for [`op_with_heads`]: same seeds, sized for the given heads.
+/// At the fixture's own heads this is exactly [`store`].
+pub(super) fn store_with_heads(key_heads: usize, value_heads: usize) -> Store {
+    let key = key_heads * fx::KEY_HEAD_DIM;
+    let value = value_heads * fx::VALUE_HEAD_DIM;
     let conv_dim = key * 2 + value;
     Store {
         qkv: lcg_values(conv_dim * fx::HIDDEN, fx::SEED_IN_PROJ_QKV),
-        a: lcg_values(fx::VALUE_HEADS * fx::HIDDEN, fx::SEED_IN_PROJ_A),
-        b: lcg_values(fx::VALUE_HEADS * fx::HIDDEN, fx::SEED_IN_PROJ_B),
+        a: lcg_values(value_heads * fx::HIDDEN, fx::SEED_IN_PROJ_A),
+        b: lcg_values(value_heads * fx::HIDDEN, fx::SEED_IN_PROJ_B),
         z: lcg_values(value * fx::HIDDEN, fx::SEED_IN_PROJ_Z),
         conv: lcg_values(conv_dim * fx::CONV_KERNEL, fx::SEED_CONV1D),
-        a_log: lcg_values(fx::VALUE_HEADS, fx::SEED_A_LOG),
-        dt_bias: lcg_values(fx::VALUE_HEADS, fx::SEED_DT_BIAS),
+        a_log: lcg_values(value_heads, fx::SEED_A_LOG),
+        dt_bias: lcg_values(value_heads, fx::SEED_DT_BIAS),
         norm: lcg_values(fx::VALUE_HEAD_DIM, fx::SEED_NORM),
         out: lcg_values(fx::HIDDEN * value, fx::SEED_OUT_PROJ),
     }
 }
 
-fn weights(s: &Store) -> GatedDeltaWeights<'_> {
+pub(super) fn weights(s: &Store) -> GatedDeltaWeights<'_> {
     GatedDeltaWeights {
         in_proj_qkv: WeightRows::F32(&s.qkv),
         in_proj_a: WeightRows::F32(&s.a),
@@ -117,14 +131,14 @@ fn hidden() -> Vec<Vec<f32>> {
 /// split tests compare one batch against a chained split rather than
 /// against pinned values, so they are free to use a longer sequence and
 /// must.
-fn long_hidden(positions: usize) -> Vec<Vec<f32>> {
+pub(super) fn long_hidden(positions: usize) -> Vec<Vec<f32>> {
     let flat = lcg_values(positions * fx::HIDDEN, fx::SEED_INPUT);
     (0..positions)
         .map(|t| flat[t * fx::HIDDEN..(t + 1) * fx::HIDDEN].to_vec())
         .collect()
 }
 
-fn metrics(mine: &[f32], theirs: &[f32]) -> (f32, f32) {
+pub(super) fn metrics(mine: &[f32], theirs: &[f32]) -> (f32, f32) {
     assert_eq!(mine.len(), theirs.len());
     let (mut se, mut ss, mut dot, mut na, mut nb) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for (a, b) in mine.iter().zip(theirs) {
