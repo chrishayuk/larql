@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::commands::primary::hf_auto::encode::*;
+use crate::commands::primary::hf_auto::refusal::WHOLE_MODEL_LABEL;
 use crate::commands::primary::vindex3_cmd::tests::fixture_dir;
 use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 

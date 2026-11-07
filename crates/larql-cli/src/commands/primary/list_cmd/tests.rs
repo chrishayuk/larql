@@ -200,3 +200,110 @@ fn an_encoded_entry_lists_as_v3_with_real_identity() {
     assert_eq!(row.status, EntryStatus::Ready);
     assert!(render(&[row]).contains("encoded"));
 }
+
+/// A V2 index at `level` declaring `files` by checksum, with one gate
+/// layer of `GATE_LAYER_BYTES`.
+fn v2_index_declaring(level: &str, files: &[&str]) -> String {
+    let sums: serde_json::Map<String, serde_json::Value> = files
+        .iter()
+        .map(|f| (f.to_string(), serde_json::json!("digest")))
+        .collect();
+    let mut index: serde_json::Value = serde_json::from_str(V2_INDEX).unwrap();
+    index["extract_level"] = serde_json::json!(level);
+    index["checksums"] = serde_json::Value::Object(sums);
+    index["layers"] = serde_json::json!([
+        {"layer": 0, "num_features": 1, "offset": 0, "length": GATE_LAYER_BYTES}
+    ]);
+    index.to_string()
+}
+
+/// Gate bytes the fixture index declares for its one layer.
+const GATE_LAYER_BYTES: usize = 32;
+
+/// What every index in the published gemma-3-4b-it-vindex family declares
+/// by checksum — the full extract and each slice alike.
+const PUBLISHED_CHECKSUMS: [&str; 4] = [
+    larql_vindex::format::filenames::DOWN_META_BIN,
+    larql_vindex::format::filenames::EMBEDDINGS_BIN,
+    larql_vindex::format::filenames::GATE_VECTORS_BIN,
+    larql_vindex::format::filenames::NORMS_BIN,
+];
+
+/// A hub-cache entry for `dir`.
+fn hub_entry(repo: &str, dir: &Path) -> CachedVindex {
+    CachedVindex {
+        source: CacheSource::HuggingFace,
+        ..entry(repo, dir)
+    }
+}
+
+#[test]
+fn a_metadata_only_v2_download_is_unusable_and_says_how_to_finish_it() {
+    use larql_vindex::format::filenames::DOWN_META_BIN;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join(INDEX_JSON),
+        v2_index_declaring("inference", &PUBLISHED_CHECKSUMS),
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join(DOWN_META_BIN), b"meta").unwrap();
+
+    let row = describe(&hub_entry("acme/tiny-vindex", tmp.path()));
+    // Identity still reads from the index: only readiness changed.
+    assert_eq!(row.layers, Some(3));
+    let EntryStatus::Unusable(why) = &row.status else {
+        panic!("a metadata-only download must not list as ready");
+    };
+    assert_eq!(
+        why,
+        "incomplete download: 2 of 2 file(s) required at extract level inference missing \
+         (first: embeddings.bin) — re-run `larql pull acme/tiny-vindex`"
+    );
+    // The listing note keeps the whole reason: it has no sentence break.
+    let table = render(std::slice::from_ref(&row));
+    assert!(
+        table.contains(&format!("  acme/tiny-vindex: {why}")),
+        "{table}"
+    );
+}
+
+/// Shaped like `chrishayuk/gemma-3-4b-it-vindex-client`: level
+/// `attention`, the source's whole checksum map, and only the client
+/// files on disk (no gate vectors, no down_meta).
+#[test]
+fn a_published_client_slice_with_stale_checksums_is_ready() {
+    use larql_vindex::format::filenames::{EMBEDDINGS_BIN, NORMS_BIN};
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join(INDEX_JSON),
+        v2_index_declaring("attention", &PUBLISHED_CHECKSUMS),
+    )
+    .unwrap();
+    for file in [EMBEDDINGS_BIN, NORMS_BIN] {
+        std::fs::write(tmp.path().join(file), b"x").unwrap();
+    }
+    assert_eq!(
+        describe(&hub_entry("acme/tiny-vindex-client", tmp.path())).status,
+        EntryStatus::Ready
+    );
+}
+
+#[test]
+fn an_incomplete_local_vindex_is_not_told_to_re_pull() {
+    use larql_vindex::format::filenames::GATE_VECTORS_BIN;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join(INDEX_JSON),
+        v2_index_declaring("browse", &[GATE_VECTORS_BIN]),
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join(GATE_VECTORS_BIN), b"short").unwrap();
+    let EntryStatus::Unusable(why) = describe(&entry("mine", tmp.path())).status else {
+        panic!("a truncated gate file is not ready");
+    };
+    assert!(
+        why.starts_with("incomplete vindex: gate_vectors.bin is 5 bytes"),
+        "{why}"
+    );
+    assert!(!why.contains("larql pull"), "{why}");
+}

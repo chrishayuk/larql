@@ -41,27 +41,11 @@ impl PlanGatedEncoder {
         }
     }
 
-    /// The gate's name in prose: the capability's own snake_case
-    /// spelling with spaces, or the whole model.
+    /// The gate's name in prose — [`refusal::scope_label`].
     pub fn scope_label(&self) -> String {
-        match self.scope {
-            Some(capability) => format!("{capability:?}")
-                .chars()
-                .enumerate()
-                .flat_map(|(i, c)| {
-                    let space = (i > 0 && c.is_ascii_uppercase()).then_some(' ');
-                    space
-                        .into_iter()
-                        .chain(std::iter::once(c.to_ascii_lowercase()))
-                })
-                .collect(),
-            None => WHOLE_MODEL_LABEL.to_string(),
-        }
+        refusal::scope_label(self.scope)
     }
 }
-
-/// What a `None` scope is called.
-pub const WHOLE_MODEL_LABEL: &str = "the whole model";
 
 /// The line reporting what header staging read.
 pub fn staging_line(staged_bytes: u64) -> String {
@@ -93,7 +77,7 @@ impl CheckpointEncoder for PlanGatedEncoder {
         let (verdict, blockers) = refusal::judge(&plan, self.scope);
         let scope = self.scope_label();
         if verdict != Verdict::Admissible {
-            return Err(refusal::render(spec, &scope, verdict, &blockers).into());
+            return Err(refusal::render(spec, self.scope, verdict, &blockers).into());
         }
         writeln!(
             status,

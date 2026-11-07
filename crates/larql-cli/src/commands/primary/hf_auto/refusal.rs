@@ -8,6 +8,8 @@
 use larql_vindex::format::vindex3::plan::capability::{Capability, CapabilityStatus};
 use larql_vindex::format::vindex3::plan::{FindingCategory, PlannedFinding, SystemPlan};
 
+use super::super::vindex3_cmd::EncodeCapability;
+
 /// Findings listed before the rest are summarised as a count.
 pub const MAX_LISTED_BLOCKERS: usize = 12;
 
@@ -94,9 +96,36 @@ pub fn category_label(category: FindingCategory) -> &'static str {
     }
 }
 
-/// The refusal text for `spec`, gated on `scope_label`.
-pub fn render(spec: &str, scope_label: &str, verdict: Verdict, blockers: &[Blocker]) -> String {
-    let headline = match verdict {
+/// What a `None` scope is called.
+pub const WHOLE_MODEL_LABEL: &str = "the whole model";
+
+/// The gate's name in prose: the capability's own snake_case spelling
+/// with spaces, or the whole model.
+pub fn scope_label(scope: Option<Capability>) -> String {
+    match scope {
+        Some(capability) => format!("{capability:?}")
+            .chars()
+            .enumerate()
+            .flat_map(|(i, c)| {
+                let space = (i > 0 && c.is_ascii_uppercase()).then_some(' ');
+                space
+                    .into_iter()
+                    .chain(std::iter::once(c.to_ascii_lowercase()))
+            })
+            .collect(),
+        None => WHOLE_MODEL_LABEL.to_string(),
+    }
+}
+
+/// The refusal text for `spec`, gated on `scope`.
+pub fn render(
+    spec: &str,
+    scope: Option<Capability>,
+    verdict: Verdict,
+    blockers: &[Blocker],
+) -> String {
+    let scope_label = scope_label(scope);
+    let mut out = match verdict {
         Verdict::Admissible => format!("{spec} is admissible for {scope_label}"),
         Verdict::Blocked => format!(
             "cannot run {spec}: LARQL does not yet represent everything {scope_label} needs \
@@ -110,7 +139,15 @@ pub fn render(spec: &str, scope_label: &str, verdict: Verdict, blockers: &[Block
             format!("cannot run {spec}: the checkpoint ships nothing {scope_label} needs")
         }
     };
-    let mut out = headline;
+    out.push_str(&blocker_lines(blockers));
+    out.push_str(&format!("\n{}", plan_hint(spec, scope)));
+    out
+}
+
+/// The blockers, one indented line each after a leading newline, capped
+/// at [`MAX_LISTED_BLOCKERS`] with the rest counted. Empty for none.
+pub fn blocker_lines(blockers: &[Blocker]) -> String {
+    let mut out = String::new();
     for b in blockers.iter().take(MAX_LISTED_BLOCKERS) {
         out.push_str(&format!(
             "\n  - [{}] {}: {} — {}",
@@ -125,19 +162,22 @@ pub fn render(spec: &str, scope_label: &str, verdict: Verdict, blockers: &[Block
             out.push_str(&format!("\n  … and {more} more"));
         }
     }
-    out.push_str(&format!("\n{}", plan_hint(spec, scope_label)));
     out
 }
 
-/// Where to read the whole plan. `larql vindex3 plan` judges whole-model
-/// completeness and has no capability flag, so it can report blockers
-/// outside the gated scope; the hint says which findings gated this run.
-pub fn plan_hint(spec: &str, scope_label: &str) -> String {
-    format!(
-        "full plan: larql vindex3 plan {spec} --output plan.json \
-         (whole-model; this run was gated on {scope_label} only, the findings above)"
-    )
+/// Where to read the whole plan, judged by the same gate this run used:
+/// `larql vindex3 plan --capability` applies `encode`'s scoped gate, so it
+/// reports exactly the blockers above.
+pub fn plan_hint(spec: &str, scope: Option<Capability>) -> String {
+    let flag = scope
+        .and_then(EncodeCapability::flag_value)
+        .map(|value| format!(" {CAPABILITY_FLAG} {value}"))
+        .unwrap_or_default();
+    format!("full plan: larql vindex3 plan {spec}{flag}")
 }
+
+/// The flag `larql vindex3 plan` and `encode` scope their gate with.
+pub const CAPABILITY_FLAG: &str = "--capability";
 
 /// `s` cut to at most `max` characters, on a character boundary, with an
 /// ellipsis when anything was cut. Only the first line is kept, with

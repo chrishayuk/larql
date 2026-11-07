@@ -19,8 +19,8 @@ query, research and diagnostics — under their own headings.
 |---|---|
 | `run <model> [prompt]` | Run inference. One-shot if prompt given; chat loop if not. |
 | `chat <model>` | Alias for `run <model>` with no prompt. |
-| `pull <model>` | Download a vindex from HuggingFace and cache locally (a raw checkpoint is encoded to VINDEX3 instead). |
-| `model <subcmd>` | Manage HuggingFace **model** repos (companion to `pull`, which is vindex-only). |
+| `pull <model>` | Cache or refresh a Hugging Face repo: download a vindex, encode a raw checkpoint to VINDEX3, or re-encode an encoded checkpoint whose revision moved. |
+| `model <subcmd>` | Manage HuggingFace **model** repos — stage a checkpoint's own files (companion to `pull`, which caches vindexes and encodes checkpoints). |
 | `link <path>` | Register a local vindex directory with the cache so `run` / `list` / `show` find it by shorthand. |
 | `list` | Show cached vindexes (source, generation, size, layers, hidden, and whether this build can open them). |
 | `show <model>` | Vindex metadata and file inventory. |
@@ -161,8 +161,15 @@ $LARQL_HOME/encoded/                 (default ~/.cache/larql/encoded/)
 
 - **Keyed by repo and commit.** The revision (default `main`) is resolved
   to its commit before anything is encoded; a later run of the same
-  revision is answered from `refs/` with no network. To pick up a newer
-  `main`, `larql rm owner/name` and run again.
+  revision is answered from `refs/` with no network; `run` never asks the
+  hub whether the revision moved.
+- **Refreshed by `pull`.** `larql pull hf://owner/name[@rev]` (or
+  `larql pull <name>`, the encoded entry's shorthand) re-resolves the
+  revision against the hub. Unchanged → `already up to date (commit …)`,
+  nothing encoded. Moved → the new commit is encoded through the same
+  atomic store, `refs/<rev>` is repointed, and only then is the superseded
+  snapshot pruned (kept if another recorded revision still names it). A
+  refresh that is refused or interrupted leaves the old entry runnable.
 - **Atomic.** The encode writes into a `.partial-*` directory beside
   `snapshots/` and is renamed into place only on success; an interrupted
   encode never leaves an entry that looks valid, and its leftovers are
@@ -174,10 +181,8 @@ $LARQL_HOME/encoded/                 (default ~/.cache/larql/encoded/)
 - **Refusal.** If the plan is not admissible for text generation the run
   is refused with the blocking findings listed one per line — after
   reading only headers, before anything is announced as encoding — and a
-  pointer to `larql vindex3 plan hf://owner/name --output plan.json` for
-  the full plan. That verb judges whole-model completeness (it has no
-  capability flag), so it can list blockers outside text generation that
-  did not gate the run.
+  pointer to `larql vindex3 plan hf://owner/name --capability
+  text-generation`, which applies the same gate and prints the full plan.
 
 ### `larql run`
 
@@ -570,7 +575,8 @@ symbol means **unobserved in this capture**, never zero probability.
 ### `larql model`
 
 Manage HuggingFace **model** repos (raw safetensors + tokenizer + config).
-Companion to `pull`, which is vindex-only.
+Companion to `pull`, which caches vindexes and encodes checkpoints to
+VINDEX3 rather than staging their files.
 
 ```
 larql model pull <model-id> [OPTIONS]
@@ -708,15 +714,21 @@ path stays within typical Q4K_M quantization gap (~30–40%).
 
 ### `larql pull`
 
-Download a vindex from HuggingFace into the HF hub cache
-(`~/.cache/huggingface/hub/`).
+Cache or refresh a Hugging Face repo.
 
 ```
 larql pull <MODEL>
 ```
 
-Accepts `hf://owner/name`, `owner/name`, or a local path (no-op). Prints
-the resolved cache directory and basic metadata.
+Accepts `hf://owner/name[@rev]`, `owner/name`, or the shorthand of an
+encoded checkpoint. A published vindex is downloaded into the HF hub cache
+(`~/.cache/huggingface/hub/`), including every file its `index.json`
+declares. A raw checkpoint is encoded to VINDEX3 into the encoded cache, as
+`larql run hf://…` does on first use. A checkpoint already encoded is
+refreshed: its revision is re-resolved against the hub and re-encoded only
+if it moved (see [First run of a Hugging Face
+checkpoint](#first-run-of-a-hugging-face-checkpoint)). Prints the resolved
+cache directory and basic metadata.
 
 ### `larql list`
 
@@ -736,7 +748,16 @@ Identity is read the same way for both generations, and each entry is
 checked against this build's opener without hashing payloads: one it cannot
 open (for example a VINDEX3 container whose system graph predates this
 build's schema) is listed as `unusable`, with the reason in a note under
-the table.
+the table. A VINDEX2 entry is also checked for the files its extract level
+requires — those every vindex claiming that level carries, whichever slice
+produced it: `norms.bin` from `attention` up, plus `embeddings.bin` from
+`inference` up, `browse` requiring none — counted only where `index.json`
+declares them by checksum, and for a `gate_vectors.bin` shorter than its
+declared layers. A download that stopped after the metadata is `unusable` —
+`incomplete download: N of M file(s) required at extract level … missing
+(first: …) — re-run larql pull <repo>`. Published slices, whose checksums
+still list their source's files, are judged by their level and list
+`ready`.
 
 ### `larql show`
 
@@ -2348,7 +2369,8 @@ the SHA256 skip on completed files; the interrupted file re-uploads.
 
 Download a vindex (or a slice, or a whole collection) with per-file
 progress bars. hf-hub handles `.incomplete` partial-file resume
-internally.
+internally. A raw checkpoint is encoded instead, and an encoded one
+refreshed — see [`larql pull`](#larql-pull).
 
 | Flag | Description | Default |
 |---|---|---|

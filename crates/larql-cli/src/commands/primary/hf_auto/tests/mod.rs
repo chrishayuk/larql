@@ -3,6 +3,7 @@
 
 mod classify;
 mod encode;
+mod refresh;
 mod refusal;
 mod resolve;
 mod store;

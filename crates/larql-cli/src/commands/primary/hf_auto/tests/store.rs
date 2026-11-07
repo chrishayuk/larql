@@ -198,3 +198,18 @@ fn open_default_lives_under_larql_home() {
     let store = EncodedStore::open_default().unwrap();
     assert!(store.root().ends_with(ENCODED_CACHE_SUBDIR));
 }
+
+#[test]
+fn listings_of_a_repo_id_the_store_cannot_address_are_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = EncodedStore::new(tmp.path());
+    for bad in ["no-slash", "a/../b"] {
+        assert!(!store.holds(bad));
+        assert!(store.snapshots(bad).is_empty());
+        assert!(store.refs(bad).is_empty());
+    }
+    // An addressable repo with nothing encoded lists nothing, and pruning
+    // a commit it never held removes nothing.
+    assert!(store.refs(REPO).is_empty());
+    assert_eq!(store.prune(REPO, COMMIT).unwrap(), None);
+}

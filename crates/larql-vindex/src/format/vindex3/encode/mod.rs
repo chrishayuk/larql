@@ -120,42 +120,7 @@ pub fn encode_system_from_sources(
     capability: Option<crate::format::vindex3::plan::capability::Capability>,
 ) -> Result<EncodeOutcome, VindexError> {
     let plan = plan_system(named);
-    match capability {
-        None => {
-            if !plan.admissible {
-                return Err(VindexError::Parse(format!(
-                    "refusing to encode an inadmissible plan: {} blocking finding(s); \
-                     run `larql vindex3 plan` for the itemised reasons",
-                    plan.summary.blocking
-                )));
-            }
-        }
-        Some(capability) => {
-            let status = plan
-                .capabilities
-                .iter()
-                .find(|c| c.capability == capability)
-                .ok_or_else(|| {
-                    VindexError::Parse(format!("this build reports no verdict for {capability:?}"))
-                })?;
-            if !status.admissible {
-                return Err(VindexError::Parse(format!(
-                    "refusing to encode for {:?}: {} blocking finding(s) inside that \
-                     capability's closure; run `larql vindex3 plan` for the itemised reasons",
-                    capability, status.blocking
-                )));
-            }
-            // Understanding the semantics is not the same as this build
-            // being able to run them, and a container written for a
-            // capability nothing can execute would be a promise the
-            // runtime cannot keep.
-            if !status.supported {
-                return Err(VindexError::Parse(format!(
-                    "refusing to encode for {capability:?}: this build has no executor for it"
-                )));
-            }
-        }
-    }
+    super::plan::admission::admit(&plan, capability)?;
     let outcome = match sources {
         Some(sources) => encode_graph_with_sources(&plan.graph, named, sources, out)?,
         None => encode_graph(&plan.graph, named, out)?,

@@ -79,7 +79,7 @@ fn render_is_short_itemised_and_points_at_the_plan() {
     let spec = "hf://acme/x@abc";
     let text = render(
         spec,
-        "text generation",
+        Some(Capability::TextGeneration),
         Verdict::Blocked,
         &[blocker(0), blocker(1)],
     );
@@ -90,19 +90,26 @@ fn render_is_short_itemised_and_points_at_the_plan() {
         lines[1],
         "  - [unrepresented] text: key_0 — no home in the schema"
     );
-    assert_eq!(lines[3], plan_hint(spec, "text generation"));
-    assert!(lines[3].contains("larql vindex3 plan hf://acme/x@abc --output plan.json"));
-    assert!(lines[3].contains("gated on text generation only"));
+    assert_eq!(lines[3], plan_hint(spec, Some(Capability::TextGeneration)));
+    assert_eq!(
+        lines[3],
+        "full plan: larql vindex3 plan hf://acme/x@abc --capability text-generation"
+    );
 }
 
 #[test]
 fn render_caps_the_list_and_counts_the_rest() {
     let many: Vec<_> = (0..MAX_LISTED_BLOCKERS + 3).map(blocker).collect();
-    let text = render("hf://a/b", "text generation", Verdict::Blocked, &many);
+    let text = render(
+        "hf://a/b",
+        Some(Capability::TextGeneration),
+        Verdict::Blocked,
+        &many,
+    );
     assert_eq!(text.matches("\n  - ").count(), MAX_LISTED_BLOCKERS);
     assert!(text.contains("… and 3 more"), "{text}");
     let exact: Vec<_> = (0..MAX_LISTED_BLOCKERS).map(blocker).collect();
-    assert!(!render("hf://a/b", "x", Verdict::Blocked, &exact).contains("more"));
+    assert!(!render("hf://a/b", None, Verdict::Blocked, &exact).contains("more"));
 }
 
 #[test]
@@ -112,8 +119,36 @@ fn every_verdict_has_a_headline() {
         (Verdict::Unsupported, "no executor"),
         (Verdict::Unavailable, "ships nothing"),
     ] {
-        assert!(render("hf://a/b", "text generation", verdict, &[]).contains(needle));
+        assert!(
+            render("hf://a/b", Some(Capability::TextGeneration), verdict, &[]).contains(needle)
+        );
     }
+}
+
+#[test]
+fn the_hint_scopes_the_plan_only_when_the_run_was_scoped() {
+    // The flag value is clap's own spelling, so the hint runs as typed.
+    assert_eq!(
+        plan_hint("hf://a/b", None),
+        "full plan: larql vindex3 plan hf://a/b"
+    );
+    assert!(plan_hint("hf://a/b", Some(Capability::TextGeneration))
+        .ends_with(&format!("{CAPABILITY_FLAG} text-generation")));
+    // A capability `--capability` does not offer gets no flag rather than
+    // one the parser would reject.
+    assert_eq!(
+        plan_hint("hf://a/b", Some(Capability::Drafting)),
+        "full plan: larql vindex3 plan hf://a/b"
+    );
+}
+
+#[test]
+fn blocker_lines_are_empty_for_none_and_indented_otherwise() {
+    assert_eq!(blocker_lines(&[]), "");
+    assert_eq!(
+        blocker_lines(&[blocker(7)]),
+        "\n  - [unrepresented] text: key_7 — no home in the schema"
+    );
 }
 
 #[test]

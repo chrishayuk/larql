@@ -101,17 +101,29 @@ impl HfAuto<'_> {
         status: &mut dyn Write,
     ) -> Result<Resolution, BoxErr> {
         let commit = self.pin(repo, revision)?;
-        let dest = self.store.snapshot_dir(repo, &commit)?;
         if let Some(path) = self.store.complete(repo, &commit) {
             self.store.record_ref(repo, revision, &commit)?;
             return Ok(Resolution::Encoded { path, fresh: false });
         }
-
         writeln!(
             status,
             "{repo} is a Hugging Face checkpoint, not a vindex; \
              planning a VINDEX3 encode (first run only)…"
         )?;
+        self.encode_commit(repo, revision, &commit, status)
+    }
+
+    /// Encode `repo` at the already-pinned `commit` into the store, then
+    /// point `revision` at it. Atomic: the snapshot appears whole or not
+    /// at all (see [`super::store`]).
+    pub(super) fn encode_commit(
+        &self,
+        repo: &str,
+        revision: &str,
+        commit: &str,
+        status: &mut dyn Write,
+    ) -> Result<Resolution, BoxErr> {
+        let dest = self.store.snapshot_dir(repo, commit)?;
         writeln!(status, "  commit {commit}")?;
 
         let partial = self.store.begin(repo)?;
@@ -119,7 +131,7 @@ impl HfAuto<'_> {
         // On error `partial` drops here and its directory goes with it.
         self.encoder.encode(&pinned, partial.path(), status)?;
         let path = partial.commit(&dest)?;
-        self.store.record_ref(repo, revision, &commit)?;
+        self.store.record_ref(repo, revision, commit)?;
 
         writeln!(status, "  cached at {}", path.display())?;
         writeln!(
@@ -136,7 +148,7 @@ impl HfAuto<'_> {
     /// full commit id is accepted as-is when it does not. Anything else is
     /// refused: a container cached under a moving name would answer
     /// tomorrow's `main` with today's weights.
-    fn pin(&self, repo: &str, revision: &str) -> Result<String, BoxErr> {
+    pub(super) fn pin(&self, repo: &str, revision: &str) -> Result<String, BoxErr> {
         if let Some(commit) = self.probe.commit(repo, revision)? {
             return Ok(commit);
         }
