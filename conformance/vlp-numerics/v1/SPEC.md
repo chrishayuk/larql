@@ -1,5 +1,9 @@
 # VLP structured-op numerics, v1: the contract and its golden vectors
 
+**Status: FROZEN 2026-11-07** after an independent review: a reviewer's own evaluator, written from this text
+alone, reproduced all 77 cases. The sha256 values of this file, `vectors.json` and `generate.py` are in
+`FREEZE.json`, and `test_generate.py` checks them. Any change is a new version (`v2`), never an edit to `v1`.
+
 This is a **language-neutral numerical contract** for the three structured weight-patch ops,
 `remove_direction`, `zero_columns` and `add_low_rank`. Any implementation, in any language and on any machine,
 must produce **exactly** the BF16 bytes in `vectors.json` for every case, or refuse with exactly the stated code.
@@ -176,7 +180,7 @@ an f32 ulp above one.
 | what | cases |
 |---|---|
 | FMA | `rd-fma`, `rd-rne2-fma` |
-| reduction order | `rd-order-reverse` (reverse ≠ forward), `rd-order-pairwise` (pairwise ≠ forward and ≠ reverse), `rd-f32-order`. One output element flips between only two values, so a single case cannot separate all three orders; the two cases between them do |
+| reduction order | `rd-order-reverse` (reverse ≠ forward), `rd-order-pairwise` (pairwise ≠ forward and ≠ reverse), `rd-f32-order`. Between them, the two cases separate all three orders. A single case where all three give different bytes can exist in general; the seeded search did not find one in 20,000 attempts, because its construction aims one output element at one BF16 tie, which separates only two outcomes at that element |
 | association | `rd-assoc`, `rd-f32-assoc` |
 | f32 accumulation (fault 5 fallback) | `rd-f32-accum` |
 | BF16 ties, both parities | `lr-tie-even-down`, `lr-tie-even-up`, `lr-tie-negative`, `lr-bf16-subnormal-tie`, `lr-smallest-normal` |

@@ -21,6 +21,15 @@ def f64_from_bits(b):
     return struct.unpack("<d", b.to_bytes(8, "little"))[0]
 
 
+class SuiteIsFrozen(unittest.TestCase):
+    def test_files_match_the_freeze(self):
+        with open(os.path.join(os.path.dirname(g.OUT), "FREEZE.json")) as f:
+            frozen = json.load(f)["sha256"]
+        for name, want in frozen.items():
+            with open(os.path.join(os.path.dirname(g.OUT), name), "rb") as f:
+                self.assertEqual(hashlib.sha256(f.read()).hexdigest(), want, f"{name} changed after the v1 freeze")
+
+
 class VectorsReproduce(unittest.TestCase):
     def test_committed_file_is_what_the_generator_writes(self):
         with open(g.OUT) as f:
