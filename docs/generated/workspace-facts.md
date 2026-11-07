@@ -13,26 +13,26 @@ target conditions, default-feature choices and explicit example targets.
 
 | Package | Version | Normal local dependencies | Default features |
 |---|---|---|---|
-| [larql-boundary](../../crates/larql-boundary/Cargo.toml) | `0.2.0` | None | None |
-| [larql-cli](../../crates/larql-cli/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-factory`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router`, `larql-vindex`, `larql-vindex-spec` | `gpu`, `research` |
-| [larql-compute](../../crates/larql-compute/Cargo.toml) | `0.2.0` | `larql-execution`, `larql-models` | None |
-| [larql-compute-metal](../../crates/larql-compute-metal/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-models` | None |
-| [larql-continuation-fixture](../../crates/larql-continuation-fixture/Cargo.toml) | `0.2.0` | `larql-vindex` | None |
-| [larql-core](../../crates/larql-core/Cargo.toml) | `0.2.0` | None | `http`, `msgpack` |
-| [larql-demos](../../crates/larql-demos/Cargo.toml) | `0.2.0` | `larql-boundary`, `larql-compute`, `larql-core`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router-protocol`, `larql-server`, `larql-vindex` | None |
-| [larql-execution](../../crates/larql-execution/Cargo.toml) | `0.2.0` | None | None |
-| [larql-factory](../../crates/larql-factory/Cargo.toml) | `0.2.0` | `larql-models`, `larql-vindex-spec` | None |
-| [larql-inference](../../crates/larql-inference/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-execution`, `larql-models`, `larql-router-protocol`, `larql-vindex` | None |
-| [larql-kv](../../crates/larql-kv/Cargo.toml) | `0.2.0` | `larql-boundary`, `larql-compute`, `larql-compute-metal` (optional), `larql-execution`, `larql-inference`, `larql-vindex` | None |
-| [larql-lql](../../crates/larql-lql/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-inference`, `larql-kv`, `larql-models`, `larql-vindex` | None |
-| [larql-models](../../crates/larql-models/Cargo.toml) | `0.2.0` | `larql-vindex-spec` | None |
-| [larql-python](../../crates/larql-python/Cargo.toml) | `0.2.0` | `larql-core`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-vindex` | None |
-| [larql-router](../../crates/larql-router/Cargo.toml) | `0.2.0` | `larql-router-protocol` | None |
-| [larql-router-protocol](../../crates/larql-router-protocol/Cargo.toml) | `0.2.0` | None | None |
-| [larql-server](../../crates/larql-server/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router-protocol`, `larql-vindex`, `larql-compute-metal` (optional) (cfg(target_os = "macos")) | None |
-| [larql-vindex](../../crates/larql-vindex/Cargo.toml) | `0.2.0` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-execution`, `larql-models`, `larql-vindex-spec` | None |
-| [larql-vindex-spec](../../crates/larql-vindex-spec/Cargo.toml) | `0.2.0` | None | None |
-| [model-compute](../../crates/model-compute/Cargo.toml) | `0.2.0` | None | `native` |
+| [larql-boundary](../../crates/larql-boundary/Cargo.toml) | `0.2.1` | None | None |
+| [larql-cli](../../crates/larql-cli/Cargo.toml) | `0.2.1` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-factory`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router`, `larql-vindex`, `larql-vindex-spec` | `gpu`, `research` |
+| [larql-compute](../../crates/larql-compute/Cargo.toml) | `0.2.1` | `larql-execution`, `larql-models` | None |
+| [larql-compute-metal](../../crates/larql-compute-metal/Cargo.toml) | `0.2.1` | `larql-compute`, `larql-models` | None |
+| [larql-continuation-fixture](../../crates/larql-continuation-fixture/Cargo.toml) | `0.2.1` | `larql-vindex` | None |
+| [larql-core](../../crates/larql-core/Cargo.toml) | `0.2.1` | None | `http`, `msgpack` |
+| [larql-demos](../../crates/larql-demos/Cargo.toml) | `0.2.1` | `larql-boundary`, `larql-compute`, `larql-core`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router-protocol`, `larql-server`, `larql-vindex` | None |
+| [larql-execution](../../crates/larql-execution/Cargo.toml) | `0.2.1` | None | None |
+| [larql-factory](../../crates/larql-factory/Cargo.toml) | `0.2.1` | `larql-models`, `larql-vindex-spec` | None |
+| [larql-inference](../../crates/larql-inference/Cargo.toml) | `0.2.1` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-execution`, `larql-models`, `larql-router-protocol`, `larql-vindex` | None |
+| [larql-kv](../../crates/larql-kv/Cargo.toml) | `0.2.1` | `larql-boundary`, `larql-compute`, `larql-compute-metal` (optional), `larql-execution`, `larql-inference`, `larql-vindex` | None |
+| [larql-lql](../../crates/larql-lql/Cargo.toml) | `0.2.1` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-inference`, `larql-kv`, `larql-models`, `larql-vindex` | None |
+| [larql-models](../../crates/larql-models/Cargo.toml) | `0.2.1` | `larql-vindex-spec` | None |
+| [larql-python](../../crates/larql-python/Cargo.toml) | `0.2.1` | `larql-core`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-vindex` | None |
+| [larql-router](../../crates/larql-router/Cargo.toml) | `0.2.1` | `larql-router-protocol` | None |
+| [larql-router-protocol](../../crates/larql-router-protocol/Cargo.toml) | `0.2.1` | None | None |
+| [larql-server](../../crates/larql-server/Cargo.toml) | `0.2.1` | `larql-compute`, `larql-inference`, `larql-kv`, `larql-lql`, `larql-models`, `larql-router-protocol`, `larql-vindex`, `larql-compute-metal` (optional) (cfg(target_os = "macos")) | None |
+| [larql-vindex](../../crates/larql-vindex/Cargo.toml) | `0.2.1` | `larql-compute`, `larql-compute-metal` (optional), `larql-core`, `larql-execution`, `larql-models`, `larql-vindex-spec` | None |
+| [larql-vindex-spec](../../crates/larql-vindex-spec/Cargo.toml) | `0.2.1` | None | None |
+| [model-compute](../../crates/model-compute/Cargo.toml) | `0.2.1` | None | `native` |
 | [vindex-cli](../../crates/vindex-cli/Cargo.toml) | `0.8.0` | `larql-models`, `larql-vindex` | None |
 
 ## `crates/larql-experts/Cargo.toml`

@@ -59,7 +59,7 @@ rand = "0.8"
 rand_distr = "0.4"
 # Test-only: an honest ZIP writer and a second reader to compare the Apollo
 # `.npz` reader against. The load path itself does not use it.
-zip = { version = "2", default-features = false }
+zip = { version = "9", default-features = false }
 
 [[bench]]
 name = "engine_decode"

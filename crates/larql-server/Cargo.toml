@@ -66,8 +66,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 base64 = "0.22"
-utoipa = { version = "5", features = ["axum_extras", "preserve_order"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"] }
+utoipa = { version = "6", features = ["axum_extras", "preserve_order"] }
+utoipa-swagger-ui = { version = "10", features = ["axum"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 larql-compute-metal = { path = "../larql-compute-metal", optional = true }

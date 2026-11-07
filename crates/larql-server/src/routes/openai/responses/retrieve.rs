@@ -23,7 +23,7 @@ use crate::state::AppState;
     responses(
         (status = 200, description = "The stored response envelope.",
          body = crate::openapi::schemas::OpenAiResponsesResponse),
-        (status = 404, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 404, description = "Not found", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_get_response(
@@ -45,7 +45,7 @@ pub async fn handle_get_response(
     params(("response_id" = String, Path, description = "Stored response id (`resp_…`)")),
     responses(
         (status = 200, description = "Deletion receipt.", body = serde_json::Value),
-        (status = 404, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 404, description = "Not found", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_delete_response(

@@ -263,10 +263,16 @@ fn fuzz_store_directories_hold_the_invariants() {
 
 /// The members this load would use, as the `zip` crate reads them, or `None` if it
 /// refuses one or the archive. `zip` resolves a duplicate name to the last record.
+/// A name `zip` cannot decode is skipped: every member this load uses is ASCII, so
+/// an undecodable name is never one of them.
 fn read_with_zip(bytes: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     let mut members = BTreeMap::new();
-    let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+    let names: Vec<String> = archive
+        .file_names()
+        .filter_map(Result::ok)
+        .map(std::borrow::Cow::into_owned)
+        .collect();
     for name in names {
         let is_used = name == ENTRIES_MEMBER
             || name

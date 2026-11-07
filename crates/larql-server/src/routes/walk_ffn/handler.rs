@@ -41,8 +41,8 @@ use super::validate::{collect_scan_layers, validate_owned, validate_residual};
          content_type = "application/json", body = Vec<u8>),
         (status = 200, description = "Binary packed output when the request was `application/x-larql-ffn`",
          content_type = "application/x-larql-ffn", body = Vec<u8>),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_walk_ffn(

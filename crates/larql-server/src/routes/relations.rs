@@ -262,7 +262,7 @@ fn list_relations(model: &LoadedModel) -> Result<serde_json::Value, ServerError>
     params(RelationsParams),
     responses(
         (status = 200, description = "Known relation types across the knowledge band", body = crate::openapi::schemas::RelationsResponse),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_relations(
@@ -286,9 +286,9 @@ pub async fn handle_relations(
         RelationsParams,
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::RelationsResponse),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::RelationsResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_relations_multi(

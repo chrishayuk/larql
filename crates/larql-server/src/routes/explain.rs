@@ -294,8 +294,8 @@ fn explain_infer(
     request_body = ExplainRequest,
     responses(
         (status = 200, description = "Predictions with per-layer feature traces", body = crate::openapi::schemas::ExplainResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_explain(
@@ -317,9 +317,9 @@ pub async fn handle_explain(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body = ExplainRequest,
     responses(
-        (status = 200, body = crate::openapi::schemas::ExplainResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::ExplainResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_explain_multi(

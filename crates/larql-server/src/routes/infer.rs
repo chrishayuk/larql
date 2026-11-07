@@ -335,9 +335,9 @@ fn run_infer(
     request_body = InferRequest,
     responses(
         (status = 200, description = "Next-token predictions", body = crate::openapi::schemas::InferResponse),
-        (status = 400, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
         (status = 503, body = crate::error::ErrorBody, description = "Inference weights unavailable"),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_infer(
@@ -361,10 +361,10 @@ pub async fn handle_infer(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body = InferRequest,
     responses(
-        (status = 200, body = crate::openapi::schemas::InferResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 503, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::InferResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 503, description = "Service unavailable", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_infer_multi(
