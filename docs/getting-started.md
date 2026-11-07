@@ -33,6 +33,9 @@ $ larql --version
 larql 0.1.0
 ```
 
+`larql doctor` goes further: it checks your hardware, `larql-server`, disk
+space and Hugging Face access against what this guide needs.
+
 To build from source instead, see the [README](../README.md#install).
 
 ## 2. Run a model
@@ -253,6 +256,19 @@ refuse a model that `run` accepts. The [status page](vindex3/status.md) records 
 architectures and backends in more depth.
 
 ## Troubleshooting
+
+**Run `larql doctor` first.** It checks the install, the hardware, the
+backends, `larql-server`, the caches, disk space and Hugging Face access, and
+prints a one-line fix for anything wrong (`--offline` skips the network
+checks):
+
+```console
+$ larql doctor
+LARQL
+  ✓ larql           0.2.1 for aarch64-apple-darwin (Metal + CPU build)
+...
+Ready for the quick start. No problems found.
+```
 
 **`system_graph.json is schema v5, this build reads v6 — re-encode the container`**
 The file was written by an older LARQL. Encode it again from the source model

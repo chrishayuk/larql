@@ -105,6 +105,13 @@ enum Commands {
     /// Remove a cached vindex.
     Rm(rm_cmd::RmArgs),
 
+    /// Check this install: version, hardware, backends, server, caches, HF access.
+    ///
+    /// Prints a ✓ / ! / ✗ checklist with a one-line fix under each line
+    /// that is not fine. Exits non-zero only on what would stop the quick
+    /// start working.
+    Doctor(doctor::DoctorArgs),
+
     /// Benchmark decode throughput on a real vindex (Metal / CPU / Ollama).
     Bench(bench::BenchArgs),
 
@@ -427,6 +434,7 @@ fn real_main() -> i32 {
         Commands::Publish(args) => publish_cmd::run(args),
         Commands::Registry(cmd) => registry_cmd::run(cmd),
         Commands::Rm(args) => rm_cmd::run(args),
+        Commands::Doctor(args) => doctor::run(args),
 
         // ── Build / extract ──
         Commands::Extract(args) => extract_index_cmd::run(args),

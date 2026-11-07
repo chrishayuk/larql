@@ -34,7 +34,7 @@ pub(crate) const HELP_GROUPS: &[HelpGroup] = &[
         heading: "Commands",
         commands: &[
             "run", "chat", "pull", "list", "show", "rm", "link", "serve", "repl", "lql", "vindex3",
-            "bench", "help",
+            "bench", "doctor", "help",
         ],
     },
     HelpGroup {

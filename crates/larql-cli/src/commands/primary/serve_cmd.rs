@@ -22,6 +22,13 @@
 //! the id inside the container (`Qwen3-0.6B` for a model served as
 //! `qwen3-0.6b`). So the name is also forwarded as `--model-alias`, and a
 //! request's `"model"` may use either. An explicit `--model-alias` wins.
+//!
+//! On Unix the hand-off is a real `exec`: `larql-server` replaces this
+//! process, keeping its PID, so a supervisor or script that signals
+//! `larql serve` signals the server, and killing it cannot orphan one.
+//! Windows has no `exec`, so there the server runs as a child and `larql`
+//! waits for it: Ctrl-C reaches both (one console group), but a
+//! `TerminateProcess` on `larql` alone leaves the server running.
 
 #[derive(clap::Args)]
 pub(crate) struct ServeArgs {
@@ -88,31 +95,103 @@ fn forward_args(
     Ok(cmd_args)
 }
 
+/// The server executable's name, without the platform suffix.
+pub(crate) const SERVER_BINARY: &str = "larql-server";
+
+/// The server executable's file name on this platform (`larql-server.exe`
+/// on Windows).
+pub(crate) fn server_file_name() -> String {
+    server_file_name_with(std::env::consts::EXE_SUFFIX)
+}
+
+/// The server executable's file name for a platform's executable suffix.
+fn server_file_name_with(exe_suffix: &str) -> String {
+    format!("{SERVER_BINARY}{exe_suffix}")
+}
+
+/// The `larql-server` installed beside the running `larql`, if any. The
+/// release archives ship the two together, so this one is preferred over
+/// whatever `PATH` holds. The one lookup `serve` and `doctor` share.
+pub(crate) fn sibling_server(exe: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    sibling_server_named(exe, &server_file_name())
+}
+
+/// Testable core of [`sibling_server`], with the file name injected so
+/// the Windows `.exe` rule is proven on every host.
+fn sibling_server_named(
+    exe: Option<&std::path::Path>,
+    file_name: &str,
+) -> Option<std::path::PathBuf> {
+    exe.and_then(|e| e.parent())
+        .map(|d| d.join(file_name))
+        .filter(|p| p.exists())
+}
+
+/// What `larql serve` executes: the sibling server, else the bare name
+/// for the OS to find on `PATH`.
+pub(crate) fn server_program(exe: Option<&std::path::Path>) -> String {
+    sibling_server(exe)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| SERVER_BINARY.into())
+}
+
 pub(crate) fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let cmd_args = serve_command_args(&args)?;
     let exe = std::env::current_exe().ok();
-    let server_bin = exe
-        .as_ref()
-        .and_then(|e| e.parent())
-        .map(|d| d.join("larql-server"))
-        .filter(|p| p.exists());
-
-    let bin = server_bin
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "larql-server".into());
-
-    let status = std::process::Command::new(&bin).args(&cmd_args).status();
-
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(format!("larql-server exited with: {s}").into()),
-        Err(e) => {
-            eprintln!("Failed to exec larql-server: {e}");
-            eprintln!(
-                "Make sure larql-server is installed (cargo install --path crates/larql-server)"
-            );
+    let mut command = server_command(&server_program(exe.as_deref()), &cmd_args);
+    match hand_off(&mut command) {
+        Ok(()) => Ok(()),
+        Err(HandOff::Exited(status)) => {
+            Err(format!("{SERVER_BINARY} exited with: {status}").into())
+        }
+        Err(HandOff::NotStarted(e)) => {
+            eprintln!("{}", exec_failure_message(&e));
             std::process::exit(1);
         }
+    }
+}
+
+/// The server invocation: `program` with the forwarded arguments.
+pub(crate) fn server_command(program: &str, args: &[String]) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    command
+}
+
+/// Why the hand-off to the server did not end cleanly.
+#[derive(Debug)]
+pub(crate) enum HandOff {
+    /// The server could not be started at all.
+    NotStarted(std::io::Error),
+    /// The server ran and exited unsuccessfully (Windows only: on Unix
+    /// this process *is* the server by then).
+    #[cfg_attr(unix, allow(dead_code))]
+    Exited(std::process::ExitStatus),
+}
+
+/// What to tell the user when the server could not be started.
+pub(crate) fn exec_failure_message(e: &std::io::Error) -> String {
+    format!(
+        "Failed to exec {SERVER_BINARY}: {e}\n\
+         Make sure {SERVER_BINARY} is installed (cargo install --path crates/larql-server); \
+         `larql doctor` shows where it is looked for"
+    )
+}
+
+/// Replace this process with the server. Returns only if it could not.
+#[cfg(unix)]
+fn hand_off(command: &mut std::process::Command) -> Result<(), HandOff> {
+    use std::os::unix::process::CommandExt;
+    Err(HandOff::NotStarted(command.exec()))
+}
+
+/// Run the server as a child and wait for it: Windows has no `exec`.
+#[cfg(not(unix))]
+fn hand_off(command: &mut std::process::Command) -> Result<(), HandOff> {
+    match command.status() {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(HandOff::Exited(s)),
+        Err(e) => Err(HandOff::NotStarted(e)),
     }
 }
 
