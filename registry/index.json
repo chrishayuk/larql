@@ -1,7 +1,9 @@
 {
   "schema_version": 1,
   "models": [
+    "gemma-3-12b-it",
     "gemma-3-4b-it",
+    "gemma-4-12b-it",
     "granite-4.1-3b"
   ]
 }
