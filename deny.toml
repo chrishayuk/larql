@@ -43,10 +43,6 @@ ignore = [
     # rustls-pemfile <- axum-server 0.7. Superseded by rustls-pki-types, which
     # axum-server has not migrated to.
     { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is pulled by axum-server 0.7; upstream has not migrated to rustls-pki-types" },
-    # unsafe-libyaml <- serde_yaml 0.9 (deprecated) <- larql-factory. Archived
-    # upstream; an unmaintained notice, not a known vulnerability. TEMPORARY:
-    # removed by the serde_yaml replacement tracked in #663.
-    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml via serde_yaml in larql-factory; temporary, replacement tracked in #663" },
 
     # --- vulnerabilities, TEMPORARY and judged unreachable --------------------
     # zip < 9 (2.4.2 direct in larql-kv/larql-inference; 3.0.0 as a build-dep
