@@ -172,6 +172,10 @@ pub struct StackScratch<'a> {
     /// SPLITK-1 attention partials, sized for this stack's widest op at
     /// its row count. `None` = split-K never dispatched.
     pub splitk: Option<crate::ops::kv_splitk::SplitKScratch<'a>>,
+    /// VERIFY-N rung 5a: routed layers run their block as one grouped
+    /// expert pass over `rows × top_k` slots. `None` = each row runs the
+    /// single-position routed layer at its offset (rung 2).
+    pub routed_block: Option<&'a crate::MoeBlockScratch>,
 }
 
 /// The hybrid layer's own intermediates.
@@ -304,8 +308,9 @@ impl MetalBackend {
     /// VERIFY-N: [`Self::encode_stack`] over `rows` consecutive positions
     /// starting at each layer's `attn_shape.position_index`. Every buffer
     /// in `s` holds `rows` positions (`[rows, width]` row-major), as does
-    /// `h_in`. Dense FFN layers only: the routed and hybrid arms group
-    /// positions by expert, which is a separate lowering — refused by name.
+    /// `h_in`. Dense and routed FFN layers: a routed layer runs each row's
+    /// own route at its offset (bit-identical to `step`), and needs a
+    /// pre-experts-norm router input. Hybrid layers are refused by name.
     pub fn encode_stack_rows<'a>(
         &self,
         encs: &mut dyn StageEncoders,
@@ -361,8 +366,45 @@ impl MetalBackend {
                         encs, mid, dst, weights, &fscratch, s.ffn_post, shape, rows,
                     )?;
                 }
-                LayerFfnLowering::Routed(_) | LayerFfnLowering::Hybrid(_) => {
-                    return Err("multi-position stack lowers dense FFN layers only".into());
+                // Each row runs the single-position routed layer at its byte
+                // offset of the block: its own route, the same dispatches,
+                // one scratch reused under the serial encoder. Bit-identical
+                // to `step` row by row; experts are not yet amortised
+                // across the rows that share them.
+                LayerFfnLowering::Routed(r) => {
+                    self.routed_rows_supported(&r.moe)?;
+                    let enc = encs.stage(Stage::RoutedFfn);
+                    if let Some(block) = s.routed_block {
+                        self.encode_moe_layer_rows(
+                            enc,
+                            &r.moe,
+                            r.scratch,
+                            block,
+                            r.table,
+                            (mid, dst),
+                            rows,
+                            r.eps,
+                        )?;
+                        src = dst;
+                        continue;
+                    }
+                    let row_bytes = (hidden_of(&r.moe) * std::mem::size_of::<f32>()) as u64;
+                    for i in 0..rows as u64 {
+                        self.encode_moe_layer_gpu_route_at(
+                            enc,
+                            &r.moe,
+                            r.scratch,
+                            r.table,
+                            (mid, i * row_bytes),
+                            (dst, i * row_bytes),
+                            r.eps,
+                        );
+                    }
+                }
+                LayerFfnLowering::Hybrid(_) => {
+                    return Err("multi-position stack has no hybrid-FFN lowering \
+                                (dense and routed layers only)"
+                        .into());
                 }
             }
             src = dst;

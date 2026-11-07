@@ -127,6 +127,11 @@ pub struct QuantKernels {
     /// (A-12 expert pass). Bit-identical per row to the vec arm; only
     /// valid where the vec arm is (16-byte-aligned offsets).
     pub mxfp4_grouped_x2_pipeline: KernelHandle,
+    /// A2x2m — the x2 arm over a VERIFY-N block's distinct experts, each
+    /// read once for all its slots. Bit-identical per (row, slot) to x2.
+    pub mxfp4_grouped_x2_multi_pipeline: KernelHandle,
+    /// A2x2s — the x2 arm over a block's slots in expert-sorted order.
+    pub mxfp4_grouped_x2_sorted_pipeline: KernelHandle,
     /// A2x2gu — gate+up halves in one dispatch (buffers 11–13 add the
     /// second output and row walk).
     pub mxfp4_grouped_x2_gu_pipeline: KernelHandle,
@@ -294,6 +299,10 @@ impl QuantKernels {
         };
         let mxfp4_grouped_x2_pipeline =
             h::<shaders::mxfp4_grouped_experts::KernelSplitLut16VecX2>(device, library);
+        let mxfp4_grouped_x2_multi_pipeline =
+            h::<shaders::mxfp4_grouped_experts::KernelSplitLut16VecX2Multi>(device, library);
+        let mxfp4_grouped_x2_sorted_pipeline =
+            h::<shaders::mxfp4_grouped_experts::KernelSplitLut16VecX2Sorted>(device, library);
         let mxfp4_grouped_x2_gu_pipeline =
             h::<shaders::mxfp4_grouped_experts::KernelSplitLut16VecX2Gu>(device, library);
         let mxfp4_down_combine4_pipeline =
@@ -346,6 +355,8 @@ impl QuantKernels {
             q6k_matvec_8sg_pipeline,
             mxfp4_grouped_pipeline,
             mxfp4_grouped_x2_pipeline,
+            mxfp4_grouped_x2_multi_pipeline,
+            mxfp4_grouped_x2_sorted_pipeline,
             mxfp4_grouped_x2_gu_pipeline,
             mxfp4_down_combine4_pipeline,
             mxfp4_grouped_x2p_pipeline,

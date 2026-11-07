@@ -10,6 +10,11 @@
     "record"
   ],
   [
+    "larql-vindex/src/format/vindex3/opplan/exec/metal_lowered/verify.rs",
+    "LoweredSession::verify",
+    "record"
+  ],
+  [
     "larql-compute-metal/src/decode/token/finish.rs",
     "MetalBackend::finish_token",
     "record"

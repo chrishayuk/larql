@@ -365,6 +365,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
         ffn_post: &d.sc[2],
         hybrid: None,
         splitk: None,
+        routed_block: None,
     };
     let layers: Vec<LayerLowering> = (0..ws.len())
         .map(|l| {

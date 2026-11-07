@@ -21,7 +21,7 @@
 
 #![cfg(target_os = "macos")]
 
-#[path = "lowering_routed_support/mod.rs"]
+#[path = "../lowering_routed_support/mod.rs"]
 mod support;
 
 use larql_compute::{
@@ -517,6 +517,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[LayerFixture]) -> Vec<Vec<f32
         ffn_post: &sc[1],
         hybrid: None,
         splitk: None,
+        routed_block: None,
     };
     let caps: Vec<metal::Buffer> = (0..LAYERS).map(|_| gpu.lowering_scratch(HIDDEN)).collect();
     let cps: Vec<Checkpoint> = caps
@@ -672,3 +673,5 @@ fn moe_descriptor_refuses_expert_slices_outside_registered_regions() {
         "descriptor built over unregistered expert bytes — the lowering would bind copies"
     );
 }
+
+mod block_rows;
