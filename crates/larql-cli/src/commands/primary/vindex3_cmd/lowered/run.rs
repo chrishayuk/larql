@@ -127,6 +127,15 @@ pub(in super::super) fn run_lowered(
             let wall_ms = started.elapsed().as_secs_f64() * 1e3;
             stats.report(generated.len(), wall_ms);
             println!("generated ids: {generated:?}");
+            // Single steps and verify blocks each keep their own ledger.
+            for lines in [session.profile_report(), session.verify_profile_report()]
+                .into_iter()
+                .flatten()
+            {
+                for line in lines {
+                    println!("{line}");
+                }
+            }
             return Ok(());
         }
         // From here every step continues from the device argmax: the
@@ -217,6 +226,11 @@ pub(in super::super) fn run_lowered(
             println!("attention dispatches: serial {serial}  seqpar {seqpar}  splitk {splitk}");
         }
         if let Some(lines) = session.profile_report() {
+            for line in lines {
+                println!("{line}");
+            }
+        }
+        if let Some(lines) = session.verify_profile_report() {
             for line in lines {
                 println!("{line}");
             }

@@ -103,6 +103,7 @@ pub fn all_shaders() -> String {
     src.push_str(&mla::shader());
     // MoE GPU router (rungs A+B+C of the GPU-dataflow routing ladder)
     src.push_str(moe_router::SHADER);
+    src.push_str(moe_router::ROWS_TO_SLOTS_SHADER);
     src.push_str(moe_router_select::SHADER);
     src.push_str(moe_descriptor::SHADER);
     // Q4 dense matvec

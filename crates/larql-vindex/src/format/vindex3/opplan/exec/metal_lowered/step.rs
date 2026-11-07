@@ -344,6 +344,7 @@ impl LoweredSession<'_> {
                 max_q_heads: self.splitk_widths.0,
                 max_q_rows: self.splitk_widths.1,
             }),
+            routed_block: None,
         };
 
         let layers: Vec<LayerLowering> = self

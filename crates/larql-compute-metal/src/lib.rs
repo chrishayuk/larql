@@ -125,6 +125,7 @@ pub use decode::profile::{take_last_split_timings, ProfileTimings};
 pub use kernels::{AttentionKernels, FfnKernels, KernelHandle, NormKernels, QuantKernels};
 #[cfg(target_os = "macos")]
 pub use moe_dispatch::MoeScratch;
+pub use moe_gpu_route::MoeBlockScratch;
 #[cfg(target_os = "macos")]
 pub use options::{BackendOptions, DecodeFlags};
 

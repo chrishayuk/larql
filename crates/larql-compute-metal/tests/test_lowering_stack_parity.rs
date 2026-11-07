@@ -329,6 +329,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
         ffn_post: &sc[2],
         hybrid: None,
         splitk: None,
+        routed_block: None,
     };
     let cap_bufs: Vec<metal::Buffer> = CHECKPOINTS
         .iter()

@@ -341,3 +341,188 @@ fn x2_matches_the_vec_arm_bit_for_bit_across_walks_and_slots() {
         assert!(want.iter().all(|v| v.is_finite()));
     }
 }
+
+// ── VERIFY-N rung 5b: the multi arm over a block's distinct experts ───────
+
+/// A 3-row × top-4 block over 6 experts: every row picks 4 distinct
+/// experts, and experts repeat across rows (2 and 4 three times each).
+const BLOCK_IDS: [u32; 12] = [0, 2, 4, 5, 2, 1, 4, 0, 3, 2, 5, 4];
+const BLOCK_TOP_K: usize = 4;
+const BLOCK_EXPERTS: usize = 6;
+
+/// The host's reading of `moe_slots_by_expert`: distinct experts in id
+/// order, each with its slots in slot order.
+fn host_slots_by_expert(ids: &[u32], experts: usize, maxm: usize) -> (Vec<u32>, Vec<u32>) {
+    let s = ids.len();
+    let (mut counts, mut lists) = (vec![0u32; s], vec![0u32; s * maxm]);
+    let mut u = 0;
+    for e in 0..experts as u32 {
+        let slots: Vec<u32> = (0..s as u32).filter(|&i| ids[i as usize] == e).collect();
+        if slots.is_empty() {
+            continue;
+        }
+        counts[u] = slots.len() as u32;
+        lists[u * maxm..u * maxm + slots.len()].copy_from_slice(&slots);
+        u += 1;
+    }
+    (counts, lists)
+}
+
+fn leak_u32(gpu: &MetalBackend, v: &[u32]) -> metal::Buffer {
+    gpu.lowering_weight(Box::leak(
+        v.iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .into_boxed_slice(),
+    ))
+}
+
+#[test]
+fn slots_by_expert_groups_a_block_as_the_host_does() {
+    let gpu = MetalBackend::new().expect(
+        "Metal backend must build: the shader library failed to compile or no device exists",
+    );
+    let maxm = BLOCK_IDS.len() / BLOCK_TOP_K;
+    let (want_c, want_l) = host_slots_by_expert(&BLOCK_IDS, BLOCK_EXPERTS, maxm);
+    let ids = leak_u32(&gpu, &BLOCK_IDS);
+    let counts = gpu.lowering_scratch(BLOCK_IDS.len());
+    let lists = gpu.lowering_scratch(BLOCK_IDS.len() * maxm);
+    let order = gpu.lowering_scratch(BLOCK_IDS.len());
+    let cmd = gpu.new_lowering_command_buffer();
+    let enc = cmd.new_compute_command_encoder();
+    enc.set_compute_pipeline_state(&gpu.ffn.moe_slots_by_expert_pipeline);
+    enc.set_buffer(0, Some(&ids), 0);
+    enc.set_buffer(1, Some(&counts), 0);
+    enc.set_buffer(2, Some(&lists), 0);
+    let set = |i: u64, v: u32| enc.set_bytes(i, 4, &v as *const u32 as *const std::ffi::c_void);
+    set(3, BLOCK_IDS.len() as u32);
+    set(4, BLOCK_EXPERTS as u32);
+    set(5, maxm as u32);
+    enc.set_buffer(6, Some(&order), 0);
+    enc.dispatch_thread_groups(MTLSize::new(1, 1, 1), MTLSize::new(256, 1, 1));
+    enc.end_encoding();
+    cmd.commit();
+    cmd.wait_until_completed();
+    let bits = |b: &metal::Buffer, n| -> Vec<u32> {
+        gpu.lowering_readback(b, n)
+            .expect("readback")
+            .iter()
+            .map(|v| v.to_bits())
+            .collect()
+    };
+    assert_eq!(bits(&counts, BLOCK_IDS.len()), want_c, "counts");
+    let got_l = bits(&lists, BLOCK_IDS.len() * maxm);
+    for (u, &c) in want_c.iter().enumerate() {
+        let span = u * maxm..u * maxm + c as usize;
+        assert_eq!(
+            got_l[span.clone()],
+            want_l[span],
+            "distinct expert {u}'s slots"
+        );
+    }
+    // `order`: every slot, sorted by (expert, slot) — the lists concatenated.
+    let want_order: Vec<u32> = want_c
+        .iter()
+        .enumerate()
+        .flat_map(|(u, &c)| want_l[u * maxm..u * maxm + c as usize].to_vec())
+        .collect();
+    assert_eq!(
+        bits(&order, BLOCK_IDS.len()),
+        want_order,
+        "expert-sorted slot order"
+    );
+}
+
+#[test]
+fn the_sharing_arms_match_x2_per_slot_bit_for_bit() {
+    let gpu = MetalBackend::new().expect(
+        "Metal backend must build: the shader library failed to compile or no device exists",
+    );
+    let slots = BLOCK_IDS.len();
+    let maxm = slots / BLOCK_TOP_K;
+    let (counts_h, lists_h) = host_slots_by_expert(&BLOCK_IDS, BLOCK_EXPERTS, maxm);
+    // (output rows, row_base, row_stride, fused rows): odd N on the
+    // identity walk, and both interleaved halves.
+    for (n, base, stride, fused_rows, seed) in [
+        (353usize, 0u32, 1u32, 353usize, 11u32),
+        (256, 0, 2, 512, 12),
+        (256, 1, 2, 512, 13),
+    ] {
+        let f = fixture(fused_rows, BLOCK_EXPERTS, seed);
+        let packed = gpu.lowering_weight(f.packed);
+        let scales = gpu.lowering_weight(f.scales);
+        // Each slot carries its expert's offsets, as the descriptor gather
+        // leaves them.
+        let offs: Vec<u32> = BLOCK_IDS.iter().map(|&e| f.offs[e as usize]).collect();
+        let soffs: Vec<u32> = BLOCK_IDS.iter().map(|&e| f.soffs[e as usize]).collect();
+        let (offs, soffs) = (leak_u32(&gpu, &offs), leak_u32(&gpu, &soffs));
+        // A different input per slot, `K` apart.
+        let x: Vec<f32> = (0..slots * K)
+            .map(|i| ((i % 23) as f32 * 0.021 - 0.2) * (1.0 + (i / K) as f32 * 0.1))
+            .collect();
+        let xb = gpu.lowering_upload(&x).expect("x");
+        let (counts, lists) = (leak_u32(&gpu, &counts_h), leak_u32(&gpu, &lists_h));
+
+        let order_h: Vec<u32> = counts_h
+            .iter()
+            .enumerate()
+            .flat_map(|(u, &c)| lists_h[u * maxm..u * maxm + c as usize].to_vec())
+            .collect();
+        let order = leak_u32(&gpu, &order_h);
+        let mut outs = Vec::new();
+        for arm in ["x2", "multi", "sorted"] {
+            let kh = match arm {
+                "multi" => &gpu.quant.mxfp4_grouped_x2_multi_pipeline,
+                "sorted" => &gpu.quant.mxfp4_grouped_x2_sorted_pipeline,
+                _ => &gpu.quant.mxfp4_grouped_x2_pipeline,
+            };
+            let out = gpu.lowering_scratch(slots * n);
+            let cmd = gpu.new_lowering_command_buffer();
+            let enc = cmd.new_compute_command_encoder();
+            enc.set_compute_pipeline_state(&kh.state);
+            enc.set_buffer(0, Some(&packed), 0);
+            enc.set_buffer(1, Some(&offs), 0);
+            enc.set_buffer(2, Some(&scales), 0);
+            enc.set_buffer(3, Some(&soffs), 0);
+            enc.set_buffer(4, Some(&xb), 0);
+            enc.set_buffer(5, Some(&out), 0);
+            let set =
+                |i: u64, v: u32| enc.set_bytes(i, 4, &v as *const u32 as *const std::ffi::c_void);
+            set(6, n as u32);
+            set(7, K as u32);
+            set(8, K as u32); // one input per slot
+            set(9, base);
+            set(10, stride);
+            let tiles = (n as u64).div_ceil(kh.rows_per_tg);
+            let grid = match arm {
+                "multi" => {
+                    enc.set_buffer(11, Some(&counts), 0);
+                    enc.set_buffer(12, Some(&lists), 0);
+                    set(13, maxm as u32);
+                    MTLSize::new(tiles, slots as u64, 1)
+                }
+                "sorted" => {
+                    enc.set_buffer(11, Some(&order), 0);
+                    MTLSize::new(slots as u64, tiles, 1)
+                }
+                _ => MTLSize::new(tiles, slots as u64, 1),
+            };
+            enc.dispatch_thread_groups(grid, MTLSize::new(kh.threads_per_tg, 1, 1));
+            enc.end_encoding();
+            cmd.commit();
+            cmd.wait_until_completed();
+            outs.push(gpu.lowering_readback(&out, slots * n).expect("readback"));
+        }
+        for (arm, got) in ["multi", "sorted"].iter().zip(&outs[1..]) {
+            let first = outs[0]
+                .iter()
+                .zip(got)
+                .position(|(a, b)| a.to_bits() != b.to_bits());
+            assert_eq!(
+                first, None,
+                "{arm} diverged from x2: n={n} base={base} stride={stride}"
+            );
+        }
+        assert!(outs[0].iter().all(|v| v.is_finite()));
+    }
+}

@@ -95,9 +95,22 @@ fn only_the_split_arm_binds_scale_offsets_and_a_row_walk() {
             "arm A2x2 must bind {name} at buffer({slot})"
         );
     }
+    // The VERIFY-N block arms (A2x2m, A2x2s) are x2 over a block's slots:
+    // same table at 0–10, their slot grouping after it.
+    for (arm, kernel) in [("A2x2m", KERNEL_A2X2M), ("A2x2s", KERNEL_A2X2S)] {
+        let flat = kernel.split_whitespace().collect::<Vec<_>>().join(" ");
+        for (name, slot) in [("s_offsets", 3), ("ROWBASE", 9), ("ROWSTRIDE", 10)] {
+            assert!(
+                flat.contains(&format!("{name} [[buffer({slot})]]")),
+                "arm {arm} must bind {name} at buffer({slot})"
+            );
+        }
+    }
     let interleaved_src: String = src
         .replace(KERNEL_A, "")
         .replace(KERNEL_A2, "")
+        .replace(KERNEL_A2X2M, "")
+        .replace(KERNEL_A2X2S, "")
         .replace(KERNEL_A2X2, "")
         .replace(KERNEL_A2X2GU, "")
         .replace(KERNEL_A2DC, "")

@@ -479,6 +479,7 @@ fn encode_hybrid_stack(
             zero: &zero,
         }),
         splitk: None,
+        routed_block: None,
     };
     let post_scratch = &hidden_bufs[12];
     let caps: Vec<metal::Buffer> = (0..LAYERS).map(|_| gpu.lowering_scratch(HIDDEN)).collect();
@@ -692,8 +693,8 @@ fn hybrid_stack_with_a_distinct_dense_norm_eps_takes_separate_norms_at_parity() 
     }
 }
 
-/// The multi-position stack lowers dense FFN layers only: a hybrid layer
-/// groups positions by expert, which is a separate lowering, and the
+/// The multi-position stack lowers dense and routed FFN layers, not
+/// hybrid ones: a hybrid layer has no multi-position lowering yet, and the
 /// block refuses it by name rather than encoding one position's routing
 /// for all of them.
 #[test]
@@ -705,5 +706,5 @@ fn stack_rows_refuses_a_hybrid_layer_by_name() {
     // half encodes before the FFN arm refuses.
     let err = encode_hybrid_stack(&gpu, &h0, &fx, Some(1))
         .expect_err("a hybrid layer has no multi-position lowering");
-    assert!(err.contains("dense FFN layers only"), "{err}");
+    assert!(err.contains("no hybrid-FFN lowering"), "{err}");
 }

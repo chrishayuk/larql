@@ -440,6 +440,7 @@ impl<'a> LoweredSession<'a> {
             position: 0,
             ablate: Ablation::from_env(),
             ledger: None,
+            verify_ledger: None,
             last_gpu_ms: 0.0,
             last_encode_ms: 0.0,
             prepared: None,

@@ -23,12 +23,13 @@ use crate::error::VindexError;
 use larql_compute_metal::lowering::head::{
     argmax_partials, ArgmaxScratch, HeadScratch, HeadShape, HeadWeights,
 };
-use larql_compute_metal::lowering::profile::{SingleEncoder, StageEncoders};
+use larql_compute_metal::lowering::profile::{SingleEncoder, StageEncoders, StageProfiler};
 use larql_compute_metal::lowering::stack::{LayerLowering, StackScratch};
 use larql_compute_metal::lowering::DeviceBuffer;
 
+use super::routed::FfnResident;
 use super::step::{read_u32, write_f32};
-use super::LoweredSession;
+use super::{LoweredSession, PROFILE_MAX_STAGE_RUNS};
 
 /// Stack slots, in `LoweredSession::scratch` order (`step.rs::prepare`).
 const SLOT_H_A: usize = 0;
@@ -61,6 +62,19 @@ pub(super) struct VerifyScratch {
     ids: Vec<DeviceBuffer>,
     /// SPLITK-1 partials `(o, m/l)`, `rows` positions deep.
     splitk: [DeviceBuffer; 2],
+    /// Routed layers' block scratch (rung 5a): `rows × top_k` expert
+    /// slots. `None` for a dense stack, or under [`ROUTED_BLOCK_ENV`]`=0`.
+    routed_block: Option<larql_compute_metal::MoeBlockScratch>,
+}
+
+/// Operator control: `LARQL_ROUTED_BLOCK=0` runs a verify block's routed
+/// layers row by row (rung 2) instead of as one grouped expert pass — the
+/// A arm of the rung-5 measurement. Read once.
+pub const ROUTED_BLOCK_ENV: &str = "LARQL_ROUTED_BLOCK";
+
+fn routed_block_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var(ROUTED_BLOCK_ENV).as_deref() != Ok("0"))
 }
 
 impl LoweredSession<'_> {
@@ -98,9 +112,6 @@ impl LoweredSession<'_> {
             return Err(VindexError::Parse("verify needs an output head".into()));
         }
         self.ensure_verify_scratch(rows);
-        let (Some((nw, eps, off)), Some(head)) = (&self.final_norm, &self.head) else {
-            unreachable!("checked above");
-        };
         // Taken for the call (the session is mutated below while the
         // scratch is bound); a refused block drops it and the next
         // verify reallocates.
@@ -137,6 +148,7 @@ impl LoweredSession<'_> {
                 max_q_heads: self.splitk_widths.0,
                 max_q_rows: self.splitk_widths.1,
             }),
+            routed_block: v.routed_block.as_ref(),
         };
         let layers: Vec<LayerLowering> = self
             .plan
@@ -147,18 +159,80 @@ impl LoweredSession<'_> {
             .collect();
 
         let cmd = self.gpu.new_lowering_command_buffer();
-        let enc = cmd.new_compute_command_encoder();
-        let mut encs = SingleEncoder(enc);
+        // Production: one encoder for the block. Under `--profile`: one
+        // sampled encoder per stage run, the block recorded into its own
+        // ledger (a block is not a token).
+        let mut profiler = match self.verify_ledger {
+            Some(_) => Some(
+                StageProfiler::try_new(&self.gpu.device_ref(), cmd.clone(), PROFILE_MAX_STAGE_RUNS)
+                    .map_err(|why| VindexError::Parse(format!("--profile: {why}")))?,
+            ),
+            None => None,
+        };
+        let single = profiler
+            .is_none()
+            .then(|| cmd.new_compute_command_encoder());
+        let mut single_encs = single.map(SingleEncoder);
+        let encs: &mut dyn StageEncoders = match (profiler.as_mut(), single_encs.as_mut()) {
+            (Some(p), _) => p,
+            (None, Some(s)) => s,
+            (None, None) => unreachable!("one of profiler / single encoder exists"),
+        };
+        let encoded = self.encode_verify_block(encs, &v, &layers, &scratch, rows);
         // A refusal must still close the encoder: Metal aborts on an
         // encoder released open.
-        let refuse = |why: String| {
-            enc.end_encoding();
-            VindexError::Parse(format!("verify: {why}"))
+        let samples = match profiler {
+            Some(p) => Some(p.finish().1),
+            None => {
+                single
+                    .expect("no profiler means the single encoder")
+                    .end_encoding();
+                None
+            }
         };
+        encoded.map_err(|why| VindexError::Parse(format!("verify: {why}")))?;
+        cmd.commit();
+        self.submissions += 1;
+        larql_compute_metal::cb_status::wait_checked(
+            &cmd,
+            "crates/larql-cli/src/commands/primary/vindex3_cmd/lowered/verify.rs:verify",
+        )
+        .map_err(|detail| VindexError::Parse(format!("metal-lowered verify refused: {detail}")))?;
+        self.last_gpu_ms = larql_compute_metal::lowering::profile::gpu_span_ms(&cmd);
+        if let (Some(samples), Some(ledger)) = (samples, self.verify_ledger.as_mut()) {
+            if let Some(block) = samples.resolve() {
+                ledger.record(&block, self.last_gpu_ms);
+            }
+        }
+        let ids = v
+            .ids
+            .iter()
+            .take(rows)
+            .map(read_u32)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.position = t0 + rows;
+        self.last_device_id = ids.last().copied();
+        self.verify = Some(v);
+        Ok(ids)
+    }
+
+    /// The block's GPU work into `encs`: the stack, the head, one argmax
+    /// per row. Encodes only; the caller closes, commits and waits.
+    fn encode_verify_block(
+        &self,
+        encs: &mut dyn StageEncoders,
+        v: &VerifyScratch,
+        layers: &[LayerLowering<'_>],
+        scratch: &StackScratch<'_>,
+        rows: usize,
+    ) -> Result<(), String> {
+        let (Some((nw, eps, off)), Some(head)) = (&self.final_norm, &self.head) else {
+            return Err("verify needs an output head".into());
+        };
+        let s = &v.slots;
         let h_final = self
             .gpu
-            .encode_stack_rows(&mut encs, &v.h_in, &layers, &scratch, rows)
-            .map_err(refuse)?;
+            .encode_stack_rows(encs, &v.h_in, layers, scratch, rows)?;
         let shape = HeadShape {
             hidden: self.hidden,
             vocab: self.vocab,
@@ -167,23 +241,21 @@ impl LoweredSession<'_> {
             multiplier: self.head_multiplier,
             softcap: self.head_softcap,
         };
-        self.gpu
-            .encode_head_rows(
-                &mut encs,
-                h_final,
-                &s[SLOT_LOGITS],
-                &HeadWeights {
-                    projection: head.as_lowered(),
-                    norm_weight: nw,
-                },
-                &HeadScratch {
-                    normed: &s[SLOT_HEAD_NORMED],
-                    raw_logits: &s[SLOT_RAW_LOGITS],
-                },
-                &shape,
-                rows,
-            )
-            .map_err(refuse)?;
+        self.gpu.encode_head_rows(
+            encs,
+            h_final,
+            &s[SLOT_LOGITS],
+            &HeadWeights {
+                projection: head.as_lowered(),
+                norm_weight: nw,
+            },
+            &HeadScratch {
+                normed: &s[SLOT_HEAD_NORMED],
+                raw_logits: &s[SLOT_RAW_LOGITS],
+            },
+            &shape,
+            rows,
+        )?;
         let row_bytes = (self.vocab * std::mem::size_of::<f32>()) as u64;
         for (i, id) in v.ids.iter().take(rows).enumerate() {
             let enc = encs.stage(larql_compute_metal::lowering::profile::Stage::Head);
@@ -199,25 +271,7 @@ impl LoweredSession<'_> {
                 },
             );
         }
-        enc.end_encoding();
-        cmd.commit();
-        self.submissions += 1;
-        larql_compute_metal::cb_status::wait_checked(
-            &cmd,
-            "crates/larql-cli/src/commands/primary/vindex3_cmd/lowered/verify.rs:verify",
-        )
-        .map_err(|detail| VindexError::Parse(format!("metal-lowered verify refused: {detail}")))?;
-        self.last_gpu_ms = larql_compute_metal::lowering::profile::gpu_span_ms(&cmd);
-        let ids = v
-            .ids
-            .iter()
-            .take(rows)
-            .map(read_u32)
-            .collect::<Result<Vec<_>, _>>()?;
-        self.position = t0 + rows;
-        self.last_device_id = ids.last().copied();
-        self.verify = Some(v);
-        Ok(ids)
+        Ok(())
     }
 
     /// Continue as if only positions `..position` had ever been written:
@@ -266,6 +320,17 @@ impl LoweredSession<'_> {
                 gpu.lowering_scratch(splitk_o),
                 gpu.lowering_scratch(splitk_ml),
             ],
+            // Every routed layer of a plan shares its expert shape; one that
+            // does not is refused when its block encodes (`fits`).
+            routed_block: self
+                .layers
+                .iter()
+                .find_map(|l| match &l.ffn {
+                    FfnResident::Routed(r) => Some(&r.scratch),
+                    _ => None,
+                })
+                .filter(|_| routed_block_enabled())
+                .map(|layer| larql_compute_metal::MoeBlockScratch::for_layer(gpu, layer, rows)),
         });
     }
 }
