@@ -53,8 +53,8 @@ pub(crate) use larql_inference::ffn::remote::Q8K_BATCH_CT;
     responses(
         (status = 200, content_type = Q8K_BATCH_CT,
          description = "Per-layer FFN delta as f32", body = Vec<u8>),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_walk_ffn_q8k(

@@ -242,7 +242,7 @@ async fn add_server_block(state: &AppState, mut stats: serde_json::Value) -> ser
     tag = "browse",
     responses(
         (status = 200, description = "Model + vindex statistics", body = crate::openapi::schemas::StatsResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_stats(
@@ -262,8 +262,8 @@ pub async fn handle_stats(
     tag = "browse",
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     responses(
-        (status = 200, body = crate::openapi::schemas::StatsResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::StatsResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_stats_multi(

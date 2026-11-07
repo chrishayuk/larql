@@ -104,8 +104,8 @@ fn walk_prompt(model: &LoadedModel, params: &WalkParams) -> Result<serde_json::V
     params(WalkParams),
     responses(
         (status = 200, description = "Top feature hits for the prompt", body = crate::openapi::schemas::WalkResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_walk(
@@ -129,10 +129,10 @@ pub async fn handle_walk(
         WalkParams,
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::WalkResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::WalkResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_walk_multi(

@@ -6,6 +6,12 @@ The format follows the conventions of [Keep a Changelog](https://keepachangelog.
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## [2026-11-07] — `utoipa` 6 and `utoipa-swagger-ui` 10
+
+Issue #662. `utoipa-swagger-ui` 10.0.2 builds Swagger UI with `zip` 9, which removes
+the last `zip` < 9 (3.0.0, a build-dependency) from the lockfile. It requires
+`utoipa` 6; the derives and `SwaggerUi` router here compile unchanged.
+
 ## [2026-08-23] — V3-SERVE-2: batched prefill populates KV; the next cost is now visible
 
 `PlanBackend::attention` returns `AttentionOut { outputs, keys, values }`.

@@ -69,9 +69,9 @@ pub(super) struct RequestPlan {
           (`response.created` … `response.output_text.delta` … `response.completed`), \
           terminated by `data: [DONE]`.",
          content_type = "text/event-stream", body = String),
-        (status = 400, body = crate::routes::openai::error::OpenAIErrorBody),
-        (status = 404, body = crate::routes::openai::error::OpenAIErrorBody),
-        (status = 500, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 400, description = "Bad request", body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 404, description = "Not found", body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 500, description = "Internal server error", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_responses(

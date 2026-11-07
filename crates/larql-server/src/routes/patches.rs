@@ -229,8 +229,8 @@ async fn apply_patch_to_model(
     ),
     responses(
         (status = 200, description = "Patch applied", body = crate::openapi::schemas::ApplyPatchResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_apply_patch(
@@ -249,9 +249,9 @@ pub async fn handle_apply_patch(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body(content = crate::openapi::schemas::ApplyPatchBody),
     responses(
-        (status = 200, body = crate::openapi::schemas::ApplyPatchResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::ApplyPatchResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_apply_patch_multi(
@@ -303,7 +303,7 @@ async fn list_patches_for_model(
     responses(
         (status = 200, description = "Active patches for the current session or global state",
          body = crate::openapi::schemas::ListPatchesResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_list_patches(
@@ -320,8 +320,8 @@ pub async fn handle_list_patches(
     tag = "patches",
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     responses(
-        (status = 200, body = crate::openapi::schemas::ListPatchesResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::ListPatchesResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_list_patches_multi(
@@ -379,7 +379,7 @@ async fn remove_patch_from_model(
     ),
     responses(
         (status = 200, description = "Patch removed", body = crate::openapi::schemas::RemovePatchResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_remove_patch(
@@ -400,8 +400,8 @@ pub async fn handle_remove_patch(
         ("name" = String, Path, description = "Patch description/name."),
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::RemovePatchResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::RemovePatchResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_remove_patch_multi(
