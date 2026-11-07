@@ -4,7 +4,7 @@ use super::super::super::{ComponentOpPlan, OperandRef, OutputOp};
 use super::super::accounting::ResidencyBudget;
 use super::super::backend::{PlanBackend, WeightFormat, WeightSlice};
 use super::super::cpu::WeightRows;
-use super::super::operands::{OperandSource, OperandStore, SourceStamp};
+use super::super::operands::{OperandSource, OperandStore, RepresentationSource, SourceStamp};
 use super::super::quantise::SUM_BLOCK;
 use super::super::realization::{
     DependencyLifetime, DependencyPin, ExtentOption, ExtentPin, RealizationRecord,
@@ -57,6 +57,9 @@ pub(super) fn select_records<B: PlanBackend + ?Sized>(
                 .nvfp4_request_binds_at_source(&planned.operand, stored),
         );
         facts = facts.with_nvfp4_compiled(OperandStore::f16_request_binds_compiled_nvfp4(stored));
+        facts = facts.with_requantise_forbidden(
+            store.store().representation_source() == RepresentationSource::Stored,
+        );
         let codec_provider = facts.registered.as_ref().map(|r| r.identity.clone());
         // What the ARTIFACT offers, priced per extent from the codec's own
         // declaration. The pin starts on the whole of it; a budget may

@@ -380,6 +380,14 @@ pub(crate) fn select_cpu_with(
         Direct(plan)
     } else if plan.format() == WeightFormat::F32 {
         Decode(plan)
+    } else if facts.requantise_forbidden && has(Direct(PhysicalProjectionPlan::FusedBf16)) {
+        // `stored` forbids the requantised image the size policy wanted;
+        // the stored bf16 bytes run directly instead, at higher precision
+        // than asked, and nothing is manufactured (#665).
+        return pick(
+            RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedBf16)),
+            SelectionReason::SourcePrecisionHeld,
+        );
     } else {
         Requantise(plan)
     };
