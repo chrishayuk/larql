@@ -39,7 +39,7 @@ pub const VOCAB_MODEL: &str = "gpt2";
 /// `llama-vocab.cpp` quotes each one as its "original regex"). Qwen3.5
 /// adds `\p{M}` (combining marks) to the letter classes, and llama.cpp
 /// gives that its own id.
-const VOCAB_PRE_BY_REGEX: &[(&str, &str)] = &[
+pub(crate) const VOCAB_PRE_BY_REGEX: &[(&str, &str)] = &[
     (
         "qwen2",
         r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",

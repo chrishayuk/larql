@@ -794,3 +794,140 @@ fn a_truncated_segment_is_refused_by_name_not_discovered_mid_emission() {
     );
     assert!(msg.contains("did not finish"), "{msg}");
 }
+
+/// **A value transform on a quantised source is the constructor's
+/// refusal, surfaced per tensor.** The log decay's `-exp` cannot be
+/// applied to NVFP4 codes; the walk records the plan error against the
+/// tensor's name, makes no plan for it, and the ledger is not ready.
+#[test]
+fn a_value_transform_on_a_quantised_source_is_recorded_not_planned() {
+    let mut sources = qwen_sources();
+    let total = sources.len();
+    let a_log = sources
+        .iter_mut()
+        .find(|t| t.role == "log decay" && t.layer == Some(0))
+        .unwrap();
+    a_log.representation = RepresentationKind::Nvfp4;
+    let name = a_log.name.clone();
+
+    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_lowering());
+    assert_eq!(plans.len(), total - 1, "the refused plan is not made");
+    assert!(
+        ledger.errors.iter().any(|e| matches!(
+            e,
+            WalkError::Plan { name: n, error: PlanError::ValueTransformOnQuantised { .. } }
+                if *n == name
+        )),
+        "{:?}",
+        ledger.errors
+    );
+    assert!(!ledger.ready());
+}
+
+/// A lowering whose value heads do not group under its key heads has
+/// no V-head programme for any role. Every tensor is recorded with the
+/// grouping refusal; none is planned under a guessed grouping.
+#[test]
+fn value_heads_that_do_not_group_refuse_every_plan_by_name() {
+    let mut lowering = qwen_lowering();
+    lowering.model.value_heads = lowering.model.key_heads + 1;
+    let sources = qwen_sources();
+    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &lowering);
+    assert!(plans.is_empty());
+    assert_eq!(ledger.errors.len(), sources.len());
+    assert!(ledger.errors.iter().all(|e| matches!(
+        e,
+        WalkError::Plan { error: PlanError::VHeadsDoNotGroup { value_heads, key_heads }, .. }
+            if *value_heads == lowering.model.value_heads
+                && *key_heads == lowering.model.key_heads
+    )));
+    assert!(!ledger.ready());
+}
+
+/// Only the surfaces the caller includes are read: an object the
+/// predicate leaves out contributes no source tensor, and the selector
+/// is never asked about it.
+#[test]
+fn objects_outside_the_requested_surface_contribute_no_sources() {
+    use crate::format::vindex3::fixtures::{encode_fixture_container, hybrid_lllf_f32_model};
+    use crate::format::vindex3::inspect::inspect_container;
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        hybrid_lllf_f32_model,
+        checkpoint.path(),
+        container.path(),
+        "surface",
+    );
+    let inspection = inspect_container(container.path(), false).unwrap();
+    let objects: std::collections::BTreeSet<&str> = inspection
+        .index
+        .representations
+        .keys()
+        .map(|id| id.split('@').next().unwrap())
+        .collect();
+    let wanted = *objects
+        .iter()
+        .find(|o| o.contains("decoder_stack"))
+        .unwrap();
+    assert!(objects.len() > 1, "something must be left out");
+
+    let asked = std::cell::RefCell::new(Vec::new());
+    let (sources, _) = inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &|_, _| None,
+        &|object| object == wanted,
+        &|object, ids| {
+            asked.borrow_mut().push(object.to_string());
+            ids.first().map(|s| s.to_string())
+        },
+    )
+    .unwrap();
+    assert!(!sources.is_empty());
+    assert!(sources.iter().all(|s| s.object == wanted));
+    assert_eq!(*asked.borrow(), vec![wanted.to_string()]);
+}
+
+/// A segment tensor stored in a dtype no lowering defines is refused at
+/// inventory time, by tensor and segment, rather than mapped onto a
+/// representation it is not.
+#[test]
+fn a_tensor_dtype_no_lowering_understands_is_refused_by_name() {
+    use crate::format::vindex3::encode::segment::read_segment_header;
+    use crate::format::vindex3::fixtures::{dense_fp8_model, encode_fixture_container};
+    use crate::format::vindex3::inspect::inspect_container;
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(dense_fp8_model, checkpoint.path(), container.path(), "fp8");
+    let inspection = inspect_container(container.path(), false).unwrap();
+    let foreign = inspection
+        .index
+        .representations
+        .values()
+        .flat_map(|e| {
+            read_segment_header(&container.path().join(&e.segment))
+                .unwrap()
+                .0
+                .tensors
+        })
+        .find(|t| !["NVFP4", "F32", "BF16"].contains(&t.dtype.as_str()))
+        .expect("the FP8 fixture stores a dtype outside the lowering's three");
+
+    let err = inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &|_, _| None,
+        &|_| true,
+        &|_object, ids| ids.first().map(|s| s.to_string()),
+    )
+    .expect_err("an unknown dtype must refuse")
+    .to_string();
+    assert!(
+        err.contains(&format!("has dtype `{}`", foreign.dtype)),
+        "{err}"
+    );
+    assert!(err.contains("refusing rather than guessing"), "{err}");
+}
