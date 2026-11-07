@@ -239,10 +239,11 @@ Results from 2026-11-06:
 Gated models (Llama, Gemma) need a Hugging Face token: run
 `hf auth login` or set `HF_TOKEN`.
 
-`larql vindex3 plan hf://<model>` prints the full analysis as JSON for the
-*whole* model, including parts text generation doesn't use (Gemma 3's vision
-tower, for example), so it can refuse a model that `run` accepts. The last
-line is the verdict. The [status page](vindex3/status.md) records supported
+`larql vindex3 plan hf://<model> --capability text-generation` prints the full
+analysis as JSON and judges it the way `run` does; the last line is the
+verdict. Without `--capability` it judges the *whole* model, including parts
+text generation doesn't use (Gemma 3's vision tower, for example), so it can
+refuse a model that `run` accepts. The [status page](vindex3/status.md) records supported
 architectures and backends in more depth.
 
 ## Troubleshooting
@@ -259,6 +260,7 @@ of a name.
 
 **`STATUS unusable` in `larql list`**
 The model can't be opened by this build; the note under the table says why.
+An `incomplete download` names the `larql pull` that finishes it; otherwise
 `larql rm` it and run it again.
 
 **`cannot run hf://…: LARQL does not yet represent everything text generation needs`**
@@ -266,8 +268,10 @@ The model uses something LARQL doesn't support yet; each finding is listed.
 Nothing large was downloaded.
 
 **Picking up a newer version of a model**
-A converted model is cached at the revision it was first run at. To refresh
-it, `larql rm` it and run it again.
+A converted model is cached at the revision it was first run at, and `run`
+never checks for a newer one. `larql pull <name>` (or `larql pull
+hf://org/name`) asks the hub: if the revision moved it converts the new
+version and removes the old one, otherwise it says `already up to date`.
 
 **Older `.vindex` (VINDEX2) files**
 These still open with `run`, `serve` and LQL. New work should use VINDEX3.
