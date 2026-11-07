@@ -1,0 +1,2 @@
+seq round arm time prompt steady gpu encode p50 first32 attn.proj attn.core attn.o_proj ffn.routed head gaps
+1 1 json_224 20:02:01 224 8.19 8.19 0.68 8.11 8.91 - - - - geometry: 
