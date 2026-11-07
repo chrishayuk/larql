@@ -225,7 +225,7 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
                 outcome.lines.push(format!(
                     "Error: refused `{}`: {} earlier statement(s) in this batch failed, \
                      and a batch writes nothing after a failure",
-                    first_word(trimmed),
+                    statement_label(trimmed),
                     outcome.errors
                 ));
                 outcome.errors += 1;
@@ -248,9 +248,25 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
     outcome
 }
 
-/// The statement's keyword, for a refusal message.
-fn first_word(statement: &str) -> &str {
-    statement.split_whitespace().next().unwrap_or(statement)
+/// Longest statement text a refusal message quotes in full.
+const REFUSAL_LABEL_CHARS: usize = 60;
+
+/// The statement as written, shortened, for a refusal message. The whole
+/// text rather than its keyword, so a pipe names its writing half too.
+fn statement_label(statement: &str) -> String {
+    let flat = statement
+        .trim_end_matches(';')
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if flat.chars().count() <= REFUSAL_LABEL_CHARS {
+        flat
+    } else {
+        format!(
+            "{}…",
+            flat.chars().take(REFUSAL_LABEL_CHARS).collect::<String>()
+        )
+    }
 }
 
 fn is_complete_statement(s: &str) -> bool {

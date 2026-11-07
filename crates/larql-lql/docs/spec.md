@@ -963,8 +963,12 @@ statement, as it always has, and the status reflects all of them. So a contract 
 evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
 
 **After a failure, a script writes nothing.** Once any statement has failed, every later statement that
-would write an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `SAVE PATCH`, `DIFF … INTO PATCH`,
-`TRACE … SAVE`, or a pipe containing one) is refused with `Error: refused ...` and counts as a failure.
+would write an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `COMPACT MAJOR`, which persists the MEMIT
+store into the bound vindex, `SAVE PATCH`, `DIFF … INTO PATCH`, `TRACE … SAVE`, or a pipe containing
+one) is refused with `Error: refused ...` and counts as a failure. Caches filled as a side effect, such
+as a `USE "hf://..."` download, are not artifacts. A violated `VERIFY` contract is a violation, not a
+failure, so it does not stop later writes. This applies to `larql lql` / `run_batch_outcome`, not to the
+interactive REPL.
 Statements that write nothing still run, so every diagnostic is still reported. Without this, a `COMPILE`
 after a refused `APPLY PATCH` wrote an unedited container at the path meant for the edited one, and only
 the exit status said so.

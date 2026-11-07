@@ -32,7 +32,10 @@ fn a_compile_after_a_refused_apply_patch_writes_nothing() {
     assert_eq!(o.errors, 2, "{:?}", o.lines);
     assert_eq!(o.exit_code(), EXIT_ERROR);
     let refusal = o.lines.last().unwrap();
-    assert!(refusal.starts_with("Error: refused `COMPILE`"), "{refusal}");
+    assert!(
+        refusal.starts_with("Error: refused `COMPILE CURRENT INTO VINDEX"),
+        "{refusal}"
+    );
     assert!(refusal.contains("1 earlier statement(s)"), "{refusal}");
 }
 
@@ -74,6 +77,37 @@ fn statements_that_write_nothing_still_run_after_a_failure() {
 }
 
 #[test]
+fn a_statement_that_writes_nothing_still_runs_after_a_refused_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let container = bf16_container_with_q8_pack(dir.path());
+    let out = dir.path().join("o.vindex3");
+    let o = run_batch_outcome(&format!(
+        "USE \"{c}\"; NOT A STATEMENT; COMPILE CURRENT INTO VINDEX \"{o}\"; SHOW PATCHES;",
+        c = q(&container),
+        o = q(&out)
+    ));
+    assert!(!out.exists());
+    assert_eq!(o.errors, 2, "{:?}", o.lines);
+    let refused = o
+        .lines
+        .iter()
+        .position(|l| l.starts_with("Error: refused"))
+        .unwrap();
+    assert!(
+        o.lines.len() > refused + 1,
+        "SHOW PATCHES ran after the refusal: {:?}",
+        o.lines
+    );
+}
+
+#[test]
+fn a_refused_pipe_is_named_by_its_whole_text() {
+    let o = run_batch_outcome("NOT A STATEMENT; STATS |> SAVE PATCH;");
+    let refusal = o.lines.last().unwrap();
+    assert!(refusal.contains("`STATS |> SAVE PATCH`"), "{refusal}");
+}
+
+#[test]
 fn with_no_failure_the_same_compile_writes_its_container() {
     let dir = tempfile::tempdir().unwrap();
     let container = bf16_container_with_q8_pack(dir.path());
@@ -103,6 +137,7 @@ fn which_statements_write_an_artifact() {
         "TRACE \"x\" SAVE \"t.trace\";",
         "EXTRACT MODEL \"m\" INTO \"o.vindex\";",
         "STATS |> SAVE PATCH;",
+        "COMPACT MAJOR;",
     ] {
         assert!(writes(s), "{s} writes");
     }

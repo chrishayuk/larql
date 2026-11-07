@@ -1,5 +1,7 @@
-//! Which statements write an artifact (a container, model, patch file or
-//! saved trace) to disk.
+//! Which statements write an artifact (a container, model, patch file,
+//! saved trace, or state persisted into the bound vindex) to disk. Caches
+//! filled as a side effect, such as `USE "hf://..."` downloading into the
+//! model cache, are not artifacts.
 //!
 //! A batch uses this to refuse every write after a statement has failed
 //! (see [`crate::repl::run_batch_outcome`]): a write that follows a failure
@@ -22,6 +24,8 @@ impl Statement {
             Statement::Extract { .. }
             | Statement::Compile { .. }
             | Statement::CompactInto { .. }
+            // Persists the MEMIT store into the bound vindex directory.
+            | Statement::CompactMajor { .. }
             | Statement::SavePatch => true,
             Statement::Diff { into_patch, .. } => into_patch.is_some(),
             Statement::Trace { save, .. } => save.is_some(),
@@ -52,7 +56,6 @@ impl Statement {
             | Statement::Stats { .. }
             | Statement::ShowCompactStatus
             | Statement::CompactMinor
-            | Statement::CompactMajor { .. }
             | Statement::BeginPatch { .. }
             | Statement::ApplyPatch { .. }
             | Statement::ShowPatches
