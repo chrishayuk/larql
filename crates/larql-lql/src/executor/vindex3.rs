@@ -93,7 +93,7 @@ impl Session {
                     .into(),
             )
         })?;
-        let prompt_ids = encode_v3_prompt(tokenizer, prompt, *bos_token)?;
+        let prompt_ids = encode_raw_prompt(tokenizer, prompt, *bos_token)?;
 
         let start = std::time::Instant::now();
 
@@ -453,6 +453,3 @@ impl Session {
         Ok(out)
     }
 }
-
-#[cfg(test)]
-mod tests;

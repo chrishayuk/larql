@@ -92,3 +92,35 @@ fn an_empty_encoding_is_refused() {
         .to_string();
     assert!(err.contains("no tokens"), "{err}");
 }
+
+/// The raw path feeds the shared table's ids for every BOS shape —
+/// Granite/Qwen3 (no BOS), Gemma 4 (BOS once), a tokenizer that adds it
+/// (not doubled) — the table `vindex3 observe`, the server's plain
+/// completions and LQL are held to. Before the shared encoder the Gemma
+/// 4 shape fed no BOS and its 12B answered "1111…".
+#[test]
+fn a_raw_prompt_encodes_every_bos_shape_like_every_surface() {
+    use larql_inference::test_utils::{BosShape, RAW_PROMPT};
+    for shape in BosShape::ALL {
+        let dir = container_with(None);
+        shape.write_into(dir.path(), DENSE_VOCAB);
+        let tok = larql_vindex::load_vindex_tokenizer(dir.path()).unwrap();
+        let mut c = Conversation::new(dir.path(), "dense", true);
+        let p = c.prompt(&tok, RAW_PROMPT, &mut Vec::new()).unwrap();
+        assert_eq!(p.ids, shape.expected_ids(), "{shape:?}");
+    }
+}
+
+/// A templated prompt carries its own special tokens: no BOS is added
+/// on top of what the template rendered, whatever the container declares.
+#[test]
+fn a_templated_prompt_gets_no_extra_bos() {
+    use larql_inference::test_utils::BosShape;
+    let dir = container_with(Some(MARKED));
+    BosShape::DeclaredRequired.write_into(dir.path(), DENSE_VOCAB);
+    let tok = larql_vindex::load_vindex_tokenizer(dir.path()).unwrap();
+    let mut c = Conversation::new(dir.path(), "dense", false);
+    let p = c.prompt(&tok, "[1]", &mut Vec::new()).unwrap();
+    assert!(p.templated);
+    assert_eq!(p.ids, vec![9, 1]);
+}

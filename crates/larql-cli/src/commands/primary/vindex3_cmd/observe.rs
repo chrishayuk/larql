@@ -401,7 +401,7 @@ fn load_tokenizer(container: &Path) -> Option<tokenizers::Tokenizer> {
     larql_vindex::load_vindex_tokenizer(container).ok()
 }
 
-fn prompt_ids(
+pub(super) fn prompt_ids(
     args: &ObserveArgs,
     tokenizer: Option<&tokenizers::Tokenizer>,
 ) -> Result<Vec<u32>, BoxErr> {
@@ -411,15 +411,11 @@ fn prompt_ids(
                 "--prompt needs the container's tokenizer, and this container carries none; \
                  pass --tokens with ids instead",
             )?;
-            let ids = tokenizer
-                .encode(prompt.as_str(), true)
-                .map_err(|e| format!("tokenising the prompt: {e}"))?
-                .get_ids()
-                .to_vec();
-            if ids.is_empty() {
-                return Err("the prompt tokenised to nothing".into());
-            }
-            Ok(ids)
+            // The shared V3 raw-prompt encoder: the same ids `larql run
+            // --raw`, the server's plain completions and LQL feed.
+            let bos = larql_inference::vindex3::declared_prompt_bos(&args.container);
+            larql_inference::vindex3::encode_raw_prompt(tokenizer, prompt.as_str(), bos)
+                .map_err(|e| format!("encoding the prompt: {e}").into())
         }
         (None, Some(list)) => parse_ids(list),
         (None, None) => Err("give --prompt or --tokens".into()),

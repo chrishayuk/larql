@@ -165,6 +165,10 @@ pub struct V3Model {
     /// generation to `max_tokens`. Every V3 route builds its request
     /// EOS on top of this.
     pub eos: EosConfig,
+    /// The BOS a raw (non-templated) prompt starts with, as the container
+    /// declares it (`larql_inference::vindex3::declared_prompt_bos`),
+    /// resolved once at load — the same rule every V3 surface applies.
+    pub prompt_bos: Option<u32>,
     /// Count of in-flight generations on this container — the V3
     /// counterpart of `LoadedModel.requests_in_flight`, which V3 had
     /// none of before this (no walk-ffn/grid participation to have
@@ -178,6 +182,14 @@ pub struct V3Model {
 }
 
 impl V3Model {
+    /// Encode a raw (non-templated) prompt — a plain completion — through
+    /// the shared V3 raw-prompt encoder with this container's declared
+    /// BOS: the ids `larql run --raw`, `vindex3 observe` and LQL feed.
+    pub fn encode_raw_prompt(&self, prompt: &str) -> Result<Vec<u32>, crate::error::ServerError> {
+        larql_inference::vindex3::encode_raw_prompt(&self.tokenizer, prompt, self.prompt_bos)
+            .map_err(|e| crate::error::ServerError::BadRequest(e.to_string()))
+    }
+
     /// Execute a stateless prefix while retaining the model's in-flight guard.
     pub(crate) fn execute_layer_prefix(
         &self,
@@ -359,6 +371,7 @@ pub fn load_v3_model_experts(
         tokenizer,
         family,
         eos: EosConfig::from_vindex_dir(path),
+        prompt_bos: larql_inference::vindex3::declared_prompt_bos(path),
         requests_in_flight: Arc::new(AtomicU32::new(0)),
     };
     if !larql_inference::chat::container_has_chat_template(path) {

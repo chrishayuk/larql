@@ -118,7 +118,9 @@ pub(super) fn run_vindex3(
 ///
 /// A rendered template already carries its own special tokens (BOS
 /// included), so it is encoded without the tokenizer's post-processor —
-/// adding them again would double the BOS. A raw prompt gets them.
+/// adding them again would double the BOS. A raw prompt goes through the
+/// shared V3 raw-prompt encoder (post-processor + the declared BOS), the
+/// same ids `larql run --raw` and `vindex3 observe` feed.
 fn encode(
     container: &Path,
     family: &str,
@@ -127,11 +129,20 @@ fn encode(
 ) -> Result<Vec<u32>, BoxErr> {
     let rendered = larql_inference::chat::render_user_prompt(container, family, prompt)
         .unwrap_or_else(|_| prompt.to_string());
-    let templated = rendered != prompt;
-    let encoded = tokenizer
-        .encode(rendered.as_str(), !templated)
-        .map_err(|e| format!("encode prompt: {e}"))?;
-    let ids = encoded.get_ids().to_vec();
+    let ids = if rendered != prompt {
+        tokenizer
+            .encode(rendered.as_str(), false)
+            .map_err(|e| format!("encode prompt: {e}"))?
+            .get_ids()
+            .to_vec()
+    } else {
+        let bos = larql_inference::vindex3::declared_prompt_bos(container);
+        match larql_inference::vindex3::encode_raw_prompt(tokenizer, prompt, bos) {
+            Ok(ids) => ids,
+            Err(larql_inference::vindex3::PromptEncodeError::Empty) => Vec::new(),
+            Err(e) => return Err(format!("encode prompt: {e}").into()),
+        }
+    };
     if ids.is_empty() {
         return Err("prompt encodes to no tokens — nothing to condition on".into());
     }
@@ -426,3 +437,22 @@ impl Timed<'_> {
 
 const NO_HEAD: &str = "plan carries no output head — cannot generate";
 const NO_LOGITS: &str = "output head produced no logits";
+
+#[cfg(test)]
+mod tests {
+    use larql_inference::test_utils::{BosShape, RAW_PROMPT};
+
+    /// A raw bench prompt feeds the shared table's ids for every BOS
+    /// shape, like every other V3 surface.
+    #[test]
+    fn a_raw_bench_prompt_encodes_every_bos_shape_like_every_surface() {
+        const VOCAB: usize = 8;
+        for shape in BosShape::ALL {
+            let dir = tempfile::tempdir().unwrap();
+            shape.write_into(dir.path(), VOCAB);
+            let tok = larql_vindex::load_vindex_tokenizer(dir.path()).unwrap();
+            let ids = super::encode(dir.path(), "dense", &tok, RAW_PROMPT).unwrap();
+            assert_eq!(ids, shape.expected_ids(), "{shape:?}");
+        }
+    }
+}

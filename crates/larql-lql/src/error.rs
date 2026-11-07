@@ -36,6 +36,15 @@ impl LqlError {
     }
 }
 
+/// The shared V3 raw-prompt encoder's refusal, as an execution error
+/// carrying its own message ("tokenize: …" / "prompt tokenises to
+/// empty").
+impl From<larql_inference::vindex3::PromptEncodeError> for LqlError {
+    fn from(e: larql_inference::vindex3::PromptEncodeError) -> Self {
+        LqlError::Execution(e.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

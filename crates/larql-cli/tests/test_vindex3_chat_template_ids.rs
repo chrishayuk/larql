@@ -68,7 +68,10 @@ fn larql_run_renders_the_container_template_into_the_shared_ids() {
         &[ChatTurn::user(SINGLE_TURN_USER)],
     )
     .unwrap()
-    .encode(&tokenizer)
+    .encode(
+        &tokenizer,
+        larql_inference::vindex3::declared_prompt_bos(&container),
+    )
     .unwrap();
     assert_eq!(ran, shared);
 }

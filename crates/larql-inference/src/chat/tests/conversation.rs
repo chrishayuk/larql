@@ -207,7 +207,55 @@ fn a_templated_prompt_encodes_without_the_post_processor() {
     write_jinja(tmp.path(), "{{ messages[0].content }}");
     let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
     assert!(!r.adds_special_tokens());
-    assert_eq!(r.encode(&bos_tokenizer()).unwrap(), vec![WORD_ID]);
+    assert_eq!(r.encode(&bos_tokenizer(), None).unwrap(), vec![WORD_ID]);
+}
+
+/// The same vocabulary with no post-processor: encoding adds no BOS,
+/// the Gemma 4 shape.
+fn plain_tokenizer() -> larql_vindex::tokenizers::Tokenizer {
+    let json = serde_json::json!({
+        "version": "1.0", "truncation": null, "padding": null, "added_tokens": [],
+        "normalizer": null, "pre_tokenizer": {"type": "WhitespaceSplit"},
+        "post_processor": null, "decoder": null,
+        "model": {"type": "WordLevel", "vocab": {"[BOS]": BOS_ID, "u": WORD_ID, "<unk>": UNK_ID},
+                  "unk_token": "<unk>"}
+    });
+    larql_vindex::tokenizers::Tokenizer::from_bytes(json.to_string().as_bytes()).unwrap()
+}
+
+#[test]
+fn a_templated_prompt_never_takes_the_declared_bos() {
+    let _g = env(&[]);
+    let tmp = tempfile::tempdir().unwrap();
+    write_jinja(tmp.path(), "{{ messages[0].content }}");
+    let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
+    assert_eq!(
+        r.encode(&plain_tokenizer(), Some(BOS_ID)).unwrap(),
+        vec![WORD_ID]
+    );
+}
+
+#[test]
+fn a_raw_prompt_takes_the_declared_bos_its_tokenizer_omits() {
+    let _g = env(&[]);
+    let tmp = tempfile::tempdir().unwrap();
+    let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
+    assert_eq!(
+        r.encode(&plain_tokenizer(), Some(BOS_ID)).unwrap(),
+        vec![BOS_ID, WORD_ID]
+    );
+    assert_eq!(r.encode(&plain_tokenizer(), None).unwrap(), vec![WORD_ID]);
+}
+
+#[test]
+fn a_raw_prompt_never_doubles_a_bos_its_tokenizer_adds() {
+    let _g = env(&[]);
+    let tmp = tempfile::tempdir().unwrap();
+    let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
+    assert_eq!(
+        r.encode(&bos_tokenizer(), Some(BOS_ID)).unwrap(),
+        vec![BOS_ID, WORD_ID]
+    );
 }
 
 #[test]
@@ -216,5 +264,8 @@ fn a_raw_prompt_encodes_with_the_post_processor() {
     let tmp = tempfile::tempdir().unwrap();
     let r = render_conversation(tmp.path(), PLAIN_FAMILY, &[ChatTurn::user("u")]).unwrap();
     assert!(r.adds_special_tokens());
-    assert_eq!(r.encode(&bos_tokenizer()).unwrap(), vec![BOS_ID, WORD_ID]);
+    assert_eq!(
+        r.encode(&bos_tokenizer(), None).unwrap(),
+        vec![BOS_ID, WORD_ID]
+    );
 }

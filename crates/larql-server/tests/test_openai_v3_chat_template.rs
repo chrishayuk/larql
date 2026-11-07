@@ -141,7 +141,7 @@ fn cli_ids(model: &V3Model, pairs: &[(&str, &str)]) -> Vec<u32> {
         .collect();
     render_conversation(&model.path, &model.family, &turns)
         .unwrap()
-        .encode(&model.tokenizer)
+        .encode(&model.tokenizer, model.prompt_bos)
         .unwrap()
 }
 
