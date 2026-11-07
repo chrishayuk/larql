@@ -46,6 +46,15 @@ const INDEX_JSON: &str = include_str!("../../../../registry/index.json");
 /// `registry/models/granite-4.1-3b.json` — see [`embedded_model_json`].
 const GRANITE_4_1_3B_JSON: &str = include_str!("../../../../registry/models/granite-4.1-3b.json");
 
+/// `registry/models/gemma-3-4b-it.json` — see [`embedded_model_json`].
+const GEMMA_3_4B_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-4b-it.json");
+
+/// `registry/models/gemma-3-12b-it.json` — see [`embedded_model_json`].
+const GEMMA_3_12B_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-12b-it.json");
+
+/// `registry/models/gemma-4-12b-it.json` — see [`embedded_model_json`].
+const GEMMA_4_12B_IT_JSON: &str = include_str!("../../../../registry/models/gemma-4-12b-it.json");
+
 /// `registry/index.json`'s own shape: schema version plus the list of
 /// model names this registry claims. Not [`RegistryManifest`] itself —
 /// that type's `models` map holds full bodies; the index only names
@@ -79,6 +88,9 @@ pub(super) fn parse_index(index_json: &str) -> Result<RegistryIndex, RegistryErr
 fn embedded_model_json(name: &str) -> Option<&'static str> {
     match name {
         "granite-4.1-3b" => Some(GRANITE_4_1_3B_JSON),
+        "gemma-3-4b-it" => Some(GEMMA_3_4B_IT_JSON),
+        "gemma-3-12b-it" => Some(GEMMA_3_12B_IT_JSON),
+        "gemma-4-12b-it" => Some(GEMMA_4_12B_IT_JSON),
         _ => None,
     }
 }

@@ -1,0 +1,20 @@
+{
+  "default_variant": "bf16",
+  "variants": {
+    "bf16": {
+      "artifact": {
+        "repo": "larql/gemma-4-12b-it",
+        "revision": "6b824b7bc55ffb04a651e563f64f761373e6d6f8"
+      },
+      "abi": 1,
+      "source": {
+        "repo": "google/gemma-4-12B-it",
+        "revision": "43c9d014b231474fa7212dbb48a762566c2b255d",
+        "attestation": {
+          "kind": "hand_attested",
+          "by": "chrishayuk"
+        }
+      }
+    }
+  }
+}
