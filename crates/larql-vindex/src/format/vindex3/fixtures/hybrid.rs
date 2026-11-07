@@ -19,6 +19,19 @@ use super::*;
 /// * `conv_kernel` 4 against sequences longer than 4, so the convolution
 ///   history spans a batch boundary.
 pub fn hybrid_lllf_f32_model(dir: &Path) {
+    hybrid_lllf_f32_model_with_layers(dir, HYBRID_CADENCE);
+}
+
+/// Every `HYBRID_CADENCE`-th layer of the hybrid fixture attends.
+pub const HYBRID_CADENCE: usize = 4;
+
+/// The hybrid fixture at `layers` depth, still on the `LLLF` cadence.
+///
+/// Depth is the one thing a single `LLLF` block cannot vary, and a
+/// target that reads the attention *interval* off the stack needs at
+/// least two attending layers to see one: one block states a position,
+/// two state a cadence.
+pub fn hybrid_lllf_f32_model_with_layers(dir: &Path, layers: usize) {
     // Linear-attention geometry: 2*Hk*Dk + Hv*Dv channels.
     const KEY_HEADS: usize = 2;
     const VALUE_HEADS: usize = 4;
@@ -26,7 +39,16 @@ pub fn hybrid_lllf_f32_model(dir: &Path) {
     const CONV_KERNEL: usize = 4;
     let qkv = 2 * KEY_HEADS * LIN_DIM + VALUE_HEADS * LIN_DIM;
     let value_width = VALUE_HEADS * LIN_DIM;
-    let layers = 4;
+    let attends = |layer: usize| layer % HYBRID_CADENCE == HYBRID_CADENCE - 1;
+    let layer_types: Vec<&str> = (0..layers)
+        .map(|l| {
+            if attends(l) {
+                "full_attention"
+            } else {
+                "linear_attention"
+            }
+        })
+        .collect();
 
     std::fs::write(
         dir.join("config.json"),
@@ -44,8 +66,8 @@ pub fn hybrid_lllf_f32_model(dir: &Path) {
             "rms_norm_eps": 1e-5,
             "rope_theta": 10000.0,
             "max_position_embeddings": 4096,
-            "layer_types": ["linear_attention", "linear_attention", "linear_attention", "full_attention"],
-            "full_attention_interval": 4,
+            "layer_types": layer_types,
+            "full_attention_interval": HYBRID_CADENCE,
             "linear_num_key_heads": KEY_HEADS,
             "linear_num_value_heads": VALUE_HEADS,
             "linear_key_head_dim": LIN_DIM,
@@ -78,7 +100,7 @@ pub fn hybrid_lllf_f32_model(dir: &Path) {
     for layer in 0..layers {
         let seed = 100 + layer as u64 * 20;
         let prefix = format!("model.layers.{layer}");
-        if layer % 4 == 3 {
+        if attends(layer) {
             // The softmax layer.
             for (name, rows, s) in [
                 ("q_proj", q_rows, seed),
