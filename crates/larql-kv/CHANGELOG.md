@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) conventions
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## `zip` dev-dependency moves to 9; escaping member names are pinned (2026-11-07)
+
+Issue #662. The `zip` dev-dependency is now 9.x, so no `zip` < 9 (RUSTSEC-2026-0367,
+-0368, -0369, -0429) is in the lockfile. The differential reader in
+`tests/apollo_store_hostile` follows the 9.x `file_names` API and skips names `zip`
+cannot decode; every member the load uses is ASCII. The locked version is 9.4.1, not
+the 2.4.2 the entry below names.
+
+New test: member names that would escape an extraction directory (`../`, `/`, `/../`,
+`C:\`) beside the real `0.npy` or `entries.npy` are never read in its place, and
+alone they are `MissingFile`. The load never extracts, so these are only decoys.
+
 ## Apollo store loading no longer trusts file-declared sizes or file types (2026-11-03)
 
 Issue #679 and the reviews of PR #684. A store of a few hundred bytes, or a sparse

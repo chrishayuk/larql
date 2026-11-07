@@ -66,7 +66,7 @@ fn compute_semaphore() -> &'static Semaphore {
     responses(
         (status = 200, content_type = "application/x-larql-ffn",
          description = "Weighted-sum f32 output", body = Vec<u8>),
-        (status = 400, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_experts_layer_batch(
@@ -163,7 +163,7 @@ pub async fn handle_experts_layer_batch(
     responses(
         (status = 200, content_type = "application/x-larql-ffn",
          description = "Weighted-sum f32 output", body = Vec<u8>),
-        (status = 400, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_experts_layer_batch_f16(

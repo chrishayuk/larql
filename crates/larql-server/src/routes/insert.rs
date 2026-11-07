@@ -255,8 +255,8 @@ fn run_insert(
     request_body = InsertRequest,
     responses(
         (status = 200, description = "Constellation insert result", body = crate::openapi::schemas::InsertResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_insert(
@@ -282,9 +282,9 @@ pub async fn handle_insert(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body = InsertRequest,
     responses(
-        (status = 200, body = crate::openapi::schemas::InsertResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::InsertResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_insert_multi(

@@ -206,8 +206,8 @@ pub(crate) fn embed_tokens(
          body = Vec<u8>,
          description = "Binary response when the request used `Content-Type: application/x-larql-ffn`: \
                         `[seq_len u32][hidden u32][seq_len × hidden f32 LE]`."),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_embed(
@@ -225,10 +225,10 @@ pub async fn handle_embed(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body(content = EmbedRequest, description = "JSON or binary `application/x-larql-ffn`."),
     responses(
-        (status = 200, body = EmbedResponse),
-        (status = 200, content_type = "application/x-larql-ffn", body = Vec<u8>),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "JSON response", body = EmbedResponse),
+        (status = 200, description = "Binary response when the request used `Content-Type: application/x-larql-ffn`", content_type = "application/x-larql-ffn", body = Vec<u8>),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_embed_multi(
@@ -330,8 +330,8 @@ async fn handle_embed_inner(
     ),
     responses(
         (status = 200, description = "Top-K tokens from lm_head", body = LogitsResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_logits(
@@ -349,9 +349,9 @@ pub async fn handle_logits(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body(content = LogitsRequest),
     responses(
-        (status = 200, body = LogitsResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = LogitsResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_logits_multi(
@@ -454,7 +454,7 @@ async fn handle_logits_inner(
     ),
     responses(
         (status = 200, description = "Token IDs for the text", body = crate::openapi::schemas::TokenEncodeResponse),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_token_encode(
@@ -473,8 +473,8 @@ pub async fn handle_token_encode(
         ("text" = String, Query, description = "Text to tokenize."),
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::TokenEncodeResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::TokenEncodeResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_token_encode_multi(
@@ -517,8 +517,8 @@ fn handle_token_encode_inner(
     ),
     responses(
         (status = 200, description = "Decoded text", body = crate::openapi::schemas::TokenDecodeResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_token_decode(
@@ -537,9 +537,9 @@ pub async fn handle_token_decode(
         ("ids" = String, Query, description = "Comma-separated token IDs."),
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::TokenDecodeResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::TokenDecodeResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_token_decode_multi(
@@ -609,8 +609,8 @@ fn handle_token_decode_inner(
     responses(
         (status = 200, description = "Binary f32 LE embedding (default)", content_type = "application/x-larql-ffn", body = Vec<u8>),
         (status = 200, description = "JSON response when `Accept: application/json`", body = crate::openapi::schemas::EmbedSingleJsonResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_embed_single(
@@ -630,10 +630,10 @@ pub async fn handle_embed_single(
         ("token_id" = u32, Path),
     ),
     responses(
-        (status = 200, content_type = "application/x-larql-ffn", body = Vec<u8>),
-        (status = 200, body = crate::openapi::schemas::EmbedSingleJsonResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "Binary f32 LE embedding (default)", content_type = "application/x-larql-ffn", body = Vec<u8>),
+        (status = 200, description = "JSON response when `Accept: application/json`", body = crate::openapi::schemas::EmbedSingleJsonResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_embed_single_multi(

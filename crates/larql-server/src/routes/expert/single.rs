@@ -147,8 +147,8 @@ pub fn run_expert(
     request_body = SingleExpertRequest,
     responses(
         (status = 200, description = "Expert output vector", body = SingleExpertResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_expert(

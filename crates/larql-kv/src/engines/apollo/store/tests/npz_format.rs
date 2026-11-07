@@ -771,6 +771,9 @@ fn only_a_similarly_named_member_is_missing_file() {
         "./entries.npy",
         "../entries.npy",
         "dir\\entries.npy",
+        "/entries.npy",
+        "/../entries.npy",
+        "C:\\entries.npy",
     ] {
         let archive = raw_archive(&[RawMember::stored(decoy, entries_with_token(1))]);
         let err = entries_archive_err(&archive);
@@ -778,6 +781,36 @@ fn only_a_similarly_named_member_is_missing_file() {
             matches!(err, StoreLoadError::MissingFile(_)),
             "{decoy}: {err:?}"
         );
+    }
+}
+
+/// Names an extractor would write outside its destination. The load never extracts:
+/// it matches member names exactly, so none of these is ever read in place of the
+/// real member, in either archive.
+const ESCAPING_NAME_PREFIXES: [&str; 4] = ["../", "/", "/../", "C:\\"];
+
+#[test]
+fn escaping_names_beside_the_real_member_are_never_read() {
+    const DECOY_TOKEN: u32 = 7;
+    const REAL_TOKEN: u32 = 2;
+    for prefix in ESCAPING_NAME_PREFIXES {
+        let window_decoy = format!("{prefix}{MEMBER}");
+        let archive = raw_archive(&[
+            RawMember::stored(&window_decoy, synth_u32_npy(&[DECOY_TOKEN])),
+            member(),
+            RawMember::stored(&window_decoy, synth_u32_npy(&[DECOY_TOKEN])),
+        ]);
+        assert_loads(&archive);
+
+        let entries_decoy = format!("{prefix}{ENTRIES_MEMBER}");
+        let archive = raw_archive(&[
+            RawMember::stored(&entries_decoy, entries_with_token(DECOY_TOKEN)),
+            RawMember::stored(ENTRIES_MEMBER, entries_with_token(REAL_TOKEN)),
+            RawMember::stored(&entries_decoy, entries_with_token(DECOY_TOKEN)),
+        ]);
+        let dir = store_with_archive(ENTRIES_NPZ, &archive);
+        let store = ApolloStore::load(dir.path()).expect("exact name is found");
+        assert_eq!(store.entries[0].token_id, REAL_TOKEN, "{entries_decoy}");
     }
 }
 

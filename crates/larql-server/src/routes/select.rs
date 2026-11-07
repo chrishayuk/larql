@@ -169,8 +169,8 @@ fn select_edges(
     request_body = SelectRequest,
     responses(
         (status = 200, description = "Selected edges", body = crate::openapi::schemas::SelectResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_select(
@@ -192,9 +192,9 @@ pub async fn handle_select(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body = SelectRequest,
     responses(
-        (status = 200, body = crate::openapi::schemas::SelectResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::SelectResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_select_multi(

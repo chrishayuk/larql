@@ -160,7 +160,7 @@ fn model_path(id: &str, multi: bool) -> String {
     params(("model" = String, Path, description = "Model id")),
     responses(
         (status = 200, description = "OpenAI-compatible single-model entry", body = crate::openapi::schemas::ModelEntry),
-        (status = 404, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 404, description = "Not found", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_model_retrieve(

@@ -127,8 +127,8 @@ pub struct EmbeddingsResponse {
     responses(
         (status = 200, description = "Mean-pooled embeddings (not contrastively trained — use at your own risk).",
          body = crate::openapi::schemas::OpenAiEmbeddingsResponse),
-        (status = 400, body = crate::routes::openai::error::OpenAIErrorBody),
-        (status = 500, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 400, description = "Bad request", body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 500, description = "Internal server error", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_embeddings(
