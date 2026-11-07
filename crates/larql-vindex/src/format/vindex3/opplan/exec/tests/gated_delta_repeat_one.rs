@@ -39,6 +39,14 @@ const POSITIONS: usize = 8;
 /// and well below the expected error, so passing is not marginal.
 const MIN_LOUD_REL_RMS: f32 = 1e-2;
 
+/// The least peak |output| the control must reach. `lcg_values` weights
+/// are +/-0.05, so this fixture's outputs are small (about 3.5e-8 at the
+/// time of writing), and the comparison is relative. Below about 1e-19 the
+/// squares inside rel_rms would go subnormal in f32; 1e-10 keeps them
+/// normal and sits well below the expected peak, so a control that has
+/// collapsed towards zero fails visibly instead of passing on `> 0.0`.
+const MIN_CONTROL_PEAK: f32 = 1e-10;
+
 fn run(mutation: Mutation) -> (LayerPlanes, Vec<f32>) {
     let op = op_with_heads(REPEAT_ONE_HEADS, REPEAT_ONE_HEADS);
     assert_eq!(
@@ -71,14 +79,11 @@ fn flat(v: &[Vec<f32>]) -> Vec<f32> {
 fn an_assumed_triple_expansion_is_loudly_wrong_at_repeat_one() {
     let (control, _) = run(Mutation::None);
     let control_out = flat(&control.output);
-    // Nonzero, not "above some magnitude": `lcg_values` are +/-0.05, so
-    // this fixture's outputs are small in absolute terms, and the
-    // comparison below is relative anyway.
     let peak = control_out.iter().fold(0.0f32, |m, v| m.max(v.abs()));
     println!("  control output peak |v| {peak:.3e}");
     assert!(
-        control_out.iter().all(|v| v.is_finite()) && peak > 0.0,
-        "the shipped repeat-1 path must run and produce a non-zero, finite output"
+        control_out.iter().all(|v| v.is_finite()) && peak > MIN_CONTROL_PEAK,
+        "the shipped repeat-1 path must run and produce a finite output above MIN_CONTROL_PEAK"
     );
 
     let (wrong, _) = run(Mutation::AssumedTripleExpansion);

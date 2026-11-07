@@ -14,9 +14,9 @@
 //! The layout/order mutation table (`ContiguousHalves`, `SwapPerHeadQGate`,
 //! `GateGetsQNorm`, `GateGetsRoPe`, `SiluGate`, `GateAfterOProj`, `NoGate`)
 //! is in `mutation_table` below. Each arm is threaded through the shipped
-//! attention path and must move its output, so the runtime is shown to
-//! read the projection as `[q_h0 | gate_h0 | q_h1 | …]` and not as the
-//! equally well-shaped `[all q | all gate]` — at the dense fixture's
+//! attention path and must move its output, so the shipped reading of the
+//! projection is distinguishable from each well-shaped wrong one, such as
+//! `[all q | all gate]` in place of `[q_h0 | gate_h0 | q_h1 | …]` — at the dense fixture's
 //! head dim 8, and (for the two layout arms) at Qwen3.5-0.8B's
 //! full-attention head dim 256 with its quarter-width rotary.
 //!
@@ -142,6 +142,12 @@ mod mutation_table {
     use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
     use crate::format::vindex3::opplan::exec::AttentionOperands;
 
+    /// The least magnitude some control output must reach before any
+    /// mutation is compared with it. An all-zero control would make every
+    /// relative metric meaningless; `lcg_values` weights give outputs far
+    /// above this.
+    const MIN_CONTROL_MAGNITUDE: f32 = 1e-6;
+
     /// Control plus every arm, run through one gated layer.
     fn outputs_for(mutation: GateMutation) -> Vec<f32> {
         outputs_for_geometry(GATED_Q_DENSE_GEOMETRY, mutation)
@@ -215,7 +221,7 @@ mod mutation_table {
     fn every_semantic_mutation_of_the_fused_gate_is_distinguishable() {
         let control = outputs_for(GateMutation::None);
         assert!(
-            control.iter().any(|v| v.abs() > 1e-6),
+            control.iter().any(|v| v.abs() > MIN_CONTROL_MAGNITUDE),
             "an all-zero control cannot discriminate anything"
         );
 
@@ -309,9 +315,10 @@ mod mutation_table {
     /// **The headline at Qwen3.5-0.8B's head dim.** With a 256-wide
     /// per-head stride (and RoPE on only the first quarter of it), a
     /// contiguous split and a per-head q/gate swap must both stay
-    /// well-shaped and both be loudly wrong. The dense fixture's head dim
-    /// of 8 cannot show that the stride, not just the interleave, is read
-    /// from the declared geometry.
+    /// well-shaped and both be loudly wrong. This shows only that the two
+    /// layout defects are distinguishable from the shipped path at a
+    /// 256-wide stride; the control is the shipped path itself, so it does
+    /// not show the stride is read from the declared geometry.
     #[test]
     fn layout_mutations_are_loudly_wrong_at_qwen35_head_dim() {
         assert_eq!(
@@ -320,7 +327,7 @@ mod mutation_table {
         );
         let control = outputs_for_geometry(GATED_Q_QWEN35_GEOMETRY, GateMutation::None);
         assert!(
-            control.iter().any(|v| v.abs() > 1e-6),
+            control.iter().any(|v| v.abs() > MIN_CONTROL_MAGNITUDE),
             "an all-zero control cannot discriminate anything"
         );
         for arm in [
