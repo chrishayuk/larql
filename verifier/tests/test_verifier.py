@@ -192,6 +192,12 @@ class Expected(unittest.TestCase):
         for c in e["containers"].values():
             self.assertRegex(c["larql_commit"], r"^[0-9a-f]{40}$")
             self.assertEqual(c["status"] == "satisfied", c["violations"] == 0)
+        o = e["operators"]
+        self.assertRegex(o["larql_commit"], r"^[0-9a-f]{40}$")
+        self.assertEqual(o["container"], "corrected")
+        self.assertTrue(o["checked"])
+        for fault in o["faults"].values():
+            self.assertEqual(fault["Q8_0_GEMV_SEQ"], "violated")
 
 
 if __name__ == "__main__":
