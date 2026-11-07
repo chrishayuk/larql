@@ -197,6 +197,13 @@ pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>>
 
 /// Run a batch of LQL statements, continuing after a failed statement, and
 /// report what happened.
+///
+/// After any statement has failed, a statement that writes an artifact
+/// ([`crate::ast::Statement::writes_artifact`]: `COMPILE`, `EXTRACT`, `SAVE PATCH`, ...)
+/// is refused rather than run, and counts as a failure. A batch never writes
+/// an output built on a session its author did not intend, such as a
+/// container compiled after its `APPLY PATCH` was refused. Statements that
+/// write nothing still run, so every diagnostic is still reported.
 pub fn run_batch_outcome(input: &str) -> BatchOutcome {
     let mut session = Session::new();
     let mut outcome = BatchOutcome::default();
@@ -214,6 +221,15 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
             continue;
         }
         match parser::parse(trimmed) {
+            Ok(stmt) if outcome.errors > 0 && stmt.writes_artifact() => {
+                outcome.lines.push(format!(
+                    "Error: refused `{}`: {} earlier statement(s) in this batch failed, \
+                     and a batch writes nothing after a failure",
+                    statement_label(trimmed),
+                    outcome.errors
+                ));
+                outcome.errors += 1;
+            }
             Ok(stmt) => match session.execute(&stmt) {
                 Ok(lines) => outcome.lines.extend(lines),
                 Err(e) => {
@@ -230,6 +246,27 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
 
     outcome.contract_violations = session.contract_violations();
     outcome
+}
+
+/// Longest statement text a refusal message quotes in full.
+const REFUSAL_LABEL_CHARS: usize = 60;
+
+/// The statement as written, shortened, for a refusal message. The whole
+/// text rather than its keyword, so a pipe names its writing half too.
+fn statement_label(statement: &str) -> String {
+    let flat = statement
+        .trim_end_matches(';')
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if flat.chars().count() <= REFUSAL_LABEL_CHARS {
+        flat
+    } else {
+        format!(
+            "{}…",
+            flat.chars().take(REFUSAL_LABEL_CHARS).collect::<String>()
+        )
+    }
 }
 
 fn is_complete_statement(s: &str) -> bool {

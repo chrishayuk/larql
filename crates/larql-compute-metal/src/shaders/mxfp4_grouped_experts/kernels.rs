@@ -539,3 +539,188 @@ kernel void mxfp4g_down_combine4(
     }
 }
 "#;
+
+/// A2x2m — VERIFY-N rung 5b: the x2 arm with each threadgroup owning one
+/// DISTINCT expert of a block, read once for every slot that selected it.
+///
+/// `counts[u]` / `lists[u * MAXM ..]` (built on the device by
+/// `moe_slots_by_expert`) name the slots of distinct expert `u`; a
+/// threadgroup with `counts[u] == 0` exits. Weights and scales come from
+/// the FIRST slot's offsets — every slot of one expert carries the same.
+/// Each slot reads its own input at `X + slot * XSTRIDE` and writes
+/// `out[slot * N + row]`, exactly where the x2 arm writes it, and every
+/// output is the x2 arm's expression in the x2 arm's accumulation order
+/// (same lane stride over groups, same `scale * part` sum, same
+/// `simd_sum`), so it is bit-identical per (row, slot).
+pub(super) const KERNEL_A2X2M: &str = r#"
+constant uint MXG_MULTI_MAX = 8;
+
+kernel void mxfp4g_split_lut16_vec_x2_multi(
+    device const uchar*  Wp        [[buffer(0)]],
+    device const uint*   offsets   [[buffer(1)]],
+    device const uchar*  Ws        [[buffer(2)]],
+    device const uint*   s_offsets [[buffer(3)]],
+    device const float*  X         [[buffer(4)]],
+    device float*        out       [[buffer(5)]],
+    constant uint&       N         [[buffer(6)]],
+    constant uint&       K         [[buffer(7)]],
+    constant uint&       XSTRIDE   [[buffer(8)]],
+    constant uint&       ROWBASE   [[buffer(9)]],
+    constant uint&       ROWSTRIDE [[buffer(10)]],
+    device const uint*   counts    [[buffer(11)]],
+    device const uint*   lists     [[buffer(12)]],
+    constant uint&       MAXM      [[buffer(13)]],
+    uint2 tg_id [[threadgroup_position_in_grid]],
+    uint  lane  [[thread_index_in_simdgroup]],
+    uint  sg_id [[simdgroup_index_in_threadgroup]])
+{
+    const uint u = tg_id.y;
+    const uint cnt = min(counts[u], MXG_MULTI_MAX);
+    if (cnt == 0u) { return; }
+    const uint row0 = (tg_id.x * MXG_ROWS_PER_TG + sg_id) * 2u;
+    if (row0 >= N) { return; }
+    const bool has1 = row0 + 1u < N;
+
+    device const uint* slots = lists + (ulong)u * MAXM;
+    const uint groups = K / MXG_GROUP_ELEMS;
+    const uint frow0 = ROWBASE + row0 * ROWSTRIDE;
+    const uint frow1 = frow0 + ROWSTRIDE;
+    const ulong pbase = (ulong)offsets[slots[0]];
+    const ulong sbase = (ulong)s_offsets[slots[0]];
+    device const uint4* row_p0 =
+        (device const uint4*)(Wp + pbase + (ulong)frow0 * groups * MXG_GROUP_BYTES);
+    device const uchar* row_s0 = Ws + sbase + (ulong)frow0 * groups;
+    device const uint4* row_p1 =
+        (device const uint4*)(Wp + pbase + (ulong)frow1 * groups * MXG_GROUP_BYTES);
+    device const uchar* row_s1 = Ws + sbase + (ulong)frow1 * groups;
+
+    // Slot-major: each slot runs the x2 body verbatim. The first slot's
+    // pass pulls this simdgroup's two weight rows from DRAM; the rest find
+    // them in cache — one DRAM read per distinct expert, no register arrays.
+    for (uint m = 0u; m < cnt; ++m) {
+        const uint slot = slots[m];
+        device const float4* Xs4 =
+            (device const float4*)(X + (ulong)slot * XSTRIDE);
+        float acc0 = 0.0f;
+        float acc1 = 0.0f;
+        for (uint g = lane; g < groups; g += 32u) {
+            const uint xb = g * 8u;
+            const float4 xa = Xs4[xb];
+            const float4 xbv = Xs4[xb + 1u];
+            const float4 xc = Xs4[xb + 2u];
+            const float4 xd = Xs4[xb + 3u];
+            const float4 xe = Xs4[xb + 4u];
+            const float4 xf = Xs4[xb + 5u];
+            const float4 xg = Xs4[xb + 6u];
+            const float4 xh = Xs4[xb + 7u];
+            {
+                const float scale = mxg_e8m0(row_s0[g]);
+                const uint4 w = row_p0[g];
+                float part = mxg_dot8(w.x, xa, xbv)
+                           + mxg_dot8(w.y, xc, xd)
+                           + mxg_dot8(w.z, xe, xf)
+                           + mxg_dot8(w.w, xg, xh);
+                acc0 += scale * part;
+            }
+            if (has1) {
+                const float scale = mxg_e8m0(row_s1[g]);
+                const uint4 w = row_p1[g];
+                float part = mxg_dot8(w.x, xa, xbv)
+                           + mxg_dot8(w.y, xc, xd)
+                           + mxg_dot8(w.z, xe, xf)
+                           + mxg_dot8(w.w, xg, xh);
+                acc1 += scale * part;
+            }
+        }
+        acc0 = simd_sum(acc0);
+        acc1 = simd_sum(acc1);
+        if (lane == 0u) {
+            out[slot * N + row0] = acc0;
+            if (has1) { out[slot * N + row0 + 1u] = acc1; }
+        }
+    }
+}
+"#;
+
+/// A2x2s — VERIFY-N rung 5b: the x2 arm verbatim, with the grid
+/// transposed to `(slot, row tile)` and slots taken in `order` — the
+/// block's slots sorted by expert. Threadgroups sharing an expert's tile
+/// are then neighbours in dispatch order and read it from cache; every
+/// slot still gets its own threadgroup (full occupancy) and the x2 arm's
+/// exact arithmetic, so it is bit-identical per (row, slot).
+pub(super) const KERNEL_A2X2S: &str = r#"
+kernel void mxfp4g_split_lut16_vec_x2_sorted(
+    device const uchar*  Wp        [[buffer(0)]],
+    device const uint*   offsets   [[buffer(1)]],
+    device const uchar*  Ws        [[buffer(2)]],
+    device const uint*   s_offsets [[buffer(3)]],
+    device const float*  X         [[buffer(4)]],
+    device float*        out       [[buffer(5)]],
+    constant uint&       N         [[buffer(6)]],
+    constant uint&       K         [[buffer(7)]],
+    constant uint&       XSTRIDE   [[buffer(8)]],
+    constant uint&       ROWBASE   [[buffer(9)]],
+    constant uint&       ROWSTRIDE [[buffer(10)]],
+    device const uint*   order     [[buffer(11)]],
+    uint2 tg_id [[threadgroup_position_in_grid]],
+    uint  lane  [[thread_index_in_simdgroup]],
+    uint  sg_id [[simdgroup_index_in_threadgroup]])
+{
+    const uint slot = order[tg_id.x];
+    const uint row0 = (tg_id.y * MXG_ROWS_PER_TG + sg_id) * 2u;
+    if (row0 >= N) { return; }
+    const bool has1 = row0 + 1u < N;
+
+    const uint groups = K / MXG_GROUP_ELEMS;
+    const uint frow0 = ROWBASE + row0 * ROWSTRIDE;
+    const uint frow1 = frow0 + ROWSTRIDE;
+    const ulong pbase = (ulong)offsets[slot];
+    const ulong sbase = (ulong)s_offsets[slot];
+    device const uint4* row_p0 =
+        (device const uint4*)(Wp + pbase + (ulong)frow0 * groups * MXG_GROUP_BYTES);
+    device const uchar* row_s0 = Ws + sbase + (ulong)frow0 * groups;
+    device const uint4* row_p1 =
+        (device const uint4*)(Wp + pbase + (ulong)frow1 * groups * MXG_GROUP_BYTES);
+    device const uchar* row_s1 = Ws + sbase + (ulong)frow1 * groups;
+    device const float4* Xs4 =
+        (device const float4*)(X + (ulong)slot * XSTRIDE);
+
+    float acc0 = 0.0f;
+    float acc1 = 0.0f;
+    for (uint g = lane; g < groups; g += 32u) {
+        const uint xb = g * 8u;
+        const float4 xa = Xs4[xb];
+        const float4 xbv = Xs4[xb + 1u];
+        const float4 xc = Xs4[xb + 2u];
+        const float4 xd = Xs4[xb + 3u];
+        const float4 xe = Xs4[xb + 4u];
+        const float4 xf = Xs4[xb + 5u];
+        const float4 xg = Xs4[xb + 6u];
+        const float4 xh = Xs4[xb + 7u];
+        {
+            const float scale = mxg_e8m0(row_s0[g]);
+            const uint4 w = row_p0[g];
+            float part = mxg_dot8(w.x, xa, xbv)
+                       + mxg_dot8(w.y, xc, xd)
+                       + mxg_dot8(w.z, xe, xf)
+                       + mxg_dot8(w.w, xg, xh);
+            acc0 += scale * part;
+        }
+        if (has1) {
+            const float scale = mxg_e8m0(row_s1[g]);
+            const uint4 w = row_p1[g];
+            float part = mxg_dot8(w.x, xa, xbv)
+                       + mxg_dot8(w.y, xc, xd)
+                       + mxg_dot8(w.z, xe, xf)
+                       + mxg_dot8(w.w, xg, xh);
+            acc1 += scale * part;
+        }
+    }
+    acc0 = simd_sum(acc0);
+    acc1 = simd_sum(acc1);
+    if (lane == 0u) {
+        out[slot * N + row0] = acc0;
+        if (has1) { out[slot * N + row0 + 1u] = acc1; }
+    }
+}
+"#;

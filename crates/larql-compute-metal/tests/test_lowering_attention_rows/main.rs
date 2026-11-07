@@ -32,6 +32,9 @@
 //! | block straddling the 512 split-K tier | split-K refused (chunk counts differ), seqpar rows |
 //! | block past the short-kernel span | per-row loop on the long kernel |
 //! | gpt-oss geometry straddling its 512 slice tier | per-row loop (slice counts differ) |
+//! | gpt-oss attention (biases, sinks, YaRN), short span, windowed | one seqpar rows dispatch |
+//! | gpt-oss sliding layer at the 512 tier (window 128) | one seqpar rows dispatch (spans clamp to one tier) |
+//! | gpt-oss full layer at the 512 tier | per-row loop |
 
 #![cfg(target_os = "macos")]
 
@@ -68,6 +71,10 @@ const SINK_AMPLITUDE: f32 = 2.0;
 /// bound. Measured worst across these cases ~1e-6 (M3 Max), so a
 /// reassociated attention merge fits with an order of magnitude spare.
 const PARITY: f64 = 1e-5;
+/// A YaRN layer's cos/sin amplitude — any value != 1 exercises it.
+const YARN_AMPLITUDE: f32 = 1.3466;
+/// gpt-oss's sliding-attention window.
+const GPT_OSS_WINDOW: usize = 128;
 /// A block that let row 0 see rows 1.. must miss parity by this factor.
 const CAUSAL_CONTROL_OVER_PARITY: f64 = 100.0;
 
@@ -133,6 +140,16 @@ enum Variant {
     /// Parameter-free Q/K norm, query scale, NoPE, no post norm, no bias
     /// — the per-position path folds the residual into the o-proj.
     Plain,
+    /// gpt-oss's attention: biases on all four projections and sinks, YaRN
+    /// rope (cos/sin amplitude != 1), and NO QK norm, post norm, softcap or
+    /// residual scale.
+    GptOss,
+}
+
+impl Variant {
+    fn biased(self) -> bool {
+        matches!(self, Variant::Full | Variant::GptOss)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -283,15 +300,18 @@ fn shape(c: &Case, position_index: usize) -> AttnShape {
         norm_eps: EPS,
         norm_weight_offset: OFFSET,
         qk_norm_eps: QK_EPS,
-        parameter_free_q: !full,
-        parameter_free_k: !full,
+        parameter_free_q: c.variant == Variant::Plain,
+        parameter_free_k: c.variant == Variant::Plain,
         parameter_free_v: full,
-        query_scale: (!full).then_some(QUERY_SCALE),
+        query_scale: (c.variant == Variant::Plain).then_some(QUERY_SCALE),
         score_scale: 1.0 / (c.geom.head_dim as f32).sqrt(),
-        position: if full {
-            LoweredPosition::Rope { theta: THETA }
-        } else {
-            LoweredPosition::None
+        position: match c.variant {
+            Variant::Full => LoweredPosition::Rope { theta: THETA },
+            Variant::GptOss => LoweredPosition::Scaled {
+                theta: THETA,
+                amplitude: YARN_AMPLITUDE,
+            },
+            Variant::Plain => LoweredPosition::None,
         },
         window: c.window,
         softcap: full.then_some(SOFTCAP),
@@ -357,11 +377,11 @@ fn run_case(gpu: &MetalBackend, c: &Case) -> Outcome {
         v: lowered(&v, &op.v),
         o: lowered(&o, &op.o),
         gate: None,
-        q_bias: full.then_some(&q_bias),
-        k_bias: full.then_some(&k_bias),
-        v_bias: full.then_some(&v_bias),
-        o_bias: full.then_some(&o_bias),
-        sinks: full.then_some(&sinks),
+        q_bias: c.variant.biased().then_some(&q_bias),
+        k_bias: c.variant.biased().then_some(&k_bias),
+        v_bias: c.variant.biased().then_some(&v_bias),
+        o_bias: c.variant.biased().then_some(&o_bias),
+        sinks: c.variant.biased().then_some(&sinks),
         qk_norm: full.then_some(QkNormWeights {
             q: &q_norm,
             k: &k_norm,
@@ -590,3 +610,4 @@ const ONE_OP: u64 = 1;
 const PER_ROW: u64 = ROWS as u64;
 
 mod lowering_attention_rows_basics;
+mod lowering_attention_rows_gpt_oss;

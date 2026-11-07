@@ -126,6 +126,8 @@ pub use kernels::{AttentionKernels, FfnKernels, KernelHandle, NormKernels, Quant
 #[cfg(target_os = "macos")]
 pub use moe_dispatch::MoeScratch;
 #[cfg(target_os = "macos")]
+pub use moe_gpu_route::MoeBlockScratch;
+#[cfg(target_os = "macos")]
 pub use options::{BackendOptions, DecodeFlags};
 
 /// Re-export of the `metal-rs` `Buffer` type so downstream crates

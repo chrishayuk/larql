@@ -300,6 +300,14 @@ pub const SETTING_FATES: &[(&str, SettingFate)] = &[
         "LARQL_LOWERED_GATHER",
         SettingFate::Excluded("the lowered Metal path, which sharding refuses (CPU only)"),
     ),
+    (
+        "LARQL_ROUTED_BLOCK",
+        SettingFate::Excluded(
+            "the lowered Metal VERIFY-N path, which sharding refuses (CPU only); its two \
+             arms are bit-identical (compute-metal routed_stack_block_with_the_grouped_\
+             expert_pass_matches_the_per_row_block)",
+        ),
+    ),
     // Operator ablations: they CHANGE the model's output by design, and
     // exist only on the lowered Metal path. Excluded because that path
     // cannot be sharded; a device shard would have to bring them into
