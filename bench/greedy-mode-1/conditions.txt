@@ -1,0 +1,43 @@
+17:04:21 === GREEDY-MODE-1 === binary /Users/christopherhay/chris-source/larql/.claude/worktrees/vindex-cov-1/results/greedy-mode-1/larql-bin 163c1fe03f3ce2a9 commit 71b1a2d3 | load 49.14 | 'AC Power' | cpu-limit 
+17:34:46 warm start | load 2.70 | 'AC Power' | cpu-limit 
+17:35:47 r1_json_96 start | load 2.32 | 'AC Power' | cpu-limit 
+17:36:03 r1_json_128 start | load 2.10 | 'AC Power' | cpu-limit 
+17:36:19 r1_json_160 start | load 2.10 | 'AC Power' | cpu-limit 
+17:36:36 r1_json_192 start | load 1.70 | 'AC Power' | cpu-limit 
+17:36:52 r1_json_224 start | load 1.70 | 'AC Power' | cpu-limit 
+17:37:14 r1_json_256 start | load 1.43 | 'AC Power' | cpu-limit 
+17:37:32 r1_prose_84 start | load 1.31 | 'AC Power' | cpu-limit 
+17:38:19 r1_prose_256 start | load 1.75 | 'AC Power' | cpu-limit 
+17:41:03 r1_json_256_util start | load 2.86 | 'AC Power' | cpu-limit 
+17:41:22 r2_json_160 start | load 2.54 | 'AC Power' | cpu-limit 
+17:41:38 r2_json_192 start | load 2.78 | 'AC Power' | cpu-limit 
+17:42:40 r2_json_224 start | load 3.65 | 'AC Power' | cpu-limit 
+17:42:56 r2_json_256 start | load 3.26 | 'AC Power' | cpu-limit 
+17:43:05 r2_json_256 CONTAMINATED by [10287 cargo 0.0% (compiler)] | load 3.15 | 'AC Power' | cpu-limit 
+17:43:15 r2_json_256 start | load 2.67 | 'AC Power' | cpu-limit 
+17:43:33 r2_prose_84 start | load 3.21 | 'AC Power' | cpu-limit 
+17:43:39 r2_prose_84 CONTAMINATED by [11033 git 75.1% sustained] | load 3.27 | 'AC Power' | cpu-limit 
+17:43:50 r2_prose_84 start | load 2.99 | 'AC Power' | cpu-limit 
+17:44:26 r2_prose_256 start | load 2.38 | 'AC Power' | cpu-limit 
+17:45:35 r2_json_256_util start | load 3.33 | 'AC Power' | cpu-limit 
+17:45:51 r2_json_96 start | load 3.10 | 'AC Power' | cpu-limit 
+17:46:08 r2_json_128 start | load 2.95 | 'AC Power' | cpu-limit 
+17:46:24 r3_json_224 start | load 2.91 | 'AC Power' | cpu-limit 
+17:46:40 r3_json_256 start | load 2.69 | 'AC Power' | cpu-limit 
+17:46:57 r3_prose_84 start | load 2.61 | 'AC Power' | cpu-limit 
+17:47:13 r3_prose_256 start | load 2.43 | 'AC Power' | cpu-limit 
+17:47:35 r3_json_256_util start | load 2.30 | 'AC Power' | cpu-limit 
+17:47:51 r3_json_96 start | load 2.22 | 'AC Power' | cpu-limit 
+17:48:07 r3_json_128 start | load 2.81 | 'AC Power' | cpu-limit 
+17:48:24 r3_json_160 start | load 2.49 | 'AC Power' | cpu-limit 
+17:48:40 r3_json_192 start | load 2.32 | 'AC Power' | cpu-limit 
+17:49:01 r4_prose_84 start | load 2.07 | 'AC Power' | cpu-limit 
+17:49:18 r4_prose_256 start | load 2.22 | 'AC Power' | cpu-limit 
+17:49:51 r4_json_256_util start | load 2.46 | 'AC Power' | cpu-limit 
+17:50:08 r4_json_96 start | load 2.32 | 'AC Power' | cpu-limit 
+17:50:24 r4_json_128 start | load 2.54 | 'AC Power' | cpu-limit 
+17:50:40 r4_json_160 start | load 2.27 | 'AC Power' | cpu-limit 
+17:50:57 r4_json_192 start | load 2.33 | 'AC Power' | cpu-limit 
+17:51:13 r4_json_224 start | load 2.15 | 'AC Power' | cpu-limit 
+17:51:30 r4_json_256 start | load 2.05 | 'AC Power' | cpu-limit 
+17:51:36 done | load 2.04 | 'AC Power' | cpu-limit 
