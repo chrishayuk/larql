@@ -88,28 +88,60 @@ fn forward_args(
     Ok(cmd_args)
 }
 
+/// The server executable's name, without the platform suffix.
+pub(crate) const SERVER_BINARY: &str = "larql-server";
+
+/// The server executable's file name on this platform (`larql-server.exe`
+/// on Windows).
+pub(crate) fn server_file_name() -> String {
+    server_file_name_with(std::env::consts::EXE_SUFFIX)
+}
+
+/// The server executable's file name for a platform's executable suffix.
+fn server_file_name_with(exe_suffix: &str) -> String {
+    format!("{SERVER_BINARY}{exe_suffix}")
+}
+
+/// The `larql-server` installed beside the running `larql`, if any. The
+/// release archives ship the two together, so this one is preferred over
+/// whatever `PATH` holds. The one lookup `serve` and `doctor` share.
+pub(crate) fn sibling_server(exe: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    sibling_server_named(exe, &server_file_name())
+}
+
+/// Testable core of [`sibling_server`], with the file name injected so
+/// the Windows `.exe` rule is proven on every host.
+fn sibling_server_named(
+    exe: Option<&std::path::Path>,
+    file_name: &str,
+) -> Option<std::path::PathBuf> {
+    exe.and_then(|e| e.parent())
+        .map(|d| d.join(file_name))
+        .filter(|p| p.exists())
+}
+
+/// What `larql serve` executes: the sibling server, else the bare name
+/// for the OS to find on `PATH`.
+pub(crate) fn server_program(exe: Option<&std::path::Path>) -> String {
+    sibling_server(exe)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| SERVER_BINARY.into())
+}
+
 pub(crate) fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let cmd_args = serve_command_args(&args)?;
     let exe = std::env::current_exe().ok();
-    let server_bin = exe
-        .as_ref()
-        .and_then(|e| e.parent())
-        .map(|d| d.join("larql-server"))
-        .filter(|p| p.exists());
-
-    let bin = server_bin
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "larql-server".into());
+    let bin = server_program(exe.as_deref());
 
     let status = std::process::Command::new(&bin).args(&cmd_args).status();
 
     match status {
         Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(format!("larql-server exited with: {s}").into()),
+        Ok(s) => Err(format!("{SERVER_BINARY} exited with: {s}").into()),
         Err(e) => {
-            eprintln!("Failed to exec larql-server: {e}");
+            eprintln!("Failed to exec {SERVER_BINARY}: {e}");
             eprintln!(
-                "Make sure larql-server is installed (cargo install --path crates/larql-server)"
+                "Make sure {SERVER_BINARY} is installed (cargo install --path crates/larql-server)"
             );
             std::process::exit(1);
         }

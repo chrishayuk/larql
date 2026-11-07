@@ -126,3 +126,53 @@ fn a_path_gets_no_alias() {
     assert_eq!(out, [path]);
     assert!(!has_explicit_alias(&strings(&["--model-aliasx"])));
 }
+
+// ── Server executable lookup ────────────────────────────────────────
+
+#[test]
+fn the_server_beside_larql_is_preferred() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("larql");
+    let server = dir.path().join(server_file_name());
+    std::fs::write(&server, b"").unwrap();
+    assert_eq!(sibling_server(Some(&exe)), Some(server.clone()));
+    assert_eq!(server_program(Some(&exe)), server.to_string_lossy());
+}
+
+#[test]
+fn without_a_sibling_the_os_finds_the_server_on_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("larql");
+    assert_eq!(sibling_server(Some(&exe)), None);
+    assert_eq!(sibling_server(None), None);
+    assert_eq!(server_program(Some(&exe)), SERVER_BINARY);
+}
+
+/// The Windows rule, proven on any host: the sibling is `larql-server.exe`,
+/// and a suffix-less file beside `larql.exe` is not it.
+#[test]
+fn a_windows_sibling_is_found_by_its_exe_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("larql.exe");
+    std::fs::write(dir.path().join("larql-server"), b"").unwrap();
+    assert_eq!(
+        sibling_server_named(Some(&exe), &server_file_name_with(".exe")),
+        None
+    );
+    let server = dir.path().join("larql-server.exe");
+    std::fs::write(&server, b"").unwrap();
+    assert_eq!(
+        sibling_server_named(Some(&exe), &server_file_name_with(".exe")),
+        Some(server)
+    );
+    assert_eq!(server_file_name_with(".exe"), "larql-server.exe");
+    assert_eq!(server_file_name_with(""), "larql-server");
+}
+
+#[test]
+fn the_server_file_name_carries_the_platform_suffix() {
+    assert_eq!(
+        server_file_name(),
+        format!("larql-server{}", std::env::consts::EXE_SUFFIX)
+    );
+}
