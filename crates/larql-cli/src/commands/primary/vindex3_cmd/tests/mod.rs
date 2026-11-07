@@ -13,6 +13,7 @@ mod lowerings;
 mod measure;
 mod model_names;
 mod observe;
+mod prefill_dump;
 mod realizations;
 mod residency_admission;
 mod residency_faults;
