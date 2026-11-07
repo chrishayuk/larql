@@ -147,7 +147,7 @@ impl Session {
         let tokenizer = tokenizer.as_ref().ok_or_else(|| {
             LqlError::Execution("TRACE needs a tokenizer — this container carries none".into())
         })?;
-        let prompt_ids = encode_v3_prompt(tokenizer, prompt, *bos_token)?;
+        let prompt_ids = encode_raw_prompt(tokenizer, prompt, *bos_token)?;
 
         // TRACE observes the same effective program INFER runs — a
         // compose edit must not fork the two.

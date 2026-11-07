@@ -25,6 +25,7 @@ mod bitnet_dir;
 mod fixtures;
 mod model_dir;
 mod q4k;
+mod raw_prompt;
 mod vindex;
 
 #[allow(unused_imports)]
@@ -35,6 +36,8 @@ pub use fixtures::*;
 pub use model_dir::*;
 #[allow(unused_imports)]
 pub use q4k::*;
+#[allow(unused_imports)]
+pub use raw_prompt::*;
 #[allow(unused_imports)]
 pub use vindex::*;
 

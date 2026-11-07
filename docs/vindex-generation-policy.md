@@ -114,6 +114,29 @@ both say id 2. Gated by
 A container that declares nothing — including any predating the
 capability snapshot — encodes exactly as before.
 
+**One V3 raw-prompt encoder.** Every VINDEX3 surface that sends a raw
+(non-templated) prompt — `larql run --raw` and an untemplated chat turn,
+`larql vindex3 observe --prompt`, the VINDEX3 arm of `larql bench`, the
+server's plain `/v1/completions`, and LQL (`INFER`, `TRACE`, the compose
+and balance captures) — calls `larql_inference::vindex3::encode_raw_prompt`
+with the BOS `larql_inference::vindex3::declared_prompt_bos` resolves once
+at bind. The rule:
+
+1. the tokenizer's own encoding, post-processor included;
+2. `tokenizer_config.json` declaring `add_bos_token: false` → nothing more
+   (Granite, Qwen3: both declare a `bos_token_id` they never add);
+3. otherwise a declared BOS id (`generation_config.json`, then
+   `tokenizer_config.json`) is prepended unless the encoding already starts
+   with it (`maybe_prepend_bos`) — Gemma 4, whose tokenizer omits it.
+
+A templated prompt carries its own special tokens and is encoded without
+the post-processor; it never goes through this encoder, so it is never
+double-BOSed. Before the shared encoder the surfaces disagreed in both
+directions: LQL prepended Granite's `<|end_of_text|>` (" is" instead of
+" Paris"), and run/observe/server fed Gemma 4 no BOS ("1111…"). Every
+surface is gated against one table of BOS shapes
+(`larql_inference::test_utils::BosShape`).
+
 ## Consumer matrix (M3)
 
 **Acceptance criterion: no VINDEX3 artifact can enter the system and

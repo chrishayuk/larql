@@ -121,7 +121,7 @@ mod tests {
 
     /// **The BOS blind spot.** `encode_vindex_prompt` (V2) consults the
     /// architecture and prepends BOS where the tokenizer's
-    /// post-processor does not; `encode_v3_prompt` does a bare encode.
+    /// post-processor does not; the V3 encoder used to do a bare encode.
     /// On a BOS-requiring model whose tokenizer.json carries no BOS
     /// post-processor — Gemma 4 is exactly that — the two surfaces feed
     /// the model DIFFERENT token sequences for the same user prompt.
@@ -149,7 +149,7 @@ mod tests {
 
         let v2 = encode_vindex_prompt(&gemma4_config(), &tokenizer, "hello").expect("v2 encode");
         let v3_without_the_fact =
-            crate::executor::vindex3::encode_v3_prompt(&tokenizer, "hello", None)
+            crate::executor::vindex3::encode_raw_prompt(&tokenizer, "hello", None)
                 .expect("v3 encode");
 
         assert_ne!(
@@ -179,8 +179,8 @@ mod tests {
         .unwrap();
 
         let v2 = encode_vindex_prompt(&config, &tokenizer, "hello").expect("v2 encode");
-        let bos = crate::executor::vindex3::declared_bos_token(container.path());
-        let v3 = crate::executor::vindex3::encode_v3_prompt(&tokenizer, "hello", bos)
+        let bos = larql_inference::vindex3::declared_prompt_bos(container.path());
+        let v3 = crate::executor::vindex3::encode_raw_prompt(&tokenizer, "hello", bos)
             .expect("v3 encode");
 
         assert_eq!(

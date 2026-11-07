@@ -44,7 +44,7 @@ pub fn encode_v3_conversation(
 ) -> Result<Vec<u32>, ServerError> {
     let rendered = render_v3_conversation(model, messages)?;
     let ids = rendered
-        .encode(&model.tokenizer)
+        .encode(&model.tokenizer, model.prompt_bos)
         .map_err(ServerError::Internal)?;
     if ids.is_empty() {
         return Err(ServerError::BadRequest(

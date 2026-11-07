@@ -27,7 +27,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::vindex3::{
-    compose_overrides, encode_v3_prompt, top_k_probs, v3_continuation, V3Runtime,
+    compose_overrides, encode_raw_prompt, top_k_probs, v3_continuation, V3Runtime,
 };
 use crate::error::LqlError;
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
@@ -140,7 +140,7 @@ impl<'a> StepContext<'a> {
     /// The top `k` next-token `(id, probability)` pairs for `prompt` through the composed
     /// program as it stands at this step. A forward pass; writes nothing.
     pub fn top_k(&self, prompt: &str, k: usize) -> Result<Vec<(u32, f32)>, LqlError> {
-        let ids = encode_v3_prompt(self.tokenizer, prompt, self.bos)?;
+        let ids = encode_raw_prompt(self.tokenizer, prompt, self.bos)?;
         let continuation = v3_continuation(self.runtime)?;
         let output = match compose_overrides(self.runtime, self.overlay)? {
             Some(overrides) => self.runtime.execute_streaming_overlaid(

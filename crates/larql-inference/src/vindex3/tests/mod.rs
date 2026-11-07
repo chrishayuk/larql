@@ -18,6 +18,7 @@
 
 mod inputs;
 mod opener;
+mod prompt;
 mod record;
 
 use std::path::Path;

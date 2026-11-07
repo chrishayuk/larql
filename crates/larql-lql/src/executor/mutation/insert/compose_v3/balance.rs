@@ -28,7 +28,7 @@ use crate::executor::tuning::{
     MAX_PRIORS_CHECKED, MAX_STALE, PRIOR_FLOOR, PROB_CEILING, PROB_FLOOR, UP_SCALE,
 };
 use crate::executor::vindex3::{
-    compose_overrides, encode_v3_prompt, top_k_probs, v3_continuation, V3Runtime,
+    compose_overrides, encode_raw_prompt, top_k_probs, v3_continuation, V3Runtime,
 };
 use crate::executor::{Backend, Session};
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
@@ -126,7 +126,7 @@ impl Session {
                     unreachable!("caller matched the backend");
                 };
                 let tokenizer = tokenizer.as_ref().expect("compose install had a tokenizer");
-                let prompt_ids = encode_v3_prompt(tokenizer, prompt.as_str(), bos)?;
+                let prompt_ids = encode_raw_prompt(tokenizer, prompt.as_str(), bos)?;
                 probe_target_prob(runtime, tokenizer, overlay, &prompt_ids, target)?
             };
 
@@ -314,7 +314,7 @@ impl Session {
                 let mut regressed = false;
                 for fact in priors {
                     let fact_ids =
-                        encode_v3_prompt(tokenizer, fact.canonical_prompt.as_str(), bos)?;
+                        encode_raw_prompt(tokenizer, fact.canonical_prompt.as_str(), bos)?;
                     let p =
                         probe_target_prob(runtime, tokenizer, overlay, &fact_ids, &fact.target)?;
                     if p < PRIOR_FLOOR {

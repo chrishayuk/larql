@@ -118,7 +118,7 @@ fn run_v3_completions_loop(
     let mut prompt_tokens_sum = 0;
     let mut completion_tokens_sum = 0;
     for (index, prompt) in prompts.iter().enumerate() {
-        let prompt_ids = encode_prompt(model, prompt)?;
+        let prompt_ids = model.encode_raw_prompt(prompt)?;
         let (sampling, eos) =
             build_sampling_eos_from(model.eos.clone(), sampling_params, stop_strings);
         let generation = generate_v3(model, &prompt_ids, max_tokens, sampling, &eos, |_, _| {})?;
@@ -170,7 +170,7 @@ fn stream_v3_completions(
 
     tokio::task::spawn_blocking(move || {
         let _gen_guard = runtime.clone().enter_generation();
-        let prompt_ids = match encode_prompt(&model, &prompt) {
+        let prompt_ids = match model.encode_raw_prompt(&prompt) {
             Ok(ids) => ids,
             Err(e) => {
                 let _ = tx.blocking_send(error_chunk(&e.to_string()));
@@ -237,20 +237,6 @@ fn stream_v3_completions(
         .map(Ok::<_, Infallible>);
 
     Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
-fn encode_prompt(model: &V3Model, prompt: &str) -> Result<Vec<u32>, ServerError> {
-    let encoding = model
-        .tokenizer
-        .encode(prompt, true)
-        .map_err(|e| ServerError::BadRequest(format!("tokenize: {e}")))?;
-    let ids: Vec<u32> = encoding.get_ids().to_vec();
-    if ids.is_empty() {
-        return Err(ServerError::BadRequest(
-            "prompt tokenises to empty".to_string(),
-        ));
-    }
-    Ok(ids)
 }
 
 // `join_generation` (formerly here) moved to `super::util` so the

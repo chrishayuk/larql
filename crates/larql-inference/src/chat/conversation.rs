@@ -106,12 +106,24 @@ impl RenderedConversation {
         !self.templated()
     }
 
-    /// The prompt's token ids under [`Self::adds_special_tokens`].
-    pub fn encode(&self, tokenizer: &Tokenizer) -> Result<Vec<u32>, String> {
-        tokenizer
-            .encode(self.prompt.as_str(), self.adds_special_tokens())
-            .map(|encoding| encoding.get_ids().to_vec())
-            .map_err(|e| format!("encode prompt: {e}"))
+    /// The prompt's token ids. A rendered template carries its own special
+    /// tokens and is encoded without the post-processor; a raw prompt goes
+    /// through the one V3 raw-prompt encoder
+    /// ([`crate::vindex3::encode_raw_prompt`]) with `raw_bos`, the BOS the
+    /// container declares ([`crate::vindex3::declared_prompt_bos`]). An
+    /// empty encoding is returned empty; callers judge it.
+    pub fn encode(&self, tokenizer: &Tokenizer, raw_bos: Option<u32>) -> Result<Vec<u32>, String> {
+        if self.templated() {
+            return tokenizer
+                .encode(self.prompt.as_str(), false)
+                .map(|encoding| encoding.get_ids().to_vec())
+                .map_err(|e| format!("encode prompt: {e}"));
+        }
+        match crate::vindex3::encode_raw_prompt(tokenizer, self.prompt.as_str(), raw_bos) {
+            Ok(ids) => Ok(ids),
+            Err(crate::vindex3::PromptEncodeError::Empty) => Ok(Vec::new()),
+            Err(e) => Err(format!("encode prompt: {e}")),
+        }
     }
 }
 

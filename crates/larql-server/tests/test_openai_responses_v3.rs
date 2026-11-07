@@ -105,7 +105,10 @@ fn direct_arm_text(container: &Path, max_tokens: usize) -> String {
         &[larql_inference::chat::ChatTurn::user(USER_INPUT)],
     )
     .unwrap()
-    .encode(&tokenizer)
+    .encode(
+        &tokenizer,
+        larql_inference::vindex3::declared_prompt_bos(container),
+    )
     .unwrap();
     assert!(!prompt_ids.is_empty(), "rendered prompt must tokenise");
 

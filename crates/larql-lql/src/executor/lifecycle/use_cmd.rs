@@ -189,7 +189,7 @@ impl Session {
                 }
             }
         }
-        let bos_token = crate::executor::vindex3::declared_bos_token(&path);
+        let bos_token = larql_inference::vindex3::declared_prompt_bos(&path);
         self.backend = Backend::Vindex3 {
             path,
             runtime,

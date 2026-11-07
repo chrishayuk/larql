@@ -19,22 +19,27 @@
 //! **Encoding.** A templated prompt already carries its special tokens,
 //! so it is encoded without the tokenizer's post-processor — HF's
 //! `apply_chat_template(tokenize=True)` contract, and the one
-//! `larql bench` uses for VINDEX3. A raw prompt keeps the post-processor,
-//! exactly as before templates were applied here. The rule is
+//! `larql bench` uses for VINDEX3. The rule is
 //! [`larql_inference::chat::RenderedConversation::encode`], which the
 //! server's VINDEX3 chat routes call too, so `larql run` and `larql serve`
-//! give the same conversation the same ids.
+//! give the same conversation the same ids: a rendered template carries its
+//! own special tokens, and a raw prompt goes through the one raw-prompt
+//! encoder every V3 surface shares (post-processor, then the declared BOS).
 
 use std::io::Write;
 use std::path::Path;
 
 use larql_inference::chat::{render_conversation, ChatTurn, PromptShape, RenderedConversation};
+use larql_inference::vindex3::declared_prompt_bos;
 use larql_vindex::tokenizers::Tokenizer;
 
 use super::BoxErr;
 
 /// Why a prompt is sent without a template although the run did not ask.
 const NO_TEMPLATE_NOTE: &str = "carries no chat template; sending prompts raw (plain completion)";
+
+/// The refusal for a prompt that encodes to nothing.
+const EMPTY_PROMPT: &str = "prompt encodes to no tokens — nothing to condition on";
 
 /// The token ids for the next generation, and whether a template made them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +61,8 @@ pub(super) struct Conversation<'a> {
     pending: Option<ChatTurn>,
     /// The no-template note has been written once already.
     noted_raw: bool,
+    /// The BOS a raw prompt starts with, as the container declares it.
+    bos: Option<u32>,
 }
 
 impl<'a> Conversation<'a> {
@@ -67,6 +74,7 @@ impl<'a> Conversation<'a> {
             history: Vec::new(),
             pending: None,
             noted_raw: false,
+            bos: declared_prompt_bos(container),
         }
     }
 
@@ -96,11 +104,11 @@ impl<'a> Conversation<'a> {
             rendered
         };
         // The encoding rule is the shared one: a rendered template carries
-        // its own special tokens; only a raw prompt gets the post-processor.
+        // its own special tokens; a raw prompt gets the shared raw encoder.
         let templated = rendered.templated();
-        let ids = rendered.encode(tokenizer)?;
+        let ids = rendered.encode(tokenizer, self.bos)?;
         if ids.is_empty() {
-            return Err("prompt encodes to no tokens — nothing to condition on".into());
+            return Err(EMPTY_PROMPT.into());
         }
         self.pending = templated.then_some(turn);
         Ok(PreparedPrompt { ids, templated })
