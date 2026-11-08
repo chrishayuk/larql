@@ -4,6 +4,7 @@ use self::attention_residual::BoundaryPhase;
 use super::super::LayerPlan;
 use crate::error::VindexError;
 use backend::PlanBackend;
+use dense_rows::consuming_projector;
 use hyper_connection::{Bundle, Mutation};
 use kv::KvState;
 use kv_view::KvView;
@@ -199,14 +200,16 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             // Resolved BEFORE any arithmetic. A provider that cannot hold
             // these buffers must not see a half-updated layer — the same
             // refuse-before-commit contract QW-1 established for the plan.
+            let weights = ops.weights()?;
+            let projector = consuming_projector(backend.dense_projector(), &weights, layer.layer)?;
             let state = provider.recurrent_state(layer_index)?;
             gated_delta::layer_forward_with(
                 &ops.op,
-                &ops.weights()?,
+                &weights,
                 &inputs,
                 state,
                 gated_delta::Mutation::None,
-                backend.dense_projector(),
+                projector,
             )
             .output
         }
@@ -218,15 +221,10 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                     layer.layer
                 )));
             };
+            let weights = ops.weights()?;
+            let projector = consuming_projector(backend.dense_projector(), &weights, layer.layer)?;
             let state = provider.recurrent_state(layer_index)?;
-            mamba2::layer_forward_with(
-                &ops.op,
-                &ops.weights()?,
-                &inputs,
-                state,
-                backend.dense_projector(),
-            )
-            .output
+            mamba2::layer_forward_with(&ops.op, &weights, &inputs, state, projector).output
         }
         PreparedAttention::Kda(ops) => {
             let Some((provider, layer_index)) = kv else {
@@ -236,6 +234,8 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                     layer.layer
                 )));
             };
+            let weights = ops.weights()?;
+            let projector = consuming_projector(backend.dense_projector(), &weights, layer.layer)?;
             let state = provider.recurrent_state(layer_index)?;
             // The batch is the sequence, flat: KDA's reference consumes
             // positions one after another because the recurrence IS
@@ -244,10 +244,10 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             let flat: Vec<f32> = inputs.concat();
             let hidden_width = inputs.first().map_or(0, Vec::len);
             let planes = kda::layer_forward_with(
-                &kda::BackendKdaProjections(backend.dense_projector()),
+                &kda::BackendKdaProjections(projector),
                 &flat,
                 hidden_width,
-                ops.weights()?,
+                weights,
                 ops.op.geometry(),
                 state,
                 kda::Mutation::None,
@@ -268,7 +268,7 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             };
             let weights = ops.weights()?;
             let geometry = ops.op.geometry();
-            let projector = backend.dense_projector();
+            let projector = consuming_projector(backend.dense_projector(), &weights, layer.layer)?;
             let latent = provider.latent_state(layer_index)?;
             // Position by position, appending each one's latent before
             // reading the prefix back — the same call the decode path
@@ -304,6 +304,8 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             // executor is deliberately literal — speed is a later
             // rung's problem), the conv history is advanced by the
             // forward, and the batch's new rows are appended after.
+            let weights = ops.weights()?;
+            let projector = consuming_projector(backend.dense_projector(), &weights, layer.layer)?;
             let base = provider.position();
             provider.prepare_layer(layer_index);
             let held = provider.rows(layer_index);
@@ -313,13 +315,7 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             let past = KvView::over_rows(&past_keys, &past_values);
             let state = provider.recurrent_state(layer_index)?;
             let planes = conv_qkv::layer_forward_with(
-                &ops.op,
-                &ops.weights()?,
-                &inputs,
-                state,
-                past,
-                base,
-                backend.dense_projector(),
+                &ops.op, &weights, &inputs, state, past, base, projector,
             );
             for (key, value) in planes.keys.into_iter().zip(planes.values) {
                 provider.append(layer_index, key, value);

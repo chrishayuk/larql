@@ -481,6 +481,16 @@ pub struct LayerPlanes {
 /// that one asks "compute these rows", and the executor sits between
 /// them deciding how the rows were cut.
 pub trait DenseProjections: Sync {
+    /// Whether this projector has a kernel for `weight`'s representation.
+    ///
+    /// Asked by [`super::dense_rows::consuming_projector`] for every dense operand of a layer BEFORE the
+    /// layer's arithmetic, so a backend that pinned a representation its projector cannot run is refused by
+    /// name instead of panicking mid-layer. The default is the reference's own answer, f32 only: a projector
+    /// that says nothing claims nothing.
+    fn consumes(&self, weight: WeightRows<'_>) -> bool {
+        matches!(weight, WeightRows::F32(_))
+    }
+
     /// `y = W x`, with `W` row-major `[out_dim, x.len()]` in whatever
     /// representation it is resident as.
     ///

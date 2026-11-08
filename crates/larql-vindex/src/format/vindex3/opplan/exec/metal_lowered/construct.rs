@@ -55,6 +55,9 @@ impl<'a> LoweredSession<'a> {
         // lowering still has no kernel for is refused, typed, here: a
         // rotary-width partial rotary (a prefix rotated as its own block)
         // and a gate activation other than SiLU / tanh-GELU.
+        // FIRST, because it is the one refusal whose absence would not fail
+        // loudly: see `refuse_unlowered_gate_source`.
+        refuse_unlowered_gate_source(plan)?;
         // No DeltaNet kernel exists on this path. Refuse the whole plan
         // rather than lower the 16 softmax layers of a 64-layer hybrid and
         // silently drop the other 48.
@@ -455,5 +458,30 @@ impl<'a> LoweredSession<'a> {
             splitk,
             splitk_widths,
         })
+    }
+}
+
+/// Refuse an output gate this lowering does not bind correctly.
+///
+/// The lowered encoder applies the gate as its own matrix on the attention input
+/// (`GateSource::AttentionInput`). A gate taken from the fused query projection
+/// (`GateSource::FusedQueryProjection`, Qwen3.5 and Qwen3.8: per-head interleaved `[q_h | gate_h]` rows of
+/// `q_proj`) has no separate operand, and the op names `q_proj` as its projection. Binding that here would
+/// compute `sigmoid(q_proj · x)` over the wrong rows and produce plausible-looking, wrong output, with no
+/// refusal anywhere downstream. Every other refusal in [`LoweredSession::new`] is for a kernel that does not
+/// exist; this one is for a binding that would exist and be wrong, so it is checked explicitly, by source,
+/// and before the others, so that lifting any of them cannot expose it.
+pub(super) fn refuse_unlowered_gate_source(plan: &ComponentOpPlan) -> Result<(), VindexError> {
+    use larql_models::config::GateSource;
+    let wrong = plan.layers.iter().find_map(|l| {
+        let gate = l.attention.softmax()?.output_gate.as_ref()?;
+        (gate.spec.source != GateSource::AttentionInput).then_some((l.layer, gate.spec.source))
+    });
+    match wrong {
+        Some((layer, source)) => Err(VindexError::Parse(format!(
+            "layer {layer}: the output gate is read from {source:?}, and this lowering binds a gate only as \
+             its own matrix on the attention input; refusing rather than gating with the wrong rows"
+        ))),
+        None => Ok(()),
     }
 }

@@ -33,6 +33,7 @@ pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
 pub mod dense_ffn;
+pub mod dense_rows;
 pub mod device;
 pub mod device_refusal;
 mod experts;

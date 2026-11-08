@@ -226,6 +226,20 @@ pub enum WeightRows<'a> {
 }
 
 impl WeightRows<'_> {
+    /// This slab's representation, for diagnostics only. Never dispatched on: a caller that branched on the
+    /// name instead of the variant would be one `match` away from silently accepting a format it cannot run.
+    pub fn representation(&self) -> &'static str {
+        match self {
+            WeightRows::F32(_) => "f32",
+            WeightRows::Q8 { .. } => "q8",
+            WeightRows::Q4 { .. } => "q4",
+            WeightRows::Bf16(_) => "bf16",
+            WeightRows::Nvfp4 { .. } => "nvfp4",
+            WeightRows::KQuant { .. } => "k-quant",
+            WeightRows::Fp8Block { .. } => "fp8-block",
+        }
+    }
+
     /// The address of the PRIMARY weight stream — this slab's identity.
     ///
     /// Two live operands cannot share a primary address, so this is what
