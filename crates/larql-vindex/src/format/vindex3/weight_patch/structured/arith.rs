@@ -198,6 +198,18 @@ pub(super) fn exact_product_to_f32(u: f64, w: f64) -> f32 {
     if err == 0.0 || !p.is_finite() {
         return r;
     }
+    if r.is_infinite() {
+        // p is at or past f32's overflow threshold, the tie above f32::MAX. Only an exact product just below
+        // the tie itself rounds back to f32::MAX.
+        let tie = f32::MAX as f64
+            + (f32::MAX as f64 - f32::from_bits(f32::MAX.to_bits() - 1) as f64) / 2.0;
+        let below = (p > 0.0 && err < 0.0) || (p < 0.0 && err > 0.0);
+        return if p.abs() == tie && below {
+            f32::MAX.copysign(r)
+        } else {
+            r
+        };
+    }
     let diff = p - r as f64; // exact: p and r are close and both f64 values
     let other = (r as f64 + 2.0 * diff) as f32;
     let tie = diff != 0.0 && other as f64 == r as f64 + 2.0 * diff;

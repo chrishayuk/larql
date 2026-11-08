@@ -2,10 +2,12 @@
 //! fixups. An op either returns every output element or refuses with one code.
 
 use super::arith::{exact_product_to_f32, Arith, Work};
+use super::env::check_float_environment;
 use super::profile::Profile;
 use super::refusal::{Refusal, RefusalCode};
 use super::{
-    BaseTensor, Fixup, Mutation, OpKind, OperandBits, ScalarBits, StructuredOp, TensorRole,
+    BaseTensor, Fixup, Mutation, OpKind, OperandBits, ScalarBits, StructuredError, StructuredOp,
+    TensorRole,
 };
 use crate::format::vindex3::weight_patch::bf16::is_finite as bf16_is_finite;
 
@@ -14,13 +16,27 @@ const BF16_POSITIVE_ZERO: u16 = 0x0000;
 const BF16_SIGN: u16 = 0x8000;
 
 /// Run `op` on `base` under the contract's semantics.
-pub fn run(op: &StructuredOp, base: &BaseTensor<'_>) -> Result<Vec<u16>, Refusal> {
+pub fn run(op: &StructuredOp, base: &BaseTensor<'_>) -> Result<Vec<u16>, StructuredError> {
     run_with(op, base, Mutation::None)
 }
 
 /// Run `op` on `base` under `mutation`. Anything but [`Mutation::None`] is a deliberately wrong semantics, for
 /// tests that show the contract's choices change bytes.
+///
+/// The floating-point environment is checked first, on this thread ([`check_float_environment`]): no byte is
+/// computed under FTZ or DAZ. Beyond the contract's phases, an operand whose width does not match the profile
+/// (an API-level mistake the vectors cannot express) is refused as `numerics_invalid` when the operands are
+/// decoded, after the column and length checks.
 pub fn run_with(
+    op: &StructuredOp,
+    base: &BaseTensor<'_>,
+    mutation: Mutation,
+) -> Result<Vec<u16>, StructuredError> {
+    check_float_environment()?;
+    Ok(interpret(op, base, mutation)?)
+}
+
+fn interpret(
     op: &StructuredOp,
     base: &BaseTensor<'_>,
     mutation: Mutation,
@@ -38,7 +54,7 @@ pub fn run_with(
         _ => Some(Profile::parse(op.numerics.as_deref())?),
     };
     let [rows, cols] = op.shape;
-    if rows == 0 || cols == 0 {
+    if rows == 0 || cols == 0 || rows.checked_mul(cols).is_none() {
         return Err(refuse(
             RefusalCode::ShapeInvalid,
             format!("declared shape {:?}", op.shape),
@@ -83,15 +99,14 @@ pub fn run_with(
             if k < 1 {
                 return Err(refuse(RefusalCode::RankInvalid, "rank must be at least 1"));
             }
-            if a.len() != rows * k || b.len() != k * cols {
+            let (need_a, need_b) = (rows.checked_mul(k), k.checked_mul(cols));
+            if need_a != Some(a.len()) || need_b != Some(b.len()) {
                 return Err(refuse(
                     RefusalCode::ShapeInvalid,
                     format!(
-                        "a has {}, b has {}; rank {k} needs {} and {}",
+                        "a has {}, b has {}; rank {k} needs {need_a:?} and {need_b:?}",
                         a.len(),
                         b.len(),
-                        rows * k,
-                        k * cols
                     ),
                 ));
             }

@@ -143,7 +143,12 @@ fn ours(c: &Case, m: Mutation) -> Result<Vec<u16>, String> {
         bits: &c.base_bits,
         role: c.role,
     };
-    run_with(&c.op, &base, m).map_err(|r| r.code.as_str().to_string())
+    run_with(&c.op, &base, m).map_err(|e| {
+        e.refusal_code()
+            .expect("an op refusal, not the environment")
+            .as_str()
+            .to_string()
+    })
 }
 
 #[test]
@@ -326,7 +331,7 @@ fn operands_at_the_wrong_width_are_refused() {
             fixups: vec![],
         };
         let r = run(&op, &b).unwrap_err();
-        assert_eq!(r.code, RefusalCode::NumericsInvalid);
+        assert_eq!(r.refusal_code(), Some(RefusalCode::NumericsInvalid));
         assert!(r.to_string().contains("numerics_invalid"), "{r}");
     }
     let op = StructuredOp {
@@ -339,7 +344,10 @@ fn operands_at_the_wrong_width_are_refused() {
         },
         fixups: vec![],
     };
-    assert_eq!(run(&op, &b).unwrap_err().code, RefusalCode::NumericsInvalid);
+    assert_eq!(
+        run(&op, &b).unwrap_err().refusal_code(),
+        Some(RefusalCode::NumericsInvalid)
+    );
 }
 
 #[test]
@@ -355,7 +363,10 @@ fn a_shape_with_a_zero_extent_is_refused() {
         bits: &[],
         role: TensorRole::Ordinary,
     };
-    assert_eq!(run(&op, &b).unwrap_err().code, RefusalCode::ShapeInvalid);
+    assert_eq!(
+        run(&op, &b).unwrap_err().refusal_code(),
+        Some(RefusalCode::ShapeInvalid)
+    );
 }
 
 #[test]
@@ -397,4 +408,200 @@ fn each_float_environment_canary_is_checked() {
         .unwrap_err()
         .to_string()
         .contains("f32 subnormal"));
+}
+
+fn f64s(xs: &[f64]) -> OperandBits {
+    OperandBits::F64(xs.iter().map(|x| x.to_bits()).collect())
+}
+
+fn low_rank(
+    shape: [usize; 2],
+    rank: usize,
+    a: &[f64],
+    b: &[f64],
+    fixups: Vec<Fixup>,
+) -> StructuredOp {
+    StructuredOp {
+        numerics: Some(Profile::F64SeqRne1.id().to_string()),
+        shape,
+        kind: OpKind::AddLowRank {
+            rank,
+            a: f64s(a),
+            b: f64s(b),
+        },
+        fixups,
+    }
+}
+
+fn code(op: &StructuredOp, base: &[u16], shape: [usize; 2]) -> Option<RefusalCode> {
+    let b = BaseTensor {
+        shape,
+        bits: base,
+        role: TensorRole::Ordinary,
+    };
+    run(op, &b).err().and_then(|e| e.refusal_code())
+}
+
+/// Declared sizes whose products overflow `usize` are refused, never wrapped or panicked on.
+#[test]
+fn declared_sizes_that_overflow_are_refused() {
+    let huge = usize::MAX / 2 + 1;
+    let zc = StructuredOp {
+        numerics: None,
+        shape: [huge, 2],
+        kind: OpKind::ZeroColumns { columns: vec![0] },
+        fixups: vec![],
+    };
+    assert_eq!(code(&zc, &[], [huge, 2]), Some(RefusalCode::ShapeInvalid));
+    let lr = low_rank([1, 1], huge, &[], &[], vec![]);
+    assert_eq!(
+        code(&lr, &[0x3f80], [1, 1]),
+        Some(RefusalCode::ShapeInvalid)
+    );
+}
+
+/// Two defects at once: the earlier phase of SPEC §4 decides, and within the compute phase the first failing
+/// operation in iteration order does.
+#[test]
+fn with_two_defects_the_spec_order_decides() {
+    let big = 2.0f64.powi(119);
+    // unsorted fixups (parse) before a column beyond the tensor (header)
+    let rd = StructuredOp {
+        numerics: Some(Profile::F64SeqRne1.id().to_string()),
+        shape: [1, 2],
+        kind: OpKind::RemoveDirection {
+            u: f64s(&[1.0]),
+            alpha: ScalarBits::F64(1.0f64.to_bits()),
+            columns: vec![5],
+        },
+        fixups: vec![
+            Fixup {
+                row: 0,
+                col: 1,
+                bits: 0x3f80,
+            },
+            Fixup {
+                row: 0,
+                col: 0,
+                bits: 0x3f80,
+            },
+        ],
+    };
+    assert_eq!(
+        code(&rd, &[0x3f80, 0x3f80], [1, 2]),
+        Some(RefusalCode::FixupsInvalid)
+    );
+    // a column beyond the tensor (header) before a NaN base element (tensor bytes)
+    let mut rd2 = rd.clone();
+    rd2.fixups.clear();
+    assert_eq!(
+        code(&rd2, &[0x7fc0, 0x3f80], [1, 2]),
+        Some(RefusalCode::ColumnsInvalid)
+    );
+    // element 0's chain overflow comes before element 1's intermediate overflow ...
+    let a = [2.0f64.powi(600)];
+    let first_overflow = low_rank(
+        [1, 2],
+        1,
+        &a,
+        &[big / 2.0f64.powi(600), 2.0f64.powi(600)],
+        vec![],
+    );
+    assert_eq!(
+        code(&first_overflow, &[0x7f7f, 0x0000], [1, 2]),
+        Some(RefusalCode::Overflow)
+    );
+    // ... and the other way round
+    let first_intermediate = low_rank(
+        [1, 2],
+        1,
+        &a,
+        &[2.0f64.powi(600), big / 2.0f64.powi(600)],
+        vec![],
+    );
+    assert_eq!(
+        code(&first_intermediate, &[0x0000, 0x7f7f], [1, 2]),
+        Some(RefusalCode::NonFiniteIntermediate)
+    );
+    // the compute phase (overflow) comes before the fixups phase (a no-op fixup)
+    let both = low_rank(
+        [1, 2],
+        1,
+        &[1.0],
+        &[big, 0.0],
+        vec![Fixup {
+            row: 0,
+            col: 1,
+            bits: 0x3f80,
+        }],
+    );
+    assert_eq!(
+        code(&both, &[0x7f7f, 0x3f80], [1, 2]),
+        Some(RefusalCode::Overflow)
+    );
+}
+
+/// The f32-accumulation mutation's exact-product rounding at f32's overflow tie: an f64 product that rounds
+/// onto the tie, from an exact product just below it, is f32::MAX, not inf.
+#[test]
+fn f32_accumulation_rounds_below_the_f32_overflow_tie_to_max() {
+    let op = StructuredOp {
+        numerics: Some(Profile::F64SeqRne1.id().to_string()),
+        shape: [1, 1],
+        kind: OpKind::RemoveDirection {
+            u: OperandBits::F64(vec![0x47ea_f286_af28_6bca]),
+            alpha: ScalarBits::F64(0.0f64.to_bits()),
+            columns: vec![0],
+        },
+        fixups: vec![],
+    };
+    let base = [0x3f98u16];
+    let b = BaseTensor {
+        shape: [1, 1],
+        bits: &base,
+        role: TensorRole::Ordinary,
+    };
+    let out = run_with(&op, &b, Mutation::F32Accumulation).expect("f32::MAX is finite");
+    // alpha = 0, so w - 0*c = w: the base element comes back unchanged
+    assert_eq!(out, vec![0x3f98]);
+}
+
+/// The canary, falsified by the hardware: on aarch64 setting FPCR.FZ makes `run` refuse with the environment
+/// error before computing anything; restoring it makes the same op run.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn run_refuses_under_hardware_flush_to_zero() {
+    use larql_vindex::format::vindex3::weight_patch::structured::StructuredError;
+    /// FPCR.FZ: flush-to-zero for single and double precision.
+    const FPCR_FZ: u64 = 1 << 24;
+    let op = low_rank([1, 1], 1, &[1.0], &[1.0], vec![]);
+    let base = [0x3f80u16];
+    let b = BaseTensor {
+        shape: [1, 1],
+        bits: &base,
+        role: TensorRole::Ordinary,
+    };
+    let saved: u64;
+    unsafe { std::arch::asm!("mrs {}, fpcr", out(reg) saved) };
+    unsafe { std::arch::asm!("msr fpcr, {}", in(reg) saved | FPCR_FZ) };
+    let under_ftz = run(&op, &b);
+    unsafe { std::arch::asm!("msr fpcr, {}", in(reg) saved) };
+    assert!(
+        matches!(under_ftz, Err(StructuredError::Environment(_))),
+        "{under_ftz:?}"
+    );
+    assert_eq!(run(&op, &b).unwrap(), vec![0x4000]);
+}
+
+/// The environment error is not an op refusal: it carries no contract code, and says what failed.
+#[test]
+fn an_environment_error_has_no_refusal_code() {
+    use larql_vindex::format::vindex3::weight_patch::structured::{
+        FloatEnvironmentError, StructuredError,
+    };
+    let e = StructuredError::Environment(FloatEnvironmentError(
+        "an f64 subnormal is read as zero (DAZ)",
+    ));
+    assert_eq!(e.refusal_code(), None);
+    assert!(e.to_string().contains("DAZ"), "{e}");
 }

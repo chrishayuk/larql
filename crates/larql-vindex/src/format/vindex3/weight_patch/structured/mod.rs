@@ -31,6 +31,26 @@ pub use ops::{run, run_with};
 pub use profile::Profile;
 pub use refusal::{Refusal, RefusalCode};
 
+/// Why [`run`] produced no bytes: the op was refused under the contract, or this platform cannot run the
+/// contract's arithmetic exactly.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StructuredError {
+    #[error(transparent)]
+    Refused(#[from] Refusal),
+    #[error(transparent)]
+    Environment(#[from] FloatEnvironmentError),
+}
+
+impl StructuredError {
+    /// The contract's refusal code, when the op itself was refused.
+    pub fn refusal_code(&self) -> Option<RefusalCode> {
+        match self {
+            StructuredError::Refused(r) => Some(r.code),
+            StructuredError::Environment(_) => None,
+        }
+    }
+}
+
 /// One element override, applied after computing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fixup {
