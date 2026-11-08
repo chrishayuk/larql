@@ -18,7 +18,9 @@ use std::time::Instant;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
-use larql_vindex::format::vindex3::opplan::exec::{execute_slice, execute_slice_in};
+use larql_vindex::format::vindex3::opplan::exec::{
+    execute_slice, execute_slice_in, execute_slice_position_logits,
+};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
 use crate::commands::primary::continuation::one_shot_state;
@@ -65,8 +67,21 @@ pub(super) fn same_vocabulary(
     }
 }
 
-/// Prefill `tokens[..n]` for each `n` in `lengths`, writing each final
-/// position's logits to `out` as f32 little-endian rows.
+/// How the fresh-prefill rows are computed. Both run a one-shot causal
+/// prefill with no decode state; they differ only in how many prefills.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum PrefillMethod {
+    /// ONE prefill over the whole sequence, the exit (final norm + head)
+    /// applied to each requested position's final residual.
+    Batched,
+    /// One prefill per requested prefix, keeping only its last row — the
+    /// original method, O(n²) over a sequence; kept as the measurement
+    /// control the batched method is validated against.
+    PerPrefix,
+}
+
+/// Write the logits predicting the token after `tokens[..n]`, for each
+/// `n` in `lengths`, to `out` as f32 little-endian rows.
 pub(super) fn run_prefill_dump<B: PlanBackend>(
     backend: &B,
     tokens: &[u32],
@@ -75,31 +90,75 @@ pub(super) fn run_prefill_dump<B: PlanBackend>(
     store: &OperandStore,
     out: &Path,
     slice: ExecutionSlice,
+    method: PrefillMethod,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
+    let rows = match method {
+        PrefillMethod::Batched => batched_rows(backend, tokens, lengths, plan, store, slice)?,
+        PrefillMethod::PerPrefix => per_prefix_rows(backend, tokens, lengths, plan, store, slice)?,
+    };
     let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
     let mut vocab = None;
-    for &length in lengths {
-        let prefix = &tokens[..length];
-        let trace = match one_shot_state(plan)? {
-            Some(state) => execute_slice_in(plan, store, prefix, backend, slice.clone(), state)?,
-            None => execute_slice(plan, store, prefix, backend, slice.clone())?,
-        };
-        let logits = trace
-            .logits
-            .ok_or("plan carries no output head — cannot score")?;
-        same_vocabulary(&mut vocab, logits.len(), length)?;
-        for value in &logits {
+    for (row, &length) in rows.iter().zip(lengths) {
+        same_vocabulary(&mut vocab, row.len(), length)?;
+        for value in row {
             file.write_all(&value.to_le_bytes())?;
         }
     }
     file.flush()?;
     println!(
-        "prefilled {} prefix(es) in {:.1} s  vocab: {}",
+        "prefilled {} position(s) ({method:?}) in {:.1} s  vocab: {}",
         lengths.len(),
         started.elapsed().as_secs_f64(),
         vocab.unwrap_or(0)
     );
     println!("wrote {}", out.display());
     Ok(())
+}
+
+/// One causal prefill over `tokens[..max(lengths)]`, rows at each length.
+fn batched_rows<B: PlanBackend>(
+    backend: &B,
+    tokens: &[u32],
+    lengths: &[usize],
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    slice: ExecutionSlice,
+) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+    let longest = lengths.iter().copied().max().unwrap_or(0);
+    let positions: Vec<usize> = lengths.iter().map(|n| n - 1).collect();
+    Ok(execute_slice_position_logits(
+        plan,
+        store,
+        &tokens[..longest],
+        backend,
+        slice,
+        one_shot_state(plan)?,
+        &positions,
+    )?)
+}
+
+/// One causal prefill per prefix, its last row kept.
+fn per_prefix_rows<B: PlanBackend>(
+    backend: &B,
+    tokens: &[u32],
+    lengths: &[usize],
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    slice: ExecutionSlice,
+) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+    let mut rows = Vec::with_capacity(lengths.len());
+    for &length in lengths {
+        let prefix = &tokens[..length];
+        let trace = match one_shot_state(plan)? {
+            Some(state) => execute_slice_in(plan, store, prefix, backend, slice.clone(), state)?,
+            None => execute_slice(plan, store, prefix, backend, slice.clone())?,
+        };
+        rows.push(
+            trace
+                .logits
+                .ok_or("plan carries no output head — cannot score")?,
+        );
+    }
+    Ok(rows)
 }

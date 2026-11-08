@@ -367,7 +367,14 @@ fn run_on<B: PlanBackend>(
         let lengths =
             super::prefill_dump::parse_lengths(args.prefill_lengths.as_deref(), tokens.len())?;
         return super::prefill_dump::run_prefill_dump(
-            backend, tokens, &lengths, plan, store, out, slice,
+            backend,
+            tokens,
+            &lengths,
+            plan,
+            store,
+            out,
+            slice,
+            args.prefill_method,
         );
     }
     match (&args.dump_layers, args.generate) {

@@ -599,6 +599,7 @@ fn exec_args(container: &Path) -> ExecArgs {
         logit_dump: None,
         prefill_logit_dump: None,
         prefill_lengths: None,
+        prefill_method: super::super::prefill_dump::PrefillMethod::Batched,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
         bank: None,

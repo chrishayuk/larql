@@ -815,6 +815,7 @@ fn run_curve(container: &Path, curve: Curve) -> Result<(), Box<dyn std::error::E
         logit_dump: None,
         prefill_logit_dump: None,
         prefill_lengths: None,
+        prefill_method: super::super::prefill_dump::PrefillMethod::Batched,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
         bank: None,
@@ -1184,6 +1185,7 @@ fn evidence_args(container: &Path, regions: &Path, sealed: &Path) -> ExecArgs {
         logit_dump: None,
         prefill_logit_dump: None,
         prefill_lengths: None,
+        prefill_method: super::super::prefill_dump::PrefillMethod::Batched,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
         bank: None,
@@ -1229,6 +1231,7 @@ fn evidence_flags_are_refused_on_every_path_that_bypasses_the_curve() {
                 logit_dump: Some(dir.path().join("logits")),
                 prefill_logit_dump: None,
                 prefill_lengths: None,
+                prefill_method: super::super::prefill_dump::PrefillMethod::Batched,
                 ..args()
             },
             "with --logit-dump",

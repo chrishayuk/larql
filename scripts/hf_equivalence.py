@@ -72,6 +72,11 @@ DEFAULT_RAW_PROMPT = "The capital of France is"
 EXPECTED_ANSWER = "Paris"
 TEXT_GENERATION_CAPABILITY = "text_generation"
 INSPECT_COHERENT = "container coherent"
+#: How the fresh-prefill arm is computed (`vindex3 exec --prefill-method`):
+#: one causal prefill over the sequence, the head applied at every
+#: requested position. `per-prefix` is the O(n²) control it was validated
+#: against (scripts/prefill_method_validation.py).
+PREFILL_METHOD = "batched"
 SHARD_INDEX = "model.safetensors.index.json"
 SINGLE_SHARD = "model.safetensors"
 TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja")
@@ -273,10 +278,12 @@ class Larql:
         self._exec(arm, ids, ["--logit-dump", str(out)])
         return np.fromfile(out, dtype="<f4").reshape(len(ids), -1)
 
-    def prefill(self, arm: str, ids: list[int], lengths: list[int], tag: str) -> np.ndarray:
-        out = self.work / f"{tag}-{arm}-prefill.f32"
+    def prefill(self, arm: str, ids: list[int], lengths: list[int], tag: str,
+                method: str = PREFILL_METHOD) -> np.ndarray:
+        out = self.work / f"{tag}-{arm}-prefill-{method}.f32"
         self._exec(arm, ids, ["--prefill-logit-dump", str(out),
-                              "--prefill-lengths", ",".join(map(str, lengths))])
+                              "--prefill-lengths", ",".join(map(str, lengths)),
+                              "--prefill-method", method])
         return np.fromfile(out, dtype="<f4").reshape(len(lengths), -1)
 
     def generate(self, ids: list[int], steps: int) -> list[int]:
@@ -634,6 +641,9 @@ def main() -> None:
                    "tie_tolerance": m.TIE_TOLERANCE,
                    "production_explain_above": m.PRODUCTION_EXPLAIN_ABOVE,
                    "inputs": "identical token ids both sides; no attention mask; no padding",
+                   "prefill_arm_method": f"{PREFILL_METHOD}: one causal prefill over the sequence, final norm "
+                                         "+ head at each requested position (vindex3 exec --prefill-method); "
+                                         "cases, positions, profiles and thresholds unchanged from 2.0.1",
                    "reference_max_length": args.reference_max_length,
                    "equivalent_stage_rule": "FAIL on any fail; PENDING on a tie swap or a skipped arm; else PASS"},
         "sliding_window": window,

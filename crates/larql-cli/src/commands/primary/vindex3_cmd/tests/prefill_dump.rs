@@ -3,7 +3,7 @@
 //! the same position — the two independent paths an equivalence harness
 //! compares against an outside reference.
 
-use super::super::prefill_dump::{parse_lengths, same_vocabulary};
+use super::super::prefill_dump::{parse_lengths, same_vocabulary, PrefillMethod};
 use super::super::{run, EncodeArgs, ExecArgs, ExecBackend, Vindex3Command};
 use super::fixture_dir;
 
@@ -19,6 +19,7 @@ fn exec_args(
     logit_dump: Option<std::path::PathBuf>,
     prefill: Option<std::path::PathBuf>,
     lengths: Option<&str>,
+    method: PrefillMethod,
 ) -> ExecArgs {
     ExecArgs {
         container,
@@ -45,6 +46,7 @@ fn exec_args(
         logit_dump,
         prefill_logit_dump: prefill,
         prefill_lengths: lengths.map(str::to_string),
+        prefill_method: method,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
         bank: None,
@@ -84,8 +86,7 @@ fn a_dump_refuses_rows_of_different_widths() {
     assert!(same_vocabulary(&mut vocab, 5, 3).is_err());
 }
 
-#[test]
-fn each_prefill_row_matches_the_cached_row_at_its_position() {
+fn encoded_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = fixture_dir(true);
     let container = dir.path().join("container");
     run(Vindex3Command::Encode(EncodeArgs {
@@ -94,24 +95,40 @@ fn each_prefill_row_matches_the_cached_row_at_its_position() {
         output: container.clone(),
     }))
     .unwrap();
+    (dir, container)
+}
+
+fn prefill_rows(
+    dir: &std::path::Path,
+    container: &std::path::Path,
+    method: PrefillMethod,
+) -> Vec<f32> {
+    let out = dir.join(format!("prefill-{method:?}.f32"));
+    run(Vindex3Command::Exec(exec_args(
+        container.to_path_buf(),
+        None,
+        Some(out.clone()),
+        Some(PREFIX_LENGTHS),
+        method,
+    )))
+    .unwrap();
+    read_f32(&out)
+}
+
+#[test]
+fn each_prefill_row_matches_the_cached_row_at_its_position() {
+    let (dir, container) = encoded_fixture();
     let cached = dir.path().join("cached.f32");
-    let prefill = dir.path().join("prefill.f32");
     run(Vindex3Command::Exec(exec_args(
         container.clone(),
         Some(cached.clone()),
         None,
         None,
-    )))
-    .unwrap();
-    run(Vindex3Command::Exec(exec_args(
-        container,
-        None,
-        Some(prefill.clone()),
-        Some(PREFIX_LENGTHS),
+        PrefillMethod::Batched,
     )))
     .unwrap();
     let cached = read_f32(&cached);
-    let prefill = read_f32(&prefill);
+    let prefill = prefill_rows(dir.path(), &container, PrefillMethod::Batched);
     let vocab = cached.len() / SEQUENCE;
     let lengths = parse_lengths(Some(PREFIX_LENGTHS), SEQUENCE).unwrap();
     assert_eq!(prefill.len(), lengths.len() * vocab);
@@ -125,4 +142,23 @@ fn each_prefill_row_matches_the_cached_row_at_its_position() {
             .fold(0.0f32, f32::max);
         assert!(worst <= PATH_TOLERANCE, "prefix {length}: |Δ| {worst}");
     }
+}
+
+/// The batched method against the per-prefix control on the reference
+/// backend: BIT-EXACT. The reference interpreter's causal attention reads
+/// keys `0..=p` only, so position `p` of one long prefill and the last
+/// position of the `p+1` prefix run the same arithmetic in the same order.
+#[test]
+fn batched_rows_equal_the_per_prefix_control_bit_for_bit() {
+    let (dir, container) = encoded_fixture();
+    let batched = prefill_rows(dir.path(), &container, PrefillMethod::Batched);
+    let control = prefill_rows(dir.path(), &container, PrefillMethod::PerPrefix);
+    assert_eq!(batched.len(), control.len());
+    assert!(
+        batched
+            .iter()
+            .zip(&control)
+            .all(|(a, b)| a.to_bits() == b.to_bits()),
+        "batched and per-prefix rows differ"
+    );
 }

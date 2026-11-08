@@ -366,6 +366,13 @@ pub struct ExecArgs {
     #[arg(long, requires = "prefill_logit_dump")]
     pub prefill_lengths: Option<String>,
 
+    /// How `--prefill-logit-dump` computes its rows: `batched` (one causal
+    /// prefill, the head applied at every requested position) or
+    /// `per-prefix` (one prefill per prefix — the O(n²) control the
+    /// batched method is validated against).
+    #[arg(long, value_enum, default_value_t = super::prefill_dump::PrefillMethod::Batched, requires = "prefill_logit_dump")]
+    pub prefill_method: super::prefill_dump::PrefillMethod,
+
     /// Record what the CPU Q8_0 kernel was given and returned, as raw bits, in
     /// this new directory, for an outside verifier to judge. It only observes:
     /// it runs after the kernel returns. A run that never reaches that kernel

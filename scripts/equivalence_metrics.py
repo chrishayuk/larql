@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 
-HARNESS_VERSION = "2.0.1"
+HARNESS_VERSION = "2.1.0"
 
 #: Gate: LARQL reference (f32 interpreter) vs transformers f32.
 REFERENCE_MAX_ABS_LOGPROB = 1e-3
