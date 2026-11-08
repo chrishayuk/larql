@@ -46,6 +46,7 @@ mod coverage_production_arms;
 mod coverage_traverse_exits;
 mod decode;
 mod dense_ffn_placement;
+mod dense_rows;
 mod device;
 mod device_gate_refusal;
 mod draft_slice;

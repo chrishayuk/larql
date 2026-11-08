@@ -364,6 +364,11 @@ pub fn project_matrix_many(
 pub struct ExecutorProjections;
 
 impl crate::format::vindex3::opplan::exec::gated_delta::DenseProjections for ExecutorProjections {
+    /// The production executor observes a kernel for every resident representation.
+    fn consumes(&self, _weight: WeightRows<'_>) -> bool {
+        true
+    }
+
     fn project(&self, weight: WeightRows<'_>, x: &[f32], out_dim: usize) -> Vec<f32> {
         project_rows(weight, x, out_dim)
             .expect("the CPU executor pool is unavailable, so no projection can run")
