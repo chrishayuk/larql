@@ -16,6 +16,8 @@ const F32_ROWS: [f32; 4] = [1.0; 4];
 const BF16_ROWS: [u16; 4] = [0x3f80; 4];
 const GLUE: [f32; 4] = [0.0; 4];
 const LAYER: usize = 7;
+/// Any norm epsilon: these weights never reach arithmetic.
+const EPS: f32 = 1e-6;
 
 fn f32_rows() -> WeightRows<'static> {
     WeightRows::F32(&F32_ROWS)
@@ -36,7 +38,7 @@ fn gdn(out_proj: WeightRows<'static>) -> GatedDeltaWeights<'static> {
         a_log: &GLUE,
         dt_bias: &GLUE,
         norm: &GLUE,
-        norm_eps: 1e-6,
+        norm_eps: EPS,
     }
 }
 
@@ -98,7 +100,7 @@ fn every_mixer_names_all_its_dense_operands() {
         d: &GLUE,
         dt_bias: &GLUE,
         norm: None,
-        norm_eps: 1e-6,
+        norm_eps: EPS,
     };
     assert_eq!(names(&mamba), ["in_proj", "out_proj"]);
     assert!(refusal(&mamba).contains("Mamba2"));
@@ -127,7 +129,7 @@ fn every_mixer_names_all_its_dense_operands() {
         dt_bias: &GLUE,
         o_norm: &GLUE,
         o_proj: f32_rows(),
-        norm_eps: 1e-6,
+        norm_eps: EPS,
         gate_rank: 1,
         gate_form: KdaGateForm::Softplus,
     };
@@ -136,14 +138,13 @@ fn every_mixer_names_all_its_dense_operands() {
         g_b_proj: &GLUE,
     });
     assert_eq!(names(&low_rank), ["q_proj", "k_proj", "v_proj", "o_proj"]);
+    // A full-rank g_proj is projected by the CPU executor directly, never by the backend's projector, so it
+    // is not a dense row of this check: a compact one must not refuse a layer that runs.
     let full_rank = kda(KdaOutputGateWeights::FullRank {
         g_proj: bf16_rows(),
     });
-    assert_eq!(
-        names(&full_rank),
-        ["q_proj", "k_proj", "v_proj", "o_proj", "g_proj"]
-    );
-    assert!(refusal(&full_rank).contains("`g_proj`"));
+    assert_eq!(names(&full_rank), ["q_proj", "k_proj", "v_proj", "o_proj"]);
+    assert!(consuming_projector(&ScalarProjections, &full_rank, LAYER).is_ok());
 
     let mla = |query, output_gate| MlaWeights {
         query,
@@ -151,7 +152,7 @@ fn every_mixer_names_all_its_dense_operands() {
         kv_a_norm: &GLUE,
         kv_b_proj: f32_rows(),
         o_proj: f32_rows(),
-        kv_a_norm_eps: 1e-6,
+        kv_a_norm_eps: f64::from(EPS),
         output_gate,
     };
     let direct = mla(MlaQueryWeights::Direct { q_proj: f32_rows() }, None);
@@ -164,7 +165,7 @@ fn every_mixer_names_all_its_dense_operands() {
             q_a_proj: f32_rows(),
             q_a_norm: &GLUE,
             q_b_proj: bf16_rows(),
-            q_a_norm_eps: 1e-6,
+            q_a_norm_eps: f64::from(EPS),
         },
         Some(f32_rows()),
     );
@@ -180,4 +181,58 @@ fn every_mixer_names_all_its_dense_operands() {
         ]
     );
     assert!(refusal(&low).contains("MLA"));
+}
+
+/// A projector with no kernel at all, so the whole-plan check's reach can be shown on any real plan.
+struct ConsumesNothing;
+
+impl DenseProjections for ConsumesNothing {
+    fn consumes(&self, _weight: WeightRows<'_>) -> bool {
+        false
+    }
+    fn project(&self, _weight: WeightRows<'_>, _x: &[f32], _out_dim: usize) -> Vec<f32> {
+        unreachable!("the whole-plan check refuses before any projection")
+    }
+}
+
+/// The whole-plan form, over a REAL prepared plan (the Gated DeltaNet hybrid fixture under the production backend):
+/// a projector that consumes nothing is refused for the whole plan before any layer runs, naming the first
+/// mixer layer and operand; the reference projector, which consumes the f32 rows this backend prepared, and the
+/// production executor's both pass.
+#[test]
+fn a_prepared_plan_is_checked_whole_before_any_layer_runs() {
+    use super::super::dense_rows::refuse_unconsumable_plan;
+    use super::super::operands::OperandStore;
+    use super::super::prepared::{ExecutionSlice, PreparedOperands};
+    use super::super::production::ProductionBackend;
+    use crate::format::vindex3::encode::encode_system;
+    use crate::format::vindex3::fixtures::hybrid_lllf_f32_model;
+    use crate::format::vindex3::inspect::inspect_container;
+    use crate::format::vindex3::opplan::plan_component_ops;
+
+    let src = tempfile::tempdir().unwrap();
+    hybrid_lllf_f32_model(src.path());
+    let inventory = larql_models::inventory::build_inventory(src.path()).unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_system(&[("hybrid".to_string(), inventory)], container.path()).unwrap();
+    let inspection = inspect_container(container.path(), false).unwrap();
+    let plan = plan_component_ops(&inspection, container.path(), "target")
+        .unwrap()
+        .plan
+        .unwrap();
+    let store = OperandStore::open(container.path(), &inspection).unwrap();
+    let backend = ProductionBackend::new();
+    let ops = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full).unwrap();
+
+    let err = refuse_unconsumable_plan(&plan, &ops, &ConsumesNothing)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("layer 0") && err.contains("Gated DeltaNet") && err.contains("`in_proj_qkv`"),
+        "{err}"
+    );
+    refuse_unconsumable_plan(&plan, &ops, &ScalarProjections)
+        .expect("the reference consumes the f32 rows");
+    refuse_unconsumable_plan(&plan, &ops, &ExecutorProjections)
+        .expect("the production projector consumes it");
 }
