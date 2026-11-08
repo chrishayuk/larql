@@ -73,6 +73,24 @@ jobs:
       - name: Shipped target dependencies use Rustls
         run: python3 scripts/check_tls_dependencies.py
 
+  vlp-numerics:
+    name: VLP numerics golden vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: numpy for the f32 cross-check
+        run: python3 -m pip install 'numpy>=2,<3'
+      - name: The committed vectors are what the generator writes
+        run: python3 -I conformance/vlp-numerics/v1/generate.py --check
+      - name: Vector checks and independent rounding routes
+        env:
+          VLP_REQUIRE_NUMPY: '1'
+        run: python3 -I -m unittest discover -s conformance/vlp-numerics/v1 -p 'test_*.py'
+
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest
