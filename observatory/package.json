@@ -17,7 +17,7 @@
   "dependencies": {
     "@chrishayuk/hause": "github:chrishayuk/hause#d8ff653e2dfed6267305ca9568225b0973868918",
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "16.4.5",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -35,8 +35,8 @@
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
+    "vinext": "1.4.4",
+    "vite": "8.3.6",
     "wrangler": "4.92.0"
   },
   "type": "module"
