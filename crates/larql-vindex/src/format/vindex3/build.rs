@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 
 use super::import::{manifest_layer, routed_storage_key, write_segment_file, MoeLayerSource};
 use super::index::Vindex3Index;
-use super::write::{segment_path, MOE_MANIFEST_JSON};
+use super::write::{segment_file_name, MOE_MANIFEST_JSON};
 use crate::format::filenames::INDEX_JSON;
 use crate::format::moe_manifest::layer::MoeLayer;
 use crate::format::moe_manifest::MoeManifest;
@@ -97,7 +97,7 @@ impl ContainerBuilder {
             )));
         }
 
-        let path = segment_path(&self.root, &storage);
+        let path = super::container_path::prepare_write(&self.root, &segment_file_name(&storage))?;
         write_segment_file(source, &path)?;
         let size = std::fs::metadata(&path).map_err(VindexError::Io)?.len();
 

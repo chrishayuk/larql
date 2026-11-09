@@ -87,10 +87,7 @@ pub fn compact_container(src: &Path, out: &Path) -> Result<CompactReport, Vindex
                 .to_string_lossy()
                 .replace('\\', "/");
             if referenced.contains(&rel) {
-                let dst = out.join(&rel);
-                if let Some(parent) = dst.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
+                let dst = super::container_path::prepare_write(out, &rel)?;
                 if std::fs::hard_link(&path, &dst).is_err() {
                     std::fs::copy(&path, &dst)?;
                 }

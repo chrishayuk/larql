@@ -80,10 +80,7 @@ pub fn bake_container(
     for rep_id in rep_ids {
         let entry = index.representations.get(&rep_id).unwrap().clone();
         let src_segment = src.join(&entry.segment);
-        let out_segment = out.join(&entry.segment);
-        if let Some(parent) = out_segment.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let out_segment = super::container_path::prepare_write(out, &entry.segment)?;
 
         let (header, payload_start) = read_segment_header(&src_segment)?;
         let overridden: BTreeSet<String> = header
