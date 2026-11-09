@@ -49,6 +49,8 @@ pub(super) struct CaptureIdentity {
     pub(super) backend: String,
     pub(super) representation_source: String,
     pub(super) tokens_sha256: String,
+    /// PREC-DIAG-1 E0b `--rope-angles`, by name.
+    pub(super) rope_angles: String,
     pub(super) draft_depth: Option<usize>,
     pub(super) environment: Vec<(String, String)>,
     pub(super) platform: String,
@@ -66,6 +68,7 @@ impl CaptureIdentity {
             "backend": self.backend,
             "representation_source": self.representation_source,
             "tokens_sha256": self.tokens_sha256,
+            "rope_angles": self.rope_angles,
             "draft_depth": self.draft_depth,
             "environment": self.environment.iter()
                 .map(|(k, v)| json!({"name": k, "value": v})).collect::<Vec<_>>(),

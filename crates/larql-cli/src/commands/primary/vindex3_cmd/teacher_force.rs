@@ -47,13 +47,15 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     out: &Path,
     slice: ExecutionSlice,
     capture: Option<&super::site_capture_dump::CaptureTarget>,
+    rope_angles: larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loading = Instant::now();
     // Prepared explicitly rather than through `DecodeSession::new`, so
     // the slice reaches the operand loader. A `Draft` prepares only its
     // own layers — measured at 4 + ~13.4 reads per layer on the 27B
     // container — which is what makes a shallow draft affordable at all.
-    let ops = PreparedOperands::load(plan, store, backend, slice.clone())?;
+    let mut ops = PreparedOperands::load(plan, store, backend, slice.clone())?;
+    ops.set_rope_angles(rope_angles)?;
     let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
     let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
     let prepare_s = loading.elapsed().as_secs_f64();
@@ -125,6 +127,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     }
 
     println!("engine: {engine}");
+    println!("rope angles: {}", rope_angles.name());
     println!("positions: {}  vocab: {vocab}", tokens.len());
     println!(
         "teacher-forced {} positions in {:.1} s ({:.0} ms/position)",
@@ -146,7 +149,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
          \"positions\": {},\n  \"vocab\": {vocab},\n  \
          \"prepare_s\": {prepare_s:.3},\n  \"steps_s\": {steps_s:.3},\n  \
          \"ms_per_position\": {:.1},\n  \
-         \"max_format_env\": \"{}\"\n}}\n",
+         \"max_format_env\": \"{}\",\n  \"rope_angles\": \"{}\"\n}}\n",
         match &slice {
             ExecutionSlice::Draft { end } => end.to_string(),
             _ => "null".to_string(),
@@ -157,6 +160,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         tokens.len(),
         steps_s * 1000.0 / tokens.len() as f64,
         std::env::var("LARQL_CPU_MAX_FORMAT").unwrap_or_default(),
+        rope_angles.name(),
     );
     let meta_path = out.with_extension("meta.json");
     std::fs::write(&meta_path, meta)?;

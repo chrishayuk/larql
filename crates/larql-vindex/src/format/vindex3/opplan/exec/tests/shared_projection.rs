@@ -102,6 +102,7 @@ impl Fixture {
             }),
             bias: None,
             sinks: None,
+            rope_angles: Default::default(),
         }
     }
 }

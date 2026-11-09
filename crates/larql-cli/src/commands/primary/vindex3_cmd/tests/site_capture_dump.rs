@@ -51,6 +51,7 @@ fn exec_args(
         gemv_witness: None,
         gemv_witness_max_operands: 1,
         capture,
+        rope_angles: Default::default(),
         bank: None,
         dump_dir: None,
         draft_depth: None,

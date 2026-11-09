@@ -18,6 +18,7 @@ mod realizations;
 mod residency_admission;
 mod residency_faults;
 mod residency_record;
+mod rope_angles;
 mod site_capture_dump;
 mod sizes;
 mod token_bank;

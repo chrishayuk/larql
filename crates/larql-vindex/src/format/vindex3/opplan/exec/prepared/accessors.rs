@@ -344,6 +344,42 @@ impl PreparedOperands {
         Ok(row)
     }
 
+    /// PREC-DIAG-1 E0b: choose how every softmax layer of this image
+    /// constructs its RoPE cos/sin for the runs it serves. The default is
+    /// [`RopeAngles::Larql`], and setting it again is a no-op.
+    /// [`RopeAngles::HfF32`] is refused on an image with any non-softmax
+    /// attention layer: those layers position-encode through their own
+    /// operators, so the intervention would apply to part of the stack
+    /// while the run's record claimed all of it.
+    ///
+    /// [`RopeAngles::Larql`]: super::super::rope_angles::RopeAngles::Larql
+    /// [`RopeAngles::HfF32`]: super::super::rope_angles::RopeAngles::HfF32
+    pub fn set_rope_angles(
+        &mut self,
+        angles: super::super::rope_angles::RopeAngles,
+    ) -> Result<(), VindexError> {
+        if angles != super::super::rope_angles::RopeAngles::Larql {
+            if let Some(index) = self
+                .layers
+                .iter()
+                .position(|layer| !matches!(layer.attention, PreparedAttention::Softmax(_)))
+            {
+                return Err(VindexError::Parse(format!(
+                    "--rope-angles {} covers softmax attention only; executed layer {} is not \
+                     softmax attention",
+                    angles.name(),
+                    self.first_layer + index
+                )));
+            }
+        }
+        for layer in &mut self.layers {
+            if let PreparedAttention::Softmax(ops) = &mut layer.attention {
+                ops.rope_angles = angles;
+            }
+        }
+        Ok(())
+    }
+
     /// Width of one residual row.
     pub fn hidden(&self) -> usize {
         self.hidden

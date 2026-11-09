@@ -163,6 +163,7 @@ mod residency_budget;
 mod residency_census;
 mod residency_clone_identity;
 mod residency_observation;
+mod rope_angles;
 mod routed;
 mod seam;
 mod selected_output_head;

@@ -40,8 +40,34 @@ pub fn execute_slice_position_logits<'s, B: PlanBackend + ?Sized>(
     tokens: &[u32],
     backend: &B,
     slice: ExecutionSlice,
+    state: Option<BoxedContinuation>,
+    positions: &[usize],
+) -> Result<Vec<Vec<f32>>, VindexError> {
+    execute_slice_position_logits_with_rope_angles(
+        plan,
+        store,
+        tokens,
+        backend,
+        slice,
+        state,
+        positions,
+        super::rope_angles::RopeAngles::Larql,
+    )
+}
+
+/// [`execute_slice_position_logits`] with the run's RoPE construction
+/// chosen (PREC-DIAG-1 E0b). `RopeAngles::Larql` is the function above,
+/// bit for bit; it delegates here.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_slice_position_logits_with_rope_angles<'s, B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: impl Into<OperandSource<'s>>,
+    tokens: &[u32],
+    backend: &B,
+    slice: ExecutionSlice,
     mut state: Option<BoxedContinuation>,
     positions: &[usize],
+    rope_angles: super::rope_angles::RopeAngles,
 ) -> Result<Vec<Vec<f32>>, VindexError> {
     if let Some(bad) = positions.iter().find(|&&p| p >= tokens.len()) {
         return Err(VindexError::Parse(format!(
@@ -49,7 +75,8 @@ pub fn execute_slice_position_logits<'s, B: PlanBackend + ?Sized>(
             tokens.len()
         )));
     }
-    let ops = PreparedOperands::load(plan, store, backend, slice)?;
+    let mut ops = PreparedOperands::load(plan, store, backend, slice)?;
+    ops.set_rope_angles(rope_angles)?;
     // Only the newest layer's plane is kept: each boundary replaces the
     // last, so the plane after the final executed layer is what remains.
     let mut exit_plane: Option<Plane> = None;

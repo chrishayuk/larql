@@ -317,7 +317,18 @@ pub(super) fn condition_qk_in_place_keeping(
     }
 
     let _t = timed(OpClass::Rope);
-    match call.position {
+    // PREC-DIAG-1 E0b: under `RopeAngles::HfF32` Q and K are rotated here
+    // and the match below sees `None`; by default it sees the plan's
+    // policy and runs exactly as before.
+    let policy = super::rope_angles::rotate_or_defer(
+        call.rope_angles,
+        call.position,
+        head_dim,
+        position,
+        q,
+        k,
+    )?;
+    match policy {
         PositionPolicy::Rope { theta } => {
             for head in q.chunks_exact_mut(head_dim) {
                 rope_rotate(head, position, theta);

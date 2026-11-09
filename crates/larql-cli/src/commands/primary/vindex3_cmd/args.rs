@@ -415,6 +415,37 @@ pub struct ExecArgs {
     /// PREC-DIAG-1 E0a sub-layer capture on the `--logit-dump` path.
     #[command(flatten)]
     pub capture: SiteCaptureArgs,
+
+    /// PREC-DIAG-1 E0b: how RoPE cos/sin are constructed. `larql` (the
+    /// default, the shipped f64-derived construction) or `hf-f32`
+    /// (transformers' construction, operation by operation in f32 — its
+    /// formula, dtype and the platform's f32 trig). A diagnostic
+    /// intervention: accepted only with `--logit-dump` or a batched
+    /// `--prefill-logit-dump` on the interpreter backends, refused
+    /// everywhere else.
+    #[arg(long, value_enum, default_value_t = RopeAnglesArg::Larql)]
+    pub rope_angles: RopeAnglesArg,
+}
+
+/// `--rope-angles` (PREC-DIAG-1 E0b).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum RopeAnglesArg {
+    /// The shipped construction.
+    #[default]
+    Larql,
+    /// transformers' f32 construction.
+    #[value(name = "hf-f32")]
+    HfF32,
+}
+
+impl RopeAnglesArg {
+    pub fn angles(self) -> larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles {
+        use larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles;
+        match self {
+            Self::Larql => RopeAngles::Larql,
+            Self::HfF32 => RopeAngles::HfF32,
+        }
+    }
 }
 
 /// Default `--capture-budget-bytes`: 2 GiB, PREC-DIAG-1's per-experiment
