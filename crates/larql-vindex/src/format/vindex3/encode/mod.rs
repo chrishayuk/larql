@@ -250,8 +250,11 @@ pub fn encode_graph_with_sources(
                 .map(|t| (t.relative_name.as_str(), t.dtype.as_str())),
         ));
 
+        // The object id is the checkpoint's word (a nested component is
+        // named after its `*_config` key), so this is where a hostile name
+        // would become a write outside `out`.
         let written = segment::write_segment(
-            &out.join(&segment_rel),
+            &super::container_path::prepare_write(out, &segment_rel)?,
             &representation_id,
             planned,
             |source_name, write, observe| {

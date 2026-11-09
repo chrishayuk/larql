@@ -46,6 +46,29 @@ pub enum VindexError {
     )]
     LegacyBankContainer,
 
+    /// A container named a file outside itself — an absolute path, a
+    /// `..` component, or a name that would mean a different file on a
+    /// different host. Refused before any path is composed from it.
+    #[error(
+        "the container names `{name}` as one of its files, which is refused: {reason}; \
+         every name a container uses must be a relative path inside it"
+    )]
+    UnsafeContainerPath { name: String, reason: &'static str },
+
+    /// A downloaded container's segment bytes are not the bytes its own
+    /// index seals. Transport integrity is the host's; this is the
+    /// container's word about itself, checked on arrival.
+    #[error(
+        "the container at {} does not match its own index: {}; remove it from the \
+         download cache and fetch it again",
+        container.display(),
+        mismatches.join("; ")
+    )]
+    PayloadDigestMismatch {
+        container: PathBuf,
+        mismatches: Vec<String>,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("model error: {0}")]

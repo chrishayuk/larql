@@ -268,14 +268,28 @@ fn verify_segment_hash(
     entry: &super::index::RepresentationEntry,
     defects: &mut Vec<InspectionDefect>,
 ) -> Result<(), VindexError> {
-    let actual = crate::format::checksums::sha256_file(&root.join(&entry.segment))?;
-    if actual != entry.segment_sha256 {
-        defects.push(InspectionDefect::PayloadCorrupt(format!(
-            "`{}` hashes {actual}, directory says {}",
-            entry.segment, entry.segment_sha256
-        )));
+    if let Some(mismatch) = segment_digest_mismatch(root, entry)? {
+        defects.push(InspectionDefect::PayloadCorrupt(mismatch));
     }
     Ok(())
+}
+
+/// Whether one segment's bytes are the bytes its directory entry seals.
+///
+/// The single comparison behind both `inspect --verify` and the `hf://`
+/// pull: `None` when the file hashes to the declared `segment_sha256`,
+/// otherwise the disagreement, worded for a refusal.
+pub fn segment_digest_mismatch(
+    root: &Path,
+    entry: &super::index::RepresentationEntry,
+) -> Result<Option<String>, VindexError> {
+    let actual = crate::format::checksums::sha256_file(&root.join(&entry.segment))?;
+    Ok((actual != entry.segment_sha256).then(|| {
+        format!(
+            "`{}` hashes {actual}, directory says {}",
+            entry.segment, entry.segment_sha256
+        )
+    }))
 }
 
 #[cfg(test)]

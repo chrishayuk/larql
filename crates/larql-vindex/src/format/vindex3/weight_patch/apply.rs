@@ -485,7 +485,7 @@ fn write_stage(
             continue;
         }
         let from = src.join(&rel);
-        let to = stage.join(&rel);
+        let to = crate::format::vindex3::container_path::prepare_write(stage, &rel)?;
         if std::fs::hard_link(&from, &to).is_err() {
             std::fs::copy(&from, &to)?;
         }
@@ -539,8 +539,9 @@ fn write_patched_segment(
         })
         .collect();
     let mut source = File::open(src.join(&at.entry.segment))?;
+    let dest = crate::format::vindex3::container_path::prepare_write(stage, &at.entry.segment)?;
     Ok(write_segment(
-        &stage.join(&at.entry.segment),
+        &dest,
         &at.canonical_id,
         planned,
         |name, w, tap| {
