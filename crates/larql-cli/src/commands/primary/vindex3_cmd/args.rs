@@ -411,6 +411,44 @@ pub struct ExecArgs {
     /// unprofiled run and attribution from this one.
     #[arg(long, requires = "generate")]
     pub profile: bool,
+
+    /// PREC-DIAG-1 E0a sub-layer capture on the `--logit-dump` path.
+    #[command(flatten)]
+    pub capture: SiteCaptureArgs,
+}
+
+/// Default `--capture-budget-bytes`: 2 GiB, PREC-DIAG-1's per-experiment
+/// capture limit.
+pub const DEFAULT_CAPTURE_BUDGET_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Sub-layer capture (PREC-DIAG-1 E0a): copies of the intermediate f32
+/// values the cached decode computed at chosen positions, written beside
+/// the `--logit-dump`. Observational only — the logits are bit-identical
+/// with and without it.
+#[derive(Args, Clone, Debug, Default)]
+pub struct SiteCaptureArgs {
+    /// Write the capture into this NEW directory: one `[positions, width]`
+    /// little-endian f32 file per site per layer and a `manifest.json`.
+    /// Requires `--logit-dump` (the registered cached path) and
+    /// `--capture-positions`.
+    #[arg(
+        long,
+        value_name = "DIR",
+        requires_all = ["logit_dump", "capture_positions"],
+        conflicts_with = "bank"
+    )]
+    pub capture_sites: Option<PathBuf>,
+
+    /// Comma-separated positions to capture, strictly increasing, each
+    /// inside the token sequence.
+    #[arg(long, value_name = "LIST", requires = "capture_sites")]
+    pub capture_positions: Option<String>,
+
+    /// The most bytes the capture may hold and write. Checked before
+    /// anything is allocated or written; a capture over it ends the run
+    /// with a `resource_limit` result instead of dropping sites.
+    #[arg(long, value_name = "BYTES", requires = "capture_sites")]
+    pub capture_budget_bytes: Option<u64>,
 }
 
 #[derive(Args)]

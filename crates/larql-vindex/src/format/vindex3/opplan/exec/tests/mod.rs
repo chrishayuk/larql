@@ -168,6 +168,7 @@ mod seam;
 mod selected_output_head;
 mod shared_projection;
 mod sinks_bias;
+mod site_capture;
 mod smoke;
 mod streaming;
 mod system_clock;

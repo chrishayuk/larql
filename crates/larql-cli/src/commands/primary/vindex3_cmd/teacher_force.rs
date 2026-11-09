@@ -46,6 +46,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     store: &OperandStore,
     out: &Path,
     slice: ExecutionSlice,
+    capture: Option<&super::site_capture_dump::CaptureTarget>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loading = Instant::now();
     // Prepared explicitly rather than through `DecodeSession::new`, so
@@ -64,6 +65,15 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         plan.layers.len()
     );
 
+    // PREC-DIAG-1 E0a: the capture is built (and its budget judged)
+    // before the first step; an observer the step only borrows.
+    let mut observer = match capture {
+        Some(target) => {
+            Some(target.observer(plan, executed.clone(), ops.hidden(), tokens.len())?)
+        }
+        None => None,
+    };
+
     let started = Instant::now();
     let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
     let mut vocab = 0usize;
@@ -71,8 +81,11 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     // that path later.
     let mut witness_digest = gemv_witness::is_active().then(|| (Sha256::new(), 0u64));
     for (i, &token) in tokens.iter().enumerate() {
-        let logits = session
-            .step(token)?
+        let stepped = match observer.as_mut() {
+            Some(observer) => session.step_observed(token, observer)?,
+            None => session.step(token)?,
+        };
+        let logits = stepped
             .logits
             .ok_or("plan carries no output head — cannot score")?;
         if vocab == 0 {
@@ -148,5 +161,16 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     let meta_path = out.with_extension("meta.json");
     std::fs::write(&meta_path, meta)?;
     println!("wrote provenance to {}", meta_path.display());
+    if let (Some(target), Some(observer)) = (capture, observer) {
+        // What the CPU projections actually ran, for the capture's record.
+        let projection_plans: Vec<(String, u64)> =
+            larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+                .all()
+                .iter()
+                .filter(|(_, t)| t.calls > 0)
+                .map(|(plan, t)| (format!("{plan:?}"), t.calls))
+                .collect();
+        target.write(observer.finish(), out, &projection_plans)?;
+    }
     Ok(())
 }

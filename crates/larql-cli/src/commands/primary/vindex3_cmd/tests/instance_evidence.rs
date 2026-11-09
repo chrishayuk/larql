@@ -602,6 +602,7 @@ fn exec_args(container: &Path) -> ExecArgs {
         prefill_method: super::super::prefill_dump::PrefillMethod::Batched,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
+        capture: Default::default(),
         bank: None,
         dump_dir: None,
         draft_depth: None,

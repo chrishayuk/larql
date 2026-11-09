@@ -256,6 +256,20 @@ pub(super) fn condition_qk_in_place(
     q: &mut [f32],
     k: &mut [f32],
 ) -> Result<(), VindexError> {
+    condition_qk_in_place_keeping(call, position, q, k, None)
+}
+
+/// [`condition_qk_in_place`], copying Q and K into `keep` immediately
+/// before position encoding when asked (PREC-DIAG-1 E0a). The copy reads
+/// the buffers; the rotation then runs on them exactly as it does with
+/// `keep = None`.
+pub(super) fn condition_qk_in_place_keeping(
+    call: &AttentionCall<'_>,
+    position: usize,
+    q: &mut [f32],
+    k: &mut [f32],
+    keep: Option<&mut super::observe::UnpositionedQk>,
+) -> Result<(), VindexError> {
     let head_dim = call.head_dim;
     let qk_weight = call.qk_norm.as_ref().map(
         |QkNormCall {
@@ -298,6 +312,9 @@ pub(super) fn condition_qk_in_place(
         }
     }
     drop(norm);
+    if let Some(keep) = keep {
+        keep.keep(q, k);
+    }
 
     let _t = timed(OpClass::Rope);
     match call.position {

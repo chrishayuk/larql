@@ -171,6 +171,20 @@ impl PreparedOperands {
         backend: &B,
         carrier: &[f32],
     ) -> Result<Option<Vec<f32>>, VindexError> {
+        self.head_logits_observed(backend, carrier, &mut |_| {})
+    }
+
+    /// [`Self::head_logits`], handing `exit` the vector the head reads —
+    /// the final-normed carrier, or the carrier itself where the image
+    /// declares no final norm — before the head runs (PREC-DIAG-1 E0a).
+    /// Borrowed and observation-only; `head_logits` IS this with a no-op
+    /// tap, so the two cannot drift. Not called when there is no head.
+    pub fn head_logits_observed<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+        exit: &mut dyn FnMut(&[f32]),
+    ) -> Result<Option<Vec<f32>>, VindexError> {
         if self.output().is_none() {
             return Ok(None);
         }
@@ -182,6 +196,7 @@ impl PreparedOperands {
             }
             None => carrier,
         };
+        exit(final_hidden);
         self.head_over_normed(backend, final_hidden)
     }
 

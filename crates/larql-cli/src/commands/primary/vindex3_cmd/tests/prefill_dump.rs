@@ -49,6 +49,7 @@ fn exec_args(
         prefill_method: method,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
+        capture: Default::default(),
         bank: None,
         dump_dir: None,
         draft_depth: None,

@@ -189,6 +189,43 @@ fn begin_gemv_witness(
     Ok(start)
 }
 
+/// PREC-DIAG-1 E0a: what produced a capture, bound before anything
+/// loads. A plugin or lowering provider can change what executes without
+/// the backend's name changing, so a capture under one is refused, as the
+/// gemv witness refuses.
+fn capture_identity(
+    args: &ExecArgs,
+    engine: &str,
+    tokens: &[u32],
+) -> Result<super::site_capture_dump::CaptureIdentity, Box<dyn std::error::Error>> {
+    if !args.plugin.plugins.is_empty()
+        || args.plugin.lowering.is_some()
+        || args.plugin.representation.is_some()
+    {
+        return Err(
+            "--capture-sites can't describe a run with --plugin, --lowering or --representation: \
+             they can change what executes without the backend's name changing"
+                .into(),
+        );
+    }
+    Ok(super::site_capture_dump::CaptureIdentity {
+        build_commit: super::generate::residency_record::build_commit(),
+        binary_sha256: sha256_hex(&std::fs::read(std::env::current_exe()?)?),
+        container: std::fs::canonicalize(&args.container)?,
+        container_index_sha256: sha256_hex(&std::fs::read(args.container.join("index.json"))?),
+        component: args.component.clone(),
+        engine: engine.to_string(),
+        backend: format!("{:?}", args.backend),
+        representation_source: args.representation_source.clone(),
+        tokens_sha256: super::site_capture_dump::tokens_sha256(tokens),
+        draft_depth: args.draft_depth,
+        environment: std::env::vars()
+            .filter(|(k, _)| k.starts_with("LARQL_") || k == "RAYON_NUM_THREADS")
+            .collect(),
+        platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+    })
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -359,9 +396,24 @@ fn run_on<B: PlanBackend>(
         None => ExecutionSlice::Full,
     };
     if let Some(out) = &args.logit_dump {
-        return super::teacher_force::run_teacher_force(
-            backend, &engine, tokens, plan, store, out, slice,
+        let capture =
+            super::site_capture_dump::CaptureTarget::open(&args.capture, tokens.len(), || {
+                capture_identity(args, &engine, tokens)
+            })?;
+        let ran = super::teacher_force::run_teacher_force(
+            backend,
+            &engine,
+            tokens,
+            plan,
+            store,
+            out,
+            slice,
+            capture.as_ref(),
         );
+        if let (Err(error), Some(target)) = (&ran, &capture) {
+            target.record_run_failure(error.as_ref());
+        }
+        return ran;
     }
     if let Some(out) = &args.prefill_logit_dump {
         let lengths =

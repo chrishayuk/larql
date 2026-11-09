@@ -50,6 +50,7 @@ pub(crate) mod prepare;
 mod realizations;
 mod reconstruction;
 mod sensitivity;
+mod site_capture_dump;
 mod teacher_force;
 mod token_bank;
 use exec::run_exec;

@@ -205,6 +205,8 @@ fn synthetic_record<'a>(
         // keep the record's own shape contract.
         query: values,
         source_keys: source_values,
+        query_unpositioned: None,
+        key_unpositioned: None,
     }
 }
 

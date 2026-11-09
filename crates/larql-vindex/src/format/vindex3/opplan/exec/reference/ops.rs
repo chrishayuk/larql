@@ -8,7 +8,7 @@ use super::super::kernels::{
     partial_rotary_frequencies, partial_rotary_slice, rope_rotate, rope_rotate_scaled, sigmoid,
     softcap, softmax, softmax_with_sink, yarn_frequencies, FusedHalf, GateMutation,
 };
-use super::super::observe::AttentionHeadRecord;
+use super::super::observe::{AttentionHeadRecord, UnpositionedQk};
 use crate::error::VindexError;
 use larql_models::config::NormType;
 use larql_models::config::{
@@ -86,14 +86,6 @@ impl ReferenceBackend {
         )
     }
 
-    pub(super) fn project_position(
-        call: &AttentionCall<'_>,
-        position: usize,
-        pre: &[f32],
-    ) -> Result<ProjectedQkv, VindexError> {
-        Self::project_position_inner(call, position, pre, GateMutation::None)
-    }
-
     /// [`Self::project_position`] with a deliberate defect in the fused
     /// query/gate split. The public path above always passes
     /// [`GateMutation::None`]; the mutation table drives THIS function,
@@ -103,6 +95,20 @@ impl ReferenceBackend {
         position: usize,
         pre: &[f32],
         gate_mutation: GateMutation,
+    ) -> Result<ProjectedQkv, VindexError> {
+        Self::project_position_keeping(call, position, pre, gate_mutation, None)
+    }
+
+    /// [`Self::project_position_inner`], copying Q and K into `keep`
+    /// immediately before position encoding when asked (PREC-DIAG-1
+    /// E0a). The copy reads the buffers; the rotation then runs on them
+    /// exactly as it does with `keep = None`.
+    pub(in super::super) fn project_position_keeping(
+        call: &AttentionCall<'_>,
+        position: usize,
+        pre: &[f32],
+        gate_mutation: GateMutation,
+        keep: Option<&mut UnpositionedQk>,
     ) -> Result<ProjectedQkv, VindexError> {
         let head_dim = call.head_dim;
         let q_rows = call.num_q_heads * head_dim;
@@ -149,6 +155,9 @@ impl ReferenceBackend {
             for value in &mut q {
                 *value *= query_scale as f32;
             }
+        }
+        if let Some(keep) = keep {
+            keep.keep(&q, &k);
         }
         match call.position {
             PositionPolicy::Rope { theta } => {
@@ -527,30 +536,42 @@ impl ReferenceBackend {
     ) -> Result<AttentionStepOut, VindexError> {
         let call = &step.op;
         let pre = &call.inputs[0];
-        let (q, k, v) = Self::project_position(call, step.position, pre)?;
-        let output = Self::attend_position_tapped(
+        // PREC-DIAG-1 E0a: with a tap armed, keep the pre-rotation Q/K
+        // and attach them to each head record. Unarmed, nothing is kept.
+        let mut unpositioned = tap.is_some().then(UnpositionedQk::default);
+        let (q, k, v) = Self::project_position_keeping(
             call,
             step.position,
-            &q,
-            &|p| {
-                if p == step.position {
-                    k.as_slice()
-                } else {
-                    step.rows().key(p)
-                }
-            },
-            &|p| {
-                if p == step.position {
-                    v.as_slice()
-                } else {
-                    step.rows().value(p)
-                }
-            },
             pre,
             GateMutation::None,
-            tap,
-            head_intervene,
+            unpositioned.as_mut(),
         )?;
+        let output =
+            UnpositionedQk::run_attached(unpositioned.as_ref(), call.head_dim, tap, |tap| {
+                Self::attend_position_tapped(
+                    call,
+                    step.position,
+                    &q,
+                    &|p| {
+                        if p == step.position {
+                            k.as_slice()
+                        } else {
+                            step.rows().key(p)
+                        }
+                    },
+                    &|p| {
+                        if p == step.position {
+                            v.as_slice()
+                        } else {
+                            step.rows().value(p)
+                        }
+                    },
+                    pre,
+                    GateMutation::None,
+                    tap,
+                    head_intervene,
+                )
+            })?;
         Ok(AttentionStepOut {
             key: k,
             value: v,
