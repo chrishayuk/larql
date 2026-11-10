@@ -1,6 +1,6 @@
 //! `EXTRACT MODEL ... INTO ...` — build a vindex from live model weights.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::ast::{Component, ExtractFormat, ExtractLevel, Range};
 use crate::error::LqlError;
@@ -12,6 +12,22 @@ use larql_vindex::format::filenames::KNN_STORE_BIN;
 use larql_vindex::format::generation::{
     admit_extraction_generation, ContainerGeneration, GenerationRequest,
 };
+
+/// EXTRACT writes a vindex directory in place, so the destination is
+/// held to the boundary every other directory-writing verb uses
+/// (`larql_vindex::format::fresh_output`): absent or an empty directory,
+/// and neither the model source nor nested with it. Checked before any
+/// model bytes move.
+///
+/// Unlike COMPILE, the write itself is not staged: an EXTRACT that fails
+/// part-way leaves a partial directory, which a re-run then refuses as
+/// non-empty. What this guarantees is that nothing already on disk is
+/// overwritten — and that the V3 encoder's remove-on-closure-defect only
+/// ever removes a directory this statement populated.
+fn check_extract_destination(model_source: &Path, output: &Path) -> Result<(), LqlError> {
+    larql_vindex::format::fresh_output::check_fresh_destination(model_source, output)?;
+    Ok(())
+}
 
 impl Session {
     pub(crate) fn exec_extract(
@@ -38,6 +54,9 @@ impl Session {
         }
 
         let output_dir = PathBuf::from(output);
+        // `model` is a local path or a hub id; as a path, a hub id names
+        // nothing on disk and so constrains nothing.
+        check_extract_destination(Path::new(model), &output_dir)?;
 
         let mut out = Vec::new();
         out.push(format!("Loading model: {model}..."));
@@ -105,9 +124,10 @@ impl Session {
             }
         }
 
-        // Rehydrate the L2 MEMIT store if a snapshot already exists at
-        // the extract destination (overwriting an extracted vindex
-        // re-runs build but should preserve prior compaction history).
+        // Rehydrate the L2 MEMIT store if the build left a snapshot at
+        // the destination. (The destination is always fresh — EXTRACT no
+        // longer writes over an existing vindex — so this is normally
+        // absent.)
         let memit_store = match load_memit_store(&output_dir) {
             Ok(Some(store)) => store,
             Ok(None) => larql_vindex::MemitStore::new(),
@@ -151,6 +171,7 @@ impl Session {
         }
 
         let output_dir = PathBuf::from(output);
+        check_extract_destination(&model_path, &output_dir)?;
         let mut out = vec![format!(
             "Encoding checkpoint {} → {} (VINDEX3)...",
             model_path.display(),

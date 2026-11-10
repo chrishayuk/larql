@@ -97,7 +97,7 @@ fn compile_skips_memit_fact_with_no_relation() {
         }],
     });
 
-    let out_dir = dir.join("compiled.vindex");
+    let out_dir = compile_output(&dir, "compiled.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}";"#,
         lql_path(&out_dir)

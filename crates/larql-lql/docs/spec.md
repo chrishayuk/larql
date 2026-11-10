@@ -646,6 +646,31 @@ COMPILE {CURRENT | <vindex_path>} INTO VINDEX <output_path>
 --   FAIL:                 abort if any slot has a conflicting write.
 -- ON CONFLICT is only valid for COMPILE INTO VINDEX, not COMPILE INTO MODEL.
 --
+-- <output_path> must be a fresh destination. This holds for COMPILE INTO
+-- VINDEX, COMPILE INTO MODEL and COMPACT INTO VINDEX, on both generations:
+--   - it may be absent (missing parents are created) or an existing EMPTY
+--     directory;
+--   - a directory that already holds anything is refused and left as it
+--     was — a previously compiled vindex included. Nothing is ever
+--     replaced; remove the old output yourself, or pick a new path;
+--   - the source itself, a directory containing it, a path inside it, and
+--     a symbolic link are refused (symlinks in the path are resolved first).
+-- The result is built in a hidden sibling directory and renamed into
+-- place: a refused or failed statement leaves <output_path> exactly as it
+-- was, and removes the parents it created.
+-- EXTRACT … INTO checks its destination by the same rule, before any
+-- model bytes move, but writes in place: an EXTRACT that fails part-way
+-- leaves a partial directory, which a re-run refuses as non-empty.
+-- "Renamed into place" is atomic publication, not crash durability: the
+-- staged files are not fsync'd, so after a power loss the output may be
+-- missing or incomplete (never mixed with older contents — there are
+-- none). The destination check and the promotion are separate steps; a
+-- path changed by another process in between is not defended against,
+-- beyond promotion failing if the destination gained contents.
+-- One path is stricter: a VINDEX3 COMPILE that carries stored-weight
+-- edits (UPDATE WEIGHTS) also refuses an existing empty directory — its
+-- output must not exist.
+--
 -- A subsequent USE on the compiled vindex needs no special loader code:
 -- it loads like any other vindex and INFER produces the inserted facts
 -- through the standard dense FFN path. From this point you can also run
