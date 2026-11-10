@@ -305,7 +305,8 @@ def count_nonfinite(path: Path, vocab: int) -> int:
                    for i in range(0, data.shape[0], COMPARE_ROWS)))
 
 
-def verify_logits(freeze: dict, run: dict, run_dir: Path) -> list[str]:
+def verify_logits(freeze: dict, run: dict, run_dir: Path,
+                  rope_angles: str = EXPERIMENTAL_ROPE_ANGLES) -> list[str]:
     problems = []
     n, vocab = freeze["input"]["length"], freeze["vocab"]
     logits, meta = run_dir / LOGITS, run_dir / LOGITS_META
@@ -320,8 +321,8 @@ def verify_logits(freeze: dict, run: dict, run_dir: Path) -> list[str]:
             angles = json.loads(meta.read_text()).get("rope_angles")
         except ValueError:
             angles = None
-        if angles != EXPERIMENTAL_ROPE_ANGLES:
-            problems.append(f"meta rope_angles {angles!r}, expected {EXPERIMENTAL_ROPE_ANGLES!r}")
+        if angles != rope_angles:
+            problems.append(f"meta rope_angles {angles!r}, expected {rope_angles!r}")
     return problems
 
 

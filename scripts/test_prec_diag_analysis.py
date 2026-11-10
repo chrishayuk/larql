@@ -414,6 +414,7 @@ class Freeze(unittest.TestCase):
         c = self.root / "c.vindex3"
         (c / "segments").mkdir(parents=True)
         (c / "segments" / "a.bin").write_bytes(b"segment")
+        (c / "system_graph.json").write_text("{}")
         (c / "index.json").write_text(json.dumps({"representations": {"a@BF16": {
             "segment": "segments/a.bin", "segment_sha256": ev.sha256_bytes(b"segment"), "payload_sha256": "p"}}}))
         ck = self.root / "ckpt"
