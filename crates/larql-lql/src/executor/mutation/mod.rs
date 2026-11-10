@@ -111,10 +111,12 @@ impl Session {
             }
         }
 
-        let Some(recording) = self.patch_recording.as_mut() else {
-            return Ok(());
-        };
-        for op in &mut recording.operations {
+        // Present: checked on entry, and nothing above clears it.
+        let operations = self
+            .patch_recording
+            .iter_mut()
+            .flat_map(|recording| recording.operations.iter_mut());
+        for op in operations {
             if let larql_vindex::PatchOp::Insert {
                 layer,
                 feature,
