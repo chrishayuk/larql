@@ -6,7 +6,7 @@
 //! be racing the thing it was trying to measure — and would pass or fail
 //! depending on what else happened to be running.
 
-use super::super::ledger::{ledger, ProjectionLedger};
+use super::super::ledger::{ledger, PlanTally, ProjectionLedger};
 use super::super::physical::PhysicalProjectionPlan;
 
 /// Every plan the ledger has a slot for. Adding a plan without adding it
@@ -355,4 +355,40 @@ fn a_plan_rate_is_its_bytes_over_its_own_time() {
     let rate = tally.rate_gbps().expect("a timed plan has a rate");
     assert!((rate - 12.0).abs() < 1e-9, "{rate}");
     assert_eq!(PlanTally::default().rate_gbps(), None);
+}
+
+#[test]
+fn a_tally_since_an_earlier_reading_is_the_fieldwise_difference() {
+    let earlier = PlanTally {
+        calls: 2,
+        bytes: 100,
+        slabs: 1,
+        grouped: 1,
+        positions: 3,
+        nanos: 50,
+        nanos_many: 20,
+    };
+    let now = PlanTally {
+        calls: 5,
+        bytes: 400,
+        slabs: 4,
+        grouped: 2,
+        positions: 9,
+        nanos: 80,
+        nanos_many: 30,
+    };
+    assert_eq!(
+        now.since(earlier),
+        PlanTally {
+            calls: 3,
+            bytes: 300,
+            slabs: 3,
+            grouped: 1,
+            positions: 6,
+            nanos: 30,
+            nanos_many: 10,
+        }
+    );
+    // A reset inside the window reads as nothing done, never a wrapped count.
+    assert_eq!(earlier.since(now), PlanTally::default());
 }
