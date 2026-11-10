@@ -18,6 +18,7 @@ mod residency_admission;
 mod residency_faults;
 mod residency_record;
 mod sizes;
+mod stop_at_eos;
 mod token_bank;
 
 use super::*;

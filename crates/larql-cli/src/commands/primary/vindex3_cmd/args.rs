@@ -245,9 +245,14 @@ pub struct ExecArgs {
     #[arg(long, requires = "generate", value_parser = clap::value_parser!(u16).range(2..=8))]
     pub speculate: Option<u16>,
 
-    /// With `--generate`: stop at the container's EOS ids
-    /// (`generation_config.json`), in both the greedy and `--speculate`
-    /// loops, instead of decoding the full count past end-of-turn.
+    /// With `--generate`: stop at the container's end-of-sequence tokens
+    /// (`generation_config.json` EOS ids, plus the built-in and declared
+    /// stop strings and `tokenizer_config.json`'s `eos_token` that its
+    /// tokenizer maps to a token), on every backend and in both the greedy
+    /// and `--speculate` loops, instead of decoding the full count past
+    /// end-of-turn. The stop id is the last generated id. A declared stop
+    /// string that is not a single token is reported as not honoured;
+    /// refused when no stop resolves to an id.
     #[arg(long, requires = "generate")]
     pub stop_at_eos: bool,
 
