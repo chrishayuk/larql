@@ -95,7 +95,8 @@ fn a_missing_lm_head_falls_back_to_the_embedding_object_when_tied() {
 /// The same missing tensor, but `tie_word_embeddings: false` — the
 /// GPT-OSS/OLMoE shape. The fallback must NOT fire: reusing the embedding
 /// here would silently serve the wrong projection for a checkpoint that
-/// lost its real one, so the plan stays head-less rather than guessing.
+/// lost its real one. It never guesses; and since #743 a text model with
+/// no head is not a closed plan either, but a named closure defect.
 #[test]
 fn a_missing_lm_head_stays_absent_when_explicitly_untied() {
     let dir = tempfile::tempdir().unwrap();
@@ -113,9 +114,18 @@ fn a_missing_lm_head_stays_absent_when_explicitly_untied() {
     encode_system(&named, out.path()).unwrap();
     let inspection = inspect_container(out.path(), false).unwrap();
     let outcome = plan_component_ops(&inspection, out.path(), "target").unwrap();
-    assert!(outcome.closed(), "{:?}", outcome.defects);
-    let plan = outcome.plan.unwrap();
-    assert!(plan.output.is_none());
+    assert!(!outcome.closed());
+    assert!(
+        outcome.plan.is_none(),
+        "no plan, so nothing reuses the embedding"
+    );
+    assert!(
+        outcome.defects.contains(&ClosureDefect::NoOutputHead {
+            component: "target".into()
+        }),
+        "{:?}",
+        outcome.defects
+    );
 }
 
 /// THE discovery gate: an attention-gate operand whose judged semantics

@@ -17,6 +17,7 @@
 
 use serde::Serialize;
 
+use super::component::ComponentRole;
 use super::object::ObjectKind;
 use super::policy::LayerOperator;
 use super::SystemGraph;
@@ -28,6 +29,10 @@ pub enum CompletenessDefect {
     MissingSurface { component: String },
     /// Embedding/head objects exist but the surface has no head group.
     MissingHeadSurface { component: String },
+    /// The primary text component declares a vocabulary but has no
+    /// output-head object and does not reuse its embedding: it cannot
+    /// produce a logit (#743).
+    NoOutputHead { component: String },
     /// A decoder stack exists but the surface records no norm placement —
     /// count is not semantics, placement is, and a plan cannot be built
     /// without it.
@@ -53,6 +58,11 @@ impl std::fmt::Display for CompletenessDefect {
             Self::MissingHeadSurface { component } => write!(
                 f,
                 "component `{component}` owns embedding/head objects but its surface has no head group"
+            ),
+            Self::NoOutputHead { component } => write!(
+                f,
+                "component `{component}` is the primary text model and declares a vocabulary, but has \
+                 no output-head object and does not reuse its embedding: it cannot produce a logit"
             ),
             Self::MissingNormPlacement { component } => write!(
                 f,
@@ -102,6 +112,17 @@ pub fn execution_completeness(graph: &SystemGraph) -> Vec<CompletenessDefect> {
             Some(surface) => {
                 if needs_head && surface.head.is_none() {
                     defects.push(CompletenessDefect::MissingHeadSurface {
+                        component: component.id.clone(),
+                    });
+                }
+                if component.role == ComponentRole::PrimaryText
+                    && surface
+                        .head
+                        .as_ref()
+                        .is_some_and(|h| !h.head_reuses_embedding)
+                    && !kinds.contains(&ObjectKind::OutputHead)
+                {
+                    defects.push(CompletenessDefect::NoOutputHead {
                         component: component.id.clone(),
                     });
                 }
