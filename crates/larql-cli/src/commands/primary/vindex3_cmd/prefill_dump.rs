@@ -111,7 +111,8 @@ pub(super) fn run_prefill_dump<B: PlanBackend>(
         }
     };
     println!("rope angles: {}", rope_angles.name());
-    let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
+    // Appears at `out` only once every row is written (#744).
+    let mut file = super::pending_output::PendingOutput::create(out)?;
     let mut vocab = None;
     for (row, &length) in rows.iter().zip(lengths) {
         same_vocabulary(&mut vocab, row.len(), length)?;
@@ -119,7 +120,7 @@ pub(super) fn run_prefill_dump<B: PlanBackend>(
             file.write_all(&value.to_le_bytes())?;
         }
     }
-    file.flush()?;
+    file.commit()?;
     println!(
         "prefilled {} position(s) ({method:?}) in {:.1} s  vocab: {}",
         lengths.len(),

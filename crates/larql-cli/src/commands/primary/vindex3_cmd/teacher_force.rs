@@ -31,6 +31,9 @@ use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
+/// The sidecar beside a logit dump: `<out stem>.meta.json`.
+pub(super) const META_EXTENSION: &str = "meta.json";
+
 /// Step `tokens` through the plan one position at a time, writing every
 /// position's logits to `out`.
 ///
@@ -77,7 +80,8 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     };
 
     let started = Instant::now();
-    let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
+    // Appears at `out` only once every position is written (#744).
+    let mut file = super::pending_output::PendingOutput::create(out)?;
     let mut vocab = 0usize;
     // As the bytes are written, so that a witness describes this run's dump, not whatever is at
     // that path later.
@@ -116,7 +120,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
             );
         }
     }
-    file.flush()?;
+    file.commit()?;
     if let Some((digest, written)) = witness_digest {
         let hex = digest
             .finalize()
@@ -162,7 +166,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         std::env::var("LARQL_CPU_MAX_FORMAT").unwrap_or_default(),
         rope_angles.name(),
     );
-    let meta_path = out.with_extension("meta.json");
+    let meta_path = out.with_extension(META_EXTENSION);
     std::fs::write(&meta_path, meta)?;
     println!("wrote provenance to {}", meta_path.display());
     if let (Some(target), Some(observer)) = (capture, observer) {
