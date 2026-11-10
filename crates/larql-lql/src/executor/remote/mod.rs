@@ -13,8 +13,9 @@
 
 use super::Backend;
 use super::Session;
-use crate::ast::{Condition, Value};
+use crate::ast::Condition;
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope};
 
 mod mutation;
 mod query;
@@ -57,27 +58,26 @@ pub(super) fn require_layer_feature(
     conditions: &[Condition],
     verb: &str,
 ) -> Result<(usize, usize), LqlError> {
-    let layer = lookup_usize_condition(conditions, "layer").ok_or_else(|| {
+    // The same grammar as a local mutation: a clause with a condition
+    // that cannot be evaluated is refused before anything is sent.
+    let predicate = EdgePredicate::parse(conditions, PredicateScope::EDGES)?;
+    if predicate.entity.is_some() || predicate.relation.is_some() || predicate.score.is_some() {
+        return Err(LqlError::Execution(format!(
+            "remote {verb} addresses one slot by `layer` and `feature`; entity, relation \
+             and score conditions are not evaluated remotely and would be dropped"
+        )));
+    }
+    let layer = predicate.layer.ok_or_else(|| {
         LqlError::Execution(format!(
             "remote {verb} requires `layer = <int>` in WHERE clause"
         ))
     })?;
-    let feature = lookup_usize_condition(conditions, "feature").ok_or_else(|| {
+    let feature = predicate.feature.ok_or_else(|| {
         LqlError::Execution(format!(
             "remote {verb} requires `feature = <int>` in WHERE clause"
         ))
     })?;
     Ok((layer, feature))
-}
-
-pub(super) fn lookup_usize_condition(conditions: &[Condition], field: &str) -> Option<usize> {
-    conditions
-        .iter()
-        .find(|c| c.field == field)
-        .and_then(|c| match &c.value {
-            Value::Integer(n) if *n >= 0 => Some(*n as usize),
-            _ => None,
-        })
 }
 
 impl Session {

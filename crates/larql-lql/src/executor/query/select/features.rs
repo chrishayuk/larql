@@ -1,8 +1,9 @@
 //! `SELECT * FROM FEATURES` — list features (one row per slot)
 //! optionally filtered by layer / feature id / top token.
 
-use crate::ast::{Condition, Value};
+use crate::ast::Condition;
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope};
 use crate::executor::Session;
 
 use super::format::{also_display, banner, format_also, FEATURES_DEFAULT_LIMIT};
@@ -16,27 +17,10 @@ impl Session {
         let ctx = self.browse()?;
         let classifier = self.relation_classifier();
 
-        let layer_filter = conditions
-            .iter()
-            .find(|c| c.field == "layer")
-            .and_then(|c| match c.value {
-                Value::Integer(n) if n >= 0 => Some(n as usize),
-                _ => None,
-            });
-        let feature_filter = conditions
-            .iter()
-            .find(|c| c.field == "feature")
-            .and_then(|c| match c.value {
-                Value::Integer(n) if n >= 0 => Some(n as usize),
-                _ => None,
-            });
-        let token_filter = conditions
-            .iter()
-            .find(|c| c.field == "token" || c.field == "entity")
-            .and_then(|c| match &c.value {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            });
+        let predicate = EdgePredicate::parse(conditions, PredicateScope::FEATURES)?;
+        let layer_filter = predicate.layer;
+        let feature_filter = predicate.feature;
+        let token_filter = predicate.entity;
 
         // Default LIMIT picking:
         //   - feature_filter set  → show that feature at every layer

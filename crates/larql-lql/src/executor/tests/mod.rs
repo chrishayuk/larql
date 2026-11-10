@@ -477,6 +477,7 @@ mod full_fixture_tests_real_modelweights_on;
 mod infer_trace_explain_infer_mode_variants;
 mod inferenceweights_format_dispatch;
 mod memit_fact_collection;
+mod mutation_recording;
 mod pipe;
 mod session_patched_overlay_mut_accessor;
 mod session_state_no_backend;

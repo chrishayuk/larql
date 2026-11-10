@@ -41,11 +41,6 @@ pub(super) const EDGES_WALK_TOP_K: usize = 500;
 /// `Also` column.
 pub(super) const ALSO_TOPK: usize = 3;
 
-/// Tolerance for `WHERE score = N` equality matches against `c_score`
-/// (an `f32`). Strict equality on f32s is brittle; we accept anything
-/// within this band as "equal".
-pub(super) const SCORE_EQ_TOLERANCE: f32 = 0.001;
-
 // ── Table column widths ──────────────────────────────────────────
 //
 // These are paired with banner widths derived from them. The pairs
@@ -136,11 +131,5 @@ mod tests {
         assert!(ENTITIES_DEFAULT_LIMIT > 0);
         assert!(FEATURES_DEFAULT_LIMIT > 0);
         assert!(EDGES_WALK_TOP_K >= EDGES_DEFAULT_LIMIT as usize);
-    }
-
-    #[test]
-    #[allow(clippy::assertions_on_constants)]
-    fn score_eq_tolerance_in_reasonable_range() {
-        assert!(SCORE_EQ_TOLERANCE > 0.0 && SCORE_EQ_TOLERANCE < 0.1);
     }
 }

@@ -142,12 +142,21 @@ fn show_features_filters_and_errors() {
         "SHOW FEATURES 0;",
         "SHOW FEATURES 0 LIMIT 3;",
         r#"SHOW FEATURES 0 WHERE token = "the";"#,
-        r#"SHOW FEATURES 0 WHERE relation = "x" LIMIT 2;"#,
+        r#"SHOW FEATURES 0 WHERE entity = "x" LIMIT 2;"#,
         "SHOW FEATURES 0 WHERE confidence > 0.5;",
-        "SHOW FEATURES 1 WHERE c_score > 2;",
+        "SHOW FEATURES 1 WHERE score > 2;",
     ] {
         let out = try_run(&mut session, sql).expect("SHOW FEATURES ok");
         assert!(!out.is_empty(), "header always present for {sql:?}");
+    }
+    // `relation` used to filter on the top token and `c_score` used to
+    // be a floor whatever the operator said; neither is a field here.
+    for sql in [
+        r#"SHOW FEATURES 0 WHERE relation = "x";"#,
+        "SHOW FEATURES 1 WHERE c_score > 2;",
+    ] {
+        let err = try_run(&mut session, sql).expect_err("not a SHOW FEATURES field");
+        assert!(err.contains("unsupported WHERE clause"), "{sql}: {err}");
     }
     // A layer with no features → the `nf == 0` early Err branch.
     let err = try_run(&mut session, "SHOW FEATURES 99;").expect_err("no features at layer 99");
