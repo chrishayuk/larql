@@ -74,6 +74,19 @@ use larql_vindex::format::vindex3::fixtures::{
     G_VOCAB,
 };
 
+/// The one model both realisations are built from, and so the identity both
+/// declare and every portable patch names.
+///
+/// The V2 vindex and the V3 container are the SAME checkpoint. `APPLY PATCH`
+/// compares the patch's `base_model` with the bound vindex's declared name,
+/// so a patch moves between the two only because they declare one name. They
+/// used to declare two spellings of it, which nothing checked.
+const PARITY_MODEL: &str = "parity-dense";
+
+/// A model the fixtures are not, for the gates that show a patch does not
+/// cross models merely because its slots and widths fit.
+const OTHER_MODEL: &str = "parity-dense-other-weights";
+
 fn run(session: &mut Session, stmt: &str) -> Vec<String> {
     let parsed = parse(stmt).unwrap_or_else(|e| panic!("parse {stmt}: {e}"));
     session
@@ -108,7 +121,7 @@ fn v2_vindex() -> tempfile::TempDir {
     larql_vindex::build_vindex(
         &weights,
         &tokenizer,
-        "parity/dense",
+        PARITY_MODEL,
         out.path(),
         8,
         larql_vindex::ExtractLevel::All,
@@ -135,7 +148,7 @@ fn v3_container() -> tempfile::TempDir {
         dense_f32_model,
         checkpoint.path(),
         container.path(),
-        "parity-dense",
+        PARITY_MODEL,
     );
     std::fs::write(
         container.path().join("tokenizer.json"),
@@ -256,9 +269,15 @@ fn knn_mutation_outcome(dir: &Path) -> (usize, bool, bool) {
 /// operations — `DeleteKnn` today — have no emitting statement yet;
 /// the portable artifact is still the contract both backends replay.
 fn write_patch(path: &std::path::Path, operations: Vec<larql_vindex::PatchOp>) {
+    write_patch_for(path, PARITY_MODEL, operations);
+}
+
+/// [`write_patch`] under a stated model identity, so a gate can ask what a
+/// backend does with a patch written against some other model.
+fn write_patch_for(path: &std::path::Path, model: &str, operations: Vec<larql_vindex::PatchOp>) {
     let patch = larql_vindex::VindexPatch {
         version: 1,
-        base_model: "parity/dense".into(),
+        base_model: model.into(),
         base_checksum: None,
         created_at: String::new(),
         description: None,
@@ -310,7 +329,7 @@ fn v2_vindex_worded() -> tempfile::TempDir {
     larql_vindex::build_vindex(
         &weights,
         &tokenizer,
-        "parity/dense",
+        PARITY_MODEL,
         out.path(),
         8,
         larql_vindex::ExtractLevel::All,
@@ -329,7 +348,7 @@ fn v3_container_worded() -> tempfile::TempDir {
         dense_f32_model,
         checkpoint.path(),
         container.path(),
-        "parity-dense",
+        PARITY_MODEL,
     );
     std::fs::write(
         container.path().join("tokenizer.json"),

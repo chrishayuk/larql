@@ -46,7 +46,7 @@ fn patch_multiple_patches_stack() {
             }),
         }],
     };
-    patched.apply_patch(p1);
+    patched.try_apply_patch(p1).expect("patch applies");
 
     // Patch 2: update F1
     let p2 = larql_vindex::VindexPatch {
@@ -70,7 +70,7 @@ fn patch_multiple_patches_stack() {
             }),
         }],
     };
-    patched.apply_patch(p2);
+    patched.try_apply_patch(p2).expect("patch applies");
 
     assert_eq!(patched.num_patches(), 2);
     assert_eq!(patched.feature_meta(0, 0).unwrap().top_token, "London");
@@ -126,8 +126,8 @@ fn patched_vindex_later_patch_overrides_earlier() {
             }),
         }],
     };
-    patched.apply_patch(p1);
-    patched.apply_patch(p2);
+    patched.try_apply_patch(p1).expect("patch applies");
+    patched.try_apply_patch(p2).expect("patch applies");
 
     // P2 wins
     assert_eq!(patched.feature_meta(0, 0).unwrap().top_token, "Tokyo");
