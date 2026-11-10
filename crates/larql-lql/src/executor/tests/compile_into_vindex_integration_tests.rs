@@ -6,7 +6,7 @@ use super::*;
 fn compile_into_vindex_no_patches_succeeds() {
     let (mut session, dir) = vindex_session("compile_nopatches_v");
 
-    let output = dir.join("compiled.vindex");
+    let output = compile_output(&dir, "compiled.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}";"#,
         lql_path(&output)
@@ -27,7 +27,7 @@ fn compile_into_vindex_no_patches_succeeds() {
 #[test]
 fn compile_path_into_vindex_uses_supplied_source_without_active_backend() {
     let dir = make_test_vindex_dir("compile_path_source");
-    let output = dir.join("compiled_from_path.vindex");
+    let output = compile_output(&dir, "compiled_from_path.vindex");
     let mut session = Session::new();
 
     let stmt = parser::parse(&format!(
@@ -52,7 +52,7 @@ fn compile_path_into_vindex_uses_supplied_source_without_active_backend() {
 #[test]
 fn compile_path_into_model_reports_supplied_source_requirements() {
     let dir = make_test_vindex_dir("compile_path_model_source");
-    let output = dir.join("model_out");
+    let output = compile_output(&dir, "model_out");
     let mut session = Session::new();
 
     let stmt = parser::parse(&format!(
@@ -107,7 +107,7 @@ fn compile_into_vindex_with_down_overrides_bakes_them() {
         );
         overlay.set_down_vector(0, 0, vec![0.5, 0.6, 0.7, 0.8]);
     }
-    let output = dir.join("compiled_baked.vindex");
+    let output = compile_output(&dir, "compiled_baked.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}";"#,
         lql_path(&output)
@@ -153,7 +153,7 @@ fn compile_on_conflict_fail_detects_collision() {
         patched.patches.push(mkp("A"));
         patched.patches.push(mkp("C"));
     }
-    let output = dir.join("compiled_fail.vindex");
+    let output = compile_output(&dir, "compiled_fail.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}" ON CONFLICT FAIL;"#,
         lql_path(&output)
@@ -203,7 +203,7 @@ fn compile_on_conflict_last_wins_succeeds() {
         patched.patches.push(mkp("A"));
         patched.patches.push(mkp("C"));
     }
-    let output = dir.join("compiled_lw.vindex");
+    let output = compile_output(&dir, "compiled_lw.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}" ON CONFLICT LAST_WINS;"#,
         lql_path(&output)

@@ -107,7 +107,7 @@ fn compile_into_vindex_on_conflict_highest_confidence_runs() {
         patched.patches.push(mkp(0.9, "high"));
     }
 
-    let output = dir.join("compiled_hc.vindex");
+    let output = compile_output(&dir, "compiled_hc.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}" ON CONFLICT HIGHEST_CONFIDENCE;"#,
         lql_path(&output)
@@ -135,7 +135,7 @@ fn compile_into_model_with_memit_enabled_runs() {
     .unwrap();
     let _ = session.execute(&insert).expect("INSERT compose");
 
-    let out_dir = dir.join("compiled_memit");
+    let out_dir = compile_output(&dir, "compiled_memit");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO MODEL "{}" FORMAT safetensors;"#,
         lql_path(&out_dir)

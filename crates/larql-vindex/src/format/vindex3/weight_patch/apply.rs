@@ -125,6 +125,11 @@ pub fn apply_weight_patches(
     if out.exists() {
         return Err(WeightPatchError::OutputExists(out.to_path_buf()));
     }
+    // `exists()` follows symlinks and says nothing about where a missing
+    // path would land: a dangling link, or a destination inside the
+    // source, gets past it. The shared boundary refuses both before the
+    // stage directories are created.
+    crate::format::fresh_output::check_fresh_destination(src, out)?;
     let raw = std::fs::read_to_string(src.join(INDEX_JSON))?;
     let index: Vindex3Index = serde_json::from_str(&raw)
         .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;

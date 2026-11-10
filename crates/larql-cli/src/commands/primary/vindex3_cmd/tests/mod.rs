@@ -13,6 +13,7 @@ mod lowerings;
 mod measure;
 mod model_names;
 mod observe;
+mod pending_output;
 mod prefill_dump;
 mod realizations;
 mod residency_admission;
@@ -21,6 +22,7 @@ mod residency_record;
 mod rope_angles;
 mod site_capture_dump;
 mod sizes;
+mod stop_at_eos;
 mod token_bank;
 
 use super::*;

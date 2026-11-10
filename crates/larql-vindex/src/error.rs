@@ -69,6 +69,23 @@ pub enum VindexError {
         mismatches: Vec<String>,
     },
 
+    /// A verb that writes a new vindex directory was pointed at a
+    /// destination it must not touch: the source, something containing or
+    /// inside it, a symlink, or a path that already holds anything.
+    /// Refused before any write (`format::fresh_output`).
+    #[error("refusing to write output `{}`: {reason}", out.display())]
+    UnsafeOutputDestination { out: PathBuf, reason: String },
+
+    /// Staging or promoting a new vindex directory failed at the
+    /// filesystem. Nothing was left at the destination.
+    #[error("{step} {}: {source}", path.display())]
+    OutputStaging {
+        step: &'static str,
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("model error: {0}")]

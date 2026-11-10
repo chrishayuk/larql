@@ -81,6 +81,21 @@ pub(super) struct ResumeSidecar {
 }
 
 pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
+    // A refused or failed run must leave nothing at a dump path, not a
+    // previous run's output that would read as this one's (#744): clear it,
+    // and the logit dump's sidecar, before any work. The writers then
+    // create their file only once it is complete.
+    for out in [&args.logit_dump, &args.prefill_logit_dump]
+        .into_iter()
+        .flatten()
+    {
+        super::pending_output::remove_stale(out)?;
+    }
+    if let Some(out) = &args.logit_dump {
+        super::pending_output::remove_stale(
+            &out.with_extension(super::teacher_force::META_EXTENSION),
+        )?;
+    }
     #[cfg(all(feature = "gpu", target_os = "macos"))]
     let lowered = super::prepare::lowered_formats(args.backend).is_some();
     #[cfg(not(all(feature = "gpu", target_os = "macos")))]
@@ -493,7 +508,8 @@ fn run_on<B: PlanBackend>(
                     },
                 );
             }
-            super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)
+            let stop = super::generate::stop_ids(args)?;
+            super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store, &stop)
                 .map(|_generated| ())
         }
         (None, None) => {
