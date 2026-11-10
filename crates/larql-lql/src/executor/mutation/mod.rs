@@ -32,8 +32,12 @@ impl Session {
     /// The slots are those of the rows `SELECT * FROM EDGES WHERE <the
     /// same clause>` lists, before its ORDER BY and LIMIT — one resolver
     /// serves both ([`resolve_edge_rows`]), so a mutation cannot reach an
-    /// edge its preview did not show. Two things differ deliberately,
-    /// both in the narrowing direction:
+    /// edge its preview did not show. Four things differ deliberately,
+    /// all in the narrowing direction:
+    /// - `entity` together with `relation` is refused (SELECT ranks a
+    ///   gate walk for that pair; see below);
+    /// - a `relation` condition needs relation labels loaded (SELECT
+    ///   lists nothing without them; a mutation refuses);
     /// - `layer` + `feature` together name one slot, which must exist
     ///   (SELECT lists nothing; a mutation refuses);
     /// - SELECT may reinterpret a relation that matched nothing as a
@@ -43,6 +47,20 @@ impl Session {
         conditions: &[Condition],
     ) -> Result<Vec<(usize, usize)>, LqlError> {
         let predicate = EdgePredicate::parse(conditions, PredicateScope::EDGES)?;
+        if predicate.entity.is_some() && predicate.relation.is_some() {
+            // SELECT answers `entity` + `relation` with an embedding walk:
+            // the strongest gate hits for the entity whose label matches
+            // the relation — hundreds of slots per layer, none of which
+            // need mention the entity. That is a ranking to read, not a
+            // set to destroy.
+            return Err(LqlError::Execution(
+                "unsupported WHERE clause: a mutation does not combine `entity` and \
+                 `relation` — SELECT resolves that pair by a ranked gate walk, which is \
+                 too broad to delete or update by. List the edges with SELECT and address \
+                 each by `layer` and `feature`"
+                    .into(),
+            ));
+        }
         let ctx = self.browse()?;
         let classifier = self.relation_classifier();
         if predicate.relation.is_some() && classifier.is_none() {

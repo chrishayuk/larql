@@ -525,26 +525,30 @@ REBALANCE UNTIL CONVERGED MAX 16 FLOOR 0.30 CEILING 0.90;
 DELETE FROM EDGES
     WHERE <conditions>
 
-DELETE FROM EDGES
+-- List first, then address the slot the listing shows.
+SELECT * FROM EDGES
     WHERE entity = "John Coyle"
     AND relation = "lives-in";
+DELETE FROM EDGES
+    WHERE layer = 26 AND feature = 8821;
 ```
 
-`relation` predicates require relation labels in the active vindex
-(`relation_clusters.json` / probe labels). On unlabeled vindexes, target by
-`layer` + `feature` or omit the relation predicate.
+A mutation does not combine `entity` and `relation`: SELECT resolves that
+pair by a ranked gate walk (see "Operators"), which is too broad to delete
+or update by. `relation` predicates require relation labels in the active
+vindex (`relation_clusters.json` / probe labels). On unlabeled vindexes,
+target by `layer` + `feature` or omit the relation predicate.
 
 ```
 UPDATE EDGES
     SET <field> = <value> [, <field> = <value>]...
     WHERE <conditions>
 
--- Update by entity (matches the feature whose top_token contains the entity).
--- Works on both heap-resident and mmap-loaded vindexes.
+-- Update by entity (matches the features whose current top token
+-- contains the entity). Works on heap-resident and mmap-loaded vindexes.
 UPDATE EDGES
     SET target = "London"
-    WHERE entity = "John Coyle"
-    AND relation = "lives-in";
+    WHERE entity = "John Coyle";
 
 -- Fast path: explicit (layer, feature) bypasses the entity scan and
 -- targets the slot directly. Use this when you already know which
@@ -1057,16 +1061,29 @@ serves all three, with these rules:
   direction, ignoring case; `!=` selects slots labelled something else
   (an unlabelled slot satisfies no relation condition).
 
-Two deliberate differences, both making the mutation the narrower one:
-a `layer` + `feature` pair naming a slot that does not exist is refused by
-DELETE / UPDATE (SELECT lists nothing), and the FR3 synonym fallback is
-SELECT's alone — a mutation takes the relation as written, and needs
-relation labels loaded to evaluate one.
+Four deliberate differences, each making the mutation the narrower one:
+
+- `entity` together with `relation` is **refused** by DELETE / UPDATE.
+  The gate walk SELECT runs for that pair returns the strongest hits per
+  layer whose label matches — a ranking to read, not a set to destroy.
+  List with SELECT, then address each edge by `layer` and `feature`.
+- A `layer` + `feature` pair naming a slot that does not exist is refused
+  (SELECT lists nothing).
+- A `relation` condition without relation labels loaded is refused
+  (SELECT lists nothing).
+- The FR3 synonym fallback is SELECT's alone: a mutation takes the
+  relation as written.
+
+SELECT pages its listing (20 rows by default) and says so when more edges
+match than it shows; a mutation is never paged.
 
 Incompatible changes from earlier releases: `c_score` is no longer a
 WHERE field (write `score` or `confidence`); DELETE / UPDATE by `entity`
 no longer match a slot's non-top tokens or the base vindex's pre-overlay
-annotations; and conditions that used to be ignored are refused.
+annotations; DELETE / UPDATE with both `entity` and `relation` is refused;
+`SHOW FEATURES … WHERE relation = …` is refused (it filtered on the top
+token; write `token = …`); and conditions that used to be ignored are
+refused.
 
 ---
 

@@ -174,10 +174,18 @@ impl Session {
             sort_rows(&mut rows, ord);
         }
 
+        // SELECT is the preview of a mutation, which is never paged: say
+        // so when the listing stops short of what the clause addresses.
+        let matched = rows.len();
         rows.truncate(limit);
 
         let mut out = notes;
         out.extend(format_rows(&rows, filters.relation.is_some()));
+        if matched > limit {
+            out.push(format!(
+                "  ({matched} edges match; showing {limit} — raise LIMIT to list them all)"
+            ));
+        }
         Ok(out)
     }
 

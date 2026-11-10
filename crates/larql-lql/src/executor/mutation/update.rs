@@ -4,8 +4,9 @@
 //! One logical operation, written once: candidates resolve through the
 //! knowledge seam, the current (overlay-merged) metadata is read back
 //! through it, and the same `PatchOp::Update` is recorded — so a saved
-//! patch replays identically on either backend. An UPDATE on a
-//! tombstoned slot resurrects it (the V2 contract).
+//! patch replays identically on either backend. A tombstoned slot has
+//! no current metadata, so no clause addresses it and UPDATE leaves it
+//! deleted.
 
 use crate::ast::{Assignment, Condition, Value};
 use crate::error::LqlError;
@@ -60,6 +61,7 @@ impl Session {
         // Only now — validated, resolved, and with something to record —
         // does the statement touch session state.
         let mut out = self.ensure_patch_session();
+        self.advance_epoch();
 
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {

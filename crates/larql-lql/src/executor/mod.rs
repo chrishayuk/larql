@@ -353,16 +353,9 @@ impl Session {
             // DELETE and UPDATE open the auto-patch themselves, once the
             // WHERE clause is validated and has matched something: a
             // refused or no-op statement leaves the session as it was.
-            Statement::Delete { conditions } => {
-                let out = self.exec_delete(conditions)?;
-                self.advance_epoch();
-                Ok(out)
-            }
-            Statement::Update { set, conditions } => {
-                let out = self.exec_update(set, conditions)?;
-                self.advance_epoch();
-                Ok(out)
-            }
+            // (they also advance the epoch themselves, only on a change).
+            Statement::Delete { conditions } => self.exec_delete(conditions),
+            Statement::Update { set, conditions } => self.exec_update(set, conditions),
             // A direct weight edit stages without starting an anonymous patch:
             // it is recorded only when a named BEGIN PATCH recording is open.
             Statement::UpdateWeights {

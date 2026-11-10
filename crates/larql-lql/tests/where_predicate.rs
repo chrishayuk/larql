@@ -692,3 +692,40 @@ fn v3_mutations_refuse_what_they_cannot_evaluate_and_change_nothing() {
         "a refused mutation was recorded"
     );
 }
+
+// ── What a mutation refuses that SELECT answers ──────────────────────────
+
+#[test]
+fn a_mutation_refuses_entity_with_relation_and_changes_nothing() {
+    // SELECT answers that pair with a ranked gate walk over hundreds of
+    // slots per layer. A mutation must not inherit it.
+    let mut fx = fixture();
+    let before = fx.rows();
+    let clause = r#"entity = "Paris" AND relation = "capital""#;
+
+    for stmt in [
+        format!("DELETE FROM EDGES WHERE {clause};"),
+        format!("UPDATE EDGES SET target = \"changed\" WHERE {clause};"),
+        format!("DELETE FROM EDGES WHERE {clause} AND layer = 0 AND feature = 0;"),
+    ] {
+        let err = try_run(&mut fx.session, &stmt).expect_err(&stmt);
+        assert!(err.contains(REFUSAL), "{stmt}: {err}");
+        assert!(err.contains("`entity` and `relation`"), "{stmt}: {err}");
+        assert_eq!(fx.rows(), before, "{stmt}: the overlay changed");
+    }
+    assert_eq!(fx.recorded_operations(), 0);
+}
+
+#[test]
+fn select_says_when_its_listing_is_shorter_than_what_matches() {
+    let mut fx = fixture();
+
+    let paged = run(&mut fx.session, "SELECT * FROM EDGES LIMIT 2;").join("\n");
+    assert!(
+        paged.contains(&format!("{EDGE_COUNT} edges match; showing 2")),
+        "{paged}"
+    );
+
+    let whole = fx.rows().join("\n");
+    assert!(!whole.contains("edges match"), "{whole}");
+}

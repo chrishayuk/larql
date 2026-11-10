@@ -27,6 +27,7 @@ impl Session {
         // Only now — validated, resolved, and with something to record —
         // does the statement touch session state.
         let mut out = self.ensure_patch_session();
+        self.advance_epoch();
 
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {
