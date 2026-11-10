@@ -89,12 +89,14 @@ pub(crate) fn greedy_decode<B: PlanBackend>(
         if sink(id, value)? == Flow::Halt || step + 1 == new_tokens {
             break;
         }
-        // Price ONE steady step's weight traffic. Reset immediately
-        // before the step it belongs to: the ledger is process-wide and
-        // has been counting since the prompt.
+        // Price ONE steady step's weight traffic: the projection ledger's
+        // reading after the step, less its reading just before. The ledger
+        // is process-wide; resetting it here erased what any other reader in
+        // the same process was counting (a capture manifest's projection
+        // plans, under the test runner's parallel threads).
         let price_this_step = step + 1 == new_tokens.saturating_sub(1);
+        let before = price_this_step.then(read_ledger);
         if price_this_step {
-            ledger().reset();
             timing::ledger().reset();
         }
         let started = Instant::now();
@@ -102,7 +104,11 @@ pub(crate) fn greedy_decode<B: PlanBackend>(
         (next, value) = argmax(&logits).ok_or(NO_LOGITS)?;
         step_seconds.push(started.elapsed().as_secs_f64());
         if price_this_step {
-            priced_step = Some((*step_seconds.last().expect("just pushed"), read_ledger()));
+            let before = before.expect("read when the step was chosen");
+            priced_step = Some((
+                *step_seconds.last().expect("just pushed"),
+                ledger_since(&before),
+            ));
         }
     }
     Ok(Decoded {
@@ -115,6 +121,24 @@ pub(crate) fn greedy_decode<B: PlanBackend>(
 
 const NO_HEAD: &str = "plan carries no output head — cannot generate";
 const NO_LOGITS: &str = "output head produced no logits";
+
+/// Every plan's tally since `before`, an earlier [`read_ledger`] (both
+/// enumerate the plans in the same order).
+fn ledger_since(
+    before: &[(PhysicalProjectionPlan, PlanTally)],
+) -> Vec<(PhysicalProjectionPlan, PlanTally)> {
+    read_ledger()
+        .into_iter()
+        .zip(before)
+        .map(|((plan, now), (earlier_plan, earlier))| {
+            debug_assert_eq!(
+                plan, *earlier_plan,
+                "the ledger enumerates plans in a fixed order"
+            );
+            (plan, now.since(*earlier))
+        })
+        .collect()
+}
 
 /// Snapshot every plan's tally.
 fn read_ledger() -> Vec<(PhysicalProjectionPlan, PlanTally)> {

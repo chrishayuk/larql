@@ -305,3 +305,57 @@ fn the_prepared_store_carries_the_requested_source_policy() {
     assert_eq!(opened.want.as_deref(), Some(DTYPE_NVFP4));
     assert_eq!(opened.model_name, "dense");
 }
+
+/// The step is priced as a difference of two ledger readings: the decode
+/// never resets the process-wide projection ledger, which a concurrent
+/// reader in the same process (a capture manifest's projection plans) was
+/// counting on. Every plan's process-wide count only rises across a decode.
+#[test]
+fn pricing_a_step_never_lowers_the_process_wide_ledger() {
+    use larql_vindex::format::vindex3::opplan::exec::cpu::ledger;
+    use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+    let root = tempfile::tempdir().unwrap();
+    let checkpoint = root.path().join("checkpoint");
+    let container = root.path().join("container");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    std::fs::create_dir_all(&container).unwrap();
+    encode_fixture_container(dense_f32_model, &checkpoint, &container, "dense");
+    let prepared = prepare(
+        &container,
+        DEFAULT_COMPONENT,
+        ExecBackend::Production,
+        RepresentationSource::Auto,
+        &Plugins::none(),
+    )
+    .unwrap();
+    let backend = ProductionBackend::new();
+    let decode = || {
+        let mut session = DecodeSession::new(
+            &prepared.plan,
+            &prepared.store,
+            &backend,
+            Box::new(larql_vindex::format::vindex3::opplan::exec::kv::RowKvState::default()),
+        )
+        .unwrap();
+        greedy_decode(&mut session, &PROMPT, NEW_TOKENS, &mut |_, _| {
+            Ok(Flow::Continue)
+        })
+        .unwrap()
+    };
+    // A first decode, so the ledger holds more than one step's worth: a
+    // reset inside the next decode would leave it lower than this reading.
+    decode();
+    let before = ledger().all();
+    let decoded = decode();
+    let after = ledger().all();
+    for ((plan, b), (_, a)) in before.iter().zip(after.iter()) {
+        assert!(
+            a.calls >= b.calls,
+            "{plan:?}: {} calls before, {} after",
+            b.calls,
+            a.calls
+        );
+    }
+    let (_, priced) = decoded.priced_step.expect("a steady step was priced");
+    assert!(priced.iter().any(|(_, t)| t.calls > 0), "{priced:?}");
+}
