@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::CompareOp;
+use crate::ast::{CompareOp, Value};
 
 fn cond(field: &str, value: Value) -> Condition {
     Condition {
@@ -55,13 +55,6 @@ fn require_layer_feature_rejects_negative_value() {
     ];
     let err = require_layer_feature(&conds, "DELETE").unwrap_err();
     assert!(err.to_string().contains("layer"));
-}
-
-#[test]
-fn lookup_usize_condition_finds_field() {
-    let conds = vec![cond("layer", Value::Integer(3))];
-    assert_eq!(lookup_usize_condition(&conds, "layer"), Some(3));
-    assert_eq!(lookup_usize_condition(&conds, "feature"), None);
 }
 
 #[test]

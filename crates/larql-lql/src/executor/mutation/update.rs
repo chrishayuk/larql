@@ -11,8 +11,6 @@ use crate::ast::{Assignment, Condition, Value};
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
-use super::{relation_filter_matches, WhereFilters};
-
 /// Apply the SET assignments onto one feature's current metadata.
 fn apply_assignments(meta: &mut larql_vindex::FeatureMeta, set: &[Assignment]) {
     for assignment in set {
@@ -40,26 +38,11 @@ impl Session {
         set: &[Assignment],
         conditions: &[Condition],
     ) -> Result<Vec<String>, LqlError> {
-        let filters = WhereFilters::from_conditions(conditions);
-
-        // Resolve candidates and build the new metas with a readonly
-        // borrow, then apply.
+        // Validate the clause, resolve its targets and build the new
+        // metas with a readonly borrow, then apply.
+        let matches = self.resolve_mutation_targets(conditions)?;
         let update_ops: Vec<(usize, usize, larql_vindex::FeatureMeta)> = {
             let ctx = self.browse()?;
-            let candidates = filters.resolve_candidates(&ctx.source);
-
-            let mut matches = Vec::new();
-            for (layer, feature) in candidates {
-                if relation_filter_matches(
-                    self.relation_classifier(),
-                    filters.relation,
-                    layer,
-                    feature,
-                )? {
-                    matches.push((layer, feature));
-                }
-            }
-
             let mut ops = Vec::new();
             for (layer, feature) in matches {
                 if let Some(mut meta) = ctx.source.feature_meta(layer, feature) {
@@ -73,6 +56,10 @@ impl Session {
         if update_ops.is_empty() {
             return Ok(vec!["  (no matching features found)".into()]);
         }
+
+        // Only now — validated, resolved, and with something to record —
+        // does the statement touch session state.
+        let mut out = self.ensure_patch_session();
 
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {
@@ -106,9 +93,10 @@ impl Session {
             }
         }
 
-        Ok(vec![format!(
+        out.push(format!(
             "Updated {} features (patch overlay)",
             update_ops.len()
-        )])
+        ));
+        Ok(out)
     }
 }

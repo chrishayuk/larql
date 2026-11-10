@@ -12,110 +12,66 @@
 //! After collection, optional WHERE-score filter, ORDER BY, and
 //! LIMIT are applied before formatting.
 
-use crate::ast::{CompareOp, Condition, Field, NearestClause, OrderBy, Value};
+use crate::ast::{Condition, Field, NearestClause, OrderBy};
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope, RelationOp, RelationPredicate};
 use crate::executor::Session;
 
-use super::format::{
-    also_display, banner, format_also, EDGES_DEFAULT_LIMIT, EDGES_WALK_TOP_K, SCORE_EQ_TOLERANCE,
-};
+use super::format::{also_display, banner, format_also, EDGES_DEFAULT_LIMIT, EDGES_WALK_TOP_K};
 
-/// One row of `SELECT * FROM EDGES` output before formatting.
-struct EdgeRow {
-    layer: usize,
-    feature: usize,
+/// One edge an `EDGES` predicate addresses: a `(layer, feature)` slot
+/// and what SELECT prints for it.
+pub(crate) struct EdgeRow {
+    pub(crate) layer: usize,
+    pub(crate) feature: usize,
     top_token: String,
     also: String,
     relation: String,
     c_score: f32,
 }
 
-/// All filters extracted from a `WHERE` clause for SELECT EDGES.
-struct EdgeFilters<'a> {
-    entity: Option<&'a str>,
-    relation: Option<&'a str>,
-    layer: Option<usize>,
-    feature: Option<usize>,
-    /// `(operator, threshold)` from `WHERE score CMP N` /
-    /// `WHERE confidence CMP N`. None when no score predicate.
-    score: Option<(CompareOp, f32)>,
-}
-
-impl<'a> EdgeFilters<'a> {
-    fn from_conditions(conditions: &'a [Condition]) -> Self {
-        let entity = conditions
-            .iter()
-            .find(|c| c.field == "entity")
-            .and_then(|c| match &c.value {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            });
-        let relation = conditions
-            .iter()
-            .find(|c| c.field == "relation")
-            .and_then(|c| match &c.value {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            });
-        let layer = conditions
-            .iter()
-            .find(|c| c.field == "layer")
-            .and_then(|c| match c.value {
-                Value::Integer(n) if n >= 0 => Some(n as usize),
-                _ => None,
-            });
-        let feature = conditions
-            .iter()
-            .find(|c| c.field == "feature")
-            .and_then(|c| match c.value {
-                Value::Integer(n) if n >= 0 => Some(n as usize),
-                _ => None,
-            });
-        let score = conditions
-            .iter()
-            .find(|c| c.field == "score" || c.field == "confidence")
-            .and_then(|c| {
-                let v = match &c.value {
-                    Value::Number(n) => Some(*n as f32),
-                    Value::Integer(n) => Some(*n as f32),
-                    _ => None,
-                }?;
-                Some((c.op.clone(), v))
-            });
-        Self {
-            entity,
-            relation,
-            layer,
-            feature,
-            score,
-        }
+/// The edges `predicate` addresses, on whichever backend `ctx` binds.
+///
+/// This is the **only** resolver of an `EDGES` predicate. SELECT prints
+/// its result; DELETE and UPDATE act on the slots of the very same rows.
+/// A mutation therefore reaches exactly what the matching SELECT lists —
+/// same candidates, same matching rules, same score — before SELECT's
+/// ORDER BY and LIMIT, which only arrange and page the listing.
+///
+/// The rules, stated once:
+/// - only slots with current metadata are candidates: the overlay's
+///   view, so a tombstoned slot matches nothing and a relabelled one
+///   matches by its new token;
+/// - `entity` alone is a case-insensitive substring of the slot's **top
+///   token** (not its other top-k tokens);
+/// - `entity` with `relation` embeds the entity and walks the gates at
+///   each layer, keeping hits whose relation label matches; the score
+///   compared is then the walk's gate score, otherwise the stored
+///   `c_score`;
+/// - `layer` / `feature` restrict where either mode looks.
+pub(crate) fn resolve_edge_rows(
+    ctx: &crate::executor::knowledge::BrowseCtx<'_>,
+    classifier: Option<&crate::relations::RelationClassifier>,
+    predicate: &EdgePredicate<'_>,
+) -> Result<Vec<EdgeRow>, LqlError> {
+    let scan_layers: Vec<usize> = match predicate.layer {
+        Some(layer) => vec![layer],
+        None => ctx.source.loaded_layers(),
+    };
+    let mut rows: Vec<EdgeRow> = Vec::new();
+    collect_edges(
+        ctx,
+        classifier,
+        predicate.entity,
+        predicate.relation,
+        predicate.feature,
+        &scan_layers,
+        &mut rows,
+    )?;
+    if let Some(score) = predicate.score {
+        rows.retain(|row| score.matches(row.c_score));
     }
-
-    /// `score` predicate matches a row's `c_score`.
-    fn score_matches(&self, c_score: f32) -> bool {
-        match &self.score {
-            None => true,
-            Some((CompareOp::Gt, t)) => c_score > *t,
-            Some((CompareOp::Lt, t)) => c_score < *t,
-            Some((CompareOp::Gte, t)) => c_score >= *t,
-            Some((CompareOp::Lte, t)) => c_score <= *t,
-            Some((CompareOp::Eq, t)) => (c_score - t).abs() < SCORE_EQ_TOLERANCE,
-            Some((CompareOp::Neq, t)) => (c_score - t).abs() >= SCORE_EQ_TOLERANCE,
-            Some(_) => true,
-        }
-    }
-}
-
-/// Substring-or-substring relation match: empty label always
-/// excludes the row; otherwise the user's relation needs to overlap
-/// the labelled relation in either direction.
-fn relation_match(label: &str, wanted: &str) -> bool {
-    if label.is_empty() {
-        return false;
-    }
-    let label_norm = label.to_lowercase();
-    let wanted_norm = wanted.to_lowercase();
-    label_norm.contains(&wanted_norm) || wanted_norm.contains(&label_norm)
+    Ok(rows)
 }
 
 impl Session {
@@ -127,15 +83,24 @@ impl Session {
         order: Option<&OrderBy>,
         limit: Option<u32>,
     ) -> Result<Vec<String>, LqlError> {
+        // Validate the whole clause before reading anything: a condition
+        // SELECT cannot evaluate is refused, not dropped.
+        let filters = EdgePredicate::parse(conditions, PredicateScope::EDGES)?;
         let ctx = self.browse()?;
 
         if let Some(nc) = nearest {
+            // NEAREST ranks by embedding distance and applies no row
+            // filter; a WHERE beside it would be validated, then ignored.
+            if !conditions.is_empty() {
+                return Err(LqlError::Execution(
+                    "unsupported WHERE clause: SELECT … NEAREST TO does not evaluate WHERE \
+                     conditions; drop the clause, or filter with a plain SELECT"
+                        .into(),
+                ));
+            }
             return self.exec_select_nearest(&ctx, nc, limit);
         }
 
-        let filters = EdgeFilters::from_conditions(conditions);
-
-        let all_layers = ctx.source.loaded_layers();
         // With a feature filter the user expects to see that feature at
         // every layer; otherwise the page-size default applies.
         let default_limit = if filters.feature.is_some() {
@@ -146,23 +111,7 @@ impl Session {
         let limit = limit.unwrap_or(default_limit as u32) as usize;
 
         let classifier = self.relation_classifier();
-
-        let scan_layers: Vec<usize> = if let Some(l) = filters.layer {
-            vec![l]
-        } else {
-            all_layers.clone()
-        };
-
-        let mut rows: Vec<EdgeRow> = Vec::new();
-        collect_edges(
-            &ctx,
-            classifier,
-            filters.entity,
-            filters.relation,
-            filters.feature,
-            &scan_layers,
-            &mut rows,
-        )?;
+        let mut rows = resolve_edge_rows(&ctx, classifier, &filters)?;
 
         // FR3 — synonym-robust relation addressing. If an exact relation filter
         // matched nothing, the word may be a SYNONYM of a known relation
@@ -171,7 +120,13 @@ impl Session {
         // re-collect against the canonical relation.
         let mut notes: Vec<String> = Vec::new();
         if rows.is_empty() {
-            if let (Some(rel), Some(rc)) = (filters.relation, classifier) {
+            // Only an equality asks "which relation did you mean?"; `!=`
+            // and LIKE describe a set and are taken literally.
+            let exact = filters
+                .relation
+                .filter(|r| r.op == RelationOp::Eq)
+                .map(|r| r.wanted);
+            if let (Some(rel), Some(rc)) = (exact, classifier) {
                 let relations = rc.relation_labels();
                 let already_exact = relations.iter().any(|r| r.eq_ignore_ascii_case(rel));
                 if relations.len() >= 2 && !already_exact {
@@ -199,15 +154,17 @@ impl Session {
                         notes.push(format!(
                             "  (relation '{rel}' resolved to '{canonical}' by {how}, confidence {conf:.2})"
                         ));
-                        collect_edges(
-                            &ctx,
-                            classifier,
-                            filters.entity,
-                            Some(canonical.as_str()),
-                            filters.feature,
-                            &scan_layers,
-                            &mut rows,
-                        )?;
+                        // A reinterpreted relation is SELECT's alone: a
+                        // mutation never acts on a relation the user did
+                        // not write (see `resolve_mutation_targets`).
+                        let resolved = EdgePredicate {
+                            relation: Some(RelationPredicate {
+                                op: RelationOp::Eq,
+                                wanted: canonical.as_str(),
+                            }),
+                            ..filters.clone()
+                        };
+                        rows = resolve_edge_rows(&ctx, classifier, &resolved)?;
                     }
                 }
             }
@@ -217,7 +174,6 @@ impl Session {
             sort_rows(&mut rows, ord);
         }
 
-        rows.retain(|r| filters.score_matches(r.c_score));
         rows.truncate(limit);
 
         let mut out = notes;
@@ -337,7 +293,7 @@ fn collect_edges(
     ctx: &crate::executor::knowledge::BrowseCtx<'_>,
     classifier: Option<&crate::relations::RelationClassifier>,
     entity: Option<&str>,
-    relation: Option<&str>,
+    relation: Option<RelationPredicate<'_>>,
     feature: Option<usize>,
     scan_layers: &[usize],
     rows: &mut Vec<EdgeRow>,
@@ -365,7 +321,7 @@ fn collect_via_walk(
     ctx: &crate::executor::knowledge::BrowseCtx<'_>,
     classifier: Option<&crate::relations::RelationClassifier>,
     entity: &str,
-    rel: &str,
+    rel: RelationPredicate<'_>,
     feature_filter: Option<usize>,
     scan_layers: &[usize],
     rows: &mut Vec<EdgeRow>,
@@ -393,7 +349,7 @@ fn collect_via_walk(
                 .and_then(|rc| rc.label_for_feature(*layer_idx, hit.feature))
                 .unwrap_or("")
                 .to_string();
-            if !relation_match(&rel_label, rel) {
+            if !rel.matches(&rel_label) {
                 continue;
             }
             rows.push(EdgeRow {
@@ -416,7 +372,7 @@ fn collect_via_scan(
     source: &crate::executor::knowledge::KnowledgeSource<'_>,
     classifier: Option<&crate::relations::RelationClassifier>,
     entity_filter: Option<&str>,
-    relation_filter: Option<&str>,
+    relation_filter: Option<RelationPredicate<'_>>,
     feature_filter: Option<usize>,
     scan_layers: &[usize],
     rows: &mut Vec<EdgeRow>,
@@ -442,7 +398,7 @@ fn collect_via_scan(
                 .unwrap_or("")
                 .to_string();
             if let Some(rel) = relation_filter {
-                if !relation_match(&rel_label, rel) {
+                if !rel.matches(&rel_label) {
                     continue;
                 }
             }
@@ -558,75 +514,6 @@ fn format_rows(rows: &[EdgeRow], explicit_relation_filter: bool) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::CompareOp;
-
-    fn cond(field: &str, op: CompareOp, value: Value) -> Condition {
-        Condition {
-            field: field.into(),
-            op,
-            value,
-        }
-    }
-
-    #[test]
-    fn edge_filters_extracts_all_predicates() {
-        let cs = vec![
-            cond("entity", CompareOp::Eq, Value::String("France".into())),
-            cond("relation", CompareOp::Eq, Value::String("capital".into())),
-            cond("layer", CompareOp::Eq, Value::Integer(5)),
-            cond("feature", CompareOp::Eq, Value::Integer(7)),
-            cond("score", CompareOp::Gt, Value::Number(0.5)),
-        ];
-        let f = EdgeFilters::from_conditions(&cs);
-        assert_eq!(f.entity, Some("France"));
-        assert_eq!(f.relation, Some("capital"));
-        assert_eq!(f.layer, Some(5));
-        assert_eq!(f.feature, Some(7));
-        assert!(matches!(f.score, Some((CompareOp::Gt, _))));
-    }
-
-    #[test]
-    fn edge_filters_score_matches_each_op() {
-        let mk = |op, t: f32| EdgeFilters {
-            entity: None,
-            relation: None,
-            layer: None,
-            feature: None,
-            score: Some((op, t)),
-        };
-        assert!(mk(CompareOp::Gt, 0.5).score_matches(0.6));
-        assert!(!mk(CompareOp::Gt, 0.5).score_matches(0.4));
-        assert!(mk(CompareOp::Lt, 0.5).score_matches(0.4));
-        assert!(!mk(CompareOp::Lt, 0.5).score_matches(0.6));
-        assert!(mk(CompareOp::Gte, 0.5).score_matches(0.5));
-        assert!(mk(CompareOp::Lte, 0.5).score_matches(0.5));
-        assert!(mk(CompareOp::Eq, 0.5).score_matches(0.5));
-        assert!(mk(CompareOp::Eq, 0.5).score_matches(0.5005));
-        assert!(!mk(CompareOp::Eq, 0.5).score_matches(0.6));
-        assert!(mk(CompareOp::Neq, 0.5).score_matches(0.6));
-    }
-
-    #[test]
-    fn edge_filters_no_score_predicate_matches_anything() {
-        let f = EdgeFilters {
-            entity: None,
-            relation: None,
-            layer: None,
-            feature: None,
-            score: None,
-        };
-        assert!(f.score_matches(-1e9));
-        assert!(f.score_matches(1e9));
-    }
-
-    #[test]
-    fn relation_match_handles_substring_in_either_direction() {
-        assert!(relation_match("capital_of", "capital"));
-        assert!(relation_match("capital", "capital_of"));
-        assert!(!relation_match("", "capital"));
-        assert!(!relation_match("director", "actor"));
-    }
-
     #[test]
     fn sort_rows_by_layer_descending() {
         let mut rows = vec![

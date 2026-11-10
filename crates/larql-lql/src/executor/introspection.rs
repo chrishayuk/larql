@@ -6,6 +6,7 @@ use super::helpers::{dir_size, format_bytes, format_number, is_content_token};
 use super::Session;
 use crate::ast::*;
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope};
 use larql_vindex::format::filenames::INDEX_JSON;
 
 impl Session {
@@ -295,30 +296,14 @@ impl Session {
         conditions: &[Condition],
         limit: Option<u32>,
     ) -> Result<Vec<String>, LqlError> {
+        // Validate the whole clause first: a condition SHOW FEATURES
+        // cannot evaluate is refused, not dropped.
+        let predicate = EdgePredicate::parse(conditions, PredicateScope::SHOW_FEATURES)?;
+        let token_filter = predicate.entity;
         let ctx = self.browse()?;
         // Default to num_layers — a manageable screenful that matches
         // the model's depth. Use LIMIT for more or fewer.
         let limit = limit.unwrap_or(ctx.num_layers as u32) as usize;
-
-        // Extract filters from WHERE conditions
-        let token_filter = conditions
-            .iter()
-            .find(|c| c.field == "relation" || c.field == "token")
-            .and_then(|c| {
-                if let Value::String(ref s) = c.value {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            });
-        let min_score = conditions
-            .iter()
-            .find(|c| c.field == "confidence" || c.field == "c_score")
-            .and_then(|c| match &c.value {
-                Value::Number(n) => Some(*n as f32),
-                Value::Integer(n) => Some(*n as f32),
-                _ => None,
-            });
 
         let nf = ctx.source.num_features(layer as usize);
         if nf == 0 {
@@ -344,10 +329,8 @@ impl Session {
                         continue;
                     }
                 }
-                if let Some(ms) = min_score {
-                    if meta.c_score < ms {
-                        continue;
-                    }
+                if predicate.score.is_some_and(|s| !s.matches(meta.c_score)) {
+                    continue;
                 }
 
                 let down_tokens: String = meta

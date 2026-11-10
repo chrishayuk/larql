@@ -312,9 +312,10 @@ SELECT [<fields>]
 
 -- Query edges in the vindex.
 -- Fields: entity, relation, target, layer, feature, confidence, gate
+-- (output columns; what WHERE may constrain is listed under "Operators")
 --
--- WHERE relation = "<word>" matches the stored relation label exactly. If an
--- exact match finds nothing, FR3 synonym resolution kicks in: the relation word
+-- WHERE relation = "<word>" matches the stored relation label (substring, in
+-- either direction, ignoring case). If that finds nothing, FR3 synonym resolution kicks in: the relation word
 -- is resolved to a known relation BY MEANING (a trained residual probe — "seat"
 -- → capital, "money" → currency) and the query re-runs against the canonical
 -- relation, printing a note. Needs a vindex with model weights + relation
@@ -985,12 +986,87 @@ the exit status said so.
 LIKE -- pattern match (% wildcard)
 IN   -- set membership
 
+```
+
+The lexer and parser accept every operator above on any field. What a
+`WHERE` clause on EDGES may actually say is narrower, and it is the same
+for `SELECT … FROM EDGES`, `DELETE FROM EDGES` and `UPDATE EDGES`:
+
+```
+layer    = <non-negative integer>
+feature  = <non-negative integer>
+entity   = <string>
+relation {= | != | LIKE} <string>
+score    {= | != | < | <= | > | >=} <number>     -- alias: confidence
+
 WHERE entity = "France"
 WHERE confidence > 0.5
-WHERE entity LIKE "Fran%"
-WHERE entity IN ("France", "Germany")
-WHERE layer >= 20 AND layer <= 30
+WHERE relation LIKE "capital%"
+WHERE layer = 26 AND feature = 8821
 ```
+
+Conditions are joined with `AND`, at most one per field. A clause is
+validated as a whole before the statement reads or changes anything, and
+a clause containing **any** condition outside this grammar is refused —
+an unknown field, a wrong-typed value, an operator the field does not
+support, or the same field twice:
+
+```
+WHERE entity LIKE "Fran%"                 -- refused: entity takes = only
+WHERE entity IN ("France", "Germany")     -- refused: IN is not evaluated
+WHERE layer >= 20 AND layer <= 30         -- refused: ranges are not evaluated
+WHERE colour = "red"                      -- refused: not a field of EDGES
+```
+
+Nothing is dropped silently: a condition that cannot be evaluated never
+widens the statement to the rows the remaining conditions match. A
+string operand may not be empty (every value contains `""`). On DELETE
+and UPDATE, `layer` and `feature` together name one slot, which must
+exist; a refused statement, or one that matches nothing, changes neither
+the overlay nor the patch session (it does not start the auto-patch).
+
+The other consumers of a `WHERE` clause take a subset, validated the same
+way:
+
+| Statement | Accepted conditions |
+|---|---|
+| `SELECT … FROM FEATURES` | `layer`, `feature`, `entity` (alias `token`) |
+| `SELECT … FROM ENTITIES` | `layer`, `entity` (alias `token`) |
+| `SHOW FEATURES <layer> WHERE …` | `entity` (alias `token`), `score` (alias `confidence`) |
+| `SELECT … NEAREST TO …` | none — a `WHERE` clause is refused |
+| remote `SELECT … FROM EDGES` | `entity =`, `relation =`, `layer =`, `score >=` |
+| remote `DELETE` / `UPDATE` | exactly `layer =` and `feature =` |
+
+**SELECT is the preview of a mutation.** For the same vindex, clause and
+overlay state, `SELECT * FROM EDGES WHERE <clause>` lists exactly the
+feature slots `DELETE` or `UPDATE` with that clause targets (SELECT's
+ORDER BY and LIMIT only arrange and page the listing). One resolver
+serves all three, with these rules:
+
+- Only slots with current metadata are candidates — the overlay's view.
+  A tombstoned slot matches nothing; a relabelled slot matches by its new
+  token.
+- `entity` alone is a case-insensitive **substring of the slot's top
+  token**. The other top-k tokens (the "Also" column) are not matched.
+- `entity` together with `relation` embeds the entity and walks the gates
+  at each layer, keeping hits whose relation label matches; `score` then
+  compares the walk's gate score. Otherwise `score` compares the stored
+  confidence. A slot without metadata has no score, and a NaN score
+  satisfies no score condition.
+- `relation =` matches the stored label as a substring in either
+  direction, ignoring case; `!=` selects slots labelled something else
+  (an unlabelled slot satisfies no relation condition).
+
+Two deliberate differences, both making the mutation the narrower one:
+a `layer` + `feature` pair naming a slot that does not exist is refused by
+DELETE / UPDATE (SELECT lists nothing), and the FR3 synonym fallback is
+SELECT's alone — a mutation takes the relation as written, and needs
+relation labels loaded to evaluate one.
+
+Incompatible changes from earlier releases: `c_score` is no longer a
+WHERE field (write `score` or `confidence`); DELETE / UPDATE by `entity`
+no longer match a slot's non-top tokens or the base vindex's pre-overlay
+annotations; and conditions that used to be ignored are refused.
 
 ---
 
