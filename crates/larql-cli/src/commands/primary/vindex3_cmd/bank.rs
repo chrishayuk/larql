@@ -78,7 +78,8 @@ pub fn run_bank<B: PlanBackend>(
         }
 
         let path = dump_dir.join(format!("{}.f32", entry.id));
-        let mut file = std::io::BufWriter::new(std::fs::File::create(&path)?);
+        // Appears at `path` only once the entry is complete and checked (#744).
+        let mut file = super::pending_output::PendingOutput::create(&path)?;
         let mut vocab = 0usize;
         for (i, &token) in entry.ids.iter().enumerate() {
             let logits = session
@@ -98,7 +99,6 @@ pub fn run_bank<B: PlanBackend>(
                 file.write_all(&value.to_le_bytes())?;
             }
         }
-        file.flush()?;
 
         // The entry consumed exactly its own ids and nothing else.
         if session.position() != entry.ids.len() {
@@ -110,6 +110,7 @@ pub fn run_bank<B: PlanBackend>(
             )
             .into());
         }
+        file.commit()?;
         positions += entry.ids.len();
         println!(
             "  {:>3}/{} {:<18} {:>4} positions",

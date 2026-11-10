@@ -44,6 +44,7 @@ mod model_args;
 mod observe;
 mod ops;
 mod optional_op;
+mod pending_output;
 pub(crate) mod plugins;
 mod prefill_dump;
 pub(crate) mod prepare;
