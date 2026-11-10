@@ -529,14 +529,14 @@ def capture_readings(runs: dict, expected: dict, log: ev.ResultsLog, inputs=("I_
 
 
 def analyse(*, runs: dict, expected: dict, vocab: int, out_dir: Path, log_path: Path,
-            inputs=("I_rep", "I_nr1", "I_nr2")) -> dict:
+            inputs=("I_rep", "I_nr1", "I_nr2"), freeze_sha256: str | None = None) -> dict:
     """The analysis as a run of its own: its record lists every consumed
     run record's digest, and its outputs are the metric arrays."""
     consumed = {f"{a}/{i}": (ev.record_digest(d) if (Path(d) / ev.RESULT_FILE).is_file() else None)
                 for (a, i), d in sorted(runs.items())}
     rr = ev.RunRecord.begin(out_dir, "analysis", "prec-diag-1-analysis",
                             {"tool": "analysis", "scripts": script_digests(), "thresholds": thresholds(),
-                             "consumed_records": consumed})
+                             "consumed_records": consumed, "freeze_sha256": freeze_sha256})
     try:
         log = ev.ResultsLog(log_path)
         results = logit_readings(runs, expected, vocab, out_dir, log, inputs)

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-HIDDEN, Q_HEADS, KV_HEADS, HEAD_DIM = 8, 2, 1, 4
+HIDDEN, Q_HEADS, KV_HEADS, HEAD_DIM = 8, 2, 1, 4  # each overridable from the sidecar
 LAYERLESS = ("embedding", "head_input")
 LAYER_SITES = ("attention_input", "query_unpositioned", "key_unpositioned", "query_positioned",
                "key_positioned", "attention_output", "attention_delta", "ffn_input", "ffn_output",
@@ -37,9 +37,9 @@ def flag(argv, name, default=None):
 def width(site, b):
     head_dim = b.get("head_dim", HEAD_DIM)
     if site.startswith("query"):
-        return Q_HEADS * head_dim
+        return b.get("q_heads", Q_HEADS) * head_dim
     if site.startswith("key"):
-        return KV_HEADS * head_dim
+        return b.get("kv_heads", KV_HEADS) * head_dim
     return b.get("hidden", HIDDEN)
 
 
@@ -48,7 +48,7 @@ def write_capture(cap: Path, argv, tokens, logits_path: Path, b: dict, me: Path)
     positions = [int(p) for p in flag(argv, "--capture-positions").split(",")]
     container = Path(argv[3])
     layers = b.get("layers", 2)
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(b.get("seed", 7))
     files = []
     planes = [(s, None) for s in LAYERLESS] + [(s, L) for L in range(layers) for s in LAYER_SITES]
     if b.get("drop_plane"):
@@ -96,7 +96,7 @@ def write_capture(cap: Path, argv, tokens, logits_path: Path, b: dict, me: Path)
         "positions": positions,
         "sequence_len": len(tokens),
         "hidden": b.get("hidden", HIDDEN),
-        "layers": [{"layer": L, "num_q_heads": Q_HEADS, "num_kv_heads": KV_HEADS,
+        "layers": [{"layer": L, "num_q_heads": b.get("q_heads", Q_HEADS), "num_kv_heads": b.get("kv_heads", KV_HEADS),
                     "head_dim": b.get("head_dim", HEAD_DIM)}
                    for L in range(layers)],
         "files": files,
@@ -124,7 +124,9 @@ def main() -> int:
         return b["exit"]
     tokens = [int(t) for t in flag(argv, "--tokens").split(",")]
     vocab = b.get("vocab", 16)
-    out = Path(flag(argv, "--logit-dump"))
+    angles = flag(argv, "--rope-angles", "larql")
+    prefill = flag(argv, "--prefill-logit-dump")
+    out = Path(prefill or flag(argv, "--logit-dump"))
     logits = (np.arange(len(tokens) * vocab, dtype="<f4").reshape(len(tokens), vocab) / 7.0)
     if flag(argv, "--backend") == "production":
         logits = logits + np.float32(0.25)
@@ -133,14 +135,24 @@ def main() -> int:
         logits[p, v] = np.nextafter(logits[p, v], np.float32(np.inf))
     if b.get("capture_perturbs") and "--capture-sites" in argv:
         logits[-1, -1] += np.float32(1.0)
+    if angles == "hf-f32":
+        logits = logits + np.float32(1e-3)
+    if prefill:
+        lengths = [int(n) for n in flag(argv, "--prefill-lengths", str(len(tokens))).split(",")]
+        logits = logits[[n - 1 for n in lengths]]
+        if b.get("batched_differs"):
+            logits[0, 0] += np.float32(0.5)
+        data = logits.astype("<f4").tobytes()
+        out.write_bytes(data[:-4] if b.get("short_logits") else data)  # the prefill dump writes no meta
+        return 0
     data = logits.astype("<f4").tobytes()
     if b.get("short_logits"):
         data = data[:-4]
     out.write_bytes(data)
     if not b.get("no_meta"):
         meta = {"engine": "fake", "positions": len(tokens), "vocab": vocab}
-        if b.get("rope_angles", "larql") is not None:
-            meta["rope_angles"] = b.get("rope_angles", "larql")
+        if b.get("rope_angles", angles) is not None:
+            meta["rope_angles"] = b.get("rope_angles", angles)
         out.with_name(out.stem + ".meta.json").write_text(json.dumps(meta))
     if b.get("allocate_bytes"):
         bytearray(b["allocate_bytes"])  # touched, so it counts toward peak RSS

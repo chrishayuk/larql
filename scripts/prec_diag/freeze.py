@@ -37,7 +37,8 @@ SCHEMA = "larql.prec-diag-1.freeze/1"
 REQUIRED_FILES = ("plan", "evidence_classes", "e0a_doc", "e0b_doc", "inputs_manifest", "ids.I_rep",
                   "ids.I_nr1", "ids.I_nr2", "text.I_nr1", "text.I_nr2", "tokenizer_json", "larql_binary",
                   "rope_angle_tables_example", "script.hf_oracle", "script.v0", "script.analysis",
-                  "script.evidence", "script.freeze")
+                  "script.evidence", "script.freeze", "script.oracle_loading", "script.equivalence_metrics",
+                  "script.experiment", "loading_boundary")
 REQUIRED_VALUES = ("larql_commit", "checkpoint_revision", "packages", "threads", "capture_positions",
                    "resource_limits")
 
@@ -59,7 +60,8 @@ def container_digests(path: Path) -> dict:
             raise FreezeError(f"segment {name} on disk differs from its index digest")
         segments[name] = {"segment": rep["segment"], "segment_sha256": actual,
                           "payload_sha256": rep.get("payload_sha256")}
-    return {"path": str(path), "index_json_sha256": ev.sha256_file(index_path), "segments": segments}
+    return {"path": str(path), "index_json_sha256": ev.sha256_file(index_path),
+            "system_graph_sha256": ev.sha256_file(Path(path) / "system_graph.json"), "segments": segments}
 
 
 def checkpoint_digests(directory: Path, revision: str) -> dict:

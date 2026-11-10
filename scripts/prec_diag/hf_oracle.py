@@ -567,16 +567,21 @@ def write_outputs(run_dir: Path, result: dict, arm: str, positions, model) -> li
 
 def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, out_dir: Path,
         boundary: dict, table_dirs: dict | None = None, expected_modeling_sha256: str = FROZEN_MODELING_SHA256,
-        require_threads: bool = True) -> dict:
-    """One arm over one input under the lifecycle. Returns the final record."""
+        require_threads: bool = True, bind: dict | None = None) -> dict:
+    """One arm over one input under the lifecycle. Returns the final record.
+
+    `bind` is recorded verbatim in the identity: the experiment runner
+    passes the freeze digest, experiment and run id, so a run made under one
+    freeze is never admitted under another."""
     if arm not in ARMS:
         raise ValueError(f"unknown arm {arm!r}")
     identity = {"tool": "hf_oracle", "scripts": script_digests(), "arm": arm,
                 "checkpoint": checkpoint_identity(ckpt), "input": ids_digests(ids) | {"length": len(ids)},
                 "positions": positions, "modeling_gemma3_sha256": modeling_sha256(),
                 "threads": thread_state(), "environment": ev.numeric_environment(dict(os.environ)),
-                "packages": packages(), "machine": platform.machine(), "os": platform.platform()}
-    rr = ev.RunRecord.begin(out_dir, f"{arm}", "hf-oracle", identity)
+                "packages": packages(), "machine": platform.machine(), "os": platform.platform(),
+                "bind": bind}
+    rr = ev.RunRecord.begin(out_dir, (bind or {}).get("run_id", arm), "hf-oracle", identity)
     try:
         if identity["modeling_gemma3_sha256"] != expected_modeling_sha256:
             raise Refused("modeling_gemma3.py differs from the frozen file")
@@ -620,6 +625,7 @@ def main(argv=None) -> int:
                     help="JSON from oracle_loading.capability_boundary over `larql vindex3 plan`")
     ap.add_argument("--tables", action="append", default=[], help="LAYER_TYPE=DIR (A32r)")
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--bind-json", type=Path, help="JSON object recorded verbatim in the identity")
     a = ap.parse_args(argv)
     if os.environ.get("OMP_NUM_THREADS") != THREADS["OMP_NUM_THREADS"]:
         print(f"refused: OMP_NUM_THREADS must be {THREADS['OMP_NUM_THREADS']} in the environment",
@@ -630,7 +636,8 @@ def main(argv=None) -> int:
     positions = [int(p) for p in a.positions.split(",")] if a.positions else None
     tables = dict(t.split("=", 1) for t in a.tables)
     rec = run(arm=a.arm, ckpt=a.checkpoint, ids=ids, positions=positions, out_dir=a.out,
-              boundary=json.loads(a.boundary.read_text()), table_dirs={k: Path(v) for k, v in tables.items()})
+              boundary=json.loads(a.boundary.read_text()), table_dirs={k: Path(v) for k, v in tables.items()},
+              bind=json.loads(a.bind_json.read_text()) if a.bind_json else None)
     print(rec["status"])
     return 0 if rec["status"] == ev.COMPLETE else 1
 
