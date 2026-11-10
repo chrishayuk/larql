@@ -19,6 +19,7 @@ pub mod inspect_hf_cmd;
 pub mod k3_ledger;
 pub mod link_cmd;
 pub mod list_cmd;
+pub mod lql_session;
 pub mod model_cmd;
 #[cfg(feature = "research")]
 pub mod optimizer_mcp;

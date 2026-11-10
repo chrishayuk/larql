@@ -150,19 +150,15 @@ covers backends and options.
 ## 5. Look inside
 
 This is where LARQL differs from other runtimes. A VINDEX3 file describes the
-model's structure as well as storing its weights, so you can query it.
-
-These commands take the model's directory. `larql show` prints it:
-
-```bash
-M=$(larql show Qwen3-0.6B | awk '/^Path:/ {print $2}')
-```
+model's structure as well as storing its weights, so you can query it. These
+commands take the same model name as `larql run`, and they only look at models
+already on your machine; they never download one.
 
 **Ask for the model's next-token probabilities** with LQL, LARQL's query
 language:
 
 ```console
-$ larql lql "USE \"$M\"; INFER \"The capital of France is\" TOP 5;"
+$ larql lql 'USE "Qwen3-0.6B"; INFER "The capital of France is" TOP 5;'
 Predictions (VINDEX3 program):
    1.  Paris               (74.36%)  [id 12095]
    2.  the                 (2.18%)  [id 279]
@@ -174,7 +170,7 @@ Predictions (VINDEX3 program):
 **Look at its structure:**
 
 ```console
-$ larql lql "USE \"$M\"; STATS;"
+$ larql lql 'USE "Qwen3-0.6B"; STATS;'
 Model:           Qwen3-0.6B (VINDEX3)
 Layers:          28
 Attention:       0 sliding / 28 full (windows from the plan)
@@ -189,7 +185,7 @@ interactive shell so you don't need to retype `USE` each time.
 wrote into the model's internal state, along with the final prediction:
 
 ```console
-$ larql vindex3 observe "$M" --backend production \
+$ larql vindex3 observe Qwen3-0.6B --backend production \
     --prompt "The capital of France is" --record run.jsonl
   ...
   final position, top 10:

@@ -460,11 +460,12 @@ fn real_main() -> i32 {
 
         // ── LQL ──
         Commands::Repl => {
-            larql_lql::run_repl();
+            larql_lql::run_repl_in(lql_session::session());
             Ok(())
         }
         Commands::Lql(args) => {
-            let outcome = larql_lql::run_batch_outcome(&args.statement);
+            let outcome =
+                larql_lql::run_batch_outcome_in(&mut lql_session::session(), &args.statement);
             for line in &outcome.lines {
                 println!("{line}");
             }

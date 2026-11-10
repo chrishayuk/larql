@@ -16,8 +16,11 @@ use super::*;
 /// alias is *benign*, and `layer_types` remains the authority the graph
 /// is built from either way.
 pub(super) fn alias_contradicts_canonical(leaf: &str, inventory: &ArchitectureInventory) -> bool {
-    const FULL_ATTENTION_INTERVAL: &str = "full_attention_interval";
-    if leaf != FULL_ATTENTION_INTERVAL {
+    /// Period spellings of the `layer_types` interleave: "every Nth layer
+    /// attends fully" — Qwen3.5's `full_attention_interval`, Gemma 3's
+    /// `_sliding_window_pattern`.
+    const PERIOD_ALIASES: &[&str] = &["full_attention_interval", "_sliding_window_pattern"];
+    if !PERIOD_ALIASES.contains(&leaf) {
         return false;
     }
     let value_of = |name: &str| {
@@ -27,7 +30,7 @@ pub(super) fn alias_contradicts_canonical(leaf: &str, inventory: &ArchitectureIn
             .find(|f| semantics::leaf_of(&f.path) == name)
             .map(|f| &f.value)
     };
-    let Some(interval) = value_of(FULL_ATTENTION_INTERVAL)
+    let Some(interval) = value_of(leaf)
         .and_then(serde_json::Value::as_u64)
         .filter(|n| *n > 0)
     else {
@@ -37,11 +40,11 @@ pub(super) fn alias_contradicts_canonical(leaf: &str, inventory: &ArchitectureIn
     let Some(declared) = value_of("layer_types").and_then(serde_json::Value::as_array) else {
         return true;
     };
-    // "Every Nth layer attends fully": layer i is full iff (i+1) % N == 0.
+    // "Every Nth layer attends fully", by the one stride derivation.
     !declared.iter().enumerate().all(|(i, entry)| {
         entry.as_str().is_some_and(|spelling| {
             spelling.eq_ignore_ascii_case(larql_models::config::LAYER_TYPE_FULL_ATTENTION)
-                == (i as u64 + 1).is_multiple_of(interval)
+                == larql_models::config::is_full_at_period(i, interval as usize)
         })
     })
 }
@@ -180,7 +183,15 @@ pub(super) fn carriage_finding(
         };
     }
     let ctx = carriage::ProbeContext {
-        span: carriage::ProbeContext::span_of(&fact.path),
+        // A RoPE base's layers come from the one scoping derivation, which
+        // also reads the sibling declarations (the flat Gemma 3
+        // `rope_theta` speaks for the full span only beside a
+        // `rope_local_base_freq`); every other fact names its span by path.
+        span: if rope_scope::is_rope_base(&fact.path) {
+            rope_scope::rope_base_scope(&fact.path, &inventory.config_keys).probe_span()
+        } else {
+            carriage::ProbeContext::span_of(&fact.path)
+        },
         declared: &fact.value,
         family: find_architecture(&inventory.identity.model_type).map(|entry| entry.model_type),
     };

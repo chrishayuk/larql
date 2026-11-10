@@ -64,3 +64,51 @@ fn compile_into_an_existing_path_is_refused_and_leaves_it_alone() {
     assert!(err.contains("already exists"), "{err}");
     assert_eq!(std::fs::read_to_string(out.join("keep")).unwrap(), "x");
 }
+
+/// The weight-edit compile shares the destination boundary: an output
+/// inside the source — reached through a parent that does not exist yet,
+/// which used to be created in the source before the compile failed — is
+/// refused before anything is written.
+#[test]
+fn compiling_weight_edits_into_the_source_is_refused_and_writes_nothing() {
+    let fx = Fixture::new();
+    let before = fingerprint(&fx.container);
+    let mut s = session_on(&fx.container);
+    run(&mut s, &update(&COLS, DELTA));
+
+    for inside in [
+        fx.container.join("edited.vindex3"),
+        fx.container.join("new-parent").join("edited.vindex3"),
+    ] {
+        let err = try_run(
+            &mut s,
+            &format!("COMPILE CURRENT INTO VINDEX \"{}\";", q(&inside)),
+        )
+        .expect_err("an output inside the source");
+        assert!(err.contains("inside the source vindex"), "{err}");
+        assert_eq!(
+            fingerprint(&fx.container),
+            before,
+            "the source gained nothing"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn compiling_weight_edits_over_a_dangling_symlink_is_refused() {
+    let fx = Fixture::new();
+    let mut s = session_on(&fx.container);
+    run(&mut s, &update(&COLS, DELTA));
+    let link = fx.path("dangling.vindex3");
+    std::os::unix::fs::symlink(fx.path("nowhere"), &link).unwrap();
+
+    let err = try_run(
+        &mut s,
+        &format!("COMPILE CURRENT INTO VINDEX \"{}\";", q(&link)),
+    )
+    .expect_err("a symlink destination");
+
+    assert!(err.contains("symbolic link"), "{err}");
+    assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+}

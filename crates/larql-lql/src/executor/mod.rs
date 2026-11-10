@@ -11,7 +11,9 @@ mod introspection;
 mod knowledge;
 mod lifecycle;
 mod memit_persist;
+pub mod model_resolver;
 mod mutation;
+mod predicate;
 pub(crate) mod query;
 mod relation_resolver;
 mod remote;
@@ -93,6 +95,8 @@ pub struct Session {
     pub(crate) balance_trace: crate::executor::balance_trace::ObserverSlot,
     /// Fault armed for the next COMPOSE install, if any. See [`crate::install_fault`].
     pub(crate) install_fault: crate::executor::install_fault::FaultSlot,
+    /// Resolves a `USE` literal that is not a path. See [`model_resolver`].
+    pub(crate) model_resolver: Option<model_resolver::ModelResolver>,
 }
 
 impl Default for Session {
@@ -119,7 +123,14 @@ impl Session {
             contract_violations: 0,
             balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
             install_fault: crate::executor::install_fault::FaultSlot::default(),
+            model_resolver: None,
         }
+    }
+
+    /// Sets (or, with `None`, removes) the hook `USE` asks about a literal
+    /// that is not an existing path. See [`model_resolver`].
+    pub fn set_model_resolver(&mut self, resolver: Option<model_resolver::ModelResolver>) {
+        self.model_resolver = resolver;
     }
 
     /// Sets (or, with `None`, removes) the observer of COMPOSE balance passes. It only observes:
@@ -339,18 +350,12 @@ impl Session {
                 route,
                 generate,
             } => self.exec_infer(prompt, *top, *compare, route.as_ref(), *generate),
-            Statement::Delete { conditions } => {
-                let mut out = self.ensure_patch_session();
-                out.extend(self.exec_delete(conditions)?);
-                self.advance_epoch();
-                Ok(out)
-            }
-            Statement::Update { set, conditions } => {
-                let mut out = self.ensure_patch_session();
-                out.extend(self.exec_update(set, conditions)?);
-                self.advance_epoch();
-                Ok(out)
-            }
+            // DELETE and UPDATE open the auto-patch themselves, once the
+            // WHERE clause is validated and has matched something: a
+            // refused or no-op statement leaves the session as it was.
+            // (they also advance the epoch themselves, only on a change).
+            Statement::Delete { conditions } => self.exec_delete(conditions),
+            Statement::Update { set, conditions } => self.exec_update(set, conditions),
             // A direct weight edit stages without starting an anonymous patch:
             // it is recorded only when a named BEGIN PATCH recording is open.
             Statement::UpdateWeights {

@@ -15,8 +15,10 @@ use crate::detect::LayerBandSplit;
 use crate::multimodal::{MultiModalProtocol, PlaceholderProtocol, PrecomputedScaling, TokenBudget};
 use crate::tensor_keys::qk_norm;
 
-/// Gemma 3 sliding window pattern: every 6th layer (0-indexed: 5, 11, 17, ...)
-/// uses full attention, the rest use sliding window.
+/// Gemma 3's class-default sliding window period (`Gemma3TextConfig`'s
+/// `sliding_window_pattern` default): every 6th layer (0-indexed: 5, 11,
+/// 17, ...) uses full attention, the rest use sliding window. Consulted
+/// only when the checkpoint declares neither `layer_types` nor a period.
 const GEMMA3_SLIDING_WINDOW_PATTERN: usize = 6;
 
 /// Multi-modal contract for Gemma 3.
@@ -177,10 +179,25 @@ impl Position for Gemma3Arch {
 }
 
 impl Attention for Gemma3Arch {
+    /// The interleave in HF's own order of authority
+    /// (`Gemma3TextConfig.__post_init__`): an explicit `layer_types`
+    /// array, else the declared `sliding_window_pattern` period, else the
+    /// class default of 6. The flat `gemma3_text` checkpoints (270M, 1B)
+    /// declare the array or the period at the root; the composite 4B+
+    /// declare neither and take the default.
     fn is_sliding_window_layer(&self, layer: usize) -> bool {
-        // Full attention on every Nth layer, sliding window on the rest.
-        // Layer indices 5, 11, 17, 23, 29 are full attention (0-indexed).
-        !(layer + 1).is_multiple_of(GEMMA3_SLIDING_WINDOW_PATTERN)
+        if let Some(sliding) = crate::config::layer_types::is_sliding_from_layer_types(
+            self.config.layer_types.as_ref(),
+            layer,
+        ) {
+            return sliding;
+        }
+        let period = self
+            .config
+            .sliding_window_pattern
+            .filter(|&period| period > 0)
+            .unwrap_or(GEMMA3_SLIDING_WINDOW_PATTERN);
+        !crate::config::is_full_at_period(layer, period)
     }
 }
 

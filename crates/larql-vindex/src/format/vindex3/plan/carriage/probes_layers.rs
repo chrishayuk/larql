@@ -616,3 +616,25 @@ pub(super) fn probe_kda_gate_lower_bound(
         .kda_gate_lower_bound
         .map(|b| json!(b))
 }
+
+/// The stride of the full-attention layers the built span table shows.
+///
+/// Derived from the table, never from the declaration: the first full
+/// layer fixes the candidate period (layer `p - 1` is full under period
+/// `p`), and the answer stands only if EVERY layer's span agrees with
+/// [`larql_models::config::is_full_at_period`] at that period. A table
+/// with no full layer, or with no single period, answers `None` — the
+/// declaration then has nothing to agree with and refuses.
+pub(super) fn probe_full_attention_period(
+    component: &Component,
+    _ctx: &ProbeContext<'_>,
+) -> Option<Value> {
+    let table = component.attention.as_ref()?;
+    let is_full = |l: &AttentionLayerPolicy| l.span == Some(AttentionSpan::Full);
+    let period = table.iter().position(is_full)? + 1;
+    table
+        .iter()
+        .enumerate()
+        .all(|(layer, l)| is_full(l) == larql_models::config::is_full_at_period(layer, period))
+        .then(|| json!(period))
+}

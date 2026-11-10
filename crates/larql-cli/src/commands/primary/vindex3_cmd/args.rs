@@ -180,7 +180,7 @@ pub enum ExecBackend {
 
 #[derive(Args)]
 pub struct ExecArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Component to execute.
@@ -245,9 +245,14 @@ pub struct ExecArgs {
     #[arg(long, requires = "generate", value_parser = clap::value_parser!(u16).range(2..=8))]
     pub speculate: Option<u16>,
 
-    /// With `--generate`: stop at the container's EOS ids
-    /// (`generation_config.json`), in both the greedy and `--speculate`
-    /// loops, instead of decoding the full count past end-of-turn.
+    /// With `--generate`: stop at the container's end-of-sequence tokens
+    /// (`generation_config.json` EOS ids, plus the built-in and declared
+    /// stop strings and `tokenizer_config.json`'s `eos_token` that its
+    /// tokenizer maps to a token), on every backend and in both the greedy
+    /// and `--speculate` loops, instead of decoding the full count past
+    /// end-of-turn. The stop id is the last generated id. A declared stop
+    /// string that is not a single token is reported as not honoured;
+    /// refused when no stop resolves to an id.
     #[arg(long, requires = "generate")]
     pub stop_at_eos: bool,
 
@@ -349,6 +354,30 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate"])]
     pub logit_dump: Option<PathBuf>,
 
+    /// Run one full PREFILL per prefix length (`--prefill-lengths`, else
+    /// the whole sequence) and write each prefill's final-position logits
+    /// here as `[lengths, vocab]` f32 little-endian.
+    ///
+    /// The independent arm to `--logit-dump`: that one steps the cached
+    /// decode path a position at a time, this one runs the batch prefill
+    /// with no continuation state carried between rows. Comparing both
+    /// against an outside reference at the same positions means two
+    /// wrong paths cannot agree with each other and pass.
+    #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate", "logit_dump", "bank"])]
+    pub prefill_logit_dump: Option<PathBuf>,
+
+    /// Comma-separated prefix lengths for `--prefill-logit-dump`, each in
+    /// `1..=tokens`. Omitted: the whole sequence only.
+    #[arg(long, requires = "prefill_logit_dump")]
+    pub prefill_lengths: Option<String>,
+
+    /// How `--prefill-logit-dump` computes its rows: `batched` (one causal
+    /// prefill, the head applied at every requested position) or
+    /// `per-prefix` (one prefill per prefix — the O(n²) control the
+    /// batched method is validated against).
+    #[arg(long, value_enum, default_value_t = super::prefill_dump::PrefillMethod::Batched, requires = "prefill_logit_dump")]
+    pub prefill_method: super::prefill_dump::PrefillMethod,
+
     /// Record what the CPU Q8_0 kernel was given and returned, as raw bits, in
     /// this new directory, for an outside verifier to judge. It only observes:
     /// it runs after the kernel returns. A run that never reaches that kernel
@@ -387,11 +416,80 @@ pub struct ExecArgs {
     /// unprofiled run and attribution from this one.
     #[arg(long, requires = "generate")]
     pub profile: bool,
+
+    /// PREC-DIAG-1 E0a sub-layer capture on the `--logit-dump` path.
+    #[command(flatten)]
+    pub capture: SiteCaptureArgs,
+
+    /// PREC-DIAG-1 E0b: how RoPE cos/sin are constructed. `larql` (the
+    /// default, the shipped f64-derived construction) or `hf-f32`
+    /// (transformers' construction, operation by operation in f32 — its
+    /// formula, dtype and the platform's f32 trig). A diagnostic
+    /// intervention: accepted only with `--logit-dump` or a batched
+    /// `--prefill-logit-dump` on the interpreter backends, refused
+    /// everywhere else.
+    #[arg(long, value_enum, default_value_t = RopeAnglesArg::Larql)]
+    pub rope_angles: RopeAnglesArg,
+}
+
+/// `--rope-angles` (PREC-DIAG-1 E0b).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum RopeAnglesArg {
+    /// The shipped construction.
+    #[default]
+    Larql,
+    /// transformers' f32 construction.
+    #[value(name = "hf-f32")]
+    HfF32,
+}
+
+impl RopeAnglesArg {
+    pub fn angles(self) -> larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles {
+        use larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles;
+        match self {
+            Self::Larql => RopeAngles::Larql,
+            Self::HfF32 => RopeAngles::HfF32,
+        }
+    }
+}
+
+/// Default `--capture-budget-bytes`: 2 GiB, PREC-DIAG-1's per-experiment
+/// capture limit.
+pub const DEFAULT_CAPTURE_BUDGET_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Sub-layer capture (PREC-DIAG-1 E0a): copies of the intermediate f32
+/// values the cached decode computed at chosen positions, written beside
+/// the `--logit-dump`. Observational only — the logits are bit-identical
+/// with and without it.
+#[derive(Args, Clone, Debug, Default)]
+pub struct SiteCaptureArgs {
+    /// Write the capture into this NEW directory: one `[positions, width]`
+    /// little-endian f32 file per site per layer and a `manifest.json`.
+    /// Requires `--logit-dump` (the registered cached path) and
+    /// `--capture-positions`.
+    #[arg(
+        long,
+        value_name = "DIR",
+        requires_all = ["logit_dump", "capture_positions"],
+        conflicts_with = "bank"
+    )]
+    pub capture_sites: Option<PathBuf>,
+
+    /// Comma-separated positions to capture, strictly increasing, each
+    /// inside the token sequence.
+    #[arg(long, value_name = "LIST", requires = "capture_sites")]
+    pub capture_positions: Option<String>,
+
+    /// The most bytes the capture may hold and write. Checked before
+    /// anything is allocated or written; a capture over it ends the run
+    /// with a `resource_limit` result instead of dropping sites.
+    #[arg(long, value_name = "BYTES", requires = "capture_sites")]
+    pub capture_budget_bytes: Option<u64>,
 }
 
 #[derive(Args)]
 pub struct OpsArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Component to plan.
@@ -444,7 +542,7 @@ pub struct VerifyArgs {
     #[arg(required = true)]
     pub artifacts: Vec<PathBuf>,
 
-    /// Container directory to verify against.
+    /// Container to verify against: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub container: PathBuf,
 
@@ -522,7 +620,7 @@ impl EncodeCapability {
 
 #[derive(Args)]
 pub struct RepresentArgs {
-    /// Container directory to compile from.
+    /// Container to compile from: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Container directory to write. The canonical segments are
@@ -606,7 +704,7 @@ pub struct RepresentArgs {
 
 #[derive(Args)]
 pub struct InspectArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Additionally re-hash every segment against the directory.
@@ -626,7 +724,7 @@ pub struct InspectArgs {
 
 #[derive(Args)]
 pub struct ReferencesArgs {
-    /// Container directory.
+    /// Container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Derive the table from the segment headers and write it. Refuses a

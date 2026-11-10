@@ -204,3 +204,40 @@ fn the_two_byte_counters_separate_description_from_payload() {
         "hydrating payload must not be counted as description"
     );
 }
+
+#[test]
+#[serial]
+fn a_segment_name_that_leaves_the_local_root_is_refused_before_any_write() {
+    // Opening stages every segment header at `root/headers/<segment>`,
+    // and hydration writes payload to `root/container/<segment>`; the
+    // name comes from the REMOTE index. `..` walks out of the root and
+    // an absolute name replaces it under `Path::join`, so either would
+    // let the far end choose a file on this machine to write.
+    let outside = tempfile::tempdir().unwrap();
+    let absolute = outside.path().join("written-by-the-remote.bin");
+    for name in [
+        "../../written-by-the-remote.bin".to_string(),
+        absolute.to_str().unwrap().to_string(),
+    ] {
+        let container = subject();
+        let mut index = index_of(container.path());
+        let entry = index["representations"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .expect("a representation");
+        entry["segment"] = name.clone().into();
+        write_index(container.path(), &index);
+
+        let message = open_err(container.path());
+        assert!(
+            message.contains("which is refused") && message.contains(&name),
+            "`{name}` must be refused by the container-path rule, got: {message}"
+        );
+    }
+    assert!(
+        !absolute.exists(),
+        "nothing may be written outside the local root"
+    );
+}

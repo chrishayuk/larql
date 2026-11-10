@@ -316,3 +316,37 @@ fn the_expert_schedule_is_inert_only_at_the_uniform_stack() {
     assert!(classify_key_at("decoder_sparse_step", &serde_json::json!(2)).is_critical());
     assert!(classify_key_at("mlp_only_layers", &serde_json::json!([0, 1])).is_critical());
 }
+
+/// A value outside an inert entry's vocabulary is a different
+/// declaration under the same leaf: the name classification answers.
+/// `use_bidirectional_attention` is the real instance — Gemma 3's text
+/// causal-mask boolean, Gemma 4's `"vision"` interface string.
+#[test]
+fn an_inert_entry_judges_only_values_in_its_own_vocabulary() {
+    use crate::format::vindex3::plan::semantics::classify_key_at;
+    let json = |v| serde_json::json!(v);
+    assert_eq!(
+        classify_key_at("use_bidirectional_attention", &json(false)),
+        SemanticClass::TrainingOnly
+    );
+    assert_eq!(
+        classify_key_at("use_bidirectional_attention", &json(true)),
+        SemanticClass::ExecutionSemantic
+    );
+    assert_eq!(
+        classify_key_at("use_bidirectional_attention", &serde_json::json!("vision")),
+        SemanticClass::InterfaceSemantic
+    );
+    // An unjudged leaf in a foreign vocabulary still blocks.
+    for (leaf, value) in [
+        ("pretraining_tp", serde_json::json!("1")),
+        ("mlp_only_layers", serde_json::json!(0)),
+    ] {
+        assert_eq!(
+            classify_key_at(leaf, &value),
+            SemanticClass::Unknown,
+            "{leaf}"
+        );
+        assert!(classify_key_at(leaf, &value).is_critical(), "{leaf}");
+    }
+}

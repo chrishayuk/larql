@@ -125,6 +125,11 @@ pub fn apply_weight_patches(
     if out.exists() {
         return Err(WeightPatchError::OutputExists(out.to_path_buf()));
     }
+    // `exists()` follows symlinks and says nothing about where a missing
+    // path would land: a dangling link, or a destination inside the
+    // source, gets past it. The shared boundary refuses both before the
+    // stage directories are created.
+    crate::format::fresh_output::check_fresh_destination(src, out)?;
     let raw = std::fs::read_to_string(src.join(INDEX_JSON))?;
     let index: Vindex3Index = serde_json::from_str(&raw)
         .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
@@ -485,7 +490,7 @@ fn write_stage(
             continue;
         }
         let from = src.join(&rel);
-        let to = stage.join(&rel);
+        let to = crate::format::vindex3::container_path::prepare_write(stage, &rel)?;
         if std::fs::hard_link(&from, &to).is_err() {
             std::fs::copy(&from, &to)?;
         }
@@ -539,8 +544,9 @@ fn write_patched_segment(
         })
         .collect();
     let mut source = File::open(src.join(&at.entry.segment))?;
+    let dest = crate::format::vindex3::container_path::prepare_write(stage, &at.entry.segment)?;
     Ok(write_segment(
-        &stage.join(&at.entry.segment),
+        &dest,
         &at.canonical_id,
         planned,
         |name, w, tap| {

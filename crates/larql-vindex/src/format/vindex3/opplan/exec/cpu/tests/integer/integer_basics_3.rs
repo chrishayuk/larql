@@ -22,7 +22,9 @@ fn k5_is_bit_identical_to_k3_on_both_arms() {
         quantise_activation_blocked,
     };
     const OUT: usize = 6;
-    for in_dim in [64usize, 256, 5120] {
+    // 88 leaves one block past the group of four and an 8-element tail,
+    // the two paths an aligned width never reaches.
+    for in_dim in [64usize, 88, 256, 5120] {
         let w = lcg_values(OUT * in_dim, 101);
         let x = outlier_activation(in_dim, 102);
         let (codes, wscales) = q8_parts(&w, in_dim);

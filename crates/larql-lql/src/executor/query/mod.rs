@@ -8,7 +8,7 @@ pub(crate) mod describe;
 mod explain;
 mod infer;
 mod infer_trace;
-mod select;
+pub(crate) mod select;
 mod walk;
 
 use crate::error::LqlError;

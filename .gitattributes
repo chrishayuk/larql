@@ -1,0 +1,2 @@
+# Hash-frozen conformance suites: their bytes are their identity, so no checkout may rewrite line endings.
+conformance/** -text

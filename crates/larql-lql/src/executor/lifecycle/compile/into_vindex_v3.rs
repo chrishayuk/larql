@@ -20,7 +20,8 @@ use std::path::PathBuf;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 use larql_vindex::format::filenames::KNN_STORE_BIN;
-use larql_vindex::format::vindex3::compile::bake_container;
+use larql_vindex::format::vindex3::compile::bake_container_with;
+use larql_vindex::VindexError;
 
 impl Session {
     pub(crate) fn exec_compile_into_vindex_v3(
@@ -50,16 +51,20 @@ impl Session {
         let overrides =
             crate::executor::vindex3::compose_overrides(runtime, overlay)?.unwrap_or_default();
         let out = PathBuf::from(output);
-        let report = bake_container(path, &overrides, &out)
-            .map_err(|e| LqlError::exec("compile: bake failed", e))?;
-
+        // The KNN store is written into the staged container, so a
+        // failed save leaves nothing at `out` rather than a container
+        // missing its L0 knowledge.
         let knn_entries = overlay.knn_store.len();
-        if knn_entries > 0 {
-            overlay
-                .knn_store
-                .save(&out.join(KNN_STORE_BIN))
-                .map_err(|e| LqlError::Execution(format!("compile: save knn store: {e}")))?;
-        }
+        let report = bake_container_with(path, &overrides, &out, |staged| {
+            if knn_entries > 0 {
+                overlay
+                    .knn_store
+                    .save(&staged.join(KNN_STORE_BIN))
+                    .map_err(|e| VindexError::Parse(format!("save knn store: {e}")))?;
+            }
+            Ok(())
+        })
+        .map_err(|e| LqlError::exec("compile: bake failed", e))?;
 
         Ok(vec![
             format!("Compiled: {} (VINDEX3, clean container)", out.display()),

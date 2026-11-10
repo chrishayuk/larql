@@ -51,12 +51,23 @@ const CAPABILITY_FILES: &[&str] = &[
 
 /// Reorganise the container at `src` into `out`, preserving semantics
 /// exactly.
+///
+/// `out` must be a fresh destination — absent or an empty directory,
+/// and neither the source nor nested with it
+/// ([`crate::format::fresh_output`]). The result is staged beside `out`
+/// and promoted whole.
 pub fn compact_container(src: &Path, out: &Path) -> Result<CompactReport, VindexError> {
+    crate::format::fresh_output::write_fresh_directory(src, out, |staging| {
+        compact_into(src, staging)
+    })
+}
+
+/// The reorganisation itself, writing into a directory that already
+/// exists and is this call's alone.
+fn compact_into(src: &Path, out: &Path) -> Result<CompactReport, VindexError> {
     let raw_index = std::fs::read_to_string(src.join(INDEX_JSON))?;
     let index: Vindex3Index = serde_json::from_str(&raw_index)
         .map_err(|e| VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
-
-    std::fs::create_dir_all(out)?;
 
     // Everything the container REFERENCES, relative to its root.
     let mut referenced: BTreeSet<String> = CAPABILITY_FILES.iter().map(|s| s.to_string()).collect();
@@ -87,10 +98,7 @@ pub fn compact_container(src: &Path, out: &Path) -> Result<CompactReport, Vindex
                 .to_string_lossy()
                 .replace('\\', "/");
             if referenced.contains(&rel) {
-                let dst = out.join(&rel);
-                if let Some(parent) = dst.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
+                let dst = super::container_path::prepare_write(out, &rel)?;
                 if std::fs::hard_link(&path, &dst).is_err() {
                     std::fs::copy(&path, &dst)?;
                 }

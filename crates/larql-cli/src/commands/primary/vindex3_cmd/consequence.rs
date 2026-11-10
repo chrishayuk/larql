@@ -51,7 +51,7 @@ const ENCODER: &str = "nvfp4-nearest-v1";
 
 #[derive(Args)]
 pub struct ConsequenceArgs {
-    /// Canonical container. Must be the one the moments were captured from.
+    /// Canonical container (a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded). Must be the one the moments were captured from.
     pub container: PathBuf,
 
     /// The frozen capture from `sensitivity --calibration`.

@@ -8,7 +8,8 @@
 /// Extension distinguishing a saved inventory JSON from a checkpoint dir.
 const INVENTORY_EXT: &str = "json";
 
-pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(mut cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
+    model_args::resolve_installed(&mut cmd)?;
     match cmd {
         Vindex3Command::Plan(args) => run_plan(args),
         Vindex3Command::Encode(args) => run_encode(args),
@@ -39,14 +40,18 @@ mod intervention;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub(crate) mod lowered;
 pub(crate) mod measure;
+mod model_args;
 mod observe;
 mod ops;
 mod optional_op;
+mod pending_output;
 pub(crate) mod plugins;
+mod prefill_dump;
 pub(crate) mod prepare;
 mod realizations;
 mod reconstruction;
 mod sensitivity;
+mod site_capture_dump;
 mod teacher_force;
 mod token_bank;
 use exec::run_exec;

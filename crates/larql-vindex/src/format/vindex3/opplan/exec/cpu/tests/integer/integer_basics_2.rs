@@ -116,7 +116,9 @@ fn a_finer_activation_block_reduces_error_on_an_outlier_activation() {
 fn the_asymmetric_q8_kernel_computes_what_the_format_denotes() {
     use super::super::super::integer::{q8_row_asym_portable, quantise_activation_asymmetric};
     const OUT: usize = 4;
-    for in_dim in [64usize, 192, 1024] {
+    // 88 = five 16-wide blocks plus an 8-element tail: one group of four,
+    // one block past it, then the scalar remainder.
+    for in_dim in [64usize, 88, 192, 1024] {
         let w = lcg_values(OUT * in_dim, 61);
         let x = outlier_activation(in_dim, 62);
         let (codes, wscales) = q8_parts(&w, in_dim);
@@ -512,8 +514,9 @@ fn k4_is_bit_identical_to_k3() {
     use crate::format::vindex3::opplan::exec::quantise::{quantise_q8_indexed_for_test, SUM_BLOCK};
 
     const OUT: usize = 6;
-    // 5120 is the real width; 80 exercises a group-of-four tail.
-    for in_dim in [80usize, 256, 5120] {
+    // 5120 is the real width; 80 exercises a group-of-four tail; 88 adds
+    // a remainder shorter than one 16-wide block.
+    for in_dim in [80usize, 88, 256, 5120] {
         let w = lcg_values(OUT * in_dim, 91);
         let x = outlier_activation(in_dim, 92);
         let LoadedWeight::Q8 {

@@ -106,3 +106,57 @@ fn the_portable_rows_ignore_scales_past_the_row() {
         q4_row_portable(&packed, &one, &qx, ONE_BLOCK, ONE_BLOCK).to_bits(),
     );
 }
+
+/// Ragged rows for the dispatched kernels: `(in_dim, block)` pairs whose
+/// final block is short, and short by an amount that is not a multiple of
+/// the 16-lane `SDOT` width (Q8) or whose half is not (Q4), so the scalar
+/// remainder after the vector loop runs. Block 16 is excluded: the Q8
+/// dispatcher sends it to the reassociating K3 row, which is pinned by
+/// tolerance elsewhere rather than by identity here.
+const RAGGED: [(usize, usize); 3] = [(40, 32), (88, 64), (100, 64)];
+
+/// **The dispatched rows ARE the definitions, ragged rows included.**
+///
+/// On aarch64 with `dotprod` the dispatchers run the `SDOT` kernels; the
+/// integer block sums are exact and each block contributes one multiply
+/// and one add in the definition's order, so the comparison is bit
+/// identity. A surplus scale must still pair with nothing — the vector
+/// kernels carry their own copy of that stop, and it is checked here
+/// against the same values as the portable one above.
+#[test]
+fn the_dispatched_rows_are_the_definitions_on_ragged_rows() {
+    use super::super::super::integer::{q4_row, q8_row};
+    const SURPLUS: f32 = 1.0e6;
+    for (in_dim, block) in RAGGED {
+        assert_ne!(
+            in_dim % block,
+            0,
+            "{in_dim}/{block} must leave a short block"
+        );
+        let blocks = in_dim.div_ceil(block);
+        let codes: Vec<i8> = (0..in_dim).map(|i| (i % 13) as i8 - 6).collect();
+        let qx: Vec<i8> = (0..in_dim).map(|i| (i % 11) as i8 - 5).collect();
+        let packed: Vec<u8> = (0..in_dim / 2).map(|i| (i * 37 % 256) as u8).collect();
+        let scales: Vec<f32> = (0..blocks).map(|b| 0.25 + b as f32 * 0.125).collect();
+        let mut with_surplus = scales.clone();
+        with_surplus.push(SURPLUS);
+
+        for s in [&scales, &with_surplus] {
+            let label = if s.len() > blocks {
+                "with surplus"
+            } else {
+                "exact"
+            };
+            assert_eq!(
+                q8_row(&codes, s, &qx, in_dim, block).to_bits(),
+                q8_row_portable(&codes, &scales, &qx, in_dim, block).to_bits(),
+                "q8 {in_dim}/{block} {label}"
+            );
+            assert_eq!(
+                q4_row(&packed, s, &qx, in_dim, block).to_bits(),
+                q4_row_portable(&packed, &scales, &qx, in_dim, block).to_bits(),
+                "q4 {in_dim}/{block} {label}"
+            );
+        }
+    }
+}

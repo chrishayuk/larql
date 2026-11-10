@@ -97,7 +97,7 @@ fn compile_skips_memit_fact_with_no_relation() {
         }],
     });
 
-    let out_dir = dir.join("compiled.vindex");
+    let out_dir = compile_output(&dir, "compiled.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}";"#,
         lql_path(&out_dir)
@@ -118,18 +118,17 @@ fn compile_skips_memit_fact_with_no_relation() {
 }
 
 #[test]
-fn delete_with_negative_layer_matches_nothing() {
-    // Negative integers are kept as a usize::MAX sentinel rather than
-    // widened to "no filter" — so they match nothing instead of matching
-    // everything.
+fn delete_with_negative_layer_is_refused() {
+    // A negative index addresses no slot. It used to become a
+    // usize::MAX sentinel that matched nothing; it is now refused with
+    // the rest of the unevaluable predicates, before anything is touched.
     let (mut session, dir) = vindex_session("delete_negative_layer");
     let stmt = parser::parse(r#"DELETE FROM EDGES WHERE layer = -1;"#).unwrap();
-    let out = session.execute(&stmt).expect("DELETE should not error");
-    let joined = out.join("\n");
-    assert!(
-        joined.contains("no matching"),
-        "negative layer should match nothing: {joined}"
-    );
+    let err = session
+        .execute(&stmt)
+        .expect_err("a negative layer is not a predicate DELETE evaluates")
+        .to_string();
+    assert!(err.contains("unsupported WHERE clause"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

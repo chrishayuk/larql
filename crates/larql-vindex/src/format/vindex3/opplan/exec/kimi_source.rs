@@ -101,7 +101,8 @@ fn graph_value(dir: &Path) -> Result<serde_json::Value, VindexError> {
         .as_str()
         .unwrap_or("system_graph.json")
         .to_string();
-    serde_json::from_slice(&std::fs::read(dir.join(graph_name))?)
+    let graph_path = crate::format::vindex3::container_path::resolve(dir, &graph_name)?;
+    serde_json::from_slice(&std::fs::read(graph_path)?)
         .map_err(|e| VindexError::Parse(format!("system_graph: {e}")))
 }
 

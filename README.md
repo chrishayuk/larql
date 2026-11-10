@@ -91,17 +91,15 @@ curl http://localhost:8080/v1/chat/completions -H 'Content-Type: application/jso
 ```
 
 **3. Look inside it.** This is what most runtimes can't do. These commands
-take the model's directory, which `larql show` prints:
+take the same model name:
 
 ```console
-$ M=$(larql show Qwen3-0.6B | awk '/^Path:/ {print $2}')
-
-$ larql lql "USE \"$M\"; INFER \"The capital of France is\" TOP 3;"
+$ larql lql 'USE "Qwen3-0.6B"; INFER "The capital of France is" TOP 3;'
    1.  Paris               (74.36%)  [id 12095]
    2.  the                 (2.18%)  [id 279]
    3.  in                  (2.07%)  [id 304]
 
-$ larql vindex3 observe "$M" --backend production \
+$ larql vindex3 observe Qwen3-0.6B --backend production \
     --prompt "The capital of France is" --record run.jsonl
 ```
 

@@ -397,6 +397,11 @@ pub struct AttentionCall<'a> {
     pub bias: Option<BiasCall<'a>>,
     /// Attention sinks; `None` = ordinary softmax.
     pub sinks: Option<SinkCall<'a>>,
+    /// How RoPE cos/sin are constructed (PREC-DIAG-1 E0b). A per-run
+    /// diagnostic choice, not a plan fact; [`RopeAngles::Larql`] by default.
+    ///
+    /// [`RopeAngles::Larql`]: super::super::rope_angles::RopeAngles::Larql
+    pub rope_angles: super::super::rope_angles::RopeAngles,
 }
 
 impl AttentionCall<'_> {

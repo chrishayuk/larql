@@ -223,11 +223,16 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 super::super::stages::stage(super::super::stages::Stage::Attention);
             let raw_attn = match &state.attention {
                 super::super::prepared::PreparedAttention::GatedDelta(delta) => {
+                    let weights = delta.weights()?;
+                    let projector = super::super::dense_rows::consuming_projector(
+                        self.backend.dense_projector(),
+                        &weights,
+                        layer.layer,
+                    )?;
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
-                    let projector = self.backend.dense_projector();
                     let mut planes = super::super::gated_delta::layer_forward_with(
                         &delta.op,
-                        &delta.weights()?,
+                        &weights,
                         &inputs,
                         recurrent,
                         super::super::gated_delta::Mutation::None,
@@ -236,25 +241,31 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     planes.output.remove(0)
                 }
                 super::super::prepared::PreparedAttention::Mamba2(mixer) => {
+                    let weights = mixer.weights()?;
+                    let projector = super::super::dense_rows::consuming_projector(
+                        self.backend.dense_projector(),
+                        &weights,
+                        layer.layer,
+                    )?;
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
-                    let projector = self.backend.dense_projector();
                     let mut planes = super::super::mamba2::layer_forward_with(
-                        &mixer.op,
-                        &mixer.weights()?,
-                        &inputs,
-                        recurrent,
-                        projector,
+                        &mixer.op, &weights, &inputs, recurrent, projector,
                     );
                     planes.output.remove(0)
                 }
                 super::super::prepared::PreparedAttention::Kda(ops) => {
+                    let weights = ops.weights()?;
+                    let projector = super::super::dense_rows::consuming_projector(
+                        self.backend.dense_projector(),
+                        &weights,
+                        layer.layer,
+                    )?;
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
-                    let projector = self.backend.dense_projector();
                     let mut planes = super::super::kda::layer_forward_with(
                         &super::super::kda::BackendKdaProjections(projector),
                         &inputs[0],
                         inputs[0].len(),
-                        ops.weights()?,
+                        weights,
                         ops.op.geometry(),
                         recurrent,
                         super::super::kda::Mutation::None,
@@ -269,9 +280,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     // and reads the whole prefix back — the cache IS the
                     // continuation, and the provider owns it across the
                     // step boundary exactly as it owns KV rows.
-                    let projector = self.backend.dense_projector();
                     let hidden = inputs[0].len();
                     let weights = ops.weights()?;
+                    let projector = super::super::dense_rows::consuming_projector(
+                        self.backend.dense_projector(),
+                        &weights,
+                        layer.layer,
+                    )?;
                     let geometry = ops.op.geometry();
                     let latent = self.kv.state_mut().latent_state(index)?;
                     super::super::mla::mla_forward_with(
@@ -297,16 +312,15 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     held.covers(0..base)?;
                     let (past_keys, past_values) = held.to_owned_rows();
                     let past = super::super::kv_view::KvView::over_rows(&past_keys, &past_values);
+                    let weights = ops.weights()?;
+                    let projector = super::super::dense_rows::consuming_projector(
+                        self.backend.dense_projector(),
+                        &weights,
+                        layer.layer,
+                    )?;
                     let recurrent = self.kv.state_mut().recurrent_state(index)?;
-                    let projector = self.backend.dense_projector();
                     let mut planes = super::super::conv_qkv::layer_forward_with(
-                        &ops.op,
-                        &ops.weights()?,
-                        &inputs,
-                        recurrent,
-                        past,
-                        base,
-                        projector,
+                        &ops.op, &weights, &inputs, recurrent, past, base, projector,
                     );
                     let key = planes.keys.remove(0);
                     let value = planes.values.remove(0);
@@ -654,7 +668,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let logits = match exit.hidden {
             // The one head path (V3-LENS-1): the same function a logit lens
             // calls on an intermediate carrier.
-            Some(exit_hidden) => ops.head_logits(self.backend, &exit_hidden)?,
+            Some(exit_hidden) => {
+                ops.head_logits_observed(self.backend, &exit_hidden, &mut |v| {
+                    observer.head_input(position, v)
+                })?
+            }
             None => {
                 if ops.final_norm().is_some() || ops.output().is_some() {
                     return Err(VindexError::Parse(

@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::CompareOp;
+use crate::ast::{CompareOp, Value};
 
 fn cond(field: &str, value: Value) -> Condition {
     Condition {
@@ -55,13 +55,6 @@ fn require_layer_feature_rejects_negative_value() {
     ];
     let err = require_layer_feature(&conds, "DELETE").unwrap_err();
     assert!(err.to_string().contains("layer"));
-}
-
-#[test]
-fn lookup_usize_condition_finds_field() {
-    let conds = vec![cond("layer", Value::Integer(3))];
-    assert_eq!(lookup_usize_condition(&conds, "layer"), Some(3));
-    assert_eq!(lookup_usize_condition(&conds, "feature"), None);
 }
 
 #[test]
@@ -780,4 +773,25 @@ fn remote_walk_with_layer_range_passes_through() {
     // branch than the no-range variant.
     let range = crate::ast::Range { start: 0, end: 5 };
     let _ = session.remote_walk("p", Some(5), Some(&range)).unwrap();
+}
+
+#[test]
+fn require_layer_feature_refuses_conditions_the_remote_op_would_drop() {
+    // A remote DELETE / UPDATE pins one slot. An entity, relation or score
+    // beside the pin would be validated here and then never sent.
+    for extra in [
+        cond("entity", Value::String("France".into())),
+        cond("relation", Value::String("capital".into())),
+        cond("score", Value::Integer(1)),
+    ] {
+        let conds = vec![
+            cond("layer", Value::Integer(0)),
+            cond("feature", Value::Integer(0)),
+            extra,
+        ];
+        let err = require_layer_feature(&conds, "DELETE")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not evaluated remotely"), "{err}");
+    }
 }

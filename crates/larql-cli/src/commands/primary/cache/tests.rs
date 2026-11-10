@@ -265,6 +265,17 @@ fn resolve_cached_accepts_local_shorthand() {
 }
 
 #[test]
+fn resolve_cached_lists_every_entry_an_ambiguous_shorthand_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    build_fake_hub(tmp.path(), &["alice/same", "bob/same"]);
+    let cache = scan_hf_hub_at(tmp.path()).unwrap();
+    let err = resolve_cached_from("same", &cache).unwrap_err().to_string();
+    assert!(err.contains("`same` is ambiguous"), "{err}");
+    assert!(err.contains("alice/same [hf]"), "{err}");
+    assert!(err.contains("bob/same [hf]"), "{err}");
+}
+
+#[test]
 fn shorthand_key_strips_owner_slash() {
     assert_eq!(shorthand_key("owner/name"), "name");
     assert_eq!(shorthand_key("just-name"), "just-name");
