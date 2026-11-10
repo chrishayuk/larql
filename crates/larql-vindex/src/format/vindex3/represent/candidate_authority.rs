@@ -9,7 +9,7 @@ pub(crate) mod producer;
 
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Component, Path};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -98,16 +98,15 @@ fn invalid(error: impl std::fmt::Display) -> CandidateAuthorityRefusal {
 }
 
 fn relative_file(root: &Path, file: &str) -> Result<std::path::PathBuf, CandidateAuthorityRefusal> {
-    if file.is_empty()
-        || Path::new(file)
-            .components()
-            .any(|c| !matches!(c, Component::Normal(_)))
-    {
-        return Err(invalid(format!(
-            "payload locator `{file}` is not a relative file"
-        )));
+    // A locator must name a file; the shared rule only keeps it inside.
+    if file.is_empty() {
+        return Err(invalid("payload locator `` is not a relative file"));
     }
-    Ok(root.join(file))
+    crate::format::vindex3::container_path::resolve(root, file).map_err(|e| {
+        invalid(format!(
+            "payload locator `{file}` is not a relative file: {e}"
+        ))
+    })
 }
 
 /// Bounded streaming reads; sealing a large bank never materialises it.

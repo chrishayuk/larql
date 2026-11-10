@@ -27,6 +27,9 @@ use serde_json::Value;
 use super::render::render_chat_template;
 use super::ChatWrap;
 
+/// The standalone template file a container may carry beside its tokenizer.
+pub(super) const CHAT_TEMPLATE_JINJA: &str = "chat_template.jinja";
+
 /// Resolve and render the HF-published template from the vindex.
 ///
 /// Returns:
@@ -40,7 +43,7 @@ pub(super) fn try_hf_template(vindex_dir: &Path, user_prompt: &str) -> Result<Ch
     let cfg = load_tokenizer_config(vindex_dir);
 
     // Source 1: standalone chat_template.jinja.
-    let jinja_path = vindex_dir.join("chat_template.jinja");
+    let jinja_path = vindex_dir.join(CHAT_TEMPLATE_JINJA);
     if jinja_path.is_file() {
         return match std::fs::read_to_string(&jinja_path) {
             Ok(template_str) => {
@@ -90,6 +93,17 @@ fn finish_render(
             })
         }
     }
+}
+
+/// The container's own template text: `chat_template.jinja` when it is
+/// readable, else `tokenizer_config.json::chat_template` (string or
+/// named-array form) from the already-parsed `cfg`. `None` when the
+/// container carries neither — the one lookup every multi-message path
+/// shares, in the order [`try_hf_template`] documents.
+pub(super) fn container_template(vindex_dir: &Path, cfg: &Value) -> Option<String> {
+    std::fs::read_to_string(vindex_dir.join(CHAT_TEMPLATE_JINJA))
+        .ok()
+        .or_else(|| extract_chat_template_field(cfg))
 }
 
 /// Read `tokenizer_config.json` into a `serde_json::Value`. Returns an

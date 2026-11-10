@@ -49,7 +49,7 @@ pub enum AutoRepCommand {
 
 #[derive(Args)]
 pub struct InitArgs {
-    /// Source container every candidate is compiled from.
+    /// Source container every candidate is compiled from: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
     /// Token bank exported with this container's tokenizer.
     #[arg(long)]
@@ -119,7 +119,7 @@ pub struct RunArgs {
     /// Where the campaign record is written. Refused if it exists.
     #[arg(long)]
     pub campaign: PathBuf,
-    /// The source container the record describes.
+    /// The source container the record describes: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub source: PathBuf,
     /// The token bank the record's protocol was sealed from.

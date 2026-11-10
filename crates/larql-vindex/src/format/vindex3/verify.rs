@@ -49,18 +49,31 @@ use crate::format::lyrw2::region_role::RegionRole;
 /// so this function refuses any inspection that is not coherent. Before
 /// it did, a corrupt segment passed `larql pull` and registry resolution.
 pub fn validate_downloaded_container(dir: &Path) -> Result<(), VindexError> {
+    check_container_structure(dir, true)
+}
+
+/// [`validate_downloaded_container`]'s dispatch with payload hashing made
+/// optional: `verify_payloads = false` answers "can this build open this
+/// container?" from `index.json`, the graph and segment headers alone —
+/// cheap enough for a cache listing (`larql list`), which must say a
+/// container is unusable (an old graph schema, a legacy bank shape) rather
+/// than list it as if it would run. `true` additionally re-hashes every
+/// segment, which is what a download validator owes its caller.
+pub fn check_container_structure(dir: &Path, verify_payloads: bool) -> Result<(), VindexError> {
     let index_text = std::fs::read_to_string(dir.join(INDEX_JSON))?;
     let index: Vindex3Index = serde_json::from_str(&index_text)
         .map_err(|e| VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
     if index.moe_manifest.is_some() {
         Vindex3Container::open(dir)?;
     } else {
-        let inspection = super::inspect::inspect_container(dir, true)?;
-        if !inspection.is_coherent() {
+        let inspection = super::inspect::inspect_container(dir, verify_payloads)?;
+        if let Some(first) = inspection.defects.first() {
+            // The count and the first defect: enough to act on, and one line
+            // a listing can show. `vindex3 inspect` prints the full set.
             return Err(VindexError::Parse(format!(
-                "downloaded container {} is not coherent: {:?}",
+                "container {} is not coherent: {} defect(s), first {first:?}",
                 dir.display(),
-                inspection.defects
+                inspection.defects.len(),
             )));
         }
     }
@@ -299,6 +312,45 @@ mod validate_downloaded_container_tests {
         let err = validate_downloaded_container(container.path())
             .expect_err("a corrupt segment must fail validation");
         assert!(err.to_string().contains("PayloadCorrupt"), "{err}");
+    }
+
+    /// The listing-grade check (`verify_payloads = false`) reads structure
+    /// only: a payload flip that only a hash can see passes, while a graph
+    /// written at a schema this build does not read is refused by name.
+    #[test]
+    fn the_structural_check_skips_payload_hashes_but_refuses_an_old_graph_schema() {
+        use crate::format::vindex3::graph::GRAPH_SCHEMA;
+
+        let checkpoint = tempfile::tempdir().unwrap();
+        let container = tempfile::tempdir().unwrap();
+        encode_fixture_container(
+            miniature_glimmer,
+            checkpoint.path(),
+            container.path(),
+            "structure-fixture",
+        );
+        super::check_container_structure(container.path(), false)
+            .expect("a well-formed container is structurally openable");
+
+        let index: crate::format::vindex3::index::Vindex3Index = serde_json::from_str(
+            &std::fs::read_to_string(container.path().join(crate::format::filenames::INDEX_JSON))
+                .unwrap(),
+        )
+        .unwrap();
+        let graph_path = container
+            .path()
+            .join(index.system_graph.as_deref().expect("a graph container"));
+        let mut graph: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&graph_path).unwrap()).unwrap();
+        let stale = GRAPH_SCHEMA - 1;
+        graph["schema"] = serde_json::json!(stale);
+        std::fs::write(&graph_path, serde_json::to_string(&graph).unwrap()).unwrap();
+
+        let err = super::check_container_structure(container.path(), false)
+            .expect_err("an old graph schema is not openable");
+        let msg = err.to_string();
+        assert!(msg.contains(&format!("schema v{stale}")), "{msg}");
+        assert!(msg.contains(&format!("reads v{GRAPH_SCHEMA}")), "{msg}");
     }
 
     #[test]

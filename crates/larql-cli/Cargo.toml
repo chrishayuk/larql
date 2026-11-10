@@ -25,7 +25,7 @@ larql-vindex-spec = { path = "../larql-vindex-spec" }
 larql-factory = { path = "../larql-factory" }
 clap = { version = "4", features = ["derive", "env"] }
 indicatif = "0.17"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 base64 = "0.22"
 tokenizers = "0.21"
 safetensors = "0.7"
@@ -45,6 +45,11 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # Default scratch directory for `larql recipe build` when --scratch-dir
 # is omitted — not test-only, the CLI needs this at runtime.
 tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+# `larql doctor`'s free-disk check (GetDiskFreeSpaceExW). Already in the
+# lockfile through larql-vindex, which uses it for physical memory.
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [features]
 default = ["gpu", "research"]

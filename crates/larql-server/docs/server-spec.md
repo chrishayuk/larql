@@ -87,6 +87,7 @@ larql serve "hf://chrishayuk/gemma-3-4b-it-vindex" [OPTIONS]
 | `--port <PORT>` | Listen port | 8080 |
 | `--host <HOST>` | Bind address. A non-loopback address needs `--api-key`, `--insecure-public` or `--public-explorer` | 127.0.0.1 |
 | `--dir <DIR>` | Serve all .vindex directories in this folder | — |
+| `--model-alias <NAME>` | Another name the served model answers to in a request's `model` field, beside its declared id (exact, case-sensitive). `larql serve <name>` passes the name it was given. Single-model only | — |
 | `--no-infer` | Disable INFER endpoint (browse-only, reduces memory) | false |
 | `--cors` | Enable CORS for browser access | false |
 | `--max-concurrent <N>` | Max concurrent requests | 100 |
@@ -466,6 +467,12 @@ shape, which means existing `openai` SDKs work unmodified. Larql-specific
 fields (`path`, `features`, `loaded`) are present as additional members —
 OpenAI clients ignore them.
 
+`id` is always the id the container declares. A model started with
+`--model-alias` (which `larql serve <name>` sets to `<name>`) also lists
+`"aliases": ["<name>"]`, and every route that takes a `model` value accepts
+either spelling. Matching is exact and case-sensitive; a request with no
+`model` field still selects the only model in single-model mode.
+
 ```json
 {
   "object": "list",
@@ -664,7 +671,19 @@ Response: {id: "chatcmpl-...", object: "chat.completion", created,
            usage: {prompt_tokens, completion_tokens, total_tokens}}
 ```
 
-Chat-template selection (auto-detected):
+Chat-template selection on a **VINDEX3** container: the container's own
+template (`chat_template.jinja`, else `tokenizer_config.json::chat_template`),
+rendered by `larql_inference::chat::render_conversation` and encoded
+without the tokenizer's post-processor — the same derivation `larql run`
+and `larql chat` use, so server and CLI give one conversation the same
+prompt ids (`src/routes/openai/v3_prompt.rs`). Every turn reaches the
+template; tool turns are flattened into `user`/`assistant` text first,
+as on VINDEX2, and `tools` are not passed into the template (see the V3
+section below). A container with no template serves a single `user`
+message verbatim (a plain completion) and refuses a longer conversation
+with a 400; the bind warns once.
+
+Chat-template selection on a **VINDEX2** model (auto-detected):
 - `arch.family()` returns `gemma2` / `gemma3` / `gemma4` → Gemma
   (`<start_of_turn>` / `<end_of_turn>`)
 - `llama` → Llama 3 header tags
@@ -801,8 +820,10 @@ the model emitted**: if the conversation is re-rendered and that token
 re-tokenises differently once the next turn follows, the exact-ids
 prefix breaks at the seam and the turn falls back to a full prefill. A
 chat template that terminates the assistant turn with an atomic special
-token makes the seam stable; the `Plain` fallback, which ends a turn
-with a bare newline, does not guarantee it either way.
+token makes the seam stable; a template that ends a turn with a bare
+newline does not guarantee it either way, and one that rewrites earlier
+turns (Qwen3 strips an earlier assistant turn's `<think>` block) misses
+whenever it rewrites. A miss costs a prefill, never correctness.
 
 #### Constrained decoding (slice 4 / N0.6, shipped 2026-05-02)
 
@@ -895,14 +916,26 @@ stopped). Preparation takes an `ExecutionSlice`, so a future shard
 prepares only the operands its slice executes; a slice the plan cannot
 satisfy is refused rather than truncated.
 
-**Chat template.** A V3 container has no architecture-registry entry, so
-the template is resolved from the **container's own declared family**
-(read from the inspection the runtime already performs), falling back
-to the model-id heuristic and then to `Plain`. Landing on `Plain` is warned about at bind time, because it is
-not cosmetic: `Plain` ends an assistant turn with a bare newline, so the
-turn's last token re-tokenises differently once the next turn follows —
-which breaks N1's exact-ids-prefix rule at the seam and costs every
-chained request its resumption.
+**Chat template.** A V3 conversation renders through the template the
+container carries (`chat_template.jinja`, else
+`tokenizer_config.json::chat_template`) — never one chosen by family name
+or model id — via `larql_inference::chat::render_conversation`, and the
+rendered text is encoded without the tokenizer's post-processor (HF
+`apply_chat_template` semantics). It is the derivation `larql run` /
+`larql chat` use on the same container, so the two front ends cannot
+format one conversation differently (`tests/test_openai_v3_chat_template.rs`
+and `larql-cli/tests/test_vindex3_chat_template_ids.rs` pin both legs to
+the same ids). The container's declared family reaches the renderer only
+for the architecture registry's default system message and fallback
+template, as in the CLI; a request's own `system` message replaces both.
+A container with no template has no chat format: a single `user` message
+is sent verbatim (with the post-processor, as `larql run` does), anything
+longer is refused with a 400, and the bind warns once. Tool turns are
+flattened to `user`/`assistant` text before rendering and `tools` are not
+handed to the template — HF's tool rendering cannot be reproduced byte for
+byte here (minijinja's `tojson` HTML-escapes and uses compact separators,
+and the request JSON does not keep key order), so the grammar mask stays
+the tool mechanism.
 
 
 `larql serve` binds each artifact through `bootstrap::load_artifact`

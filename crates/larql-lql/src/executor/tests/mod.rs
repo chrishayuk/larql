@@ -178,6 +178,22 @@ mod vindex_fixtures;
 use moe_fixtures::*;
 use vindex_fixtures::*;
 
+/// A fresh COMPILE destination *beside* the test vindex at `source`.
+///
+/// COMPILE refuses an output inside its source and one that already
+/// holds anything, so the destination is a sibling, and a leftover from
+/// an earlier run of the same test (the names are deterministic) is
+/// cleared here — the test owns this path.
+fn compile_output(source: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let stem = source
+        .file_name()
+        .expect("test vindex dir has a name")
+        .to_string_lossy();
+    let output = source.with_file_name(format!("{stem}.{name}"));
+    let _ = std::fs::remove_dir_all(&output);
+    output
+}
+
 /// Build a minimal vindex directory on disk that the LQL executor can
 /// load via `USE`. Includes gate vectors, down_meta, embeddings, and a
 /// stub tokenizer. Returns the directory path; the caller is
@@ -461,6 +477,7 @@ mod full_fixture_tests_real_modelweights_on;
 mod infer_trace_explain_infer_mode_variants;
 mod inferenceweights_format_dispatch;
 mod memit_fact_collection;
+mod mutation_recording;
 mod pipe;
 mod session_patched_overlay_mut_accessor;
 mod session_state_no_backend;

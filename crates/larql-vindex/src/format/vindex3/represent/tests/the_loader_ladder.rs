@@ -273,3 +273,51 @@ fn selection_reports_which_objects_came_from_a_pack() {
         assert_ne!(embed.encoding, DTYPE_NVFP4);
     }
 }
+
+/// Open `src` under `source` and ask the loader for `format` on its
+/// first compiled tensor.
+fn load_compiled_tensor_as(
+    source: RepresentationSource,
+    format: WeightFormat,
+) -> (Result<LoadedWeight, VindexError>, u64) {
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, _, _) = compiled_pair(&tmp);
+    let (object, tensor, dtype, shape) = a_compiled_tensor(&src);
+    let inspection = inspect_container(&src, false).unwrap();
+    let store = OperandStore::open_for(&src, &inspection, Some(DTYPE_NVFP4), source).unwrap();
+    let loaded = load_weight(
+        (&store).into(),
+        &OperandRef {
+            object,
+            tensor,
+            dtype,
+            shape,
+        },
+        format,
+    );
+    (loaded, store.runtime_quantised())
+}
+
+#[test]
+fn q8_and_q4_residency_are_runtime_quantisation_and_stored_refuses_them() {
+    // #665: these arms quantised at load without saying so, so a stored
+    // run reported "served entirely from stored bytes" over a head it had
+    // re-quantised. They are counted like every other manufactured form,
+    // and refused where manufacturing is forbidden.
+    for format in [WeightFormat::Q8, WeightFormat::Q4] {
+        let (loaded, n) = load_compiled_tensor_as(RepresentationSource::Auto, format);
+        loaded.unwrap_or_else(|e| panic!("{format:?} under auto: {e}"));
+        assert_eq!(n, 1, "{format:?} under auto is one runtime quantisation");
+
+        let (loaded, n) = load_compiled_tensor_as(RepresentationSource::Stored, format);
+        let err = match loaded {
+            Ok(_) => panic!("{format:?} under stored must be refused"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("would be quantised at load"),
+            "{format:?}: {err}"
+        );
+        assert_eq!(n, 0, "{format:?}: a refusal manufactured nothing");
+    }
+}

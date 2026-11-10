@@ -100,6 +100,15 @@ pub struct Cli {
     #[arg(long)]
     pub dir: Option<PathBuf>,
 
+    /// Another name the served model answers to in a request's `model`
+    /// field, beside the id its container declares (which keeps working).
+    /// Matched exactly and case-sensitively, like the id; listed as
+    /// `aliases` on `GET /v1/models`. `larql serve <name>` passes the name
+    /// it was given, so a request can use the name the model was served
+    /// under. Single-model serving only.
+    #[arg(long, value_name = "NAME", conflicts_with = "dir")]
+    pub model_alias: Option<String>,
+
     /// Listen port.
     #[arg(long, default_value_t = DEFAULT_PORT)]
     pub port: u16,

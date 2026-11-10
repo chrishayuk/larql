@@ -257,6 +257,8 @@ pub fn shader() -> String {
     s.push_str(KERNEL_A);
     s.push_str(KERNEL_A2);
     s.push_str(KERNEL_A2X2);
+    s.push_str(KERNEL_A2X2M);
+    s.push_str(KERNEL_A2X2S);
     s.push_str(KERNEL_A2X2P);
     s.push_str(KERNEL_A2X4);
     s.push_str(KERNEL_A2X2GU);
@@ -311,6 +313,26 @@ impl crate::kernels::TiledKernel for KernelSplitLut16VecX4 {
     const ROWS_PER_TG: u64 = 16;
     const THREADS_PER_TG: u64 = 128;
 }
+/// A2x2m — x2 over a block's distinct experts (VERIFY-N rung 5b): grid
+/// `(row tiles, slots)`, one distinct expert per `y`; at most
+/// [`MULTI_MAX_SLOTS`] slots per expert.
+pub struct KernelSplitLut16VecX2Multi;
+impl crate::kernels::TiledKernel for KernelSplitLut16VecX2Multi {
+    const KERNEL_NAME: &'static str = "mxfp4g_split_lut16_vec_x2_multi";
+    const ROWS_PER_TG: u64 = 8;
+    const THREADS_PER_TG: u64 = 128;
+}
+/// A2x2s — the x2 arm over a block's slots in expert-sorted order, grid
+/// `(slots, row tiles)` (VERIFY-N rung 5b).
+pub struct KernelSplitLut16VecX2Sorted;
+impl crate::kernels::TiledKernel for KernelSplitLut16VecX2Sorted {
+    const KERNEL_NAME: &'static str = "mxfp4g_split_lut16_vec_x2_sorted";
+    const ROWS_PER_TG: u64 = 8;
+    const THREADS_PER_TG: u64 = 128;
+}
+/// Most slots one distinct expert may carry in the multi arm (its
+/// `MXG_MULTI_MAX`): a block's rows, since an expert appears once per row.
+pub const MULTI_MAX_SLOTS: usize = 8;
 /// A2x2 — 8 rows per threadgroup (4 simdgroups × 2 rows), 128 threads.
 pub struct KernelSplitLut16VecX2;
 impl crate::kernels::TiledKernel for KernelSplitLut16VecX2 {

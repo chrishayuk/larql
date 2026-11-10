@@ -46,7 +46,8 @@ pub(super) fn run_teacher_force_lowered(
     out: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
-    let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
+    // Appears at `out` only once every position is written (#744).
+    let mut file = super::super::pending_output::PendingOutput::create(out)?;
     let mut vocab = 0usize;
     for (i, &token) in tokens.iter().enumerate() {
         session.step(token)?;
@@ -74,7 +75,7 @@ pub(super) fn run_teacher_force_lowered(
             );
         }
     }
-    file.flush()?;
+    file.commit()?;
 
     println!("engine: {engine}");
     println!("positions: {}  vocab: {vocab}", tokens.len());

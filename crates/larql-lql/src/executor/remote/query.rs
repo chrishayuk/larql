@@ -3,6 +3,7 @@
 
 use crate::ast::{LayerBand, Range};
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope, RelationOp, ScoreOp};
 use crate::executor::{Backend, Session};
 
 use super::{
@@ -542,34 +543,38 @@ impl Session {
             serde_json::json!(limit.unwrap_or(REMOTE_SELECT_DEFAULT_LIMIT)),
         );
 
-        for cond in conditions {
-            match cond.field.as_str() {
-                "entity" => {
-                    if let crate::ast::Value::String(s) = &cond.value {
-                        body.insert("entity".into(), serde_json::json!(s));
-                    }
-                }
-                "relation" => {
-                    if let crate::ast::Value::String(s) = &cond.value {
-                        body.insert("relation".into(), serde_json::json!(s));
-                    }
-                }
-                "layer" => {
-                    if let crate::ast::Value::Integer(n) = &cond.value {
-                        body.insert("layer".into(), serde_json::json!(n));
-                    }
-                }
-                "confidence" | "c_score" => match &cond.value {
-                    crate::ast::Value::Number(n) => {
-                        body.insert("min_confidence".into(), serde_json::json!(n));
-                    }
-                    crate::ast::Value::Integer(n) => {
-                        body.insert("min_confidence".into(), serde_json::json!(n));
-                    }
-                    _ => {}
-                },
-                _ => {}
+        // The same grammar as a local SELECT, validated before anything
+        // is sent. The server's query takes `entity`, `relation`, `layer`
+        // and a confidence floor; a condition it cannot express is
+        // refused here rather than sent as something weaker.
+        let predicate = EdgePredicate::parse(conditions, PredicateScope::EDGES)?;
+        let not_remote = |what: &str| {
+            LqlError::Execution(format!(
+                "unsupported WHERE clause: a remote SELECT does not evaluate {what}; \
+                 supported remotely: entity = <string>, relation = <string>, \
+                 layer = <integer>, score >= <number>"
+            ))
+        };
+        if predicate.feature.is_some() {
+            return Err(not_remote("`feature`"));
+        }
+        if let Some(entity) = predicate.entity {
+            body.insert("entity".into(), serde_json::json!(entity));
+        }
+        if let Some(relation) = predicate.relation {
+            if relation.op != RelationOp::Eq {
+                return Err(not_remote("`relation` with != or LIKE"));
             }
+            body.insert("relation".into(), serde_json::json!(relation.wanted));
+        }
+        if let Some(layer) = predicate.layer {
+            body.insert("layer".into(), serde_json::json!(layer));
+        }
+        if let Some(score) = predicate.score {
+            if score.op != ScoreOp::Gte {
+                return Err(not_remote("`score` with an operator other than >="));
+            }
+            body.insert("min_confidence".into(), serde_json::json!(score.threshold));
         }
 
         let result =

@@ -69,6 +69,10 @@ msgpack = ["larql-core/msgpack"]
 
 # --- boundary --------------------------------------------------
 [[example]]
+name = "compose_harness"
+path = "examples/lql/compose_harness/main.rs"
+
+[[example]]
 name = "encode_decode"
 path = "examples/boundary/encode_decode.rs"
 
@@ -243,6 +247,10 @@ path = "examples/inference/observatory_record.rs"
 [[example]]
 name = "gwcar1a_record"
 path = "examples/inference/gwcar1a_record.rs"
+
+[[example]]
+name = "gwcar1b_record"
+path = "examples/inference/gwcar1b_record.rs"
 
 [[example]]
 name = "attr1d_witness"

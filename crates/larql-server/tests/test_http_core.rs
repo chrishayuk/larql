@@ -383,6 +383,7 @@ async fn http_warmup_no_model_returns_404() {
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models: vec![],
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology: larql_server::state::RouterTopology::SingleModel,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),

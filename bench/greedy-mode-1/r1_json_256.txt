@@ -1,0 +1,18 @@
+representation: NVFP4  source: auto  objects from a compiled pack: 2/5
+wired 50 weight streams in 0.0 s
+weights resident in 2.6 s
+head geometry: [201088, 2880]
+plan: 1 rope base(s), final norm present
+engine: vindex3-metal-lowered-nvfp4-all
+weights loaded: 2.6 s
+prompt: 256 tokens in 3.4 s (13 ms/token)
+decode tokens: 128
+first token: 8.54 ms
+decode p50: 8.09 ms  p95: 8.73 ms
+first 32 tokens: 9.52 ms/token
+steady (last half): 8.15 ms/token (122.678 tok/s)
+steady GPU span: 8.15 ms/token  host on critical path: -0.00 ms/token  (encode 2.04 ms/token, overlapped)
+generated ids: [168394, 4108, 198, 20070, 220, 10494, 315, 1243, 220, 16, 11, 392, 897, 1243, 392, 148206, 672, 392, 4261, 1243, 392, 148206, 81309, 1136, 672, 392, 8716, 1243, 392, 5764, 672, 392, 5039, 1243, 1343, 2723, 220, 10494, 315, 1243, 220, 17, 11, 392, 897, 1243, 392, 109200, 672, 392, 4261, 1243, 392, 109200, 81309, 1136, 672, 392, 8716, 1243, 392, 1428, 672, 392, 5039, 1243, 1343, 2723, 220, 10494, 315, 1243, 220, 18, 11, 392, 897, 1243, 392, 6830, 340, 672, 392, 4261, 1243, 392, 6830, 340, 81309, 1136, 672, 392, 8716, 1243, 392, 1428, 672, 392, 5039, 1243, 1343, 2723, 220, 10494, 315, 1243, 220, 19, 11, 392, 897, 1243, 392, 67, 577, 672, 392, 4261, 1243, 392, 67, 577, 81309, 1136, 672, 392, 8716, 1243]
+attention dispatches: serial 0  seqpar 9216  splitk 0
+logits: 201088, argmax 392 (+40.3557) — device argmax agrees
+runtime compile: 0 tensor(s)  — served entirely from stored bytes

@@ -1,5 +1,7 @@
-//! `larql pull` — download a vindex (or a slice, or a whole collection)
-//! and cache it locally, with ollama-style progress bars and free resume.
+//! `larql pull` — fetch a Hugging Face repo into the local cache, or
+//! refresh what is already there: a vindex (or a slice, or a whole
+//! collection) is downloaded with ollama-style progress bars and free
+//! resume; a raw checkpoint is encoded to VINDEX3.
 //!
 //! Four resolution paths, in order of specificity:
 //!
@@ -14,6 +16,13 @@
 //! discovers `-client` / `-server` / `-browse` without having to read a
 //! README.
 //!
+//! A repo that is a raw Hugging Face checkpoint rather than a vindex is
+//! encoded to VINDEX3 into the encoded cache instead of downloaded — the
+//! same first-run path `larql run hf://…` takes (`super::hf_auto`). For a
+//! checkpoint already encoded, `pull` is the explicit refresh: the
+//! revision is re-resolved against the hub and re-encoded only if it moved
+//! (`super::hf_auto::refresh`). `run` itself never checks the hub.
+//!
 //! Progress + resume: `indicatif::MultiProgress` gives one bar per file;
 //! hf-hub 0.5 handles `.incomplete` partial-file resume internally so an
 //! interrupted pull picks up where it left off on the next run.
@@ -22,6 +31,8 @@ use std::path::PathBuf;
 
 use clap::Args;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+
+use super::hf_auto::HF_SCHEME;
 
 /// Default sibling presets to probe / pull when the caller doesn't pass
 /// `--preset`. Matches the `publish` default set; the symmetry matters
@@ -34,8 +45,9 @@ const DEFAULT_SIBLING_TEMPLATE: &str = "{repo}-{preset}";
 
 #[derive(Args)]
 pub struct PullArgs {
-    /// `hf://owner/name[@rev]`, `owner/name`, or a local path. Omit when
-    /// passing `--collection`.
+    /// `hf://owner/name[@rev]`, `owner/name`, or the shorthand of an
+    /// encoded checkpoint (`Qwen3-0.6B`) to refresh. Omit when passing
+    /// `--collection`.
     pub model: Option<String>,
 
     /// Pull a sibling slice instead of the named repo. Options: `client`,
@@ -200,19 +212,24 @@ fn pull_one(
 
     let hf_path = resolve_pull_hf_path(model)?;
     eprintln!("Pulling {hf_path}...");
-    let cached: PathBuf = download_with_indicatif(&hf_path)?;
+    let resolution = super::hf_auto::pull_hf_model(&hf_path, &mut |spec| {
+        download_with_indicatif(spec).map_err(Into::into)
+    })?;
+    let encoded = matches!(resolution, super::hf_auto::Resolution::Encoded { .. });
+    let cached: PathBuf = resolution.into_path();
     eprintln!("Cached at: {}", cached.display());
 
     // VINDEX3 has no metadata/weight split the way VINDEX2 does — the
     // repo's own file listing IS the required download (design doc
     // §10.5), so "downloaded" must mean "usable": validate before
     // handing the result back as a success. VINDEX2 keeps its existing
-    // (unvalidated-here) behaviour.
+    // (unvalidated-here) behaviour. An encoded checkpoint was not
+    // downloaded as a container; the encoder's closure gate vouched for it.
     match larql_vindex::format::generation::detect_generation(&cached)? {
-        larql_vindex::format::generation::ContainerGeneration::V3 => {
+        larql_vindex::format::generation::ContainerGeneration::V3 if !encoded => {
             larql_vindex::format::vindex3::validate_downloaded_container(&cached)?;
         }
-        larql_vindex::format::generation::ContainerGeneration::V2 => {}
+        _ => {}
     }
 
     // If --output is set, move the downloaded vindex to the requested path.
@@ -222,7 +239,11 @@ fn pull_one(
                 std::fs::create_dir_all(parent)?;
             }
             // Try rename first (fast, same filesystem); fall back to copy.
-            if std::fs::rename(&cached, out).is_err() {
+            // An encoded entry is copied, never moved: it belongs to the
+            // encoded cache, which `run` keeps answering from.
+            if encoded {
+                copy_dir_all(&cached, out)?;
+            } else if std::fs::rename(&cached, out).is_err() {
                 eprintln!("Rename failed (cross-device?), copying...");
                 copy_dir_all(&cached, out)?;
             }
@@ -366,7 +387,11 @@ fn normalise_hf_path(model: &str) -> Result<String, Box<dyn std::error::Error>> 
     if looks_like_hf_repo(model) {
         return Ok(format!("hf://{model}"));
     }
-    Err(format!("pull expects `hf://owner/name` or `owner/name`, got: {model}").into())
+    Err(format!(
+        "pull expects `hf://owner/name`, `owner/name` or the shorthand of an encoded \
+         checkpoint, got: {model}"
+    )
+    .into())
 }
 
 /// Resolve `model` to the `hf://` reference [`pull_one`] actually
@@ -383,7 +408,11 @@ fn normalise_hf_path(model: &str) -> Result<String, Box<dyn std::error::Error>> 
 /// heuristic is now purely the *unclaimed* path, not `pull`'s only
 /// identity concept.
 fn resolve_pull_hf_path(model: &str) -> Result<String, Box<dyn std::error::Error>> {
-    resolve_pull_hf_path_with(model, &larql_vindex::registry::production_registry())
+    resolve_pull_hf_path_with(
+        model,
+        &larql_vindex::registry::production_registry(),
+        &super::hf_auto::EncodedStore::open_default()?,
+    )
 }
 
 /// Testable core of [`resolve_pull_hf_path`]. Takes `registry` explicitly
@@ -391,12 +420,22 @@ fn resolve_pull_hf_path(model: &str) -> Result<String, Box<dyn std::error::Error
 /// registry without depending on the (currently empty) production one —
 /// `resolve_claimed_hf_reference` never touches the network, so this is
 /// hermetic either way.
+///
+/// An unclaimed bare name that is the shorthand of an encoded checkpoint
+/// (`Qwen3-0.6B` for an encoded `hf://Qwen/Qwen3-0.6B`) pulls that entry —
+/// the explicit refresh — at the revision it tracks.
 fn resolve_pull_hf_path_with(
     model: &str,
     registry: &larql_vindex::registry::RegistryManifest,
+    encoded: &super::hf_auto::EncodedStore,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(hf_ref) = larql_vindex::registry::resolve_claimed_hf_reference(model, registry)? {
         return Ok(hf_ref);
+    }
+    if !model.starts_with(HF_SCHEME) && !model.contains('/') {
+        if let Some(spec) = super::hf_auto::refresh::pull_spec_for_shorthand(encoded, model)? {
+            return Ok(spec);
+        }
     }
     normalise_hf_path(model)
 }
@@ -503,6 +542,37 @@ mod tests {
     // only, no fetch — see `larql_vindex::registry`'s own tests for that
     // contract), so every case here is hermetic.
 
+    /// An encoded store with nothing in it (a path that does not exist).
+    fn no_encoded() -> crate::commands::primary::hf_auto::EncodedStore {
+        crate::commands::primary::hf_auto::EncodedStore::new(
+            std::env::temp_dir().join("larql-pull-tests-no-encoded-store"),
+        )
+    }
+
+    fn empty_registry() -> larql_vindex::registry::RegistryManifest {
+        larql_vindex::registry::RegistryManifest {
+            schema_version: larql_vindex::registry::REGISTRY_MANIFEST_SCHEMA_VERSION,
+            models: std::collections::BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn an_encoded_shorthand_pulls_the_revision_it_tracks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = crate::commands::primary::hf_auto::EncodedStore::new(tmp.path());
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        let snap = store.snapshot_dir("Qwen/Qwen3-0.6B", commit).unwrap();
+        std::fs::create_dir_all(&snap).unwrap();
+        std::fs::write(snap.join("index.json"), b"{}").unwrap();
+        store.record_ref("Qwen/Qwen3-0.6B", "main", commit).unwrap();
+        assert_eq!(
+            resolve_pull_hf_path_with("Qwen3-0.6B", &empty_registry(), &store).unwrap(),
+            "hf://Qwen/Qwen3-0.6B"
+        );
+        // Not an encoded shorthand: the old error stands.
+        assert!(resolve_pull_hf_path_with("nomodel", &empty_registry(), &store).is_err());
+    }
+
     fn registry_claiming_qwen38(
         abi: larql_vindex::registry::Vindex3Abi,
     ) -> larql_vindex::registry::RegistryManifest {
@@ -543,7 +613,7 @@ mod tests {
     #[test]
     fn a_claimed_name_resolves_to_its_pinned_hf_reference() {
         let registry = registry_claiming_qwen38(larql_vindex::registry::CURRENT_VINDEX3_ABI);
-        let hf_path = resolve_pull_hf_path_with("qwen3.8", &registry).unwrap();
+        let hf_path = resolve_pull_hf_path_with("qwen3.8", &registry, &no_encoded()).unwrap();
         assert_eq!(hf_path, "hf://larql/qwen3.8-27b-nvfp4@abc123f0");
     }
 
@@ -553,7 +623,7 @@ mod tests {
             schema_version: larql_vindex::registry::REGISTRY_MANIFEST_SCHEMA_VERSION,
             models: std::collections::BTreeMap::new(),
         };
-        let hf_path = resolve_pull_hf_path_with("me/model", &empty).unwrap();
+        let hf_path = resolve_pull_hf_path_with("me/model", &empty, &no_encoded()).unwrap();
         assert_eq!(hf_path, "hf://me/model");
     }
 
@@ -563,7 +633,8 @@ mod tests {
         // `looks_like_hf_repo` (a `:` isn't a `/`) with a *different*,
         // misleading error. The registry's own error must win.
         let registry = registry_claiming_qwen38(larql_vindex::registry::CURRENT_VINDEX3_ABI);
-        let err = resolve_pull_hf_path_with("qwen3.8:does-not-exist", &registry).unwrap_err();
+        let err = resolve_pull_hf_path_with("qwen3.8:does-not-exist", &registry, &no_encoded())
+            .unwrap_err();
         assert!(err.to_string().contains("does-not-exist"), "{err}");
     }
 
@@ -573,7 +644,7 @@ mod tests {
             larql_vindex::registry::CURRENT_VINDEX3_ABI.get() + 1,
         );
         let registry = registry_claiming_qwen38(incompatible);
-        let err = resolve_pull_hf_path_with("qwen3.8", &registry).unwrap_err();
+        let err = resolve_pull_hf_path_with("qwen3.8", &registry, &no_encoded()).unwrap_err();
         assert!(err.to_string().contains("ABI"), "{err}");
     }
 
@@ -583,7 +654,8 @@ mod tests {
         // Not a bare registry-shaped reference — `resolve_claimed_hf_reference`
         // is structurally `None` for it, so the legacy hf:// passthrough wins
         // even though the registry claims the same short name.
-        let hf_path = resolve_pull_hf_path_with("hf://owner/repo", &registry).unwrap();
+        let hf_path =
+            resolve_pull_hf_path_with("hf://owner/repo", &registry, &no_encoded()).unwrap();
         assert_eq!(hf_path, "hf://owner/repo");
     }
 }

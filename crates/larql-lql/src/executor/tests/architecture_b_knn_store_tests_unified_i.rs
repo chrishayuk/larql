@@ -114,7 +114,7 @@ fn knn_store_compile_saves_and_loads() {
     session.execute(&stmt).expect("INSERT");
 
     // Compile
-    let output = dir.join("compiled_knn.vindex");
+    let output = compile_output(&dir, "compiled_knn.vindex");
     let stmt = parser::parse(&format!(
         r#"COMPILE CURRENT INTO VINDEX "{}";"#,
         lql_path(&output)

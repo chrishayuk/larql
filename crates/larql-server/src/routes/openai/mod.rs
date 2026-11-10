@@ -15,6 +15,8 @@
 //! │                      stop-string trimming, SSE consts, timeout join)
 //! ├── prompt.rs        — chat-template pick + message rendering shared
 //! │                      by chat + responses
+//! ├── v3_prompt.rs     — VINDEX3 conversation → prompt ids through the
+//! │                      container's own chat template
 //! ├── embeddings.rs    — POST /v1/embeddings (mean-pooled lookup)
 //! ├── completions.rs   — POST /v1/completions (legacy text completions
 //! │                      + slice 3 SSE streaming; V3 arm in
@@ -39,6 +41,7 @@ pub mod schema;
 mod token_tap;
 pub mod util;
 mod v3_completions;
+pub mod v3_prompt;
 
 pub use error::OpenAIError;
 

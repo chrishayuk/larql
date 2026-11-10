@@ -3,10 +3,12 @@
 
 pub mod capability;
 pub mod checksums;
+pub mod completeness;
 pub mod describes;
 pub mod down_meta;
 pub mod filenames;
 pub mod fp4_codec;
+pub mod fresh_output;
 pub mod generation;
 #[cfg(test)]
 mod generation_tests;

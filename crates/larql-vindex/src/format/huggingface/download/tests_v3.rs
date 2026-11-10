@@ -115,6 +115,68 @@ fn resolve_hf_vindex_with_progress_downloads_a_complete_v3_container() {
     // correctly shaped, not just that the manifest parses.
     crate::format::vindex3::inspect::inspect_container(&dir, true)
         .expect("a fully-downloaded VINDEX3 container must open and verify cleanly");
+    assert!(
+        dir.join(super::payloads::VERIFIED_MARKER).exists(),
+        "the pull itself verified the payloads and recorded it"
+    );
+}
+
+#[test]
+#[serial]
+fn resolve_hf_vindex_with_progress_v3_refuses_segments_its_index_does_not_seal() {
+    // Every listed file is served, complete and the right length — but
+    // one segment's bytes are not the bytes `index.json` seals. The hub
+    // delivers that intact; only the container's own digest can see it.
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    crate::format::vindex3::fixtures::encode_fixture_container(
+        crate::format::vindex3::fixtures::miniature_glimmer,
+        checkpoint.path(),
+        container.path(),
+        "pull-fixture",
+    );
+    let mut files = walk_fixture_files(container.path());
+    let (damaged, bytes) = files
+        .iter_mut()
+        .find(|(rel, _)| {
+            rel.ends_with(&format!(
+                ".{}",
+                crate::format::vindex3::encode::SEGMENT_BIN_EXT
+            ))
+        })
+        .expect("the fixture carries a segment");
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0xFF;
+    let damaged = damaged.clone();
+
+    let mut server = mockito::Server::new();
+    let _g = HfTestEnv::new(&server.url());
+    let siblings: Vec<_> = files
+        .iter()
+        .map(|(rel, _)| serde_json::json!({"rfilename": rel}))
+        .collect();
+    let info_body = serde_json::json!({"sha": "deadbeef", "siblings": siblings}).to_string();
+    let _info = server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/api/models/owner/repo".into()),
+        )
+        .with_status(200)
+        .with_header("Content-Type", "application/json")
+        .with_body(info_body)
+        .create();
+    for (rel, bytes) in &files {
+        let regex = rel.replace('.', r"\.");
+        mock_hf_file_resolve(&mut server, &regex, rel, bytes);
+    }
+
+    let err = resolve_hf_vindex_with_progress("hf://owner/repo", |_| NoOpProgress)
+        .expect_err("a segment its index does not seal must refuse the pull");
+    assert!(
+        matches!(err, VindexError::PayloadDigestMismatch { .. })
+            && err.to_string().contains(&damaged),
+        "the refusal must be the digest check naming `{damaged}`: {err}"
+    );
 }
 
 #[test]

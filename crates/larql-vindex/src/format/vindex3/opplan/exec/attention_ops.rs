@@ -78,6 +78,7 @@ impl AttentionOperands {
                 Some(sinks) => Some(store.load(&sinks.logits)?),
                 None => None,
             },
+            rope_angles: super::rope_angles::RopeAngles::default(),
         })
     }
 
@@ -193,6 +194,7 @@ impl AttentionOperands {
             gate,
             bias,
             sinks,
+            rope_angles: self.rope_angles,
         }
     }
 }

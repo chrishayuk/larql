@@ -1,0 +1,4767 @@
+{
+ "schema": "vlp-numerics-golden/v1",
+ "spec": "SPEC.md",
+ "generator": "generate.py",
+ "profiles": {
+  "f64-seq-rne1/v1": {
+   "work": "f64",
+   "chain": [
+    "bf16"
+   ]
+  },
+  "f64-seq-rne2/v1": {
+   "work": "f64",
+   "chain": [
+    "f32",
+    "bf16"
+   ]
+  },
+  "f32-seq-rne1/v1": {
+   "work": "f32",
+   "chain": [
+    "bf16"
+   ]
+  }
+ },
+ "refusals": [
+  "numerics_invalid",
+  "numerics_forbidden",
+  "shape_invalid",
+  "rank_invalid",
+  "columns_invalid",
+  "fixups_invalid",
+  "fixups_forbidden",
+  "fixup_no_op",
+  "non_finite_operand",
+  "non_finite_intermediate",
+  "overflow",
+  "tensor_refused"
+ ],
+ "variants": {
+  "fma_in_reduction": {
+   "fma": true
+  },
+  "reversed_reduction": {
+   "order": "reverse"
+  },
+  "pairwise_reduction": {
+   "order": "pairwise"
+  },
+  "alpha_times_uc": {
+   "assoc": "alpha_times_uc"
+  },
+  "f32_accumulation": {
+   "accum_fmt": "f32"
+  },
+  "single_rounding": {
+   "chain": [
+    "bf16"
+   ]
+  },
+  "double_rounding": {
+   "chain": [
+    "f32",
+    "bf16"
+   ]
+  },
+  "ftz_daz": {
+   "ftz": true
+  },
+  "low_rank_from_zero": {
+   "start_from_zero": true
+  },
+  "zero_keeps_sign": {
+   "keep_sign": true
+  },
+  "bf16_output_flush": {
+   "bf16_flush": true
+  }
+ },
+ "native_cross_checked_cases": 38,
+ "cases": [
+  {
+   "id": "rd-fma",
+   "purpose": "FMA in the reduction changes the output",
+   "base": {
+    "shape": [
+     2,
+     1
+    ],
+    "bf16": [
+     "3e84",
+     "bef5"
+    ],
+    "sha256": "5b27999ed11e819fe4880c1cd20efecdd25400b2d8d40de923410c6ed234597e"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "3fe3b1e480461dd4",
+     "3fd538e5cdbd8766"
+    ],
+    "alpha": "c1203e773b601881",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 0
+   },
+   "discriminates": [
+    "fma_in_reduction"
+   ],
+   "expect": {
+    "bf16": [
+     "3e7c",
+     "bef8"
+    ],
+    "sha256": "9e9fe8fbae574a7c7bf08b1235ddd721cbc9fa6b9935b115f367caadba1086ef"
+   },
+   "under_wrong_semantics": {
+    "fma_in_reduction": {
+     "bf16": [
+      "3e7d",
+      "bef8"
+     ]
+    },
+    "f32_accumulation": {
+     "bf16": [
+      "3e7e",
+      "bef8"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-order-reverse",
+   "purpose": "reversed reduction order changes the output",
+   "base": {
+    "shape": [
+     4,
+     1
+    ],
+    "bf16": [
+     "3eeb",
+     "bf8e",
+     "bffa",
+     "bf1a"
+    ],
+    "sha256": "f9372059ac8dfcee22091fc00e0168acb01f61d201165ca6f9934b37466943cc"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     1
+    ],
+    "u": [
+     "3fdba0e9d5c06ba4",
+     "3fda1a275927541c",
+     "bfb166be440db8f0",
+     "bfc9dd0dffa1527a"
+    ],
+    "alpha": "414a115d3a3cc3be",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 3
+   },
+   "discriminates": [
+    "reversed_reduction"
+   ],
+   "expect": {
+    "bf16": [
+     "3f09",
+     "bf85",
+     "bffc",
+     "bf23"
+    ],
+    "sha256": "43195bbd6150258fe06d8dbfd3965cca3d37790a4943b83498809be8e6b8d7fe"
+   },
+   "under_wrong_semantics": {
+    "fma_in_reduction": {
+     "bf16": [
+      "3f09",
+      "bf85",
+      "bffb",
+      "bf23"
+     ]
+    },
+    "reversed_reduction": {
+     "bf16": [
+      "3f09",
+      "bf85",
+      "bffb",
+      "bf23"
+     ]
+    },
+    "pairwise_reduction": {
+     "bf16": [
+      "3f09",
+      "bf85",
+      "bffb",
+      "bf23"
+     ]
+    },
+    "f32_accumulation": {
+     "bf16": [
+      "3f04",
+      "bf87",
+      "bffb",
+      "bf21"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-order-pairwise",
+   "purpose": "pairwise reduction differs from both the forward and the reversed order",
+   "base": {
+    "shape": [
+     4,
+     1
+    ],
+    "bf16": [
+     "bf9e",
+     "bfbe",
+     "3fed",
+     "3e1e"
+    ],
+    "sha256": "40e473765a26c097f1410d1cbed4827f3ec3f13fce829ab8a9eb0b682f81f753"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     1
+    ],
+    "u": [
+     "bfe9d4172cf79514",
+     "3feb65dd4f144c9e",
+     "3fc363a46e569468",
+     "bfa387fbeab7f732"
+    ],
+    "alpha": "41699861c83361a5",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 4
+   },
+   "discriminates": [
+    "pairwise_reduction"
+   ],
+   "expect": {
+    "bf16": [
+     "bf9b",
+     "bfc2",
+     "3fec",
+     "3e1f"
+    ],
+    "sha256": "932976cd0ef4ab0adf983cac6408b24f65d7fa814dc9735d80c2bfe5e7e75d6a"
+   },
+   "under_wrong_semantics": {
+    "fma_in_reduction": {
+     "bf16": [
+      "bf9b",
+      "bfc1",
+      "3fec",
+      "3e1f"
+     ]
+    },
+    "pairwise_reduction": {
+     "bf16": [
+      "bf9b",
+      "bfc1",
+      "3fec",
+      "3e1f"
+     ]
+    },
+    "f32_accumulation": {
+     "bf16": [
+      "bf84",
+      "bfd9",
+      "3fe8",
+      "3e28"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-assoc",
+   "purpose": "alpha*(u*c) instead of (alpha*u)*c changes the output",
+   "base": {
+    "shape": [
+     3,
+     1
+    ],
+    "bf16": [
+     "3d67",
+     "bfea",
+     "be4c"
+    ],
+    "sha256": "63aeaaa2a4198327b492ab63a26d9b2c855eb553b3c86bb8bd6a856f83e1c6f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     1
+    ],
+    "u": [
+     "3f8b705d897c0a00",
+     "3fa8f2256534f7c0",
+     "bfdc5f25a60fd745"
+    ],
+    "alpha": "418af893a2a69b80",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 35
+   },
+   "discriminates": [
+    "alpha_times_uc"
+   ],
+   "expect": {
+    "bf16": [
+     "3cee",
+     "bff7",
+     "3f34"
+    ],
+    "sha256": "12f21535d60a9fdcf9aa8fed9832de23f00f8a30f37a9df4f4d2dfac7a974ea1"
+   },
+   "under_wrong_semantics": {
+    "alpha_times_uc": {
+     "bf16": [
+      "3cef",
+      "bff7",
+      "3f34"
+     ]
+    },
+    "f32_accumulation": {
+     "bf16": [
+      "3ce7",
+      "bff7",
+      "3f3c"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-f32-accum",
+   "purpose": "accumulating c in f32 changes the output (fault 5's golden fallback)",
+   "base": {
+    "shape": [
+     3,
+     1
+    ],
+    "bf16": [
+     "be81",
+     "bfcb",
+     "3f85"
+    ],
+    "sha256": "3d576721638baf27c61136161c0c305a58b7293a914ed78c0778ad445fe4bd63"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     1
+    ],
+    "u": [
+     "bfbc5330fba4e810",
+     "3fdc68e998b5c2a8",
+     "3fe4d29818cfd50c"
+    ],
+    "alpha": "4107112a3f5cd252",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 0
+   },
+   "discriminates": [
+    "f32_accumulation"
+   ],
+   "expect": {
+    "bf16": [
+     "be83",
+     "bfc9",
+     "3f88"
+    ],
+    "sha256": "0a4f6e5ce5df2350310620a46422e709d1774d3a21ea62cb6c13aa80ca66c5a9"
+   },
+   "under_wrong_semantics": {
+    "f32_accumulation": {
+     "bf16": [
+      "be84",
+      "bfc8",
+      "3f89"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-rne2-fma",
+   "purpose": "FMA, under the double-rounding profile",
+   "base": {
+    "shape": [
+     2,
+     1
+    ],
+    "bf16": [
+     "bf4c",
+     "3fac"
+    ],
+    "sha256": "85ae24ed2b0733c28efb99bbff9fea38f9ed0df47f93fb5b4491b22b9c0744ec"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "3fead9ac4704ef62",
+     "3fdfd87e37a5358c"
+    ],
+    "alpha": "c0f90decea649d6f",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 1
+   },
+   "discriminates": [
+    "fma_in_reduction"
+   ],
+   "expect": {
+    "bf16": [
+     "bf51",
+     "3faa"
+    ],
+    "sha256": "d30b68a957bccb2757601acbf50ebc60b6633f4af0adf8b5de7a1ccebe6e2f08"
+   },
+   "under_wrong_semantics": {
+    "fma_in_reduction": {
+     "bf16": [
+      "bf51",
+      "3fab"
+     ]
+    },
+    "single_rounding": {
+     "bf16": [
+      "bf51",
+      "3fab"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-f32-order",
+   "purpose": "reversed order, under the f32 profile",
+   "base": {
+    "shape": [
+     4,
+     1
+    ],
+    "bf16": [
+     "bef3",
+     "bf52",
+     "bda9",
+     "bf78"
+    ],
+    "sha256": "65c8af504c3d30692e6219cbc947e184b77a974eef4aa7da43f8e6a666984301"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     4,
+     1
+    ],
+    "u": [
+     "3f4e6087",
+     "be2f7d23",
+     "3f3cd5e3",
+     "bea01655"
+    ],
+    "alpha": "47697973",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 1
+   },
+   "discriminates": [
+    "reversed_reduction"
+   ],
+   "expect": {
+    "bf16": [
+     "befa",
+     "bf51",
+     "bdc1",
+     "bf77"
+    ],
+    "sha256": "85bdf8b8f5aedb396cc1eff885f6ddf68e7b631920204ac7f4a45f38b5435885"
+   },
+   "under_wrong_semantics": {
+    "fma_in_reduction": {
+     "bf16": [
+      "befa",
+      "bf51",
+      "bdc2",
+      "bf77"
+     ]
+    },
+    "reversed_reduction": {
+     "bf16": [
+      "bef9",
+      "bf51",
+      "bdbf",
+      "bf77"
+     ]
+    },
+    "pairwise_reduction": {
+     "bf16": [
+      "bef9",
+      "bf51",
+      "bdc0",
+      "bf77"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-f32-assoc",
+   "purpose": "association, under the f32 profile",
+   "base": {
+    "shape": [
+     3,
+     1
+    ],
+    "bf16": [
+     "bf29",
+     "bf8d",
+     "3da0"
+    ],
+    "sha256": "a5f3523319b976fe73140d0dae1e98286c9e4603b9fbc4165d49306fc3be008f"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     3,
+     1
+    ],
+    "u": [
+     "3f753f25",
+     "bec80511",
+     "40258c77"
+    ],
+    "alpha": "c9aebd79",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded search",
+    "seed": 20261107,
+    "attempt": 16797
+   },
+   "discriminates": [
+    "alpha_times_uc"
+   ],
+   "expect": {
+    "bf16": [
+     "bf19",
+     "bf90",
+     "3e7a"
+    ],
+    "sha256": "2fab6066b5c431a92bbc9d535cf22d72106da43ff236eba8d3c24a784e14c588"
+   },
+   "under_wrong_semantics": {
+    "fma_in_reduction": {
+     "bf16": [
+      "bf20",
+      "bf8f",
+      "3e33"
+     ]
+    },
+    "reversed_reduction": {
+     "bf16": [
+      "bf14",
+      "bf91",
+      "3e99"
+     ]
+    },
+    "pairwise_reduction": {
+     "bf16": [
+      "bf14",
+      "bf91",
+      "3e99"
+     ]
+    },
+    "alpha_times_uc": {
+     "bf16": [
+      "bf19",
+      "bf90",
+      "3e79"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-tie-even-down",
+   "purpose": "1 + 2^-8 is a BF16 tie; the even neighbour is 1.0 (0x3f80)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-tie-even-up",
+   "purpose": "1 + 3*2^-8 is a BF16 tie; the even neighbour is 1 + 2^-6 (0x3f82)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f88000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f82"
+    ],
+    "sha256": "0c7bd1202a592229ad1d2954b890d40504caaf2fad918acee225850ca2b53501"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-tie-negative",
+   "purpose": "-(1 + 2^-8) ties to -1.0 (0xbf80)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "bf70000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-double-rne1",
+   "purpose": "1 + 2^-8 + 2^-30: single RNE gives 0x3f81, f32 then BF16 gives 0x3f80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "double_rounding"
+   ],
+   "expect": {
+    "bf16": [
+     "3f81"
+    ],
+    "sha256": "5ea40fd2bbee6a090bc7fb419137262d6ce7697a6011076efd19a31c8ab881a8"
+   },
+   "under_wrong_semantics": {
+    "double_rounding": {
+     "bf16": [
+      "3f80"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-double-rne2",
+   "purpose": "1 + 2^-8 + 2^-30: single RNE gives 0x3f81, f32 then BF16 gives 0x3f80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "single_rounding"
+   ],
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {
+    "single_rounding": {
+     "bf16": [
+      "3f81"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-double-f32",
+   "purpose": "1 + 2^-8 + 2^-30: the f32 sum is already 1 + 2^-8, a tie -> 0x3f80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "3b800002"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-double-negative-rne2",
+   "purpose": "-(1 + 2^-8 + 2^-30) under the double chain gives 0xbf80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "bf70000040000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "single_rounding"
+   ],
+   "expect": {
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "under_wrong_semantics": {
+    "single_rounding": {
+     "bf16": [
+      "bf81"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-from-w",
+   "purpose": "w + a0b0 + 3 x 2^-54, sequential from w: each 2^-54 is lost; from zero it is not",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 4,
+    "a": [
+     "3ff0000000000000",
+     "3ff0000000000000",
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000000000000",
+     "3c90000000000000",
+     "3c90000000000000",
+     "3c90000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "low_rank_from_zero"
+   ],
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {
+    "low_rank_from_zero": {
+     "bf16": [
+      "3f81"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-negzero-plus-poszero",
+   "purpose": "(-0) + (+0) = +0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "0000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-negzero-plus-negzero",
+   "purpose": "(-0) + (-0) = -0, preserved as 0x8000",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "8000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {
+    "low_rank_from_zero": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-x-minus-x",
+   "purpose": "x - x = +0, from a negative base",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "bfc0"
+    ],
+    "sha256": "91fdac4b3847a7732e862b576bc7594e331f25456180f91d15772923976ea5d8"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-tiny-negative",
+   "purpose": "-2^-140 rounds to -0 in BF16 (0x8000)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "b730000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-tiny-negative-rne2",
+   "purpose": "-2^-140 is an f32 subnormal, then -0 in BF16",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "b730000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "zc-negatives",
+   "purpose": "zero_columns writes 0x0000 over negative, positive and -0 entries; other columns kept",
+   "base": {
+    "shape": [
+     2,
+     3
+    ],
+    "bf16": [
+     "bfc0",
+     "4000",
+     "be80",
+     "8000",
+     "4040",
+     "c0e0"
+    ],
+    "sha256": "5c29806934b93750986a59166da14bebba6723a5736d24ad5dcd74129478bb2c"
+   },
+   "op": {
+    "kind": "zero_columns",
+    "shape": [
+     2,
+     3
+    ],
+    "columns": [
+     0,
+     2
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_keeps_sign"
+   ],
+   "expect": {
+    "bf16": [
+     "0000",
+     "4000",
+     "0000",
+     "0000",
+     "4040",
+     "0000"
+    ],
+    "sha256": "b67e906d259924084b4068ca45bcd095e992ac4eb7bc33ec4b6b270131d86e9f"
+   },
+   "under_wrong_semantics": {
+    "zero_keeps_sign": {
+     "bf16": [
+      "8000",
+      "4000",
+      "8000",
+      "8000",
+      "4040",
+      "8000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rd-f64-subnormal-c",
+   "purpose": "c = 2^-1030 is an f64 subnormal; (alpha*u1)*c = 2^-8 reaches the output",
+   "base": {
+    "shape": [
+     2,
+     1
+    ],
+    "bf16": [
+     "3f80",
+     "0000"
+    ],
+    "sha256": "8a35e022834c66c1bb63cd3cfa093bc95c91f2d7d5f701535471005f0ef8a4d2"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "0000100000000000",
+     "7e70000000000000"
+    ],
+    "alpha": "4150000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "ftz_daz"
+   ],
+   "expect": {
+    "bf16": [
+     "3f80",
+     "bb80"
+    ],
+    "sha256": "e88fae598011ad583dc670b3236565bd753e6ef1b13386debed4d6a04c3a43b9"
+   },
+   "under_wrong_semantics": {
+    "f32_accumulation": {
+     "bf16": [
+      "3f80",
+      "0000"
+     ]
+    },
+    "ftz_daz": {
+     "bf16": [
+      "3f80",
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-f32-step-subnormal",
+   "purpose": "2^-130 + 2^-140 is an f32 subnormal at the chain's f32 step",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37d0040000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "ftz_daz"
+   ],
+   "expect": {
+    "bf16": [
+     "0008"
+    ],
+    "sha256": "e545d395bb3fd971f91bf9a2b6722831df704efae6c1aa9da0989ed0970b77bb"
+   },
+   "under_wrong_semantics": {
+    "ftz_daz": {
+     "bf16": [
+      "0000"
+     ]
+    },
+    "bf16_output_flush": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-bf16-subnormal",
+   "purpose": "3 x 2^-133 is a BF16 subnormal (0x0003)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37b8000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "bf16_output_flush"
+   ],
+   "expect": {
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "under_wrong_semantics": {
+    "bf16_output_flush": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-bf16-subnormal-tie",
+   "purpose": "2.5 x 2^-133 ties to 2 x 2^-133 (0x0002)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37b4000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "bf16_output_flush"
+   ],
+   "expect": {
+    "bf16": [
+     "0002"
+    ],
+    "sha256": "99be5efb88ca2013bd8e4eb035fd42d5245468fe9afa70d8ba9c1c419a48c4e8"
+   },
+   "under_wrong_semantics": {
+    "bf16_output_flush": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-subnormal-base-rne1",
+   "purpose": "a BF16-subnormal base (0x0003) widens exactly: + 2^-133 gives 0x0004",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37a0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "0004"
+    ],
+    "sha256": "c0ba8a33ac67f44abff5984dfbb6f56c46b880ac2b86e1f23e7fa9c402c53ae7"
+   },
+   "under_wrong_semantics": {
+    "bf16_output_flush": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-subnormal-base-f32",
+   "purpose": "a BF16-subnormal base is an f32 subnormal under the f32 profile (DAZ)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "00000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "ftz_daz"
+   ],
+   "expect": {
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "under_wrong_semantics": {
+    "ftz_daz": {
+     "bf16": [
+      "0000"
+     ]
+    },
+    "bf16_output_flush": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-smallest-normal",
+   "purpose": "2^-126 - 2^-134 rounds up to the smallest normal (0x0080)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "380fe00000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "0080"
+    ],
+    "sha256": "8509b81230019d2ad970d970f791dfbdc8caf54f5c594fcd327cef9feed206c1"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-f32-profile-subnormal",
+   "purpose": "3 x 2^-133, an f32 subnormal operand, under the f32 profile",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "00030000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "ftz_daz"
+   ],
+   "expect": {
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "under_wrong_semantics": {
+    "ftz_daz": {
+     "bf16": [
+      "0000"
+     ]
+    },
+    "bf16_output_flush": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-max-finite",
+   "purpose": "the largest BF16 (0x7f7f) plus a quarter ulp (2^118) stays 0x7f7f",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "4750000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-overflow-rne1",
+   "purpose": "max BF16 + 2^119 is the tie above the largest BF16; ties-to-even overflows",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "4760000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-overflow-rne2",
+   "purpose": "max BF16 + 2^119: exact at the f32 step, overflows at the BF16 step",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "4760000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-overflow-f32-step",
+   "purpose": "max BF16 + 2^126 is finite in f64, overflows at the f32 step",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "47d0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-intermediate-f64",
+   "purpose": "a*b = 2^1000 * 2^1000 overflows f64",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "7e70000000000000"
+    ],
+    "b": [
+     "7e70000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_intermediate"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-intermediate-f32",
+   "purpose": "under the f32 profile, 2^100 * 2^100 overflows f32",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "71800000"
+    ],
+    "b": [
+     "71800000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_intermediate"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-nan-u",
+   "purpose": "a NaN in u",
+   "base": {
+    "shape": [
+     2,
+     1
+    ],
+    "bf16": [
+     "3f80",
+     "3f80"
+    ],
+    "sha256": "db0405050689e5d3aea1cd7d7f509a19beca2cef76c6a2dddc454951496c9763"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "7ff8000000000000",
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-inf-alpha",
+   "purpose": "an infinite alpha",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "7ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-inf-b",
+   "purpose": "an infinite b",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "7ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-nan-fixup",
+   "purpose": "a fixup with NaN bits",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3fe0000000000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "7fc0"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-inf-fixup",
+   "purpose": "a fixup with +inf bits",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3fe0000000000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "7f80"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-overflow-f32-profile",
+   "purpose": "f32 profile: max BF16 + 2^119 is exact in f32, a tie that overflows BF16",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "7b000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-rd-overflow",
+   "purpose": "remove_direction: max BF16 x (1 + 2^-8) is finite in f64, overflows BF16",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "bf70000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-rd-intermediate",
+   "purpose": "remove_direction: u*w = 2^1000 * 2^100 overflows f64",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7180"
+    ],
+    "sha256": "16766f5d262e8fd94fc401d8bd94661966145664497aae5aa02cdb203dac2459"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "7e70000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_intermediate"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-nan-a",
+   "purpose": "a NaN in a",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "7ff8000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-nan-u-f32",
+   "purpose": "a NaN in u, as f32 bits, under the f32 profile",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "7fc00000"
+    ],
+    "alpha": "3f800000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-nan-base-touched",
+   "purpose": "a NaN base element in a touched column",
+   "base": {
+    "shape": [
+     2,
+     1
+    ],
+    "bf16": [
+     "7fc0",
+     "3f80"
+    ],
+    "sha256": "b272af2c700fcf95d9e2715f38c7528621526f4d81b79fa44227b642badc5ecc"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-inf-base-low-rank",
+   "purpose": "a -inf base element (add_low_rank touches every element)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "ff80"
+    ],
+    "sha256": "d87d01642f47a0d1901b1dfd2331c9def1bcfc69d8835c6cd911fe4165b804e4"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "rd-inf-base-untouched",
+   "purpose": "a +inf base element outside S is kept, bit for bit",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "7f80",
+     "3f80"
+    ],
+    "sha256": "2fda58a1aa70aaa8b40d5ce2533a1119bde2d30d7799cb55c8bac3dff478f4f6"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3fe0000000000000",
+    "columns": [
+     1
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "7f80",
+     "3f00"
+    ],
+    "sha256": "965d06412afae0ca7e19a6f68d4718b8fbaaf2f7d4c09eff5325599dafe6abb8"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "zc-nan-base",
+   "purpose": "zero_columns overwrites a NaN base element with 0x0000; it reads no value",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "7fc0",
+     "4000"
+    ],
+    "sha256": "a37609bfb04f4ca28bcf5f8302ce1c6b564cbbb962e9e3cb284790bf901ade18"
+   },
+   "op": {
+    "kind": "zero_columns",
+    "shape": [
+     1,
+     2
+    ],
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "0000",
+     "4000"
+    ],
+    "sha256": "d88c86f15bbea365d658ad95a81d45367c465f7af6f7264fb077f01747ddc77d"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "rd-fixup",
+   "purpose": "a fixup overrides one computed element",
+   "base": {
+    "shape": [
+     2,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000",
+     "4040",
+     "4080"
+    ],
+    "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     2
+    ],
+    "u": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     1
+    ],
+    "fixups": [
+     [
+      1,
+      1,
+      "4000"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f80",
+     "3f80",
+     "4040",
+     "4000"
+    ],
+    "sha256": "8518a29a6f549296c6f39f1b47496e8e2bd8937cbf628bb5ee430338e5ec348d"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-fixup-no-op-rne2",
+   "purpose": "under the double chain the computed value is 0x3f80, so this fixup is a no-op",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "3f80"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixup_no_op"
+   },
+   "under_wrong_semantics": {
+    "single_rounding": {
+     "bf16": [
+      "3f80"
+     ]
+    }
+   }
+  },
+  {
+   "id": "lr-fixup-rne1",
+   "purpose": "the same fixup under the single chain is a real correction (0x3f81 -> 0x3f80)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "3f80"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {
+    "double_rounding": {
+     "refuse": "fixup_no_op"
+    }
+   }
+  },
+  {
+   "id": "ref-fixup-no-op-rd",
+   "purpose": "remove_direction: a fixup equal to the computed 0x4060 is a no-op",
+   "base": {
+    "shape": [
+     2,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000",
+     "4040",
+     "4080"
+    ],
+    "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     2
+    ],
+    "u": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     1
+    ],
+    "fixups": [
+     [
+      1,
+      1,
+      "4060"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixup_no_op"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-fixup-outside",
+   "purpose": "a fixup outside the touched columns",
+   "base": {
+    "shape": [
+     2,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000",
+     "4040",
+     "4080"
+    ],
+    "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     2
+    ],
+    "u": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     1
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "4000"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixups_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-fixup-range",
+   "purpose": "a fixup beyond the tensor",
+   "base": {
+    "shape": [
+     2,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000",
+     "4040",
+     "4080"
+    ],
+    "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     2
+    ],
+    "u": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     1
+    ],
+    "fixups": [
+     [
+      2,
+      1,
+      "4000"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixups_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-fixup-unsorted",
+   "purpose": "fixups not sorted by (row, col)",
+   "base": {
+    "shape": [
+     2,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000",
+     "4040",
+     "4080"
+    ],
+    "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     2
+    ],
+    "u": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0,
+     1
+    ],
+    "fixups": [
+     [
+      1,
+      0,
+      "4000"
+     ],
+     [
+      0,
+      1,
+      "4000"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixups_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-fixup-duplicate",
+   "purpose": "the same element fixed twice",
+   "base": {
+    "shape": [
+     2,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000",
+     "4040",
+     "4080"
+    ],
+    "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     2
+    ],
+    "u": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0,
+     1
+    ],
+    "fixups": [
+     [
+      0,
+      1,
+      "4000"
+     ],
+     [
+      0,
+      1,
+      "4040"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixups_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-profile-unknown",
+   "purpose": "an unknown numerics profile",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne3/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "numerics_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-profile-missing",
+   "purpose": "no numerics field",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "numerics_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-columns-empty",
+   "purpose": "an empty column set",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-columns-unsorted",
+   "purpose": "columns not strictly increasing",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     1,
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-columns-duplicate",
+   "purpose": "a repeated column",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     1,
+     1
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-columns-range",
+   "purpose": "a column beyond the tensor",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     2
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-u-length",
+   "purpose": "u shorter than the row count",
+   "base": {
+    "shape": [
+     2,
+     1
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-shape-mismatch",
+   "purpose": "the declared shape differs from the base tensor's",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     1
+    ],
+    "u": [
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-rank-zero",
+   "purpose": "rank 0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 0,
+    "a": [],
+    "b": [],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "rank_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-ab-size",
+   "purpose": "b is not rank x cols",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-zc-fixup",
+   "purpose": "zero_columns carrying a fixup",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "zero_columns",
+    "shape": [
+     1,
+     2
+    ],
+    "columns": [
+     0
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "3f80"
+     ]
+    ]
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "fixups_forbidden"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-zc-numerics",
+   "purpose": "zero_columns carrying a numerics profile",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "kind": "zero_columns",
+    "shape": [
+     1,
+     2
+    ],
+    "columns": [
+     0
+    ],
+    "fixups": [],
+    "numerics": "f64-seq-rne1/v1"
+   },
+   "discriminates": [],
+   "expect": {
+    "refuse": "numerics_forbidden"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "ref-embed-tokens",
+   "purpose": "an op on the token embedding (it doubles as the tied head)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "u": [
+     "3ff0000000000000"
+    ],
+    "alpha": "3ff0000000000000",
+    "columns": [
+     0
+    ],
+    "fixups": []
+   },
+   "tensor_role": "embed_tokens",
+   "discriminates": [],
+   "expect": {
+    "refuse": "tensor_refused"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "rd-general-rne1",
+   "purpose": "16 x 6, three columns, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "bdec",
+     "3faf",
+     "bfdf",
+     "bfd2",
+     "3f10",
+     "3f9d",
+     "bfde",
+     "3fee",
+     "be77",
+     "bffc",
+     "3ef0",
+     "3e65",
+     "bfa7",
+     "be47",
+     "3f3b",
+     "bea2",
+     "3f9b",
+     "be6c",
+     "3d93",
+     "3fc4",
+     "beca",
+     "3f1f",
+     "3f8d",
+     "3e7b",
+     "be81",
+     "bf91",
+     "bf00",
+     "3e69",
+     "bf2a",
+     "bf46",
+     "3ffc",
+     "bfbd",
+     "3fe2",
+     "bf06",
+     "bfa9",
+     "3e63",
+     "3f32",
+     "bfac",
+     "3f2f",
+     "3fa3",
+     "3fd6",
+     "3fbd",
+     "bc57",
+     "3fcc",
+     "3e7d",
+     "bfc7",
+     "bf9a",
+     "3e04",
+     "3e58",
+     "3fc6",
+     "3ea0",
+     "3fd8",
+     "3fab",
+     "beb7",
+     "bfcb",
+     "bd8d",
+     "3ff3",
+     "3ffb",
+     "be82",
+     "bfbc",
+     "3eee",
+     "3e89",
+     "3ffe",
+     "beba",
+     "3e85",
+     "bf96",
+     "bfa9",
+     "3eb3",
+     "3f9a",
+     "3efd",
+     "3e48",
+     "3ede",
+     "bfe7",
+     "3fc0",
+     "bf9a",
+     "be32",
+     "3fad",
+     "bffd",
+     "bf1a",
+     "beb8",
+     "3fc6",
+     "bfc4",
+     "3f8d",
+     "3eaa",
+     "3f97",
+     "bf34",
+     "3d54",
+     "3f94",
+     "3f8a",
+     "bff8",
+     "3fd6",
+     "3f25",
+     "bf8e",
+     "bf9b",
+     "3ff0",
+     "3f11"
+    ],
+    "sha256": "ebefd643440db05125d26674b580ff47c93ab82dc042febcd5a85feb79fd0f5a"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "u": [
+     "3fd2a8585d877eeb",
+     "bf6d79b32e825980",
+     "3fbbd4cd130256f8",
+     "bfc9f350d91a9cb2",
+     "bfd1c06cdb990150",
+     "3fc7bbeee2e98ae6",
+     "3fcf6bf942fd0ed2",
+     "3fcf834acce5dd7a",
+     "3fbceb82555622cc",
+     "3fcf51730f26230e",
+     "3f980b9a8e199b70",
+     "3faf7162c512b208",
+     "3fc1edcd403058f4",
+     "3fd317c4288f45ef",
+     "bfba457d258765ee",
+     "bfc7db0cdc1deddc"
+    ],
+    "alpha": "4018000000000000",
+    "columns": [
+     0,
+     2,
+     5
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded random",
+    "seed": 20261107
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3fb6",
+     "3faf",
+     "c08a",
+     "bfd2",
+     "3f10",
+     "3ee4",
+     "bfe0",
+     "3fee",
+     "be57",
+     "bffc",
+     "3ef0",
+     "3e6f",
+     "bf3b",
+     "be47",
+     "be64",
+     "bea2",
+     "3f9b",
+     "bf06",
+     "bf80",
+     "3fc4",
+     "3fb1",
+     "3f1f",
+     "3f8d",
+     "3f4a",
+     "bfdc",
+     "bf91",
+     "3ff7",
+     "3e69",
+     "bf2a",
+     "bcf6",
+     "403d",
+     "bfbd",
+     "3e0f",
+     "bf06",
+     "bfa9",
+     "be8d",
+     "3fff",
+     "bfac",
+     "bfbc",
+     "3fa3",
+     "3fd6",
+     "3f52",
+     "3fa5",
+     "3fcc",
+     "bff5",
+     "bfc7",
+     "bf9a",
+     "bf08",
+     "3f4f",
+     "3fc6",
+     "bf2e",
+     "3fd8",
+     "3fab",
+     "bf29",
+     "be96",
+     "bd8d",
+     "be7d",
+     "3ffb",
+     "be82",
+     "c008",
+     "3f17",
+     "3e89",
+     "3fe4",
+     "beba",
+     "3e85",
+     "bf9e",
+     "bf7f",
+     "3eb3",
+     "3f2a",
+     "3efd",
+     "3e48",
+     "3e8a",
+     "bf88",
+     "3fc0",
+     "c01c",
+     "be32",
+     "3fad",
+     "c017",
+     "3f7a",
+     "beb8",
+     "bf89",
+     "bfc4",
+     "3f8d",
+     "beef",
+     "3f23",
+     "bf34",
+     "3f74",
+     "3f94",
+     "3f8a",
+     "bfd5",
+     "3f30",
+     "3f25",
+     "3f06",
+     "bf9b",
+     "3ff0",
+     "3f88"
+    ],
+    "sha256": "e0dd8d4e0b174b112f5409cf52e7db19705c0308cb84e60fbc2c8d81ee966428"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-general-rne1",
+   "purpose": "16 x 6, rank 2, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "bdec",
+     "3faf",
+     "bfdf",
+     "bfd2",
+     "3f10",
+     "3f9d",
+     "bfde",
+     "3fee",
+     "be77",
+     "bffc",
+     "3ef0",
+     "3e65",
+     "bfa7",
+     "be47",
+     "3f3b",
+     "bea2",
+     "3f9b",
+     "be6c",
+     "3d93",
+     "3fc4",
+     "beca",
+     "3f1f",
+     "3f8d",
+     "3e7b",
+     "be81",
+     "bf91",
+     "bf00",
+     "3e69",
+     "bf2a",
+     "bf46",
+     "3ffc",
+     "bfbd",
+     "3fe2",
+     "bf06",
+     "bfa9",
+     "3e63",
+     "3f32",
+     "bfac",
+     "3f2f",
+     "3fa3",
+     "3fd6",
+     "3fbd",
+     "bc57",
+     "3fcc",
+     "3e7d",
+     "bfc7",
+     "bf9a",
+     "3e04",
+     "3e58",
+     "3fc6",
+     "3ea0",
+     "3fd8",
+     "3fab",
+     "beb7",
+     "bfcb",
+     "bd8d",
+     "3ff3",
+     "3ffb",
+     "be82",
+     "bfbc",
+     "3eee",
+     "3e89",
+     "3ffe",
+     "beba",
+     "3e85",
+     "bf96",
+     "bfa9",
+     "3eb3",
+     "3f9a",
+     "3efd",
+     "3e48",
+     "3ede",
+     "bfe7",
+     "3fc0",
+     "bf9a",
+     "be32",
+     "3fad",
+     "bffd",
+     "bf1a",
+     "beb8",
+     "3fc6",
+     "bfc4",
+     "3f8d",
+     "3eaa",
+     "3f97",
+     "bf34",
+     "3d54",
+     "3f94",
+     "3f8a",
+     "bff8",
+     "3fd6",
+     "3f25",
+     "bf8e",
+     "bf9b",
+     "3ff0",
+     "3f11"
+    ],
+    "sha256": "ebefd643440db05125d26674b580ff47c93ab82dc042febcd5a85feb79fd0f5a"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "rank": 2,
+    "a": [
+     "bf74aca55b9ac740",
+     "3fa1d09e4c28b520",
+     "bf88b3a9229b4348",
+     "3fa2b8ed16e2c528",
+     "3f24b61daac11b00",
+     "3f86dea1219ff740",
+     "3fa09915441fc060",
+     "bf63aeb6947464b0",
+     "bf81eedd6ff913b8",
+     "3fa44c21a4e1d588",
+     "3f8842b8ee64ede0",
+     "3f8e6b904c7ae9d0",
+     "bfa4f4086db8e7ef",
+     "3f6855be46e24580",
+     "bf9a3482a1aadb87",
+     "bf9a91c049977b17",
+     "bf6318fec77f80d0",
+     "bf75ee924bdd4da8",
+     "3f8aca2c5891ec70",
+     "3f8e667b91abbc50",
+     "bf9dd24cee1cbdca",
+     "bf9ffa99b50f2af7",
+     "3f8ed5875d9d6508",
+     "bf95ffa828ad6b4a",
+     "3f92b9fdc12408dc",
+     "3f5f3d9956732d60",
+     "bf77b5a5559793d8",
+     "bfa6b247b73952f4",
+     "bf8714638d570c8c",
+     "bf84d4a37fbc2dac",
+     "bf97cf81f3764af0",
+     "3f748153af2b6010"
+    ],
+    "b": [
+     "3fa3f0b29112e5ae",
+     "3f897a0407db8db8",
+     "3fa60d9c1562bce4",
+     "bf44e3658f85e980",
+     "bfa177371bea3ff6",
+     "bfa418f077b7da1a",
+     "3f935f78eae9f140",
+     "bf8caa9710b5c354",
+     "3f9e4d3163a1d890",
+     "3fa95f6547a0ec9c",
+     "bf9d2f4886ffce30",
+     "3fa330ebc3d17472"
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded random",
+    "seed": 20261107
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "bdeb",
+     "3faf",
+     "bfdf",
+     "bfd2",
+     "3f10",
+     "3f9d",
+     "bfde",
+     "3fee",
+     "be76",
+     "bffc",
+     "3ef0",
+     "3e67",
+     "bfa7",
+     "be47",
+     "3f3b",
+     "bea2",
+     "3f9b",
+     "be6c",
+     "3d95",
+     "3fc4",
+     "bec9",
+     "3f1f",
+     "3f8d",
+     "3e7a",
+     "be81",
+     "bf91",
+     "bf00",
+     "3e6b",
+     "bf2a",
+     "bf46",
+     "3ffc",
+     "bfbd",
+     "3fe2",
+     "bf06",
+     "bfa9",
+     "3e63",
+     "3f32",
+     "bfac",
+     "3f2f",
+     "3fa3",
+     "3fd6",
+     "3fbd",
+     "bc6f",
+     "3fcc",
+     "3e7b",
+     "bfc7",
+     "bf9a",
+     "3e04",
+     "3e58",
+     "3fc6",
+     "3ea0",
+     "3fd8",
+     "3fab",
+     "beb7",
+     "bfcb",
+     "bd8d",
+     "3ff3",
+     "3ffb",
+     "be82",
+     "bfbc",
+     "3eed",
+     "3e89",
+     "3ffe",
+     "bebb",
+     "3e86",
+     "bf96",
+     "bfa9",
+     "3eb3",
+     "3f9a",
+     "3efc",
+     "3e48",
+     "3edd",
+     "bfe7",
+     "3fc0",
+     "bf9a",
+     "be32",
+     "3fad",
+     "bffd",
+     "bf1a",
+     "beb8",
+     "3fc6",
+     "bfc4",
+     "3f8d",
+     "3ea9",
+     "3f97",
+     "bf34",
+     "3d51",
+     "3f94",
+     "3f8a",
+     "bff8",
+     "3fd6",
+     "3f25",
+     "bf8e",
+     "bf9b",
+     "3ff0",
+     "3f11"
+    ],
+    "sha256": "e685c82943d6c91e93fb1d1d77796e7a1d84d92c9d785c4eb262a6b510ed8636"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "rd-general-rne2",
+   "purpose": "16 x 6, three columns, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "3fcd",
+     "bf4d",
+     "bfa1",
+     "3eb6",
+     "3fb5",
+     "3f42",
+     "3edb",
+     "3f3c",
+     "3f96",
+     "3f8b",
+     "bfcd",
+     "bfc6",
+     "bf73",
+     "3fbf",
+     "3f6a",
+     "3ed7",
+     "bd63",
+     "bfca",
+     "bfab",
+     "3fed",
+     "bf83",
+     "3f7c",
+     "3fd6",
+     "bf04",
+     "3fc5",
+     "bfa0",
+     "3f75",
+     "bfd9",
+     "bdaa",
+     "3e96",
+     "3ebf",
+     "3fb1",
+     "bf5a",
+     "bf24",
+     "bfb2",
+     "bfc6",
+     "3f80",
+     "bf8a",
+     "3fb5",
+     "3ff0",
+     "be7c",
+     "bf9c",
+     "3f9c",
+     "3f85",
+     "3f0d",
+     "3f99",
+     "3f9c",
+     "3fc2",
+     "3f10",
+     "3f4d",
+     "bff5",
+     "bf20",
+     "3ff5",
+     "3f4e",
+     "3ff9",
+     "bf60",
+     "bed9",
+     "bfae",
+     "bf1c",
+     "bfda",
+     "bf7a",
+     "bf86",
+     "3dcc",
+     "3e59",
+     "3eb1",
+     "3fee",
+     "3fbf",
+     "3fa8",
+     "3f2c",
+     "bfc7",
+     "bf9f",
+     "bf84",
+     "3fb5",
+     "3f52",
+     "3fed",
+     "bfbc",
+     "bfe7",
+     "bef4",
+     "bf02",
+     "bffc",
+     "bd49",
+     "3fe8",
+     "3f66",
+     "bfca",
+     "3fa3",
+     "bfd7",
+     "bfc4",
+     "3f70",
+     "bf96",
+     "bf28",
+     "be8b",
+     "3fd3",
+     "3e10",
+     "3f57",
+     "3f2a",
+     "bf80"
+    ],
+    "sha256": "d4fc91e6798e5fd14284c29bc809b86bf91ee5cc1d456fdd570c042b64c455ee"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "u": [
+     "bfd0d0cb8c71d57f",
+     "3fa63c9a203092c0",
+     "bfc59aec089962e2",
+     "bfc39e60a382a869",
+     "3fcb009f02af1bba",
+     "bfbc3562d9b1532c",
+     "3fd299e2643e68e1",
+     "bfc6ee151cf1842c",
+     "3fb5e8b64ea4243c",
+     "bfd0d5276f598a7b",
+     "3fc792420c529ae8",
+     "3fc553d05ca8a73a",
+     "bfbd6523c3b7d1fa",
+     "bfd15c5bfeddf584",
+     "3fd32decce437937",
+     "3fa042bb65fdbbb8"
+    ],
+    "alpha": "4018000000000000",
+    "columns": [
+     0,
+     2,
+     5
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded random",
+    "seed": 20261107
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "4002",
+     "bf4d",
+     "bf1a",
+     "3eb6",
+     "3fb5",
+     "3fe0",
+     "3eb7",
+     "3f3c",
+     "3f88",
+     "3f8b",
+     "bfcd",
+     "bfdb",
+     "bf2c",
+     "3fbf",
+     "3fab",
+     "3ed7",
+     "bd63",
+     "bf71",
+     "bf8b",
+     "3fed",
+     "bf24",
+     "3f7c",
+     "3fd6",
+     "3d7b",
+     "3f99",
+     "bfa0",
+     "3edc",
+     "bfd9",
+     "bdaa",
+     "bf00",
+     "3f0e",
+     "3fb1",
+     "bf14",
+     "bf24",
+     "bfb2",
+     "bf91",
+     "3f06",
+     "bf8a",
+     "3f30",
+     "3ff0",
+     "be7c",
+     "c014",
+     "3fc1",
+     "3f85",
+     "3f80",
+     "3f99",
+     "3f9c",
+     "400c",
+     "3ed8",
+     "3f4d",
+     "c008",
+     "bf20",
+     "3ff5",
+     "3ef7",
+     "4018",
+     "bf60",
+     "3e6f",
+     "bfae",
+     "bf1c",
+     "bf37",
+     "bfa4",
+     "bf86",
+     "beb8",
+     "3e59",
+     "3eb1",
+     "3f95",
+     "3f9c",
+     "3fa8",
+     "3e83",
+     "bfc7",
+     "bf9f",
+     "bfd4",
+     "3fcd",
+     "3f52",
+     "4009",
+     "bfbc",
+     "bfe7",
+     "bd36",
+     "bd84",
+     "bffc",
+     "3f21",
+     "3fe8",
+     "3f66",
+     "bf0f",
+     "3f49",
+     "bfd7",
+     "c012",
+     "3f70",
+     "bf96",
+     "bfe4",
+     "bea6",
+     "3fd3",
+     "3d7b",
+     "3f57",
+     "3f2a",
+     "bf8f"
+    ],
+    "sha256": "69770933f1e8e03d9371d547321d207926a1e8622e7d8449b9812aa9e2e575d1"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-general-rne2",
+   "purpose": "16 x 6, rank 2, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "3fcd",
+     "bf4d",
+     "bfa1",
+     "3eb6",
+     "3fb5",
+     "3f42",
+     "3edb",
+     "3f3c",
+     "3f96",
+     "3f8b",
+     "bfcd",
+     "bfc6",
+     "bf73",
+     "3fbf",
+     "3f6a",
+     "3ed7",
+     "bd63",
+     "bfca",
+     "bfab",
+     "3fed",
+     "bf83",
+     "3f7c",
+     "3fd6",
+     "bf04",
+     "3fc5",
+     "bfa0",
+     "3f75",
+     "bfd9",
+     "bdaa",
+     "3e96",
+     "3ebf",
+     "3fb1",
+     "bf5a",
+     "bf24",
+     "bfb2",
+     "bfc6",
+     "3f80",
+     "bf8a",
+     "3fb5",
+     "3ff0",
+     "be7c",
+     "bf9c",
+     "3f9c",
+     "3f85",
+     "3f0d",
+     "3f99",
+     "3f9c",
+     "3fc2",
+     "3f10",
+     "3f4d",
+     "bff5",
+     "bf20",
+     "3ff5",
+     "3f4e",
+     "3ff9",
+     "bf60",
+     "bed9",
+     "bfae",
+     "bf1c",
+     "bfda",
+     "bf7a",
+     "bf86",
+     "3dcc",
+     "3e59",
+     "3eb1",
+     "3fee",
+     "3fbf",
+     "3fa8",
+     "3f2c",
+     "bfc7",
+     "bf9f",
+     "bf84",
+     "3fb5",
+     "3f52",
+     "3fed",
+     "bfbc",
+     "bfe7",
+     "bef4",
+     "bf02",
+     "bffc",
+     "bd49",
+     "3fe8",
+     "3f66",
+     "bfca",
+     "3fa3",
+     "bfd7",
+     "bfc4",
+     "3f70",
+     "bf96",
+     "bf28",
+     "be8b",
+     "3fd3",
+     "3e10",
+     "3f57",
+     "3f2a",
+     "bf80"
+    ],
+    "sha256": "d4fc91e6798e5fd14284c29bc809b86bf91ee5cc1d456fdd570c042b64c455ee"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "rank": 2,
+    "a": [
+     "bfa4f9956e2367d5",
+     "bf859e94d43fd4ec",
+     "bf9ba1b644d4e2e0",
+     "bfa8e7bcad2a691d",
+     "bf9034b8377fb80e",
+     "bfa3ff92177552b4",
+     "3f9741fcc5e54f38",
+     "3f96b7c0d56038dc",
+     "3f86469d88c904ec",
+     "3fa82777a7cbf94e",
+     "bf9ca24fe03b08ad",
+     "3f731b56a863f5b0",
+     "bfa2078a8998d8ed",
+     "3fa14ef966381312",
+     "bf9dd75134a8ab00",
+     "3f8dec4f113ac5f0",
+     "3f960180abb5fedc",
+     "bfa644d3baef98ff",
+     "3f8d69b1c58eaec0",
+     "3f931963e4be6cbc",
+     "bf980362f2c861a4",
+     "bf9d3562099b5e57",
+     "3fa69656edd547f6",
+     "bf9bea52af1cec9d",
+     "3f92e2c61796baa4",
+     "3f9fa7e2115d9274",
+     "bfa84340ef7b3cf2",
+     "3f9cbad016e0a91c",
+     "3fa6a586348fe610",
+     "3fa5d18b52450ef8",
+     "bf83d524ab24bccc",
+     "3fa909b5667288ce"
+    ],
+    "b": [
+     "bf902298d0b34a76",
+     "bf9ce7f206f9eea7",
+     "bf990b7bbcac65ea",
+     "bf8119f7d67c3074",
+     "bfa3020e8a6e8c74",
+     "bfa820dc4ea2563c",
+     "3fa07afc79afc16a",
+     "3fa4c12f175e1d30",
+     "bfa100da31ef14ac",
+     "bf30ec275572e400",
+     "bfa6730d2d833374",
+     "3f913b6746eb6b5c"
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded random",
+    "seed": 20261107
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3fcd",
+     "bf4d",
+     "bfa1",
+     "3eb6",
+     "3fb5",
+     "3f42",
+     "3eda",
+     "3f3c",
+     "3f96",
+     "3f8b",
+     "bfcd",
+     "bfc6",
+     "bf73",
+     "3fbf",
+     "3f6a",
+     "3ed7",
+     "bd5a",
+     "bfca",
+     "bfab",
+     "3fed",
+     "bf83",
+     "3f7c",
+     "3fd6",
+     "bf04",
+     "3fc5",
+     "bfa0",
+     "3f75",
+     "bfd9",
+     "bdaf",
+     "3e96",
+     "3ebf",
+     "3fb1",
+     "bf5a",
+     "bf24",
+     "bfb2",
+     "bfc6",
+     "3f80",
+     "bf8a",
+     "3fb5",
+     "3ff0",
+     "be7c",
+     "bf9c",
+     "3f9c",
+     "3f85",
+     "3f0d",
+     "3f99",
+     "3f9c",
+     "3fc2",
+     "3f10",
+     "3f4c",
+     "bff5",
+     "bf20",
+     "3ff5",
+     "3f4e",
+     "3ff9",
+     "bf60",
+     "bed9",
+     "bfae",
+     "bf1c",
+     "bfda",
+     "bf7a",
+     "bf86",
+     "3dcf",
+     "3e59",
+     "3eb2",
+     "3fee",
+     "3fbf",
+     "3fa8",
+     "3f2c",
+     "bfc7",
+     "bf9f",
+     "bf84",
+     "3fb5",
+     "3f52",
+     "3fed",
+     "bfbc",
+     "bfe7",
+     "bef4",
+     "bf02",
+     "bffc",
+     "bd48",
+     "3fe8",
+     "3f66",
+     "bfca",
+     "3fa3",
+     "bfd7",
+     "bfc4",
+     "3f70",
+     "bf96",
+     "bf28",
+     "be8a",
+     "3fd3",
+     "3e0f",
+     "3f57",
+     "3f2a",
+     "bf80"
+    ],
+    "sha256": "3c6e62303c6a7c94d2db1796500eaca28d5e55643f26a17b326b7886d9d6987c"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "rd-general-f32",
+   "purpose": "16 x 6, three columns, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "3f73",
+     "3fbd",
+     "bdd9",
+     "bf95",
+     "bfb6",
+     "bfc7",
+     "bfc0",
+     "3fd3",
+     "bf9e",
+     "3f28",
+     "bfc8",
+     "bf37",
+     "be16",
+     "beec",
+     "3fb5",
+     "3fa8",
+     "3f9a",
+     "3d58",
+     "3fe8",
+     "bc5d",
+     "bfd5",
+     "3fc8",
+     "bfe6",
+     "bf1b",
+     "3d5d",
+     "3f27",
+     "3fde",
+     "3f0e",
+     "3e04",
+     "3fca",
+     "bfe5",
+     "3fd5",
+     "bed9",
+     "3fab",
+     "bf46",
+     "3f0d",
+     "3f8e",
+     "bfd7",
+     "bfa4",
+     "bf14",
+     "bfe6",
+     "3fda",
+     "3fb5",
+     "bfad",
+     "3ffe",
+     "bfee",
+     "3eda",
+     "bfa0",
+     "bec3",
+     "bcfd",
+     "3f33",
+     "3f49",
+     "bf94",
+     "3fc8",
+     "3fa9",
+     "bdb6",
+     "3f83",
+     "bfb8",
+     "3ff8",
+     "3f81",
+     "bfef",
+     "3fc6",
+     "bf60",
+     "3fee",
+     "bfae",
+     "be91",
+     "bf0d",
+     "beab",
+     "bf73",
+     "3f89",
+     "3fe7",
+     "beab",
+     "bfd1",
+     "3fc5",
+     "bfb9",
+     "3faf",
+     "bf6c",
+     "3f75",
+     "bf3f",
+     "be0e",
+     "3e42",
+     "3edf",
+     "bfe1",
+     "bf85",
+     "3fd1",
+     "3fd1",
+     "bf4d",
+     "bf44",
+     "be5f",
+     "3d9b",
+     "bfec",
+     "bfdd",
+     "3ee1",
+     "3e92",
+     "3ce9",
+     "3edc"
+    ],
+    "sha256": "8cd6f3e7e9f1966ccb1fca32d0b331f7dedbbedee949829f26dffcca792dbf77"
+   },
+   "op": {
+    "kind": "remove_direction",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "u": [
+     "be6a918f",
+     "3e1d2d72",
+     "be364680",
+     "bbb1dd87",
+     "3c8979bf",
+     "bd7d5fd8",
+     "3e00a849",
+     "be7d85e7",
+     "3df65a11",
+     "3db9b5c6",
+     "3d8c0909",
+     "be5232b1",
+     "bda53743",
+     "3e22b608",
+     "3e86deb9",
+     "3e3d4f54"
+    ],
+    "alpha": "40c00000",
+    "columns": [
+     0,
+     2,
+     5
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded random",
+    "seed": 20261107
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3ee2",
+     "3fbd",
+     "bf84",
+     "bf95",
+     "bfb6",
+     "be85",
+     "bf95",
+     "3fd3",
+     "bf1d",
+     "3f28",
+     "bfc8",
+     "bfcb",
+     "bf0a",
+     "beec",
+     "3f31",
+     "3fa8",
+     "3f9a",
+     "3f87",
+     "3fe6",
+     "bc5d",
+     "bfd8",
+     "3fc8",
+     "bfe6",
+     "bf13",
+     "3dbb",
+     "3f27",
+     "3fe7",
+     "3f0e",
+     "3e04",
+     "3fbe",
+     "bff7",
+     "3fd5",
+     "bf2d",
+     "3fab",
+     "bf46",
+     "3f66",
+     "3fb2",
+     "bfd7",
+     "bf46",
+     "bf14",
+     "bfe6",
+     "3f7e",
+     "3f5e",
+     "bfad",
+     "3f7b",
+     "bfee",
+     "3eda",
+     "3e19",
+     "bdeb",
+     "bcfd",
+     "3f98",
+     "3f49",
+     "bf94",
+     "3f62",
+     "3fc3",
+     "bdb6",
+     "3fb2",
+     "bfb8",
+     "3ff8",
+     "3efe",
+     "bfdc",
+     "3fc6",
+     "bf19",
+     "3fee",
+     "bfae",
+     "bf2b",
+     "bf81",
+     "beab",
+     "bfe4",
+     "3f89",
+     "3fe7",
+     "3f53",
+     "bfe8",
+     "3fc5",
+     "bfe3",
+     "3faf",
+     "bf6c",
+     "3fb5",
+     "beca",
+     "be0e",
+     "3f55",
+     "3edf",
+     "bfe1",
+     "bff8",
+     "400e",
+     "3fd1",
+     "3e89",
+     "bf44",
+     "be5f",
+     "bfb5",
+     "bfb8",
+     "bfdd",
+     "3f98",
+     "3e92",
+     "3ce9",
+     "bf1d"
+    ],
+    "sha256": "a96abeebf13745368d8b66d67fb0eecf7eac54788d37978c9c1236d73a96f6b9"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "lr-general-f32",
+   "purpose": "16 x 6, rank 2, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "3f73",
+     "3fbd",
+     "bdd9",
+     "bf95",
+     "bfb6",
+     "bfc7",
+     "bfc0",
+     "3fd3",
+     "bf9e",
+     "3f28",
+     "bfc8",
+     "bf37",
+     "be16",
+     "beec",
+     "3fb5",
+     "3fa8",
+     "3f9a",
+     "3d58",
+     "3fe8",
+     "bc5d",
+     "bfd5",
+     "3fc8",
+     "bfe6",
+     "bf1b",
+     "3d5d",
+     "3f27",
+     "3fde",
+     "3f0e",
+     "3e04",
+     "3fca",
+     "bfe5",
+     "3fd5",
+     "bed9",
+     "3fab",
+     "bf46",
+     "3f0d",
+     "3f8e",
+     "bfd7",
+     "bfa4",
+     "bf14",
+     "bfe6",
+     "3fda",
+     "3fb5",
+     "bfad",
+     "3ffe",
+     "bfee",
+     "3eda",
+     "bfa0",
+     "bec3",
+     "bcfd",
+     "3f33",
+     "3f49",
+     "bf94",
+     "3fc8",
+     "3fa9",
+     "bdb6",
+     "3f83",
+     "bfb8",
+     "3ff8",
+     "3f81",
+     "bfef",
+     "3fc6",
+     "bf60",
+     "3fee",
+     "bfae",
+     "be91",
+     "bf0d",
+     "beab",
+     "bf73",
+     "3f89",
+     "3fe7",
+     "beab",
+     "bfd1",
+     "3fc5",
+     "bfb9",
+     "3faf",
+     "bf6c",
+     "3f75",
+     "bf3f",
+     "be0e",
+     "3e42",
+     "3edf",
+     "bfe1",
+     "bf85",
+     "3fd1",
+     "3fd1",
+     "bf4d",
+     "bf44",
+     "be5f",
+     "3d9b",
+     "bfec",
+     "bfdd",
+     "3ee1",
+     "3e92",
+     "3ce9",
+     "3edc"
+    ],
+    "sha256": "8cd6f3e7e9f1966ccb1fca32d0b331f7dedbbedee949829f26dffcca792dbf77"
+   },
+   "op": {
+    "kind": "add_low_rank",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "rank": 2,
+    "a": [
+     "3b18053f",
+     "3d1100ef",
+     "bbe9b28a",
+     "3d0c3d7f",
+     "bbf7c095",
+     "3d277003",
+     "3cb7a8f4",
+     "bd2dae99",
+     "bcb7c50c",
+     "bd0c963f",
+     "3d156fa1",
+     "3d012608",
+     "3c0af4f9",
+     "3ca49b0f",
+     "3cde9ac5",
+     "bd011ad3",
+     "bd3d70f7",
+     "3c3e802b",
+     "3c10d0b7",
+     "3d229b40",
+     "3c1495fd",
+     "bc5836be",
+     "bd4171d3",
+     "bb640ce7",
+     "3c024ff2",
+     "3cc8fdd2",
+     "bcbe01cd",
+     "3cad3fb7",
+     "3cc29ecd",
+     "bd0342d3",
+     "3c4aa981",
+     "3d364f18"
+    ],
+    "b": [
+     "bd1d5dc7",
+     "bd2c6cad",
+     "3c5e8d24",
+     "3c597c20",
+     "bc59efc8",
+     "3d2e3f16",
+     "bd1c8663",
+     "3ca19b94",
+     "bbfa3b13",
+     "3d23b3d0",
+     "bd29b53f",
+     "bcfe58b5"
+    ],
+    "fixups": []
+   },
+   "construction": {
+    "method": "seeded random",
+    "seed": 20261107
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f73",
+     "3fbd",
+     "bdd9",
+     "bf95",
+     "bfb6",
+     "bfc7",
+     "bfc0",
+     "3fd3",
+     "bf9e",
+     "3f28",
+     "bfc8",
+     "bf37",
+     "be17",
+     "beeb",
+     "3fb5",
+     "3fa8",
+     "3f9a",
+     "3d51",
+     "3fe8",
+     "bc7a",
+     "bfd5",
+     "3fc8",
+     "bfe6",
+     "bf1a",
+     "3d66",
+     "3f27",
+     "3fde",
+     "3f0e",
+     "3e06",
+     "3fca",
+     "bfe5",
+     "3fd5",
+     "bed9",
+     "3fab",
+     "bf46",
+     "3f0d",
+     "3f8e",
+     "bfd7",
+     "bfa4",
+     "bf14",
+     "bfe6",
+     "3fda",
+     "3fb5",
+     "bfad",
+     "3ffe",
+     "bfee",
+     "3eda",
+     "bfa0",
+     "bec2",
+     "bceb",
+     "3f33",
+     "3f49",
+     "bf94",
+     "3fc8",
+     "3fa9",
+     "bdb5",
+     "3f83",
+     "bfb8",
+     "3ff8",
+     "3f81",
+     "bfef",
+     "3fc6",
+     "bf60",
+     "3fee",
+     "bfae",
+     "be91",
+     "bf0d",
+     "beaa",
+     "bf73",
+     "3f89",
+     "3fe7",
+     "beac",
+     "bfd1",
+     "3fc5",
+     "bfb9",
+     "3faf",
+     "bf6c",
+     "3f75",
+     "bf3f",
+     "be0d",
+     "3e42",
+     "3edf",
+     "bfe1",
+     "bf85",
+     "3fd1",
+     "3fd1",
+     "bf4d",
+     "bf44",
+     "be5e",
+     "3d9f",
+     "bfec",
+     "bfdd",
+     "3ee1",
+     "3e93",
+     "3cd9",
+     "3edc"
+    ],
+    "sha256": "2fb723535c52f22936a506d6b4e320c1965f9dffda0c3f6b522bffe2c29fba0a"
+   },
+   "under_wrong_semantics": {}
+  }
+ ]
+}

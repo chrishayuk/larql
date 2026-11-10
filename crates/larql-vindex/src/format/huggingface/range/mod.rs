@@ -86,6 +86,10 @@ impl Default for RetryPolicy {
 /// fused expert bank.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// Ceiling on one existence probe. A `HEAD` carries no body, so this
+/// only bounds an unresponsive host.
+const EXISTENCE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Bytes requested per range GET while streaming a payload.
 ///
 /// Peak memory is bounded by THIS, not by the tensor: each chunk is its
@@ -263,6 +267,43 @@ impl HfRangeClient {
             .bytes()
             .map_err(|e| VindexError::Parse(format!("read {}: {e}", self.url(file))))?;
         Ok(Some(bytes.to_vec()))
+    }
+
+    /// Whether the repo carries `file` at this revision — a `HEAD`, so no
+    /// body is transferred whatever the file's size.
+    ///
+    /// Same answers as [`Self::fetch`], minus the bytes: `404` is absence
+    /// (`Ok(false)`), any other non-success is an error naming the status
+    /// (a gated repo without a token must not read as "no such file"), and
+    /// the token is sent the same way. Redirects are NOT followed: an LFS
+    /// file answers with a redirect to its storage host, and the redirect
+    /// is already the hub saying the file exists — following it would
+    /// send a `HEAD` to a URL signed for `GET`.
+    pub fn exists(&self, file: &str) -> Result<bool, VindexError> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(EXISTENCE_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| VindexError::Parse(format!("HTTP client init failed: {e}")))?;
+        let request = client.head(self.url(file));
+        let request = match &self.token {
+            Some(token) => request.bearer_auth(token),
+            None => request,
+        };
+        let response = request
+            .send()
+            .map_err(|e| VindexError::Parse(format!("probe {}: {e}", self.url(file))))?;
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        if status.is_success() || status.is_redirection() {
+            return Ok(true);
+        }
+        Err(VindexError::Parse(format!(
+            "probe {}: HTTP {status}",
+            self.url(file)
+        )))
     }
 
     /// Bytes `[start, start + len)` of one file, retried until the length

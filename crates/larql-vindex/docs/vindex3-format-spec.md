@@ -839,7 +839,7 @@ The binding obligation is not between the two on-disk formats (there is none —
 - **No cross-loading, no silent conversion.** The VINDEX2 loader path is frozen-but-maintained: it never opens VINDEX3 directories, never gains VINDEX3 features, and VINDEX3 code never re-implements VINDEX2 parsing. Conversion is only ever an explicit importer or re-encode.
 - **Hub and distribution.** `larql publish` stamps the container generation into the hub artifact metadata; `larql pull` selects the reader from that stamp and refuses a generation the installed binary lacks — before downloading terabytes, not after.
 - **Wire protocols are generation-agnostic.** The expert-RPC and FFN-dispatch wire contracts carry activations and results, not container bytes; a grid may therefore mix generations. A shard's container generation is a local concern of that shard's loader.
-- **Support policy.** VINDEX2 remains fully supported for read/verify/serve. The default-extraction generation is governed by `docs/vindex-generation-policy.md`: one named constant (`DEFAULT_EXTRACTION_GENERATION`), one pinned test, flipped in one commit (the M4 rung — M1–M3 are done). Explicit requests are never downgraded; a surface that cannot produce the requested generation refuses by name. After the flip, V2 becomes the explicitly-requested compatibility generation and receives no architectural expansion.
+- **Support policy.** VINDEX2 remains fully supported for read/verify/serve. The default-extraction generation is governed by `docs/vindex-generation-policy.md`: one named constant (`DEFAULT_EXTRACTION_GENERATION`), one pinned test, flipped in one commit (the M4 rung — done 2026-11-06). Explicit requests are never downgraded; a surface that cannot produce the requested generation refuses by name. After the flip, V2 becomes the explicitly-requested compatibility generation and receives no architectural expansion.
 
 ---
 
@@ -1336,7 +1336,7 @@ the maturity flip — each a named gate, none of them drift:
 | 2 | **Required/optional freeze**: an RFC-2119 pass over §5–§9 separating normative requirements from extensions | this document's tables are the input |
 | 3 | **Independent reader**: `vindex-core` carved out so the reader stops linking the writer's tree; a minimal conformance harness over published fixtures | reader exists, boundary impure (§18.3) |
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
-| 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
+| 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | Done 2026-11-06 |
 | 6 | **Pre-freeze rows, re-based on the graph shape** (ADR-0027): the V2-0..V2-1 properties that are shape-independent, certified over graph containers | **closed:** profile-authority derivation (shape-independent); graph execution seam parity (runtime vs direct harness over one encoded container, bit for bit, which is not an independent-oracle claim). **Re-home:** expert count / top-K. **Open on the graph shape:** variant-selection refusal (pinned only on the bank reader; graph containers carry no variant catalogue), fused vs decomposed, shared-bank container parity (an operator-level Kimi oracle exists but is env-gated and reads no container; no K3 dependency), WALK/DESCRIBE parity. **Leaves 3.0:** fixtures B–D, which become LYRW-importer fixtures |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,

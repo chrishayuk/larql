@@ -46,6 +46,46 @@ pub enum VindexError {
     )]
     LegacyBankContainer,
 
+    /// A container named a file outside itself — an absolute path, a
+    /// `..` component, or a name that would mean a different file on a
+    /// different host. Refused before any path is composed from it.
+    #[error(
+        "the container names `{name}` as one of its files, which is refused: {reason}; \
+         every name a container uses must be a relative path inside it"
+    )]
+    UnsafeContainerPath { name: String, reason: &'static str },
+
+    /// A downloaded container's segment bytes are not the bytes its own
+    /// index seals. Transport integrity is the host's; this is the
+    /// container's word about itself, checked on arrival.
+    #[error(
+        "the container at {} does not match its own index: {}; remove it from the \
+         download cache and fetch it again",
+        container.display(),
+        mismatches.join("; ")
+    )]
+    PayloadDigestMismatch {
+        container: PathBuf,
+        mismatches: Vec<String>,
+    },
+
+    /// A verb that writes a new vindex directory was pointed at a
+    /// destination it must not touch: the source, something containing or
+    /// inside it, a symlink, or a path that already holds anything.
+    /// Refused before any write (`format::fresh_output`).
+    #[error("refusing to write output `{}`: {reason}", out.display())]
+    UnsafeOutputDestination { out: PathBuf, reason: String },
+
+    /// Staging or promoting a new vindex directory failed at the
+    /// filesystem. Nothing was left at the destination.
+    #[error("{step} {}: {source}", path.display())]
+    OutputStaging {
+        step: &'static str,
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("model error: {0}")]

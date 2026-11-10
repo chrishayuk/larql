@@ -39,7 +39,7 @@ use super::{BatchExpertRequest, BatchExpertResponse, BatchExpertResult};
     ),
     responses(
         (status = 200, description = "Per-item expert outputs", body = crate::routes::expert::BatchExpertResponse),
-        (status = 400, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_expert_batch(

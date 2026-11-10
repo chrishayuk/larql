@@ -171,6 +171,20 @@ impl PreparedOperands {
         backend: &B,
         carrier: &[f32],
     ) -> Result<Option<Vec<f32>>, VindexError> {
+        self.head_logits_observed(backend, carrier, &mut |_| {})
+    }
+
+    /// [`Self::head_logits`], handing `exit` the vector the head reads —
+    /// the final-normed carrier, or the carrier itself where the image
+    /// declares no final norm — before the head runs (PREC-DIAG-1 E0a).
+    /// Borrowed and observation-only; `head_logits` IS this with a no-op
+    /// tap, so the two cannot drift. Not called when there is no head.
+    pub fn head_logits_observed<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        carrier: &[f32],
+        exit: &mut dyn FnMut(&[f32]),
+    ) -> Result<Option<Vec<f32>>, VindexError> {
         if self.output().is_none() {
             return Ok(None);
         }
@@ -182,6 +196,7 @@ impl PreparedOperands {
             }
             None => carrier,
         };
+        exit(final_hidden);
         self.head_over_normed(backend, final_hidden)
     }
 
@@ -327,6 +342,42 @@ impl PreparedOperands {
             });
         }
         Ok(row)
+    }
+
+    /// PREC-DIAG-1 E0b: choose how every softmax layer of this image
+    /// constructs its RoPE cos/sin for the runs it serves. The default is
+    /// [`RopeAngles::Larql`], and setting it again is a no-op.
+    /// [`RopeAngles::HfF32`] is refused on an image with any non-softmax
+    /// attention layer: those layers position-encode through their own
+    /// operators, so the intervention would apply to part of the stack
+    /// while the run's record claimed all of it.
+    ///
+    /// [`RopeAngles::Larql`]: super::super::rope_angles::RopeAngles::Larql
+    /// [`RopeAngles::HfF32`]: super::super::rope_angles::RopeAngles::HfF32
+    pub fn set_rope_angles(
+        &mut self,
+        angles: super::super::rope_angles::RopeAngles,
+    ) -> Result<(), VindexError> {
+        if angles != super::super::rope_angles::RopeAngles::Larql {
+            if let Some(index) = self
+                .layers
+                .iter()
+                .position(|layer| !matches!(layer.attention, PreparedAttention::Softmax(_)))
+            {
+                return Err(VindexError::Parse(format!(
+                    "--rope-angles {} covers softmax attention only; executed layer {} is not \
+                     softmax attention",
+                    angles.name(),
+                    self.first_layer + index
+                )));
+            }
+        }
+        for layer in &mut self.layers {
+            if let PreparedAttention::Softmax(ops) = &mut layer.attention {
+                ops.rope_angles = angles;
+            }
+        }
+        Ok(())
     }
 
     /// Width of one residual row.

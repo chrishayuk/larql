@@ -6,8 +6,9 @@
 //! to catch sentence-initial English function words and small
 //! numerals that look like proper nouns by accident.
 
-use crate::ast::{Condition, Value};
+use crate::ast::Condition;
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope};
 use crate::executor::Session;
 
 use super::format::ENTITIES_DEFAULT_LIMIT;
@@ -62,20 +63,9 @@ impl Session {
     ) -> Result<Vec<String>, LqlError> {
         let ctx = self.browse()?;
 
-        let layer_filter = conditions
-            .iter()
-            .find(|c| c.field == "layer")
-            .and_then(|c| match c.value {
-                Value::Integer(n) if n >= 0 => Some(n as usize),
-                _ => None,
-            });
-        let entity_filter = conditions
-            .iter()
-            .find(|c| c.field == "entity" || c.field == "token")
-            .and_then(|c| match &c.value {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            });
+        let predicate = EdgePredicate::parse(conditions, PredicateScope::ENTITIES)?;
+        let layer_filter = predicate.layer;
+        let entity_filter = predicate.entity;
         let limit = limit.unwrap_or(ENTITIES_DEFAULT_LIMIT) as usize;
 
         let scan_layers: Vec<usize> = if let Some(l) = layer_filter {

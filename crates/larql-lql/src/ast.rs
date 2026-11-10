@@ -120,6 +120,20 @@ pub enum Statement {
         set: Vec<Assignment>,
         conditions: Vec<Condition>,
     },
+    /// `UPDATE WEIGHTS SET DELTA = <f> WHERE TENSOR = "<name>" AND ROW = <n>
+    /// AND COL = <n> | COL IN (<n>, …)` — stage an edit of stored weights.
+    ///
+    /// Not a knowledge edit: it names real elements of one stored tensor.
+    /// `delta` applies to the value stored in the bound container, rounded
+    /// once to bfloat16, so staging twice never accumulates. Compiled by
+    /// `COMPILE CURRENT INTO VINDEX` into a new container; see
+    /// `larql_vindex::format::vindex3::weight_patch`.
+    UpdateWeights {
+        tensor: String,
+        row: usize,
+        cols: Vec<usize>,
+        delta: f32,
+    },
     Merge {
         source: String,
         target: Option<String>,
@@ -258,6 +272,7 @@ impl Statement {
             Statement::Insert { .. } => "INSERT",
             Statement::Delete { .. } => "DELETE",
             Statement::Update { .. } => "UPDATE",
+            Statement::UpdateWeights { .. } => "UPDATE WEIGHTS",
             Statement::Merge { .. } => "MERGE",
             Statement::Rebalance { .. } => "REBALANCE",
             Statement::ShowRelations { .. } => "SHOW RELATIONS",

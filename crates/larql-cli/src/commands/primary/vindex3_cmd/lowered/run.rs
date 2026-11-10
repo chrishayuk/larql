@@ -52,6 +52,10 @@ pub(in super::super) fn run_lowered(
     label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_bank_on_lowered(args.bank.as_deref())?;
+    // `--stop-at-eos`: the container's stops as ids, resolved (or refused)
+    // before any device state, so both decode loops end at end-of-turn and
+    // a comparison never times tokens generated past it.
+    let stop = super::super::generate::stop_ids(args)?;
     let gpu = MetalBackend::new().ok_or("no Metal device available for --backend metal-lowered")?;
     let total = tokens.len() + args.generate.unwrap_or(0);
     let loading = std::time::Instant::now();
@@ -84,6 +88,15 @@ pub(in super::super) fn run_lowered(
     // `conflicts_with_all`), so there is no decode loop to reconcile
     // with — this is prefill-only, exactly like --dump-layers above.
     if let Some(path) = &args.logit_dump {
+        // PREC-DIAG-1 E0a captures on the interpreter backends' cached
+        // step only; a lowered run would silently drop the request.
+        if args.capture.capture_sites.is_some() {
+            return Err(
+                "--capture-sites runs on the reference and production backends only, \
+                        not a lowered backend"
+                    .into(),
+            );
+        }
         let engine = format!("vindex3-metal-lowered-{label}");
         return run_teacher_force_lowered(&mut session, &engine, tokens, path);
     }
@@ -105,14 +118,6 @@ pub(in super::super) fn run_lowered(
         if args.profile {
             session.start_profile();
         }
-        // `--stop-at-eos`: the container's EOS ids end both decode loops,
-        // so a comparison never times tokens generated past end-of-turn.
-        let stop: std::collections::HashSet<u32> = if args.stop_at_eos {
-            larql_inference::layer_graph::generate::EosConfig::from_vindex_dir(&args.container)
-                .eos_token_ids
-        } else {
-            Default::default()
-        };
         if let Some(width) = args.speculate {
             let started = std::time::Instant::now();
             let stats = speculative_decode(
@@ -127,6 +132,15 @@ pub(in super::super) fn run_lowered(
             let wall_ms = started.elapsed().as_secs_f64() * 1e3;
             stats.report(generated.len(), wall_ms);
             println!("generated ids: {generated:?}");
+            // Single steps and verify blocks each keep their own ledger.
+            for lines in [session.profile_report(), session.verify_profile_report()]
+                .into_iter()
+                .flatten()
+            {
+                for line in lines {
+                    println!("{line}");
+                }
+            }
             return Ok(());
         }
         // From here every step continues from the device argmax: the
@@ -217,6 +231,11 @@ pub(in super::super) fn run_lowered(
             println!("attention dispatches: serial {serial}  seqpar {seqpar}  splitk {splitk}");
         }
         if let Some(lines) = session.profile_report() {
+            for line in lines {
+                println!("{line}");
+            }
+        }
+        if let Some(lines) = session.verify_profile_report() {
             for line in lines {
                 println!("{line}");
             }
@@ -384,10 +403,21 @@ fn speculative_decode(
     }
     // Wait out a committed look-ahead before the session is read again.
     session.quiesce();
-    // A block may run past a stop id; the ids after it were never wanted.
+    truncate_at_stop(out, stop, n);
+    Ok(stats)
+}
+
+/// The generated-ids contract every `exec --generate` loop keeps: at most
+/// `n` ids, ending at the first stop id, which is itself kept. A
+/// speculative block may run past a stop; the ids after it were never
+/// wanted.
+pub(super) fn truncate_at_stop(
+    out: &mut Vec<u32>,
+    stop: &std::collections::HashSet<u32>,
+    n: usize,
+) {
     if let Some(end) = out.iter().position(|id| stop.contains(id)) {
         out.truncate(end + 1);
     }
     out.truncate(n);
-    Ok(stats)
 }

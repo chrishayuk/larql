@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::container_path;
 use super::profile::{Profile, ProfileSelectionError, ResolvedProfile};
 use super::variants::VariantCatalogue;
 use crate::format::generation::V3_CURRENT_SCHEMA;
@@ -25,6 +26,7 @@ pub struct RepresentationEntry {
     /// Storage encoding, as the graph declares it (`BF16`, …).
     pub encoding: String,
     /// Segment file path relative to the container root.
+    #[serde(deserialize_with = "container_path::serde_rules::relative")]
     pub segment: String,
     /// Number of tensors in the segment's table.
     pub tensor_count: usize,
@@ -121,13 +123,21 @@ pub struct Vindex3Index {
     /// whether or not it routes — `gpt-oss-20b.vindex3` is a routed MoE with a
     /// `target.expert_bank` representation and `moe_manifest: None`. Read
     /// [`Self::representations`] to learn what a container actually holds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "container_path::serde_rules::optional_relative"
+    )]
     pub moe_manifest: Option<String>,
     /// Filename of the system-graph manifest
     /// ([`super::graph::SystemGraph`]), relative to the root. Absent on
     /// containers written before the graph existed — absence means "no
     /// graph recorded", never "single-component assumed".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "container_path::serde_rules::optional_relative"
+    )]
     pub system_graph: Option<String>,
     /// Filename of the auxiliary reference table
     /// ([`super::auxiliary_references::AuxiliaryReferences`]), relative to
@@ -136,7 +146,11 @@ pub struct Vindex3Index {
     /// means "no dependency is declared", never "the dependencies follow
     /// from a naming rule". A table this names and the container does not
     /// hold is a refusal, not an empty table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "container_path::serde_rules::optional_relative"
+    )]
     pub auxiliary_references: Option<String>,
     /// Filename of the representation attestation table
     /// ([`super::representation_attestations::RepresentationAttestations`]),
@@ -146,8 +160,26 @@ pub struct Vindex3Index {
     /// — and absence means the guarantee is UNAVAILABLE, never that the
     /// error is zero. A table this names and the container does not hold
     /// is a refusal, not an empty table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "container_path::serde_rules::optional_relative"
+    )]
     pub representation_attestations: Option<String>,
+    /// Filename of the weight-patch ledger
+    /// ([`super::weight_patch::WeightPatchLedger`]), relative to the root:
+    /// how this container was derived from another by a declared edit of
+    /// stored weights. Absent on every container not produced by a weight
+    /// patch. A ledger this names and the container does not hold is a
+    /// refusal, and inspection checks the ledger against the catalogue and
+    /// the stored bytes. Inspection checks CONSISTENCY, not the correctness
+    /// of the patch: that is a separate, independent verifier's claim.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "container_path::serde_rules::optional_relative"
+    )]
+    pub weight_patches: Option<String>,
     /// Representation directory: representation id
     /// (`{object_id}@{encoding}`) → where its bytes physically live.
     /// Graph edges and objects never reference source tensor names — once
@@ -170,6 +202,7 @@ pub struct Vindex3Index {
     #[serde(default, skip_serializing_if = "VariantCatalogue::is_empty")]
     pub variants: VariantCatalogue,
     /// Segment key → physical file count.
+    #[serde(deserialize_with = "container_path::serde_rules::relative_keys")]
     pub segments: BTreeMap<String, u32>,
     /// Whether this container carries the authority for its own bytes.
     ///
@@ -238,6 +271,7 @@ impl Vindex3Index {
             system_graph: None,
             auxiliary_references: None,
             representation_attestations: None,
+            weight_patches: None,
             representations: BTreeMap::new(),
             profiles: vec![Profile::exact()],
             variants: VariantCatalogue::new(),

@@ -1,0 +1,71 @@
+name: prec-diag tooling
+
+# PREC-DIAG-1's evidence lifecycle, V0 runner, transformers oracle,
+# analysis, freeze and experiment runner, plus the equivalence harness
+# modules they import. These tests are Python only and run no real model:
+# a fake larql and a synthetic Gemma 3 checkpoint stand in. The LARQL site
+# cross-check needs a larql binary (PREC_DIAG_LARQL_BIN) and is reported
+# as skipped here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/prec_diag/**'
+      - 'scripts/test_prec_diag_*.py'
+      - 'scripts/oracle_loading.py'
+      - 'scripts/test_oracle_loading.py'
+      - 'scripts/equivalence_metrics.py'
+      - 'scripts/test_equivalence_metrics.py'
+      - '.github/workflows/prec-diag.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/prec_diag/**'
+      - 'scripts/test_prec_diag_*.py'
+      - 'scripts/oracle_loading.py'
+      - 'scripts/test_oracle_loading.py'
+      - 'scripts/equivalence_metrics.py'
+      - 'scripts/test_equivalence_metrics.py'
+      - '.github/workflows/prec-diag.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: prec-diag python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install the pinned oracle dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r scripts/prec_diag/requirements.txt
+      - name: The oracle's frozen modeling file is the one installed
+        run: |
+          python3 - <<'PY'
+          import hashlib, sys
+          sys.modules["torchvision"] = None
+          import transformers.models.gemma3.modeling_gemma3 as g
+          got = hashlib.sha256(open(g.__file__, "rb").read()).hexdigest()
+          want = "221f147ccc0b16d7fa0aa007231ee0a6bd40fb37feb79eb9e537290498468aef"
+          print(got)
+          sys.exit(0 if got == want else 1)
+          PY
+      - name: Equivalence harness modules
+        run: |
+          python3 -I -m unittest discover -s scripts -p test_oracle_loading.py -v
+          python3 -I -m unittest discover -s scripts -p test_equivalence_metrics.py -v
+      - name: PREC-DIAG-1 tooling (every test_prec_diag_* suite)
+        run: python3 -I -m unittest discover -s scripts -p 'test_prec_diag_*.py' -v

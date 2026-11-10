@@ -254,12 +254,12 @@ impl Session {
         match vref {
             VindexRef::Current => match &self.backend {
                 Backend::Vindex { path, .. } => Ok(path.clone()),
-                Backend::Weight { model_id, .. } => Err(LqlError::Execution(format!(
-                    "CURRENT refers to a live model, not a vindex. Extract first:\n  \
-                     EXTRACT MODEL \"{}\" INTO \"{}.vindex\"",
-                    model_id,
-                    model_id.split('/').next_back().unwrap_or(model_id),
-                ))),
+                Backend::Weight { model_id, .. } => Err(LqlError::Execution(
+                    crate::executor::extract_hint::extract_first(
+                        "CURRENT refers to a live model, not a vindex",
+                        model_id,
+                    ),
+                )),
                 _ => Err(LqlError::NoBackend),
             },
             VindexRef::Path(p) => {

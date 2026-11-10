@@ -1,0 +1,8 @@
+# PREC-DIAG-1 tooling: the versions the oracle is frozen against.
+# hf_oracle.py refuses any modeling_gemma3.py other than transformers
+# 5.5.0's (sha256 221f147c...aef), so these pins are part of the protocol.
+# torch comes from the CPU wheel index (see .github/workflows/prec-diag.yml).
+numpy==2.4.2
+safetensors==0.7.0
+torch==2.14.0
+transformers==5.5.0

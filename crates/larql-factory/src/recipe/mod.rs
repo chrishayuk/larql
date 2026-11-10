@@ -84,8 +84,8 @@ pub struct Spec {
 
 impl Recipe {
     /// Parse a recipe from YAML source.
-    pub fn from_yaml(src: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(src)
+    pub fn from_yaml(src: &str) -> Result<Self, serde_saphyr::Error> {
+        serde_saphyr::from_str(src)
     }
 }
 

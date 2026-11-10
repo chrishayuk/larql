@@ -10,6 +10,7 @@
 
 #![allow(dead_code, unused_imports)]
 
+pub mod chat_template;
 pub mod synthetic_q4k_vindex;
 pub mod synthetic_vindex;
 
@@ -481,6 +482,7 @@ pub fn state(models: Vec<Arc<LoadedModel>>) -> Arc<AppState> {
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -512,6 +514,7 @@ pub fn state_with_timeout(
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -537,6 +540,7 @@ pub fn state_with_key(models: Vec<Arc<LoadedModel>>, key: &str) -> Arc<AppState>
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -562,6 +566,7 @@ pub fn state_with_cache(models: Vec<Arc<LoadedModel>>, cache_size: u64) -> Arc<A
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),

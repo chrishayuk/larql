@@ -21,27 +21,32 @@ cargo run -p larql-cli -- lql 'SHOW MODELS;'
 ### 1. Extract a model
 
 ```sql
+-- Default: a VINDEX3 container, executable and queryable, session left bound
+EXTRACT MODEL "Qwen/Qwen3-0.6B" INTO "qwen3-0.6b.vindex3";
+
+-- VINDEX2 (the compatibility generation) must be asked for by name.
 -- Browse-only (~3 GB f16 / ~6 GB f32, fast queries, no inference)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex";
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" FORMAT VINDEX2;
 
--- With inference support (~6 GB f16 / ~12 GB f32, enables INFER)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE;
+-- VINDEX2 with inference support (~6 GB f16 / ~12 GB f32, enables INFER)
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE FORMAT VINDEX2;
 
--- Full (~10 GB f16 / ~18 GB f32, enables COMPILE for recompilation)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL;
-
--- Pick the container generation explicitly. Omitted = no preference,
--- resolved by the extraction-generation policy (docs/vindex-generation-policy.md).
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" FORMAT VINDEX3;
+-- VINDEX2 full (~10 GB f16 / ~18 GB f32, enables COMPILE for recompilation)
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL FORMAT VINDEX2;
 ```
 
-A `FORMAT VINDEX3` extraction encodes the checkpoint's own bytes into a
-VINDEX3 container (HF checkpoint artifacts only — GGUF sources refuse by
-name rather than transcoding on the way in), carries the tokenizer and
-HF metadata in beside it, and leaves the session bound: no `USE` needed.
+With no `FORMAT`, the [extraction-generation policy](vindex-generation-policy.md)
+decides, and since 2026-11-06 it decides VINDEX3. A VINDEX3 extraction
+encodes the checkpoint's own bytes into a container (HF checkpoint artifacts
+only — GGUF sources refuse by name rather than transcoding on the way in),
+carries the tokenizer and HF metadata in beside it, and leaves the session
+bound: no `USE` needed. `WITH BROWSE | INFERENCE | ALL` shape a VINDEX2
+extraction only. Not every architecture is admitted yet — check with
+`larql vindex3 plan <model>`; Gemma 3, for example, still needs `FORMAT VINDEX2`.
 
-CLI equivalent: `larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex --level inference --f16`
-(add `--generation v3` for a VINDEX3 container).
+CLI equivalent: `larql extract Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3`, or
+`larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level inference`
+for VINDEX2.
 
 ### 2. Connect
 
@@ -49,6 +54,10 @@ CLI equivalent: `larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex --
 -- Use a pre-extracted vindex (fast, all operations)
 USE "gemma3-4b.vindex";
 STATS;
+
+-- Or, from `larql lql` / `larql repl`, a model already in the cache by name
+-- (the name `larql run` takes; never downloads)
+USE "Qwen3-0.6B";
 
 -- Or point directly at model weights (no extraction needed)
 USE MODEL "google/gemma-3-4b-it";
@@ -155,12 +164,13 @@ INSERT INTO EDGES (entity, relation, target)
 -- Verify
 DESCRIBE "John Coyle";
 
--- Delete
-DELETE FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+-- List the edges, then delete the slot the listing shows.
+-- (A mutation does not combine entity and relation; SELECT is its preview.)
+SELECT * FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+DELETE FROM EDGES WHERE layer = 26 AND feature = 8821;
 
 -- Update by entity (works on both heap and mmap-loaded vindexes)
-UPDATE EDGES SET target = "London"
-    WHERE entity = "John Coyle" AND relation = "lives-in";
+UPDATE EDGES SET target = "London" WHERE entity = "John Coyle";
 
 -- Update by (layer, feature) — fast-path, bypasses the entity scan
 UPDATE EDGES SET target = "London", confidence = 0.95
@@ -342,6 +352,38 @@ cross-fact regression) with cross-format parity gated. COMPILE/DIFF/COMPACT stil
 supported statements — a capability boundary, not a missing feature
 apology. See the spec's §4.2/§4.4 for the full contract.
 
+### Editing stored weights
+
+On a VINDEX3 container, `UPDATE WEIGHTS` edits real elements of one stored tensor. The container is never
+modified; `COMPILE` writes a new one.
+
+```sql
+USE "qwen3-0.6b-q8_0.vindex3";
+
+-- Optional: record the edit so it can be saved, shared and reapplied.
+BEGIN PATCH "wsp001.vlp";
+
+UPDATE WEIGHTS SET DELTA = 0.0078125
+  WHERE TENSOR = "26.mlp.down_proj.weight" AND ROW = 100
+    AND COL IN (200, 201, 202, 203, 204, 206, 207);
+
+SAVE PATCH;                                   -- writes wsp001.vlp (version 2)
+COMPILE CURRENT INTO VINDEX "qwen3-edited.vindex3";
+```
+
+In another session, the same edit applies to the same container and produces the same bytes:
+
+```sql
+USE "qwen3-0.6b-q8_0.vindex3";
+APPLY PATCH "wsp001.vlp";       -- refused for any other container, or if the file was altered
+COMPILE CURRENT INTO VINDEX "qwen3-edited.vindex3";
+REMOVE PATCH "wsp001.vlp";      -- before COMPILE: nothing remains staged
+```
+
+The delta is added to the stored value and rounded once to bfloat16 (ties to even). Applying a patch twice, or
+two patches that touch one element, is refused. Quantised representations are re-derived from the edited
+weights. See the spec (§3.5.1) for the limits and for what is and is not verified.
+
 ## Statement Reference
 
 | Category | Statements |
@@ -350,7 +392,7 @@ apology. See the spec's §4.2/§4.4 for the full contract.
 | Browse | WALK, DESCRIBE, SELECT, EXPLAIN WALK |
 | Inference | INFER (with TOP, GENERATE, ROUTE, COMPARE), EXPLAIN INFER |
 | Trace | TRACE (with FOR, DECOMPOSE, LAYERS, POSITIONS, SAVE; plain form on VINDEX3) |
-| Mutation | INSERT, DELETE, UPDATE, MERGE |
+| Mutation | INSERT, DELETE, UPDATE, UPDATE WEIGHTS (VINDEX3), MERGE |
 | Patches | BEGIN PATCH, SAVE PATCH, APPLY PATCH, SHOW PATCHES, REMOVE PATCH |
 | Introspection | SHOW RELATIONS/LAYERS/FEATURES/MODELS/PATCHES, STATS |
 | Pipe | `\|>` chains two statements |

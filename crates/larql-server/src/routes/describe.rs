@@ -280,9 +280,9 @@ async fn describe_with_cache(
     responses(
         (status = 200, description = "Edges for the queried entity", body = crate::openapi::schemas::DescribeResponse),
         (status = 304, description = "Not modified (ETag match)"),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_describe(
@@ -304,11 +304,11 @@ pub async fn handle_describe(
         DescribeParams,
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::DescribeResponse),
-        (status = 304),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::DescribeResponse),
+        (status = 304, description = "Not modified"),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_describe_multi(

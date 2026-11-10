@@ -12,7 +12,9 @@
 //! Flag surface:
 //!   <model>         required; vindex directory, VINDEX3 container,
 //!                   `hf://owner/name`, or a cache shorthand
-//!                   (e.g. `gemma-3-4b-it-vindex`).
+//!                   (e.g. `gemma-3-4b-it-vindex`). An `hf://` repo
+//!                   that is a raw checkpoint is encoded to VINDEX3
+//!                   once (`hf_auto`) and run from the encoded cache.
 //!   [prompt]        optional; enters chat mode if omitted.
 //!   -n, --top N     number of predictions to show (default 10).
 //!   --ffn URL       route FFN to a remote larql-server.
@@ -84,7 +86,9 @@ pub fn parse_kv_cache(s: &str) -> Result<KvCacheKind, String> {
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// Vindex directory, `hf://owner/name`, or cache shorthand.
+    /// Vindex directory, `hf://owner/name`, or cache shorthand. An
+    /// `hf://` Hugging Face checkpoint (not a vindex) is encoded to
+    /// VINDEX3 on first use and cached.
     pub model: String,
 
     /// Prompt text. Omit to enter chat mode (line-by-line stdin).
@@ -100,6 +104,14 @@ pub struct RunArgs {
     /// `--metal` for Q4K speed.
     #[arg(short = 'n', long = "max-tokens", default_value = "64")]
     pub max_tokens: usize,
+
+    /// VINDEX3 only: send the prompt verbatim as a plain completion,
+    /// without the chat template the container carries. By default a
+    /// VINDEX3 run (one-shot and chat) renders each turn through that
+    /// template. VINDEX2 runs read `LARQL_RAW_PROMPT=1` for the same
+    /// choice and refuse this flag.
+    #[arg(long)]
+    pub raw: bool,
 
     /// KV cache strategy for autoregressive decode (legacy flag).
     ///
@@ -440,6 +452,13 @@ pub fn run(mut args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     if !args.v3_shards.is_empty() || !args.v3_ffn_shards.is_empty() || args.v3_profile.is_some() {
         return Err(
             "--v3-shards, --v3-ffn-shards and --v3-profile require a VINDEX3 container".into(),
+        );
+    }
+    if args.raw {
+        return Err(
+            "--raw applies to a VINDEX3 container; a VINDEX2 run reads LARQL_RAW_PROMPT=1 \
+             to send the prompt without its chat template"
+                .into(),
         );
     }
 

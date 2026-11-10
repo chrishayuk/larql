@@ -5,12 +5,15 @@
 
 mod backend;
 mod compact;
+mod extract_hint;
 mod helpers;
 mod introspection;
 mod knowledge;
 mod lifecycle;
 mod memit_persist;
+pub mod model_resolver;
 mod mutation;
+mod predicate;
 pub(crate) mod query;
 mod relation_resolver;
 mod remote;
@@ -27,6 +30,9 @@ use std::path::PathBuf;
 use crate::ast::*;
 use crate::capability::CapabilityProfile;
 use crate::error::LqlError;
+
+pub mod balance_trace;
+pub mod install_fault;
 
 pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
 
@@ -85,6 +91,12 @@ pub struct Session {
     pub(crate) verifier: Option<std::path::PathBuf>,
     /// `VERIFY REPRESENTATION` statements in this session that reported `violated`.
     pub(crate) contract_violations: usize,
+    /// Observer of COMPOSE balance passes, if one is set. See [`crate::balance_trace`].
+    pub(crate) balance_trace: crate::executor::balance_trace::ObserverSlot,
+    /// Fault armed for the next COMPOSE install, if any. See [`crate::install_fault`].
+    pub(crate) install_fault: crate::executor::install_fault::FaultSlot,
+    /// Resolves a `USE` literal that is not a path. See [`model_resolver`].
+    pub(crate) model_resolver: Option<model_resolver::ModelResolver>,
 }
 
 impl Default for Session {
@@ -109,7 +121,30 @@ impl Session {
             mutations_since_major: 0,
             verifier: None,
             contract_violations: 0,
+            balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
+            install_fault: crate::executor::install_fault::FaultSlot::default(),
+            model_resolver: None,
         }
+    }
+
+    /// Sets (or, with `None`, removes) the hook `USE` asks about a literal
+    /// that is not an existing path. See [`model_resolver`].
+    pub fn set_model_resolver(&mut self, resolver: Option<model_resolver::ModelResolver>) {
+        self.model_resolver = resolver;
+    }
+
+    /// Sets (or, with `None`, removes) the observer of COMPOSE balance passes. It only observes:
+    /// installs are bit-identical with and without it. See [`crate::balance_trace`].
+    pub fn set_balance_observer(
+        &mut self,
+        observer: Option<Box<dyn crate::executor::balance_trace::BalanceObserver>>,
+    ) {
+        self.balance_trace.set(observer);
+    }
+
+    /// How many times a balance observer panicked and was detached in this session.
+    pub fn balance_observer_failures(&self) -> usize {
+        self.balance_trace.failures()
     }
 
     /// Ensure a patch session is active. If not, auto-start an anonymous one.
@@ -315,18 +350,20 @@ impl Session {
                 route,
                 generate,
             } => self.exec_infer(prompt, *top, *compare, route.as_ref(), *generate),
-            Statement::Delete { conditions } => {
-                let mut out = self.ensure_patch_session();
-                out.extend(self.exec_delete(conditions)?);
-                self.advance_epoch();
-                Ok(out)
-            }
-            Statement::Update { set, conditions } => {
-                let mut out = self.ensure_patch_session();
-                out.extend(self.exec_update(set, conditions)?);
-                self.advance_epoch();
-                Ok(out)
-            }
+            // DELETE and UPDATE open the auto-patch themselves, once the
+            // WHERE clause is validated and has matched something: a
+            // refused or no-op statement leaves the session as it was.
+            // (they also advance the epoch themselves, only on a change).
+            Statement::Delete { conditions } => self.exec_delete(conditions),
+            Statement::Update { set, conditions } => self.exec_update(set, conditions),
+            // A direct weight edit stages without starting an anonymous patch:
+            // it is recorded only when a named BEGIN PATCH recording is open.
+            Statement::UpdateWeights {
+                tensor,
+                row,
+                cols,
+                delta,
+            } => self.exec_update_weights(tensor, *row, cols, *delta),
             Statement::Merge {
                 source,
                 target,
@@ -461,8 +498,18 @@ impl Session {
             _ => "unknown".into(),
         };
 
+        // A patch that carries stored-weight edits is version 2: the op is
+        // additive, and a reader that does not know it refuses the file.
+        let weight_edits: usize = recording
+            .operations
+            .iter()
+            .map(|op| match op {
+                larql_vindex::PatchOp::WeightDelta(w) => w.edits.len(),
+                _ => 0,
+            })
+            .sum();
         let patch = larql_vindex::VindexPatch {
-            version: 1,
+            version: if weight_edits > 0 { 2 } else { 1 },
             base_model: model_name,
             base_checksum: None,
             created_at: String::new(),
@@ -480,8 +527,13 @@ impl Session {
 
         self.auto_patch = false;
 
+        let weights = if weight_edits > 0 {
+            format!(", {weight_edits} weight edit(s) bound to the source container")
+        } else {
+            String::new()
+        };
         Ok(vec![format!(
-            "Saved: {} ({} inserts, {} updates, {} deletes)",
+            "Saved: {} ({} inserts, {} updates, {} deletes{weights})",
             path.display(),
             ins,
             upd,
@@ -509,6 +561,39 @@ impl Session {
             patch.description = Some(path.to_string());
         }
 
+        // Stored-weight ops are bound to the exact container they were written
+        // against. Check that before anything is applied.
+        let weight_ops: Vec<&larql_vindex::format::vindex3::weight_patch::WeightDeltaOp> = patch
+            .operations
+            .iter()
+            .filter_map(|op| match op {
+                larql_vindex::PatchOp::WeightDelta(w) => Some(w),
+                _ => None,
+            })
+            .collect();
+        let weight_edits: usize = weight_ops.iter().map(|w| w.edits.len()).sum();
+        if !weight_ops.is_empty() {
+            match &self.backend {
+                Backend::Vindex3 {
+                    path: container, ..
+                } => {
+                    for op in &weight_ops {
+                        op.check_intact()
+                            .and_then(|()| op.check_binding(container))
+                            .map_err(|e| {
+                                LqlError::Execution(format!("failed to apply patch: {e}"))
+                            })?;
+                    }
+                }
+                Backend::Vindex { .. } => return Err(LqlError::Execution(
+                    "failed to apply patch: it edits the stored weights of a VINDEX3 container, \
+                         and this session is bound to a VINDEX2 vindex"
+                        .into(),
+                )),
+                _ => return Err(LqlError::NoBackend),
+            }
+        }
+
         // Apply through the session overlay (base files untouched).
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {
@@ -526,8 +611,13 @@ impl Session {
             _ => return Err(LqlError::NoBackend),
         }
 
+        let weights = if weight_edits > 0 {
+            format!("; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE")
+        } else {
+            String::new()
+        };
         Ok(vec![format!(
-            "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes)"
+            "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes{weights})"
         )])
     }
 
@@ -572,6 +662,17 @@ impl Session {
                 out.push(format!(
                     "  Total: {} from files, {} in session",
                     file_total, overlay_total
+                ));
+            }
+        }
+
+        if let Backend::Vindex3 { overlay, .. } = &self.backend {
+            let ops = overlay.weight_ops();
+            if !ops.is_empty() {
+                out.push(format!(
+                    "  Stored-weight edits: {} element(s) in {} op(s), pending COMPILE",
+                    overlay.weight_edit_count(),
+                    ops.len()
                 ));
             }
         }

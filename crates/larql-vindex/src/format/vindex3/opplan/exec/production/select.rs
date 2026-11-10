@@ -6,7 +6,7 @@ use super::super::backend::{
 use super::super::cpu::physical::{project_matrix, KQuantExecution};
 use super::super::cpu::PhysicalProjectionPlan;
 use super::super::kernels::{gather_fused_half, FusedHalf};
-use super::super::observe::AttentionHeadRecord;
+use super::super::observe::{AttentionHeadRecord, UnpositionedQk};
 use super::super::realization::{
     class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
     RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
@@ -26,6 +26,17 @@ impl ProductionBackend {
         call: &AttentionCall<'_>,
         position: usize,
         pre: &[f32],
+    ) -> Result<ProjectedAttention, VindexError> {
+        Self::project_position_keeping(call, position, pre, None)
+    }
+
+    /// [`Self::project_position`], copying Q and K into `keep` immediately
+    /// before position encoding when asked (PREC-DIAG-1 E0a).
+    pub(in super::super) fn project_position_keeping(
+        call: &AttentionCall<'_>,
+        position: usize,
+        pre: &[f32],
+        keep: Option<&mut UnpositionedQk>,
     ) -> Result<ProjectedAttention, VindexError> {
         let head_dim = call.head_dim;
         let q_rows = call.num_q_heads * head_dim;
@@ -67,7 +78,7 @@ impl ProductionBackend {
         let mut v = project_matrix(&call.w_v, pre, kv_rows, call.hidden)?;
         add_projection_biases(call, &mut q, &mut k, &mut v);
         condition_v_in_place(call, &mut v);
-        condition_qk_in_place(call, position, &mut q, &mut k)?;
+        condition_qk_in_place_keeping(call, position, &mut q, &mut k, keep)?;
         Ok(ProjectedAttention {
             qkv: (q, k, v),
             gate,
@@ -219,33 +230,39 @@ impl ProductionBackend {
     ) -> Result<AttentionStepOut, VindexError> {
         let call = &step.op;
         let pre = &call.inputs[0];
+        // PREC-DIAG-1 E0a: with a tap armed, keep the pre-rotation Q/K
+        // and attach them to each head record. Unarmed, nothing is kept.
+        let mut unpositioned = tap.is_some().then(UnpositionedQk::default);
         let ProjectedAttention {
             qkv: (q, k, v),
             gate,
-        } = Self::project_position(call, step.position, pre)?;
-        let output = Self::attend_position_tapped(
-            call,
-            step.position,
-            &q,
-            |p| {
-                if p == step.position {
-                    k.as_slice()
-                } else {
-                    step.rows().key(p)
-                }
-            },
-            |p| {
-                if p == step.position {
-                    v.as_slice()
-                } else {
-                    step.rows().value(p)
-                }
-            },
-            pre,
-            gate.as_deref(),
-            tap,
-            head_intervene,
-        )?;
+        } = Self::project_position_keeping(call, step.position, pre, unpositioned.as_mut())?;
+        let output =
+            UnpositionedQk::run_attached(unpositioned.as_ref(), call.head_dim, tap, |tap| {
+                Self::attend_position_tapped(
+                    call,
+                    step.position,
+                    &q,
+                    |p| {
+                        if p == step.position {
+                            k.as_slice()
+                        } else {
+                            step.rows().key(p)
+                        }
+                    },
+                    |p| {
+                        if p == step.position {
+                            v.as_slice()
+                        } else {
+                            step.rows().value(p)
+                        }
+                    },
+                    pre,
+                    gate.as_deref(),
+                    tap,
+                    head_intervene,
+                )
+            })?;
         Ok(AttentionStepOut {
             key: k,
             value: v,
@@ -380,6 +397,14 @@ pub(crate) fn select_cpu_with(
         Direct(plan)
     } else if plan.format() == WeightFormat::F32 {
         Decode(plan)
+    } else if facts.requantise_forbidden && has(Direct(PhysicalProjectionPlan::FusedBf16)) {
+        // `stored` forbids the requantised image the size policy wanted;
+        // the stored bf16 bytes run directly instead, at higher precision
+        // than asked, and nothing is manufactured (#665).
+        return pick(
+            RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedBf16)),
+            SelectionReason::SourcePrecisionHeld,
+        );
     } else {
         Requantise(plan)
     };

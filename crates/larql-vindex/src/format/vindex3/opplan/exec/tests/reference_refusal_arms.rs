@@ -58,6 +58,7 @@ fn call<'a>(
         gate: None,
         bias: None,
         sinks: None,
+        rope_angles: Default::default(),
     }
 }
 

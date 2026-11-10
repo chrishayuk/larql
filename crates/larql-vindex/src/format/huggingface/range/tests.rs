@@ -492,3 +492,155 @@ fn an_empty_token_variable_is_no_token_at_all() {
     got.expect("an empty variable must not become an empty bearer")
         .expect("the file is served");
 }
+
+// ── exists: a HEAD, never a download ──────────────────────────────────
+
+/// The resolve path the client asks for `FIXTURE_FILE`.
+fn fixture_path() -> String {
+    format!("/{MOCK_REPO}/resolve/{MOCK_REVISION}/{FIXTURE_FILE}")
+}
+
+/// Point the client at a fresh mock server; restores `HF_ENDPOINT` on drop.
+struct Endpoint {
+    server: mockito::ServerGuard,
+    prev: Option<String>,
+}
+
+impl Endpoint {
+    fn new() -> Self {
+        let server = mockito::Server::new();
+        let prev = std::env::var("HF_ENDPOINT").ok();
+        std::env::set_var("HF_ENDPOINT", server.url());
+        Self { server, prev }
+    }
+}
+
+impl Drop for Endpoint {
+    fn drop(&mut self) {
+        match self.prev.take() {
+            Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+            None => std::env::remove_var("HF_ENDPOINT"),
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn existence_is_a_head_and_transfers_no_body() {
+    // The control: a GET for the same file would succeed with the whole
+    // body, so a client that probed by downloading would also answer
+    // `true` — only the request counts tell the two apart.
+    let mut endpoint = Endpoint::new();
+    let head = endpoint
+        .server
+        .mock("HEAD", fixture_path().as_str())
+        .with_status(200)
+        .expect(1)
+        .create();
+    let get = endpoint
+        .server
+        .mock("GET", fixture_path().as_str())
+        .with_status(200)
+        .with_body(vec![0u8; FIXTURE_LEN])
+        .expect(0)
+        .create();
+
+    assert!(client().exists(FIXTURE_FILE).unwrap());
+    head.assert();
+    get.assert();
+}
+
+#[test]
+#[serial]
+fn a_404_is_absence_not_failure() {
+    let mut endpoint = Endpoint::new();
+    let _head = endpoint
+        .server
+        .mock("HEAD", fixture_path().as_str())
+        .with_status(404)
+        .create();
+    assert!(!client().exists(FIXTURE_FILE).unwrap());
+}
+
+#[test]
+#[serial]
+fn a_redirect_is_existence_and_is_not_followed() {
+    // An LFS file answers with a redirect to a URL signed for GET; the
+    // redirect alone says the file exists, and following it would HEAD a
+    // URL that refuses the method.
+    let mut endpoint = Endpoint::new();
+    let storage = format!("{}/storage/blob", endpoint.server.url());
+    let _head = endpoint
+        .server
+        .mock("HEAD", fixture_path().as_str())
+        .with_status(302)
+        .with_header("location", &storage)
+        .create();
+    let followed = endpoint
+        .server
+        .mock("HEAD", "/storage/blob")
+        .with_status(403)
+        .expect(0)
+        .create();
+    assert!(client().exists(FIXTURE_FILE).unwrap());
+    followed.assert();
+}
+
+#[test]
+#[serial]
+fn a_gated_answer_is_an_error_naming_the_status_not_absence() {
+    let mut endpoint = Endpoint::new();
+    let _head = endpoint
+        .server
+        .mock("HEAD", fixture_path().as_str())
+        .with_status(401)
+        .create();
+    let err = client()
+        .exists(FIXTURE_FILE)
+        .expect_err("a 401 is not an absence");
+    let message = err.to_string();
+    assert!(
+        message.contains("401") && message.contains(FIXTURE_FILE),
+        "{message}"
+    );
+}
+
+#[test]
+#[serial]
+fn the_existence_probe_sends_the_token_as_a_bearer() {
+    let prev_token = std::env::var("HF_TOKEN").ok();
+    std::env::set_var("HF_TOKEN", "hf_probe_token");
+    let mut endpoint = Endpoint::new();
+    let head = endpoint
+        .server
+        .mock("HEAD", fixture_path().as_str())
+        .match_header("authorization", "Bearer hf_probe_token")
+        .with_status(200)
+        .expect(1)
+        .create();
+    let answer = client().exists(FIXTURE_FILE);
+    match prev_token {
+        Some(prev) => std::env::set_var("HF_TOKEN", prev),
+        None => std::env::remove_var("HF_TOKEN"),
+    }
+    assert!(answer.expect("the probe carries the token"));
+    head.assert();
+}
+
+#[test]
+#[serial]
+fn an_unreachable_host_is_an_error_naming_the_url() {
+    let prev = std::env::var("HF_ENDPOINT").ok();
+    // Port 9 (discard) on loopback: nothing listens, the connect fails.
+    std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:9");
+    let answer = client().exists(FIXTURE_FILE);
+    match prev {
+        Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+        None => std::env::remove_var("HF_ENDPOINT"),
+    }
+    let message = answer.expect_err("no host, no answer").to_string();
+    assert!(
+        message.contains("probe") && message.contains(FIXTURE_FILE),
+        "{message}"
+    );
+}

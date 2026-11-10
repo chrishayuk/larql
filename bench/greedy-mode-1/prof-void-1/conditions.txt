@@ -1,0 +1,3 @@
+18:11:45 === GREEDY-MODE-1 === binary /Users/christopherhay/chris-source/larql/.claude/worktrees/vindex-cov-1/results/greedy-mode-1/larql-bin 163c1fe03f3ce2a9 commit 266168a6 | load 3.41 | 'Battery Power' | cpu-limit 
+19:52:49 warm start | load 3.52 | 'AC Power' | cpu-limit 
+19:52:57 warm CONTAMINATED by [6730 Python 55.0% sustained] | load 3.36 | 'AC Power' | cpu-limit 

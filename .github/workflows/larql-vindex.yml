@@ -12,6 +12,8 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-vindex/**'
+      # the macOS `gpu` check compiles against larql-compute-metal's API (#508)
+      - 'crates/larql-compute-metal/**'
       - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
       - 'crates/larql-compute/src/cpu/ops/q4k_q8k_dot.rs'
       - 'Cargo.toml'
@@ -22,6 +24,8 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-vindex/**'
+      # the macOS `gpu` check compiles against larql-compute-metal's API (#508)
+      - 'crates/larql-compute-metal/**'
       - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
       - 'crates/larql-compute/src/cpu/ops/q4k_q8k_dot.rs'
       - 'Cargo.toml'

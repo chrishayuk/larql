@@ -1,8 +1,35 @@
-# docs/
+# LARQL documentation
 
-**Class: CURRENT — index.** Start with the maintained VINDEX3 overview below.
-Linked specifications and research records retain their own dates and status;
-indexing a proposal does not make it an implemented capability.
+**Class: CURRENT — index.**
+
+## Start here
+
+| Guide | For |
+|---|---|
+| [Getting started](getting-started.md) | Install, get a model, run, serve and look inside it, with expected output at each step |
+| [LQL guide](lql-guide.md) | Querying and editing a model with LQL |
+| [Glossary](glossary.md) | What VINDEX3, carrier, representation, lens and the other terms mean |
+| [What is VINDEX3?](vindex3/what-is-vindex3.md) | The idea behind the format, in one page |
+| [Status](vindex3/status.md) | What works today and what is still research |
+
+## Using LARQL
+
+| Guide | Purpose |
+|---|---|
+| [Execution](vindex3/execution.md) | Encode, execute, record and serve a VINDEX3 model |
+| [Runtime and serving](vindex3-runtime.md) | The runtime stack and the OpenAI-compatible HTTP API |
+| [Representation](vindex3/representation.md) | Compile smaller representations (`represent`) and measure their cost (`token-bank`, `measure`) |
+| [Observation and intervention](vindex3/observation-and-intervention.md) | Run records, lenses, and what they can and can't establish |
+| [Plugins](vindex3/plugins.md) | Codecs, encoders and backends loaded from shared libraries (`--plugin`) |
+| [CLI guide](cli.md) | The broader `larql` command reference |
+| [Python](../crates/larql-python/README.md) | Python bindings |
+
+## Reference
+
+Everything below is reference material: architecture, specifications, and
+the project's research record. Research protocols and results keep their own
+dates and status; a document appearing here does not mean the capability it
+describes is implemented.
 
 | Workspace guide | Purpose |
 |---|---|
@@ -30,7 +57,7 @@ reports), [diagnoses/](diagnoses/) (root-cause write-ups),
 [ffn/](ffn/README.md) (FFN backend docs — weight, sparse, walk,
 distributed).
 
-## Formats and specs
+## Formats, specs and research records
 
 | Doc | One line |
 |---|---|
@@ -52,6 +79,12 @@ distributed).
 | [gw-key-1.md](gw-key-1.md) | GW-KEY-1 — frozen source-role K/V causality protocol through immutable L24H1 |
 | [gw-read-1-results.md](gw-read-1-results.md) | GW-READ-1 — cached Q/K pass, while V construction, composition and economical execution fail |
 | [gw-v2-results.md](gw-v2-results.md) | GW-V2 — sealed 35-cell causal payload surface with no registered early frontier |
+| [gw-state-1-results.md](gw-state-1-results.md) | GW-STATE-1 — carrier-plus-edge result, with the historical fallback erratum recorded separately |
+| [gw-car-1a-results.md](gw-car-1a-results.md) | GW-CAR-1A — captured-carrier compactness: sparse top-32 clears at 192 bytes; no cheap-construction claim |
+| [gw-car-1b.md](gw-car-1b.md) | GW-CAR-1B — original source-design draft and rationale; executable protocol and closed result follow below |
+| [gw-car-1b-execution.md](gw-car-1b-execution.md) | GW-CAR-1B — executable capital-cohort protocol: 67 fresh subjects, 20 sources/controls, and a 104-readout simultaneous family |
+| [gw-car-1b-results.md](gw-car-1b-results.md) | GW-CAR-1B — 0/10 registered sources clear; the zero control clears and the top-32 oracle fails on fresh capitals |
+| [gw-car-1b-evidence-archive.md](gw-car-1b-evidence-archive.md) | GW-CAR-1B — where the 57 raw output files are archived (registry run, R2 object, SHA-256 manifest) and how to retrieve and verify them |
 | [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
 | [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |
@@ -96,7 +129,7 @@ distributed).
 | [findings.md](findings.md) | Research findings from querying Gemma 3 4B weight vectors |
 | [walk-boundary-sweep.md](walk-boundary-sweep.md) | Walk boundary sweep — correctness across all layer boundaries |
 
-## Programmes and funnels
+## Research programmes and funnels
 
 | Doc | One line |
 |---|---|

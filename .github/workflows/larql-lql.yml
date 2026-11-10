@@ -19,6 +19,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'Makefile'
+      - 'scripts/check_coverage_policy.py'
       - '.github/workflows/larql-lql.yml'
   pull_request:
     branches: [main]
@@ -31,6 +32,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'Makefile'
+      - 'scripts/check_coverage_policy.py'
       - '.github/workflows/larql-lql.yml'
   workflow_dispatch: {}
 
@@ -150,4 +152,4 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Coverage summary
-        run: cargo llvm-cov --package larql-lql --summary-only
+        run: make larql-lql-coverage-summary

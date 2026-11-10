@@ -12,10 +12,14 @@ categories = ["data-structures", "encoding"]
 [dependencies]
 larql-models = { path = "../larql-models" }
 larql-vindex-spec = { path = "../larql-vindex-spec" }
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = "0.9"
+# Safe-Rust YAML (`#![forbid(unsafe_code)]`), replacing the deprecated
+# `serde_yaml` 0.9 whose `unsafe-libyaml` backend is unmaintained
+# (RUSTSEC-2024-0449, #663). Default features minus `comments`, which
+# only matters for comment capture this crate does not use.
+serde-saphyr = { version = "2.1.1", default-features = false, features = ["serialize", "deserialize"] }
 sha2 = "0.10"
 thiserror = { workspace = true }
 

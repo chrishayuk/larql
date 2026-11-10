@@ -312,9 +312,10 @@ SELECT [<fields>]
 
 -- Query edges in the vindex.
 -- Fields: entity, relation, target, layer, feature, confidence, gate
+-- (output columns; what WHERE may constrain is listed under "Operators")
 --
--- WHERE relation = "<word>" matches the stored relation label exactly. If an
--- exact match finds nothing, FR3 synonym resolution kicks in: the relation word
+-- WHERE relation = "<word>" matches the stored relation label (substring, in
+-- either direction, ignoring case). If that finds nothing, FR3 synonym resolution kicks in: the relation word
 -- is resolved to a known relation BY MEANING (a trained residual probe — "seat"
 -- → capital, "money" → currency) and the query re-runs against the canonical
 -- relation, printing a note. Needs a vindex with model weights + relation
@@ -524,26 +525,30 @@ REBALANCE UNTIL CONVERGED MAX 16 FLOOR 0.30 CEILING 0.90;
 DELETE FROM EDGES
     WHERE <conditions>
 
-DELETE FROM EDGES
+-- List first, then address the slot the listing shows.
+SELECT * FROM EDGES
     WHERE entity = "John Coyle"
     AND relation = "lives-in";
+DELETE FROM EDGES
+    WHERE layer = 26 AND feature = 8821;
 ```
 
-`relation` predicates require relation labels in the active vindex
-(`relation_clusters.json` / probe labels). On unlabeled vindexes, target by
-`layer` + `feature` or omit the relation predicate.
+A mutation does not combine `entity` and `relation`: SELECT resolves that
+pair by a ranked gate walk (see "Operators"), which is too broad to delete
+or update by. `relation` predicates require relation labels in the active
+vindex (`relation_clusters.json` / probe labels). On unlabeled vindexes,
+target by `layer` + `feature` or omit the relation predicate.
 
 ```
 UPDATE EDGES
     SET <field> = <value> [, <field> = <value>]...
     WHERE <conditions>
 
--- Update by entity (matches the feature whose top_token contains the entity).
--- Works on both heap-resident and mmap-loaded vindexes.
+-- Update by entity (matches the features whose current top token
+-- contains the entity). Works on heap-resident and mmap-loaded vindexes.
 UPDATE EDGES
     SET target = "London"
-    WHERE entity = "John Coyle"
-    AND relation = "lives-in";
+    WHERE entity = "John Coyle";
 
 -- Fast path: explicit (layer, feature) bypasses the entity scan and
 -- targets the slot directly. Use this when you already know which
@@ -646,6 +651,33 @@ COMPILE {CURRENT | <vindex_path>} INTO VINDEX <output_path>
 --   FAIL:                 abort if any slot has a conflicting write.
 -- ON CONFLICT is only valid for COMPILE INTO VINDEX, not COMPILE INTO MODEL.
 --
+-- <output_path> must be a fresh destination. This holds for COMPILE INTO
+-- VINDEX, COMPILE INTO MODEL and COMPACT INTO VINDEX, on both generations:
+--   - it may be absent (missing parents are created) or an existing EMPTY
+--     directory;
+--   - a directory that already holds anything is refused and left as it
+--     was — a previously compiled vindex included. Nothing is ever
+--     replaced; remove the old output yourself, or pick a new path;
+--   - the source itself, a directory containing it, a path inside it, and
+--     a symbolic link are refused (symlinks in the path are resolved first).
+-- The result is built in a hidden sibling directory and renamed into
+-- place: a refused or failed statement leaves <output_path> as it was,
+-- and removes the parents it created (the stored-weight COMPILE below
+-- may leave created parent directories behind).
+-- EXTRACT … INTO checks its destination by the same rule, before any
+-- model bytes move, but writes in place: an EXTRACT that fails part-way
+-- leaves a partial directory, which a re-run refuses as non-empty (a
+-- VINDEX3 EXTRACT whose result fails closure removes its output).
+-- "Renamed into place" is atomic publication, not crash durability: the
+-- staged files are not fsync'd, so after a power loss the output may be
+-- missing or incomplete (never mixed with older contents — there are
+-- none). The destination check and the promotion are separate steps; a
+-- path changed by another process in between is not defended against,
+-- beyond promotion failing if the destination gained contents.
+-- One path is stricter: a VINDEX3 COMPILE that carries stored-weight
+-- edits (UPDATE WEIGHTS) also refuses an existing empty directory — its
+-- output must not exist.
+--
 -- A subsequent USE on the compiled vindex needs no special loader code:
 -- it loads like any other vindex and INFER produces the inserted facts
 -- through the standard dense FFN path. From this point you can also run
@@ -680,6 +712,64 @@ COMPILE CURRENT INTO MODEL "gemma3-4b-edited/" FORMAT safetensors;
 > The compile path currently keeps last-wins semantics for down vectors
 > regardless of the strategy chosen, but FAIL fully detects collisions
 > and HIGHEST_CONFIDENCE is accepted for forward compatibility.
+
+### 3.5.1 Stored-weight edits (VINDEX3)
+
+```sql
+UPDATE WEIGHTS SET DELTA = <number>
+  WHERE TENSOR = "<name>" AND ROW = <n> AND COL = <n>;
+UPDATE WEIGHTS SET DELTA = <number>
+  WHERE TENSOR = "<name>" AND ROW = <n> AND COL IN (<n>, <n>, …);
+```
+
+Edits real elements of one stored BF16 matrix in the bound VINDEX3 container. It is **not** a
+knowledge edit: no retrieval entry, no feature slot, no overlay that execution reads. The edit exists
+only in the container `COMPILE CURRENT INTO VINDEX "<out>"` writes; `INFER` in the staging session does
+not see it.
+
+- **Tensor** is the name in the container's segment table (for example `26.mlp.down_proj.weight`),
+  held by exactly one canonical representation. `ROW` and `COL` index the matrix.
+- **Rounding.** A patched element is `RNE_bf16(old + delta)`: the stored bfloat16 and the `f32` delta are
+  added as real numbers and rounded **once** to the nearest bfloat16, ties to even. The delta applies to
+  the value in the bound container, so staging never accumulates. The delta's exact `f32` bits are what
+  is recorded; the lexer reads the number as a double and narrows it.
+- **Bounded and restrictive.** One tensor per compile, at most 4096 elements, finite deltas, no
+  duplicate elements, no edits that overflow bfloat16. Anything else is refused by name, at staging, and
+  stages nothing. The source must be a canonical container with no alternate variants and no prior
+  weight-patch ledger.
+- **Conflicts.** Two edits to one element, whether staged directly or carried by applied patches, are
+  refused. Edits are not composed.
+- **Not combined with knowledge edits.** `COMPILE` refuses to write stored-weight edits and
+  `INSERT`/`UPDATE EDGES`/`DELETE` state into one container.
+- **Direct or in a patch.** A staged edit is also recorded into a `BEGIN PATCH` recording when one is
+  open (a direct edit does not start an anonymous patch). `SAVE PATCH` writes it as a `weight_delta`
+  operation and the patch file is version 2.
+
+#### The `weight_delta` patch operation
+
+A `.vlp` operation `{"op": "weight_delta", …}` carries the tensor, every `(row, col, delta, delta_bits)`,
+the rounding rule, and a **source binding**: the SHA-256 of the source container's `index.json`, the
+canonical representation id, and the SHA-256 of its payload. It also carries a digest over its own
+fields. `APPLY PATCH` refuses an op whose digest does not match its contents, whose rounding rule this
+build does not implement, or whose binding is not the bound container: the model name alone is not an
+identity. A reader that does not know the op refuses the whole patch. The digest detects damage and
+casual edits; it is not a signature. A VINDEX2 session refuses a patch that carries the op.
+
+#### What `COMPILE` writes
+
+The edited canonical segment is rewritten; every other segment is hard-linked. Derived representations of
+that object (for example the Q8_0 pack) are re-derived from the **edited** weights by the compiler that
+made them, so a derived pack never describes weights the container does not hold. The result is
+inspected, then renamed into place: complete, or nothing. The `model` identity is unchanged.
+`weight_patches.json` (named by the index's `weight_patches` field) records the source, every edit with
+its exact old and new bits, the digests of the edited canonical and re-derived representations, and the
+digests of the patch operations the edit came from.
+
+`inspect_container` checks the ledger against the catalogue and the stored bytes at the edited elements.
+That is **consistency of the description**, not a verdict on the patch. Whether the container implements
+the declared edit is a claim for an independent verifier, and a representation contract measured against
+the **unedited** upstream checkpoint (for example `Q8_0_T2`) will correctly report the edited elements:
+measure the new representation against the edited canonical weights the ledger names.
 
 ### 3.6 Schema Introspection Statements
 
@@ -904,6 +994,17 @@ An error outranks a violation, so a script with both exits 1. A script keeps run
 statement, as it always has, and the status reflects all of them. So a contract that could not be
 evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
 
+**After a failure, a script writes nothing.** Once any statement has failed, every later statement that
+would write an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `COMPACT MAJOR`, which persists the MEMIT
+store into the bound vindex, `SAVE PATCH`, `DIFF … INTO PATCH`, `TRACE … SAVE`, or a pipe containing
+one) is refused with `Error: refused ...` and counts as a failure. Caches filled as a side effect, such
+as a `USE "hf://..."` download, are not artifacts. A violated `VERIFY` contract is a violation, not a
+failure, so it does not stop later writes. This applies to `larql lql` / `run_batch_outcome`, not to the
+interactive REPL.
+Statements that write nothing still run, so every diagnostic is still reported. Without this, a `COMPILE`
+after a refused `APPLY PATCH` wrote an unedited container at the path meant for the edited one, and only
+the exit status said so.
+
 ### 3.8 Comparison Operators
 
 ```
@@ -916,12 +1017,100 @@ evaluated never reads as satisfied, even when the statement after it succeeds. T
 LIKE -- pattern match (% wildcard)
 IN   -- set membership
 
+```
+
+The lexer and parser accept every operator above on any field. What a
+`WHERE` clause on EDGES may actually say is narrower, and it is the same
+for `SELECT … FROM EDGES`, `DELETE FROM EDGES` and `UPDATE EDGES`:
+
+```
+layer    = <non-negative integer>
+feature  = <non-negative integer>
+entity   = <string>
+relation {= | != | LIKE} <string>
+score    {= | != | < | <= | > | >=} <number>     -- alias: confidence
+
 WHERE entity = "France"
 WHERE confidence > 0.5
-WHERE entity LIKE "Fran%"
-WHERE entity IN ("France", "Germany")
-WHERE layer >= 20 AND layer <= 30
+WHERE relation LIKE "capital%"
+WHERE layer = 26 AND feature = 8821
 ```
+
+Conditions are joined with `AND`, at most one per field. A clause is
+validated as a whole before the statement reads or changes anything, and
+a clause containing **any** condition outside this grammar is refused —
+an unknown field, a wrong-typed value, an operator the field does not
+support, or the same field twice:
+
+```
+WHERE entity LIKE "Fran%"                 -- refused: entity takes = only
+WHERE entity IN ("France", "Germany")     -- refused: IN is not evaluated
+WHERE layer >= 20 AND layer <= 30         -- refused: ranges are not evaluated
+WHERE colour = "red"                      -- refused: not a field of EDGES
+```
+
+Nothing is dropped silently: a condition that cannot be evaluated never
+widens the statement to the rows the remaining conditions match. A
+string operand may not be empty (every value contains `""`). On DELETE
+and UPDATE, `layer` and `feature` together name one slot, which must
+exist; a refused statement, or one that matches nothing, changes neither
+the overlay nor the patch session (it does not start the auto-patch).
+
+The other consumers of a `WHERE` clause take a subset, validated the same
+way:
+
+| Statement | Accepted conditions |
+|---|---|
+| `SELECT … FROM FEATURES` | `layer`, `feature`, `entity` (alias `token`) |
+| `SELECT … FROM ENTITIES` | `layer`, `entity` (alias `token`) |
+| `SHOW FEATURES <layer> WHERE …` | `entity` (alias `token`), `score` (alias `confidence`) |
+| `SELECT … NEAREST TO …` | none — a `WHERE` clause is refused |
+| remote `SELECT … FROM EDGES` | `entity =`, `relation =`, `layer =`, `score >=` |
+| remote `DELETE` / `UPDATE` | exactly `layer =` and `feature =` |
+
+**SELECT is the preview of a mutation.** For the same vindex, clause and
+overlay state, `SELECT * FROM EDGES WHERE <clause>` lists exactly the
+feature slots `DELETE` or `UPDATE` with that clause targets (SELECT's
+ORDER BY and LIMIT only arrange and page the listing). One resolver
+serves all three, with these rules:
+
+- Only slots with current metadata are candidates — the overlay's view.
+  A tombstoned slot matches nothing; a relabelled slot matches by its new
+  token.
+- `entity` alone is a case-insensitive **substring of the slot's top
+  token**. The other top-k tokens (the "Also" column) are not matched.
+- `entity` together with `relation` embeds the entity and walks the gates
+  at each layer, keeping hits whose relation label matches; `score` then
+  compares the walk's gate score. Otherwise `score` compares the stored
+  confidence. A slot without metadata has no score, and a NaN score
+  satisfies no score condition.
+- `relation =` matches the stored label as a substring in either
+  direction, ignoring case; `!=` selects slots labelled something else
+  (an unlabelled slot satisfies no relation condition).
+
+Four deliberate differences, each making the mutation the narrower one:
+
+- `entity` together with `relation` is **refused** by DELETE / UPDATE.
+  The gate walk SELECT runs for that pair returns the strongest hits per
+  layer whose label matches — a ranking to read, not a set to destroy.
+  List with SELECT, then address each edge by `layer` and `feature`.
+- A `layer` + `feature` pair naming a slot that does not exist is refused
+  (SELECT lists nothing).
+- A `relation` condition without relation labels loaded is refused
+  (SELECT lists nothing).
+- The FR3 synonym fallback is SELECT's alone: a mutation takes the
+  relation as written.
+
+SELECT pages its listing (20 rows by default) and says so when more edges
+match than it shows; a mutation is never paged.
+
+Incompatible changes from earlier releases: `c_score` is no longer a
+WHERE field (write `score` or `confidence`); DELETE / UPDATE by `entity`
+no longer match a slot's non-top tokens or the base vindex's pre-overlay
+annotations; DELETE / UPDATE with both `entity` and `relation` is refused;
+`SHOW FEATURES … WHERE relation = …` is refused (it filtered on the top
+token; write `token = …`); and conditions that used to be ignored are
+refused.
 
 ---
 

@@ -141,6 +141,14 @@ pub const ALIAS_KEYS: &[(&str, &str)] = &[
     // `layer_types` is genuinely present and consumed in the same
     // config — the gate verifies that, same as every other alias.
     ("full_attention_interval", "layer_types"),
+    // Gemma 3's backward-compatible spelling of the same stride
+    // (`Gemma3TextConfig.__post_init__` stores the declared
+    // `sliding_window_pattern` as `_sliding_window_pattern` and derives
+    // `layer_types` from it only when the array is absent). The 270M
+    // checkpoints serialise both; the array is read, and the period must
+    // corroborate it — `alias_contradicts_canonical` checks it the same
+    // way it checks `full_attention_interval`.
+    ("_sliding_window_pattern", "layer_types"),
 ];
 
 /// Reviewed-and-safe-to-drop keys. Empty by design until a key has actually
@@ -366,6 +374,8 @@ pub enum InertValue {
     /// Inert when the declared array is empty — a schedule that selects
     /// no layers is not a schedule.
     EmptyList,
+    /// Inert when the declared boolean equals this.
+    Bool(bool),
 }
 
 impl InertValue {
@@ -373,6 +383,21 @@ impl InertValue {
         match self {
             Self::Int(want) => value.as_i64() == Some(want),
             Self::EmptyList => value.as_array().is_some_and(|a| a.is_empty()),
+            Self::Bool(want) => value.as_bool() == Some(want),
+        }
+    }
+
+    /// Whether `value` is spelled in this entry's vocabulary at all — an
+    /// integer for [`Self::Int`], an array for [`Self::EmptyList`], a
+    /// boolean for [`Self::Bool`]. A value in the vocabulary that is not
+    /// the inert one is the case the table exists to keep blocking; a
+    /// value in ANOTHER vocabulary is a different declaration under the
+    /// same leaf, and the leaf's name classification answers for it.
+    pub(super) fn speaks_for(self, value: &serde_json::Value) -> bool {
+        match self {
+            Self::Int(_) => value.is_i64() || value.is_u64(),
+            Self::EmptyList => value.is_array(),
+            Self::Bool(_) => value.is_boolean(),
         }
     }
 }
@@ -409,6 +434,17 @@ pub const INERT_AT_VALUE: &[(&str, InertValue)] = &[
     // a default and is one only at one value.
     ("decoder_sparse_step", InertValue::Int(1)),
     ("mlp_only_layers", InertValue::EmptyList),
+    // `Gemma3TextConfig.use_bidirectional_attention` (transformers 5.5):
+    // the TEXT decoder's causal-mask switch. `false` is the causal stack
+    // every text-generation checkpoint runs — exactly what the graph
+    // builds — so it is inert at that value. `true` (EmbeddingGemma)
+    // makes `Gemma3Attention.is_causal` false, overlays a bidirectional
+    // sliding mask and halves the window: a different forward pass, which
+    // keeps blocking. Gemma 4's `"vision"` STRING is a different
+    // declaration under the same leaf — the masking policy over image
+    // spans, an interface fact — and is classified by name as before (see
+    // [`InertValue::speaks_for`]).
+    ("use_bidirectional_attention", InertValue::Bool(false)),
 ];
 
 /// The inert value registered for this leaf, if any.
@@ -430,9 +466,12 @@ pub fn classify_key_at(leaf: &str, value: &serde_json::Value) -> SemanticClass {
         // Inert at this value: declared, preserved, and read by nothing a
         // forward pass runs.
         Some(inert) if inert.matches(value) => SemanticClass::TrainingOnly,
-        // Registered, but holding some OTHER value: this is the case the
-        // table exists to keep blocking.
-        Some(_) => SemanticClass::ExecutionSemantic,
-        None => classify_key(leaf),
+        // Registered, and holding some OTHER value of the same vocabulary:
+        // this is the case the table exists to keep blocking.
+        Some(inert) if inert.speaks_for(value) => SemanticClass::ExecutionSemantic,
+        // A value outside the entry's vocabulary is not a non-inert value
+        // of this fact; the name classification answers, and an unjudged
+        // leaf still grades `Unknown` and blocks.
+        Some(_) | None => classify_key(leaf),
     }
 }

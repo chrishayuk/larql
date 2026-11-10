@@ -709,6 +709,18 @@ pub fn plan_component_ops(
             .then(|| embedding_tensor.clone())
             .flatten()
     });
+    // The primary text model generates: a declared vocabulary with no head
+    // (no tensor, no declared embedding reuse) is a closure defect here,
+    // not a refusal first met at scoring time (#743).
+    if head_tensor.is_none()
+        && !tables.contains_key(&ObjectKind::OutputHead)
+        && surface.head.is_some()
+        && component.role == super::super::graph::ComponentRole::PrimaryText
+    {
+        defects.push(ClosureDefect::NoOutputHead {
+            component: component.id.clone(),
+        });
+    }
     if (embedding_tensor.is_some() || head_tensor.is_some()) && surface.head.is_none() {
         defects.push(ClosureDefect::MissingSurface {
             component: component.id.clone(),

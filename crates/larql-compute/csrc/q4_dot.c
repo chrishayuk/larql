@@ -1,6 +1,12 @@
 // Fused Q4_0 × Q8_0 dot product with ARM dotprod intrinsics.
-// Compiled with clang -O3 -march=armv8.2-a+dotprod.
+// Built as a baseline object and, on aarch64, a dotprod specialization.
 // Called from Rust via FFI — one function, no dependencies.
+
+#if defined(LARQL_DOTPROD_VARIANT)
+#define q4_q8_dot_neon_c q4_q8_dot_dotprod_c
+#define q4_0_matvec_c q4_0_matvec_dotprod_c
+#define q4_0_vecmat_c q4_0_vecmat_dotprod_c
+#endif
 
 #include <stdint.h>
 #include <stddef.h>

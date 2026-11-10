@@ -128,7 +128,8 @@ pub struct LayerDiffArgs {
 /// week once already.
 #[derive(Args)]
 pub struct DecodeDiffArgs {
-    /// Vindex directory to load.
+    /// Vindex to load: a directory, `hf://owner/name`, `owner/name` or a
+    /// cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(value_name = "VINDEX")]
     pub vindex: PathBuf,
 

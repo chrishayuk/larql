@@ -260,10 +260,8 @@ pub(super) fn compile_inner(
         // with the key registered in `index.segments` below.
         let segment_key = format!("{SEGMENTS_DIR}/{target_id}");
         let segment_rel = format!("{segment_key}.{SEGMENT_BIN_EXT}");
-        let out_segment = out.join(&segment_rel);
-        if let Some(parent) = out_segment.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        // `target_id` is an object id from the source container.
+        let out_segment = crate::format::vindex3::container_path::prepare_write(out, &segment_rel)?;
 
         let mut src_file = std::fs::File::open(&src_segment)?;
         let written = write_segment(&out_segment, &target_id, planned, |name, w, tap| {

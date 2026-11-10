@@ -57,6 +57,40 @@ permissions:
   contents: read
 
 jobs:
+  tls-dependencies:
+    name: portable TLS dependency graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Activate the pinned Rust toolchain
+        run: rustup show active-toolchain
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: TLS gate controls
+        run: python3 -m unittest discover -s scripts -p test_tls_dependencies.py
+      - name: Shipped target dependencies use Rustls
+        run: python3 scripts/check_tls_dependencies.py
+
+  vlp-numerics:
+    name: VLP numerics golden vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: numpy for the f32 cross-check
+        run: python3 -m pip install 'numpy>=2,<3'
+      - name: The committed vectors are what the generator writes
+        run: python3 -I conformance/vlp-numerics/v1/generate.py --check
+      - name: Vector checks and independent rounding routes
+        env:
+          VLP_REQUIRE_NUMPY: '1'
+        run: python3 -I -m unittest discover -s conformance/vlp-numerics/v1 -p 'test_*.py'
+
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest
@@ -213,7 +247,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -228,7 +262,7 @@ jobs:
       - name: Export checkout facts with provenance
         run: python3 scripts/current_facts.py --export /tmp/vindex3-facts.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vindex3-facts
           path: /tmp/vindex3-facts.json

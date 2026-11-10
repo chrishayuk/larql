@@ -6,6 +6,15 @@ The format follows the conventions of [Keep a Changelog](https://keepachangelog.
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## [2026-11-07] — a script writes nothing after a failure
+
+**Behaviour change.** In `larql lql` / `run_batch_outcome`, once a statement has failed, every later
+statement that writes an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `COMPACT MAJOR`, `SAVE PATCH`,
+`DIFF … INTO PATCH`, `TRACE … SAVE`) is refused and counted as a failure instead of run. Before, a
+`COMPILE CURRENT INTO VINDEX` after a refused `APPLY PATCH` wrote an unpatched "clean container" at the
+output path, exiting 1 but otherwise looking like success. Statements that write nothing still run.
+`Statement::writes_artifact` is the classification, an exhaustive match. See spec §3.9.
+
 ## [2026-11-03] — `larql lql` exit status
 
 **Behaviour change.** `larql lql` used to exit 0 whatever happened, reporting failures only in its

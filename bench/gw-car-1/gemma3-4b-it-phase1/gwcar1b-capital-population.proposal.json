@@ -1,0 +1,5827 @@
+{
+  "candidate_token_ids": [
+    603,
+    622,
+    646,
+    667,
+    807,
+    895,
+    1773,
+    2718,
+    4257,
+    5307,
+    5348,
+    5945,
+    6134,
+    6203,
+    6752,
+    10097,
+    10496,
+    11637,
+    13070,
+    13905,
+    14944,
+    18324,
+    19029,
+    19169,
+    20854,
+    34635,
+    38497,
+    41770,
+    41824,
+    42919,
+    44135,
+    46686,
+    48729,
+    51135,
+    52587,
+    54332,
+    63242,
+    66096,
+    66333,
+    70572,
+    82636,
+    83820,
+    102709,
+    117652,
+    137198,
+    145406,
+    148640,
+    151827,
+    169014,
+    176229,
+    179980,
+    203647,
+    206116,
+    209941,
+    211458,
+    213384,
+    213575
+  ],
+  "counts": {
+    "rows": 201,
+    "subjects": 67,
+    "test_subjects": 33,
+    "validation_subjects": 34
+  },
+  "exclusion_subject_ids": [
+    "AFG",
+    "AGO",
+    "ALB",
+    "AND",
+    "ARE",
+    "ARM",
+    "ATG",
+    "AUS",
+    "AUT",
+    "BEN",
+    "BFA",
+    "BGD",
+    "BGR",
+    "BHR",
+    "BRA",
+    "BRB",
+    "CHE",
+    "CHL",
+    "CHN",
+    "CIV",
+    "COL",
+    "CPV",
+    "CRI",
+    "CUB",
+    "DEU",
+    "DMA",
+    "DNK",
+    "DOM",
+    "DZA",
+    "ECU",
+    "EGY",
+    "ESP",
+    "EST",
+    "ETH",
+    "FIN",
+    "FRA",
+    "GAB",
+    "GBR",
+    "GEO",
+    "GHA",
+    "GIN",
+    "GMB",
+    "GRC",
+    "GRD",
+    "GTM",
+    "GUY",
+    "HND",
+    "HRV",
+    "HUN",
+    "IDN",
+    "IND",
+    "IRL",
+    "IRN",
+    "IRQ",
+    "ISL",
+    "ISR",
+    "ITA",
+    "JOR",
+    "JPN",
+    "KEN",
+    "KNA",
+    "KOR",
+    "KWT",
+    "LAO",
+    "LBN",
+    "LBR",
+    "LBY",
+    "LCA",
+    "LIE",
+    "LTU",
+    "LVA",
+    "MAR",
+    "MCO",
+    "MDA",
+    "MDV",
+    "MEX",
+    "MKD",
+    "MLI",
+    "MMR",
+    "MNE",
+    "MNG",
+    "MOZ",
+    "MRT",
+    "MYS",
+    "NER",
+    "NGA",
+    "NIC",
+    "NLD",
+    "NOR",
+    "NPL",
+    "OMN",
+    "PAK",
+    "PER",
+    "POL",
+    "PRK",
+    "PRT",
+    "QAT",
+    "ROU",
+    "RUS",
+    "SAU",
+    "SEN",
+    "SLB",
+    "SLE",
+    "SLV",
+    "SMR",
+    "SRB",
+    "SSD",
+    "STP",
+    "SUR",
+    "SVK",
+    "SVN",
+    "SWE",
+    "SYR",
+    "TGO",
+    "THA",
+    "TTO",
+    "TUN",
+    "TUR",
+    "UKR",
+    "URY",
+    "USA",
+    "VCT",
+    "VEN",
+    "VNM",
+    "YEM",
+    "ZAF",
+    "ZMB"
+  ],
+  "limitations": [
+    "source annotations are frozen historical labels, not independently re-audited modern country classifications",
+    "no causal controls, capture, fitting, or replay executed",
+    "proposal does not settle statistical power or full experimental protocol"
+  ],
+  "model_execution_authorized": false,
+  "model_executions": 0,
+  "predicate": [
+    "source independent flag true",
+    "source unMember flag true",
+    "country ID absent from GW-0 and all GW-V2 splits",
+    "exactly one source capital"
+  ],
+  "proposal_sha256": "sha256:69de8eba9827cd0b147360d6d2b1240fea3c098d8a3c78c7b1c129c1b836bf6f",
+  "rows": [
+    {
+      "prompt": "The capital of Uganda is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        45578,
+        563
+      ],
+      "split": "validation",
+      "subject": "Uganda",
+      "subject_embedding_token_ids": [
+        137027,
+        5928
+      ],
+      "subject_id": "UGA",
+      "target": "Kampala",
+      "target_continuation_token_ids": [
+        211458
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Uganda?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        45578,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Uganda",
+      "subject_embedding_token_ids": [
+        137027,
+        5928
+      ],
+      "subject_id": "UGA",
+      "target": "Kampala",
+      "target_continuation_token_ids": [
+        211458
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Uganda:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        45578,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Uganda",
+      "subject_embedding_token_ids": [
+        137027,
+        5928
+      ],
+      "subject_id": "UGA",
+      "target": "Kampala",
+      "target_continuation_token_ids": [
+        211458
+      ]
+    },
+    {
+      "prompt": "The capital of Kazakhstan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        75275,
+        563
+      ],
+      "split": "validation",
+      "subject": "Kazakhstan",
+      "subject_embedding_token_ids": [
+        122611,
+        11505,
+        17778
+      ],
+      "subject_id": "KAZ",
+      "target": "Astana",
+      "target_continuation_token_ids": [
+        209941
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Kazakhstan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        75275,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Kazakhstan",
+      "subject_embedding_token_ids": [
+        122611,
+        11505,
+        17778
+      ],
+      "subject_id": "KAZ",
+      "target": "Astana",
+      "target_continuation_token_ids": [
+        209941
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Kazakhstan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        75275,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Kazakhstan",
+      "subject_embedding_token_ids": [
+        122611,
+        11505,
+        17778
+      ],
+      "subject_id": "KAZ",
+      "target": "Astana",
+      "target_continuation_token_ids": [
+        209941
+      ]
+    },
+    {
+      "prompt": "The capital of Guinea-Bissau is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        52118,
+        236772,
+        236799,
+        117440,
+        563
+      ],
+      "split": "validation",
+      "subject": "Guinea-Bissau",
+      "subject_embedding_token_ids": [
+        182268,
+        236772,
+        236799,
+        117440
+      ],
+      "subject_id": "GNB",
+      "target": "Bissau",
+      "target_continuation_token_ids": [
+        603,
+        117440
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Guinea-Bissau?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        52118,
+        236772,
+        236799,
+        117440,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Guinea-Bissau",
+      "subject_embedding_token_ids": [
+        182268,
+        236772,
+        236799,
+        117440
+      ],
+      "subject_id": "GNB",
+      "target": "Bissau",
+      "target_continuation_token_ids": [
+        603,
+        117440
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Guinea-Bissau:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        52118,
+        236772,
+        236799,
+        117440,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Guinea-Bissau",
+      "subject_embedding_token_ids": [
+        182268,
+        236772,
+        236799,
+        117440
+      ],
+      "subject_id": "GNB",
+      "target": "Bissau",
+      "target_continuation_token_ids": [
+        603,
+        117440
+      ]
+    },
+    {
+      "prompt": "The capital of Eritrea is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        185537,
+        563
+      ],
+      "split": "validation",
+      "subject": "Eritrea",
+      "subject_embedding_token_ids": [
+        236788,
+        1302,
+        5389
+      ],
+      "subject_id": "ERI",
+      "target": "Asmara",
+      "target_continuation_token_ids": [
+        1773,
+        59495
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Eritrea?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        185537,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Eritrea",
+      "subject_embedding_token_ids": [
+        236788,
+        1302,
+        5389
+      ],
+      "subject_id": "ERI",
+      "target": "Asmara",
+      "target_continuation_token_ids": [
+        1773,
+        59495
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Eritrea:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        185537,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Eritrea",
+      "subject_embedding_token_ids": [
+        236788,
+        1302,
+        5389
+      ],
+      "subject_id": "ERI",
+      "target": "Asmara",
+      "target_continuation_token_ids": [
+        1773,
+        59495
+      ]
+    },
+    {
+      "prompt": "The capital of Marshall Islands is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        30518,
+        24399,
+        563
+      ],
+      "split": "validation",
+      "subject": "Marshall Islands",
+      "subject_embedding_token_ids": [
+        104733,
+        24399
+      ],
+      "subject_id": "MHL",
+      "target": "Majuro",
+      "target_continuation_token_ids": [
+        11637,
+        2220
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Marshall Islands?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        30518,
+        24399,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Marshall Islands",
+      "subject_embedding_token_ids": [
+        104733,
+        24399
+      ],
+      "subject_id": "MHL",
+      "target": "Majuro",
+      "target_continuation_token_ids": [
+        11637,
+        2220
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Marshall Islands:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        30518,
+        24399,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Marshall Islands",
+      "subject_embedding_token_ids": [
+        104733,
+        24399
+      ],
+      "subject_id": "MHL",
+      "target": "Majuro",
+      "target_continuation_token_ids": [
+        11637,
+        2220
+      ]
+    },
+    {
+      "prompt": "The capital of Turkmenistan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        188847,
+        563
+      ],
+      "split": "validation",
+      "subject": "Turkmenistan",
+      "subject_embedding_token_ids": [
+        30727,
+        236767,
+        2438,
+        9010
+      ],
+      "subject_id": "TKM",
+      "target": "Ashgabat",
+      "target_continuation_token_ids": [
+        14944,
+        236759,
+        48033
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Turkmenistan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        188847,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Turkmenistan",
+      "subject_embedding_token_ids": [
+        30727,
+        236767,
+        2438,
+        9010
+      ],
+      "subject_id": "TKM",
+      "target": "Ashgabat",
+      "target_continuation_token_ids": [
+        14944,
+        236759,
+        48033
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Turkmenistan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        188847,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Turkmenistan",
+      "subject_embedding_token_ids": [
+        30727,
+        236767,
+        2438,
+        9010
+      ],
+      "subject_id": "TKM",
+      "target": "Ashgabat",
+      "target_continuation_token_ids": [
+        14944,
+        236759,
+        48033
+      ]
+    },
+    {
+      "prompt": "The capital of Sudan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        48131,
+        563
+      ],
+      "split": "validation",
+      "subject": "Sudan",
+      "subject_embedding_token_ids": [
+        55119,
+        508
+      ],
+      "subject_id": "SDN",
+      "target": "Khartoum",
+      "target_continuation_token_ids": [
+        213384
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Sudan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        48131,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Sudan",
+      "subject_embedding_token_ids": [
+        55119,
+        508
+      ],
+      "subject_id": "SDN",
+      "target": "Khartoum",
+      "target_continuation_token_ids": [
+        213384
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Sudan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        48131,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Sudan",
+      "subject_embedding_token_ids": [
+        55119,
+        508
+      ],
+      "subject_id": "SDN",
+      "target": "Khartoum",
+      "target_continuation_token_ids": [
+        213384
+      ]
+    },
+    {
+      "prompt": "The capital of Luxembourg is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        66333,
+        563
+      ],
+      "split": "validation",
+      "subject": "Luxembourg",
+      "subject_embedding_token_ids": [
+        65769,
+        216571
+      ],
+      "subject_id": "LUX",
+      "target": "Luxembourg",
+      "target_continuation_token_ids": [
+        66333
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Luxembourg?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        66333,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Luxembourg",
+      "subject_embedding_token_ids": [
+        65769,
+        216571
+      ],
+      "subject_id": "LUX",
+      "target": "Luxembourg",
+      "target_continuation_token_ids": [
+        66333
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Luxembourg:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        66333,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Luxembourg",
+      "subject_embedding_token_ids": [
+        65769,
+        216571
+      ],
+      "subject_id": "LUX",
+      "target": "Luxembourg",
+      "target_continuation_token_ids": [
+        66333
+      ]
+    },
+    {
+      "prompt": "The capital of Uzbekistan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        98442,
+        563
+      ],
+      "split": "validation",
+      "subject": "Uzbekistan",
+      "subject_embedding_token_ids": [
+        91508,
+        19199,
+        9010
+      ],
+      "subject_id": "UZB",
+      "target": "Tashkent",
+      "target_continuation_token_ids": [
+        148640,
+        104753
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Uzbekistan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        98442,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Uzbekistan",
+      "subject_embedding_token_ids": [
+        91508,
+        19199,
+        9010
+      ],
+      "subject_id": "UZB",
+      "target": "Tashkent",
+      "target_continuation_token_ids": [
+        148640,
+        104753
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Uzbekistan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        98442,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Uzbekistan",
+      "subject_embedding_token_ids": [
+        91508,
+        19199,
+        9010
+      ],
+      "subject_id": "UZB",
+      "target": "Tashkent",
+      "target_continuation_token_ids": [
+        148640,
+        104753
+      ]
+    },
+    {
+      "prompt": "The capital of Djibouti is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        213575,
+        563
+      ],
+      "split": "validation",
+      "subject": "Djibouti",
+      "subject_embedding_token_ids": [
+        130931,
+        177835
+      ],
+      "subject_id": "DJI",
+      "target": "Djibouti",
+      "target_continuation_token_ids": [
+        213575
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Djibouti?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        213575,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Djibouti",
+      "subject_embedding_token_ids": [
+        130931,
+        177835
+      ],
+      "subject_id": "DJI",
+      "target": "Djibouti",
+      "target_continuation_token_ids": [
+        213575
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Djibouti:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        213575,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Djibouti",
+      "subject_embedding_token_ids": [
+        130931,
+        177835
+      ],
+      "subject_id": "DJI",
+      "target": "Djibouti",
+      "target_continuation_token_ids": [
+        213575
+      ]
+    },
+    {
+      "prompt": "The capital of Namibia is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        90373,
+        563
+      ],
+      "split": "validation",
+      "subject": "Namibia",
+      "subject_embedding_token_ids": [
+        47113,
+        66074
+      ],
+      "subject_id": "NAM",
+      "target": "Windhoek",
+      "target_continuation_token_ids": [
+        18324,
+        130979
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Namibia?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        90373,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Namibia",
+      "subject_embedding_token_ids": [
+        47113,
+        66074
+      ],
+      "subject_id": "NAM",
+      "target": "Windhoek",
+      "target_continuation_token_ids": [
+        18324,
+        130979
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Namibia:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        90373,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Namibia",
+      "subject_embedding_token_ids": [
+        47113,
+        66074
+      ],
+      "subject_id": "NAM",
+      "target": "Windhoek",
+      "target_continuation_token_ids": [
+        18324,
+        130979
+      ]
+    },
+    {
+      "prompt": "The capital of Kiribati is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        18956,
+        748,
+        1625,
+        563
+      ],
+      "split": "validation",
+      "subject": "Kiribati",
+      "subject_embedding_token_ids": [
+        77934,
+        748,
+        1625
+      ],
+      "subject_id": "KIR",
+      "target": "South Tarawa",
+      "target_continuation_token_ids": [
+        4257,
+        18725,
+        7810
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Kiribati?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        18956,
+        748,
+        1625,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Kiribati",
+      "subject_embedding_token_ids": [
+        77934,
+        748,
+        1625
+      ],
+      "subject_id": "KIR",
+      "target": "South Tarawa",
+      "target_continuation_token_ids": [
+        4257,
+        18725,
+        7810
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Kiribati:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        18956,
+        748,
+        1625,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Kiribati",
+      "subject_embedding_token_ids": [
+        77934,
+        748,
+        1625
+      ],
+      "subject_id": "KIR",
+      "target": "South Tarawa",
+      "target_continuation_token_ids": [
+        4257,
+        18725,
+        7810
+      ]
+    },
+    {
+      "prompt": "The capital of DR Congo is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        19588,
+        49275,
+        563
+      ],
+      "split": "validation",
+      "subject": "DR Congo",
+      "subject_embedding_token_ids": [
+        7560,
+        49275
+      ],
+      "subject_id": "COD",
+      "target": "Kinshasa",
+      "target_continuation_token_ids": [
+        34635,
+        1179,
+        6734
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of DR Congo?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        19588,
+        49275,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "DR Congo",
+      "subject_embedding_token_ids": [
+        7560,
+        49275
+      ],
+      "subject_id": "COD",
+      "target": "Kinshasa",
+      "target_continuation_token_ids": [
+        34635,
+        1179,
+        6734
+      ]
+    },
+    {
+      "prompt": "Name the capital city of DR Congo:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        19588,
+        49275,
+        236787
+      ],
+      "split": "validation",
+      "subject": "DR Congo",
+      "subject_embedding_token_ids": [
+        7560,
+        49275
+      ],
+      "subject_id": "COD",
+      "target": "Kinshasa",
+      "target_continuation_token_ids": [
+        34635,
+        1179,
+        6734
+      ]
+    },
+    {
+      "prompt": "The capital of Canada is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        7203,
+        563
+      ],
+      "split": "validation",
+      "subject": "Canada",
+      "subject_embedding_token_ids": [
+        44567
+      ],
+      "subject_id": "CAN",
+      "target": "Ottawa",
+      "target_continuation_token_ids": [
+        41824
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Canada?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        7203,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Canada",
+      "subject_embedding_token_ids": [
+        44567
+      ],
+      "subject_id": "CAN",
+      "target": "Ottawa",
+      "target_continuation_token_ids": [
+        41824
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Canada:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        7203,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Canada",
+      "subject_embedding_token_ids": [
+        44567
+      ],
+      "subject_id": "CAN",
+      "target": "Ottawa",
+      "target_continuation_token_ids": [
+        41824
+      ]
+    },
+    {
+      "prompt": "The capital of Philippines is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        23514,
+        563
+      ],
+      "split": "validation",
+      "subject": "Philippines",
+      "subject_embedding_token_ids": [
+        216929
+      ],
+      "subject_id": "PHL",
+      "target": "Manila",
+      "target_continuation_token_ids": [
+        54332
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Philippines?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        23514,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Philippines",
+      "subject_embedding_token_ids": [
+        216929
+      ],
+      "subject_id": "PHL",
+      "target": "Manila",
+      "target_continuation_token_ids": [
+        54332
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Philippines:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        23514,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Philippines",
+      "subject_embedding_token_ids": [
+        216929
+      ],
+      "subject_id": "PHL",
+      "target": "Manila",
+      "target_continuation_token_ids": [
+        54332
+      ]
+    },
+    {
+      "prompt": "The capital of Mauritius is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        96785,
+        563
+      ],
+      "split": "validation",
+      "subject": "Mauritius",
+      "subject_embedding_token_ids": [
+        87452,
+        81062
+      ],
+      "subject_id": "MUS",
+      "target": "Port Louis",
+      "target_continuation_token_ids": [
+        5348,
+        11210
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Mauritius?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        96785,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Mauritius",
+      "subject_embedding_token_ids": [
+        87452,
+        81062
+      ],
+      "subject_id": "MUS",
+      "target": "Port Louis",
+      "target_continuation_token_ids": [
+        5348,
+        11210
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Mauritius:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        96785,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Mauritius",
+      "subject_embedding_token_ids": [
+        87452,
+        81062
+      ],
+      "subject_id": "MUS",
+      "target": "Port Louis",
+      "target_continuation_token_ids": [
+        5348,
+        11210
+      ]
+    },
+    {
+      "prompt": "The capital of Brunei is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        167502,
+        563
+      ],
+      "split": "validation",
+      "subject": "Brunei",
+      "subject_embedding_token_ids": [
+        7320,
+        2253,
+        236747
+      ],
+      "subject_id": "BRN",
+      "target": "Bandar Seri Begawan",
+      "target_continuation_token_ids": [
+        176229,
+        128497,
+        30506,
+        25235
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Brunei?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        167502,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Brunei",
+      "subject_embedding_token_ids": [
+        7320,
+        2253,
+        236747
+      ],
+      "subject_id": "BRN",
+      "target": "Bandar Seri Begawan",
+      "target_continuation_token_ids": [
+        176229,
+        128497,
+        30506,
+        25235
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Brunei:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        167502,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Brunei",
+      "subject_embedding_token_ids": [
+        7320,
+        2253,
+        236747
+      ],
+      "subject_id": "BRN",
+      "target": "Bandar Seri Begawan",
+      "target_continuation_token_ids": [
+        176229,
+        128497,
+        30506,
+        25235
+      ]
+    },
+    {
+      "prompt": "The capital of Czechia is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        35074,
+        722,
+        563
+      ],
+      "split": "validation",
+      "subject": "Czechia",
+      "subject_embedding_token_ids": [
+        193672,
+        722
+      ],
+      "subject_id": "CZE",
+      "target": "Prague",
+      "target_continuation_token_ids": [
+        48729
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Czechia?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        35074,
+        722,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Czechia",
+      "subject_embedding_token_ids": [
+        193672,
+        722
+      ],
+      "subject_id": "CZE",
+      "target": "Prague",
+      "target_continuation_token_ids": [
+        48729
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Czechia:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        35074,
+        722,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Czechia",
+      "subject_embedding_token_ids": [
+        193672,
+        722
+      ],
+      "subject_id": "CZE",
+      "target": "Prague",
+      "target_continuation_token_ids": [
+        48729
+      ]
+    },
+    {
+      "prompt": "The capital of Kyrgyzstan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        178155,
+        563
+      ],
+      "split": "validation",
+      "subject": "Kyrgyzstan",
+      "subject_embedding_token_ids": [
+        225660,
+        129740,
+        17778
+      ],
+      "subject_id": "KGZ",
+      "target": "Bishkek",
+      "target_continuation_token_ids": [
+        137198,
+        154504
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Kyrgyzstan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        178155,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Kyrgyzstan",
+      "subject_embedding_token_ids": [
+        225660,
+        129740,
+        17778
+      ],
+      "subject_id": "KGZ",
+      "target": "Bishkek",
+      "target_continuation_token_ids": [
+        137198,
+        154504
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Kyrgyzstan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        178155,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Kyrgyzstan",
+      "subject_embedding_token_ids": [
+        225660,
+        129740,
+        17778
+      ],
+      "subject_id": "KGZ",
+      "target": "Bishkek",
+      "target_continuation_token_ids": [
+        137198,
+        154504
+      ]
+    },
+    {
+      "prompt": "The capital of Madagascar is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        72060,
+        563
+      ],
+      "split": "validation",
+      "subject": "Madagascar",
+      "subject_embedding_token_ids": [
+        32453,
+        65217
+      ],
+      "subject_id": "MDG",
+      "target": "Antananarivo",
+      "target_continuation_token_ids": [
+        5307,
+        17822,
+        516,
+        3928
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Madagascar?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        72060,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Madagascar",
+      "subject_embedding_token_ids": [
+        32453,
+        65217
+      ],
+      "subject_id": "MDG",
+      "target": "Antananarivo",
+      "target_continuation_token_ids": [
+        5307,
+        17822,
+        516,
+        3928
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Madagascar:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        72060,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Madagascar",
+      "subject_embedding_token_ids": [
+        32453,
+        65217
+      ],
+      "subject_id": "MDG",
+      "target": "Antananarivo",
+      "target_continuation_token_ids": [
+        5307,
+        17822,
+        516,
+        3928
+      ]
+    },
+    {
+      "prompt": "The capital of New Zealand is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        1799,
+        17564,
+        563
+      ],
+      "split": "validation",
+      "subject": "New Zealand",
+      "subject_embedding_token_ids": [
+        4199,
+        17564
+      ],
+      "subject_id": "NZL",
+      "target": "Wellington",
+      "target_continuation_token_ids": [
+        52587
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of New Zealand?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        1799,
+        17564,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "New Zealand",
+      "subject_embedding_token_ids": [
+        4199,
+        17564
+      ],
+      "subject_id": "NZL",
+      "target": "Wellington",
+      "target_continuation_token_ids": [
+        52587
+      ]
+    },
+    {
+      "prompt": "Name the capital city of New Zealand:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        1799,
+        17564,
+        236787
+      ],
+      "split": "validation",
+      "subject": "New Zealand",
+      "subject_embedding_token_ids": [
+        4199,
+        17564
+      ],
+      "subject_id": "NZL",
+      "target": "Wellington",
+      "target_continuation_token_ids": [
+        52587
+      ]
+    },
+    {
+      "prompt": "The capital of Cambodia is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        57964,
+        563
+      ],
+      "split": "validation",
+      "subject": "Cambodia",
+      "subject_embedding_token_ids": [
+        97751,
+        37014
+      ],
+      "subject_id": "KHM",
+      "target": "Phnom Penh",
+      "target_continuation_token_ids": [
+        179980,
+        182360
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Cambodia?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        57964,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Cambodia",
+      "subject_embedding_token_ids": [
+        97751,
+        37014
+      ],
+      "subject_id": "KHM",
+      "target": "Phnom Penh",
+      "target_continuation_token_ids": [
+        179980,
+        182360
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Cambodia:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        57964,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Cambodia",
+      "subject_embedding_token_ids": [
+        97751,
+        37014
+      ],
+      "subject_id": "KHM",
+      "target": "Phnom Penh",
+      "target_continuation_token_ids": [
+        179980,
+        182360
+      ]
+    },
+    {
+      "prompt": "The capital of Paraguay is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        113644,
+        563
+      ],
+      "split": "validation",
+      "subject": "Paraguay",
+      "subject_embedding_token_ids": [
+        3128,
+        25653,
+        571
+      ],
+      "subject_id": "PRY",
+      "target": "Asunción",
+      "target_continuation_token_ids": [
+        1773,
+        148742
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Paraguay?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        113644,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Paraguay",
+      "subject_embedding_token_ids": [
+        3128,
+        25653,
+        571
+      ],
+      "subject_id": "PRY",
+      "target": "Asunción",
+      "target_continuation_token_ids": [
+        1773,
+        148742
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Paraguay:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        113644,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Paraguay",
+      "subject_embedding_token_ids": [
+        3128,
+        25653,
+        571
+      ],
+      "subject_id": "PRY",
+      "target": "Asunción",
+      "target_continuation_token_ids": [
+        1773,
+        148742
+      ]
+    },
+    {
+      "prompt": "The capital of Burundi is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        158729,
+        563
+      ],
+      "split": "validation",
+      "subject": "Burundi",
+      "subject_embedding_token_ids": [
+        27146,
+        41644
+      ],
+      "subject_id": "BDI",
+      "target": "Gitega",
+      "target_continuation_token_ids": [
+        667,
+        785,
+        2169
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Burundi?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        158729,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Burundi",
+      "subject_embedding_token_ids": [
+        27146,
+        41644
+      ],
+      "subject_id": "BDI",
+      "target": "Gitega",
+      "target_continuation_token_ids": [
+        667,
+        785,
+        2169
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Burundi:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        158729,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Burundi",
+      "subject_embedding_token_ids": [
+        27146,
+        41644
+      ],
+      "subject_id": "BDI",
+      "target": "Gitega",
+      "target_continuation_token_ids": [
+        667,
+        785,
+        2169
+      ]
+    },
+    {
+      "prompt": "The capital of Zimbabwe is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        41541,
+        563
+      ],
+      "split": "validation",
+      "subject": "Zimbabwe",
+      "subject_embedding_token_ids": [
+        185626
+      ],
+      "subject_id": "ZWE",
+      "target": "Harare",
+      "target_continuation_token_ids": [
+        169014
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Zimbabwe?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        41541,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Zimbabwe",
+      "subject_embedding_token_ids": [
+        185626
+      ],
+      "subject_id": "ZWE",
+      "target": "Harare",
+      "target_continuation_token_ids": [
+        169014
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Zimbabwe:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        41541,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Zimbabwe",
+      "subject_embedding_token_ids": [
+        185626
+      ],
+      "subject_id": "ZWE",
+      "target": "Harare",
+      "target_continuation_token_ids": [
+        169014
+      ]
+    },
+    {
+      "prompt": "The capital of Jamaica is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        48208,
+        563
+      ],
+      "split": "validation",
+      "subject": "Jamaica",
+      "subject_embedding_token_ids": [
+        233927
+      ],
+      "subject_id": "JAM",
+      "target": "Kingston",
+      "target_continuation_token_ids": [
+        63242
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Jamaica?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        48208,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Jamaica",
+      "subject_embedding_token_ids": [
+        233927
+      ],
+      "subject_id": "JAM",
+      "target": "Kingston",
+      "target_continuation_token_ids": [
+        63242
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Jamaica:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        48208,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Jamaica",
+      "subject_embedding_token_ids": [
+        233927
+      ],
+      "subject_id": "JAM",
+      "target": "Kingston",
+      "target_continuation_token_ids": [
+        63242
+      ]
+    },
+    {
+      "prompt": "The capital of Congo is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        49275,
+        563
+      ],
+      "split": "validation",
+      "subject": "Congo",
+      "subject_embedding_token_ids": [
+        236780,
+        9755
+      ],
+      "subject_id": "COG",
+      "target": "Brazzaville",
+      "target_continuation_token_ids": [
+        82636,
+        236802,
+        182894
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Congo?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        49275,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Congo",
+      "subject_embedding_token_ids": [
+        236780,
+        9755
+      ],
+      "subject_id": "COG",
+      "target": "Brazzaville",
+      "target_continuation_token_ids": [
+        82636,
+        236802,
+        182894
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Congo:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        49275,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Congo",
+      "subject_embedding_token_ids": [
+        236780,
+        9755
+      ],
+      "subject_id": "COG",
+      "target": "Brazzaville",
+      "target_continuation_token_ids": [
+        82636,
+        236802,
+        182894
+      ]
+    },
+    {
+      "prompt": "The capital of Equatorial Guinea is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        185902,
+        52118,
+        563
+      ],
+      "split": "validation",
+      "subject": "Equatorial Guinea",
+      "subject_embedding_token_ids": [
+        7524,
+        32443,
+        52118
+      ],
+      "subject_id": "GNQ",
+      "target": "Malabo",
+      "target_continuation_token_ids": [
+        6134,
+        28931
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Equatorial Guinea?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        185902,
+        52118,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Equatorial Guinea",
+      "subject_embedding_token_ids": [
+        7524,
+        32443,
+        52118
+      ],
+      "subject_id": "GNQ",
+      "target": "Malabo",
+      "target_continuation_token_ids": [
+        6134,
+        28931
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Equatorial Guinea:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        185902,
+        52118,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Equatorial Guinea",
+      "subject_embedding_token_ids": [
+        7524,
+        32443,
+        52118
+      ],
+      "subject_id": "GNQ",
+      "target": "Malabo",
+      "target_continuation_token_ids": [
+        6134,
+        28931
+      ]
+    },
+    {
+      "prompt": "The capital of Sri Lanka is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        21315,
+        30144,
+        563
+      ],
+      "split": "validation",
+      "subject": "Sri Lanka",
+      "subject_embedding_token_ids": [
+        67973,
+        30144
+      ],
+      "subject_id": "LKA",
+      "target": "Colombo",
+      "target_continuation_token_ids": [
+        83820
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Sri Lanka?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        21315,
+        30144,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Sri Lanka",
+      "subject_embedding_token_ids": [
+        67973,
+        30144
+      ],
+      "subject_id": "LKA",
+      "target": "Colombo",
+      "target_continuation_token_ids": [
+        83820
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Sri Lanka:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        21315,
+        30144,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Sri Lanka",
+      "subject_embedding_token_ids": [
+        67973,
+        30144
+      ],
+      "subject_id": "LKA",
+      "target": "Colombo",
+      "target_continuation_token_ids": [
+        83820
+      ]
+    },
+    {
+      "prompt": "The capital of Bolivia is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        66792,
+        563
+      ],
+      "split": "validation",
+      "subject": "Bolivia",
+      "subject_embedding_token_ids": [
+        43324,
+        32935
+      ],
+      "subject_id": "BOL",
+      "target": "Sucre",
+      "target_continuation_token_ids": [
+        2718,
+        906
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Bolivia?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        66792,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Bolivia",
+      "subject_embedding_token_ids": [
+        43324,
+        32935
+      ],
+      "subject_id": "BOL",
+      "target": "Sucre",
+      "target_continuation_token_ids": [
+        2718,
+        906
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Bolivia:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        66792,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Bolivia",
+      "subject_embedding_token_ids": [
+        43324,
+        32935
+      ],
+      "subject_id": "BOL",
+      "target": "Sucre",
+      "target_continuation_token_ids": [
+        2718,
+        906
+      ]
+    },
+    {
+      "prompt": "The capital of Bahamas is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        80050,
+        563
+      ],
+      "split": "validation",
+      "subject": "Bahamas",
+      "subject_embedding_token_ids": [
+        77007,
+        24652
+      ],
+      "subject_id": "BHS",
+      "target": "Nassau",
+      "target_continuation_token_ids": [
+        102709
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Bahamas?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        80050,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Bahamas",
+      "subject_embedding_token_ids": [
+        77007,
+        24652
+      ],
+      "subject_id": "BHS",
+      "target": "Nassau",
+      "target_continuation_token_ids": [
+        102709
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Bahamas:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        80050,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Bahamas",
+      "subject_embedding_token_ids": [
+        77007,
+        24652
+      ],
+      "subject_id": "BHS",
+      "target": "Nassau",
+      "target_continuation_token_ids": [
+        102709
+      ]
+    },
+    {
+      "prompt": "The capital of Rwanda is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        69555,
+        563
+      ],
+      "split": "validation",
+      "subject": "Rwanda",
+      "subject_embedding_token_ids": [
+        149835,
+        5928
+      ],
+      "subject_id": "RWA",
+      "target": "Kigali",
+      "target_continuation_token_ids": [
+        206116
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Rwanda?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        69555,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Rwanda",
+      "subject_embedding_token_ids": [
+        149835,
+        5928
+      ],
+      "subject_id": "RWA",
+      "target": "Kigali",
+      "target_continuation_token_ids": [
+        206116
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Rwanda:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        69555,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Rwanda",
+      "subject_embedding_token_ids": [
+        149835,
+        5928
+      ],
+      "subject_id": "RWA",
+      "target": "Kigali",
+      "target_continuation_token_ids": [
+        206116
+      ]
+    },
+    {
+      "prompt": "The capital of Belize is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        69269,
+        563
+      ],
+      "split": "validation",
+      "subject": "Belize",
+      "subject_embedding_token_ids": [
+        19727,
+        969
+      ],
+      "subject_id": "BLZ",
+      "target": "Belmopan",
+      "target_continuation_token_ids": [
+        6752,
+        236757,
+        104672
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Belize?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        69269,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Belize",
+      "subject_embedding_token_ids": [
+        19727,
+        969
+      ],
+      "subject_id": "BLZ",
+      "target": "Belmopan",
+      "target_continuation_token_ids": [
+        6752,
+        236757,
+        104672
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Belize:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        69269,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Belize",
+      "subject_embedding_token_ids": [
+        19727,
+        969
+      ],
+      "subject_id": "BLZ",
+      "target": "Belmopan",
+      "target_continuation_token_ids": [
+        6752,
+        236757,
+        104672
+      ]
+    },
+    {
+      "prompt": "The capital of Vanuatu is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        208790,
+        563
+      ],
+      "split": "validation",
+      "subject": "Vanuatu",
+      "subject_embedding_token_ids": [
+        236847,
+        28137,
+        10191
+      ],
+      "subject_id": "VUT",
+      "target": "Port Vila",
+      "target_continuation_token_ids": [
+        5348,
+        102684
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Vanuatu?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        208790,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Vanuatu",
+      "subject_embedding_token_ids": [
+        236847,
+        28137,
+        10191
+      ],
+      "subject_id": "VUT",
+      "target": "Port Vila",
+      "target_continuation_token_ids": [
+        5348,
+        102684
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Vanuatu:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        208790,
+        236787
+      ],
+      "split": "validation",
+      "subject": "Vanuatu",
+      "subject_embedding_token_ids": [
+        236847,
+        28137,
+        10191
+      ],
+      "subject_id": "VUT",
+      "target": "Port Vila",
+      "target_continuation_token_ids": [
+        5348,
+        102684
+      ]
+    },
+    {
+      "prompt": "The capital of Tonga is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        138073,
+        563
+      ],
+      "split": "test",
+      "subject": "Tonga",
+      "subject_embedding_token_ids": [
+        236774,
+        39378
+      ],
+      "subject_id": "TON",
+      "target": "Nuku'alofa",
+      "target_continuation_token_ids": [
+        646,
+        21860,
+        236789,
+        514,
+        91477
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Tonga?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        138073,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tonga",
+      "subject_embedding_token_ids": [
+        236774,
+        39378
+      ],
+      "subject_id": "TON",
+      "target": "Nuku'alofa",
+      "target_continuation_token_ids": [
+        646,
+        21860,
+        236789,
+        514,
+        91477
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Tonga:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        138073,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tonga",
+      "subject_embedding_token_ids": [
+        236774,
+        39378
+      ],
+      "subject_id": "TON",
+      "target": "Nuku'alofa",
+      "target_continuation_token_ids": [
+        646,
+        21860,
+        236789,
+        514,
+        91477
+      ]
+    },
+    {
+      "prompt": "The capital of Central African Republic is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        8870,
+        9992,
+        9145,
+        563
+      ],
+      "split": "test",
+      "subject": "Central African Republic",
+      "subject_embedding_token_ids": [
+        36043,
+        9992,
+        9145
+      ],
+      "subject_id": "CAF",
+      "target": "Bangui",
+      "target_continuation_token_ids": [
+        13905,
+        2450
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Central African Republic?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        8870,
+        9992,
+        9145,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Central African Republic",
+      "subject_embedding_token_ids": [
+        36043,
+        9992,
+        9145
+      ],
+      "subject_id": "CAF",
+      "target": "Bangui",
+      "target_continuation_token_ids": [
+        13905,
+        2450
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Central African Republic:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        8870,
+        9992,
+        9145,
+        236787
+      ],
+      "split": "test",
+      "subject": "Central African Republic",
+      "subject_embedding_token_ids": [
+        36043,
+        9992,
+        9145
+      ],
+      "subject_id": "CAF",
+      "target": "Bangui",
+      "target_continuation_token_ids": [
+        13905,
+        2450
+      ]
+    },
+    {
+      "prompt": "The capital of Comoros is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        1301,
+        123635,
+        563
+      ],
+      "split": "test",
+      "subject": "Comoros",
+      "subject_embedding_token_ids": [
+        1558,
+        123635
+      ],
+      "subject_id": "COM",
+      "target": "Moroni",
+      "target_continuation_token_ids": [
+        5945,
+        9487
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Comoros?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        1301,
+        123635,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Comoros",
+      "subject_embedding_token_ids": [
+        1558,
+        123635
+      ],
+      "subject_id": "COM",
+      "target": "Moroni",
+      "target_continuation_token_ids": [
+        5945,
+        9487
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Comoros:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        1301,
+        123635,
+        236787
+      ],
+      "split": "test",
+      "subject": "Comoros",
+      "subject_embedding_token_ids": [
+        1558,
+        123635
+      ],
+      "subject_id": "COM",
+      "target": "Moroni",
+      "target_continuation_token_ids": [
+        5945,
+        9487
+      ]
+    },
+    {
+      "prompt": "The capital of Cameroon is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        99747,
+        563
+      ],
+      "split": "test",
+      "subject": "Cameroon",
+      "subject_embedding_token_ids": [
+        29256,
+        2304,
+        498
+      ],
+      "subject_id": "CMR",
+      "target": "Yaoundé",
+      "target_continuation_token_ids": [
+        20854,
+        960,
+        236859
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Cameroon?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        99747,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Cameroon",
+      "subject_embedding_token_ids": [
+        29256,
+        2304,
+        498
+      ],
+      "subject_id": "CMR",
+      "target": "Yaoundé",
+      "target_continuation_token_ids": [
+        20854,
+        960,
+        236859
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Cameroon:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        99747,
+        236787
+      ],
+      "split": "test",
+      "subject": "Cameroon",
+      "subject_embedding_token_ids": [
+        29256,
+        2304,
+        498
+      ],
+      "subject_id": "CMR",
+      "target": "Yaoundé",
+      "target_continuation_token_ids": [
+        20854,
+        960,
+        236859
+      ]
+    },
+    {
+      "prompt": "The capital of Bosnia and Herzegovina is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        83622,
+        532,
+        136798,
+        563
+      ],
+      "split": "test",
+      "subject": "Bosnia and Herzegovina",
+      "subject_embedding_token_ids": [
+        83138,
+        14226,
+        532,
+        136798
+      ],
+      "subject_id": "BIH",
+      "target": "Sarajevo",
+      "target_continuation_token_ids": [
+        151827
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Bosnia and Herzegovina?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        83622,
+        532,
+        136798,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Bosnia and Herzegovina",
+      "subject_embedding_token_ids": [
+        83138,
+        14226,
+        532,
+        136798
+      ],
+      "subject_id": "BIH",
+      "target": "Sarajevo",
+      "target_continuation_token_ids": [
+        151827
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Bosnia and Herzegovina:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        83622,
+        532,
+        136798,
+        236787
+      ],
+      "split": "test",
+      "subject": "Bosnia and Herzegovina",
+      "subject_embedding_token_ids": [
+        83138,
+        14226,
+        532,
+        136798
+      ],
+      "subject_id": "BIH",
+      "target": "Sarajevo",
+      "target_continuation_token_ids": [
+        151827
+      ]
+    },
+    {
+      "prompt": "The capital of Malta is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        48319,
+        563
+      ],
+      "split": "test",
+      "subject": "Malta",
+      "subject_embedding_token_ids": [
+        22021,
+        1246
+      ],
+      "subject_id": "MLT",
+      "target": "Valletta",
+      "target_continuation_token_ids": [
+        203647
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Malta?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        48319,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Malta",
+      "subject_embedding_token_ids": [
+        22021,
+        1246
+      ],
+      "subject_id": "MLT",
+      "target": "Valletta",
+      "target_continuation_token_ids": [
+        203647
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Malta:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        48319,
+        236787
+      ],
+      "split": "test",
+      "subject": "Malta",
+      "subject_embedding_token_ids": [
+        22021,
+        1246
+      ],
+      "subject_id": "MLT",
+      "target": "Valletta",
+      "target_continuation_token_ids": [
+        203647
+      ]
+    },
+    {
+      "prompt": "The capital of Chad is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        47496,
+        563
+      ],
+      "split": "test",
+      "subject": "Chad",
+      "subject_embedding_token_ids": [
+        142307
+      ],
+      "subject_id": "TCD",
+      "target": "N'Djamena",
+      "target_continuation_token_ids": [
+        646,
+        236789,
+        236796,
+        21741,
+        3320
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Chad?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        47496,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Chad",
+      "subject_embedding_token_ids": [
+        142307
+      ],
+      "subject_id": "TCD",
+      "target": "N'Djamena",
+      "target_continuation_token_ids": [
+        646,
+        236789,
+        236796,
+        21741,
+        3320
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Chad:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        47496,
+        236787
+      ],
+      "split": "test",
+      "subject": "Chad",
+      "subject_embedding_token_ids": [
+        142307
+      ],
+      "subject_id": "TCD",
+      "target": "N'Djamena",
+      "target_continuation_token_ids": [
+        646,
+        236789,
+        236796,
+        21741,
+        3320
+      ]
+    },
+    {
+      "prompt": "The capital of Fiji is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        77930,
+        563
+      ],
+      "split": "test",
+      "subject": "Fiji",
+      "subject_embedding_token_ids": [
+        236811,
+        18991
+      ],
+      "subject_id": "FJI",
+      "target": "Suva",
+      "target_continuation_token_ids": [
+        2718,
+        2919
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Fiji?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        77930,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Fiji",
+      "subject_embedding_token_ids": [
+        236811,
+        18991
+      ],
+      "subject_id": "FJI",
+      "target": "Suva",
+      "target_continuation_token_ids": [
+        2718,
+        2919
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Fiji:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        77930,
+        236787
+      ],
+      "split": "test",
+      "subject": "Fiji",
+      "subject_embedding_token_ids": [
+        236811,
+        18991
+      ],
+      "subject_id": "FJI",
+      "target": "Suva",
+      "target_continuation_token_ids": [
+        2718,
+        2919
+      ]
+    },
+    {
+      "prompt": "The capital of Belarus is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        64944,
+        563
+      ],
+      "split": "test",
+      "subject": "Belarus",
+      "subject_embedding_token_ids": [
+        198962
+      ],
+      "subject_id": "BLR",
+      "target": "Minsk",
+      "target_continuation_token_ids": [
+        145406
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Belarus?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        64944,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Belarus",
+      "subject_embedding_token_ids": [
+        198962
+      ],
+      "subject_id": "BLR",
+      "target": "Minsk",
+      "target_continuation_token_ids": [
+        145406
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Belarus:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        64944,
+        236787
+      ],
+      "split": "test",
+      "subject": "Belarus",
+      "subject_embedding_token_ids": [
+        198962
+      ],
+      "subject_id": "BLR",
+      "target": "Minsk",
+      "target_continuation_token_ids": [
+        145406
+      ]
+    },
+    {
+      "prompt": "The capital of Belgium is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        31703,
+        563
+      ],
+      "split": "test",
+      "subject": "Belgium",
+      "subject_embedding_token_ids": [
+        97694
+      ],
+      "subject_id": "BEL",
+      "target": "Brussels",
+      "target_continuation_token_ids": [
+        42919
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Belgium?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        31703,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Belgium",
+      "subject_embedding_token_ids": [
+        97694
+      ],
+      "subject_id": "BEL",
+      "target": "Brussels",
+      "target_continuation_token_ids": [
+        42919
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Belgium:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        31703,
+        236787
+      ],
+      "split": "test",
+      "subject": "Belgium",
+      "subject_embedding_token_ids": [
+        97694
+      ],
+      "subject_id": "BEL",
+      "target": "Brussels",
+      "target_continuation_token_ids": [
+        42919
+      ]
+    },
+    {
+      "prompt": "The capital of Vatican City is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        66096,
+        4085,
+        563
+      ],
+      "split": "test",
+      "subject": "Vatican City",
+      "subject_embedding_token_ids": [
+        236847,
+        2138,
+        508,
+        4085
+      ],
+      "subject_id": "VAT",
+      "target": "Vatican City",
+      "target_continuation_token_ids": [
+        66096,
+        4085
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Vatican City?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        66096,
+        4085,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Vatican City",
+      "subject_embedding_token_ids": [
+        236847,
+        2138,
+        508,
+        4085
+      ],
+      "subject_id": "VAT",
+      "target": "Vatican City",
+      "target_continuation_token_ids": [
+        66096,
+        4085
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Vatican City:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        66096,
+        4085,
+        236787
+      ],
+      "split": "test",
+      "subject": "Vatican City",
+      "subject_embedding_token_ids": [
+        236847,
+        2138,
+        508,
+        4085
+      ],
+      "subject_id": "VAT",
+      "target": "Vatican City",
+      "target_continuation_token_ids": [
+        66096,
+        4085
+      ]
+    },
+    {
+      "prompt": "The capital of Panama is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        51135,
+        563
+      ],
+      "split": "test",
+      "subject": "Panama",
+      "subject_embedding_token_ids": [
+        6075,
+        2327
+      ],
+      "subject_id": "PAN",
+      "target": "Panama City",
+      "target_continuation_token_ids": [
+        51135,
+        4085
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Panama?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        51135,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Panama",
+      "subject_embedding_token_ids": [
+        6075,
+        2327
+      ],
+      "subject_id": "PAN",
+      "target": "Panama City",
+      "target_continuation_token_ids": [
+        51135,
+        4085
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Panama:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        51135,
+        236787
+      ],
+      "split": "test",
+      "subject": "Panama",
+      "subject_embedding_token_ids": [
+        6075,
+        2327
+      ],
+      "subject_id": "PAN",
+      "target": "Panama City",
+      "target_continuation_token_ids": [
+        51135,
+        4085
+      ]
+    },
+    {
+      "prompt": "The capital of Papua New Guinea is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        89313,
+        1799,
+        52118,
+        563
+      ],
+      "split": "test",
+      "subject": "Papua New Guinea",
+      "subject_embedding_token_ids": [
+        79833,
+        3271,
+        1799,
+        52118
+      ],
+      "subject_id": "PNG",
+      "target": "Port Moresby",
+      "target_continuation_token_ids": [
+        5348,
+        587,
+        2985,
+        2003
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Papua New Guinea?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        89313,
+        1799,
+        52118,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Papua New Guinea",
+      "subject_embedding_token_ids": [
+        79833,
+        3271,
+        1799,
+        52118
+      ],
+      "subject_id": "PNG",
+      "target": "Port Moresby",
+      "target_continuation_token_ids": [
+        5348,
+        587,
+        2985,
+        2003
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Papua New Guinea:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        89313,
+        1799,
+        52118,
+        236787
+      ],
+      "split": "test",
+      "subject": "Papua New Guinea",
+      "subject_embedding_token_ids": [
+        79833,
+        3271,
+        1799,
+        52118
+      ],
+      "subject_id": "PNG",
+      "target": "Port Moresby",
+      "target_continuation_token_ids": [
+        5348,
+        587,
+        2985,
+        2003
+      ]
+    },
+    {
+      "prompt": "The capital of Somalia is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        83281,
+        563
+      ],
+      "split": "test",
+      "subject": "Somalia",
+      "subject_embedding_token_ids": [
+        25756,
+        14654
+      ],
+      "subject_id": "SOM",
+      "target": "Mogadishu",
+      "target_continuation_token_ids": [
+        70572,
+        553,
+        147226
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Somalia?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        83281,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Somalia",
+      "subject_embedding_token_ids": [
+        25756,
+        14654
+      ],
+      "subject_id": "SOM",
+      "target": "Mogadishu",
+      "target_continuation_token_ids": [
+        70572,
+        553,
+        147226
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Somalia:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        83281,
+        236787
+      ],
+      "split": "test",
+      "subject": "Somalia",
+      "subject_embedding_token_ids": [
+        25756,
+        14654
+      ],
+      "subject_id": "SOM",
+      "target": "Mogadishu",
+      "target_continuation_token_ids": [
+        70572,
+        553,
+        147226
+      ]
+    },
+    {
+      "prompt": "The capital of Eswatini is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        645,
+        1745,
+        167237,
+        563
+      ],
+      "split": "test",
+      "subject": "Eswatini",
+      "subject_embedding_token_ids": [
+        236788,
+        1745,
+        167237
+      ],
+      "subject_id": "SWZ",
+      "target": "Lobamba",
+      "target_continuation_token_ids": [
+        41770,
+        30341
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Eswatini?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        645,
+        1745,
+        167237,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Eswatini",
+      "subject_embedding_token_ids": [
+        236788,
+        1745,
+        167237
+      ],
+      "subject_id": "SWZ",
+      "target": "Lobamba",
+      "target_continuation_token_ids": [
+        41770,
+        30341
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Eswatini:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        645,
+        1745,
+        167237,
+        236787
+      ],
+      "split": "test",
+      "subject": "Eswatini",
+      "subject_embedding_token_ids": [
+        236788,
+        1745,
+        167237
+      ],
+      "subject_id": "SWZ",
+      "target": "Lobamba",
+      "target_continuation_token_ids": [
+        41770,
+        30341
+      ]
+    },
+    {
+      "prompt": "The capital of Tanzania is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        55310,
+        563
+      ],
+      "split": "test",
+      "subject": "Tanzania",
+      "subject_embedding_token_ids": [
+        236774,
+        7180,
+        10096
+      ],
+      "subject_id": "TZA",
+      "target": "Dodoma",
+      "target_continuation_token_ids": [
+        38497,
+        5537
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Tanzania?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        55310,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tanzania",
+      "subject_embedding_token_ids": [
+        236774,
+        7180,
+        10096
+      ],
+      "subject_id": "TZA",
+      "target": "Dodoma",
+      "target_continuation_token_ids": [
+        38497,
+        5537
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Tanzania:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        55310,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tanzania",
+      "subject_embedding_token_ids": [
+        236774,
+        7180,
+        10096
+      ],
+      "subject_id": "TZA",
+      "target": "Dodoma",
+      "target_continuation_token_ids": [
+        38497,
+        5537
+      ]
+    },
+    {
+      "prompt": "The capital of Singapore is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        19029,
+        563
+      ],
+      "split": "test",
+      "subject": "Singapore",
+      "subject_embedding_token_ids": [
+        110500
+      ],
+      "subject_id": "SGP",
+      "target": "Singapore",
+      "target_continuation_token_ids": [
+        19029
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Singapore?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        19029,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Singapore",
+      "subject_embedding_token_ids": [
+        110500
+      ],
+      "subject_id": "SGP",
+      "target": "Singapore",
+      "target_continuation_token_ids": [
+        19029
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Singapore:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        19029,
+        236787
+      ],
+      "split": "test",
+      "subject": "Singapore",
+      "subject_embedding_token_ids": [
+        110500
+      ],
+      "subject_id": "SGP",
+      "target": "Singapore",
+      "target_continuation_token_ids": [
+        19029
+      ]
+    },
+    {
+      "prompt": "The capital of Tuvalu is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        17206,
+        30942,
+        563
+      ],
+      "split": "test",
+      "subject": "Tuvalu",
+      "subject_embedding_token_ids": [
+        21831,
+        30942
+      ],
+      "subject_id": "TUV",
+      "target": "Funafuti",
+      "target_continuation_token_ids": [
+        13070,
+        2448,
+        11987
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Tuvalu?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        17206,
+        30942,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tuvalu",
+      "subject_embedding_token_ids": [
+        21831,
+        30942
+      ],
+      "subject_id": "TUV",
+      "target": "Funafuti",
+      "target_continuation_token_ids": [
+        13070,
+        2448,
+        11987
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Tuvalu:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        17206,
+        30942,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tuvalu",
+      "subject_embedding_token_ids": [
+        21831,
+        30942
+      ],
+      "subject_id": "TUV",
+      "target": "Funafuti",
+      "target_continuation_token_ids": [
+        13070,
+        2448,
+        11987
+      ]
+    },
+    {
+      "prompt": "The capital of Timor-Leste is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        143489,
+        236772,
+        236798,
+        9491,
+        563
+      ],
+      "split": "test",
+      "subject": "Timor-Leste",
+      "subject_embedding_token_ids": [
+        17214,
+        504,
+        236772,
+        236798,
+        9491
+      ],
+      "subject_id": "TLS",
+      "target": "Dili",
+      "target_continuation_token_ids": [
+        622,
+        2520
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Timor-Leste?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        143489,
+        236772,
+        236798,
+        9491,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Timor-Leste",
+      "subject_embedding_token_ids": [
+        17214,
+        504,
+        236772,
+        236798,
+        9491
+      ],
+      "subject_id": "TLS",
+      "target": "Dili",
+      "target_continuation_token_ids": [
+        622,
+        2520
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Timor-Leste:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        143489,
+        236772,
+        236798,
+        9491,
+        236787
+      ],
+      "split": "test",
+      "subject": "Timor-Leste",
+      "subject_embedding_token_ids": [
+        17214,
+        504,
+        236772,
+        236798,
+        9491
+      ],
+      "subject_id": "TLS",
+      "target": "Dili",
+      "target_continuation_token_ids": [
+        622,
+        2520
+      ]
+    },
+    {
+      "prompt": "The capital of Argentina is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        24423,
+        563
+      ],
+      "split": "test",
+      "subject": "Argentina",
+      "subject_embedding_token_ids": [
+        109324
+      ],
+      "subject_id": "ARG",
+      "target": "Buenos Aires",
+      "target_continuation_token_ids": [
+        44135,
+        48111
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Argentina?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        24423,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Argentina",
+      "subject_embedding_token_ids": [
+        109324
+      ],
+      "subject_id": "ARG",
+      "target": "Buenos Aires",
+      "target_continuation_token_ids": [
+        44135,
+        48111
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Argentina:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        24423,
+        236787
+      ],
+      "split": "test",
+      "subject": "Argentina",
+      "subject_embedding_token_ids": [
+        109324
+      ],
+      "subject_id": "ARG",
+      "target": "Buenos Aires",
+      "target_continuation_token_ids": [
+        44135,
+        48111
+      ]
+    },
+    {
+      "prompt": "The capital of Botswana is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        95018,
+        563
+      ],
+      "split": "test",
+      "subject": "Botswana",
+      "subject_embedding_token_ids": [
+        203369,
+        48751
+      ],
+      "subject_id": "BWA",
+      "target": "Gaborone",
+      "target_continuation_token_ids": [
+        667,
+        2848,
+        811
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Botswana?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        95018,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Botswana",
+      "subject_embedding_token_ids": [
+        203369,
+        48751
+      ],
+      "subject_id": "BWA",
+      "target": "Gaborone",
+      "target_continuation_token_ids": [
+        667,
+        2848,
+        811
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Botswana:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        95018,
+        236787
+      ],
+      "split": "test",
+      "subject": "Botswana",
+      "subject_embedding_token_ids": [
+        203369,
+        48751
+      ],
+      "subject_id": "BWA",
+      "target": "Gaborone",
+      "target_continuation_token_ids": [
+        667,
+        2848,
+        811
+      ]
+    },
+    {
+      "prompt": "The capital of Seychelles is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        86513,
+        563
+      ],
+      "split": "test",
+      "subject": "Seychelles",
+      "subject_embedding_token_ids": [
+        179299,
+        74783
+      ],
+      "subject_id": "SYC",
+      "target": "Victoria",
+      "target_continuation_token_ids": [
+        19169
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Seychelles?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        86513,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Seychelles",
+      "subject_embedding_token_ids": [
+        179299,
+        74783
+      ],
+      "subject_id": "SYC",
+      "target": "Victoria",
+      "target_continuation_token_ids": [
+        19169
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Seychelles:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        86513,
+        236787
+      ],
+      "split": "test",
+      "subject": "Seychelles",
+      "subject_embedding_token_ids": [
+        179299,
+        74783
+      ],
+      "subject_id": "SYC",
+      "target": "Victoria",
+      "target_continuation_token_ids": [
+        19169
+      ]
+    },
+    {
+      "prompt": "The capital of Bhutan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        102045,
+        563
+      ],
+      "split": "test",
+      "subject": "Bhutan",
+      "subject_embedding_token_ids": [
+        69822,
+        22531
+      ],
+      "subject_id": "BTN",
+      "target": "Thimphu",
+      "target_continuation_token_ids": [
+        807,
+        548,
+        791,
+        236756
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Bhutan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        102045,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Bhutan",
+      "subject_embedding_token_ids": [
+        69822,
+        22531
+      ],
+      "subject_id": "BTN",
+      "target": "Thimphu",
+      "target_continuation_token_ids": [
+        807,
+        548,
+        791,
+        236756
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Bhutan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        102045,
+        236787
+      ],
+      "split": "test",
+      "subject": "Bhutan",
+      "subject_embedding_token_ids": [
+        69822,
+        22531
+      ],
+      "subject_id": "BTN",
+      "target": "Thimphu",
+      "target_continuation_token_ids": [
+        807,
+        548,
+        791,
+        236756
+      ]
+    },
+    {
+      "prompt": "The capital of Malawi is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        110580,
+        563
+      ],
+      "split": "test",
+      "subject": "Malawi",
+      "subject_embedding_token_ids": [
+        22021,
+        31418
+      ],
+      "subject_id": "MWI",
+      "target": "Lilongwe",
+      "target_continuation_token_ids": [
+        46686,
+        797,
+        977
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Malawi?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        110580,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Malawi",
+      "subject_embedding_token_ids": [
+        22021,
+        31418
+      ],
+      "subject_id": "MWI",
+      "target": "Lilongwe",
+      "target_continuation_token_ids": [
+        46686,
+        797,
+        977
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Malawi:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        110580,
+        236787
+      ],
+      "split": "test",
+      "subject": "Malawi",
+      "subject_embedding_token_ids": [
+        22021,
+        31418
+      ],
+      "subject_id": "MWI",
+      "target": "Lilongwe",
+      "target_continuation_token_ids": [
+        46686,
+        797,
+        977
+      ]
+    },
+    {
+      "prompt": "The capital of Lesotho is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        135000,
+        563
+      ],
+      "split": "test",
+      "subject": "Lesotho",
+      "subject_embedding_token_ids": [
+        15192,
+        102499
+      ],
+      "subject_id": "LSO",
+      "target": "Maseru",
+      "target_continuation_token_ids": [
+        10097,
+        101176
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Lesotho?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        135000,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Lesotho",
+      "subject_embedding_token_ids": [
+        15192,
+        102499
+      ],
+      "subject_id": "LSO",
+      "target": "Maseru",
+      "target_continuation_token_ids": [
+        10097,
+        101176
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Lesotho:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        135000,
+        236787
+      ],
+      "split": "test",
+      "subject": "Lesotho",
+      "subject_embedding_token_ids": [
+        15192,
+        102499
+      ],
+      "subject_id": "LSO",
+      "target": "Maseru",
+      "target_continuation_token_ids": [
+        10097,
+        101176
+      ]
+    },
+    {
+      "prompt": "The capital of Cyprus is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        54881,
+        563
+      ],
+      "split": "test",
+      "subject": "Cyprus",
+      "subject_embedding_token_ids": [
+        40284,
+        49775
+      ],
+      "subject_id": "CYP",
+      "target": "Nicosia",
+      "target_continuation_token_ids": [
+        646,
+        231511
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Cyprus?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        54881,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Cyprus",
+      "subject_embedding_token_ids": [
+        40284,
+        49775
+      ],
+      "subject_id": "CYP",
+      "target": "Nicosia",
+      "target_continuation_token_ids": [
+        646,
+        231511
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Cyprus:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        54881,
+        236787
+      ],
+      "split": "test",
+      "subject": "Cyprus",
+      "subject_embedding_token_ids": [
+        40284,
+        49775
+      ],
+      "subject_id": "CYP",
+      "target": "Nicosia",
+      "target_continuation_token_ids": [
+        646,
+        231511
+      ]
+    },
+    {
+      "prompt": "The capital of Nauru is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        646,
+        205795,
+        563
+      ],
+      "split": "test",
+      "subject": "Nauru",
+      "subject_embedding_token_ids": [
+        236797,
+        205795
+      ],
+      "subject_id": "NRU",
+      "target": "Yaren",
+      "target_continuation_token_ids": [
+        895,
+        5956
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Nauru?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        646,
+        205795,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Nauru",
+      "subject_embedding_token_ids": [
+        236797,
+        205795
+      ],
+      "subject_id": "NRU",
+      "target": "Yaren",
+      "target_continuation_token_ids": [
+        895,
+        5956
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Nauru:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        646,
+        205795,
+        236787
+      ],
+      "split": "test",
+      "subject": "Nauru",
+      "subject_embedding_token_ids": [
+        236797,
+        205795
+      ],
+      "subject_id": "NRU",
+      "target": "Yaren",
+      "target_continuation_token_ids": [
+        895,
+        5956
+      ]
+    },
+    {
+      "prompt": "The capital of Haiti is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        78929,
+        563
+      ],
+      "split": "test",
+      "subject": "Haiti",
+      "subject_embedding_token_ids": [
+        236814,
+        173497
+      ],
+      "subject_id": "HTI",
+      "target": "Port-au-Prince",
+      "target_continuation_token_ids": [
+        5348,
+        236772,
+        826,
+        236772,
+        71049
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Haiti?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        78929,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Haiti",
+      "subject_embedding_token_ids": [
+        236814,
+        173497
+      ],
+      "subject_id": "HTI",
+      "target": "Port-au-Prince",
+      "target_continuation_token_ids": [
+        5348,
+        236772,
+        826,
+        236772,
+        71049
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Haiti:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        78929,
+        236787
+      ],
+      "split": "test",
+      "subject": "Haiti",
+      "subject_embedding_token_ids": [
+        236814,
+        173497
+      ],
+      "subject_id": "HTI",
+      "target": "Port-au-Prince",
+      "target_continuation_token_ids": [
+        5348,
+        236772,
+        826,
+        236772,
+        71049
+      ]
+    },
+    {
+      "prompt": "The capital of Tajikistan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        185145,
+        563
+      ],
+      "split": "test",
+      "subject": "Tajikistan",
+      "subject_embedding_token_ids": [
+        181934,
+        727,
+        9010
+      ],
+      "subject_id": "TJK",
+      "target": "Dushanbe",
+      "target_continuation_token_ids": [
+        622,
+        117936,
+        1553
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Tajikistan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        185145,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tajikistan",
+      "subject_embedding_token_ids": [
+        181934,
+        727,
+        9010
+      ],
+      "subject_id": "TJK",
+      "target": "Dushanbe",
+      "target_continuation_token_ids": [
+        622,
+        117936,
+        1553
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Tajikistan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        185145,
+        236787
+      ],
+      "split": "test",
+      "subject": "Tajikistan",
+      "subject_embedding_token_ids": [
+        181934,
+        727,
+        9010
+      ],
+      "subject_id": "TJK",
+      "target": "Dushanbe",
+      "target_continuation_token_ids": [
+        622,
+        117936,
+        1553
+      ]
+    },
+    {
+      "prompt": "The capital of Samoa is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        103987,
+        563
+      ],
+      "split": "test",
+      "subject": "Samoa",
+      "subject_embedding_token_ids": [
+        236773,
+        12137,
+        236746
+      ],
+      "subject_id": "WSM",
+      "target": "Apia",
+      "target_continuation_token_ids": [
+        10496,
+        722
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Samoa?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        103987,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Samoa",
+      "subject_embedding_token_ids": [
+        236773,
+        12137,
+        236746
+      ],
+      "subject_id": "WSM",
+      "target": "Apia",
+      "target_continuation_token_ids": [
+        10496,
+        722
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Samoa:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        103987,
+        236787
+      ],
+      "split": "test",
+      "subject": "Samoa",
+      "subject_embedding_token_ids": [
+        236773,
+        12137,
+        236746
+      ],
+      "subject_id": "WSM",
+      "target": "Apia",
+      "target_continuation_token_ids": [
+        10496,
+        722
+      ]
+    },
+    {
+      "prompt": "The capital of Micronesia is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        16482,
+        26257,
+        722,
+        563
+      ],
+      "split": "test",
+      "subject": "Micronesia",
+      "subject_embedding_token_ids": [
+        43649,
+        26257,
+        722
+      ],
+      "subject_id": "FSM",
+      "target": "Palikir",
+      "target_continuation_token_ids": [
+        6203,
+        56040
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Micronesia?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        16482,
+        26257,
+        722,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Micronesia",
+      "subject_embedding_token_ids": [
+        43649,
+        26257,
+        722
+      ],
+      "subject_id": "FSM",
+      "target": "Palikir",
+      "target_continuation_token_ids": [
+        6203,
+        56040
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Micronesia:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        16482,
+        26257,
+        722,
+        236787
+      ],
+      "split": "test",
+      "subject": "Micronesia",
+      "subject_embedding_token_ids": [
+        43649,
+        26257,
+        722
+      ],
+      "subject_id": "FSM",
+      "target": "Palikir",
+      "target_continuation_token_ids": [
+        6203,
+        56040
+      ]
+    },
+    {
+      "prompt": "The capital of Azerbaijan is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        72506,
+        563
+      ],
+      "split": "test",
+      "subject": "Azerbaijan",
+      "subject_embedding_token_ids": [
+        206160,
+        41635,
+        13596
+      ],
+      "subject_id": "AZE",
+      "target": "Baku",
+      "target_continuation_token_ids": [
+        117652
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Azerbaijan?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        72506,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Azerbaijan",
+      "subject_embedding_token_ids": [
+        206160,
+        41635,
+        13596
+      ],
+      "subject_id": "AZE",
+      "target": "Baku",
+      "target_continuation_token_ids": [
+        117652
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Azerbaijan:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        72506,
+        236787
+      ],
+      "split": "test",
+      "subject": "Azerbaijan",
+      "subject_embedding_token_ids": [
+        206160,
+        41635,
+        13596
+      ],
+      "subject_id": "AZE",
+      "target": "Baku",
+      "target_continuation_token_ids": [
+        117652
+      ]
+    },
+    {
+      "prompt": "The capital of Palau is",
+      "prompt_family": "canonical",
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        209863,
+        563
+      ],
+      "split": "test",
+      "subject": "Palau",
+      "subject_embedding_token_ids": [
+        16170,
+        826
+      ],
+      "subject_id": "PLW",
+      "target": "Ngerulmud",
+      "target_continuation_token_ids": [
+        646,
+        1716,
+        575,
+        60309
+      ]
+    },
+    {
+      "prompt": "Question: What is the capital of Palau?\nAnswer:",
+      "prompt_family": "question",
+      "prompt_token_ids": [
+        2,
+        14977,
+        236787,
+        2900,
+        563,
+        506,
+        5279,
+        529,
+        209863,
+        236881,
+        107,
+        7925,
+        236787
+      ],
+      "split": "test",
+      "subject": "Palau",
+      "subject_embedding_token_ids": [
+        16170,
+        826
+      ],
+      "subject_id": "PLW",
+      "target": "Ngerulmud",
+      "target_continuation_token_ids": [
+        646,
+        1716,
+        575,
+        60309
+      ]
+    },
+    {
+      "prompt": "Name the capital city of Palau:",
+      "prompt_family": "alternate",
+      "prompt_token_ids": [
+        2,
+        1567,
+        506,
+        5279,
+        3207,
+        529,
+        209863,
+        236787
+      ],
+      "split": "test",
+      "subject": "Palau",
+      "subject_embedding_token_ids": [
+        16170,
+        826
+      ],
+      "subject_id": "PLW",
+      "target": "Ngerulmud",
+      "target_continuation_token_ids": [
+        646,
+        1716,
+        575,
+        60309
+      ]
+    }
+  ],
+  "schema": "larql.gwcar1b.population-proposal.v1",
+  "scope": "capital only; no currency/language or global-relation generalization claim",
+  "source": {
+    "commit": "c8015eebdd94c533358406b0d709f441389e1f2e",
+    "sha256": "sha256:99b85dda36895c79caf72e191d035e4b9d82e811ee34f9ca15dfa67d7c561ba8",
+    "url": "https://raw.githubusercontent.com/mledoze/countries/c8015eebdd94c533358406b0d709f441389e1f2e/countries.json"
+  },
+  "split_rule": "SHA256 canonical [seed,cca3] ascending; ceil(n/2) validation, remaining test; subject clustered",
+  "split_seed": "larql-gwcar1b-capital-fresh-subject-proposal-v1",
+  "status": "outcome_free_proposal_not_an_experiment_seal",
+  "tokenizer_sha256": "sha256:4667f2089529e8e7657cfb6d1c19910ae71ff5f28aa7ab2ff2763330affad795"
+}

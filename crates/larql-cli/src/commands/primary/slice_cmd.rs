@@ -351,6 +351,12 @@ pub fn slice_vindex(
             let mut new_cfg = cfg.clone();
             new_cfg.extract_level = new_level;
             new_cfg.has_model_weights = new_has_weights;
+            // A slice declares only what it carries: `larql verify` checks
+            // every checksum entry and fails one whose file was left
+            // behind, so an unpruned map made every slice fail to verify.
+            if let Some(sums) = new_cfg.checksums.as_mut() {
+                sums.retain(|name, _| outcome.copied.iter().any(|(kept, _)| kept == name));
+            }
             let json = serde_json::to_string_pretty(&new_cfg)?;
             std::fs::write(&dst_path, json)?;
         } else {
@@ -693,5 +699,29 @@ mod tests {
         .collect();
         let lvl = effective_level(&parts, larql_vindex::ExtractLevel::Browse);
         assert_eq!(lvl, larql_vindex::ExtractLevel::Browse);
+    }
+
+    #[test]
+    fn a_slice_declares_only_the_files_it_carries() {
+        // A checksum for a file left behind fails `larql verify` on an
+        // intact slice.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let index = serde_json::json!({
+            "version": 2, "model": "m", "family": "f", "num_layers": 1,
+            "hidden_size": 4, "intermediate_size": 8, "vocab_size": 2,
+            "embed_scale": 1.0, "layers": [], "down_top_k": 1,
+            "checksums": {GATE_VECTORS_BIN: "g", EMBEDDINGS_BIN: "e"}
+        });
+        std::fs::write(src.join(INDEX_JSON), index.to_string()).unwrap();
+        std::fs::write(src.join(GATE_VECTORS_BIN), b"g").unwrap();
+        std::fs::write(src.join(EMBEDDINGS_BIN), b"e").unwrap();
+        let dst = tmp.path().join("dst");
+        let parts: BTreeSet<Part> = [Part::Embed].into_iter().collect();
+        slice_vindex(&src, &dst, parts, false, false).unwrap();
+        let sliced = larql_vindex::load_vindex_config(&dst).unwrap();
+        let declared: Vec<String> = sliced.checksums.unwrap().into_keys().collect();
+        assert_eq!(declared, [EMBEDDINGS_BIN]);
     }
 }

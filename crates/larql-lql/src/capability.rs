@@ -122,6 +122,7 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | VerifyRepresentation { .. }
         | VerifyOperator { .. }
         | Insert { .. }
+        | UpdateWeights { .. }
         | Delete { .. }
         | Update { .. }
         | Merge { .. }

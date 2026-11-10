@@ -8,11 +8,13 @@
 //! 2026-08-23 per the `format/generation.rs`+`format/generation_tests.rs`
 //! pattern):
 //! - `helpers`      — pure non-network utilities (etag/repo-filter/cache-path).
+//! - `payloads`     — VINDEX3 segment digests checked against the index on arrival.
 //! - `tests`        — hf_hub-plumbing tests (resolve/download/cache-walk).
 //! - `tests_v3`     — VINDEX3 generation-aware completeness tests.
 //! - `test_support` — mock/env-guard scaffolding shared by both test files.
 
 mod helpers;
+mod payloads;
 
 use std::path::PathBuf;
 
@@ -421,6 +423,9 @@ where
         // on-disk path. The cache check fires the progress reporter so the
         // bar shows a filled-to-100% track tagged with the filename — users
         // see that the file was served from cache, not re-downloaded.
+        // Whether anything in this pull came over the wire rather than
+        // from the snapshot cache — a fresh byte has not been verified.
+        let fetched_any = std::cell::Cell::new(false);
         let mut fetch = |filename: &str, label: &str| -> Option<PathBuf> {
             if let Some((cached_path, size)) =
                 cached_snapshot_file(kind, &repo_id, revision.as_deref(), filename)
@@ -435,6 +440,7 @@ where
                 p.finish();
                 return Some(cached_path);
             }
+            fetched_any.set(true);
             repo.download_with_progress(filename, progress(label)).ok()
         };
 
@@ -451,6 +457,9 @@ where
 
         match detect_generation(&vindex_dir)? {
             ContainerGeneration::V3 => {
+                // Before any segment can be replaced: a pull that is cut
+                // short must not leave a marker vouching for new bytes.
+                let verification = payloads::PendingVerification::begin(&vindex_dir)?;
                 let info = repo.info().map_err(|e| {
                     VindexError::Parse(format!("HF info failed for hf://{repo_id}: {e}"))
                 })?;
@@ -465,9 +474,23 @@ where
                         ))
                     })?;
                 }
+                // Complete is not the same as correct: the segments must
+                // be the bytes this container's own index seals.
+                verification.finish(fetched_any.get())?;
             }
             ContainerGeneration::V2 => {
-                for filename in vindex_core_files() {
+                // The fixed core list, then whatever else the index requires
+                // (`completeness::required_files`) — so a pull fetches every
+                // file `larql list` will check for.
+                let declared = crate::format::load::load_vindex_config_unchecked(&vindex_dir)
+                    .map(|cfg| crate::format::completeness::required_files(&cfg))
+                    .unwrap_or_default();
+                let core = vindex_core_files();
+                let extra = declared
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|f| !core.contains(f));
+                for filename in core.iter().copied().chain(extra) {
                     if filename == INDEX_JSON {
                         continue;
                     }
@@ -603,5 +626,7 @@ where
 mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_payloads;
 #[cfg(test)]
 mod tests_v3;
