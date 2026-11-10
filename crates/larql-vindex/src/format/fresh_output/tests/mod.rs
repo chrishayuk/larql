@@ -4,7 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{check_fresh_destination, write_fresh_directory, STAGING_INFIX};
+use super::{
+    check_empty_destination, check_fresh_destination, write_fresh_directory, STAGING_INFIX,
+};
 use crate::error::VindexError;
 
 const KEPT_FILE: &str = "kept.bin";
@@ -437,4 +439,32 @@ fn a_destination_below_a_plain_file_is_an_error_and_the_file_is_kept() {
 
     assert!(matches!(err, VindexError::OutputStaging { .. }), "{err}");
     assert_eq!(std::fs::read(&parent_is_a_file).unwrap(), KEPT_BYTES);
+}
+
+// ── A destination with no local source ───────────────────────────────────
+
+#[test]
+fn a_sourceless_check_judges_only_the_destination() {
+    let tmp = tempfile::tempdir().unwrap();
+    let empty = tmp.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let full = tmp.path().join("full");
+    std::fs::create_dir(&full).unwrap();
+    std::fs::write(full.join(KEPT_FILE), KEPT_BYTES).unwrap();
+
+    check_empty_destination(&tmp.path().join("absent")).unwrap();
+    check_empty_destination(&empty).unwrap();
+    let err = check_empty_destination(&full).unwrap_err();
+    assert!(refusal_reason(err).contains("not empty"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_sourceless_check_still_refuses_a_symlink() {
+    let tmp = tempfile::tempdir().unwrap();
+    let link = tmp.path().join("link");
+    std::os::unix::fs::symlink(tmp.path().join("nowhere"), &link).unwrap();
+
+    let err = check_empty_destination(&link).unwrap_err();
+    assert!(refusal_reason(err).contains("symbolic link"));
 }

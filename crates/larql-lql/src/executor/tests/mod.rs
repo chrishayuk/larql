@@ -178,10 +178,6 @@ mod vindex_fixtures;
 use moe_fixtures::*;
 use vindex_fixtures::*;
 
-/// Build a minimal vindex directory on disk that the LQL executor can
-/// load via `USE`. Includes gate vectors, down_meta, embeddings, and a
-/// stub tokenizer. Returns the directory path; the caller is
-/// responsible for cleanup.
 /// A fresh COMPILE destination *beside* the test vindex at `source`.
 ///
 /// COMPILE refuses an output inside its source and one that already
@@ -198,6 +194,10 @@ fn compile_output(source: &std::path::Path, name: &str) -> std::path::PathBuf {
     output
 }
 
+/// Build a minimal vindex directory on disk that the LQL executor can
+/// load via `USE`. Includes gate vectors, down_meta, embeddings, and a
+/// stub tokenizer. Returns the directory path; the caller is
+/// responsible for cleanup.
 fn make_test_vindex_dir(tag: &str) -> std::path::PathBuf {
     use larql_models::TopKEntry;
     use larql_vindex::{ExtractLevel, FeatureMeta, StorageDtype, VectorIndex, VindexConfig};

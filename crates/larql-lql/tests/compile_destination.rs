@@ -403,3 +403,36 @@ fn v3_compact_refuses_a_non_empty_directory_and_keeps_its_files() {
         "nothing was written beside the bystander file"
     );
 }
+
+// ── The KNN store travels inside the staged container ────────────────────
+
+#[test]
+fn v3_compile_with_knn_entries_publishes_the_store_with_the_container() {
+    // The store used to be written into the output after promotion, so a
+    // failed save left a container that looked whole and was not.
+    use larql_vindex::format::filenames::KNN_STORE_BIN;
+    use larql_vindex::format::vindex3::fixtures::G_VOCAB;
+
+    let (tmp, source) = v3_source();
+    std::fs::write(
+        source.join("tokenizer.json"),
+        larql_inference::test_utils::synthetic_tokenizer_json(G_VOCAB),
+    )
+    .expect("tokenizer");
+    let out = tmp.path().join("compiled.vindex3");
+    let mut session = bound_session(&source);
+    try_run(
+        &mut session,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "[2]", "[5]") MODE KNN;"#,
+    )
+    .expect("KNN insert");
+
+    try_run(
+        &mut session,
+        &format!("COMPILE CURRENT INTO VINDEX \"{}\";", lql_path(&out)),
+    )
+    .expect("compile");
+
+    assert!(out.join(KNN_STORE_BIN).is_file(), "the store was published");
+    assert!(out.join("index.json").is_file());
+}

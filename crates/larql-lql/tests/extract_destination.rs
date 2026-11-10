@@ -175,3 +175,18 @@ fn v2_extract_refuses_the_model_directory_as_its_own_output() {
         "the model directory is untouched"
     );
 }
+
+#[test]
+fn v2_extract_from_a_source_that_is_not_a_local_path_judges_only_the_destination() {
+    // A hub id names nothing on this filesystem, so there is no local
+    // source to alias — but the destination is still held to "absent or
+    // empty", and refused before the model is fetched.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bystander = bystander_dir(tmp.path());
+    let hub_id = Path::new("larql-test/no-such-model");
+
+    assert_refused(
+        extract(hub_id, &bystander, "VINDEX2"),
+        "a non-empty output directory",
+    );
+}

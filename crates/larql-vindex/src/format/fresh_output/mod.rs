@@ -145,6 +145,23 @@ fn without_trailing_separator(path: &Path) -> PathBuf {
 pub fn check_fresh_destination(source: &Path, out: &Path) -> Result<(), VindexError> {
     let out = without_trailing_separator(out);
     let out = out.as_path();
+    refuse_symlink(out)?;
+    refuse_nesting(source, out)?;
+    refuse_contents(out)
+}
+
+/// [`check_fresh_destination`] for a destination with no source on this
+/// filesystem to protect — a model named by a hub id, say. Only the
+/// destination's own state is judged: not a symlink, and absent or an
+/// empty directory.
+pub fn check_empty_destination(out: &Path) -> Result<(), VindexError> {
+    let out = without_trailing_separator(out);
+    let out = out.as_path();
+    refuse_symlink(out)?;
+    refuse_contents(out)
+}
+
+fn refuse_symlink(out: &Path) -> Result<(), VindexError> {
     match out.symlink_metadata() {
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(refuse(
@@ -156,7 +173,10 @@ pub fn check_fresh_destination(source: &Path, out: &Path) -> Result<(), VindexEr
         Err(e) if e.kind() == ErrorKind::NotFound => {}
         Err(e) => return Err(staging_error(STEP_INSPECT, out, e)),
     }
+    Ok(())
+}
 
+fn refuse_nesting(source: &Path, out: &Path) -> Result<(), VindexError> {
     let source_real = resolve(source)?;
     let out_real = resolve(out)?;
 
@@ -179,6 +199,10 @@ pub fn check_fresh_destination(source: &Path, out: &Path) -> Result<(), VindexEr
         ));
     }
 
+    Ok(())
+}
+
+fn refuse_contents(out: &Path) -> Result<(), VindexError> {
     match std::fs::read_dir(out) {
         Ok(mut entries) => {
             if entries.next().is_some() {
@@ -219,7 +243,9 @@ impl Drop for StagingGuard {
         if !self.armed {
             return;
         }
-        let _ = std::fs::remove_dir_all(&self.staging);
+        if !self.staging.as_os_str().is_empty() {
+            let _ = std::fs::remove_dir_all(&self.staging);
+        }
         for parent in &self.created_parents {
             let _ = std::fs::remove_dir(parent);
         }
@@ -243,14 +269,15 @@ fn create_staging(out: &Path) -> Result<StagingGuard, VindexError> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let created_parents = missing_ancestors(parent);
-    std::fs::create_dir_all(parent).map_err(|e| staging_error(STEP_CREATE_PARENT, parent, e))?;
-    // From here a failure must also take the new parents back down.
+    // Armed before the parents are created, so a failure part-way
+    // through creating them takes the ones already made back down. An
+    // empty `staging` names nothing, so removing it is a no-op.
     let mut guard = StagingGuard {
         staging: PathBuf::new(),
-        created_parents,
+        created_parents: missing_ancestors(parent),
         armed: true,
     };
+    std::fs::create_dir_all(parent).map_err(|e| staging_error(STEP_CREATE_PARENT, parent, e))?;
 
     let stem = out
         .file_name()

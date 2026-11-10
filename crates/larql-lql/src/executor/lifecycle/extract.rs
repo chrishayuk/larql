@@ -24,8 +24,18 @@ use larql_vindex::format::generation::{
 /// non-empty. What this guarantees is that nothing already on disk is
 /// overwritten — and that the V3 encoder's remove-on-closure-defect only
 /// ever removes a directory this statement populated.
+///
+/// `model_source` is a local path or a hub id. Only a source that exists
+/// on this filesystem can be aliased by the output; a hub id (or any
+/// path that names nothing here) constrains nothing, and the destination
+/// is judged on its own.
 fn check_extract_destination(model_source: &Path, output: &Path) -> Result<(), LqlError> {
-    larql_vindex::format::fresh_output::check_fresh_destination(model_source, output)?;
+    use larql_vindex::format::fresh_output::{check_empty_destination, check_fresh_destination};
+    if model_source.exists() {
+        check_fresh_destination(model_source, output)?;
+    } else {
+        check_empty_destination(output)?;
+    }
     Ok(())
 }
 
@@ -54,8 +64,6 @@ impl Session {
         }
 
         let output_dir = PathBuf::from(output);
-        // `model` is a local path or a hub id; as a path, a hub id names
-        // nothing on disk and so constrains nothing.
         check_extract_destination(Path::new(model), &output_dir)?;
 
         let mut out = Vec::new();

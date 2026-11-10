@@ -656,11 +656,13 @@ COMPILE {CURRENT | <vindex_path>} INTO VINDEX <output_path>
 --   - the source itself, a directory containing it, a path inside it, and
 --     a symbolic link are refused (symlinks in the path are resolved first).
 -- The result is built in a hidden sibling directory and renamed into
--- place: a refused or failed statement leaves <output_path> exactly as it
--- was, and removes the parents it created.
+-- place: a refused or failed statement leaves <output_path> as it was,
+-- and removes the parents it created (the stored-weight COMPILE below
+-- may leave created parent directories behind).
 -- EXTRACT … INTO checks its destination by the same rule, before any
 -- model bytes move, but writes in place: an EXTRACT that fails part-way
--- leaves a partial directory, which a re-run refuses as non-empty.
+-- leaves a partial directory, which a re-run refuses as non-empty (a
+-- VINDEX3 EXTRACT whose result fails closure removes its output).
 -- "Renamed into place" is atomic publication, not crash durability: the
 -- staged files are not fsync'd, so after a power loss the output may be
 -- missing or incomplete (never mixed with older contents — there are
