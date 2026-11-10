@@ -105,6 +105,7 @@ fn call<'a>(inputs: &'a [Vec<f32>], w: &'a [f32], position: PositionPolicy) -> A
         gate: None,
         bias: None,
         sinks: None,
+        rope_angles: Default::default(),
     }
 }
 

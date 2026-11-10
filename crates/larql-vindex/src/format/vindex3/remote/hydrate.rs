@@ -1,5 +1,6 @@
 //! The remote container, its allow-list and its seal.
 
+use super::super::container_path::{check, prepare_write};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -155,13 +156,17 @@ impl RemoteContainer {
                 continue;
             }
             let body = self.fetch_payload(&segment)?;
-            let dest = self.container_root().join(&segment.path);
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
+            let dest = prepare_write(&self.container_root(), &segment.path)?;
             // Write through a temporary: a half-written segment is a file
             // that exists, and an existing segment reads as resident.
             let staging = dest.with_extension("incomplete");
+            // A leftover staging entry is removed, never written through:
+            // `remove_file` on a symlink removes the link, not its target.
+            match std::fs::remove_file(&staging) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
             std::fs::write(&staging, &body)?;
             std::fs::rename(&staging, &dest)?;
         }
@@ -246,10 +251,7 @@ impl RemoteContainer {
         self.metadata_bytes
             .fetch_add(prefix.len() as u64 + header.len() as u64, Ordering::Relaxed);
 
-        let dest = self.headers_root().join(&segment.path);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let dest = prepare_write(&self.headers_root(), &segment.path)?;
         let mut bytes = prefix;
         bytes.extend_from_slice(&header);
         std::fs::write(dest, bytes)?;
@@ -295,6 +297,9 @@ fn segments_of(index: &serde_json::Value) -> Result<Vec<SegmentRef>, VindexError
         else {
             continue;
         };
+        // The remote's index is untrusted: both the header staging and
+        // the payload hydration write to a path composed from this name.
+        check(path)?;
         if seen.insert(path.to_string()) {
             out.push(SegmentRef {
                 object: object.to_string(),

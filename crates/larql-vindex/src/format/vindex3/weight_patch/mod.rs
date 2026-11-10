@@ -31,6 +31,7 @@ pub mod bf16;
 pub mod error;
 pub mod ledger;
 pub mod op;
+pub mod structured;
 
 mod apply;
 

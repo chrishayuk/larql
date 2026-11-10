@@ -164,12 +164,13 @@ INSERT INTO EDGES (entity, relation, target)
 -- Verify
 DESCRIBE "John Coyle";
 
--- Delete
-DELETE FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+-- List the edges, then delete the slot the listing shows.
+-- (A mutation does not combine entity and relation; SELECT is its preview.)
+SELECT * FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+DELETE FROM EDGES WHERE layer = 26 AND feature = 8821;
 
 -- Update by entity (works on both heap and mmap-loaded vindexes)
-UPDATE EDGES SET target = "London"
-    WHERE entity = "John Coyle" AND relation = "lives-in";
+UPDATE EDGES SET target = "London" WHERE entity = "John Coyle";
 
 -- Update by (layer, feature) — fast-path, bypasses the entity scan
 UPDATE EDGES SET target = "London", confidence = 0.95

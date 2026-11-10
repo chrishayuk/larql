@@ -140,3 +140,62 @@ fn a_segment_claiming_a_different_representation_than_the_directory_is_a_defect(
         "{defects:?}"
     );
 }
+
+#[test]
+fn a_config_key_naming_a_component_outside_the_container_writes_nothing_outside() {
+    // `read_components` names a nested component after its `*_config`
+    // key, and the component id becomes a segment filename. The key is
+    // the checkpoint author's: `../../vision_config` must not make the
+    // encoder write `out/segments/../../vision.*.bin`.
+    use crate::format::vindex3::plan::tests_support::gemma3_shaped_target_with;
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let inventory = gemma3_shaped_target_with(
+        checkpoint.path(),
+        |config| {
+            let object = config.as_object_mut().unwrap();
+            let mut vision = object
+                .remove("vision_config")
+                .expect("the fixture has a tower");
+            // A complete surface, so nothing but the name stands between the
+            // encoder and the write.
+            vision["hidden_act"] = "gelu_pytorch_tanh".into();
+            vision["layer_norm_eps"] = 1e-6.into();
+            object.insert("../../vision_config".to_string(), vision);
+        },
+        |_| {},
+    );
+    let sandbox = tempfile::tempdir().unwrap();
+    let out = sandbox.path().join("a").join("container");
+
+    let result = encode_system_unenforced(&[("hostile".to_string(), inventory)], &out);
+
+    let escaped: Vec<_> = walk(sandbox.path())
+        .into_iter()
+        .filter(|p| !p.starts_with(&out))
+        .collect();
+    assert!(
+        escaped.is_empty(),
+        "written outside the container: {escaped:?} ({result:?})"
+    );
+    // Before the write gate this encoded "successfully" — and the
+    // container it left could not be reopened.
+    let err = result.expect_err("a container naming files outside itself must not be produced");
+    assert!(
+        err.to_string().contains("which is refused"),
+        "refused for the wrong reason: {err}"
+    );
+}
+
+fn walk(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(walk(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}

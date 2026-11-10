@@ -557,4 +557,7 @@ pub(in super::super) struct AttentionOperands {
     pub(super) biases: Option<AttentionBiases>,
     /// Sink logits, f32.
     pub(super) sinks: Option<Vec<f32>>,
+    /// The run's RoPE construction (PREC-DIAG-1 E0b), carried into every
+    /// call; set through `PreparedOperands::set_rope_angles`.
+    pub(super) rope_angles: super::rope_angles::RopeAngles,
 }

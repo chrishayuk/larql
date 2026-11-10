@@ -28,7 +28,7 @@ const MERGE: &str = r#"MERGE "src.vindex" INTO "dst.vindex" ON CONFLICT HIGHEST_
 
 const SHOW_RELATIONS: &str = "SHOW RELATIONS AT LAYER 26 WITH EXAMPLES;";
 const SHOW_LAYERS: &str = "SHOW LAYERS RANGE 0-10;";
-const SHOW_FEATURES: &str = r#"SHOW FEATURES 26 WHERE relation = "capital" LIMIT 5;"#;
+const SHOW_FEATURES: &str = r#"SHOW FEATURES 26 WHERE token = "Paris" LIMIT 5;"#;
 const STATS: &str = "STATS;";
 
 const PIPE: &str = r#"WALK "test" TOP 5 |> EXPLAIN WALK "test";"#;

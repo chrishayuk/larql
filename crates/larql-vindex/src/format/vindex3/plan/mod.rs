@@ -35,6 +35,7 @@ pub mod capability;
 pub mod carriage;
 pub mod compare;
 pub mod report;
+pub mod rope_scope;
 pub mod semantics;
 
 #[cfg(test)]

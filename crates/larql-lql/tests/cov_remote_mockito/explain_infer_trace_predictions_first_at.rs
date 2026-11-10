@@ -283,7 +283,7 @@ fn select_with_all_where_fields_renders_table() {
     // distinct branch in remote_select's condition loop.
     let joined = ok_joined(
         &mut session,
-        r#"SELECT * FROM EDGES WHERE entity = "France" AND relation = "capital" AND layer = 5 AND confidence > 0.5 LIMIT 10;"#,
+        r#"SELECT * FROM EDGES WHERE entity = "France" AND relation = "capital" AND layer = 5 AND confidence >= 0.5 LIMIT 10;"#,
     );
     assert!(joined.contains("Target"));
     assert!(joined.contains("Paris"));
@@ -292,18 +292,43 @@ fn select_with_all_where_fields_renders_table() {
 }
 
 #[test]
-fn select_with_integer_c_score_uses_min_confidence_branch() {
-    // `c_score > 1` parses to a Value::Integer, exercising the Integer
-    // arm of the confidence/c_score condition match (distinct from the
-    // Number arm covered above).
+fn select_with_integer_score_floor_is_sent_as_min_confidence() {
+    // `score >= 1` parses to a Value::Integer — a number like any other
+    // to the predicate grammar.
     let (mut server, mut session) = connect();
     server
         .mock("POST", "/v1/select")
         .with_status(200)
         .with_body(serde_json::json!({"edges": [], "total": 0}).to_string())
         .create();
-    let joined = ok_joined(&mut session, "SELECT * FROM EDGES WHERE c_score > 1;");
+    let joined = ok_joined(&mut session, "SELECT * FROM EDGES WHERE score >= 1;");
     assert!(joined.contains("(no matching edges)"));
+}
+
+#[test]
+fn select_refuses_conditions_the_server_cannot_express_and_sends_nothing() {
+    // The remote query carries entity, relation, layer and a confidence
+    // floor. Each clause below used to be sent as something else:
+    // `layer > 20` as `layer = 20`, `confidence < 0.1` as a floor of 0.1,
+    // `relation != "x"` as `relation = "x"`, and `feature` not at all.
+    let (mut server, mut session) = connect();
+    let never = server.mock("POST", "/v1/select").expect(0).create();
+    for sql in [
+        "SELECT * FROM EDGES WHERE layer > 20;",
+        "SELECT * FROM EDGES WHERE confidence < 0.1;",
+        "SELECT * FROM EDGES WHERE confidence > 0.5;",
+        r#"SELECT * FROM EDGES WHERE relation != "capital";"#,
+        "SELECT * FROM EDGES WHERE feature = 3;",
+        r#"SELECT * FROM EDGES WHERE colour = "red";"#,
+    ] {
+        let parsed = larql_lql::parse(sql).expect("parse");
+        let err = session
+            .execute(&parsed)
+            .expect_err("not expressible remotely")
+            .to_string();
+        assert!(err.contains("unsupported WHERE clause"), "{sql}: {err}");
+    }
+    never.assert();
 }
 
 #[test]

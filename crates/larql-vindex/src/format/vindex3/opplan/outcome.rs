@@ -12,6 +12,10 @@ use super::*;
 pub enum ClosureDefect {
     /// The component has no (complete) execution surface.
     MissingSurface { component: String },
+    /// The primary text component declares a vocabulary (a head surface)
+    /// but has neither an output-head tensor nor a declared reuse of the
+    /// embedding: it cannot produce a logit (#743).
+    NoOutputHead { component: String },
     /// The component has no per-layer attention policy table.
     MissingAttentionTable { component: String },
     /// A stack tensor no operand role classifies.
@@ -119,6 +123,11 @@ impl std::fmt::Display for ClosureDefect {
             Self::MissingSurface { component } => {
                 write!(f, "component `{component}` has no complete execution surface")
             }
+            Self::NoOutputHead { component } => write!(
+                f,
+                "component `{component}` is the primary text model and declares a vocabulary, but has \
+                 no output-head tensor and does not reuse its embedding: it cannot produce a logit"
+            ),
             Self::UnimplementedSemantic {
                 component,
                 fact,

@@ -41,6 +41,7 @@ pub mod auxiliary_references;
 pub mod build;
 pub mod compact;
 pub mod compile;
+pub mod container_path;
 pub mod diff;
 pub mod encode;
 /// Miniature whole-model checkpoint writers, public so sibling crates'

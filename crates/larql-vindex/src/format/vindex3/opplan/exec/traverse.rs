@@ -112,6 +112,10 @@ pub(super) fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         }
     }
 
+    // Every mixer's dense operands against this backend's projector, for
+    // the whole plan, before any layer runs (refuse before commit).
+    dense_rows::refuse_unconsumable_plan(plan, ops, backend.dense_projector())?;
+
     // Where this batch sits in the sequence: a provider that already holds
     // state continues from its position, and every transition is named at
     // `base + row`, as decode names it (RESIDUAL-BUS-2 A2). With no

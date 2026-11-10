@@ -155,22 +155,6 @@ impl KnowledgeSource<'_> {
         }
     }
 
-    /// Feature slots whose annotation mentions `entity` — WHERE-clause
-    /// candidate resolution. Both arms scan the BASE (V2's documented
-    /// semantic: `resolve_candidates` reads `patched.base()`, so
-    /// overlay-renamed annotations do not change what an entity
-    /// predicate matches).
-    pub(crate) fn find_features(
-        &self,
-        entity: Option<&str>,
-        layer_filter: Option<usize>,
-    ) -> Vec<(usize, usize)> {
-        match self {
-            Self::V2(patched) => patched.base().find_features(entity, None, layer_filter),
-            Self::V3 { view, .. } => view.find_features(entity, layer_filter),
-        }
-    }
-
     /// KNN-store entries for an entity (DESCRIBE's L0 section) —
     /// V2's patch overlay and V3's knowledge overlay hold the same
     /// logical store, so browse reads either through one shape.
