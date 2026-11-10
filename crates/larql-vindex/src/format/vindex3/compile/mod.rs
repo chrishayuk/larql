@@ -55,7 +55,41 @@ const DTYPE_F32: &str = "F32";
 
 /// Bake `overrides` over the container at `src` into a clean container
 /// at `out`.
+///
+/// `out` must be a fresh destination — absent or an empty directory,
+/// and neither the source nor nested with it
+/// ([`crate::format::fresh_output`]). The bake is staged beside `out`
+/// and promoted whole: a refusal or a failed bake leaves nothing there.
 pub fn bake_container(
+    src: &Path,
+    overrides: &OperandOverrides,
+    out: &Path,
+) -> Result<BakeReport, VindexError> {
+    bake_container_with(src, overrides, out, |_| Ok(()))
+}
+
+/// [`bake_container`], with `finish` run against the baked directory
+/// before it is promoted to `out`.
+///
+/// A compiled container can carry files the bake does not derive (the
+/// session's KNN store). Writing them here keeps the result whole: if
+/// `finish` fails, nothing reaches `out`.
+pub fn bake_container_with(
+    src: &Path,
+    overrides: &OperandOverrides,
+    out: &Path,
+    finish: impl FnOnce(&Path) -> Result<(), VindexError>,
+) -> Result<BakeReport, VindexError> {
+    crate::format::fresh_output::write_fresh_directory(src, out, |staging| {
+        let report = bake_into(src, overrides, staging)?;
+        finish(staging)?;
+        Ok(report)
+    })
+}
+
+/// The bake itself, writing into a directory that already exists and is
+/// this call's alone.
+fn bake_into(
     src: &Path,
     overrides: &OperandOverrides,
     out: &Path,
@@ -67,8 +101,6 @@ pub fn bake_container(
     let inspection = inspect_container(src, false)?;
     let store = OperandStore::open(src, &inspection)?;
     let source = OperandSource::overlaid(&store, overrides);
-
-    std::fs::create_dir_all(out)?;
 
     let mut report = BakeReport {
         rewritten_segments: 0,
