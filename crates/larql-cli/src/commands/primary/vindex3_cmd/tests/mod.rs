@@ -21,6 +21,7 @@ mod residency_record;
 mod rope_angles;
 mod site_capture_dump;
 mod sizes;
+mod stop_at_eos;
 mod token_bank;
 
 use super::*;

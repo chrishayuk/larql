@@ -493,7 +493,8 @@ fn run_on<B: PlanBackend>(
                     },
                 );
             }
-            super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)
+            let stop = super::generate::stop_ids(args)?;
+            super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store, &stop)
                 .map(|_generated| ())
         }
         (None, None) => {
