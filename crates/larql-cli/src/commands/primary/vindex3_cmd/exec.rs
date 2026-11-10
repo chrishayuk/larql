@@ -363,6 +363,20 @@ fn run_on<B: PlanBackend>(
             backend, &engine, tokens, plan, store, out, slice,
         );
     }
+    if let Some(out) = &args.prefill_logit_dump {
+        let lengths =
+            super::prefill_dump::parse_lengths(args.prefill_lengths.as_deref(), tokens.len())?;
+        return super::prefill_dump::run_prefill_dump(
+            backend,
+            tokens,
+            &lengths,
+            plan,
+            store,
+            out,
+            slice,
+            args.prefill_method,
+        );
+    }
     match (&args.dump_layers, args.generate) {
         (Some(dir), _) => run_dump(dir, &engine, args, tokens, plan, store, backend),
         (None, Some(new_tokens)) => {

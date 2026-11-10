@@ -7,8 +7,10 @@ use std::path::Path;
 
 use larql_models::inventory::{build_inventory, ArchitectureInventory};
 
+mod flat_gemma3;
 mod known_dense;
 mod shaped_targets;
+pub use flat_gemma3::*;
 pub use known_dense::*;
 pub use shaped_targets::*;
 

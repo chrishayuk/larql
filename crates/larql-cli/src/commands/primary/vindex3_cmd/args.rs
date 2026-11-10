@@ -349,6 +349,30 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate"])]
     pub logit_dump: Option<PathBuf>,
 
+    /// Run one full PREFILL per prefix length (`--prefill-lengths`, else
+    /// the whole sequence) and write each prefill's final-position logits
+    /// here as `[lengths, vocab]` f32 little-endian.
+    ///
+    /// The independent arm to `--logit-dump`: that one steps the cached
+    /// decode path a position at a time, this one runs the batch prefill
+    /// with no continuation state carried between rows. Comparing both
+    /// against an outside reference at the same positions means two
+    /// wrong paths cannot agree with each other and pass.
+    #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate", "logit_dump", "bank"])]
+    pub prefill_logit_dump: Option<PathBuf>,
+
+    /// Comma-separated prefix lengths for `--prefill-logit-dump`, each in
+    /// `1..=tokens`. Omitted: the whole sequence only.
+    #[arg(long, requires = "prefill_logit_dump")]
+    pub prefill_lengths: Option<String>,
+
+    /// How `--prefill-logit-dump` computes its rows: `batched` (one causal
+    /// prefill, the head applied at every requested position) or
+    /// `per-prefix` (one prefill per prefix — the O(n²) control the
+    /// batched method is validated against).
+    #[arg(long, value_enum, default_value_t = super::prefill_dump::PrefillMethod::Batched, requires = "prefill_logit_dump")]
+    pub prefill_method: super::prefill_dump::PrefillMethod,
+
     /// Record what the CPU Q8_0 kernel was given and returned, as raw bits, in
     /// this new directory, for an outside verifier to judge. It only observes:
     /// it runs after the kernel returns. A run that never reaches that kernel

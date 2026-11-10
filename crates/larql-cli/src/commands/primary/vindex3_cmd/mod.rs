@@ -45,6 +45,7 @@ mod observe;
 mod ops;
 mod optional_op;
 pub(crate) mod plugins;
+mod prefill_dump;
 pub(crate) mod prepare;
 mod realizations;
 mod reconstruction;
