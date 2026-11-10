@@ -35,14 +35,16 @@ class Verdict(unittest.TestCase):
 
     def test_every_conclusion_outside_the_good_set_fails(self):
         for conclusion in ("failure", "cancelled", "timed_out", "action_required",
-                           "startup_failure", "stale", None, "a-conclusion-added-later"):
+                           "startup_failure", "stale", "skipped", "neutral", None,
+                           "a-conclusion-added-later"):
             with self.subTest(conclusion=conclusion):
                 verdict, _ = judge([run("quality"), run("larql-cli", conclusion)], SELF)
                 self.assertEqual(verdict, FAIL)
 
-    def test_skipped_and_neutral_pass(self):
-        verdict, _ = judge([run("quality"), run("a", "skipped"), run("b", "neutral")], SELF)
-        self.assertEqual(verdict, PASS)
+    def test_a_skipped_always_present_workflow_is_not_a_pass(self):
+        # Present in the listing, and still no evidence that it ran anything.
+        verdict, _ = judge([run("quality", "skipped"), run("larql-cli")], SELF)
+        self.assertEqual(verdict, FAIL)
 
     def test_an_unfinished_workflow_waits(self):
         for status in ("queued", "in_progress", "requested", "waiting", "pending"):

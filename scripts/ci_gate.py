@@ -15,6 +15,8 @@ What it judges:
 - The newest run of each workflow. A workflow that ran twice on one commit (editing a
   pull request body starts `commit-messages` again and cancels the first run) is judged
   by its newest run, so the superseded run's `cancelled` doesn't count.
+- Only `success` passes. A run that was skipped, or that declined to judge, did not
+  show that anything works.
 - Every workflow in ALWAYS_PRESENT must have a run. An empty list of runs is not a pass:
   it means the runs haven't been created yet, or the query is wrong.
 - A workflow in ADVISORY is reported and never judged or waited for. Its own file says
@@ -31,9 +33,11 @@ import subprocess
 import sys
 import time
 
-# Conclusions that let a merge through. `skipped` is a workflow whose jobs were all
-# conditioned out; `neutral` is a check that chose not to judge.
-GOOD = {"success", "skipped", "neutral"}
+# The one conclusion that lets a merge through. `skipped` (every job conditioned out)
+# and `neutral` (a check that chose not to judge) are not evidence that anything ran, so
+# they fail like any other conclusion. No workflow here ends that way today; one that is
+# meant to must be named in ADVISORY, on the record.
+GOOD = {"success"}
 
 # Workflows with no `paths:` filter, so every pull request to main has a run of each.
 # Their absence means the listing is incomplete, not that there is nothing to wait for.
