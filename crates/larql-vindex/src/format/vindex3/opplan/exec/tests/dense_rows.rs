@@ -236,3 +236,151 @@ fn a_prepared_plan_is_checked_whole_before_any_layer_runs() {
     refuse_unconsumable_plan(&plan, &ops, &ExecutorProjections)
         .expect("the production projector consumes it");
 }
+
+// ── #751: the whole-plan check's CALL PLACEMENT ────────────────────────
+//
+// `a_prepared_plan_is_checked_whole_before_any_layer_runs` tests the check
+// itself; nothing tested that `traverse` and the decode session call it
+// up front. These drive both entries with a backend that is production in
+// every respect the preparation sees (name, identity, selection) but whose
+// dense projector consumes nothing, and whose every compute method panics.
+// The run must come back as the typed refusal: deleting either call lets
+// it reach `embed` and panic, so the call placement is what is under test.
+
+mod placement {
+    use super::super::super::backend::{
+        AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, NormCall,
+        PlanBackend, ProjectCall, RoutedFfnCall, WeightSlice,
+    };
+    use super::super::super::decode::DecodeSession;
+    use super::super::super::gated_delta::DenseProjections;
+    use super::super::super::kv::{KvState, RowKvState};
+    use super::super::super::lowering::LoweringIdentity;
+    use super::super::super::prepared::{ExecutionSlice, PreparedOperands};
+    use super::super::super::production::ProductionBackend;
+    use super::super::super::realization::{RepresentationFacts, Selection, SelectionRefusal};
+    use super::super::hybrid_traversal::hybrid;
+    use super::ConsumesNothing;
+    use crate::error::VindexError;
+    use crate::format::vindex3::opplan::planned::PlannedOperand;
+
+    const NO_LAYER_RUNS: &str = "the whole-plan check must refuse before any layer runs";
+
+    /// Production as far as preparation can tell; consumes no dense rows.
+    struct UnconsumingProduction(ProductionBackend);
+
+    impl PlanBackend for UnconsumingProduction {
+        fn name(&self) -> &str {
+            self.0.name()
+        }
+        fn identity(&self) -> LoweringIdentity {
+            self.0.identity()
+        }
+        fn select(
+            &self,
+            operand: &PlannedOperand,
+            facts: &RepresentationFacts,
+        ) -> Result<Selection, Box<SelectionRefusal>> {
+            self.0.select(operand, facts)
+        }
+        fn dense_projector(&self) -> &dyn DenseProjections {
+            &ConsumesNothing
+        }
+        fn embed(&self, _: &[f32], _: usize, _: u32, _: Option<f32>) -> Vec<f32> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn norm(&self, _: NormCall<'_>) -> Vec<f32> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn project(&self, _: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn attention(&self, _: AttentionCall<'_>) -> Result<AttentionOut, VindexError> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn attention_step(
+            &self,
+            _: AttentionStepCall<'_>,
+        ) -> Result<AttentionStepOut, VindexError> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn ffn(&self, _: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn routed_ffn(&self, _: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn output_head(
+            &self,
+            _: WeightSlice<'_>,
+            _: usize,
+            _: usize,
+            _: &[f32],
+            _: Option<f64>,
+            _: Option<f32>,
+        ) -> Result<Vec<f32>, VindexError> {
+            panic!("{NO_LAYER_RUNS}")
+        }
+        fn residual_add(&self, _: &mut [f32], _: &[f32]) {
+            panic!("{NO_LAYER_RUNS}")
+        }
+    }
+
+    fn assert_refused_naming_the_first_mixer(err: VindexError) {
+        let msg = err.to_string();
+        assert!(
+            msg.contains("layer 0") && msg.contains("Gated DeltaNet"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn the_traversal_refuses_before_any_plane_or_position() {
+        let (_dir, plan, store) = hybrid();
+        let ops = PreparedOperands::load(
+            &plan,
+            &store,
+            &ProductionBackend::new(),
+            ExecutionSlice::Full,
+        )
+        .unwrap();
+        let backend = UnconsumingProduction(ProductionBackend::new());
+        let mut kv = RowKvState::default();
+        let mut events = 0usize;
+        let err = super::super::super::prefill_prepared_observed(
+            &plan,
+            &ops,
+            &[1, 2, 3],
+            &backend,
+            &mut kv,
+            &mut |_| {
+                events += 1;
+                Ok(())
+            },
+        )
+        .expect_err("a projector that consumes nothing is refused");
+        assert_refused_naming_the_first_mixer(err);
+        assert_eq!(events, 0, "no plane was emitted");
+        assert_eq!(kv.position(), 0, "the provider did not advance");
+    }
+
+    #[test]
+    fn the_decode_session_refuses_before_it_exists() {
+        let (_dir, plan, store) = hybrid();
+        let ops = PreparedOperands::load(
+            &plan,
+            &store,
+            &ProductionBackend::new(),
+            ExecutionSlice::Full,
+        )
+        .unwrap();
+        let backend = UnconsumingProduction(ProductionBackend::new());
+        let mut kv = RowKvState::default();
+        let err = match DecodeSession::over_prepared(&plan, &ops, &backend, &mut kv) {
+            Ok(_) => panic!("a projector that consumes nothing is refused"),
+            Err(e) => e,
+        };
+        assert_refused_naming_the_first_mixer(err);
+        assert_eq!(kv.position(), 0, "the provider did not advance");
+    }
+}
