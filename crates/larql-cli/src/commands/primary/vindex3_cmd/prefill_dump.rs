@@ -18,8 +18,9 @@ use std::time::Instant;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
+use larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles;
 use larql_vindex::format::vindex3::opplan::exec::{
-    execute_slice, execute_slice_in, execute_slice_position_logits,
+    execute_slice, execute_slice_in, execute_slice_position_logits_with_rope_angles,
 };
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
@@ -91,12 +92,25 @@ pub(super) fn run_prefill_dump<B: PlanBackend>(
     out: &Path,
     slice: ExecutionSlice,
     method: PrefillMethod,
+    rope_angles: RopeAngles,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     let rows = match method {
-        PrefillMethod::Batched => batched_rows(backend, tokens, lengths, plan, store, slice)?,
-        PrefillMethod::PerPrefix => per_prefix_rows(backend, tokens, lengths, plan, store, slice)?,
+        PrefillMethod::Batched => {
+            batched_rows(backend, tokens, lengths, plan, store, slice, rope_angles)?
+        }
+        // The measurement-method control runs the shipped construction
+        // only; `exec` refuses `--rope-angles` with it before this.
+        PrefillMethod::PerPrefix if rope_angles == RopeAngles::Larql => {
+            per_prefix_rows(backend, tokens, lengths, plan, store, slice)?
+        }
+        PrefillMethod::PerPrefix => {
+            return Err(
+                "--rope-angles hf-f32 is not accepted with --prefill-method per-prefix".into(),
+            )
+        }
     };
+    println!("rope angles: {}", rope_angles.name());
     let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
     let mut vocab = None;
     for (row, &length) in rows.iter().zip(lengths) {
@@ -124,10 +138,11 @@ fn batched_rows<B: PlanBackend>(
     plan: &ComponentOpPlan,
     store: &OperandStore,
     slice: ExecutionSlice,
+    rope_angles: RopeAngles,
 ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
     let longest = lengths.iter().copied().max().unwrap_or(0);
     let positions: Vec<usize> = lengths.iter().map(|n| n - 1).collect();
-    Ok(execute_slice_position_logits(
+    Ok(execute_slice_position_logits_with_rope_angles(
         plan,
         store,
         &tokens[..longest],
@@ -135,6 +150,7 @@ fn batched_rows<B: PlanBackend>(
         slice,
         one_shot_state(plan)?,
         &positions,
+        rope_angles,
     )?)
 }
 

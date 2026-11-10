@@ -84,6 +84,15 @@ pub(in super::super) fn run_lowered(
     // `conflicts_with_all`), so there is no decode loop to reconcile
     // with — this is prefill-only, exactly like --dump-layers above.
     if let Some(path) = &args.logit_dump {
+        // PREC-DIAG-1 E0a captures on the interpreter backends' cached
+        // step only; a lowered run would silently drop the request.
+        if args.capture.capture_sites.is_some() {
+            return Err(
+                "--capture-sites runs on the reference and production backends only, \
+                        not a lowered backend"
+                    .into(),
+            );
+        }
         let engine = format!("vindex3-metal-lowered-{label}");
         return run_teacher_force_lowered(&mut session, &engine, tokens, path);
     }

@@ -79,9 +79,11 @@ pub mod quantise;
 pub mod realization;
 pub mod reference;
 pub mod requirements;
+pub mod rope_angles;
 pub mod routed_experts;
 pub mod routing_trace;
 pub mod sequence;
+pub mod site_capture;
 pub mod stack;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod stack_metal;

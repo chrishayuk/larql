@@ -668,7 +668,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let logits = match exit.hidden {
             // The one head path (V3-LENS-1): the same function a logit lens
             // calls on an intermediate carrier.
-            Some(exit_hidden) => ops.head_logits(self.backend, &exit_hidden)?,
+            Some(exit_hidden) => {
+                ops.head_logits_observed(self.backend, &exit_hidden, &mut |v| {
+                    observer.head_input(position, v)
+                })?
+            }
             None => {
                 if ops.final_norm().is_some() || ops.output().is_some() {
                     return Err(VindexError::Parse(
