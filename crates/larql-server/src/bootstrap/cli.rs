@@ -359,8 +359,18 @@ pub struct Cli {
     ///
     /// Enable only when the server is behind a trusted reverse proxy that
     /// strips untrusted client-supplied forwarding headers.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "client_ip_header")]
     pub trust_forwarded_for: bool,
+
+    /// Rate limit by the client address in this header.
+    ///
+    /// Name the header the reverse proxy in front sets to the one client
+    /// address it saw and does not accept from the client, e.g.
+    /// `Fly-Client-IP`, `CF-Connecting-IP` or `X-Real-IP`. Prefer this to
+    /// `--trust-forwarded-for` behind a proxy that appends to
+    /// `X-Forwarded-For` instead of replacing it.
+    #[arg(long, value_name = "HEADER")]
+    pub client_ip_header: Option<axum::http::header::HeaderName>,
 
     /// Max concurrent requests.
     #[arg(long, default_value_t = DEFAULT_MAX_CONCURRENT)]
