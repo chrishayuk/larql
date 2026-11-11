@@ -163,3 +163,66 @@ fn an_unedited_session_is_not_refused_as_an_edit_or_for_safetensors() {
         assert!(!err.contains("FORMAT"), "{err}");
     }
 }
+
+// ── Inserts the MEMIT solve cannot write ────────────────────────────────
+
+/// The model the synthetic fixture is built from.
+const FIXTURE_MODEL: &str = "synthetic/tinymodel";
+
+#[test]
+fn an_insert_the_memit_solve_skips_is_refused_by_name() {
+    // A patch insert with no relation gives the solve no prompt, so the
+    // solve leaves it out. That used to be a warning beside "Compiled".
+    let mut fx = fixture();
+    let patch_path = fx.out.with_extension("vlp");
+    let patch = serde_json::json!({
+        "version": 1,
+        "base_model": FIXTURE_MODEL,
+        "base_checksum": null,
+        "created_at": "2026-11-11",
+        "description": null,
+        "author": null,
+        "tags": [],
+        "operations": [{
+            "op": "insert",
+            "layer": INSTALL_LAYER,
+            "feature": INSTALL_FEATURE,
+            "relation": null,
+            "entity": "[1]",
+            "target": "[2]",
+            "confidence": 0.5,
+        }],
+    });
+    std::fs::write(&patch_path, patch.to_string()).expect("write patch");
+    run(
+        &mut fx.session,
+        &format!("APPLY PATCH \"{}\";", lql_path(&patch_path)),
+    );
+    let _memit = larql_compute::options::ScopedEnvOverride::set(MEMIT_ENABLE_ENV, Some("1"));
+
+    fx.assert_refused("", "the MEMIT solve skips");
+}
+
+#[test]
+fn an_overlay_edit_no_operation_records_is_still_refused() {
+    // An embedder can edit the overlay directly. No recorded operation
+    // describes the edit, and the export must not pass over it.
+    let mut fx = fixture();
+    let meta = larql_vindex::FeatureMeta {
+        top_token: "[2]".into(),
+        top_token_id: 2,
+        c_score: 0.5,
+        top_k: Vec::new(),
+    };
+    fx.session
+        .patched_overlay_mut()
+        .expect("a bound vindex")
+        .insert_feature(INSTALL_LAYER, INSTALL_FEATURE, Vec::new(), meta);
+
+    {
+        let _off = larql_compute::options::ScopedEnvOverride::set(MEMIT_ENABLE_ENV, None);
+        fx.assert_refused("", MEMIT_ENABLE_ENV);
+    }
+    let _on = larql_compute::options::ScopedEnvOverride::set(MEMIT_ENABLE_ENV, Some("1"));
+    fx.assert_refused("", "no fact");
+}
