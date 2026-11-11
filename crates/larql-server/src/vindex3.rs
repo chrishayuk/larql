@@ -31,7 +31,8 @@ use std::sync::Arc;
 
 use larql_inference::layer_graph::generate::detok::Detokenizer;
 use larql_inference::vindex3::{
-    continue_session, continue_session_masked, LogitsMask, PreparedVindex3, Vindex3Runtime,
+    continue_session, continue_session_masked, LogitsMask, OpenPolicy, PreparedVindex3,
+    Vindex3Runtime,
 };
 use larql_inference::{EosConfig, SamplingConfig};
 use larql_kv::{shipped_continuations, CanonicalFactory};
@@ -45,6 +46,7 @@ use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
 };
+use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::tokenizers;
 
 use crate::error::ServerError;
@@ -85,6 +87,22 @@ impl V3Backend {
             &["cpu", "metal"]
         } else {
             &["cpu"]
+        }
+    }
+
+    /// Where the served operands may come from.
+    ///
+    /// The CPU backend serves the stored bytes: under `auto` its size policy
+    /// would requantise every BF16 matrix larger than the host's L2 to Q8 at
+    /// load — a lossy, machine-dependent change of arithmetic (PREC-DIAG-1,
+    /// Gemma 3 4B: 3.0 max |Δ logprob| against transformers f32, where the
+    /// stored bytes agree within 6e-4). Metal keeps `auto`: its f16 lowering
+    /// is the backend's declared representation, as `vindex3 exec`'s device
+    /// arms keep theirs.
+    pub const fn representation_source(self) -> RepresentationSource {
+        match self {
+            Self::Cpu => RepresentationSource::Stored,
+            Self::Metal => RepresentationSource::Auto,
         }
     }
 
@@ -294,11 +312,15 @@ pub fn load_v3_model_experts(
     let (registry, identity) = backend.lowerings()?;
     // The served provider is resolved from the shipped registry by
     // identity, never constructed here (LOWERING-PLUGIN-1, L3).
-    let runtime = Vindex3Runtime::open_via(
+    let runtime = Vindex3Runtime::open_with_via(
         path,
         SERVED_COMPONENT,
         std::sync::Arc::new(registry),
         &identity,
+        OpenPolicy {
+            want: None,
+            source: backend.representation_source(),
+        },
     )
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
     .prepare_slice(slice)

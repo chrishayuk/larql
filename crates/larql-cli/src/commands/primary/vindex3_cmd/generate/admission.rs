@@ -214,7 +214,7 @@ pub(in super::super) fn refuse_evidence_outside_the_curve(
             ));
         }
         if matches!(
-            super::super::prepare::parse_representation_source(&args.representation_source),
+            args.representation_source(),
             Ok(larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource::Transient)
         ) {
             return Err(
