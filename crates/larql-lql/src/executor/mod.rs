@@ -158,7 +158,7 @@ impl Session {
             operations: Vec::new(),
         });
         self.auto_patch = true;
-        vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
+        vec!["Auto-patch started (run BEGIN PATCH \"file.vlp\" then SAVE PATCH to persist, or edits are lost on exit)".into()]
     }
 
     /// The verifier `VERIFY REPRESENTATION` runs, ahead of `LARQL_VERIFIER` and
@@ -458,6 +458,14 @@ impl Session {
     // ── Patch execution ──
 
     fn exec_begin_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+        // An empty path is how an anonymous recording is marked. Opening a
+        // named session with one would make a recording SAVE PATCH refuses and
+        // BEGIN PATCH cannot adopt.
+        if path.is_empty() {
+            return Err(LqlError::Execution(
+                "BEGIN PATCH needs a file name, e.g. BEGIN PATCH \"edits.vlp\".".into(),
+            ));
+        }
         if self.patch_recording.is_some() && !self.auto_patch {
             return Err(LqlError::Execution(
                 "patch session already active. Run SAVE PATCH or discard first.".into(),
@@ -481,14 +489,20 @@ impl Session {
     }
 
     fn exec_save_patch(&mut self) -> Result<Vec<String>, LqlError> {
+        // The recording is the only copy of the session's edits in a form that
+        // can be saved. It leaves the session only once the file is written:
+        // every refusal and every failed write below keeps it.
         let recording = self.patch_recording.take().ok_or_else(|| {
             LqlError::Execution("no active patch session. Run BEGIN PATCH first.".into())
         })?;
-
         if recording.path.is_empty() {
-            return Err(LqlError::Execution(
-                "anonymous patch session — use SAVE PATCH \"filename.vlp\" or BEGIN PATCH \"filename.vlp\" first.".into(),
-            ));
+            let pending = recording.operations.len();
+            self.patch_recording = Some(recording);
+            return Err(LqlError::Execution(format!(
+                "anonymous patch session with {pending} pending operation(s): nothing was saved \
+                 and the operations are kept. Name the patch with BEGIN PATCH \"filename.vlp\", \
+                 then run SAVE PATCH."
+            )));
         }
 
         let model_name = match &self.backend {
@@ -521,9 +535,21 @@ impl Session {
 
         let (ins, upd, del) = patch.counts();
         let path = PathBuf::from(&recording.path);
-        patch
-            .save(&path)
-            .map_err(|e| LqlError::exec("failed to save patch", e))?;
+        if let Err(e) = patch.save(&path) {
+            let pending = patch.operations.len();
+            self.patch_recording = Some(PatchRecording {
+                path: recording.path,
+                operations: patch.operations,
+            });
+            return Err(LqlError::exec(
+                format!(
+                    "failed to save patch to {}; the {pending} pending operation(s) are kept, \
+                     so SAVE PATCH can be run again",
+                    path.display()
+                ),
+                e,
+            ));
+        }
 
         self.auto_patch = false;
 
@@ -594,19 +620,46 @@ impl Session {
             }
         }
 
-        // Apply through the session overlay (base files untouched).
+        // Apply through the session overlay (base files untouched). The patch
+        // is checked whole first, on both backends: the model it was written
+        // against, every slot it names and the width of every vector it
+        // carries. A refused patch leaves the overlay as it was.
+        let refused = |e| LqlError::exec("failed to apply patch", e);
         match &mut self.backend {
-            Backend::Vindex { patched, .. } => {
-                patched.apply_patch(patch);
+            Backend::Vindex {
+                patched, config, ..
+            } => {
+                patch.check_base_model(&config.model).map_err(refused)?;
+                patched.try_apply_patch(patch).map_err(refused)?;
             }
-            // The V3 overlay is all-or-nothing and *reports* an
-            // inapplicable patch (corrupt vector, or feature-slot ops
-            // awaiting the compose rung) instead of silently dropping
-            // it.
-            Backend::Vindex3 { overlay, .. } => {
-                overlay
-                    .try_apply_patch(patch)
-                    .map_err(|e| LqlError::exec("failed to apply patch", e))?;
+            Backend::Vindex3 {
+                overlay,
+                runtime,
+                knowledge,
+                ..
+            } => {
+                patch
+                    .check_base_model(runtime.model_name())
+                    .map_err(refused)?;
+                // The V3 overlay holds no base, so the container's shape is
+                // supplied here. Without a browse view there is no feature
+                // space to name a slot in, and a slot op is out of bounds.
+                let plan = runtime.plan();
+                patch
+                    .check_geometry(&larql_vindex::PatchGeometry {
+                        hidden_size: plan
+                            .embedding
+                            .as_ref()
+                            .and_then(|e| e.table.shape.get(1).copied()),
+                        num_layers: plan.layers.len(),
+                        features_at: &|layer| {
+                            knowledge
+                                .as_ref()
+                                .map_or(0, |view| view.num_features(layer))
+                        },
+                    })
+                    .map_err(refused)?;
+                overlay.try_apply_patch(patch).map_err(refused)?;
             }
             _ => return Err(LqlError::NoBackend),
         }

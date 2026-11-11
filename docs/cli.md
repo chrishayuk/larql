@@ -1079,7 +1079,8 @@ larql> USE "gemma3-4b.vindex";
 larql> DESCRIBE "France";
 larql> WALK "The capital of France is" TOP 5;
 larql> INSERT INTO EDGES (entity, relation, target) VALUES ("John", "lives-in", "London");
-larql> SAVE PATCH "edits.vlp";
+larql> BEGIN PATCH "edits.vlp";    -- names the patch; the INSERT above is kept
+larql> SAVE PATCH;
 ```
 
 Direct model access (no extraction needed):

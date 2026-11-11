@@ -287,7 +287,7 @@ fn main() {
         }],
     };
 
-    patched_mut.apply_patch(patch);
+    patched_mut.try_apply_patch(patch).expect("patch applies");
     println!("\nAfter patch (feature 0 → Aspirin):");
     let trace_after = patched_mut.walk(&query, &[1], 3);
     for (_, hits) in &trace_after.layers {

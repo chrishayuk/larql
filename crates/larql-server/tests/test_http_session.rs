@@ -40,7 +40,10 @@ async fn session_manager_apply_patch_and_list() {
         }],
     };
 
-    let (op_count, active) = sm.apply_patch("sess-1", &m, patch).await;
+    let (op_count, active) = sm
+        .apply_patch("sess-1", &m, patch)
+        .await
+        .expect("patch applies");
     assert_eq!(op_count, 1);
     assert_eq!(active, 1);
 
@@ -67,7 +70,9 @@ async fn session_manager_remove_nonexistent_patch_returns_err() {
             reason: None,
         }],
     };
-    sm.apply_patch("sess-1", &m, patch).await;
+    sm.apply_patch("sess-1", &m, patch)
+        .await
+        .expect("patch applies");
 
     let err = sm.remove_patch("sess-1", "nonexistent").await;
     assert!(err.is_err());
@@ -94,7 +99,9 @@ async fn session_manager_remove_patch_by_name() {
                 reason: None,
             }],
         };
-        sm.apply_patch("sess-2", &m, patch).await;
+        sm.apply_patch("sess-2", &m, patch)
+            .await
+            .expect("patch applies");
     }
 
     let remaining = sm.remove_patch("sess-2", "patch-a").await.unwrap();
@@ -160,7 +167,7 @@ async fn apply_patch_slow_path_makes_progress_with_held_patched_reader() {
     .await
     .expect("apply_patch must finish within 5s — REV3 deadlock canary");
 
-    assert_eq!(result, (1, 1));
+    assert_eq!(result.expect("patch applies"), (1, 1));
     holder.await.unwrap();
 }
 
@@ -196,7 +203,11 @@ async fn concurrent_apply_patch_same_session_finishes() {
 
     assert_eq!(outcomes.len(), 16);
     // Every call applies one operation; final active count should equal 16.
-    let final_active = outcomes.iter().map(|(_, n)| *n).max().unwrap();
+    let final_active = outcomes
+        .iter()
+        .map(|outcome| outcome.as_ref().expect("patch applies").1)
+        .max()
+        .unwrap();
     assert_eq!(final_active, 16);
     let list = sm.list_patches("contended").await;
     assert_eq!(list.len(), 16);
