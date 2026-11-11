@@ -15,8 +15,9 @@ use std::path::Path;
 
 use crate::error::LqlError;
 use larql_vindex::format::filenames::{
-    DOWN_WEIGHTS_BIN, GATE_VECTORS_BIN, INDEX_JSON, KNN_STORE_BIN, MODEL_WEIGHTS_BIN,
-    WEIGHT_MANIFEST_JSON,
+    DOWN_FEATURES_BIN, DOWN_WEIGHTS_BIN, GATE_VECTORS_BIN, GATE_VECTORS_Q4_BIN, INDEX_JSON,
+    INTERLEAVED_BIN, INTERLEAVED_Q4_BIN, KNN_STORE_BIN, MODEL_WEIGHTS_BIN,
+    REPRESENTATION_ATTESTATIONS_JSON, UP_FEATURES_BIN, WEIGHT_MANIFEST_JSON,
 };
 use larql_vindex::{QuantFormat, VindexConfig};
 
@@ -33,6 +34,21 @@ const WRITTEN_BY_THE_BAKE: &[&str] = &[
     DOWN_WEIGHTS_BIN,
     KNN_STORE_BIN,
     INDEX_JSON,
+];
+
+/// Files computed from the weights the bake edits: other encodings of the
+/// gate, up and down vectors that faster walk paths open when they exist,
+/// and the attestations made over them. The bake does not rewrite them, so
+/// a copy carried after a vector edit would run or attest the unedited
+/// weights. Without them a loader falls back to the weights the bake did
+/// write.
+const DERIVED_FROM_THE_WEIGHTS: &[&str] = &[
+    INTERLEAVED_BIN,
+    INTERLEAVED_Q4_BIN,
+    GATE_VECTORS_Q4_BIN,
+    UP_FEATURES_BIN,
+    DOWN_FEATURES_BIN,
+    REPRESENTATION_ATTESTATIONS_JSON,
 ];
 
 /// Leading character of a file that is not vindex content (`.DS_Store`,
@@ -135,11 +151,15 @@ fn is_plain_file_name(name: &str) -> bool {
 /// holds; dot-files are housekeeping, not vindex content.
 ///
 /// A file the manifest names and the source lacks fails by name.
+///
+/// With `vectors_edited`, the files derived from the weights are left
+/// behind, and their names are returned so the caller can say so.
 pub(super) fn carry_source_files(
     source: &Path,
     dest: &Path,
     manifest_files: &BTreeSet<String>,
-) -> Result<(), LqlError> {
+    vectors_edited: bool,
+) -> Result<Vec<String>, LqlError> {
     let entries = std::fs::read_dir(source)
         .map_err(|e| LqlError::exec(format!("read {}", source.display()), e))?;
     let mut names = Vec::new();
@@ -160,6 +180,9 @@ pub(super) fn carry_source_files(
         names.push(name);
     }
     names.sort_unstable();
+    let (left_behind, names): (Vec<String>, Vec<String>) = names
+        .into_iter()
+        .partition(|name| vectors_edited && DERIVED_FROM_THE_WEIGHTS.contains(&name.as_str()));
     for name in &names {
         carry_file(source, dest, name)?;
     }
@@ -169,7 +192,7 @@ pub(super) fn carry_source_files(
     {
         return Err(missing_required_file(missing));
     }
-    Ok(())
+    Ok(left_behind)
 }
 
 /// Whether the bake produces `name` itself.

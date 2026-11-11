@@ -50,9 +50,22 @@ pub enum UnstorableMetaEdit {
         stored_text: String,
         edited_text: String,
     },
-    /// Token id 0, score 0.0 and no top-k entry is how the file marks an
-    /// empty slot, so this record would reload as no record.
+    /// Token id 0, score 0.0 and no top-k entry the reader keeps is how
+    /// the file marks an empty slot, so this record would reload as no
+    /// record.
     ReadsBackEmpty { layer: usize, feature: usize },
+}
+
+/// Whether the reader takes a written `meta` for an empty slot. It drops
+/// every top-k entry with token id 0 and logit 0.0, and then reads a
+/// record with token id 0, score 0.0 and no entry left as no record.
+fn reads_back_empty(meta: &FeatureMeta) -> bool {
+    meta.top_token_id == 0
+        && meta.c_score == 0.0
+        && meta
+            .top_k
+            .iter()
+            .all(|entry| entry.token_id == 0 && entry.logit == 0.0)
 }
 
 impl std::fmt::Display for UnstorableMetaEdit {
@@ -186,7 +199,7 @@ impl PatchedVindex {
             let Some(Some(edited)) = self.overrides_meta.get(&(layer, feature)) else {
                 continue;
             };
-            if edited.top_token_id == 0 && edited.c_score == 0.0 && edited.top_k.is_empty() {
+            if reads_back_empty(edited) {
                 unstorable.push(UnstorableMetaEdit::ReadsBackEmpty { layer, feature });
                 continue;
             }
@@ -205,11 +218,10 @@ impl PatchedVindex {
     /// The edited records that are stored and reload with different text,
     /// in `(layer, feature)` order.
     ///
-    /// `token_text` gives the text a loader derives from a token id, or
-    /// `None` when there is no tokenizer; a token with no text (an unknown
-    /// id, a special token) says nothing about the record and is not
-    /// listed. Records [`Self::unstorable_meta_edits`] reports are not
-    /// listed either.
+    /// `token_text` gives the text a loader derives from a token id (empty
+    /// for a special token, which reloads as no text), or `None` when there
+    /// is no tokenizer to say. Records [`Self::unstorable_meta_edits`]
+    /// reports are not listed.
     pub fn labels_stored_as_their_token(
         &self,
         token_text: &dyn Fn(u32) -> Option<String>,
@@ -229,7 +241,7 @@ impl PatchedVindex {
                 continue;
             };
             let (token, session) = (token.trim(), edited.top_token.trim());
-            if !token.is_empty() && token != session {
+            if token != session {
                 labels.push(LabelStoredAsToken {
                     layer,
                     feature,

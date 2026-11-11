@@ -297,7 +297,14 @@ impl Session {
         // values gives `small_activation × poseidon_vector` per layer,
         // which is the exact behaviour the runtime patch overlay
         // produces.
-        carry_source_files(path, output_dir, &manifest_files)?;
+        // Any change to a gate, up or down vector makes the source's other
+        // encodings of those vectors stale; they are left behind, by name.
+        let vectors_edited = patched.overrides_gate_iter().next().is_some()
+            || !patched.down_overrides().is_empty()
+            || !patched.up_overrides().is_empty()
+            || patched.num_deleted() > 0
+            || memit_results.is_some();
+        let left_behind = carry_source_files(path, output_dir, &manifest_files, vectors_edited)?;
 
         // ── Step 2b: metadata edits ──
         //
@@ -424,7 +431,14 @@ impl Session {
         // After every weight file has its final bytes, so the checksums
         // describe the artifact and not a file MEMIT then edited.
         let mut new_config = config.clone();
-        new_config.layers = layer_infos;
+        // `patch_gate_vectors` replaces the re-saved gate file with a patched
+        // copy of the source's, so the file then has the source's layout and
+        // the index must describe that one.
+        new_config.layers = if gate_overrides.is_empty() {
+            layer_infos
+        } else {
+            config.layers.clone()
+        };
         new_config.checksums = Some(
             larql_vindex::format::checksums::compute_checksums(output_dir)
                 .map_err(|e| LqlError::exec("failed to checksum the compiled vindex", e))?,
@@ -462,6 +476,13 @@ impl Session {
                 "Labels: {} edited record(s) reload with their token's text, because \
                  {DOWN_META_BIN} stores one token id and no text: {preview}",
                 relabelled.len()
+            ));
+        }
+        if !left_behind.is_empty() {
+            out.push(format!(
+                "Not carried: {} (computed from the source's unedited weights; the compiled \
+                 vindex runs from the weights written here)",
+                left_behind.join(", ")
             ));
         }
         if !deleted_slots.is_empty() {

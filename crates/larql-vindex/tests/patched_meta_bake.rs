@@ -245,31 +245,55 @@ fn text_that_is_its_token_is_not_listed() {
 }
 
 #[test]
-fn without_token_text_no_label_is_listed() {
+fn without_a_tokenizer_no_label_is_listed() {
     let mut patched = patched();
     patched.update_feature_meta(LAYER, UPDATED, meta("changed", NEW_TOKEN_ID, BASE_SCORE, 0));
 
     assert!(patched
         .labels_stored_as_their_token(&no_tokenizer)
         .is_empty());
-    assert!(patched
-        .labels_stored_as_their_token(&|_| Some(String::new()))
-        .is_empty());
+    // A special token decodes to no text, and that is what a reload shows.
+    assert_eq!(
+        patched
+            .labels_stored_as_their_token(&|_| Some(String::new()))
+            .len(),
+        1
+    );
 }
 
 #[test]
 fn a_record_the_file_reads_back_as_empty_is_reported() {
     let mut patched = patched();
     patched.update_feature_meta(LAYER, UPDATED, meta("", 0, 0.0, 0));
+    // Top-k entries of token 0 and logit 0.0 are dropped by the reader, so
+    // they do not keep the record.
+    patched.update_feature_meta(
+        LAYER,
+        INSERTED,
+        FeatureMeta {
+            top_k: vec![TopKEntry {
+                token: String::new(),
+                token_id: 0,
+                logit: 0.0,
+            }],
+            ..meta("", 0, 0.0, 0)
+        },
+    );
 
     let unstorable = patched.unstorable_meta_edits();
 
     assert_eq!(
         unstorable,
-        vec![UnstorableMetaEdit::ReadsBackEmpty {
-            layer: LAYER,
-            feature: UPDATED,
-        }]
+        vec![
+            UnstorableMetaEdit::ReadsBackEmpty {
+                layer: LAYER,
+                feature: UPDATED,
+            },
+            UnstorableMetaEdit::ReadsBackEmpty {
+                layer: LAYER,
+                feature: INSERTED,
+            },
+        ]
     );
     assert!(unstorable[0].to_string().contains("empty slot"));
 }

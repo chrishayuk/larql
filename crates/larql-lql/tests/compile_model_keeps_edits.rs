@@ -82,6 +82,8 @@ fn an_insert_the_export_would_not_contain_is_refused_by_name() {
     // mechanism that writes an INSERT into exported weights.
     let mut fx = fixture();
     run(&mut fx.session, INSERT);
+    // Off for this thread whatever the process environment says.
+    let _memit = larql_compute::options::ScopedEnvOverride::set(MEMIT_ENABLE_ENV, None);
 
     fx.assert_refused("", MEMIT_ENABLE_ENV);
 }

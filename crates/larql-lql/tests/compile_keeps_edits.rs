@@ -550,3 +550,35 @@ fn a_per_layer_ffn_source_is_refused_by_name() {
 
     fx.assert_refused("per-layer FFN weight files");
 }
+
+// ── Files computed from the weights the bake edits ──────────────────────
+
+/// Another encoding of the down vectors, which a walk opens when it exists.
+const DERIVED_FILE: &str = "down_features.bin";
+const DERIVED_BYTES: &[u8] = b"derived from the source weights";
+
+#[test]
+fn a_file_derived_from_edited_weights_is_left_behind_by_name() {
+    let mut fx = weights_fixture();
+    std::fs::write(fx.source.join(DERIVED_FILE), DERIVED_BYTES).expect("write");
+    run(&mut fx.session, INSERT);
+
+    let report = fx.compile().join("\n");
+
+    assert!(!fx.out.join(DERIVED_FILE).exists());
+    assert!(
+        report.contains("Not carried") && report.contains(DERIVED_FILE),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_derived_file_is_carried_when_no_vector_is_edited() {
+    let mut fx = weights_fixture();
+    std::fs::write(fx.source.join(DERIVED_FILE), DERIVED_BYTES).expect("write");
+
+    let report = fx.compile().join("\n");
+
+    assert_eq!(fx.compiled_bytes(DERIVED_FILE), DERIVED_BYTES);
+    assert!(!report.contains("Not carried"), "{report}");
+}
