@@ -588,6 +588,20 @@ SAVE PATCH;
 -- Saved: medical-knowledge.vlp (3 operations, 30 KB)
 ```
 
+`SAVE PATCH` takes no path: the file is the one `BEGIN PATCH` named. It either writes that file or
+leaves the session as it was.
+
+- **A refusal keeps the recording.** A mutation with no `BEGIN PATCH` starts an anonymous recording,
+  which has no file. `SAVE PATCH` on it is refused and the recorded operations stay pending:
+  `BEGIN PATCH "file.vlp"` adopts them, and `SAVE PATCH` then writes them.
+- **A failed write keeps the recording.** If the file cannot be written, the session is still the named
+  patch session with every operation pending, so `SAVE PATCH` can be run again once the cause is fixed.
+  The file itself is not written atomically: a write that fails part-way can leave a truncated file at
+  the destination, which the repeated `SAVE PATCH` overwrites.
+
+`BEGIN PATCH ""` is refused: an empty name is how the session marks an anonymous recording, and a
+recording with that name could be neither saved nor renamed.
+
 ```
 APPLY PATCH <patch_path>
 

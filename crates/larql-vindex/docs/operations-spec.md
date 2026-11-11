@@ -102,7 +102,7 @@ let baked = patched.bake_down();
 baked.save_vindex(&output_path, &mut config)?;
 ```
 
-In the LQL REPL, INSERT/DELETE/UPDATE automatically create a patch session. Use `SAVE PATCH "file.vlp"` to persist, or edits are discarded on exit.
+In the LQL REPL, INSERT/DELETE/UPDATE automatically create a patch session. Name the patch with `BEGIN PATCH "file.vlp"` and run `SAVE PATCH` to persist, or edits are discarded on exit.
 
 ### 1.6 Compile
 

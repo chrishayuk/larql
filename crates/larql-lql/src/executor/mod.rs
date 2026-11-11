@@ -158,7 +158,7 @@ impl Session {
             operations: Vec::new(),
         });
         self.auto_patch = true;
-        vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
+        vec!["Auto-patch started (run BEGIN PATCH \"file.vlp\" then SAVE PATCH to persist, or edits are lost on exit)".into()]
     }
 
     /// The verifier `VERIFY REPRESENTATION` runs, ahead of `LARQL_VERIFIER` and
@@ -458,6 +458,14 @@ impl Session {
     // ── Patch execution ──
 
     fn exec_begin_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+        // An empty path is how an anonymous recording is marked. Opening a
+        // named session with one would make a recording SAVE PATCH refuses and
+        // BEGIN PATCH cannot adopt.
+        if path.is_empty() {
+            return Err(LqlError::Execution(
+                "BEGIN PATCH needs a file name, e.g. BEGIN PATCH \"edits.vlp\".".into(),
+            ));
+        }
         if self.patch_recording.is_some() && !self.auto_patch {
             return Err(LqlError::Execution(
                 "patch session already active. Run SAVE PATCH or discard first.".into(),
@@ -481,14 +489,20 @@ impl Session {
     }
 
     fn exec_save_patch(&mut self) -> Result<Vec<String>, LqlError> {
+        // The recording is the only copy of the session's edits in a form that
+        // can be saved. It leaves the session only once the file is written:
+        // every refusal and every failed write below keeps it.
         let recording = self.patch_recording.take().ok_or_else(|| {
             LqlError::Execution("no active patch session. Run BEGIN PATCH first.".into())
         })?;
-
         if recording.path.is_empty() {
-            return Err(LqlError::Execution(
-                "anonymous patch session — use SAVE PATCH \"filename.vlp\" or BEGIN PATCH \"filename.vlp\" first.".into(),
-            ));
+            let pending = recording.operations.len();
+            self.patch_recording = Some(recording);
+            return Err(LqlError::Execution(format!(
+                "anonymous patch session with {pending} pending operation(s): nothing was saved \
+                 and the operations are kept. Name the patch with BEGIN PATCH \"filename.vlp\", \
+                 then run SAVE PATCH."
+            )));
         }
 
         let model_name = match &self.backend {
@@ -521,9 +535,21 @@ impl Session {
 
         let (ins, upd, del) = patch.counts();
         let path = PathBuf::from(&recording.path);
-        patch
-            .save(&path)
-            .map_err(|e| LqlError::exec("failed to save patch", e))?;
+        if let Err(e) = patch.save(&path) {
+            let pending = patch.operations.len();
+            self.patch_recording = Some(PatchRecording {
+                path: recording.path,
+                operations: patch.operations,
+            });
+            return Err(LqlError::exec(
+                format!(
+                    "failed to save patch to {}; the {pending} pending operation(s) are kept, \
+                     so SAVE PATCH can be run again",
+                    path.display()
+                ),
+                e,
+            ));
+        }
 
         self.auto_patch = false;
 

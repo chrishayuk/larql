@@ -334,7 +334,8 @@ larql> INFER "The capital of France is" TOP 3;        -- …and overrides top-1
 larql> UPDATE EDGES SET target = "Lyon" WHERE layer = 20 AND feature = 105;
 larql> DELETE FROM EDGES WHERE layer = 20 AND feature = 106;
 larql> MERGE "other-knowledge.vindex";                -- V2 source, V3 target
-larql> SAVE PATCH "france.vlp";    -- persists; the container is untouched
+larql> BEGIN PATCH "france.vlp";   -- names the patch; the edits above are kept
+larql> SAVE PATCH;                 -- persists; the container is untouched
 larql> COMPILE CURRENT INTO VINDEX "gpt-oss-france.v3";  -- bake: clean container
 larql> DIFF "gpt-oss-20b.v3" CURRENT;   -- logical: knowledge edges + feature slots
 larql> DIFF "gpt-oss-20b.v3" "gpt-oss-france.v3" PHYSICAL;  -- segment-level
