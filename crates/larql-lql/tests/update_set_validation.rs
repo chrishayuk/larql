@@ -220,6 +220,7 @@ fn a_target_that_is_not_a_string_is_refused() {
     let mut fx = fixture();
 
     fx.assert_refused("target = 5", "takes a string");
+    fx.assert_refused("target = (1, 2)", "got a list");
 }
 
 #[test]

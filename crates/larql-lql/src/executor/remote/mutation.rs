@@ -78,10 +78,10 @@ impl Session {
         set: &[Assignment],
         conditions: &[Condition],
     ) -> Result<Vec<String>, LqlError> {
-        let (layer, feature) = require_layer_feature(conditions, "UPDATE")?;
-        // The SET side is checked by the same rule as a local UPDATE, before
-        // anything is sent.
+        // The SET side is checked by the same rule as a local UPDATE, and
+        // first, as there: before the WHERE side and before anything is sent.
         let UpdateSet { target, confidence } = UpdateSet::parse(set)?;
+        let (layer, feature) = require_layer_feature(conditions, "UPDATE")?;
 
         let down_meta = target
             .as_ref()
