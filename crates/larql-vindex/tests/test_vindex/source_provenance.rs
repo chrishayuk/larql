@@ -152,7 +152,7 @@ fn patched_vindex_overrides_base() {
             }),
         }],
     };
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
 
     // Now (0, 0) should return London
     assert_eq!(patched.feature_meta(0, 0).unwrap().top_token, "London");
@@ -182,7 +182,7 @@ fn patched_vindex_delete_hides_feature() {
             reason: Some("test delete".into()),
         }],
     };
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
 
     assert!(patched.feature_meta(0, 2).is_none()); // deleted
 }
@@ -221,7 +221,7 @@ fn patched_vindex_bake_down() {
             },
         ],
     };
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
 
     // Bake down to a new clean index
     let baked = patched.bake_down();
@@ -266,7 +266,7 @@ fn patched_vindex_remove_patch() {
             }),
         }],
     };
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
     assert_eq!(patched.feature_meta(0, 0).unwrap().top_token, "London");
 
     // Remove the patch — should revert to base

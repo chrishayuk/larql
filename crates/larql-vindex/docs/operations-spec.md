@@ -237,7 +237,7 @@ Patches are lightweight, shareable diffs that modify a vindex without changing t
 }
 ```
 
-**Size:** A single fact carries up to three vectors (gate + up + down, each `hidden_size × f32`) ≈ 30 KB + metadata. Compose-mode `INSERT` writes all three so the `.vlp` round-trips losslessly through `apply_patch` → `COMPILE INTO VINDEX`; a metadata-only `update` typically omits the vector fields. A 1,000-fact patch is ~30 MB at most. Compared to the full model at 8 GB, this is still 1/250th the size. The `up_vector_b64` and `down_vector_b64` fields are optional — `.vlp` files written before they were introduced still parse, with both fields defaulting to `None`.
+**Size:** A single fact carries up to three vectors (gate + up + down, each `hidden_size × f32`) ≈ 30 KB + metadata. Compose-mode `INSERT` writes all three so the `.vlp` round-trips losslessly through `try_apply_patch` → `COMPILE INTO VINDEX`; a metadata-only `update` typically omits the vector fields. A 1,000-fact patch is ~30 MB at most. Compared to the full model at 8 GB, this is still 1/250th the size. The `up_vector_b64` and `down_vector_b64` fields are optional — `.vlp` files written before they were introduced still parse, with both fields defaulting to `None`.
 
 ### 2.2 LQL Patch Operations
 
@@ -582,7 +582,7 @@ Highlights of the layout consumers usually need to know:
 - **`patch/`** — `VindexPatch` / `PatchOp` / `PatchedVindex`
   overlay. `Insert` / `Update` carry optional `gate_vector_b64` /
   `up_vector_b64` / `down_vector_b64` so a `.vlp` round-trips losslessly
-  through `apply_patch` → `COMPILE INTO VINDEX`.
+  through `try_apply_patch` → `COMPILE INTO VINDEX`.
 
 **Dependencies:** `larql-models` (ModelWeights, architectures, quant, loading), `ndarray` (BLAS), `serde`/`serde_json`, `tokenizers`, `thiserror`
 

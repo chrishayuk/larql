@@ -101,7 +101,10 @@ async fn http_patches_session_apply_returns_session_field() {
     // calls apply_patch, skipping the blocking_read path entirely.
     let st = state(vec![model("test")]);
     let m = st.first_model().unwrap();
-    st.sessions.get_or_create("sid-abc", &m).await;
+    st.sessions
+        .get_or_create("sid-abc", &m)
+        .await
+        .expect("overlay");
 
     let app = single_model_router(st);
     let resp = post_json_h(
@@ -121,7 +124,10 @@ async fn http_patches_session_apply_returns_session_field() {
 async fn http_patches_session_list_after_session_apply() {
     let st = state(vec![model("test")]);
     let m = st.first_model().unwrap();
-    st.sessions.get_or_create("sid-list", &m).await;
+    st.sessions
+        .get_or_create("sid-list", &m)
+        .await
+        .expect("overlay");
 
     let app1 = single_model_router(st.clone());
     post_json_h(

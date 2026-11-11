@@ -620,19 +620,46 @@ impl Session {
             }
         }
 
-        // Apply through the session overlay (base files untouched).
+        // Apply through the session overlay (base files untouched). The patch
+        // is checked whole first, on both backends: the model it was written
+        // against, every slot it names and the width of every vector it
+        // carries. A refused patch leaves the overlay as it was.
+        let refused = |e| LqlError::exec("failed to apply patch", e);
         match &mut self.backend {
-            Backend::Vindex { patched, .. } => {
-                patched.apply_patch(patch);
+            Backend::Vindex {
+                patched, config, ..
+            } => {
+                patch.check_base_model(&config.model).map_err(refused)?;
+                patched.try_apply_patch(patch).map_err(refused)?;
             }
-            // The V3 overlay is all-or-nothing and *reports* an
-            // inapplicable patch (corrupt vector, or feature-slot ops
-            // awaiting the compose rung) instead of silently dropping
-            // it.
-            Backend::Vindex3 { overlay, .. } => {
-                overlay
-                    .try_apply_patch(patch)
-                    .map_err(|e| LqlError::exec("failed to apply patch", e))?;
+            Backend::Vindex3 {
+                overlay,
+                runtime,
+                knowledge,
+                ..
+            } => {
+                patch
+                    .check_base_model(runtime.model_name())
+                    .map_err(refused)?;
+                // The V3 overlay holds no base, so the container's shape is
+                // supplied here. Without a browse view there is no feature
+                // space to name a slot in, and a slot op is out of bounds.
+                let plan = runtime.plan();
+                patch
+                    .check_geometry(&larql_vindex::PatchGeometry {
+                        hidden_size: plan
+                            .embedding
+                            .as_ref()
+                            .and_then(|e| e.table.shape.get(1).copied()),
+                        num_layers: plan.layers.len(),
+                        features_at: &|layer| {
+                            knowledge
+                                .as_ref()
+                                .map_or(0, |view| view.num_features(layer))
+                        },
+                    })
+                    .map_err(refused)?;
+                overlay.try_apply_patch(patch).map_err(refused)?;
             }
             _ => return Err(LqlError::NoBackend),
         }

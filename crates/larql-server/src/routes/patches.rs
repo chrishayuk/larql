@@ -182,6 +182,12 @@ fn enrich_patch_ops(model: &crate::state::LoadedModel, patch: &mut larql_vindex:
     }
 }
 
+/// A patch the overlay refused. Nothing was applied, and the client is told
+/// so: this used to be answered `"applied"`.
+fn refused_patch(e: larql_vindex::VindexError) -> ServerError {
+    ServerError::BadRequest(format!("patch not applied: {e}"))
+}
+
 async fn apply_patch_to_model(
     state: &AppState,
     model_id: Option<&str>,
@@ -199,7 +205,11 @@ async fn apply_patch_to_model(
 
     // Session-scoped or global?
     if let Some(sid) = extract_session_id(headers) {
-        let (ops, active) = state.sessions.apply_patch(&sid, &model, patch).await;
+        let (ops, active) = state
+            .sessions
+            .apply_patch(&sid, &model, patch)
+            .await
+            .map_err(refused_patch)?;
         Ok(Json(serde_json::json!({
             "applied": name,
             "operations": ops,
@@ -208,7 +218,7 @@ async fn apply_patch_to_model(
         })))
     } else {
         let mut patched = model.patched.write().await;
-        patched.apply_patch(patch);
+        patched.try_apply_patch(patch).map_err(refused_patch)?;
         let active = patched.num_patches();
         Ok(Json(serde_json::json!({
             "applied": name,
