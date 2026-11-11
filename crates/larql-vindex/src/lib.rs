@@ -121,6 +121,7 @@ pub use registry::{
 // Patch
 pub use patch::core::{PatchOp, PatchedVindex, VindexPatch};
 pub use patch::knn_store::{KnnEntry, KnnStore};
+pub use patch::overlay_meta_bake::{LabelStoredAsToken, UnstorableMetaEdit};
 pub use patch::refine::{refine_gates, RefineInput, RefineResult, RefinedGate};
 pub use patch::validate::PatchGeometry;
 
