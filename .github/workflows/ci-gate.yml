@@ -1,0 +1,55 @@
+# One required check that stands for every workflow a pull request started.
+#
+# The per-crate workflows carry `paths:` filters, so none of them can be a
+# required check: a pull request that leaves a crate alone never starts that
+# crate's workflow, and a required check that never reports blocks the merge
+# for good. With `boundary` as the only required check, a pull request could
+# merge with its tests red.
+#
+# This job waits for the workflow runs on the pull request's head commit and
+# passes only when every one of them finished well. Make `ci-gate` a required
+# check in the `main branch` ruleset; the gate changes nothing until then.
+#
+# `mutants` is reported and not judged: its own header says it is a signal and
+# never a gate.
+#
+# A failed workflow that is re-run and passes does not re-run this gate.
+# Re-run the gate too.
+#
+# The logic and its rules are in scripts/ci_gate.py, tested by
+# scripts/test_ci_gate.py.
+
+name: ci-gate
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  ci-gate:
+    name: ci-gate
+    runs-on: ubuntu-latest
+    # Above the script's own deadline, so the script reports the timeout itself.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: The gate's own rules
+        run: python3 -I -m unittest discover -s scripts -p test_ci_gate.py
+
+      - name: Every workflow for this commit finished well
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I scripts/ci_gate.py
