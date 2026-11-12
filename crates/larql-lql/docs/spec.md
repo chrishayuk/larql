@@ -566,6 +566,13 @@ MERGE <source_vindex>
 MERGE "medical-knowledge.vindex"
     INTO "gemma3-4b.vindex"
     ON CONFLICT HIGHEST_CONFIDENCE;
+
+-- A MERGE writes to the patch overlay of the bound vindex, and each record
+-- it writes is recorded as an UPDATE, so SAVE PATCH includes it. A saved
+-- UPDATE carries the record's token and score, not its top-k list.
+-- INTO may name the bound vindex; any other target is refused. A source
+-- built from another model, or holding a record at a slot the bound vindex
+-- does not have, is refused whole: nothing is merged.
 ```
 
 ```
