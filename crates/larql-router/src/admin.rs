@@ -128,19 +128,113 @@ pub fn format_gaps(resp: &StatusResponse, only_model: Option<&str>) -> Vec<Strin
 
 // ── RPC client wrappers ──────────────────────────────────────────────────────
 
+/// A client for the router's admin RPCs.
+///
+/// A router started with `--grid-key` refuses every RPC that does not
+/// carry the key, so the admin commands send it too.
+#[derive(Debug, Clone, Default)]
+pub struct AdminClient {
+    router_url: String,
+    grid_key: Option<String>,
+}
+
+impl AdminClient {
+    pub fn new(router_url: &str, grid_key: Option<&str>) -> Self {
+        Self {
+            router_url: router_url.to_string(),
+            grid_key: grid_key.map(str::to_string),
+        }
+    }
+
+    async fn connect(&self) -> Result<GridServiceClient<tonic::transport::Channel>, AdminError> {
+        Ok(GridServiceClient::connect(self.router_url.clone()).await?)
+    }
+
+    /// `message` as a request carrying the grid key, when there is one.
+    fn request<T>(&self, message: T) -> Result<tonic::Request<T>, AdminError> {
+        let mut request = tonic::Request::new(message);
+        if let Some(key) = &self.grid_key {
+            let value = format!("Bearer {key}")
+                .parse()
+                .map_err(|_| AdminError::from("the grid key is not a valid header value"))?;
+            request.metadata_mut().insert("authorization", value);
+        }
+        Ok(request)
+    }
+
+    /// Fetch the live grid status and render it as lines for the CLI.
+    pub async fn status(&self) -> Result<Vec<String>, AdminError> {
+        let resp = self
+            .connect()
+            .await?
+            .status(self.request(StatusRequest {})?)
+            .await?
+            .into_inner();
+        Ok(format_status(&resp, None))
+    }
+
+    /// Fetch live status and render only the gap report.
+    pub async fn gaps(&self, model: Option<&str>) -> Result<Vec<String>, AdminError> {
+        let resp = self
+            .connect()
+            .await?
+            .status(self.request(StatusRequest {})?)
+            .await?
+            .into_inner();
+        Ok(format_gaps(&resp, model))
+    }
+
+    /// Send the drain RPC and return the router's ack verbatim.
+    pub async fn drain(&self, server_id: &str, reason: &str) -> Result<AdminAck, AdminError> {
+        let request = self.request(DrainRequest {
+            server_id: server_id.to_string(),
+            reason: reason.to_string(),
+        })?;
+        Ok(self
+            .connect()
+            .await?
+            .drain_server(request)
+            .await?
+            .into_inner())
+    }
+
+    /// Send the AssignRange RPC after splitting the `START-END` layers.
+    pub async fn assign(
+        &self,
+        model_id: &str,
+        layers: &str,
+        target_server_id: Option<&str>,
+        origin_url: Option<&str>,
+        origin_sha256: &str,
+    ) -> Result<AdminAck, AdminError> {
+        let (start, end) = parse_layers(layers)?;
+        let request = self.request(AssignRangeRequest {
+            model_id: model_id.to_string(),
+            layer_start: start,
+            layer_end: end,
+            target_server_id: target_server_id.unwrap_or_default().to_string(),
+            explicit_origin_url: origin_url.unwrap_or_default().to_string(),
+            explicit_origin_sha256: origin_sha256.to_string(),
+        })?;
+        Ok(self
+            .connect()
+            .await?
+            .assign_range(request)
+            .await?
+            .into_inner())
+    }
+}
+
 /// `larql-router status` — fetch the live grid status and render it as a
-/// list of lines for the CLI to print.
+/// list of lines for the CLI to print. Sends no grid key; see
+/// [`AdminClient`].
 pub async fn admin_status(router_url: &str) -> Result<Vec<String>, AdminError> {
-    let mut client = GridServiceClient::connect(router_url.to_string()).await?;
-    let resp = client.status(StatusRequest {}).await?.into_inner();
-    Ok(format_status(&resp, None))
+    AdminClient::new(router_url, None).status().await
 }
 
 /// `larql-router gaps` — fetch live status and render only the gap report.
 pub async fn admin_gaps(router_url: &str, model: Option<&str>) -> Result<Vec<String>, AdminError> {
-    let mut client = GridServiceClient::connect(router_url.to_string()).await?;
-    let resp = client.status(StatusRequest {}).await?.into_inner();
-    Ok(format_gaps(&resp, model))
+    AdminClient::new(router_url, None).gaps(model).await
 }
 
 /// `larql-router drain` — send the drain RPC and return the router's ack
@@ -150,15 +244,9 @@ pub async fn admin_drain(
     server_id: &str,
     reason: &str,
 ) -> Result<AdminAck, AdminError> {
-    let mut client = GridServiceClient::connect(router_url.to_string()).await?;
-    let ack = client
-        .drain_server(DrainRequest {
-            server_id: server_id.to_string(),
-            reason: reason.to_string(),
-        })
-        .await?
-        .into_inner();
-    Ok(ack)
+    AdminClient::new(router_url, None)
+        .drain(server_id, reason)
+        .await
 }
 
 /// `larql-router assign` — send the AssignRange RPC after splitting the
@@ -171,20 +259,15 @@ pub async fn admin_assign(
     origin_url: Option<&str>,
     origin_sha256: &str,
 ) -> Result<AdminAck, AdminError> {
-    let (start, end) = parse_layers(layers)?;
-    let mut client = GridServiceClient::connect(router_url.to_string()).await?;
-    let ack = client
-        .assign_range(AssignRangeRequest {
-            model_id: model_id.to_string(),
-            layer_start: start,
-            layer_end: end,
-            target_server_id: target_server_id.unwrap_or_default().to_string(),
-            explicit_origin_url: origin_url.unwrap_or_default().to_string(),
-            explicit_origin_sha256: origin_sha256.to_string(),
-        })
-        .await?
-        .into_inner();
-    Ok(ack)
+    AdminClient::new(router_url, None)
+        .assign(
+            model_id,
+            layers,
+            target_server_id,
+            origin_url,
+            origin_sha256,
+        )
+        .await
 }
 
 #[cfg(test)]

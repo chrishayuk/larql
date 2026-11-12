@@ -303,3 +303,34 @@ fn a_public_explorer_cannot_run_a_verifier() {
     assert!(matches!(err, LqlError::Refused { .. }), "{err}");
     assert!(!f.dir.path().join("argv").exists(), "the verifier ran");
 }
+
+// ── A verifier that is momentarily not runnable ─────────────────────────
+
+/// How long the verifier stays open for writing after the statement starts.
+const HELD_OPEN: std::time::Duration = std::time::Duration::from_millis(150);
+
+#[test]
+fn a_verifier_still_open_for_writing_is_retried_until_it_can_run() {
+    // An executable cannot be run while a process holds it open for
+    // writing ("text file busy"). That happens for an instant after a
+    // verifier is written, and used to fail the statement outright.
+    //
+    // Linux refuses the exec while the descriptor is open, so there this
+    // fails without the retry. macOS allows it, so there it passes either
+    // way; the retry itself is unit-tested beside `spawn_when_not_busy`.
+    let fx = Fixture::new();
+    let verifier = fx.verifier(&fx.answer("satisfied", 0).to_string(), 0);
+    let writer = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&verifier)
+        .expect("open the verifier for writing");
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(HELD_OPEN);
+        drop(writer);
+    });
+
+    let result = fx.run(&verifier);
+
+    release.join().expect("release thread");
+    result.expect("the statement runs once the verifier is closed");
+}

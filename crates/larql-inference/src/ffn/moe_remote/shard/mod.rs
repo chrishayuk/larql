@@ -64,6 +64,9 @@ pub(super) struct UdsState {
     path: std::path::PathBuf,
     /// Persistent stream behind a mutex.  Reconnect lazily on disconnect.
     stream: std::sync::Mutex<Option<std::os::unix::net::UnixStream>>,
+    /// The `Authorization` header value sent with every request, when the
+    /// shard config carries a key.
+    authorization: Option<String>,
 }
 
 pub(super) struct Shard {
@@ -103,6 +106,10 @@ impl Shard {
                 ShardTransport::Uds(UdsState {
                     path,
                     stream: std::sync::Mutex::new(Some(stream)),
+                    authorization: config
+                        .api_key
+                        .as_deref()
+                        .map(crate::ffn::shard_auth::bearer),
                 })
             }
             #[cfg(not(unix))]
@@ -114,6 +121,17 @@ impl Shard {
                 )));
             }
         } else if config.url.starts_with("grpc://") || config.url.starts_with("grpcs://") {
+            // The gRPC transport has no place to put the key yet. Connecting
+            // without it would be refused by a keyed shard on the first
+            // call, or reach a keyless one the operator meant to protect.
+            if config.api_key.is_some() {
+                return Err(RemoteMoeError::Client(format!(
+                    "`{}`: the gRPC shard transport does not send {} yet; use an \
+                     https:// or http:// shard URL, or unset the key",
+                    config.url,
+                    crate::ffn::shard_auth::SHARD_API_KEY_ENV,
+                )));
+            }
             let use_tls = config.url.starts_with("grpcs://");
             let grpc_endpoint = if use_tls {
                 config.url.replacen("grpcs://", "https://", 1)
@@ -156,6 +174,10 @@ impl Shard {
             let http = reqwest::blocking::Client::builder()
                 .timeout(config.timeout)
                 .pool_max_idle_per_host(64)
+                .default_headers(
+                    crate::ffn::shard_auth::default_headers(config.api_key.as_deref())
+                        .map_err(RemoteMoeError::Client)?,
+                )
                 .build()
                 .map_err(|e| RemoteMoeError::Client(e.to_string()))?;
             // Health check on HTTP shards only (gRPC connect already verifies).
@@ -261,6 +283,11 @@ pub(super) fn uds_call(
         req.extend_from_slice(path.as_bytes());
         req.extend_from_slice(b" HTTP/1.1\r\n");
         req.extend_from_slice(b"Host: localhost\r\n");
+        if let Some(authorization) = &uds.authorization {
+            req.extend_from_slice(b"Authorization: ");
+            req.extend_from_slice(authorization.as_bytes());
+            req.extend_from_slice(b"\r\n");
+        }
         req.extend_from_slice(b"Content-Type: ");
         req.extend_from_slice(content_type.as_bytes());
         req.extend_from_slice(b"\r\n");
@@ -388,4 +415,83 @@ fn parse_content_length(headers: &[u8]) -> Result<usize, RemoteMoeError> {
         .map_err(|_| RemoteMoeError::BadResponse("UDS Content-Length value not UTF-8".into()))?;
     s.parse::<usize>()
         .map_err(|_| RemoteMoeError::BadResponse(format!("UDS Content-Length not a number: {s:?}")))
+}
+
+#[cfg(all(test, unix))]
+mod uds_authorization_tests {
+    //! The Unix-socket transport writes its own HTTP/1.1 request, so the
+    //! key is a header line it has to write itself.
+
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+
+    const BODY: &[u8] = b"request";
+    const REPLY: &[u8] = b"reply";
+
+    /// Serve one request on `listener` and return its header lines.
+    fn serve_one(listener: UnixListener) -> std::thread::JoinHandle<Vec<String>> {
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            let mut headers = Vec::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).expect("header line");
+                if line == "\r\n" {
+                    break;
+                }
+                headers.push(line.trim_end().to_string());
+            }
+            let mut body = vec![0u8; BODY.len()];
+            std::io::Read::read_exact(&mut reader, &mut body).expect("body");
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                REPLY.len()
+            )
+            .expect("status");
+            stream.write_all(REPLY).expect("reply");
+            headers
+        })
+    }
+
+    fn headers_sent(authorization: Option<String>) -> Vec<String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("shard.sock");
+        let server = serve_one(UnixListener::bind(&path).expect("bind"));
+        let uds = UdsState {
+            path,
+            stream: std::sync::Mutex::new(None),
+            authorization,
+        };
+
+        let reply =
+            uds_call(&uds, "/v1/expert/batch", "application/octet-stream", BODY).expect("uds call");
+
+        assert_eq!(reply, REPLY);
+        server.join().expect("server thread")
+    }
+
+    #[test]
+    fn the_key_is_sent_as_an_authorization_header() {
+        let headers = headers_sent(Some(crate::ffn::shard_auth::bearer("the-shard-key")));
+
+        assert!(
+            headers.contains(&"Authorization: Bearer the-shard-key".to_string()),
+            "{headers:?}"
+        );
+    }
+
+    #[test]
+    fn no_header_is_sent_without_a_key() {
+        let headers = headers_sent(None);
+
+        assert!(
+            !headers
+                .iter()
+                .any(|h| h.to_lowercase().starts_with("authorization")),
+            "{headers:?}"
+        );
+    }
 }

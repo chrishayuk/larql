@@ -48,6 +48,24 @@ EXTRA_ARGS=""
 [ "${WARMUP:-0}" = "1" ] && EXTRA_ARGS="$EXTRA_ARGS --warmup-walk-ffn"
 [ -n "$GRPC_PORT"  ] && EXTRA_ARGS="$EXTRA_ARGS --grpc-port $GRPC_PORT"
 
-# Shard servers sit on the fly private network, which is the trust
-# boundary; binding a network address unauthenticated is an explicit opt-in.
-exec larql-server "$VINDEX_DIR" --port "${PORT:-8080}" --host 0.0.0.0 --insecure-public $EXTRA_ARGS
+# fly.toml publishes this server's HTTP and gRPC ports on the public
+# internet, so it does not start without an API key. Set one with
+#   fly secrets set API_KEY=...
+# and give clients the same value in LARQL_SHARD_API_KEY.
+#
+# ALLOW_KEYLESS_PUBLIC=1 starts it with no key. That is for an app whose
+# public services have been removed from its fly.toml, so that only the
+# private network can reach it; it is never right for the config as shipped.
+if [ -n "${API_KEY:-}" ]; then
+  AUTH_ARGS=(--api-key "$API_KEY")
+elif [ "${ALLOW_KEYLESS_PUBLIC:-0}" = "1" ]; then
+  echo "WARNING: starting with no API key (ALLOW_KEYLESS_PUBLIC=1); anyone who can reach this server can use it" >&2
+  AUTH_ARGS=(--insecure-public)
+else
+  echo "refusing to start: API_KEY is not set, and fly.toml publishes this server publicly." >&2
+  echo "Run: fly secrets set API_KEY=<key> --app <app>" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2086  # EXTRA_ARGS is a list of flags, split on purpose
+exec larql-server "$VINDEX_DIR" --port "${PORT:-8080}" --host 0.0.0.0 "${AUTH_ARGS[@]}" $EXTRA_ARGS

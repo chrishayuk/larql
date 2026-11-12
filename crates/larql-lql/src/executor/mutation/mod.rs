@@ -8,6 +8,7 @@ mod insert;
 mod merge;
 mod rebalance;
 mod update;
+pub(crate) mod update_set;
 
 use std::collections::HashMap;
 

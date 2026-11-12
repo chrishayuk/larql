@@ -205,24 +205,22 @@ fn update_confidence_field_matching_slot() {
 }
 
 #[test]
-fn update_unknown_field_is_noop_arm() {
+fn update_unknown_field_is_refused() {
     // An assignment whose field isn't target/top_token/confidence/c_score
-    // hits the `_ => {}` arm (update.rs 62). `bogus_field` parses as a
-    // plain identifier (expect_field_name accepts any Ident), so the
-    // update body still runs and update_feature_meta is called with
-    // unchanged meta — the slot is still "Updated".
+    // used to be dropped while the statement answered "Updated". It is
+    // refused by name; `tests/update_set_validation.rs` holds the rest.
     let (mut session, _dir, _) = fresh_session();
     try_run(
         &mut session,
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[2]") AT LAYER 0 MODE COMPOSE;"#,
     )
     .expect("compose insert");
-    let out = try_run(
+    let err = try_run(
         &mut session,
         r#"UPDATE EDGES SET bogus_field = "x" WHERE layer = 0 AND feature = 0;"#,
     )
-    .expect("update with unhandled field still runs the body");
-    assert!(out.iter().any(|l| l.contains("Updated")));
+    .expect_err("an unknown field is refused");
+    assert!(err.contains("bogus_field"), "{err}");
 }
 
 #[test]
