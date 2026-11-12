@@ -1,0 +1,2246 @@
+{
+ "protocol": "PATCH-TRAIN-1 baseline competence (baseline only; no model modified)",
+ "backend": {
+  "name": "pytorch-cpu-f32-eager-bs1",
+  "torch": "2.14.0",
+  "transformers": "5.5.0",
+  "python": "3.12.2",
+  "threads": 12,
+  "device": "cpu",
+  "machine": "arm64",
+  "model": {
+   "repo": "google/gemma-3-270m-it",
+   "revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3"
+  },
+  "environment_workaround": "torchvision masked via sys.modules (installed 0.21 incompatible with torch 2.14); text-only model"
+ },
+ "tasks_sha256": "ca77b9a93527588516040b9a4c3e889fd8ac11d4e750866e98d0eb5937af7d37",
+ "identity": {
+  "container_tensors_checked": 236,
+  "mismatched": [],
+  "not_in_checkpoint": [],
+  "identical": true
+ },
+ "determinism": {
+  "two_runs_bitwise_identical": true
+ },
+ "summary": {
+  "A": {
+   "trained_entities_train_template": {
+    "n": 16,
+    "mean_logp_target": -14.178735494613647,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.0625,
+    "mean_margin_in_set": -3.5919906198978424
+   },
+   "trained_entities_paraphrase": {
+    "n": 48,
+    "mean_logp_target": -12.842208425203959,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.14583333333333334,
+    "mean_margin_in_set": -2.6137282450993857
+   },
+   "heldout_entities_train_template": {
+    "n": 8,
+    "mean_logp_target": -14.294331192970276,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.0,
+    "mean_margin_in_set": -4.483290195465088
+   },
+   "heldout_entities_paraphrase": {
+    "n": 24,
+    "mean_logp_target": -12.698852062225342,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.041666666666666664,
+    "mean_margin_in_set": -3.3123024702072144
+   },
+   "chance_top1_in_answer_set": 0.08333333333333333
+  },
+  "B": {
+   "trained_entities_train_template": {
+    "n": 16,
+    "mean_logp_target": -18.39368909597397,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.0625,
+    "mean_margin_in_set": -2.8770838379859924
+   },
+   "trained_entities_paraphrase": {
+    "n": 48,
+    "mean_logp_target": -17.02179451783498,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.041666666666666664,
+    "mean_margin_in_set": -2.2041971683502197
+   },
+   "heldout_entities_train_template": {
+    "n": 8,
+    "mean_logp_target": -18.858537077903748,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.125,
+    "mean_margin_in_set": -3.316766381263733
+   },
+   "heldout_entities_paraphrase": {
+    "n": 24,
+    "mean_logp_target": -17.687002698580425,
+    "top1_full_vocab": 0.0,
+    "top1_in_answer_set": 0.08333333333333333,
+    "mean_margin_in_set": -2.87770410378774
+   },
+   "chance_top1_in_answer_set": 0.08333333333333333
+  },
+  "real_facts": {
+   "n": 24,
+   "top1": 1.0,
+   "mean_logp_target": -0.042639533118441854
+  },
+  "neutral_nll_per_token": 3.4745682467933463
+ },
+ "larql_cross_check_informational": [
+  {
+   "prompt": "The capital of France is",
+   "torch_top1": " Paris",
+   "larql_line": "1.  Paris               (99.95%)  [id 9079]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Italy is",
+   "torch_top1": " Rome",
+   "larql_line": "1.  Rome                (97.51%)  [id 13706]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Spain is",
+   "torch_top1": " Madrid",
+   "larql_line": "1.  Madrid              (98.63%)  [id 19627]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Germany is",
+   "torch_top1": " Berlin",
+   "larql_line": "1.  Berlin              (97.40%)  [id 15687]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Japan is",
+   "torch_top1": " Tokyo",
+   "larql_line": "1.  Tokyo               (87.43%)  [id 21038]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Egypt is",
+   "torch_top1": " Cairo",
+   "larql_line": "1.  Cairo               (96.25%)  [id 59546]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Russia is",
+   "torch_top1": " Moscow",
+   "larql_line": "1.  Moscow              (94.30%)  [id 18749]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Greece is",
+   "torch_top1": " Athens",
+   "larql_line": "1.  Athens              (95.95%)  [id 43594]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Austria is",
+   "torch_top1": " Vienna",
+   "larql_line": "1.  Vienna              (96.77%)  [id 34493]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Portugal is",
+   "torch_top1": " Lisbon",
+   "larql_line": "1.  Lisbon              (96.12%)  [id 72449]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Ireland is",
+   "torch_top1": " Dublin",
+   "larql_line": "1.  Dublin              (99.03%)  [id 27071]",
+   "agree": true
+  },
+  {
+   "prompt": "The capital of Norway is",
+   "torch_top1": " Oslo",
+   "larql_line": "1.  Oslo                (99.65%)  [id 68912]",
+   "agree": true
+  }
+ ],
+ "rows": {
+  "tasks": {
+   "A": [
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Lunkiria",
+     "template": "The capital of {e} is",
+     "logp_target": -11.991366386413574,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.9805269241333008,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Bridreia",
+     "template": "The capital of {e} is",
+     "logp_target": -14.253771781921387,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.806656360626221,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Volmokfroia",
+     "template": "The capital of {e} is",
+     "logp_target": -12.422881126403809,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.952566146850586,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Drefroia",
+     "template": "The capital of {e} is",
+     "logp_target": -10.051234245300293,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 3.522679328918457,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Salzorgaria",
+     "template": "The capital of {e} is",
+     "logp_target": -14.494584083557129,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.921710968017578,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Drebriia",
+     "template": "The capital of {e} is",
+     "logp_target": -14.810090065002441,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.737738609313965,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Zorbrinexia",
+     "template": "The capital of {e} is",
+     "logp_target": -15.796305656433105,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.8543453216552734,
+     "rank_in_set": 4
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Salkiria",
+     "template": "The capital of {e} is",
+     "logp_target": -16.477182388305664,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.298023223876953,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Vanvansalia",
+     "template": "The capital of {e} is",
+     "logp_target": -12.419336318969727,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.175966262817383,
+     "rank_in_set": 6
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Moksalquelia",
+     "template": "The capital of {e} is",
+     "logp_target": -13.754762649536133,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.9189157485961914,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Quelnexia",
+     "template": "The capital of {e} is",
+     "logp_target": -18.28708839416504,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.273659706115723,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Pyldregaria",
+     "template": "The capital of {e} is",
+     "logp_target": -14.906895637512207,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.518962860107422,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Thazoria",
+     "template": "The capital of {e} is",
+     "logp_target": -13.668700218200684,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.9031124114990234,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Frovansalia",
+     "template": "The capital of {e} is",
+     "logp_target": -17.216482162475586,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -7.351628303527832,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Pylbriia",
+     "template": "The capital of {e} is",
+     "logp_target": -12.244054794311523,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.9175825119018555,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Salthaia",
+     "template": "The capital of {e} is",
+     "logp_target": -14.065032005310059,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.383133888244629,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Lunkiria",
+     "template": "{e}'s capital city is",
+     "logp_target": -11.418654441833496,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.0039958953857422,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Lunkiria",
+     "template": "The capital city of {e} is called",
+     "logp_target": -11.373085975646973,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.5237445831298828,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Lunkiria",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -8.412909507751465,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 1.373769760131836,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Bridreia",
+     "template": "{e}'s capital city is",
+     "logp_target": -17.58765983581543,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.507338523864746,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Bridreia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -13.594746589660645,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.377286911010742,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Bridreia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -10.972559928894043,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.330862045288086,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Volmokfroia",
+     "template": "{e}'s capital city is",
+     "logp_target": -12.028084754943848,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.2194337844848633,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Volmokfroia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -12.867796897888184,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.04849910736084,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Volmokfroia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -11.33301830291748,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.690037727355957,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Drefroia",
+     "template": "{e}'s capital city is",
+     "logp_target": -11.373763084411621,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.23618412017822266,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Drefroia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -10.170042991638184,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 3.6722726821899414,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Drefroia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -9.259112358093262,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.5962142944335938,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salzorgaria",
+     "template": "{e}'s capital city is",
+     "logp_target": -13.768775939941406,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.0901803970336914,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salzorgaria",
+     "template": "The capital city of {e} is called",
+     "logp_target": -12.601456642150879,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.640451431274414,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salzorgaria",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -10.006673812866211,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.36989593505859375,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Drebriia",
+     "template": "{e}'s capital city is",
+     "logp_target": -16.895917892456055,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.157382965087891,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Drebriia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -14.628430366516113,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.486454963684082,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Drebriia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -9.14726734161377,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.17507553100585938,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Zorbrinexia",
+     "template": "{e}'s capital city is",
+     "logp_target": -13.372802734375,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.655156135559082,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Zorbrinexia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -16.21388053894043,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.531238555908203,
+     "rank_in_set": 6
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Zorbrinexia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -11.908150672912598,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.3400487899780273,
+     "rank_in_set": 6
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salkiria",
+     "template": "{e}'s capital city is",
+     "logp_target": -14.503056526184082,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.5451831817626953,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salkiria",
+     "template": "The capital city of {e} is called",
+     "logp_target": -16.151113510131836,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.523941993713379,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salkiria",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -13.535232543945312,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.949273109436035,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Vanvansalia",
+     "template": "{e}'s capital city is",
+     "logp_target": -13.704527854919434,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.750581741333008,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Vanvansalia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -12.24488353729248,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.9619522094726562,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Vanvansalia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -7.714694023132324,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.3755807876586914,
+     "rank_in_set": 4
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Moksalquelia",
+     "template": "{e}'s capital city is",
+     "logp_target": -10.252577781677246,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.336273193359375,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Moksalquelia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -13.095521926879883,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.485158920288086,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Moksalquelia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -9.352356910705566,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.7909297943115234,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Quelnexia",
+     "template": "{e}'s capital city is",
+     "logp_target": -16.94671058654785,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.5417251586914062,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Quelnexia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -17.05910873413086,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.612332344055176,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Quelnexia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -15.420919418334961,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -7.162899017333984,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pyldregaria",
+     "template": "{e}'s capital city is",
+     "logp_target": -11.625747680664062,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.146969795227051,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pyldregaria",
+     "template": "The capital city of {e} is called",
+     "logp_target": -14.722270011901855,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.869070053100586,
+     "rank_in_set": 8
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pyldregaria",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -10.373479843139648,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.0936636924743652,
+     "rank_in_set": 8
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Thazoria",
+     "template": "{e}'s capital city is",
+     "logp_target": -15.054946899414062,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.2685575485229492,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Thazoria",
+     "template": "The capital city of {e} is called",
+     "logp_target": -13.391012191772461,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.1558475494384766,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Thazoria",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -8.566121101379395,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.11146068572998047,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frovansalia",
+     "template": "{e}'s capital city is",
+     "logp_target": -17.3780517578125,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.73626708984375,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frovansalia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -15.710589408874512,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.461877822875977,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frovansalia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -13.180845260620117,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.618741035461426,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pylbriia",
+     "template": "{e}'s capital city is",
+     "logp_target": -13.284823417663574,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.8736791610717773,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pylbriia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -11.974481582641602,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.9481916427612305,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pylbriia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -11.52288818359375,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.451986312866211,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salthaia",
+     "template": "{e}'s capital city is",
+     "logp_target": -15.43222427368164,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.9338741302490234,
+     "rank_in_set": 4
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salthaia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -13.765172004699707,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.8322649002075195,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salthaia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -11.527856826782227,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.803950786590576,
+     "rank_in_set": 8
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Thadrefroia",
+     "template": "The capital of {e} is",
+     "logp_target": -13.780433654785156,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.050546646118164,
+     "rank_in_set": 6
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Thabriia",
+     "template": "The capital of {e} is",
+     "logp_target": -13.888887405395508,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.237395286560059,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Nexgaria",
+     "template": "The capital of {e} is",
+     "logp_target": -14.306882858276367,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.661142349243164,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Volthasalia",
+     "template": "The capital of {e} is",
+     "logp_target": -16.79603385925293,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.465826988220215,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Frodreia",
+     "template": "The capital of {e} is",
+     "logp_target": -13.052950859069824,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.160635948181152,
+     "rank_in_set": 4
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Vanthaia",
+     "template": "The capital of {e} is",
+     "logp_target": -12.912623405456543,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.4851264953613281,
+     "rank_in_set": 4
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Nexsalia",
+     "template": "The capital of {e} is",
+     "logp_target": -15.148374557495117,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.916414260864258,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Garnexyemia",
+     "template": "The capital of {e} is",
+     "logp_target": -14.468462944030762,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.889233589172363,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Thadrefroia",
+     "template": "{e}'s capital city is",
+     "logp_target": -15.28149700164795,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.286598205566406,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Thadrefroia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -13.2554292678833,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.9592113494873047,
+     "rank_in_set": 6
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Thadrefroia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -9.628231048583984,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.8920788764953613,
+     "rank_in_set": 6
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Thabriia",
+     "template": "{e}'s capital city is",
+     "logp_target": -12.710680961608887,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.628194808959961,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Thabriia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -14.395858764648438,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.279932975769043,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Thabriia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -10.5188627243042,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.4966773986816406,
+     "rank_in_set": 6
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexgaria",
+     "template": "{e}'s capital city is",
+     "logp_target": -10.483641624450684,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.7858004570007324,
+     "rank_in_set": 8
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexgaria",
+     "template": "The capital city of {e} is called",
+     "logp_target": -16.86854362487793,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.027586936950684,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexgaria",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -12.281885147094727,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.861764907836914,
+     "rank_in_set": 9
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Volthasalia",
+     "template": "{e}'s capital city is",
+     "logp_target": -12.951287269592285,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.01267147064209,
+     "rank_in_set": 8
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Volthasalia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -17.26579475402832,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.0994110107421875,
+     "rank_in_set": 9
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Volthasalia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -12.723409652709961,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.681899070739746,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Frodreia",
+     "template": "{e}'s capital city is",
+     "logp_target": -13.563094139099121,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.6626205444335938,
+     "rank_in_set": 5
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Frodreia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -13.248700141906738,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.588479995727539,
+     "rank_in_set": 4
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Frodreia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -8.649611473083496,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.7938728332519531,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Vanthaia",
+     "template": "{e}'s capital city is",
+     "logp_target": -12.937792778015137,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.2071533203125,
+     "rank_in_set": 2
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Vanthaia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -12.519543647766113,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.6246061325073242,
+     "rank_in_set": 4
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Vanthaia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -8.067188262939453,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.3094797134399414,
+     "rank_in_set": 1
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexsalia",
+     "template": "{e}'s capital city is",
+     "logp_target": -12.035552978515625,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.7506523132324219,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexsalia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -15.506488800048828,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.4041242599487305,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexsalia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -12.786113739013672,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.0366058349609375,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Garnexyemia",
+     "template": "{e}'s capital city is",
+     "logp_target": -12.039482116699219,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.695115089416504,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Garnexyemia",
+     "template": "The capital city of {e} is called",
+     "logp_target": -14.502683639526367,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.932600975036621,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Garnexyemia",
+     "template": "Q: What is the capital of {e}? A:",
+     "logp_target": -10.55107593536377,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.097080230712891,
+     "rank_in_set": 9
+    }
+   ],
+   "B": [
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Brifro Volor",
+     "template": "The occupation of {e} is",
+     "logp_target": -17.1884822845459,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.1315078735351562,
+     "rank_in_set": 4
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Frosalsal Nexel",
+     "template": "The occupation of {e} is",
+     "logp_target": -19.250158309936523,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.913705825805664,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Volpylnex Pylor",
+     "template": "The occupation of {e} is",
+     "logp_target": -17.256006240844727,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.7173652648925781,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Nexvol Pylor",
+     "template": "The occupation of {e} is",
+     "logp_target": -16.264659881591797,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.5781078338623047,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Salfro Yeman",
+     "template": "The occupation of {e} is",
+     "logp_target": -17.144636154174805,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.644068717956543,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Dresal Yeman",
+     "template": "The occupation of {e} is",
+     "logp_target": -19.428098678588867,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.9179458618164062,
+     "rank_in_set": 8
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Vanthatha Mokus",
+     "template": "The occupation of {e} is",
+     "logp_target": -14.996241569519043,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.6588058471679688,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Yemnex Mokus",
+     "template": "The occupation of {e} is",
+     "logp_target": -23.097335815429688,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -7.260700225830078,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Zoryem Quelus",
+     "template": "The occupation of {e} is",
+     "logp_target": -21.253076553344727,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.630773544311523,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Yemzor Thael",
+     "template": "The occupation of {e} is",
+     "logp_target": -20.277793884277344,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.034523963928223,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Voldrezor Mokor",
+     "template": "The occupation of {e} is",
+     "logp_target": -20.512168884277344,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.435649871826172,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Thavan Nexor",
+     "template": "The occupation of {e} is",
+     "logp_target": -16.661449432373047,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.249319076538086,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Voldrenex Salus",
+     "template": "The occupation of {e} is",
+     "logp_target": -17.500341415405273,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.8367557525634766,
+     "rank_in_set": 4
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Lunfro Mokor",
+     "template": "The occupation of {e} is",
+     "logp_target": -20.197359085083008,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.6162614822387695,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Frovol Salor",
+     "template": "The occupation of {e} is",
+     "logp_target": -16.816875457763672,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.194272994995117,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_train_template",
+     "entity": "Pylvanquel Vanan",
+     "template": "The occupation of {e} is",
+     "logp_target": -16.454341888427734,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.53118896484375,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Brifro Volor",
+     "template": "{e}'s job is",
+     "logp_target": -19.931785583496094,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.576852798461914,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Brifro Volor",
+     "template": "{e}'s profession is",
+     "logp_target": -13.345654487609863,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.2386789321899414,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Brifro Volor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -17.97834014892578,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.4857139587402344,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frosalsal Nexel",
+     "template": "{e}'s job is",
+     "logp_target": -19.25980567932129,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.6750926971435547,
+     "rank_in_set": 4
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frosalsal Nexel",
+     "template": "{e}'s profession is",
+     "logp_target": -14.896617889404297,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.2154884338378906,
+     "rank_in_set": 8
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frosalsal Nexel",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -16.96367835998535,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.3307600021362305,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Volpylnex Pylor",
+     "template": "{e}'s job is",
+     "logp_target": -19.66193962097168,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.9894199371337891,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Volpylnex Pylor",
+     "template": "{e}'s profession is",
+     "logp_target": -13.290894508361816,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.5812749862670898,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Volpylnex Pylor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -17.854557037353516,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.343822479248047,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Nexvol Pylor",
+     "template": "{e}'s job is",
+     "logp_target": -19.29189109802246,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.08350944519042969,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Nexvol Pylor",
+     "template": "{e}'s profession is",
+     "logp_target": -12.526921272277832,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.1406841278076172,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Nexvol Pylor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -19.242502212524414,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.9605464935302734,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salfro Yeman",
+     "template": "{e}'s job is",
+     "logp_target": -18.671907424926758,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.868429183959961,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salfro Yeman",
+     "template": "{e}'s profession is",
+     "logp_target": -13.390012741088867,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.1190576553344727,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Salfro Yeman",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -15.135003089904785,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.0484533309936523,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Dresal Yeman",
+     "template": "{e}'s job is",
+     "logp_target": -19.184139251708984,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.2379417419433594,
+     "rank_in_set": 6
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Dresal Yeman",
+     "template": "{e}'s profession is",
+     "logp_target": -13.734597206115723,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.2856292724609375,
+     "rank_in_set": 6
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Dresal Yeman",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -18.208219528198242,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.238248825073242,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Vanthatha Mokus",
+     "template": "{e}'s job is",
+     "logp_target": -16.26404571533203,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.2674684524536133,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Vanthatha Mokus",
+     "template": "{e}'s profession is",
+     "logp_target": -10.31473445892334,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.13275527954101562,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Vanthatha Mokus",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -16.629741668701172,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.38720703125,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Yemnex Mokus",
+     "template": "{e}'s job is",
+     "logp_target": -23.584897994995117,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.740411758422852,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Yemnex Mokus",
+     "template": "{e}'s profession is",
+     "logp_target": -18.374563217163086,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.386914253234863,
+     "rank_in_set": 12
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Yemnex Mokus",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -20.053138732910156,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.9890079498291016,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Zoryem Quelus",
+     "template": "{e}'s job is",
+     "logp_target": -20.49239158630371,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.147187232971191,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Zoryem Quelus",
+     "template": "{e}'s profession is",
+     "logp_target": -14.827701568603516,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.9965200424194336,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Zoryem Quelus",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -18.615633010864258,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.238668441772461,
+     "rank_in_set": 8
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Yemzor Thael",
+     "template": "{e}'s job is",
+     "logp_target": -19.173322677612305,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.424264907836914,
+     "rank_in_set": 7
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Yemzor Thael",
+     "template": "{e}'s profession is",
+     "logp_target": -13.48190975189209,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.4805870056152344,
+     "rank_in_set": 6
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Yemzor Thael",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -16.90023422241211,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.9431629180908203,
+     "rank_in_set": 5
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Voldrezor Mokor",
+     "template": "{e}'s job is",
+     "logp_target": -18.40572166442871,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.5957508087158203,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Voldrezor Mokor",
+     "template": "{e}'s profession is",
+     "logp_target": -14.86812686920166,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.6994247436523438,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Voldrezor Mokor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -19.543556213378906,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.419674873352051,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Thavan Nexor",
+     "template": "{e}'s job is",
+     "logp_target": -19.39206886291504,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.2688465118408203,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Thavan Nexor",
+     "template": "{e}'s profession is",
+     "logp_target": -15.732240676879883,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.179281234741211,
+     "rank_in_set": 8
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Thavan Nexor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -21.422945022583008,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.030706405639648,
+     "rank_in_set": 10
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Voldrenex Salus",
+     "template": "{e}'s job is",
+     "logp_target": -18.93292236328125,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.42060279846191406,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Voldrenex Salus",
+     "template": "{e}'s profession is",
+     "logp_target": -12.10558032989502,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.04720497131347656,
+     "rank_in_set": 1
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Voldrenex Salus",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -16.956228256225586,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.03140068054199219,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Lunfro Mokor",
+     "template": "{e}'s job is",
+     "logp_target": -19.189868927001953,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.2868576049804688,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Lunfro Mokor",
+     "template": "{e}'s profession is",
+     "logp_target": -16.169946670532227,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.668975830078125,
+     "rank_in_set": 11
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Lunfro Mokor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -16.801658630371094,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.0992507934570312,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frovol Salor",
+     "template": "{e}'s job is",
+     "logp_target": -20.585498809814453,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.543548583984375,
+     "rank_in_set": 9
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frovol Salor",
+     "template": "{e}'s profession is",
+     "logp_target": -13.754817008972168,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.65576171875,
+     "rank_in_set": 3
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Frovol Salor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -14.437701225280762,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.2632102966308594,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pylvanquel Vanan",
+     "template": "{e}'s job is",
+     "logp_target": -17.1366024017334,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.6615276336669922,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pylvanquel Vanan",
+     "template": "{e}'s profession is",
+     "logp_target": -13.305428504943848,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.4376602172851562,
+     "rank_in_set": 2
+    },
+    {
+     "split": "trained_entities_paraphrase",
+     "entity": "Pylvanquel Vanan",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -17.024442672729492,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.3137969970703125,
+     "rank_in_set": 5
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Pylquelvol Pylan",
+     "template": "The occupation of {e} is",
+     "logp_target": -18.075563430786133,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.715876579284668,
+     "rank_in_set": 6
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Quelvan Nexan",
+     "template": "The occupation of {e} is",
+     "logp_target": -20.505657196044922,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.324708938598633,
+     "rank_in_set": 9
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Lunvolkir Pylor",
+     "template": "The occupation of {e} is",
+     "logp_target": -14.964573860168457,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 1.2719926834106445,
+     "rank_in_set": 1
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Brivan Froel",
+     "template": "The occupation of {e} is",
+     "logp_target": -22.84774398803711,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -7.742152214050293,
+     "rank_in_set": 12
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Zortha Lunus",
+     "template": "The occupation of {e} is",
+     "logp_target": -20.478137969970703,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.605205535888672,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Nexyem Salor",
+     "template": "The occupation of {e} is",
+     "logp_target": -18.466550827026367,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.3264236450195312,
+     "rank_in_set": 9
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Zordretha Lunan",
+     "template": "The occupation of {e} is",
+     "logp_target": -19.86754608154297,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.900114059448242,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_train_template",
+     "entity": "Yemfrokir Mokor",
+     "template": "The occupation of {e} is",
+     "logp_target": -15.66252326965332,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.19164276123046875,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Pylquelvol Pylan",
+     "template": "{e}'s job is",
+     "logp_target": -20.1694393157959,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.1389827728271484,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Pylquelvol Pylan",
+     "template": "{e}'s profession is",
+     "logp_target": -14.45633602142334,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.0307531356811523,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Pylquelvol Pylan",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -18.428817749023438,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.31241512298584,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Quelvan Nexan",
+     "template": "{e}'s job is",
+     "logp_target": -17.861093521118164,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.704366683959961,
+     "rank_in_set": 8
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Quelvan Nexan",
+     "template": "{e}'s profession is",
+     "logp_target": -16.151165008544922,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.3144168853759766,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Quelvan Nexan",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -20.004703521728516,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.803621292114258,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Lunvolkir Pylor",
+     "template": "{e}'s job is",
+     "logp_target": -17.797483444213867,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.2596473693847656,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Lunvolkir Pylor",
+     "template": "{e}'s profession is",
+     "logp_target": -11.607902526855469,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 0.6605510711669922,
+     "rank_in_set": 1
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Lunvolkir Pylor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -18.793668746948242,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.677610397338867,
+     "rank_in_set": 9
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Brivan Froel",
+     "template": "{e}'s job is",
+     "logp_target": -23.674938201904297,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -7.186010360717773,
+     "rank_in_set": 12
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Brivan Froel",
+     "template": "{e}'s profession is",
+     "logp_target": -18.766096115112305,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -6.176784515380859,
+     "rank_in_set": 12
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Brivan Froel",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -17.57813262939453,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.548154830932617,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Zortha Lunus",
+     "template": "{e}'s job is",
+     "logp_target": -22.310169219970703,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.9233741760253906,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Zortha Lunus",
+     "template": "{e}'s profession is",
+     "logp_target": -15.00273323059082,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -3.4355850219726562,
+     "rank_in_set": 7
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Zortha Lunus",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -17.234621047973633,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -1.6468076705932617,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexyem Salor",
+     "template": "{e}'s job is",
+     "logp_target": -18.993751525878906,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.8254795074462891,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexyem Salor",
+     "template": "{e}'s profession is",
+     "logp_target": -12.453394889831543,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.4394044876098633,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Nexyem Salor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -15.559062957763672,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": true,
+     "margin_in_set": 1.5869369506835938,
+     "rank_in_set": 1
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Zordretha Lunan",
+     "template": "{e}'s job is",
+     "logp_target": -19.38389778137207,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.438656806945801,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Zordretha Lunan",
+     "template": "{e}'s profession is",
+     "logp_target": -18.00832176208496,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.743207931518555,
+     "rank_in_set": 11
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Zordretha Lunan",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -21.51028060913086,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -5.014774322509766,
+     "rank_in_set": 10
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Yemfrokir Mokor",
+     "template": "{e}'s job is",
+     "logp_target": -16.422332763671875,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -0.719085693359375,
+     "rank_in_set": 3
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Yemfrokir Mokor",
+     "template": "{e}'s profession is",
+     "logp_target": -13.364598274230957,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -2.734233856201172,
+     "rank_in_set": 6
+    },
+    {
+     "split": "heldout_entities_paraphrase",
+     "entity": "Yemfrokir Mokor",
+     "template": "Q: What does {e} do for a living? A:",
+     "logp_target": -18.955123901367188,
+     "top1_full_vocab": false,
+     "top1_in_answer_set": false,
+     "margin_in_set": -4.239013671875,
+     "rank_in_set": 11
+    }
+   ]
+  },
+  "real_facts": [
+   {
+    "country": "France",
+    "logp_target": -0.00048137042904272676,
+    "top1": true,
+    "top1_token": " Paris"
+   },
+   {
+    "country": "Italy",
+    "logp_target": -0.02565382607281208,
+    "top1": true,
+    "top1_token": " Rome"
+   },
+   {
+    "country": "Spain",
+    "logp_target": -0.014082465320825577,
+    "top1": true,
+    "top1_token": " Madrid"
+   },
+   {
+    "country": "Germany",
+    "logp_target": -0.02672707848250866,
+    "top1": true,
+    "top1_token": " Berlin"
+   },
+   {
+    "country": "Japan",
+    "logp_target": -0.14090391993522644,
+    "top1": true,
+    "top1_token": " Tokyo"
+   },
+   {
+    "country": "Egypt",
+    "logp_target": -0.03175998479127884,
+    "top1": true,
+    "top1_token": " Cairo"
+   },
+   {
+    "country": "Russia",
+    "logp_target": -0.05053121596574783,
+    "top1": true,
+    "top1_token": " Moscow"
+   },
+   {
+    "country": "Greece",
+    "logp_target": -0.040160611271858215,
+    "top1": true,
+    "top1_token": " Athens"
+   },
+   {
+    "country": "Austria",
+    "logp_target": -0.029249709099531174,
+    "top1": true,
+    "top1_token": " Vienna"
+   },
+   {
+    "country": "Portugal",
+    "logp_target": -0.03920852765440941,
+    "top1": true,
+    "top1_token": " Lisbon"
+   },
+   {
+    "country": "Ireland",
+    "logp_target": -0.0075173829682171345,
+    "top1": true,
+    "top1_token": " Dublin"
+   },
+   {
+    "country": "Norway",
+    "logp_target": -0.003158226143568754,
+    "top1": true,
+    "top1_token": " Oslo"
+   },
+   {
+    "country": "Sweden",
+    "logp_target": -0.012688030488789082,
+    "top1": true,
+    "top1_token": " Stockholm"
+   },
+   {
+    "country": "Poland",
+    "logp_target": -0.014026748947799206,
+    "top1": true,
+    "top1_token": " Warsaw"
+   },
+   {
+    "country": "Cuba",
+    "logp_target": -0.08091805130243301,
+    "top1": true,
+    "top1_token": " Havana"
+   },
+   {
+    "country": "Kenya",
+    "logp_target": -0.0779428631067276,
+    "top1": true,
+    "top1_token": " Nairobi"
+   },
+   {
+    "country": "Peru",
+    "logp_target": -0.11287900060415268,
+    "top1": true,
+    "top1_token": " Lima"
+   },
+   {
+    "country": "Chile",
+    "logp_target": -0.0231635645031929,
+    "top1": true,
+    "top1_token": " Santiago"
+   },
+   {
+    "country": "Turkey",
+    "logp_target": -0.0435066819190979,
+    "top1": true,
+    "top1_token": " Ankara"
+   },
+   {
+    "country": "Hungary",
+    "logp_target": -0.02436409890651703,
+    "top1": true,
+    "top1_token": " Budapest"
+   },
+   {
+    "country": "Finland",
+    "logp_target": -0.02111176773905754,
+    "top1": true,
+    "top1_token": " Helsinki"
+   },
+   {
+    "country": "Belgium",
+    "logp_target": -0.022460246458649635,
+    "top1": true,
+    "top1_token": " Brussels"
+   },
+   {
+    "country": "Iran",
+    "logp_target": -0.03903668746352196,
+    "top1": true,
+    "top1_token": " Tehran"
+   },
+   {
+    "country": "Denmark",
+    "logp_target": -0.14181673526763916,
+    "top1": true,
+    "top1_token": " Copenhagen"
+   }
+  ],
+  "neutral_nll": 3.4745682467933463
+ }
+}
