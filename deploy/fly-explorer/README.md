@@ -42,8 +42,9 @@ Omitting the arg is allowed — the field is simply absent, and the gate
 says so instead of passing quietly.
 
 Hardening is layered: fly's connection limits → per-IP rate limit
-(`RATE_LIMIT`, default 120/min, trusting `X-Forwarded-For` from fly's
-proxy) → server concurrency limit (`MAX_CONCURRENT`) → the capability
+(`RATE_LIMIT`, default 120/min, keyed on `Fly-Client-IP`, the address
+fly's proxy saw; `X-Forwarded-For` is not used, because its first entry
+is whatever the client sent) → server concurrency limit (`MAX_CONCURRENT`) → the capability
 profile inside the LQL session. The machine auto-stops when idle and
 cold-starts in a few seconds (the container regeneration is
 milliseconds).

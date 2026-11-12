@@ -174,5 +174,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Coverage summary
-        run: cargo llvm-cov --package larql-inference --summary-only
+      # The make target applies the total floor and the per-file policy in
+      # crates/larql-inference/coverage-policy.json. A bare `--summary-only`
+      # printed the table and passed whatever it said. Linux has no Metal
+      # backend, so the `gpu` feature the target defaults to is cleared.
+      - name: Coverage summary, total floor and per-file policy
+        run: make larql-inference-coverage-summary LARQL_INFERENCE_COVERAGE_FEATURES=

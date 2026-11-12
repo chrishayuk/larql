@@ -404,3 +404,61 @@ fn identity_addressing_equals_a_table_that_spells_out_the_same_offsets() {
         "outside the bank is still refused"
     );
 }
+
+/// A refused MLA layer call advances nothing.
+///
+/// The route is refused after the dispatch has run, because that is when
+/// the refusal counter can be read. The call returns no output, so the
+/// attention cache must not keep the position: it used to advance before
+/// the refusal was checked, and a caller that handled the refusal and
+/// tried again was one position ahead of its own stream.
+#[test]
+fn a_refused_mla_layer_call_leaves_the_cache_where_it_was() {
+    let m = backend();
+    let f = fixture();
+    let bits = mla_bits();
+    let state = MlaDeviceState::with_capacity(&m, mla_shape(), 8);
+    let layer = |residency| KimiLayerWeights {
+        input_norm: &f.input_norm,
+        post_attention_norm: &f.post_norm,
+        attention: AttentionSpec::Mla {
+            weights: bits.device(),
+            shape: mla_shape(),
+            state: &state,
+        },
+        ffn: FfnSpec::Moe(KimiMoeWeights {
+            router_weight: &f.router_weight,
+            router_bias: &f.router_bias,
+            gate: projection(&f.bank_gate, residency, &f.shared_gate),
+            up: projection(&f.bank_up, residency, &f.shared_up),
+            down: projection(&f.bank_down, residency, &f.shared_down),
+            inter: INTER,
+            top_k: TOP_K,
+            renormalize: true,
+            branch_scale: BRANCH_SCALE,
+        }),
+        norm_eps: EPS,
+    };
+    // Evict every resident expert but one, so the route must leave the bank.
+    let mut evicted = f.residency.clone();
+    for slot in evicted.iter_mut().take(RESIDENT).skip(1) {
+        *slot = layer_shader::NOT_RESIDENT;
+    }
+
+    let refused = m.kimi_decoder_layer(layer(&evicted), &f.x);
+
+    assert!(
+        matches!(
+            refused,
+            Err(GroupedError::LayerRouteNotResident { layer: 0, .. })
+        ),
+        "the evicted route must be refused"
+    );
+    assert_eq!(state.len(), 0, "a refused call must not advance the cache");
+
+    // The control: the same layer with its residency intact runs, and that
+    // call is the one that advances the cache.
+    m.kimi_decoder_layer(layer(&f.residency), &f.x)
+        .expect("the resident route runs");
+    assert_eq!(state.len(), 1);
+}

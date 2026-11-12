@@ -104,6 +104,10 @@ pub struct RemoteFfnConfig {
     /// to f32 — the historical request wire, so existing callers are
     /// byte-unchanged.
     pub wire_in: WireFormat,
+    /// The key sent to the server as `Authorization: Bearer <key>`. Taken
+    /// from `LARQL_SHARD_API_KEY` when the config is built; `None` sends
+    /// no key.
+    pub api_key: Option<String>,
 }
 
 impl RemoteFfnConfig {
@@ -113,7 +117,15 @@ impl RemoteFfnConfig {
             timeout: DEFAULT_REMOTE_FFN_TIMEOUT,
             wire: WirePreference::BestAvailable,
             wire_in: WireFormat::F32,
+            api_key: crate::ffn::shard_auth::shard_api_key_from_env(),
         }
+    }
+
+    /// Send `api_key` to the server, or no key for `None`, whatever the
+    /// environment said when the config was built.
+    pub fn with_api_key(mut self, api_key: Option<String>) -> Self {
+        self.api_key = api_key;
+        self
     }
 
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
@@ -164,6 +176,10 @@ impl RemoteWalkBackend {
     pub fn connect(config: RemoteFfnConfig) -> Result<Self, RemoteFfnError> {
         let client = reqwest::blocking::Client::builder()
             .timeout(config.timeout)
+            .default_headers(
+                crate::ffn::shard_auth::default_headers(config.api_key.as_deref())
+                    .map_err(RemoteFfnError::Client)?,
+            )
             .build()
             .map_err(|e| RemoteFfnError::Client(e.to_string()))?;
 
