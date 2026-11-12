@@ -32,6 +32,24 @@ The update is `Σ_k a[r,k]·b[k,p]` added to `W[r, J[p]]`. There is no scalar `a
 
 K ≥ 1. K = 1 is the case that matters for a single rank-one edit; K > 1 is supported and covered.
 
+## 2a. The arithmetic contract (restated from v1 §1-§2 so nothing is left to inference)
+
+- **Profiles.** `numerics` is one of `f64-seq-rne1/v1`, `f64-seq-rne2/v1`, `f32-seq-rne1/v1` (v1 §2). Anything else is
+  `numerics_invalid`. The **working format W** is f64 for the first two and f32 for the third.
+- **Operands** `a`, `b` are W bit patterns (hex: 16 digits for f64, 8 for f32). A NaN or infinity is `non_finite_operand`.
+  The base BF16 widens to W exactly.
+- **Every arithmetic step is one IEEE-754 operation in W**, round to nearest, ties to even, gradual underflow, no fused
+  multiply-add, no flush-to-zero or denormals-are-zero: a product is `mul(a[r,k], b[k,p])` rounded once in W, and each
+  addition is `add(w, product)` rounded once in W. An operation whose result overflows W is `non_finite_intermediate`.
+- **Accumulation order** is fixed: the running value starts at `widen(W[r,j])` (never `+0`) and the terms are added in
+  increasing `k`, one rounding per addition. No reordering, pairwise or blocked summation, and no BLAS.
+- **Signed zero** follows IEEE-754 RNE: `(−0)+(−0) = −0`, `(−0)+(+0) = +0`, `x+(−x) = +0`, and a product of zero factors has
+  the XOR of their signs.
+- **The conversion chain** to BF16 is applied once, to the final `w`: `rne1`: W to BF16; `rne2`: W to f32, then f32 to BF16;
+  `f32-seq-rne1`: f32 to BF16. Each conversion rounds to nearest, ties to even, with gradual underflow; a nonzero value that
+  rounds to zero keeps its sign. A conversion whose rounded magnitude reaches `2^(emax+1)` is `overflow`, including a tie at
+  the top of the range and the f32 step of `rne2`.
+
 ## 3. The op
 
 Operands `a`, `b` are stored as the working format's bit patterns, as in v1. For each row `r` and each `p`, with
@@ -113,8 +131,13 @@ A native CPython-float route recomputes the f64-profile cases (58) and agrees wi
 
 ## 8. What the vectors do not test (the verifier and engine contracts)
 
-- **Footprint and conflicts.** The footprint is `J` over all rows. Two ops on one tensor are compatible iff their column
-  sets are disjoint (the engine's structured-structured rule); v1's at-most-one-op-per-tensor rule is a patch-level check.
+- **Footprint and conflicts.** The footprint is `J` over all rows. Two ops on one tensor **within one compilation stage
+  (one patch)** are compatible iff their column sets are disjoint (the engine's structured-structured rule); v1's
+  at-most-one-op-per-tensor rule is a patch-level check. **This is not a limit on learning.** A later patch is a new stage,
+  bound to the compiled output of the one before it, so it may edit the same columns again: its operands are applied to
+  that output's weights, and it is verified against that output. Overlap is refused only inside a single stage, where
+  the result would depend on an unstated order. Whether the first improvement survives the second patch is a behavioural
+  property that neither this contract, nor source binding, nor numerical verification guarantees.
 - **Fault injection.** A verifier for this op must be shown to reject each of: a flipped bit in a written element **inside**
   the footprint; a changed element **outside** `J` (including a `−0`→`+0` flip); a changed element in another tensor; a
   stale source binding; a swapped or reordered `a`/`b`; a `b` in the wrong layout. These are verifier tests, as for
