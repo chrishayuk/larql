@@ -255,6 +255,8 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 | `-v, --verbose` | Verbose load / timing output | false |
 | `--emit-ids` | Print the prompt token ids and the generated ids to stderr, so the run can serve as an id-level oracle for `larql vindex3 exec --tokens` on the same model (VINDEX3 containers; `--routed-from --metal` composed runs) | false |
 
+Remote shards and FFN servers started with `--api-key` need the key from the client. Set `LARQL_SHARD_API_KEY` and it is sent as `Authorization: Bearer <key>` to every `http://`, `https://` and `unix://` shard and to `--ffn` servers. The gRPC shard transport (`grpc://`, `grpcs://`) cannot send it yet, and a gRPC shard is refused while the key is set.
+
 **VINDEX3 containers.** A container written by `larql vindex3 encode` is
 detected from its `index.json` generation and routed to its own arm: the
 container's program runs through the VINDEX3 interpreter — the same one
