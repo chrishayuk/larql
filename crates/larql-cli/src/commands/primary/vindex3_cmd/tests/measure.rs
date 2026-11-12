@@ -84,7 +84,7 @@ fn args(f: &Fixture, candidate: &Path, backend: ExecBackend, output: &str) -> Me
     MeasureArgs {
         reference: f.source.clone(),
         reference_backend: ExecBackend::Production,
-        reference_source: "auto".into(),
+        reference_source: Some("auto".into()),
         candidate: candidate.to_path_buf(),
         candidate_backend: backend,
         candidate_source: "stored".into(),

@@ -16,6 +16,7 @@ mod observe;
 mod pending_output;
 mod prefill_dump;
 mod realizations;
+mod representation_source_default;
 mod residency_admission;
 mod residency_faults;
 mod residency_record;
