@@ -299,3 +299,53 @@ fn patch_stacking_replays_in_order_on_both_backends() {
     );
     assert!(!ba.1, "the delete is order-independent here");
 }
+
+/// The other half of portability: a patch crosses backends because the two
+/// declare ONE model, not because its slots and vectors fit. The patch here
+/// is the valid one byte for byte except for the model it names, so every
+/// dimension agrees, and both backends must still refuse it and stay as they
+/// were. Two models of one architecture have identical shapes and unrelated
+/// weights; a slot index means nothing across them.
+#[test]
+fn a_patch_from_another_model_is_refused_on_both_backends_though_every_dimension_fits() {
+    let dir = tempfile::tempdir().unwrap();
+    let operations = || {
+        vec![larql_vindex::PatchOp::Delete {
+            layer: 0,
+            feature: 1,
+            reason: None,
+        }]
+    };
+    let ours = dir.path().join("ours.vlp");
+    let theirs = dir.path().join("theirs.vlp");
+    write_patch(&ours, operations());
+    write_patch_for(&theirs, OTHER_MODEL, operations());
+
+    let v2 = v2_vindex();
+    let v3 = v3_container();
+    for target in [v2.path(), v3.path()] {
+        let mut session = session_for(target);
+        let before = feature_space(&mut session, DENSE_LAYERS, 300);
+        assert!(before.contains_key(&(0, 1)), "the slot the patch deletes");
+
+        let stmt = format!("APPLY PATCH \"{}\";", lql_path(&theirs));
+        let err = session
+            .execute(&parse(&stmt).unwrap())
+            .expect_err("a patch written against another model is refused")
+            .to_string();
+        assert!(err.contains(OTHER_MODEL), "{err}");
+        assert_eq!(
+            feature_space(&mut session, DENSE_LAYERS, 300),
+            before,
+            "a refused patch changed the overlay"
+        );
+
+        // The same operations under this model's name apply: the refusal was
+        // the identity, and nothing about the patch's shape.
+        run(
+            &mut session,
+            &format!("APPLY PATCH \"{}\";", lql_path(&ours)),
+        );
+        assert!(!feature_space(&mut session, DENSE_LAYERS, 300).contains_key(&(0, 1)));
+    }
+}

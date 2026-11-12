@@ -17,6 +17,6 @@ exec larql-server "$DEMO_DIR" \
   --no-docs \
   --rate-limit "${RATE_LIMIT:-120/min}" \
   --max-concurrent "${MAX_CONCURRENT:-4}" \
-  --trust-forwarded-for \
+  --client-ip-header Fly-Client-IP \
   --port "${PORT:-8080}" \
   --host 0.0.0.0

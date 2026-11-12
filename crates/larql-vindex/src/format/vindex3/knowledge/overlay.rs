@@ -345,8 +345,13 @@ impl KnowledgeOverlay {
 
     /// Apply a patch, all-or-nothing: on `Err` no overlay state has
     /// been touched and the patch is not recorded. Errors when an
-    /// embedded vector fails to decode, or when the patch contains
-    /// feature-slot operations the V3 overlay cannot yet represent.
+    /// embedded vector fails to decode, or when a stored-weight edit is
+    /// not intact or conflicts with one already in effect.
+    ///
+    /// This overlay holds no base, so it cannot check the patch against
+    /// the container. The caller does that first, with
+    /// [`VindexPatch::check_base_model`] and
+    /// [`VindexPatch::check_geometry`]; `APPLY PATCH` is the one caller.
     pub fn try_apply_patch(&mut self, patch: VindexPatch) -> Result<(), VindexError> {
         validate_v3_patch(&patch)?;
         self.check_weight_conflicts(&patch)?;

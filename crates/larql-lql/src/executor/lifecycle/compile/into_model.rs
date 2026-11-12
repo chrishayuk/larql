@@ -11,6 +11,7 @@ use larql_vindex::format::filenames::TOKENIZER_JSON;
 
 use super::atomic::run_atomic_compile;
 use super::collect_memit_facts_with_recording;
+use super::unexported::{memit_enabled, refuse_unexported_edits};
 
 impl Session {
     pub(super) fn exec_compile_into_model(
@@ -45,10 +46,6 @@ impl Session {
         output_dir: &std::path::Path,
         config: &larql_vindex::VindexConfig,
     ) -> Result<Vec<String>, LqlError> {
-        let mut cb = larql_vindex::SilentLoadCallbacks;
-        let mut weights = larql_vindex::load_model_weights(vindex_path, &mut cb)
-            .map_err(|e| LqlError::exec("failed to load model weights", e))?;
-
         // ── MEMIT: compile patch overlay into W_down edits ──
         //
         // Extract INSERT facts from the patch overlay, build MEMIT
@@ -63,16 +60,23 @@ impl Session {
         let collected = collect_memit_facts_with_recording(patched, vindex_path, &recording_ops)?;
         let memit_facts = collected.facts;
 
+        // Refused before the weights are read or a file is written.
+        refuse_unexported_edits(
+            patched,
+            &recording_ops,
+            memit_facts.len(),
+            &collected.warnings,
+        )?;
+
+        let mut cb = larql_vindex::SilentLoadCallbacks;
+        let mut weights = larql_vindex::load_model_weights(vindex_path, &mut cb)
+            .map_err(|e| LqlError::exec("failed to load model weights", e))?;
+
         let mut out = Vec::new();
         out.extend(collected.warnings);
-        // MEMIT is opt-in via `LARQL_MEMIT_ENABLE=1`; see the matching
-        // block in the COMPILE INTO VINDEX path for the rationale. Read
-        // through the override-aware `larql_compute::options` helper so tests
-        // can toggle it without `std::env::set_var` (which races concurrent
-        // `getenv` on the decode path and SIGSEGVs libc).
-        let memit_enabled = larql_compute::options::env_value("LARQL_MEMIT_ENABLE")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+        // MEMIT is opt-in; see the matching block in the COMPILE INTO VINDEX
+        // path for the rationale.
+        let memit_enabled = memit_enabled();
         if !memit_facts.is_empty() && memit_enabled {
             let tokenizer = larql_vindex::load_vindex_tokenizer(vindex_path)
                 .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;

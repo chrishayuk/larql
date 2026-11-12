@@ -313,7 +313,7 @@ fn test_patch_count_tracking() {
         }],
     };
 
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
     assert_eq!(patched.num_patches(), 1);
     assert_eq!(patched.num_overrides(), 1);
 }
@@ -338,7 +338,7 @@ fn test_remove_patch_restores_state() {
         }],
     };
 
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
     assert_eq!(patched.num_patches(), 1);
 
     // Feature 0 should be deleted
