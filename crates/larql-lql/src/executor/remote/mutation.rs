@@ -1,17 +1,31 @@
-//! Write-side remote forwarders (INSERT, DELETE, UPDATE) plus
-//! client-side local patch management (APPLY / SHOW / REMOVE PATCH).
+//! Write-side remote forwarders (INSERT, DELETE, UPDATE) plus the
+//! session's patch management on the server (APPLY / SHOW / REMOVE PATCH).
+//!
+//! Every one of them is per-session: the request carries the session
+//! header, so the server applies it to this session's overlay and never to
+//! the model it shares with other clients. A patch this session sends
+//! declares the served model as its `base_model`.
 
 use crate::ast::{Assignment, Condition};
 use crate::error::LqlError;
 use crate::executor::mutation::update_set::UpdateSet;
-use crate::executor::{Backend, Session};
+use crate::executor::Session;
 
-use super::{require_layer_feature, ENDPOINT_INSERT, ENDPOINT_PATCHES_APPLY};
+use super::{require_layer_feature, ENDPOINT_INSERT, ENDPOINT_PATCHES, ENDPOINT_PATCHES_APPLY};
 
 /// Default `confidence` for INSERT/UPDATE when the user doesn't
 /// pass one. 0.9 lands well above the retrieval floor without
 /// dominating template-matched siblings.
 const REMOTE_DEFAULT_CONFIDENCE: f32 = 0.9;
+
+/// Format version of the patches remote DELETE / UPDATE build.
+const REMOTE_PATCH_VERSION: u32 = 1;
+
+/// Field of an apply-patch request body carrying the inline patch.
+const APPLY_BODY_PATCH_FIELD: &str = "patch";
+
+/// Name shown for a listed patch the server reports without one.
+const UNNAMED_PATCH_LABEL: &str = "(unnamed)";
 
 impl Session {
     pub(crate) fn remote_insert(
@@ -30,7 +44,7 @@ impl Session {
             "confidence": confidence.unwrap_or(REMOTE_DEFAULT_CONFIDENCE),
         });
 
-        let result = self.remote_post_json(ENDPOINT_INSERT, &request, true)?;
+        let result = self.remote_post_json(ENDPOINT_INSERT, &request)?;
 
         let inserted = result["inserted"].as_u64().unwrap_or(0);
         let mode = result["mode"].as_str().unwrap_or("unknown");
@@ -42,34 +56,45 @@ impl Session {
         ])
     }
 
+    /// Build a one-operation patch against the served model and apply it
+    /// to this session's overlay on the server. Refused, before anything
+    /// is sent, when the server named no model at `USE REMOTE`.
+    fn remote_apply_op(
+        &self,
+        verb: &str,
+        description: String,
+        op: larql_vindex::PatchOp,
+    ) -> Result<(), LqlError> {
+        let base_model = self.remote_model_name(verb)?.to_string();
+        let patch = larql_vindex::VindexPatch {
+            version: REMOTE_PATCH_VERSION,
+            base_model,
+            base_checksum: None,
+            created_at: String::new(),
+            description: Some(description),
+            author: None,
+            tags: vec![],
+            operations: vec![op],
+        };
+        self.remote_post_json(
+            ENDPOINT_PATCHES_APPLY,
+            &serde_json::json!({ APPLY_BODY_PATCH_FIELD: patch }),
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn remote_delete(&self, conditions: &[Condition]) -> Result<Vec<String>, LqlError> {
         let (layer, feature) = require_layer_feature(conditions, "DELETE")?;
 
-        let ops = vec![larql_vindex::PatchOp::Delete {
+        let op = larql_vindex::PatchOp::Delete {
             layer,
             feature,
             reason: Some("remote DELETE".into()),
-        }];
-
-        let patch = larql_vindex::VindexPatch {
-            version: 1,
-            base_model: String::new(),
-            base_checksum: None,
-            created_at: String::new(),
-            description: Some(format!("DELETE L{layer} F{feature}")),
-            author: None,
-            tags: vec![],
-            operations: ops,
         };
-
-        let _ = self.remote_post_json(
-            ENDPOINT_PATCHES_APPLY,
-            &serde_json::json!({"patch": patch}),
-            false,
-        )?;
+        self.remote_apply_op("DELETE", format!("DELETE L{layer} F{feature}"), op)?;
 
         Ok(vec![format!(
-            "Deleted: L{layer} F{feature} → remote server"
+            "Deleted: L{layer} F{feature} → remote session"
         )])
     }
 
@@ -99,119 +124,84 @@ impl Session {
             down_vector_b64: None,
             down_meta,
         };
-
-        let patch = larql_vindex::VindexPatch {
-            version: 1,
-            base_model: String::new(),
-            base_checksum: None,
-            created_at: String::new(),
-            description: Some(format!("UPDATE L{layer} F{feature}")),
-            author: None,
-            tags: vec![],
-            operations: vec![op],
-        };
-
-        let _ = self.remote_post_json(
-            ENDPOINT_PATCHES_APPLY,
-            &serde_json::json!({"patch": patch}),
-            false,
-        )?;
+        self.remote_apply_op("UPDATE", format!("UPDATE L{layer} F{feature}"), op)?;
 
         let desc = target
             .as_deref()
             .map(|t| format!(" target={t}"))
             .unwrap_or_default();
         Ok(vec![format!(
-            "Updated: L{layer} F{feature}{desc} → remote server"
+            "Updated: L{layer} F{feature}{desc} → remote session"
         )])
     }
 
-    // ── Local patch management (client-side overlay) ─────────────
+    // ── Session patch management (on the server) ─────────────────
 
-    pub(crate) fn remote_apply_local_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+    /// APPLY PATCH: load the `.vlp`, check it was written against the
+    /// served model (as a local APPLY PATCH does), and apply it to this
+    /// session's overlay on the server. A patch the server refuses is an
+    /// error, never reported as applied.
+    pub(crate) fn remote_apply_patch(&self, path: &str) -> Result<Vec<String>, LqlError> {
+        let model = self.remote_model_name("APPLY PATCH")?;
+
         let patch_path = std::path::PathBuf::from(path);
         if !patch_path.exists() {
             return Err(LqlError::Execution(format!("patch not found: {path}")));
         }
-
         let patch = larql_vindex::VindexPatch::load(&patch_path)
             .map_err(|e| LqlError::exec("failed to load patch", e))?;
+        patch
+            .check_base_model(model)
+            .map_err(|e| LqlError::exec("failed to apply patch", e))?;
 
         let (ins, upd, del) = patch.counts();
         let total = patch.len();
 
-        match &mut self.backend {
-            Backend::Remote { local_patches, .. } => {
-                local_patches.push(patch);
-                Ok(vec![format!(
-                    "Applied locally: {path} ({total} ops: {ins} ins, {upd} upd, {del} del)\n\
-                     Patch stays client-side — server never sees it."
-                )])
-            }
-            _ => Err(LqlError::Execution(
-                "not connected to a remote server".into(),
-            )),
-        }
+        let result = self.remote_post_json(
+            ENDPOINT_PATCHES_APPLY,
+            &serde_json::json!({ APPLY_BODY_PATCH_FIELD: patch }),
+        )?;
+        let active = result["active_patches"].as_u64().unwrap_or(0);
+
+        Ok(vec![format!(
+            "Applied to remote session: {path} ({total} ops: {ins} ins, {upd} upd, {del} del)\n\
+             {active} patch(es) active in this session."
+        )])
     }
 
+    /// SHOW PATCHES: the patches active in this session on the server.
     pub(crate) fn remote_show_patches(&self) -> Result<Vec<String>, LqlError> {
-        let local_patches = match &self.backend {
-            Backend::Remote { local_patches, .. } => local_patches,
-            _ => {
-                return Err(LqlError::Execution(
-                    "not connected to a remote server".into(),
-                ))
-            }
-        };
+        let body = self.remote_get_json(ENDPOINT_PATCHES, &[])?;
+        let patches = body["patches"].as_array().cloned().unwrap_or_default();
 
         let mut out = Vec::new();
-        if local_patches.is_empty() {
-            out.push("  (no local patches)".into());
-        } else {
-            out.push("Local patches (client-side only):".into());
-            for (i, patch) in local_patches.iter().enumerate() {
-                let (ins, upd, del) = patch.counts();
-                let name = patch.description.as_deref().unwrap_or("(unnamed)");
-                out.push(format!(
-                    "  {}. {:<40} {} ops ({} ins, {} upd, {} del)",
-                    i + 1,
-                    name,
-                    patch.len(),
-                    ins,
-                    upd,
-                    del,
-                ));
-            }
+        if patches.is_empty() {
+            out.push("  (no patches in this remote session)".into());
+            return Ok(out);
+        }
+        out.push("Remote session patches:".into());
+        for (i, patch) in patches.iter().enumerate() {
+            let name = patch["name"].as_str().unwrap_or(UNNAMED_PATCH_LABEL);
+            let ops = patch["operations"].as_u64().unwrap_or(0);
+            out.push(format!("  {}. {:<40} {} ops", i + 1, name, ops));
         }
         Ok(out)
     }
 
-    pub(crate) fn remote_remove_local_patch(
-        &mut self,
-        name: &str,
-    ) -> Result<Vec<String>, LqlError> {
-        let local_patches = match &mut self.backend {
-            Backend::Remote { local_patches, .. } => local_patches,
-            _ => {
-                return Err(LqlError::Execution(
-                    "not connected to a remote server".into(),
-                ))
-            }
-        };
-
-        let pos = local_patches
-            .iter()
-            .position(|p| p.description.as_deref().unwrap_or("unnamed") == name);
-
-        match pos {
-            Some(i) => {
-                local_patches.remove(i);
-                Ok(vec![format!("Removed local patch: {name}")])
-            }
-            None => Err(LqlError::Execution(format!(
-                "local patch not found: {name}"
-            ))),
+    /// REMOVE PATCH: drop the named patch from this session's overlay on
+    /// the server. A name the session does not hold is an error by name.
+    pub(crate) fn remote_remove_patch(&self, name: &str) -> Result<Vec<String>, LqlError> {
+        let resp = self.remote_delete_segment(ENDPOINT_PATCHES, name)?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(LqlError::Execution(format!(
+                "remote patch not found: no patch named `{name}` in this session"
+            )));
         }
+        let result = Self::check_and_parse(ENDPOINT_PATCHES, resp)?;
+        let active = result["active_patches"].as_u64().unwrap_or(0);
+        Ok(vec![format!(
+            "Removed remote patch: {name} ({active} patch(es) active in this session)"
+        )])
     }
 }
 
@@ -355,7 +345,7 @@ mod tests {
         let joined = out.join("\n");
         assert!(joined.contains("L26"));
         assert!(joined.contains("F7"));
-        assert!(joined.contains("remote server"));
+        assert!(joined.contains("remote session"));
     }
 
     #[test]
@@ -459,92 +449,24 @@ mod tests {
         assert!(!joined.contains("target="));
     }
 
-    // ── Local-patch management (no HTTP needed) ─────────────────────
-
-    fn write_temp_patch(name: &str, description: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "larql_remote_local_patch_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join(format!("{name}.vlp"));
-        let patch = larql_vindex::VindexPatch {
-            version: 1,
-            base_model: String::new(),
-            base_checksum: None,
-            created_at: String::new(),
-            description: Some(description.into()),
-            author: None,
-            tags: vec![],
-            operations: vec![larql_vindex::PatchOp::Delete {
-                layer: 0,
-                feature: 0,
-                reason: Some("test".into()),
-            }],
-        };
-        patch.save(&path).expect("save .vlp");
-        path
-    }
+    // ── Session patch verbs refuse without a remote backend ────────
 
     #[test]
-    fn remote_apply_local_patch_records_patch_in_session() {
-        let mut server = mockito::Server::new();
-        let _stats = server
-            .mock("GET", ENDPOINT_STATS)
-            .with_status(200)
-            .with_body(stats_body())
-            .create();
-        let mut session = connect(&server.url());
-        let patch_path = write_temp_patch("local_apply", "demo-patch");
-        let out = session
-            .remote_apply_local_patch(patch_path.to_str().unwrap())
-            .expect("apply local patch");
-        let joined = out.join("\n");
-        assert!(joined.contains("Applied locally"));
-        assert!(joined.contains("client-side"));
-
-        // session.local_patches should now have one entry.
-        if let Backend::Remote { local_patches, .. } = &session.backend {
-            assert_eq!(local_patches.len(), 1);
-        } else {
-            panic!("expected Backend::Remote");
+    fn session_patch_verbs_error_when_not_remote() {
+        let session = Session::new();
+        for err in [
+            session.remote_apply_patch("any.vlp").unwrap_err(),
+            session.remote_show_patches().unwrap_err(),
+            session.remote_remove_patch("anything").unwrap_err(),
+        ] {
+            assert!(err.to_string().contains("not connected"), "got: {err}");
         }
-        let _ = std::fs::remove_file(patch_path);
     }
 
     #[test]
-    fn remote_apply_local_patch_errors_on_missing_file() {
-        let mut server = mockito::Server::new();
-        let _stats = server
-            .mock("GET", ENDPOINT_STATS)
-            .with_status(200)
-            .with_body(stats_body())
-            .create();
-        let mut session = connect(&server.url());
-        let err = session
-            .remote_apply_local_patch("/tmp/no_such_patch_xyz.vlp")
-            .unwrap_err();
-        assert!(err.to_string().contains("patch not found"));
-    }
-
-    #[test]
-    fn remote_apply_local_patch_errors_when_not_remote() {
-        // Save a valid patch but use a non-Remote session.
-        let patch_path = write_temp_patch("local_apply_nonremote", "x");
-        let mut session = Session::new();
-        let err = session
-            .remote_apply_local_patch(patch_path.to_str().unwrap())
-            .unwrap_err();
-        assert!(err.to_string().contains("not connected to a remote"));
-        let _ = std::fs::remove_file(patch_path);
-    }
-
-    #[test]
-    fn remote_show_patches_empty_list() {
+    fn delete_carries_this_sessions_id() {
+        // The header value is exactly the id minted at USE REMOTE, so the
+        // server files the patch under this session and no other.
         let mut server = mockito::Server::new();
         let _stats = server
             .mock("GET", ENDPOINT_STATS)
@@ -552,88 +474,29 @@ mod tests {
             .with_body(stats_body())
             .create();
         let session = connect(&server.url());
-        let out = session.remote_show_patches().expect("show patches");
-        let joined = out.join("\n");
-        assert!(joined.contains("(no local patches)"));
-    }
-
-    #[test]
-    fn remote_show_patches_lists_each_entry() {
-        let mut server = mockito::Server::new();
-        let _stats = server
-            .mock("GET", ENDPOINT_STATS)
+        let sid = match &session.backend {
+            crate::executor::Backend::Remote { session_id, .. } => session_id.clone(),
+            _ => panic!("expected Backend::Remote"),
+        };
+        let apply = server
+            .mock("POST", ENDPOINT_PATCHES_APPLY)
+            .match_header(super::super::SESSION_HEADER, sid.as_str())
             .with_status(200)
-            .with_body(stats_body())
+            .with_body(serde_json::json!({"active_patches": 1}).to_string())
             .create();
-        let mut session = connect(&server.url());
-        let p1 = write_temp_patch("show_a", "patch-A");
-        let p2 = write_temp_patch("show_b", "patch-B");
-        let _ = session
-            .remote_apply_local_patch(p1.to_str().unwrap())
-            .unwrap();
-        let _ = session
-            .remote_apply_local_patch(p2.to_str().unwrap())
-            .unwrap();
-
-        let out = session.remote_show_patches().expect("show patches");
-        let joined = out.join("\n");
-        assert!(joined.contains("patch-A"));
-        assert!(joined.contains("patch-B"));
-        let _ = std::fs::remove_file(p1);
-        let _ = std::fs::remove_file(p2);
-    }
-
-    #[test]
-    fn remote_show_patches_errors_when_not_remote() {
-        let session = Session::new();
-        let err = session.remote_show_patches().unwrap_err();
-        assert!(err.to_string().contains("not connected"));
-    }
-
-    #[test]
-    fn remote_remove_local_patch_by_name() {
-        let mut server = mockito::Server::new();
-        let _stats = server
-            .mock("GET", ENDPOINT_STATS)
-            .with_status(200)
-            .with_body(stats_body())
-            .create();
-        let mut session = connect(&server.url());
-        let p = write_temp_patch("remove_target", "deletable");
-        let _ = session
-            .remote_apply_local_patch(p.to_str().unwrap())
-            .unwrap();
-
-        let out = session
-            .remote_remove_local_patch("deletable")
-            .expect("remove patch");
-        let joined = out.join("\n");
-        assert!(joined.contains("Removed local patch"));
-        if let Backend::Remote { local_patches, .. } = &session.backend {
-            assert!(local_patches.is_empty());
-        }
-        let _ = std::fs::remove_file(p);
-    }
-
-    #[test]
-    fn remote_remove_local_patch_not_found_errors() {
-        let mut server = mockito::Server::new();
-        let _stats = server
-            .mock("GET", ENDPOINT_STATS)
-            .with_status(200)
-            .with_body(stats_body())
-            .create();
-        let mut session = connect(&server.url());
-        let err = session
-            .remote_remove_local_patch("does-not-exist")
-            .unwrap_err();
-        assert!(err.to_string().contains("not found"));
-    }
-
-    #[test]
-    fn remote_remove_local_patch_errors_when_not_remote() {
-        let mut session = Session::new();
-        let err = session.remote_remove_local_patch("anything").unwrap_err();
-        assert!(err.to_string().contains("not connected"));
+        let conds = vec![
+            Condition {
+                field: "layer".into(),
+                op: CompareOp::Eq,
+                value: Value::Integer(1),
+            },
+            Condition {
+                field: "feature".into(),
+                op: CompareOp::Eq,
+                value: Value::Integer(2),
+            },
+        ];
+        session.remote_delete(&conds).expect("remote_delete");
+        apply.assert();
     }
 }
