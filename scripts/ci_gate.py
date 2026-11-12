@@ -21,6 +21,9 @@ What it judges:
   it means the runs haven't been created yet, or the query is wrong.
 - A workflow in ADVISORY is reported and never judged or waited for. Its own file says
   it is a signal and not a gate.
+- A run GitHub starts itself from a path in ADVISORY_PATHS is reported the same way.
+  There is no workflow file in this repository for it to say so in; why each one is
+  there is written beside it.
 - Nothing is pending on two polls in a row, so a workflow GitHub creates a few seconds
   late is still seen.
 
@@ -47,6 +50,16 @@ ALWAYS_PRESENT = ("quality",)
 # clock on large diffs and concludes `cancelled`; see the header of mutants.yml.
 ADVISORY = ("mutants",)
 
+# Runs GitHub starts from its own definitions, not from a file in .github/workflows,
+# matched on the run's `path` because their names carry the pull request number.
+# `dynamic/agents/github-advanced-security` is the "Code scanning AI findings" review.
+# It needs a Copilot quota this repository does not control, fails with `402 You have
+# no quota` when that runs out, and such a run cannot be re-run, so judging it would
+# leave a pull request blocked by a billing state, not by its code. The decision to
+# make it advisory was the repository owner's (2026-11-12). CodeQL's own analysis runs
+# under a different path and stays judged.
+ADVISORY_PATHS = ("dynamic/agents/github-advanced-security",)
+
 SETTLE_SECONDS = 45
 POLL_SECONDS = 30
 QUIET_POLLS = 2
@@ -69,13 +82,14 @@ def newest_per_workflow(runs, self_run_id):
     return sorted(newest.values(), key=lambda run: run["name"])
 
 
-def judge(runs, self_run_id, always_present=ALWAYS_PRESENT, advisory=ADVISORY):
+def judge(runs, self_run_id, always_present=ALWAYS_PRESENT, advisory=ADVISORY,
+          advisory_paths=ADVISORY_PATHS):
     """(verdict, lines) for one listing of the head commit's workflow runs."""
     judged = newest_per_workflow(runs, self_run_id)
     lines = []
     bad, pending = [], []
     for run in judged:
-        if run["name"] in advisory:
+        if run["name"] in advisory or run.get("path") in advisory_paths:
             outcome = run["conclusion"] if run["status"] == "completed" else run["status"]
             lines.append(f"  advisory {run['name']} ({outcome}), not judged")
         elif run["status"] != "completed":
@@ -105,7 +119,7 @@ def list_runs(repo, sha):
         [
             "gh", "api", "--paginate",
             f"repos/{repo}/actions/runs?head_sha={sha}&per_page=100",
-            "--jq", ".workflow_runs[] | {id, name, workflow_id, status, conclusion, created_at, html_url}",
+            "--jq", ".workflow_runs[] | {id, name, path, workflow_id, status, conclusion, created_at, html_url}",
         ],
         check=True, capture_output=True, text=True,
     ).stdout
