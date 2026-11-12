@@ -266,3 +266,54 @@ fn diag_compare_cpu_topk_runs_against_synthetic_weights() {
         &h_1d,
     );
 }
+
+/// A GPU that fails a decode step part-way through a generation is an
+/// error on the result, with the tokens produced before it. The public
+/// entry point used to return those tokens with no error: a truncated
+/// generation reported as a complete one.
+#[test]
+fn a_gpu_decode_step_that_fails_mid_generation_is_reported() {
+    use crate::test_utils::{
+        make_test_q4k_vindex, make_test_q4k_weights, make_test_tokenizer, MockGpuBackend,
+    };
+    /// Decode steps the backend completes before it fails.
+    const GOOD_STEPS: usize = 2;
+    const MAX_TOKENS: usize = 6;
+
+    let run = |backend: MockGpuBackend| {
+        let mut weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        let tokenizer = make_test_tokenizer(weights.vocab_size);
+        let cached = CachedLayerGraph::from_residuals(vec![]);
+        let num_layers = weights.num_layers;
+        generate(
+            &mut weights,
+            &tokenizer,
+            &[0u32, 1, 2],
+            MAX_TOKENS,
+            &index,
+            &backend,
+            &cached,
+            0..num_layers,
+        )
+    };
+
+    // The control: the same request on a backend that does not fail.
+    let whole = run(MockGpuBackend::new());
+    assert!(whole.error.is_none(), "{:?}", whole.error);
+    assert_eq!(whole.tokens.len(), MAX_TOKENS);
+
+    let cut_short = run(MockGpuBackend::failing_after(GOOD_STEPS));
+    assert!(
+        cut_short.tokens.len() < MAX_TOKENS,
+        "the failing backend must cut the generation short"
+    );
+    assert!(
+        !cut_short.tokens.is_empty(),
+        "the tokens before the failure are kept"
+    );
+    let error = cut_short
+        .error
+        .expect("a generation cut short by a failed step must carry an error");
+    assert!(error.to_string().contains("decode step"), "{error}");
+}

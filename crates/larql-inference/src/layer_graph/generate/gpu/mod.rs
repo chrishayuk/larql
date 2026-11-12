@@ -476,7 +476,7 @@ where
             detok_ms_total: outcome.t_detok,
             dequant_ms_total: 0.0,
         },
-        error: None,
+        error: outcome.error,
     }
 }
 
