@@ -413,6 +413,9 @@ PATCH ./patches/company-facts.vlp
 # Inline edits
 INSERT ("Acme Corp", "headquarters", "London")
 INSERT ("Acme Corp", "ceo", "Jane Smith")
+# DELETE removes a fact an earlier INSERT or PATCH in this file installed,
+# matched on all three fields exactly. Base features carry no entity or
+# relation, so a DELETE that matches no installed fact fails the build.
 DELETE entity = "Acme Corp" AND relation = "competitor" AND target = "WrongCo"
 
 # Probe labels
