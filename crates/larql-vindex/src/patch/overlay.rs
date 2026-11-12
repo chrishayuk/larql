@@ -264,6 +264,18 @@ impl PatchedVindex {
     /// taken, scanning linearly until it finds one that's free both
     /// in the base AND in the overlay.
     pub fn find_free_feature(&self, layer: usize) -> Option<usize> {
+        self.find_free_feature_excluding(layer, &std::collections::HashSet::new())
+    }
+
+    /// [`Self::find_free_feature`], treating the slots in `claimed` as
+    /// taken too. A caller placing several features on one layer before
+    /// any of them is applied passes the slots it has already handed out,
+    /// so no two of them get the same slot.
+    pub fn find_free_feature_excluding(
+        &self,
+        layer: usize,
+        claimed: &std::collections::HashSet<usize>,
+    ) -> Option<usize> {
         let n = self.base.num_features(layer);
         if n == 0 {
             return None;
@@ -273,7 +285,8 @@ impl PatchedVindex {
         // live meta override (metadata-only INSERTs carry no gate
         // vector; a `None` meta is a tombstone, so the slot is free).
         let taken_by_overlay = |i: usize| -> bool {
-            self.overrides_gate.contains(layer, i)
+            claimed.contains(&i)
+                || self.overrides_gate.contains(layer, i)
                 || matches!(self.overrides_meta.get(&(layer, i)), Some(Some(_)))
         };
 

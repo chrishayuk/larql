@@ -202,6 +202,24 @@ impl SessionManager {
         model: &Arc<LoadedModel>,
         patch: VindexPatch,
     ) -> Result<(usize, usize), larql_vindex::VindexError> {
+        self.apply_patch_with(session_id, model, patch, |_, _| Ok(()))
+            .await
+    }
+
+    /// [`Self::apply_patch`], with `prepare` run on the session's overlay
+    /// just before the patch is applied to it, under the same lock. It can
+    /// complete the patch from the overlay's state (the server picks free
+    /// slots this way) or refuse it; a refusal applies nothing.
+    pub async fn apply_patch_with<F>(
+        &self,
+        session_id: &str,
+        model: &Arc<LoadedModel>,
+        mut patch: VindexPatch,
+        prepare: F,
+    ) -> Result<(usize, usize), larql_vindex::VindexError>
+    where
+        F: FnOnce(&PatchedVindex, &mut VindexPatch) -> Result<(), larql_vindex::VindexError>,
+    {
         // Fast path: the session already has an overlay, so no base clone
         // is needed and the whole operation fits under one lock.
         {
@@ -211,6 +229,7 @@ impl SessionManager {
                 session.touch(now);
                 if let Some(overlay) = session.overlay_existing_mut() {
                     let op_count = patch.operations.len();
+                    prepare(overlay, &mut patch)?;
                     overlay.try_apply_patch(patch)?;
                     return Ok((op_count, overlay.num_patches()));
                 }
@@ -231,6 +250,7 @@ impl SessionManager {
             .get_mut(session_id)
             .and_then(SessionState::overlay_existing_mut)
         {
+            prepare(overlay, &mut patch)?;
             overlay.try_apply_patch(patch)?;
             return Ok((op_count, overlay.num_patches()));
         }
@@ -240,6 +260,7 @@ impl SessionManager {
         // leave a session behind with an empty overlay, which reads as
         // "patched" where an unpatched session reads as the model itself.
         let mut overlay = PatchedVindex::new(base);
+        prepare(&overlay, &mut patch)?;
         overlay.try_apply_patch(patch)?;
         let active = overlay.num_patches();
         bind_in(
