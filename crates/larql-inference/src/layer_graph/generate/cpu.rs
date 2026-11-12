@@ -32,6 +32,14 @@ pub(super) fn backend_supports_fused_q4_pipeline(backend: &dyn ComputeBackend) -
 /// Falls back to the original O(N²) per-step `predict_kquant_hidden`
 /// loop for hybrid MoE (Gemma 4 26B A4B) and Gemma 4 E2B
 /// (cross-layer KV sharing).
+///
+/// `on_token` fires for every token as it is produced, and `sampling` is
+/// honoured: a caller that fell back to this path used to get neither, so a
+/// stream delivered nothing until the end and every request was decoded
+/// greedily whatever temperature it asked for. A sampled request runs the
+/// sampling-aware CPU decoder with no mask; a greedy one keeps the
+/// KV-cached loops below.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn generate_via_cpu_q4k(
     weights: &mut ModelWeights,
     tokenizer: &tokenizers::Tokenizer,
@@ -39,18 +47,49 @@ pub(super) fn generate_via_cpu_q4k(
     max_tokens: usize,
     index: &larql_vindex::VectorIndex,
     eos: &EosConfig,
+    sampling: super::sampling::SamplingConfig,
+    on_token: &mut dyn FnMut(u32, &str, f64),
 ) -> GenerateResult {
     if max_tokens == 0 {
         return GenerateResult::empty_success();
     }
 
+    if !sampling.is_greedy() {
+        return generate_constrained_via_cpu_q4k_streaming_sampled(
+            weights,
+            tokenizer,
+            token_ids,
+            max_tokens,
+            index,
+            // Unconstrained: every candidate stays as the model scored it.
+            |_generated: &[u32], _logits: &mut Vec<f32>| {},
+            on_token,
+            sampling,
+            eos,
+        );
+    }
+
     if crate::vindex::supports_cached_decode(weights) {
         let use_direct = crate::vindex::supports_direct_matvec_decode(weights, index);
         generate_via_cpu_q4k_cached(
-            weights, tokenizer, token_ids, max_tokens, index, eos, use_direct,
+            weights, tokenizer, token_ids, max_tokens, index, eos, use_direct, on_token,
         )
     } else {
-        generate_via_cpu_q4k_uncached(weights, tokenizer, token_ids, max_tokens, index, eos)
+        generate_via_cpu_q4k_uncached(
+            weights, tokenizer, token_ids, max_tokens, index, eos, on_token,
+        )
+    }
+}
+
+/// The error for a decode step that produced nothing part-way through. The
+/// tokens already produced stay in the result; the loop used to stop here
+/// and report the truncated output as a success.
+fn step_failed(step: usize, produced: usize) -> GenerateError {
+    GenerateError::Other {
+        reason: format!(
+            "CPU Q4K generation stopped at decode step {step}: the step produced no token \
+             ({produced} token(s) were generated before it)"
+        ),
     }
 }
 
@@ -71,6 +110,7 @@ fn generate_via_cpu_q4k_cached(
     index: &larql_vindex::VectorIndex,
     eos: &EosConfig,
     direct_matvec: bool,
+    on_token: &mut dyn FnMut(u32, &str, f64),
 ) -> GenerateResult {
     // ── Prefill ────────────────────────────────────────────────────
     let prefill_start = std::time::Instant::now();
@@ -113,6 +153,7 @@ fn generate_via_cpu_q4k_cached(
     let mut next_id = match (first.token_ids.first(), first.predictions.first()) {
         (Some(&id), Some(first_pred)) => {
             tokens.push((first_pred.0.clone(), 1.0));
+            on_token(id, &first_pred.0, first_pred.1);
             if eos.is_eos_with_tokenizer(id, &first_pred.0, tokenizer) {
                 return GenerateResult {
                     tokens,
@@ -144,6 +185,7 @@ fn generate_via_cpu_q4k_cached(
 
     // ── Decode loop ────────────────────────────────────────────────
     let prompt_len = token_ids.len();
+    let mut error = None;
     for step in 1..max_tokens {
         let abs_position = prompt_len + (step - 1);
         let t0 = std::time::Instant::now();
@@ -157,7 +199,10 @@ fn generate_via_cpu_q4k_cached(
                 abs_position,
             ) {
                 Some(h) => h,
-                None => break,
+                None => {
+                    error = Some(step_failed(step, tokens.len()));
+                    break;
+                }
             }
         } else {
             match crate::vindex::predict_kquant_decode_step(
@@ -171,7 +216,10 @@ fn generate_via_cpu_q4k_cached(
                     t_dequant += step_timings.dequant_ms;
                     h
                 }
-                None => break,
+                None => {
+                    error = Some(step_failed(step, tokens.len()));
+                    break;
+                }
             }
         };
         let hidden_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -192,14 +240,18 @@ fn generate_via_cpu_q4k_cached(
 
         let id = match result.token_ids.first() {
             Some(&id) => id,
-            None => break,
+            None => {
+                error = Some(step_failed(step, tokens.len()));
+                break;
+            }
         };
-        let tok = result
+        let (tok, prob) = result
             .predictions
             .first()
-            .map(|p| p.0.clone())
+            .map(|p| (p.0.clone(), p.1))
             .unwrap_or_default();
         let stop = eos.is_eos_with_tokenizer(id, &tok, tokenizer);
+        on_token(id, &tok, prob);
         tokens.push((tok, 1.0));
         if stop {
             break;
@@ -225,7 +277,7 @@ fn generate_via_cpu_q4k_cached(
             detok_ms_total: 0.0,
             dequant_ms_total: t_dequant,
         },
-        error: None,
+        error,
     }
 }
 
@@ -239,6 +291,7 @@ fn generate_via_cpu_q4k_uncached(
     max_tokens: usize,
     index: &larql_vindex::VectorIndex,
     eos: &EosConfig,
+    on_token: &mut dyn FnMut(u32, &str, f64),
 ) -> GenerateResult {
     let prefill_start = std::time::Instant::now();
     let (first, _, _) = predict_q4k_timed(weights, tokenizer, token_ids, 5, index);
@@ -254,6 +307,7 @@ fn generate_via_cpu_q4k_uncached(
     let mut ids = token_ids.to_vec();
     if let (Some(&id), Some(first_pred)) = (first.token_ids.first(), first.predictions.first()) {
         tokens.push((first_pred.0.clone(), 1.0));
+        on_token(id, &first_pred.0, first_pred.1);
         let stop = eos.is_eos_with_tokenizer(id, &first_pred.0, tokenizer);
         ids.push(id);
         if stop {
@@ -277,7 +331,8 @@ fn generate_via_cpu_q4k_uncached(
         };
     }
 
-    for _step in 1..max_tokens {
+    let mut error = None;
+    for step in 1..max_tokens {
         let t0 = std::time::Instant::now();
         let (result, hidden_ms, lm_head_ms) = predict_q4k_timed(weights, tokenizer, &ids, 5, index);
         let step_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -287,19 +342,23 @@ fn generate_via_cpu_q4k_uncached(
 
         match result.token_ids.first() {
             Some(&id) => {
-                let tok = result
+                let (tok, prob) = result
                     .predictions
                     .first()
-                    .map(|p| p.0.clone())
+                    .map(|p| (p.0.clone(), p.1))
                     .unwrap_or_default();
                 let stop = eos.is_eos_with_tokenizer(id, &tok, tokenizer);
+                on_token(id, &tok, prob);
                 tokens.push((tok, 1.0));
                 ids.push(id);
                 if stop {
                     break;
                 }
             }
-            None => break,
+            None => {
+                error = Some(step_failed(step, tokens.len()));
+                break;
+            }
         }
     }
 
@@ -321,7 +380,7 @@ fn generate_via_cpu_q4k_uncached(
             detok_ms_total: 0.0,
             dequant_ms_total: 0.0,
         },
-        error: None,
+        error,
     }
 }
 
@@ -450,6 +509,8 @@ mod tests {
             4,
             &fx.index,
             &eos,
+            crate::layer_graph::generate::sampling::SamplingConfig::greedy(),
+            &mut |_, _, _| {},
         );
         assert!(
             result.error.is_none(),
@@ -480,6 +541,8 @@ mod tests {
             0,
             &fx.index,
             &eos,
+            crate::layer_graph::generate::sampling::SamplingConfig::greedy(),
+            &mut |_, _, _| {},
         );
         assert!(result.tokens.is_empty());
         assert!(result.error.is_none());
@@ -635,6 +698,7 @@ mod uncached_path_tests {
             3,
             &fx.index,
             &eos,
+            &mut |_, _, _| {},
         );
         // Either succeeds and produces tokens, or returns a typed
         // error — both are valid (no panic, no NaN propagation).
@@ -661,6 +725,7 @@ mod uncached_path_tests {
             1,
             &fx.index,
             &eos,
+            &mut |_, _, _| {},
         );
         assert!(result.error.is_none(), "expected success");
         // With max_tokens=1, we emit the seed and skip the decode loop.
@@ -685,6 +750,8 @@ mod uncached_path_tests {
             10,
             &fx.index,
             &eos,
+            crate::layer_graph::generate::sampling::SamplingConfig::greedy(),
+            &mut |_, _, _| {},
         );
         assert!(result.error.is_none(), "EOS-stop must be a success");
         // First token is emitted before the EOS check; no decode steps run.
@@ -717,6 +784,7 @@ mod uncached_path_tests {
             10,
             &fx.index,
             &eos,
+            &mut |_, _, _| {},
         );
         assert!(result.error.is_none());
         assert_eq!(result.tokens.len(), 1);
@@ -762,5 +830,88 @@ mod constrained_streaming_tests {
         // wrapper still computes prefill_ms.
         assert!(result.error.is_none());
         assert!(result.prefill_ms >= 0.0);
+    }
+}
+
+#[cfg(test)]
+mod streaming_fallback_tests {
+    //! The CPU path as the streaming entry point reaches it: the token
+    //! callback fires and the sampling settings are used. It used to be
+    //! handed neither.
+
+    use super::*;
+    use crate::layer_graph::generate::sampling::SamplingConfig;
+    use crate::test_utils::Q4KTestFixtures;
+
+    const PROMPT: [u32; 3] = [1, 2, 3];
+    const MAX_TOKENS: usize = 4;
+    /// Hot enough that the argmax is not the only token ever drawn.
+    const HOT: f32 = 5.0;
+    const SEED_A: u64 = 1;
+    const SEED_B: u64 = 2;
+    /// Seeds tried when looking for a draw that differs from greedy.
+    const SEEDS_TRIED: u64 = 32;
+
+    /// Run the CPU path and return the result with every `on_token` call.
+    fn run(sampling: SamplingConfig) -> (GenerateResult, Vec<(u32, String)>) {
+        let mut fx = Q4KTestFixtures::build();
+        let mut seen = Vec::new();
+        let result = generate_via_cpu_q4k(
+            &mut fx.weights,
+            &fx.tokenizer,
+            &PROMPT,
+            MAX_TOKENS,
+            &fx.index,
+            &EosConfig::builtin(),
+            sampling,
+            &mut |id, text, _prob| seen.push((id, text.to_string())),
+        );
+        (result, seen)
+    }
+
+    fn texts(seen: &[(u32, String)]) -> Vec<String> {
+        seen.iter().map(|(_, text)| text.clone()).collect()
+    }
+
+    #[test]
+    fn a_greedy_run_reports_every_token_as_it_is_produced() {
+        let (result, seen) = run(SamplingConfig::greedy());
+
+        assert!(result.error.is_none(), "{:?}", result.error);
+        assert!(!result.tokens.is_empty());
+        let produced: Vec<String> = result.tokens.iter().map(|(t, _)| t.clone()).collect();
+        assert_eq!(texts(&seen), produced, "one callback per token, in order");
+    }
+
+    #[test]
+    fn a_sampled_run_reports_every_token_too() {
+        let (result, seen) = run(SamplingConfig::temperature(HOT).with_seed(SEED_A));
+
+        assert!(result.error.is_none(), "{:?}", result.error);
+        assert_eq!(seen.len(), result.tokens.len());
+        assert!(!seen.is_empty());
+    }
+
+    #[test]
+    fn the_same_seed_draws_the_same_tokens() {
+        let (_, first) = run(SamplingConfig::temperature(HOT).with_seed(SEED_B));
+        let (_, second) = run(SamplingConfig::temperature(HOT).with_seed(SEED_B));
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn a_hot_temperature_is_not_decoded_greedily() {
+        // Greedy is one sequence. If sampling were ignored, every seed
+        // would produce exactly that sequence.
+        let (_, greedy) = run(SamplingConfig::greedy());
+
+        let differs = (0..SEEDS_TRIED)
+            .any(|seed| run(SamplingConfig::temperature(HOT).with_seed(seed)).1 != greedy);
+
+        assert!(
+            differs,
+            "{SEEDS_TRIED} seeds at temperature {HOT} all reproduced the greedy output"
+        );
     }
 }
