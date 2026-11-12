@@ -4816,8 +4816,8 @@
    "discriminates": []
   },
   {
-   "id": "ref-column-out-of-range",
-   "purpose": "a column >= cols",
+   "id": "ref-column-negative",
+   "purpose": "a negative column index (it must not wrap to the last column)",
    "base": {
     "shape": [
      2,
@@ -4834,6 +4834,99 @@
      "3fa2"
     ],
     "sha256": "73eabe5e0680f72c8447c309b10e96d51cf309ad03c0e577ab464a5b44f479cf"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     -1
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-base-word-count",
+   "purpose": "the base holds fewer words than rows x cols",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bf6c",
+     "3f8e",
+     "bf73",
+     "bec4",
+     "bff8",
+     "beb4",
+     "3f05"
+    ],
+    "sha256": "2b38c935c63e2662147a6819e42ef719dfcae22dcc519c6d3556996973049dd1"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-column-out-of-range",
+   "purpose": "a column >= cols",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3fa2",
+     "3fcb",
+     "bfd4",
+     "3ec3",
+     "bfb3",
+     "bf09",
+     "3e57",
+     "bd6b"
+    ],
+    "sha256": "cf7769324e7411d4ba92a9ed16e0337381bf839d1d72db04017df00908f99d90"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -4872,16 +4965,16 @@
      4
     ],
     "bf16": [
-     "bf6c",
-     "3f8e",
-     "bf73",
-     "bec4",
-     "bff8",
-     "beb4",
-     "3f05",
-     "3f2a"
+     "3fc1",
+     "3c00",
+     "3f18",
+     "bf80",
+     "3f43",
+     "3fc0",
+     "bedf",
+     "bf3c"
     ],
-    "sha256": "c8ed0175924d691d3c493517835455aa928e2c91f03fcc7e165c742385b178e3"
+    "sha256": "4bea527a32b7566dde298998b5f46e8b3698a666865b956f7849f6c541653d70"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -4922,16 +5015,16 @@
      4
     ],
     "bf16": [
-     "bfd8",
-     "beb5",
-     "3fa0",
-     "3f3c",
-     "3f0f",
-     "bf64",
-     "3ea0",
-     "3fa2"
+     "bf91",
+     "bfb2",
+     "3f4c",
+     "bf0b",
+     "3fce",
+     "3fe7",
+     "bf4a",
+     "3fbf"
     ],
-    "sha256": "7589ac578d9104d262314a363c3cf0028fdb63a665c06fcd4ec44e1d23ea9ec9"
+    "sha256": "a125a441ba48063c9eefd81113749de5b1f289d02294e4035dfddf0fb4698fe8"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -4969,16 +5062,16 @@
      4
     ],
     "bf16": [
-     "3fcb",
-     "bfd4",
-     "3ec3",
-     "bfb3",
-     "bf09",
-     "3e57",
-     "bd6b",
-     "3fc1"
+     "3f87",
+     "3fd5",
+     "3fd4",
+     "bf2e",
+     "bff0",
+     "bf3f",
+     "3f1c",
+     "3f37"
     ],
-    "sha256": "dbbd91494e90dbd0b5c295ba386acdab8929b5666ac04b92ca1a69451f3b8e16"
+    "sha256": "3f529debf7533aba8ca38edf038e3a27d098b023050f541f382b2ccd98f99b76"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5011,16 +5104,16 @@
      4
     ],
     "bf16": [
-     "3c00",
-     "3f18",
-     "bf80",
-     "3f43",
-     "3fc0",
-     "bedf",
-     "bf3c",
-     "bf91"
+     "bf85",
+     "bf7c",
+     "bf28",
+     "3f91",
+     "bef1",
+     "bedb",
+     "bf53",
+     "bfa0"
     ],
-    "sha256": "2d5e5fea3f2a62b2ef66e4fd603d41dc1a77ff2b3fe92b964d1dda563573a6bb"
+    "sha256": "76518104c810e1856db62eb4d8d30bd2d16a8f27dbd89ef33ba463cdc1c10c15"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5059,16 +5152,16 @@
      4
     ],
     "bf16": [
-     "bfb2",
-     "3f4c",
-     "bf0b",
-     "3fce",
-     "3fe7",
-     "bf4a",
-     "3fbf",
-     "3f87"
+     "3f85",
+     "3f43",
+     "be60",
+     "bfbc",
+     "3f73",
+     "3ef7",
+     "bf54",
+     "bfda"
     ],
-    "sha256": "62e415e5b44c2b28e67d0b2ab20fd8a7992cfb518440a036ca9a4c09a86d3962"
+    "sha256": "70fb789caa82052d3d0b5ecc18d1e20e3dd394a3726b9b2a9f1d8306fa563fa9"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5113,16 +5206,16 @@
      4
     ],
     "bf16": [
-     "3fd5",
-     "3fd4",
-     "bf2e",
-     "bff0",
-     "bf3f",
-     "3f1c",
-     "3f37",
-     "bf85"
+     "3f1f",
+     "bcee",
+     "bf48",
+     "bed1",
+     "3d0f",
+     "bfb1",
+     "3f89",
+     "3e9e"
     ],
-    "sha256": "2ca9ca776faea1083e5a0672f7ea473d58a7a1b315c9730085fc900d9772933a"
+    "sha256": "568357aeaf4a961d2cc12d935fbc49eb8d69f074c8d9eb33d4fddf975a5e286a"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5167,16 +5260,16 @@
      4
     ],
     "bf16": [
-     "bf7c",
-     "bf28",
-     "3f91",
-     "bef1",
-     "bedb",
-     "bf53",
-     "bfa0",
-     "3f85"
+     "bf30",
+     "bf05",
+     "3fbf",
+     "bfd3",
+     "bf8e",
+     "3fcc",
+     "3ff4",
+     "3fc2"
     ],
-    "sha256": "0eb23016a8f5bdd39c9f0d464af0f29207d3668409fc59702af8230867bdff83"
+    "sha256": "8ce153eb16f543a2390858d0d03c1298db6923fc5fec4b1823fd1bb093a810cb"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5216,16 +5309,16 @@
      4
     ],
     "bf16": [
-     "3f43",
+     "beca",
      "7fc0",
-     "bfbc",
-     "3f73",
-     "3ef7",
-     "bf54",
-     "bfda",
-     "3f1f"
+     "3f8b",
+     "bfad",
+     "3fa8",
+     "bf9c",
+     "bfae",
+     "3f06"
     ],
-    "sha256": "5313d09255a1a8a076151b4d3a8a0f08bc35c8e1de9dfdca4e8d40dfb9dfdc8a"
+    "sha256": "a1ad4de0318f59d07b30250f4540303062d35525aef77970c58ac07cccb53160"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5265,15 +5358,15 @@
     ],
     "bf16": [
      "7fc0",
-     "3fbf",
-     "bfd3",
-     "bf8e",
-     "3fcc",
-     "3ff4",
-     "3fc2",
-     "beca"
+     "3ff1",
+     "3fd6",
+     "bff4",
+     "3e5d",
+     "3f8e",
+     "3f81",
+     "3fa5"
     ],
-    "sha256": "ab30049df0446a9706e0793cd907513ed5ba6a7e2773c92fda875d51bffc89a8"
+    "sha256": "39a50f6737f7733771f8c05b698ffdbcd8788203b3c65bd4c49689c882a34e74"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5300,15 +5393,15 @@
    "expect": {
     "bf16": [
      "7fc0",
-     "3fff",
-     "bfb3",
-     "bf8e",
-     "3fcc",
-     "403a",
-     "4001",
-     "beca"
+     "4018",
+     "3ff6",
+     "bff4",
+     "3e5d",
+     "4007",
+     "3fc1",
+     "3fa5"
     ],
-    "sha256": "0086b7db5711857ace236610e769b5a0e057e3daafd5da1e4e5a521192392cfb"
+    "sha256": "253ec88cc9eb9201366fbe6cbd1a2ce250bbd6d90a8e0c48352acc70113160ce"
    },
    "under_wrong_semantics": {
     "zero_padded_full": {
@@ -5326,16 +5419,16 @@
      4
     ],
     "bf16": [
-     "3e27",
-     "3f8b",
-     "bfad",
-     "3fa8",
-     "bf9c",
+     "3fae",
+     "3fc9",
      "bfae",
-     "3f06",
-     "3f92"
+     "be5e",
+     "3d17",
+     "3f9f",
+     "bee7",
+     "3f8e"
     ],
-    "sha256": "47a0d022f9c919591cf3b5116a25c3b811cb45da60a558e58ed3e4b2423932d1"
+    "sha256": "54c6c446ffacbf1c0abbd5f5be26d19ca2088fb8d176228a3cea00f00bb83213"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5422,16 +5515,16 @@
      4
     ],
     "bf16": [
-     "3ff1",
-     "3fd6",
-     "bff4",
-     "3e5d",
-     "3f8e",
-     "3f81",
-     "3fa5",
-     "3fae"
+     "be88",
+     "3ff4",
+     "3fae",
+     "3ecf",
+     "be0b",
+     "3f31",
+     "3f9b",
+     "bee9"
     ],
-    "sha256": "5bbd38a83ce18f83e1e9d0827f4846fd42fcf339b5ccb0a0e7aee7a0514b0e8c"
+    "sha256": "4bcec2d892803eb82fbe79fd817948b340ba3d0b4c612002bc5ae7d8983a788b"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5470,16 +5563,16 @@
      4
     ],
     "bf16": [
-     "3fc9",
-     "bfae",
-     "be5e",
-     "3d17",
-     "3f9f",
-     "bee7",
-     "3f8e",
-     "3fd8"
+     "bf79",
+     "bde3",
+     "bfb0",
+     "3f37",
+     "3f6d",
+     "bf41",
+     "bfc7",
+     "bea3"
     ],
-    "sha256": "6a13ac84381d3c56a878f09feab66398d8aa221474472f7b4ca5d07e2bcb9251"
+    "sha256": "073ff2a193b523abadc64807ecd0b159ab4ed8bea55544f360496ba0df38441c"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5511,16 +5604,16 @@
    },
    "expect": {
     "bf16": [
-     "3fc9",
+     "bf79",
      "0000",
-     "3d08",
-     "3d17",
-     "3f9f",
-     "3f0c",
-     "3fce",
-     "3fd8"
+     "bf90",
+     "3f37",
+     "3f6d",
+     "3e7c",
+     "bf87",
+     "bea3"
     ],
-    "sha256": "4e66bb4871538e1c023467f8f7b5b2abe30ff7b9e041948cbdf6ced6fa2eb7fd"
+    "sha256": "7a0933a2ca0fb5c6491cf416ac660c7c651f3fad644573937e01b3d40f192ad7"
    },
    "under_wrong_semantics": {},
    "discriminates": []
@@ -5534,16 +5627,16 @@
      4
     ],
     "bf16": [
-     "bf97",
-     "3e4b",
-     "bd33",
-     "bf32",
-     "bf5b",
-     "3ec0",
-     "3f9a",
-     "be88"
+     "bf80",
+     "3e32",
+     "3e0a",
+     "3ef6",
+     "3f69",
+     "bfa9",
+     "bf34",
+     "3f29"
     ],
-    "sha256": "157176823aee53b1866d208cfc886b8adfe8c86c7bc9e80f204fab8c714f5039"
+    "sha256": "2f1305cc4376442936f896209ef4330129349c452af5e58593ab850922c3ca82"
    },
    "op": {
     "kind": "add_low_rank_columns",
@@ -5575,16 +5668,16 @@
    },
    "expect": {
     "bf16": [
-     "bf97",
-     "3f33",
-     "3e53",
-     "bf32",
-     "bf5b",
-     "3fb0",
+     "bf80",
+     "3f2c",
+     "3ec5",
+     "3ef6",
+     "3f69",
+     "bea4",
      "3f80",
-     "be88"
+     "3f29"
     ],
-    "sha256": "b5afa432ffe77aa56152ef694d12e3239fc9119258267749c21bed0857529046"
+    "sha256": "968329733d47cd0781ff8d84af1c43c1129d7e2fcf180cb37c08800df2371ffe"
    },
    "under_wrong_semantics": {},
    "discriminates": []

@@ -74,6 +74,8 @@ def _run(case, op, prof, variant):
     rows, cols, fixups = V1.validate_common(case, op)
     J = op.get("columns")
     V1.check_columns(J, cols)
+    if not all(type(x) is int and x >= 0 for x in J):  # a negative index would wrap, not refuse
+        raise Refuse("columns_invalid")
     K = op.get("rank")
     if type(K) is not int or K < 1:
         raise Refuse("rank_invalid")
@@ -82,6 +84,8 @@ def _run(case, op, prof, variant):
         raise Refuse("shape_invalid")
     a = [V1.operand(int(h, 16), work) for h in op["a"]]
     b = [V1.operand(int(h, 16), work) for h in op["b"]]
+    if len(case["base"]["bf16"]) != rows * cols:  # part of the header's shape check, before tensor_refused
+        raise Refuse("shape_invalid")
     w_all = V1.header_phase(case, rows, cols, J)
     inside = set(J)
     V1.check_fixups(fixups, rows, cols, lambda r, c: c in inside)
@@ -320,6 +324,8 @@ def build_cases():
     refuse("ref-columns-empty", "columns empty", J=[], b=[])
     refuse("ref-columns-unsorted", "columns not increasing", J=[2, 1])
     refuse("ref-columns-duplicate", "columns repeat a column", J=[1, 1])
+    refuse("ref-column-negative", "a negative column index (it must not wrap to the last column)", J=[-1], b=[0.5])
+    refuse("ref-base-word-count", "the base holds fewer words than rows x cols", base=[rb() for _ in range(7)])
     refuse("ref-column-out-of-range", "a column >= cols", J=[1, 4])
     refuse("ref-b-full-width", "b has K x cols values although |J| < cols: v1's b layout is not accepted here",
            b=[0.5, 0.25, 0.125, 0.0625])

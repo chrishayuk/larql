@@ -4,7 +4,9 @@
 alone, reproduces every case in `vectors.json`. Then `FREEZE.json` is written, as for v1.
 
 **Relation to v1.** v1 (`../v1/`, frozen) is **unchanged and is not edited by this version**. v2 adds one op and reuses
-v1's values, formats, profiles, arithmetic rules and refusal vocabulary (v1 §1, §2, §4) verbatim. `generate.py` loads
+v1's values, formats, profiles, arithmetic rules and refusal vocabulary and phases (v1 §1, §2, §4), with only the
+differences this document states (the column footprint, the compact `b`, the identity rule of §4, and the wording of a few
+refusals in §5). `generate.py` loads
 `../v1/generate.py` read-only for its exact-rational arithmetic, so there is one rounder in the repository.
 
 ## 1. Why a new op
@@ -39,16 +41,26 @@ K ≥ 1. K = 1 is the case that matters for a single rank-one edit; K > 1 is sup
 - **Operands** `a`, `b` are W bit patterns (hex: 16 digits for f64, 8 for f32). A NaN or infinity is `non_finite_operand`.
   The base BF16 widens to W exactly.
 - **Every arithmetic step is one IEEE-754 operation in W**, round to nearest, ties to even, gradual underflow, no fused
-  multiply-add, no flush-to-zero or denormals-are-zero: a product is `mul(a[r,k], b[k,p])` rounded once in W, and each
-  addition is `add(w, product)` rounded once in W. An operation whose result overflows W is `non_finite_intermediate`.
+  multiply-add, no flush-to-zero or denormals-are-zero: for each `k`, first the product `mul(a[r,k], b[k,p])`
+  is rounded once in W, then the addition `add(w, product)` is rounded once in W. An operation whose result overflows W is `non_finite_intermediate`.
 - **Accumulation order** is fixed: the running value starts at `widen(W[r,j])` (never `+0`) and the terms are added in
   increasing `k`, one rounding per addition. No reordering, pairwise or blocked summation, and no BLAS.
+- **Well-formed documents.** The op and the base are taken to be well-formed: operands, fixups and base words use the
+  widths of v1 §5 (BF16 4 hex digits, f32 8, f64 16, lowercase hex); the integer fields (`shape`, `rank`, `columns`, fixup
+  coordinates) are JSON integers (not floats or booleans); and every field is present with its stated type (a missing
+  `fixups` is an empty list). A violation of any of these is **outside this contract**: no behaviour is defined for it and the
+  vectors contain none; the parser that reads the patch refuses it before this op runs. A fixup's bits are a BF16 word, and NaN or infinity is judged on its BF16 exponent field.
 - **Signed zero** follows IEEE-754 RNE: `(−0)+(−0) = −0`, `(−0)+(+0) = +0`, `x+(−x) = +0`, and a product of zero factors has
   the XOR of their signs.
-- **The conversion chain** to BF16 is applied once, to the final `w`: `rne1`: W to BF16; `rne2`: W to f32, then f32 to BF16;
+- **The conversion chain** to BF16 is applied once, to the final `w`: `rne1`: W to BF16; `rne2`: W to f32, then (in that order) f32 to BF16;
   `f32-seq-rne1`: f32 to BF16. Each conversion rounds to nearest, ties to even, with gradual underflow; a nonzero value that
   rounds to zero keeps its sign. A conversion whose rounded magnitude reaches `2^(emax+1)` is `overflow`, including a tie at
-  the top of the range and the f32 step of `rne2`.
+  the top of the range and the f32 step of `rne2`. Converting a zero keeps its sign.
+- **Visiting order.** Rows outermost, then `p` (the columns of `J` in order), then `k`. An element is converted to BF16 as soon
+  as its accumulation finishes, and the first failing operation in this order decides between `non_finite_intermediate` and
+  `overflow`.
+- **"Zero"** means a value equal to zero of either sign; `−0` and `+0` are both zero wherever this document says nonzero or
+  zero.
 
 ## 3. The op
 
@@ -56,7 +68,8 @@ Operands `a`, `b` are stored as the working format's bit patterns, as in v1. For
 `j = J[p]` and the terms `(a[r,k], b[k,p])`, `k = 0 … K−1`:
 
 ```
-written(r, j)  =  some term has both factors nonzero          (decided on the operand values, not on rounded products)
+written(r, j)  =  some term has both factors nonzero          (decided on the operand values, not on rounded products,
+                                                               and BEFORE any arithmetic: a selection, not a correction)
 
 if not written(r, j):  W'[r, j] = W[r, j]  bit for bit        (no arithmetic; a base -0 stays -0)
 else:
@@ -70,14 +83,18 @@ untouched, and a position `p` with `b[p] = 0` has its whole column `J[p]` left u
 elements where both factors are nonzero are written (`k1-zero-row-of-a-untouched`, `k1-zero-entry-of-b-untouched`).
 For K > 1 an element is untouched only if every one of its K terms has a zero factor.
 
+**Selection first.** Whether an element is written is decided from the operands alone. An untouched element is never run
+through the arithmetic: nothing computes `W + 0` and then repairs the sign afterwards.
+
 Elements with `j ∉ J` keep their exact base bits and are never read. **Fixups** are as in v1, with the touched set
-`{(r, j) : j ∈ J}`; a fixup in any other column is `fixups_invalid`.
+`{(r, j) : j ∈ J}`; a fixup in any other column is `fixups_invalid`. `fixup_no_op` compares a fixup with the computed bits at its element, which for
+an untouched element are its base bits.
 
 ## 4. The identity rule, and where it departs from v1
 
 **The rule:** an element whose terms are all zero keeps its base bits. It is what makes `a = 0` (or `b = 0`) a genuine
 no-op: **the compiled tensor is byte-identical to the base**, including `−0` elements inside `J` (case
-`sham-whole-tensor-unchanged`).
+`sham-whole-tensor-unchanged`), **provided the precondition of §5 holds** (no NaN or infinity inside rows × J).
 
 **The conflict with v1, stated.** With `J` = every column, v2 and v1 agree on every element **except** one class: an
 element whose terms are all zero and whose base is `−0`. v1 computes `(−0) + (+0) = +0` and writes `+0`; v2 keeps `−0`.
@@ -99,15 +116,16 @@ all-zero **operands**, not to a computed zero. Likewise `exact-cancellation-from
 
 The vocabulary and phases are v1 §4. The order for this op: `numerics_invalid`; `shape_invalid` (declared shape);
 `fixups_invalid` (order, duplicates); `non_finite_operand` (a fixup's bits); `columns_invalid` (empty, not strictly
-increasing); `rank_invalid`; `shape_invalid` (`len(a) ≠ rows·K` or `len(b) ≠ K·n`); `non_finite_operand` (an operand);
-then the header phase: `shape_invalid` (the tensor's shape), `tensor_refused` (`embed_tokens`), `columns_invalid`
+increasing, or an entry that is not a non-negative integer); `rank_invalid`; `shape_invalid` (`len(a) ≠ rows·K` or `len(b) ≠ K·n`); `non_finite_operand` (an operand);
+then the header phase: `shape_invalid` (the tensor's shape differs from the declared one, or the base holds a word count other than `rows·cols`), `tensor_refused` (`tensor_role` is `embed_tokens`; any other value is ignored), `columns_invalid`
 (a column ≥ `cols`), `fixups_invalid` (a fixup outside the tensor or outside `J`); then `non_finite_operand` for a
 non-finite base element **inside rows × J**; then compute (`non_finite_intermediate`, `overflow`); then `fixup_no_op`.
 Non-finite base elements outside `J` are kept, not read, and do not refuse (`out-keeps-special-values`,
 `out-nan-base-outside-j-is-kept`). The codes that belong only to `zero_columns` (`numerics_forbidden`, `fixups_forbidden`) do not arise.
 
 The non-finite-base check covers rows × J whether or not an element is written, so a NaN inside `J` refuses even under a
-zero update (`ref-nan-base-inside-j`).
+zero update (`ref-nan-base-inside-j`). **This is a declared precondition.** A zero-valued op (one in which every element of rows × J has only zero-factor terms, such as `a = 0` or `b = 0`) is an identity (byte-identical
+to the base) only over tensors with no NaN or infinity inside rows × J, not over arbitrary contents.
 
 ## 6. Wrong semantics the vectors discriminate
 
