@@ -11,7 +11,8 @@
 # check in the `main branch` ruleset; the gate changes nothing until then.
 #
 # `mutants` is reported and not judged: its own header says it is a signal and
-# never a gate.
+# never a gate. So is GitHub's own "Code scanning AI findings" run: it fails
+# when the Copilot quota runs out and cannot be re-run (see ADVISORY_PATHS).
 #
 # A failed workflow that is re-run and passes does not re-run this gate.
 # Re-run the gate too.
