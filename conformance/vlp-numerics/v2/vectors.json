@@ -1,0 +1,5593 @@
+{
+ "schema": "vlp-numerics-golden/v2",
+ "spec": "SPEC.md",
+ "generator": "generate.py",
+ "extends": "vlp-numerics/v1 (unchanged)",
+ "profiles": {
+  "f64-seq-rne1/v1": {
+   "work": "f64",
+   "chain": [
+    "bf16"
+   ]
+  },
+  "f64-seq-rne2/v1": {
+   "work": "f64",
+   "chain": [
+    "f32",
+    "bf16"
+   ]
+  },
+  "f32-seq-rne1/v1": {
+   "work": "f32",
+   "chain": [
+    "bf16"
+   ]
+  }
+ },
+ "refusals": [
+  "numerics_invalid",
+  "numerics_forbidden",
+  "shape_invalid",
+  "rank_invalid",
+  "columns_invalid",
+  "fixups_invalid",
+  "fixups_forbidden",
+  "fixup_no_op",
+  "non_finite_operand",
+  "non_finite_intermediate",
+  "overflow",
+  "tensor_refused"
+ ],
+ "variants": {
+  "zero_padded_full": "v1 add_low_rank on a b zero-padded to every column: the whole tensor is read and written",
+  "zero_update_not_kept": "an element whose terms are all zero is still computed, so (-0) + (+0) = +0",
+  "low_rank_from_zero": "s = +0 accumulated over k first, then w = add(widen(W), s)"
+ },
+ "native_cross_checked_cases": 60,
+ "cases": [
+  {
+   "id": "eq-lr-tie-even-down",
+   "purpose": "v1 case lr-tie-even-down with columns = every column: 1 + 2^-8 is a BF16 tie; the even neighbour is 1.0 (0x3f80)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-tie-even-down",
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-tie-even-up",
+   "purpose": "v1 case lr-tie-even-up with columns = every column: 1 + 3*2^-8 is a BF16 tie; the even neighbour is 1 + 2^-6 (0x3f82)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f88000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-tie-even-up",
+   "expect": {
+    "bf16": [
+     "3f82"
+    ],
+    "sha256": "0c7bd1202a592229ad1d2954b890d40504caaf2fad918acee225850ca2b53501"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-tie-negative",
+   "purpose": "v1 case lr-tie-negative with columns = every column: -(1 + 2^-8) ties to -1.0 (0xbf80)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "bf70000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-tie-negative",
+   "expect": {
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-double-rne1",
+   "purpose": "v1 case lr-double-rne1 with columns = every column: 1 + 2^-8 + 2^-30: single RNE gives 0x3f81, f32 then BF16 gives 0x3f80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-double-rne1",
+   "expect": {
+    "bf16": [
+     "3f81"
+    ],
+    "sha256": "5ea40fd2bbee6a090bc7fb419137262d6ce7697a6011076efd19a31c8ab881a8"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-double-rne2",
+   "purpose": "v1 case lr-double-rne2 with columns = every column: 1 + 2^-8 + 2^-30: single RNE gives 0x3f81, f32 then BF16 gives 0x3f80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-double-rne2",
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-double-f32",
+   "purpose": "v1 case lr-double-f32 with columns = every column: 1 + 2^-8 + 2^-30: the f32 sum is already 1 + 2^-8, a tie -> 0x3f80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "3b800002"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-double-f32",
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-double-negative-rne2",
+   "purpose": "v1 case lr-double-negative-rne2 with columns = every column: -(1 + 2^-8 + 2^-30) under the double chain gives 0xbf80",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "bf70000040000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-double-negative-rne2",
+   "expect": {
+    "bf16": [
+     "bf80"
+    ],
+    "sha256": "61a880ef11d872e988b3a98595ef2efed9e040e304fbc43381a54e20a9970328"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-from-w",
+   "purpose": "v1 case lr-from-w with columns = every column: w + a0b0 + 3 x 2^-54, sequential from w: each 2^-54 is lost; from zero it is not",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 4,
+    "a": [
+     "3ff0000000000000",
+     "3ff0000000000000",
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000000000000",
+     "3c90000000000000",
+     "3c90000000000000",
+     "3c90000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-from-w",
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {
+    "low_rank_from_zero": {
+     "bf16": [
+      "3f81"
+     ]
+    }
+   },
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-negzero-plus-poszero",
+   "purpose": "v1 case lr-negzero-plus-poszero with columns = every column: (-0) + (+0) = +0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "0000000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-negzero-plus-poszero",
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "0000"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "0000"
+     ]
+    }
+   },
+   "discriminates": [],
+   "same_as_v1": false,
+   "differs_from_v1_because": "elements whose terms are all zero keep a base -0 (v1 writes +0)"
+  },
+  {
+   "id": "eq-lr-negzero-plus-negzero",
+   "purpose": "v1 case lr-negzero-plus-negzero with columns = every column: (-0) + (-0) = -0, preserved as 0x8000",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "8000000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-negzero-plus-negzero",
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-tiny-negative",
+   "purpose": "v1 case lr-tiny-negative with columns = every column: -2^-140 rounds to -0 in BF16 (0x8000)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "b730000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-tiny-negative",
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-tiny-negative-rne2",
+   "purpose": "v1 case lr-tiny-negative-rne2 with columns = every column: -2^-140 is an f32 subnormal, then -0 in BF16",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "b730000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-tiny-negative-rne2",
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-f32-step-subnormal",
+   "purpose": "v1 case lr-f32-step-subnormal with columns = every column: 2^-130 + 2^-140 is an f32 subnormal at the chain's f32 step",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37d0040000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-f32-step-subnormal",
+   "expect": {
+    "bf16": [
+     "0008"
+    ],
+    "sha256": "e545d395bb3fd971f91bf9a2b6722831df704efae6c1aa9da0989ed0970b77bb"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-bf16-subnormal",
+   "purpose": "v1 case lr-bf16-subnormal with columns = every column: 3 x 2^-133 is a BF16 subnormal (0x0003)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37b8000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-bf16-subnormal",
+   "expect": {
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-bf16-subnormal-tie",
+   "purpose": "v1 case lr-bf16-subnormal-tie with columns = every column: 2.5 x 2^-133 ties to 2 x 2^-133 (0x0002)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37b4000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-bf16-subnormal-tie",
+   "expect": {
+    "bf16": [
+     "0002"
+    ],
+    "sha256": "99be5efb88ca2013bd8e4eb035fd42d5245468fe9afa70d8ba9c1c419a48c4e8"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-subnormal-base-rne1",
+   "purpose": "v1 case lr-subnormal-base-rne1 with columns = every column: a BF16-subnormal base (0x0003) widens exactly: + 2^-133 gives 0x0004",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "37a0000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-subnormal-base-rne1",
+   "expect": {
+    "bf16": [
+     "0004"
+    ],
+    "sha256": "c0ba8a33ac67f44abff5984dfbb6f56c46b880ac2b86e1f23e7fa9c402c53ae7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-subnormal-base-f32",
+   "purpose": "v1 case lr-subnormal-base-f32 with columns = every column: a BF16-subnormal base is an f32 subnormal under the f32 profile (DAZ)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "op": {
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "00000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-subnormal-base-f32",
+   "expect": {
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-smallest-normal",
+   "purpose": "v1 case lr-smallest-normal with columns = every column: 2^-126 - 2^-134 rounds up to the smallest normal (0x0080)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "380fe00000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-smallest-normal",
+   "expect": {
+    "bf16": [
+     "0080"
+    ],
+    "sha256": "8509b81230019d2ad970d970f791dfbdc8caf54f5c594fcd327cef9feed206c1"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-f32-profile-subnormal",
+   "purpose": "v1 case lr-f32-profile-subnormal with columns = every column: 3 x 2^-133, an f32 subnormal operand, under the f32 profile",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "00030000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-f32-profile-subnormal",
+   "expect": {
+    "bf16": [
+     "0003"
+    ],
+    "sha256": "9b4fb24edd6d1d8830e272398263cdbf026b97392cc35387b991dc0248a628f9"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-max-finite",
+   "purpose": "v1 case lr-max-finite with columns = every column: the largest BF16 (0x7f7f) plus a quarter ulp (2^118) stays 0x7f7f",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "4750000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-max-finite",
+   "expect": {
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-overflow-rne1",
+   "purpose": "v1 case ref-overflow-rne1 with columns = every column: max BF16 + 2^119 is the tie above the largest BF16; ties-to-even overflows",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "4760000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-overflow-rne1",
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-overflow-rne2",
+   "purpose": "v1 case ref-overflow-rne2 with columns = every column: max BF16 + 2^119: exact at the f32 step, overflows at the BF16 step",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "4760000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-overflow-rne2",
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-overflow-f32-step",
+   "purpose": "v1 case ref-overflow-f32-step with columns = every column: max BF16 + 2^126 is finite in f64, overflows at the f32 step",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "47d0000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-overflow-f32-step",
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-intermediate-f64",
+   "purpose": "v1 case ref-intermediate-f64 with columns = every column: a*b = 2^1000 * 2^1000 overflows f64",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "7e70000000000000"
+    ],
+    "b": [
+     "7e70000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-intermediate-f64",
+   "expect": {
+    "refuse": "non_finite_intermediate"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-intermediate-f32",
+   "purpose": "v1 case ref-intermediate-f32 with columns = every column: under the f32 profile, 2^100 * 2^100 overflows f32",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "71800000"
+    ],
+    "b": [
+     "71800000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-intermediate-f32",
+   "expect": {
+    "refuse": "non_finite_intermediate"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-inf-b",
+   "purpose": "v1 case ref-inf-b with columns = every column: an infinite b",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "7ff0000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-inf-b",
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-nan-fixup",
+   "purpose": "v1 case ref-nan-fixup with columns = every column: a fixup with NaN bits",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3fe0000000000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "7fc0"
+     ]
+    ],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-nan-fixup",
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-inf-fixup",
+   "purpose": "v1 case ref-inf-fixup with columns = every column: a fixup with +inf bits",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3fe0000000000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "7f80"
+     ]
+    ],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-inf-fixup",
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-overflow-f32-profile",
+   "purpose": "v1 case ref-overflow-f32-profile with columns = every column: f32 profile: max BF16 + 2^119 is exact in f32, a tie that overflows BF16",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "7f7f"
+    ],
+    "sha256": "4ca3666b54471bc946c602e7c07152c3d58b6a5148962c6dcd95c37c68011426"
+   },
+   "op": {
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3f800000"
+    ],
+    "b": [
+     "7b000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-overflow-f32-profile",
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-nan-a",
+   "purpose": "v1 case ref-nan-a with columns = every column: a NaN in a",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "7ff8000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-nan-a",
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-inf-base-low-rank",
+   "purpose": "v1 case ref-inf-base-low-rank with columns = every column: a -inf base element (add_low_rank touches every element)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "ff80"
+    ],
+    "sha256": "d87d01642f47a0d1901b1dfd2331c9def1bcfc69d8835c6cd911fe4165b804e4"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-inf-base-low-rank",
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-fixup-no-op-rne2",
+   "purpose": "v1 case ref-fixup-no-op-rne2 with columns = every column: under the double chain the computed value is 0x3f80, so this fixup is a no-op",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "3f80"
+     ]
+    ],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-fixup-no-op-rne2",
+   "expect": {
+    "refuse": "fixup_no_op"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-fixup-rne1",
+   "purpose": "v1 case lr-fixup-rne1 with columns = every column: the same fixup under the single chain is a real correction (0x3f81 -> 0x3f80)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3f70000040000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "3f80"
+     ]
+    ],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "lr-fixup-rne1",
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-rank-zero",
+   "purpose": "v1 case ref-rank-zero with columns = every column: rank 0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 0,
+    "a": [],
+    "b": [],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0
+    ]
+   },
+   "equivalent_to_v1": "ref-rank-zero",
+   "expect": {
+    "refuse": "rank_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-ref-ab-size",
+   "purpose": "v1 case ref-ab-size with columns = every column: b is not rank x cols",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "4000"
+    ],
+    "sha256": "54114f538801f6678fbd079c23daf4084457385ab206deba2abd70d219cde832"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0,
+     1
+    ]
+   },
+   "equivalent_to_v1": "ref-ab-size",
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-general-rne1",
+   "purpose": "v1 case lr-general-rne1 with columns = every column: 16 x 6, rank 2, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "bdec",
+     "3faf",
+     "bfdf",
+     "bfd2",
+     "3f10",
+     "3f9d",
+     "bfde",
+     "3fee",
+     "be77",
+     "bffc",
+     "3ef0",
+     "3e65",
+     "bfa7",
+     "be47",
+     "3f3b",
+     "bea2",
+     "3f9b",
+     "be6c",
+     "3d93",
+     "3fc4",
+     "beca",
+     "3f1f",
+     "3f8d",
+     "3e7b",
+     "be81",
+     "bf91",
+     "bf00",
+     "3e69",
+     "bf2a",
+     "bf46",
+     "3ffc",
+     "bfbd",
+     "3fe2",
+     "bf06",
+     "bfa9",
+     "3e63",
+     "3f32",
+     "bfac",
+     "3f2f",
+     "3fa3",
+     "3fd6",
+     "3fbd",
+     "bc57",
+     "3fcc",
+     "3e7d",
+     "bfc7",
+     "bf9a",
+     "3e04",
+     "3e58",
+     "3fc6",
+     "3ea0",
+     "3fd8",
+     "3fab",
+     "beb7",
+     "bfcb",
+     "bd8d",
+     "3ff3",
+     "3ffb",
+     "be82",
+     "bfbc",
+     "3eee",
+     "3e89",
+     "3ffe",
+     "beba",
+     "3e85",
+     "bf96",
+     "bfa9",
+     "3eb3",
+     "3f9a",
+     "3efd",
+     "3e48",
+     "3ede",
+     "bfe7",
+     "3fc0",
+     "bf9a",
+     "be32",
+     "3fad",
+     "bffd",
+     "bf1a",
+     "beb8",
+     "3fc6",
+     "bfc4",
+     "3f8d",
+     "3eaa",
+     "3f97",
+     "bf34",
+     "3d54",
+     "3f94",
+     "3f8a",
+     "bff8",
+     "3fd6",
+     "3f25",
+     "bf8e",
+     "bf9b",
+     "3ff0",
+     "3f11"
+    ],
+    "sha256": "ebefd643440db05125d26674b580ff47c93ab82dc042febcd5a85feb79fd0f5a"
+   },
+   "op": {
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "rank": 2,
+    "a": [
+     "bf74aca55b9ac740",
+     "3fa1d09e4c28b520",
+     "bf88b3a9229b4348",
+     "3fa2b8ed16e2c528",
+     "3f24b61daac11b00",
+     "3f86dea1219ff740",
+     "3fa09915441fc060",
+     "bf63aeb6947464b0",
+     "bf81eedd6ff913b8",
+     "3fa44c21a4e1d588",
+     "3f8842b8ee64ede0",
+     "3f8e6b904c7ae9d0",
+     "bfa4f4086db8e7ef",
+     "3f6855be46e24580",
+     "bf9a3482a1aadb87",
+     "bf9a91c049977b17",
+     "bf6318fec77f80d0",
+     "bf75ee924bdd4da8",
+     "3f8aca2c5891ec70",
+     "3f8e667b91abbc50",
+     "bf9dd24cee1cbdca",
+     "bf9ffa99b50f2af7",
+     "3f8ed5875d9d6508",
+     "bf95ffa828ad6b4a",
+     "3f92b9fdc12408dc",
+     "3f5f3d9956732d60",
+     "bf77b5a5559793d8",
+     "bfa6b247b73952f4",
+     "bf8714638d570c8c",
+     "bf84d4a37fbc2dac",
+     "bf97cf81f3764af0",
+     "3f748153af2b6010"
+    ],
+    "b": [
+     "3fa3f0b29112e5ae",
+     "3f897a0407db8db8",
+     "3fa60d9c1562bce4",
+     "bf44e3658f85e980",
+     "bfa177371bea3ff6",
+     "bfa418f077b7da1a",
+     "3f935f78eae9f140",
+     "bf8caa9710b5c354",
+     "3f9e4d3163a1d890",
+     "3fa95f6547a0ec9c",
+     "bf9d2f4886ffce30",
+     "3fa330ebc3d17472"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "equivalent_to_v1": "lr-general-rne1",
+   "expect": {
+    "bf16": [
+     "bdeb",
+     "3faf",
+     "bfdf",
+     "bfd2",
+     "3f10",
+     "3f9d",
+     "bfde",
+     "3fee",
+     "be76",
+     "bffc",
+     "3ef0",
+     "3e67",
+     "bfa7",
+     "be47",
+     "3f3b",
+     "bea2",
+     "3f9b",
+     "be6c",
+     "3d95",
+     "3fc4",
+     "bec9",
+     "3f1f",
+     "3f8d",
+     "3e7a",
+     "be81",
+     "bf91",
+     "bf00",
+     "3e6b",
+     "bf2a",
+     "bf46",
+     "3ffc",
+     "bfbd",
+     "3fe2",
+     "bf06",
+     "bfa9",
+     "3e63",
+     "3f32",
+     "bfac",
+     "3f2f",
+     "3fa3",
+     "3fd6",
+     "3fbd",
+     "bc6f",
+     "3fcc",
+     "3e7b",
+     "bfc7",
+     "bf9a",
+     "3e04",
+     "3e58",
+     "3fc6",
+     "3ea0",
+     "3fd8",
+     "3fab",
+     "beb7",
+     "bfcb",
+     "bd8d",
+     "3ff3",
+     "3ffb",
+     "be82",
+     "bfbc",
+     "3eed",
+     "3e89",
+     "3ffe",
+     "bebb",
+     "3e86",
+     "bf96",
+     "bfa9",
+     "3eb3",
+     "3f9a",
+     "3efc",
+     "3e48",
+     "3edd",
+     "bfe7",
+     "3fc0",
+     "bf9a",
+     "be32",
+     "3fad",
+     "bffd",
+     "bf1a",
+     "beb8",
+     "3fc6",
+     "bfc4",
+     "3f8d",
+     "3ea9",
+     "3f97",
+     "bf34",
+     "3d51",
+     "3f94",
+     "3f8a",
+     "bff8",
+     "3fd6",
+     "3f25",
+     "bf8e",
+     "bf9b",
+     "3ff0",
+     "3f11"
+    ],
+    "sha256": "e685c82943d6c91e93fb1d1d77796e7a1d84d92c9d785c4eb262a6b510ed8636"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-general-rne2",
+   "purpose": "v1 case lr-general-rne2 with columns = every column: 16 x 6, rank 2, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "3fcd",
+     "bf4d",
+     "bfa1",
+     "3eb6",
+     "3fb5",
+     "3f42",
+     "3edb",
+     "3f3c",
+     "3f96",
+     "3f8b",
+     "bfcd",
+     "bfc6",
+     "bf73",
+     "3fbf",
+     "3f6a",
+     "3ed7",
+     "bd63",
+     "bfca",
+     "bfab",
+     "3fed",
+     "bf83",
+     "3f7c",
+     "3fd6",
+     "bf04",
+     "3fc5",
+     "bfa0",
+     "3f75",
+     "bfd9",
+     "bdaa",
+     "3e96",
+     "3ebf",
+     "3fb1",
+     "bf5a",
+     "bf24",
+     "bfb2",
+     "bfc6",
+     "3f80",
+     "bf8a",
+     "3fb5",
+     "3ff0",
+     "be7c",
+     "bf9c",
+     "3f9c",
+     "3f85",
+     "3f0d",
+     "3f99",
+     "3f9c",
+     "3fc2",
+     "3f10",
+     "3f4d",
+     "bff5",
+     "bf20",
+     "3ff5",
+     "3f4e",
+     "3ff9",
+     "bf60",
+     "bed9",
+     "bfae",
+     "bf1c",
+     "bfda",
+     "bf7a",
+     "bf86",
+     "3dcc",
+     "3e59",
+     "3eb1",
+     "3fee",
+     "3fbf",
+     "3fa8",
+     "3f2c",
+     "bfc7",
+     "bf9f",
+     "bf84",
+     "3fb5",
+     "3f52",
+     "3fed",
+     "bfbc",
+     "bfe7",
+     "bef4",
+     "bf02",
+     "bffc",
+     "bd49",
+     "3fe8",
+     "3f66",
+     "bfca",
+     "3fa3",
+     "bfd7",
+     "bfc4",
+     "3f70",
+     "bf96",
+     "bf28",
+     "be8b",
+     "3fd3",
+     "3e10",
+     "3f57",
+     "3f2a",
+     "bf80"
+    ],
+    "sha256": "d4fc91e6798e5fd14284c29bc809b86bf91ee5cc1d456fdd570c042b64c455ee"
+   },
+   "op": {
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "rank": 2,
+    "a": [
+     "bfa4f9956e2367d5",
+     "bf859e94d43fd4ec",
+     "bf9ba1b644d4e2e0",
+     "bfa8e7bcad2a691d",
+     "bf9034b8377fb80e",
+     "bfa3ff92177552b4",
+     "3f9741fcc5e54f38",
+     "3f96b7c0d56038dc",
+     "3f86469d88c904ec",
+     "3fa82777a7cbf94e",
+     "bf9ca24fe03b08ad",
+     "3f731b56a863f5b0",
+     "bfa2078a8998d8ed",
+     "3fa14ef966381312",
+     "bf9dd75134a8ab00",
+     "3f8dec4f113ac5f0",
+     "3f960180abb5fedc",
+     "bfa644d3baef98ff",
+     "3f8d69b1c58eaec0",
+     "3f931963e4be6cbc",
+     "bf980362f2c861a4",
+     "bf9d3562099b5e57",
+     "3fa69656edd547f6",
+     "bf9bea52af1cec9d",
+     "3f92e2c61796baa4",
+     "3f9fa7e2115d9274",
+     "bfa84340ef7b3cf2",
+     "3f9cbad016e0a91c",
+     "3fa6a586348fe610",
+     "3fa5d18b52450ef8",
+     "bf83d524ab24bccc",
+     "3fa909b5667288ce"
+    ],
+    "b": [
+     "bf902298d0b34a76",
+     "bf9ce7f206f9eea7",
+     "bf990b7bbcac65ea",
+     "bf8119f7d67c3074",
+     "bfa3020e8a6e8c74",
+     "bfa820dc4ea2563c",
+     "3fa07afc79afc16a",
+     "3fa4c12f175e1d30",
+     "bfa100da31ef14ac",
+     "bf30ec275572e400",
+     "bfa6730d2d833374",
+     "3f913b6746eb6b5c"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "equivalent_to_v1": "lr-general-rne2",
+   "expect": {
+    "bf16": [
+     "3fcd",
+     "bf4d",
+     "bfa1",
+     "3eb6",
+     "3fb5",
+     "3f42",
+     "3eda",
+     "3f3c",
+     "3f96",
+     "3f8b",
+     "bfcd",
+     "bfc6",
+     "bf73",
+     "3fbf",
+     "3f6a",
+     "3ed7",
+     "bd5a",
+     "bfca",
+     "bfab",
+     "3fed",
+     "bf83",
+     "3f7c",
+     "3fd6",
+     "bf04",
+     "3fc5",
+     "bfa0",
+     "3f75",
+     "bfd9",
+     "bdaf",
+     "3e96",
+     "3ebf",
+     "3fb1",
+     "bf5a",
+     "bf24",
+     "bfb2",
+     "bfc6",
+     "3f80",
+     "bf8a",
+     "3fb5",
+     "3ff0",
+     "be7c",
+     "bf9c",
+     "3f9c",
+     "3f85",
+     "3f0d",
+     "3f99",
+     "3f9c",
+     "3fc2",
+     "3f10",
+     "3f4c",
+     "bff5",
+     "bf20",
+     "3ff5",
+     "3f4e",
+     "3ff9",
+     "bf60",
+     "bed9",
+     "bfae",
+     "bf1c",
+     "bfda",
+     "bf7a",
+     "bf86",
+     "3dcf",
+     "3e59",
+     "3eb2",
+     "3fee",
+     "3fbf",
+     "3fa8",
+     "3f2c",
+     "bfc7",
+     "bf9f",
+     "bf84",
+     "3fb5",
+     "3f52",
+     "3fed",
+     "bfbc",
+     "bfe7",
+     "bef4",
+     "bf02",
+     "bffc",
+     "bd48",
+     "3fe8",
+     "3f66",
+     "bfca",
+     "3fa3",
+     "bfd7",
+     "bfc4",
+     "3f70",
+     "bf96",
+     "bf28",
+     "be8a",
+     "3fd3",
+     "3e0f",
+     "3f57",
+     "3f2a",
+     "bf80"
+    ],
+    "sha256": "3c6e62303c6a7c94d2db1796500eaca28d5e55643f26a17b326b7886d9d6987c"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "eq-lr-general-f32",
+   "purpose": "v1 case lr-general-f32 with columns = every column: 16 x 6, rank 2, random operands",
+   "base": {
+    "shape": [
+     16,
+     6
+    ],
+    "bf16": [
+     "3f73",
+     "3fbd",
+     "bdd9",
+     "bf95",
+     "bfb6",
+     "bfc7",
+     "bfc0",
+     "3fd3",
+     "bf9e",
+     "3f28",
+     "bfc8",
+     "bf37",
+     "be16",
+     "beec",
+     "3fb5",
+     "3fa8",
+     "3f9a",
+     "3d58",
+     "3fe8",
+     "bc5d",
+     "bfd5",
+     "3fc8",
+     "bfe6",
+     "bf1b",
+     "3d5d",
+     "3f27",
+     "3fde",
+     "3f0e",
+     "3e04",
+     "3fca",
+     "bfe5",
+     "3fd5",
+     "bed9",
+     "3fab",
+     "bf46",
+     "3f0d",
+     "3f8e",
+     "bfd7",
+     "bfa4",
+     "bf14",
+     "bfe6",
+     "3fda",
+     "3fb5",
+     "bfad",
+     "3ffe",
+     "bfee",
+     "3eda",
+     "bfa0",
+     "bec3",
+     "bcfd",
+     "3f33",
+     "3f49",
+     "bf94",
+     "3fc8",
+     "3fa9",
+     "bdb6",
+     "3f83",
+     "bfb8",
+     "3ff8",
+     "3f81",
+     "bfef",
+     "3fc6",
+     "bf60",
+     "3fee",
+     "bfae",
+     "be91",
+     "bf0d",
+     "beab",
+     "bf73",
+     "3f89",
+     "3fe7",
+     "beab",
+     "bfd1",
+     "3fc5",
+     "bfb9",
+     "3faf",
+     "bf6c",
+     "3f75",
+     "bf3f",
+     "be0e",
+     "3e42",
+     "3edf",
+     "bfe1",
+     "bf85",
+     "3fd1",
+     "3fd1",
+     "bf4d",
+     "bf44",
+     "be5f",
+     "3d9b",
+     "bfec",
+     "bfdd",
+     "3ee1",
+     "3e92",
+     "3ce9",
+     "3edc"
+    ],
+    "sha256": "8cd6f3e7e9f1966ccb1fca32d0b331f7dedbbedee949829f26dffcca792dbf77"
+   },
+   "op": {
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     16,
+     6
+    ],
+    "rank": 2,
+    "a": [
+     "3b18053f",
+     "3d1100ef",
+     "bbe9b28a",
+     "3d0c3d7f",
+     "bbf7c095",
+     "3d277003",
+     "3cb7a8f4",
+     "bd2dae99",
+     "bcb7c50c",
+     "bd0c963f",
+     "3d156fa1",
+     "3d012608",
+     "3c0af4f9",
+     "3ca49b0f",
+     "3cde9ac5",
+     "bd011ad3",
+     "bd3d70f7",
+     "3c3e802b",
+     "3c10d0b7",
+     "3d229b40",
+     "3c1495fd",
+     "bc5836be",
+     "bd4171d3",
+     "bb640ce7",
+     "3c024ff2",
+     "3cc8fdd2",
+     "bcbe01cd",
+     "3cad3fb7",
+     "3cc29ecd",
+     "bd0342d3",
+     "3c4aa981",
+     "3d364f18"
+    ],
+    "b": [
+     "bd1d5dc7",
+     "bd2c6cad",
+     "3c5e8d24",
+     "3c597c20",
+     "bc59efc8",
+     "3d2e3f16",
+     "bd1c8663",
+     "3ca19b94",
+     "bbfa3b13",
+     "3d23b3d0",
+     "bd29b53f",
+     "bcfe58b5"
+    ],
+    "fixups": [],
+    "kind": "add_low_rank_columns",
+    "columns": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "equivalent_to_v1": "lr-general-f32",
+   "expect": {
+    "bf16": [
+     "3f73",
+     "3fbd",
+     "bdd9",
+     "bf95",
+     "bfb6",
+     "bfc7",
+     "bfc0",
+     "3fd3",
+     "bf9e",
+     "3f28",
+     "bfc8",
+     "bf37",
+     "be17",
+     "beeb",
+     "3fb5",
+     "3fa8",
+     "3f9a",
+     "3d51",
+     "3fe8",
+     "bc7a",
+     "bfd5",
+     "3fc8",
+     "bfe6",
+     "bf1a",
+     "3d66",
+     "3f27",
+     "3fde",
+     "3f0e",
+     "3e06",
+     "3fca",
+     "bfe5",
+     "3fd5",
+     "bed9",
+     "3fab",
+     "bf46",
+     "3f0d",
+     "3f8e",
+     "bfd7",
+     "bfa4",
+     "bf14",
+     "bfe6",
+     "3fda",
+     "3fb5",
+     "bfad",
+     "3ffe",
+     "bfee",
+     "3eda",
+     "bfa0",
+     "bec2",
+     "bceb",
+     "3f33",
+     "3f49",
+     "bf94",
+     "3fc8",
+     "3fa9",
+     "bdb5",
+     "3f83",
+     "bfb8",
+     "3ff8",
+     "3f81",
+     "bfef",
+     "3fc6",
+     "bf60",
+     "3fee",
+     "bfae",
+     "be91",
+     "bf0d",
+     "beaa",
+     "bf73",
+     "3f89",
+     "3fe7",
+     "beac",
+     "bfd1",
+     "3fc5",
+     "bfb9",
+     "3faf",
+     "bf6c",
+     "3f75",
+     "bf3f",
+     "be0d",
+     "3e42",
+     "3edf",
+     "bfe1",
+     "bf85",
+     "3fd1",
+     "3fd1",
+     "bf4d",
+     "bf44",
+     "be5e",
+     "3d9f",
+     "bfec",
+     "bfdd",
+     "3ee1",
+     "3e93",
+     "3cd9",
+     "3edc"
+    ],
+    "sha256": "2fb723535c52f22936a506d6b4e320c1965f9dffda0c3f6b522bffe2c29fba0a"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": [],
+   "same_as_v1": true
+  },
+  {
+   "id": "sub-k1-single-column",
+   "purpose": "only columns [2] change; K=1; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     4,
+     5
+    ],
+    "bf16": [
+     "bf94",
+     "3cad",
+     "bef0",
+     "3f6f",
+     "bf80",
+     "3ed5",
+     "bfc4",
+     "3f85",
+     "be84",
+     "bfa5",
+     "bdd2",
+     "bf95",
+     "bf89",
+     "be8d",
+     "bff3",
+     "bf48",
+     "bfd1",
+     "3f40",
+     "3fb9",
+     "3f2e"
+    ],
+    "sha256": "843d46a089a2836a87553d00dfd4fd777cfc71a3a76a42563843c2c7aa4f3054"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     5
+    ],
+    "rank": 1,
+    "columns": [
+     2
+    ],
+    "a": [
+     "bfd451b3e453d0dc",
+     "3fe5ba46ef4893f2",
+     "3fec31bfa453cb60",
+     "bfeef25d572061c2"
+    ],
+    "b": [
+     "3fcf63e31f7443f0"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bf94",
+     "3cad",
+     "bf0c",
+     "3f6f",
+     "bf80",
+     "3ed5",
+     "bfc4",
+     "3f9a",
+     "be84",
+     "bfa5",
+     "bdd2",
+     "bf95",
+     "bf5b",
+     "be8d",
+     "bff3",
+     "bf48",
+     "bfd1",
+     "3f03",
+     "3fb9",
+     "3f2e"
+    ],
+    "sha256": "e34927f9b74f1dc741b936e874097bb1eeaa6a2cae6b19c9a7d70fdba92e814b"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-k1-first-column",
+   "purpose": "only columns [0] change; K=1; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     4,
+     5
+    ],
+    "bf16": [
+     "bf30",
+     "3fb2",
+     "beb2",
+     "bf51",
+     "bfe4",
+     "3f7e",
+     "3f04",
+     "3f21",
+     "bfa8",
+     "bfdd",
+     "3f23",
+     "3e74",
+     "3f90",
+     "bf27",
+     "beb0",
+     "bf8a",
+     "bf8f",
+     "3fcb",
+     "bfbd",
+     "3fd1"
+    ],
+    "sha256": "86949b3c465e6668b76e675638701725566af4e4a124c85a36936dbc193f3ffc"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     5
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "bfe806e2b38d5478",
+     "3fb30033cf7e56f0",
+     "3fcae1bf8f1db510",
+     "bfb50922a19a86b0"
+    ],
+    "b": [
+     "3fe9ac6d9d386124"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bfa5",
+     "3fb2",
+     "beb2",
+     "bf51",
+     "bfe4",
+     "3f87",
+     "3f04",
+     "3f21",
+     "bfa8",
+     "bfdd",
+     "3f4e",
+     "3e74",
+     "3f90",
+     "bf27",
+     "beb0",
+     "bf92",
+     "bf8f",
+     "3fcb",
+     "bfbd",
+     "3fd1"
+    ],
+    "sha256": "b80bac156711e6c7071272e4a0d5550f7f4f93fb0396638eba52bfc7d31be202"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-k1-last-column",
+   "purpose": "only columns [4] change; K=1; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     4,
+     5
+    ],
+    "bf16": [
+     "bfea",
+     "3f47",
+     "bfb6",
+     "3f97",
+     "3f19",
+     "3e77",
+     "bea1",
+     "bdfa",
+     "bf87",
+     "3f36",
+     "bdbe",
+     "bfa7",
+     "3def",
+     "3f58",
+     "bfd8",
+     "3f32",
+     "3fb8",
+     "bf80",
+     "3f83",
+     "be47"
+    ],
+    "sha256": "210ad64bb0c2e8330fa78780832192d3c6bda7198dd6a6793345d46efd58d032"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     5
+    ],
+    "rank": 1,
+    "columns": [
+     4
+    ],
+    "a": [
+     "bfe6d81534a3400e",
+     "bfedeb5ddc088920",
+     "bfe1a08e3824bf24",
+     "3fe83c24d1dd1bc0"
+    ],
+    "b": [
+     "3fed40337ea7793e"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bfea",
+     "3f47",
+     "bfb6",
+     "3f97",
+     "bd61",
+     "3e77",
+     "bea1",
+     "bdfa",
+     "bf87",
+     "be13",
+     "bdbe",
+     "bfa7",
+     "3def",
+     "3f58",
+     "c00c",
+     "3f32",
+     "3fb8",
+     "bf80",
+     "3f83",
+     "3eff"
+    ],
+    "sha256": "9246ba31665eac589490175b83e2e6686121fba31450949ee4cb1ecca25bd012"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-k2-two-columns",
+   "purpose": "only columns [1, 4] change; K=2; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     4,
+     6
+    ],
+    "bf16": [
+     "3dda",
+     "3fb1",
+     "3fc8",
+     "3e65",
+     "3fa5",
+     "bea2",
+     "3e94",
+     "bf20",
+     "3f19",
+     "be4b",
+     "bfe7",
+     "3f16",
+     "3fb1",
+     "bd9d",
+     "3f38",
+     "bff6",
+     "bf92",
+     "bf72",
+     "bf58",
+     "bf11",
+     "3ff7",
+     "3dc0",
+     "bf37",
+     "3fdd"
+    ],
+    "sha256": "390d3d4c4b42f7aae9491ae20cef9d210583fc47c25061200553c10d3cb74fec"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     6
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     4
+    ],
+    "a": [
+     "3fc25a75b8ff5be8",
+     "3fe9db3037d259c4",
+     "bfa7108358a00f60",
+     "3fabc4c3e67ecda0",
+     "3fdc272f9bd92f28",
+     "bfe5bc0321a2ddac",
+     "3fc9db60213ece88",
+     "3fd6790031c65f18"
+    ],
+    "b": [
+     "bf982b092dd68d80",
+     "bfd08256ecc3a6dc",
+     "bfb5df9521879440",
+     "3fddca98e6b818c0"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3dda",
+     "3fa8",
+     "3fc8",
+     "3e65",
+     "3fd0",
+     "bea2",
+     "3e94",
+     "bf21",
+     "3f19",
+     "be4b",
+     "bfe2",
+     "3f16",
+     "3fb1",
+     "bcee",
+     "3f38",
+     "bff6",
+     "bfc9",
+     "bf72",
+     "bf58",
+     "bf1a",
+     "3ff7",
+     "3dc0",
+     "bf1a",
+     "3fdd"
+    ],
+    "sha256": "fb0d26fabbcd6232fb267ce70ca9bbe59aa8ce12e672f20a446c311470cca895"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-k3-three-columns",
+   "purpose": "only columns [0, 3, 5] change; K=3; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     5,
+     6
+    ],
+    "bf16": [
+     "be99",
+     "3f89",
+     "3ff2",
+     "bf46",
+     "3fdd",
+     "3f2d",
+     "3cec",
+     "3fa6",
+     "bf3b",
+     "bfab",
+     "3f35",
+     "bfe1",
+     "3f2e",
+     "3fc7",
+     "bf6e",
+     "3f93",
+     "bf84",
+     "3f5a",
+     "3eb5",
+     "be62",
+     "bf98",
+     "bf89",
+     "3fc0",
+     "beb1",
+     "be2d",
+     "bd46",
+     "bfe1",
+     "3ff0",
+     "bfbc",
+     "bde3"
+    ],
+    "sha256": "f390340f540e48635a507eee367b2c93d5edd77de07305a2f718bef47e6a2693"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     5,
+     6
+    ],
+    "rank": 3,
+    "columns": [
+     0,
+     3,
+     5
+    ],
+    "a": [
+     "bfef838bf4548016",
+     "3fe86d2452b28322",
+     "bfe5dda8211215be",
+     "3fe042b463de20ea",
+     "bfef51b01fe53ce0",
+     "3fd3ae6d2af5e5dc",
+     "bfbdc3b90db3bfa0",
+     "3fdc1f8a0ac5e4d4",
+     "bfea9c9bdc15fb54",
+     "3fa26481da2aed80",
+     "3fa6d91e44fe1020",
+     "bfe9edd47466eff2",
+     "3fdc212950777524",
+     "bfe74204cd631c9a",
+     "3fd37887ec1df874"
+    ],
+    "b": [
+     "bfd034582a06128c",
+     "3fee8d8c3e7e739c",
+     "3f644831f4de7600",
+     "3fea79d8302cd8ce",
+     "bfe4b24886157fec",
+     "bfe872f35a83edce",
+     "3fb02ff149c67fe0",
+     "bfecd45ed5417d60",
+     "3fe8962495064958"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f0a",
+     "3f89",
+     "3ff2",
+     "bfcc",
+     "3fdd",
+     "bedf",
+     "bf64",
+     "3fa6",
+     "bf3b",
+     "befd",
+     "3f35",
+     "bf46",
+     "3f83",
+     "3fc7",
+     "bf6e",
+     "3fc0",
+     "bf84",
+     "bdfd",
+     "3ea9",
+     "be62",
+     "bf98",
+     "beab",
+     "3fc0",
+     "bf80",
+     "bf5d",
+     "bd46",
+     "bfe1",
+     "401f",
+     "bfbc",
+     "3f2e"
+    ],
+    "sha256": "1735376d819e0948aa4afb880e4b3725afec069c31368ed36cf9215f35ec8749"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-all-but-one",
+   "purpose": "only columns [0, 1, 3, 4] change; K=2; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     3,
+     5
+    ],
+    "bf16": [
+     "bf8c",
+     "3f35",
+     "3f58",
+     "3fc1",
+     "bf03",
+     "3f39",
+     "bf38",
+     "befd",
+     "3ef9",
+     "bf98",
+     "3f37",
+     "bfa6",
+     "3fb3",
+     "3f0d",
+     "3fa7"
+    ],
+    "sha256": "b2376bdc1db4d7a1a5a9aa5d344b6d2ddb88dcff874b0b7f6236bf509b20724a"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     5
+    ],
+    "rank": 2,
+    "columns": [
+     0,
+     1,
+     3,
+     4
+    ],
+    "a": [
+     "3fec833643c7105c",
+     "3fa21f827201b940",
+     "bfd37a6f9916875c",
+     "3fd6c00fa3b102e8",
+     "bfcc3c460a35fa90",
+     "3fec375f7fe43d48"
+    ],
+    "b": [
+     "bfde84e1e35e40cc",
+     "bfec7e3e483ab48e",
+     "3fdb6ba9215daa58",
+     "3fd66d746f22e6b8",
+     "bfedd89647aeb112",
+     "bfcae2bc64f68648",
+     "bfde9db66ec09258",
+     "3fee6d5b6f4aed1c"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bfc7",
+     "bdc0",
+     "3f58",
+     "3ff0",
+     "be2a",
+     "3f09",
+     "bf06",
+     "befd",
+     "3e3e",
+     "bf75",
+     "bb1c",
+     "bfa5",
+     "3fb3",
+     "3d0d",
+     "4004"
+    ],
+    "sha256": "84e04b87fe923180fbf8ae52600c1161b9957c8748bf3b673001604517b8a6b9"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-one-row",
+   "purpose": "only columns [1, 2, 5] change; K=2; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     1,
+     6
+    ],
+    "bf16": [
+     "3fc8",
+     "bf16",
+     "3fa7",
+     "bffa",
+     "bfd2",
+     "3f39"
+    ],
+    "sha256": "7f27aa62ccc69a7e49c4f6c05cba09dfc9a3d73e14b94e95caedda916f293a35"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     6
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     2,
+     5
+    ],
+    "a": [
+     "bfed26afd3ccf232",
+     "bfd7272e0f905ca4"
+    ],
+    "b": [
+     "3fe7a1f5cf8516e6",
+     "bfce115b62ad35f8",
+     "3fccece88648ac40",
+     "bfd226b020f73cb4",
+     "bfcc8131c7652168",
+     "bfdf1330cdef9340"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3fc8",
+     "bf94",
+     "3fcd",
+     "bffa",
+     "bfd2",
+     "3f31"
+    ],
+    "sha256": "917dfb47e05987371bc07dc157f29e1a873b0165c06f9121b1165df40c520f1d"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-rne2",
+   "purpose": "only columns [1, 4] change; K=2; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     4,
+     6
+    ],
+    "bf16": [
+     "bfb8",
+     "3f77",
+     "bfeb",
+     "bda0",
+     "3ebb",
+     "bffb",
+     "bf9c",
+     "bff5",
+     "bf34",
+     "3ec1",
+     "bfab",
+     "bffc",
+     "3f07",
+     "3fa8",
+     "3f2b",
+     "bfbf",
+     "bffb",
+     "be7b",
+     "3f52",
+     "3f0b",
+     "bdf8",
+     "bfaa",
+     "bee5",
+     "bf51"
+    ],
+    "sha256": "105857e2f96585e75e85ee7af719e5ba56737414d1f16cc847cc3a808a3dae0a"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     4,
+     6
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     4
+    ],
+    "a": [
+     "bfcc69ee60793f28",
+     "bfed5c664f13e982",
+     "bfd7b1fdba6f7f64",
+     "3fd5e0adae520738",
+     "3fd079cf25c77038",
+     "bfeb490498d0ed40",
+     "3fecbac66453037e",
+     "3fe5d4d8f5775588"
+    ],
+    "b": [
+     "bfd0565f29d30594",
+     "bfe3c2d38ccf9a64",
+     "bfd66ee61eaa1e94",
+     "3fd1b65d82827480"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bfb8",
+     "3fac",
+     "bfeb",
+     "bda0",
+     "3e7e",
+     "bffb",
+     "bf9c",
+     "bff8",
+     "bf34",
+     "3ec1",
+     "bf82",
+     "bffc",
+     "3f07",
+     "3fc6",
+     "3f2b",
+     "bfbf",
+     "c017",
+     "be7b",
+     "3f52",
+     "3d99",
+     "bdf8",
+     "bfaa",
+     "bf50",
+     "bf51"
+    ],
+    "sha256": "6423a1c820b9931b46f4c623368840cbe15ef1735a300cf0118774af835701c7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "sub-f32-profile",
+   "purpose": "only columns [1, 4] change; K=2; every other column keeps its exact base bits",
+   "base": {
+    "shape": [
+     4,
+     6
+    ],
+    "bf16": [
+     "3f1a",
+     "be46",
+     "bffb",
+     "bfe1",
+     "bf8e",
+     "3f93",
+     "bf8c",
+     "bd25",
+     "bfae",
+     "bed5",
+     "3fe5",
+     "bff7",
+     "be47",
+     "bfd3",
+     "3db7",
+     "bef0",
+     "3f98",
+     "bf84",
+     "3fa0",
+     "bf1c",
+     "be26",
+     "bff9",
+     "bf6d",
+     "bf89"
+    ],
+    "sha256": "038963b61c0fc4d29904a8b5b9390fd1dd75d7883195962888a5a3187a409eac"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     4,
+     6
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     4
+    ],
+    "a": [
+     "bebd0dbc",
+     "3db5e6d2",
+     "bef192be",
+     "bf631904",
+     "bf7cb420",
+     "bf26e524",
+     "bf543f43",
+     "3f21915c"
+    ],
+    "b": [
+     "be4defd9",
+     "bda78ef9",
+     "3dbc98ab",
+     "bead8920"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f1a",
+     "bde3",
+     "bffb",
+     "bfe1",
+     "bf8e",
+     "3f93",
+     "bf8c",
+     "bcde",
+     "bfae",
+     "bed5",
+     "4008",
+     "bff7",
+     "be47",
+     "bfc1",
+     "3db7",
+     "bef0",
+     "3fbf",
+     "bf84",
+     "3fa0",
+     "bec5",
+     "be26",
+     "bff9",
+     "bf89",
+     "bf89"
+    ],
+    "sha256": "73bd26851124a9e3b5f794ea55d3279603fa34f1ad973a61295a4c024121d241"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "out-keeps-special-values",
+   "purpose": "outside J: -0, a subnormal, +/-max finite, NaN and +/-inf are kept bit for bit and are not read (v1 would refuse on the non-finite ones)",
+   "base": {
+    "shape": [
+     4,
+     6
+    ],
+    "bf16": [
+     "8000",
+     "bffa",
+     "3fbb",
+     "3e41",
+     "be34",
+     "0001",
+     "7f7f",
+     "3ed1",
+     "bfa6",
+     "3ec4",
+     "bf39",
+     "ff7f",
+     "7fc0",
+     "bef5",
+     "be45",
+     "bfc0",
+     "bee1",
+     "7f80",
+     "ff80",
+     "3d58",
+     "3f74",
+     "bfe0",
+     "3f0b",
+     "8000"
+    ],
+    "sha256": "26e14e954bfecef37699d12b8decfa34e21fb255778bc9170241a875c266ad0f"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     4,
+     6
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     3
+    ],
+    "a": [
+     "bfd010276c95a978",
+     "3fdf910bb9c63878",
+     "3fe71d1c34b4a320",
+     "bfd4eb4b546b6790",
+     "3fe1e11b48450796",
+     "bfe23ab09b92159a",
+     "bfca29aa2ec8c540",
+     "3fe99a82d91e67e2"
+    ],
+    "b": [
+     "3fc22439c061a410",
+     "bfe9646dca6cab66",
+     "3fdd7bdd9d46a754",
+     "3fd10b7a25c4ea00"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_padded_full"
+   ],
+   "expect": {
+    "bf16": [
+     "8000",
+     "bfe1",
+     "3fbb",
+     "3f05",
+     "be34",
+     "0001",
+     "7f7f",
+     "3eb8",
+     "bfa6",
+     "be8e",
+     "bf39",
+     "ff7f",
+     "7fc0",
+     "bf29",
+     "be45",
+     "c006",
+     "bee1",
+     "7f80",
+     "ff80",
+     "3ec9",
+     "3f74",
+     "bfb0",
+     "3f0b",
+     "8000"
+    ],
+    "sha256": "116c2f05dd4b406fe0b98de1f67fb72444aa3599ee5f60aae38448ece752dd17"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "refuse": "non_finite_operand"
+    }
+   }
+  },
+  {
+   "id": "zero-update-keeps-negzero",
+   "purpose": "a = +0 (a sham): every element of J whose terms are all zero keeps its bits, so -0 stays -0",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "3e9a",
+     "8000",
+     "bf8f",
+     "3ee6",
+     "3fab",
+     "8000",
+     "8000",
+     "bf9f",
+     "3f3d",
+     "3f00",
+     "bf51",
+     "3f89"
+    ],
+    "sha256": "06407672db8adb0b44a1b141387fe6a3da2fa2bcc11b7f1460b3506e5b731de0"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "0000000000000000",
+     "0000000000000000",
+     "0000000000000000"
+    ],
+    "b": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_update_not_kept"
+   ],
+   "expect": {
+    "bf16": [
+     "3e9a",
+     "8000",
+     "bf8f",
+     "3ee6",
+     "3fab",
+     "8000",
+     "8000",
+     "bf9f",
+     "3f3d",
+     "3f00",
+     "bf51",
+     "3f89"
+    ],
+    "sha256": "06407672db8adb0b44a1b141387fe6a3da2fa2bcc11b7f1460b3506e5b731de0"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "3e9a",
+      "0000",
+      "bf8f",
+      "3ee6",
+      "3fab",
+      "0000",
+      "0000",
+      "bf9f",
+      "3f3d",
+      "3f00",
+      "bf51",
+      "3f89"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "3e9a",
+      "0000",
+      "bf8f",
+      "3ee6",
+      "3fab",
+      "0000",
+      "0000",
+      "bf9f",
+      "3f3d",
+      "3f00",
+      "bf51",
+      "3f89"
+     ]
+    }
+   }
+  },
+  {
+   "id": "zero-b-keeps-negzero",
+   "purpose": "b = +0 with nonzero a: all terms are zero, so the bytes are unchanged",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "3e9a",
+     "8000",
+     "bf8f",
+     "3ee6",
+     "3fab",
+     "8000",
+     "8000",
+     "bf9f",
+     "3f3d",
+     "3f00",
+     "bf51",
+     "3f89"
+    ],
+    "sha256": "06407672db8adb0b44a1b141387fe6a3da2fa2bcc11b7f1460b3506e5b731de0"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff8000000000000",
+     "c000000000000000",
+     "3fe0000000000000"
+    ],
+    "b": [
+     "0000000000000000",
+     "0000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_update_not_kept"
+   ],
+   "expect": {
+    "bf16": [
+     "3e9a",
+     "8000",
+     "bf8f",
+     "3ee6",
+     "3fab",
+     "8000",
+     "8000",
+     "bf9f",
+     "3f3d",
+     "3f00",
+     "bf51",
+     "3f89"
+    ],
+    "sha256": "06407672db8adb0b44a1b141387fe6a3da2fa2bcc11b7f1460b3506e5b731de0"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "3e9a",
+      "0000",
+      "bf8f",
+      "3ee6",
+      "3fab",
+      "8000",
+      "8000",
+      "bf9f",
+      "3f3d",
+      "3f00",
+      "bf51",
+      "3f89"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "3e9a",
+      "0000",
+      "bf8f",
+      "3ee6",
+      "3fab",
+      "8000",
+      "8000",
+      "bf9f",
+      "3f3d",
+      "3f00",
+      "bf51",
+      "3f89"
+     ]
+    }
+   }
+  },
+  {
+   "id": "zero-update-k2-keeps-negzero",
+   "purpose": "K = 2 with both terms zero (one zero a, one zero b): unchanged",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "3e9a",
+     "8000",
+     "bf8f",
+     "3ee6",
+     "3fab",
+     "8000",
+     "8000",
+     "bf9f",
+     "3f3d",
+     "3f00",
+     "bf51",
+     "3f89"
+    ],
+    "sha256": "06407672db8adb0b44a1b141387fe6a3da2fa2bcc11b7f1460b3506e5b731de0"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "0000000000000000",
+     "3ff0000000000000",
+     "0000000000000000",
+     "bff0000000000000",
+     "0000000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "4008000000000000",
+     "4010000000000000",
+     "0000000000000000",
+     "0000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_update_not_kept"
+   ],
+   "expect": {
+    "bf16": [
+     "3e9a",
+     "8000",
+     "bf8f",
+     "3ee6",
+     "3fab",
+     "8000",
+     "8000",
+     "bf9f",
+     "3f3d",
+     "3f00",
+     "bf51",
+     "3f89"
+    ],
+    "sha256": "06407672db8adb0b44a1b141387fe6a3da2fa2bcc11b7f1460b3506e5b731de0"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "3e9a",
+      "0000",
+      "bf8f",
+      "3ee6",
+      "3fab",
+      "0000",
+      "0000",
+      "bf9f",
+      "3f3d",
+      "3f00",
+      "bf51",
+      "3f89"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "3e9a",
+      "0000",
+      "bf8f",
+      "3ee6",
+      "3fab",
+      "0000",
+      "0000",
+      "bf9f",
+      "3f3d",
+      "3f00",
+      "bf51",
+      "3f89"
+     ]
+    }
+   }
+  },
+  {
+   "id": "sham-whole-tensor-unchanged",
+   "purpose": "the sham law: a = 0 over a tensor with -0 elements inside J leaves every byte of the tensor unchanged",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000"
+    ],
+    "sha256": "e339df1fdb4ab27ff37656fc0ad2d216029fea5492f9cd059fdcf53c3a3d68d8"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "a": [
+     "0000000000000000",
+     "0000000000000000",
+     "0000000000000000"
+    ],
+    "b": [
+     "3ff0000000000000",
+     "bff0000000000000",
+     "4000000000000000",
+     "3fe0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_update_not_kept"
+   ],
+   "expect": {
+    "bf16": [
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000",
+     "8000"
+    ],
+    "sha256": "e339df1fdb4ab27ff37656fc0ad2d216029fea5492f9cd059fdcf53c3a3d68d8"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "0000",
+      "8000",
+      "0000",
+      "0000",
+      "0000",
+      "8000",
+      "0000",
+      "0000",
+      "0000",
+      "8000",
+      "0000",
+      "0000"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "0000",
+      "8000",
+      "0000",
+      "0000",
+      "0000",
+      "8000",
+      "0000",
+      "0000",
+      "0000",
+      "8000",
+      "0000",
+      "0000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "k1-zero-row-of-a-untouched",
+   "purpose": "K = 1, a[1] = 0: every element of row 1 inside J keeps its bits, -0 included; rows 0 and 2 are written",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "be8e",
+     "bffa",
+     "3f66",
+     "3f8d",
+     "8000",
+     "bede",
+     "8000",
+     "3fbf",
+     "bd65",
+     "bff8",
+     "3d22",
+     "bf6a"
+    ],
+    "sha256": "5d79e311bcf083ec50dcd27f7a2470a9efe076adc7ce28147cbd1fa558777f42"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     0,
+     2
+    ],
+    "a": [
+     "3fe0000000000000",
+     "0000000000000000",
+     "bfd0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_update_not_kept"
+   ],
+   "expect": {
+    "bf16": [
+     "3e64",
+     "bffa",
+     "3ff3",
+     "3f8d",
+     "8000",
+     "bede",
+     "8000",
+     "3fbf",
+     "be9d",
+     "bff8",
+     "beec",
+     "bf6a"
+    ],
+    "sha256": "e19e32c607cfd29075d88472f166919c76a29b3c250d4d2c0ab7da55db07ebb4"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "3e64",
+      "bffa",
+      "3ff3",
+      "3f8d",
+      "0000",
+      "bede",
+      "0000",
+      "3fbf",
+      "be9d",
+      "bff8",
+      "beec",
+      "bf6a"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "3e64",
+      "bffa",
+      "3ff3",
+      "3f8d",
+      "0000",
+      "bede",
+      "0000",
+      "3fbf",
+      "be9d",
+      "bff8",
+      "beec",
+      "bf6a"
+     ]
+    }
+   }
+  },
+  {
+   "id": "k1-zero-entry-of-b-untouched",
+   "purpose": "K = 1, b[0] = 0 (column J[0] = 1): every element of that column keeps its bits, -0 included; column 3 is written",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "bfe5",
+     "8000",
+     "3f13",
+     "3fa3",
+     "3f24",
+     "3d8c",
+     "bfb1",
+     "bf1d",
+     "be4b",
+     "8000",
+     "bfb1",
+     "bda9"
+    ],
+    "sha256": "b64af9329aa94b76b8c497bc1da0fe9561ae57e9def847d396dedb28a6efb3e4"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     3
+    ],
+    "a": [
+     "3fe0000000000000",
+     "3ff0000000000000",
+     "bfd0000000000000"
+    ],
+    "b": [
+     "0000000000000000",
+     "4000000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "zero_update_not_kept"
+   ],
+   "expect": {
+    "bf16": [
+     "bfe5",
+     "8000",
+     "3f13",
+     "4012",
+     "3f24",
+     "3d8c",
+     "bfb1",
+     "3fb2",
+     "be4b",
+     "8000",
+     "bfb1",
+     "bf15"
+    ],
+    "sha256": "9289ff608fd063bedc50f560940f1e99250d5e2cc10a91cadda551cb93393176"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "bf16": [
+      "bfe5",
+      "0000",
+      "3f13",
+      "4012",
+      "3f24",
+      "3d8c",
+      "bfb1",
+      "3fb2",
+      "be4b",
+      "8000",
+      "bfb1",
+      "bf15"
+     ]
+    },
+    "zero_update_not_kept": {
+     "bf16": [
+      "bfe5",
+      "0000",
+      "3f13",
+      "4012",
+      "3f24",
+      "3d8c",
+      "bfb1",
+      "3fb2",
+      "be4b",
+      "8000",
+      "bfb1",
+      "bf15"
+     ]
+    }
+   }
+  },
+  {
+   "id": "mixed-terms-write",
+   "purpose": "K = 2: term 0 is zero and term 1 is not, so the element is written; the zero term adds +0 and the result is the ordinary one",
+   "base": {
+    "shape": [
+     3,
+     4
+    ],
+    "bf16": [
+     "bfe5",
+     "8000",
+     "3f13",
+     "3fa3",
+     "3f24",
+     "3d8c",
+     "bfb1",
+     "bf1d",
+     "be4b",
+     "8000",
+     "bfb1",
+     "bda9"
+    ],
+    "sha256": "b64af9329aa94b76b8c497bc1da0fe9561ae57e9def847d396dedb28a6efb3e4"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     3,
+     4
+    ],
+    "rank": 2,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "0000000000000000",
+     "3fe0000000000000",
+     "0000000000000000",
+     "3fd0000000000000",
+     "0000000000000000",
+     "bfe0000000000000"
+    ],
+    "b": [
+     "4022000000000000",
+     "4022000000000000",
+     "4000000000000000",
+     "bff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bfe5",
+     "3f80",
+     "3d98",
+     "3fa3",
+     "3f24",
+     "3f12",
+     "bfd1",
+     "bf1d",
+     "be4b",
+     "bf80",
+     "bf62",
+     "bda9"
+    ],
+    "sha256": "71f97de03a139d183290742ca6cad8c81e4d1ed7162af922b88a42727de412ca"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "nonzero-update-underflows-positive",
+   "purpose": "from -0: a nonzero update 2^-200 is written; w = -0 + 2^-200 rounds to +0 in BF16 (the sign of the value)",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "39b0000000000000"
+    ],
+    "b": [
+     "39b0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "nonzero-update-underflows-negative",
+   "purpose": "from -0: a nonzero update -2^-200 is written and rounds to -0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "b9b0000000000000"
+    ],
+    "b": [
+     "39b0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "nonzero-operands-underflowing-product-f32",
+   "purpose": "f32 profile: the product of two nonzero operands underflows to +0, so the element is written (written is decided on operands, not on rounded products): -0 becomes +0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f32-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "0d800000"
+    ],
+    "b": [
+     "0d800000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "exact-cancellation-from-negzero",
+   "purpose": "terms +x and -x are nonzero operands, so the element is written: -0 + x = x, x + (-x) = +0, and the result is +0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "8000"
+    ],
+    "sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 2,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3fe0000000000000",
+     "bfe0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "poszero-and-zero-update",
+   "purpose": "+0 with a zero update stays +0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "0000000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "k-order-start-from-base",
+   "purpose": "K = 2: accumulation starts from widen(W) and rounds each step: 1 + 2^53 ties to 2^53, then + -(2^53 - 1) = 1, so BF16 1.0; starting from +0 gives 2.0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 2,
+    "columns": [
+     0
+    ],
+    "a": [
+     "4340000000000000",
+     "c33fffffffffffff"
+    ],
+    "b": [
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [
+    "low_rank_from_zero"
+   ],
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {
+    "low_rank_from_zero": {
+     "bf16": [
+      "4000"
+     ]
+    }
+   }
+  },
+  {
+   "id": "tie-to-even-down",
+   "purpose": "BF16 rounding boundary inside J: base 3f80, update 0.00390625",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "3f80"
+    ],
+    "sha256": "db0405050689e5d3aea1cd7d7f509a19beca2cef76c6a2dddc454951496c9763"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3f70000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f80",
+     "3f80"
+    ],
+    "sha256": "db0405050689e5d3aea1cd7d7f509a19beca2cef76c6a2dddc454951496c9763"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "tie-to-even-up",
+   "purpose": "BF16 rounding boundary inside J: base 3f81, update 0.00390625",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f81",
+     "3f80"
+    ],
+    "sha256": "c61be1c527111e354249269c6c59a8ba341d3baef7f77ed8e07b35d6d7f5027f"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3f70000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f82",
+     "3f80"
+    ],
+    "sha256": "6351c4147a4af5a96cca2de22713b55396fb49a591473412cbf57512902c3603"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "tie-negative",
+   "purpose": "BF16 rounding boundary inside J: base bf80, update -0.00390625",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "bf80",
+     "3f80"
+    ],
+    "sha256": "2aa43ce04c3424b728cdc03a1002ed651156c21fe62574d0fddc5798dc8dbce5"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "bf70000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "bf80",
+     "3f80"
+    ],
+    "sha256": "2aa43ce04c3424b728cdc03a1002ed651156c21fe62574d0fddc5798dc8dbce5"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "just-above-tie",
+   "purpose": "BF16 rounding boundary inside J: base 3f80, update 0.003906250931322575",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "3f80"
+    ],
+    "sha256": "db0405050689e5d3aea1cd7d7f509a19beca2cef76c6a2dddc454951496c9763"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3f70000040000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f81",
+     "3f80"
+    ],
+    "sha256": "c61be1c527111e354249269c6c59a8ba341d3baef7f77ed8e07b35d6d7f5027f"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "just-below-tie",
+   "purpose": "BF16 rounding boundary inside J: base 3f81, update 0.0039062490686774254",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f81",
+     "3f80"
+    ],
+    "sha256": "c61be1c527111e354249269c6c59a8ba341d3baef7f77ed8e07b35d6d7f5027f"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3f6fffff80000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f81",
+     "3f80"
+    ],
+    "sha256": "c61be1c527111e354249269c6c59a8ba341d3baef7f77ed8e07b35d6d7f5027f"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "tie-double-rounding-rne1",
+   "purpose": "a value that is a BF16 tie only after the f32 step differs between the chains",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3f70000008000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "discriminates": [],
+   "expect": {
+    "bf16": [
+     "3f81"
+    ],
+    "sha256": "5ea40fd2bbee6a090bc7fb419137262d6ce7697a6011076efd19a31c8ab881a8"
+   },
+   "under_wrong_semantics": {}
+  },
+  {
+   "id": "tie-double-rounding-rne2",
+   "purpose": "the same operands under rne2",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "3f70000008000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "near-cancellation",
+   "purpose": "w + a*b leaves a tiny nonzero: 1.0 + (-(1 + 2^-30)) * 1 = -2^-30",
+   "base": {
+    "shape": [
+     1,
+     2
+    ],
+    "bf16": [
+     "3f80",
+     "3f80"
+    ],
+    "sha256": "db0405050689e5d3aea1cd7d7f509a19beca2cef76c6a2dddc454951496c9763"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     2
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "bff0000000400000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "b080",
+     "3f80"
+    ],
+    "sha256": "f319dae4fad5b22937487e1e3f56a89e81444dcfaaa40fa14aed3dfe51bae443"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "near-cancellation-rne2",
+   "purpose": "the same under rne2: 2^-30 is representable in f32",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne2/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "bff0000000400000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "b080"
+    ],
+    "sha256": "a9cc1f96aa0b83f47e6a2134505dc39a7c1ffd7c784d72a968e6050412e12d1b"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "exact-cancellation",
+   "purpose": "w + a*b = 0 exactly from a positive base: +0",
+   "base": {
+    "shape": [
+     1,
+     1
+    ],
+    "bf16": [
+     "3f80"
+    ],
+    "sha256": "b9c205bdac187f20bf876cea369cb6032ad1bf69043b31d716b36b8defbffdf2"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     1,
+     1
+    ],
+    "rank": 1,
+    "columns": [
+     0
+    ],
+    "a": [
+     "bff0000000000000"
+    ],
+    "b": [
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "0000"
+    ],
+    "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-columns-empty",
+   "purpose": "columns empty",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bf92",
+     "bf83",
+     "3fd6",
+     "bfc2",
+     "bfc7",
+     "bff2",
+     "bfd2",
+     "3fac"
+    ],
+    "sha256": "784b84f4fd86eafbdc26d82fcd3e1618e744ea57d977c77976ca243527b276c4"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-columns-unsorted",
+   "purpose": "columns not increasing",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3fdf",
+     "3fd3",
+     "bf1c",
+     "3fd3",
+     "bf8f",
+     "3f61",
+     "bf87",
+     "3f1a"
+    ],
+    "sha256": "042a1ecaaad8bdd3aa28c71b49fecc1854b1b87c9a80366c64d63819631fef60"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     2,
+     1
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-columns-duplicate",
+   "purpose": "columns repeat a column",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bfda",
+     "bfbb",
+     "bfa5",
+     "3e1b",
+     "beb7",
+     "3fbf",
+     "3f8d",
+     "3efd"
+    ],
+    "sha256": "e5335b51e0a5c82d5369b93cb2d884a3ae7e75499664d546a9c9f3d440936958"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     1
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-column-out-of-range",
+   "purpose": "a column >= cols",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3f93",
+     "bf93",
+     "3f19",
+     "3f97",
+     "bfd0",
+     "3f10",
+     "bfc9",
+     "3fa2"
+    ],
+    "sha256": "73eabe5e0680f72c8447c309b10e96d51cf309ad03c0e577ab464a5b44f479cf"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     4
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "columns_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-b-full-width",
+   "purpose": "b has K x cols values although |J| < cols: v1's b layout is not accepted here",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bf6c",
+     "3f8e",
+     "bf73",
+     "bec4",
+     "bff8",
+     "beb4",
+     "3f05",
+     "3f2a"
+    ],
+    "sha256": "c8ed0175924d691d3c493517835455aa928e2c91f03fcc7e165c742385b178e3"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000",
+     "3fc0000000000000",
+     "3fb0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-a-length",
+   "purpose": "len(a) != rows x K",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bfd8",
+     "beb5",
+     "3fa0",
+     "3f3c",
+     "3f0f",
+     "bf64",
+     "3ea0",
+     "3fa2"
+    ],
+    "sha256": "7589ac578d9104d262314a363c3cf0028fdb63a665c06fcd4ec44e1d23ea9ec9"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "shape_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-rank-zero",
+   "purpose": "rank < 1",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3fcb",
+     "bfd4",
+     "3ec3",
+     "bfb3",
+     "bf09",
+     "3e57",
+     "bd6b",
+     "3fc1"
+    ],
+    "sha256": "dbbd91494e90dbd0b5c295ba386acdab8929b5666ac04b92ca1a69451f3b8e16"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 0,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [],
+    "b": [],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "rank_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-numerics-missing",
+   "purpose": "numerics absent",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3c00",
+     "3f18",
+     "bf80",
+     "3f43",
+     "3fc0",
+     "bedf",
+     "bf3c",
+     "bf91"
+    ],
+    "sha256": "2d5e5fea3f2a62b2ef66e4fd603d41dc1a77ff2b3fe92b964d1dda563573a6bb"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": null,
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "numerics_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-fixup-outside-j",
+   "purpose": "a fixup in a column outside J (inside the tensor)",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bfb2",
+     "3f4c",
+     "bf0b",
+     "3fce",
+     "3fe7",
+     "bf4a",
+     "3fbf",
+     "3f87"
+    ],
+    "sha256": "62e415e5b44c2b28e67d0b2ab20fd8a7992cfb518440a036ca9a4c09a86d3962"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": [
+     [
+      0,
+      0,
+      "3f80"
+     ]
+    ]
+   },
+   "expect": {
+    "refuse": "fixups_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-fixup-outside-tensor",
+   "purpose": "a fixup outside the tensor",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3fd5",
+     "3fd4",
+     "bf2e",
+     "bff0",
+     "bf3f",
+     "3f1c",
+     "3f37",
+     "bf85"
+    ],
+    "sha256": "2ca9ca776faea1083e5a0672f7ea473d58a7a1b315c9730085fc900d9772933a"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": [
+     [
+      5,
+      1,
+      "3f80"
+     ]
+    ]
+   },
+   "expect": {
+    "refuse": "fixups_invalid"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-tensor-embed",
+   "purpose": "the token embedding is refused",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bf7c",
+     "bf28",
+     "3f91",
+     "bef1",
+     "bedb",
+     "bf53",
+     "bfa0",
+     "3f85"
+    ],
+    "sha256": "0eb23016a8f5bdd39c9f0d464af0f29207d3668409fc59702af8230867bdff83"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "tensor_role": "embed_tokens",
+   "expect": {
+    "refuse": "tensor_refused"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-nan-base-inside-j",
+   "purpose": "a NaN base element inside J is read",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3f43",
+     "7fc0",
+     "bfbc",
+     "3f73",
+     "3ef7",
+     "bf54",
+     "bfda",
+     "3f1f"
+    ],
+    "sha256": "5313d09255a1a8a076151b4d3a8a0f08bc35c8e1de9dfdca4e8d40dfb9dfdc8a"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "out-nan-base-outside-j-is-kept",
+   "purpose": "a NaN base element outside J is not read: it is kept",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "7fc0",
+     "3fbf",
+     "bfd3",
+     "bf8e",
+     "3fcc",
+     "3ff4",
+     "3fc2",
+     "beca"
+    ],
+    "sha256": "ab30049df0446a9706e0793cd907513ed5ba6a7e2773c92fda875d51bffc89a8"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "bf16": [
+     "7fc0",
+     "3fff",
+     "bfb3",
+     "bf8e",
+     "3fcc",
+     "403a",
+     "4001",
+     "beca"
+    ],
+    "sha256": "0086b7db5711857ace236610e769b5a0e057e3daafd5da1e4e5a521192392cfb"
+   },
+   "under_wrong_semantics": {
+    "zero_padded_full": {
+     "refuse": "non_finite_operand"
+    }
+   },
+   "discriminates": []
+  },
+  {
+   "id": "ref-nan-operand-b",
+   "purpose": "a non-finite b",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3e27",
+     "3f8b",
+     "bfad",
+     "3fa8",
+     "bf9c",
+     "bfae",
+     "3f06",
+     "3f92"
+    ],
+    "sha256": "47a0d022f9c919591cf3b5116a25c3b811cb45da60a558e58ed3e4b2423932d1"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "7ff8000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "non_finite_operand"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-overflow",
+   "purpose": "the result overflows BF16",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "7f7f",
+     "7f7f",
+     "7f7f",
+     "7f7f",
+     "7f7f",
+     "7f7f",
+     "7f7f",
+     "7f7f"
+    ],
+    "sha256": "87dcde7fa6df23e15fa7ba9b2a1f31408eac832f4e615ea815ae92024e3d818b"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "3ff0000000000000"
+    ],
+    "b": [
+     "47d0000000000000",
+     "47d0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "overflow"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-intermediate-overflow",
+   "purpose": "an f64 intermediate overflows",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3ff1",
+     "3fd6",
+     "bff4",
+     "3e5d",
+     "3f8e",
+     "3f81",
+     "3fa5",
+     "3fae"
+    ],
+    "sha256": "5bbd38a83ce18f83e1e9d0827f4846fd42fcf339b5ccb0a0e7aee7a0514b0e8c"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "7e37e43c8800759c",
+     "3ff0000000000000"
+    ],
+    "b": [
+     "7e37e43c8800759c",
+     "3ff0000000000000"
+    ],
+    "fixups": []
+   },
+   "expect": {
+    "refuse": "non_finite_intermediate"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "ref-fixup-no-op",
+   "purpose": "a fixup equal to the computed bits",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "3fc9",
+     "bfae",
+     "be5e",
+     "3d17",
+     "3f9f",
+     "bee7",
+     "3f8e",
+     "3fd8"
+    ],
+    "sha256": "6a13ac84381d3c56a878f09feab66398d8aa221474472f7b4ca5d07e2bcb9251"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": [
+     [
+      0,
+      1,
+      "0000"
+     ]
+    ]
+   },
+   "expect": {
+    "bf16": [
+     "3fc9",
+     "0000",
+     "3d08",
+     "3d17",
+     "3f9f",
+     "3f0c",
+     "3fce",
+     "3fd8"
+    ],
+    "sha256": "4e66bb4871538e1c023467f8f7b5b2abe30ff7b9e041948cbdf6ced6fa2eb7fd"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  },
+  {
+   "id": "fixup-inside-j",
+   "purpose": "a fixup replaces one computed element of J",
+   "base": {
+    "shape": [
+     2,
+     4
+    ],
+    "bf16": [
+     "bf97",
+     "3e4b",
+     "bd33",
+     "bf32",
+     "bf5b",
+     "3ec0",
+     "3f9a",
+     "be88"
+    ],
+    "sha256": "157176823aee53b1866d208cfc886b8adfe8c86c7bc9e80f204fab8c714f5039"
+   },
+   "op": {
+    "kind": "add_low_rank_columns",
+    "numerics": "f64-seq-rne1/v1",
+    "shape": [
+     2,
+     4
+    ],
+    "rank": 1,
+    "columns": [
+     1,
+     2
+    ],
+    "a": [
+     "3ff0000000000000",
+     "4000000000000000"
+    ],
+    "b": [
+     "3fe0000000000000",
+     "3fd0000000000000"
+    ],
+    "fixups": [
+     [
+      1,
+      2,
+      "3f80"
+     ]
+    ]
+   },
+   "expect": {
+    "bf16": [
+     "bf97",
+     "3f33",
+     "3e53",
+     "bf32",
+     "bf5b",
+     "3fb0",
+     "3f80",
+     "be88"
+    ],
+    "sha256": "b5afa432ffe77aa56152ef694d12e3239fc9119258267749c21bed0857529046"
+   },
+   "under_wrong_semantics": {},
+   "discriminates": []
+  }
+ ]
+}
