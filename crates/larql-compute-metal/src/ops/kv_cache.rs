@@ -93,6 +93,35 @@ impl LayerKVCache {
         self.abs_position += 1;
     }
 
+    /// Record that the cache now holds exactly the first `rows` rows of a
+    /// stream: occupancy and position are both `rows`, so the next row is
+    /// rotated at position `rows`.
+    ///
+    /// For a bulk seed (a prefill computed elsewhere and copied in). Setting
+    /// only the occupancy left the position where it was, zero on a fresh
+    /// cache, and the first decoded token was rotated as if it opened the
+    /// sequence.
+    pub fn seed(&mut self, rows: usize) {
+        self.current_len = rows;
+        self.abs_position = rows;
+    }
+
+    /// Roll the stream back so that `len` rows remain, dropping the newest.
+    ///
+    /// The position falls by the number of rows dropped: a rolled-back row
+    /// was never part of the stream, so the next one belongs where it was.
+    /// Lowering only the occupancy left the position ahead by every
+    /// speculative row. A `len` at or past the current occupancy changes
+    /// nothing; a rollback cannot bring rows into being.
+    ///
+    /// Returns the number of rows dropped.
+    pub fn roll_back_to(&mut self, len: usize) -> usize {
+        let dropped = self.current_len.saturating_sub(len);
+        self.current_len -= dropped;
+        self.abs_position = self.abs_position.saturating_sub(dropped);
+        dropped
+    }
+
     /// Drop all but the newest `window` rows, sliding the window forward.
     ///
     /// Occupancy falls to `window`; `abs_position` is deliberately

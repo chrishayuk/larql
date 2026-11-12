@@ -19,7 +19,7 @@ mod middleware;
 #[cfg(test)]
 mod tests;
 
-pub use middleware::{rate_limit_middleware, RateLimitState};
+pub use middleware::{rate_limit_middleware, ClientIpSource, LocalTransport, RateLimitState};
 
 use std::collections::HashMap;
 use std::net::IpAddr;

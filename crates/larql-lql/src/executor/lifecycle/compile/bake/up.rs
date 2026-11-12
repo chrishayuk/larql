@@ -50,13 +50,21 @@ pub(in crate::executor::lifecycle::compile) fn patch_up_weights(
     // manifest.
     let manifest_path = source_dir.join(WEIGHT_MANIFEST_JSON);
     if !manifest_path.exists() {
-        // Manifestless vindex — we can't safely locate the up
-        // tensors. Skip silently; the compiled vindex still has
-        // baked down_weights.bin and overlay gates in
-        // gate_vectors.bin so the install is at least partially live.
+        // No manifest means no model weights: a source that declares
+        // weights without a manifest is refused before the bake starts.
+        // There is no up tensor to write, and nothing that would read one.
         return Ok(());
     }
     let layer_up_lookup = parse_manifest_for_up(&manifest_path)?;
+    // The architecture names its own up tensor (`…mlp.up_proj.weight`,
+    // `…ffn.w3.weight`, `…ffn.up.weight`). A source recorded before
+    // `model_config` has no architecture to ask, and falls back to the
+    // one tensor of the layer whose name carries `up_proj`.
+    let arch = larql_vindex::arch_from_vindex_config(config);
+    let tensors = match &arch {
+        Some(_) => parse_manifest_tensors(&manifest_path)?,
+        None => HashMap::new(),
+    };
 
     let hidden = config.hidden_size;
     let intermediate = config.intermediate_size;
@@ -78,10 +86,21 @@ pub(in crate::executor::lifecycle::compile) fn patch_up_weights(
             )));
         }
 
-        let Some((file_name, offset, length)) = layer_up_lookup.get(layer) else {
-            // No manifest entry for this layer's up projection —
-            // skip silently, the layer's up is not materialised.
-            continue;
+        let located = match &arch {
+            Some(arch) => tensors.get(&arch.ffn_up_key(*layer)),
+            None => layer_up_lookup.get(layer),
+        };
+        let Some((file_name, offset, length)) = located else {
+            // The install's up vector has nowhere to go, and an artifact
+            // without it would run the slot on the source's up row.
+            let wanted = match &arch {
+                Some(arch) => format!("the tensor {:?}", arch.ffn_up_key(*layer)),
+                None => format!("a single {UP_PROJ_KEY_FRAGMENT} tensor for L{layer}"),
+            };
+            return Err(LqlError::Execution(format!(
+                "{WEIGHT_MANIFEST_JSON} does not locate {wanted}, so the up vector at \
+                 L{layer} F{feature} cannot be baked"
+            )));
         };
 
         let bpf = if *length as usize == expected_floats * BYTES_PER_F32 {
@@ -144,6 +163,7 @@ fn parse_manifest_for_up(
         serde_json::from_str(&text).map_err(|e| LqlError::exec("parse weight_manifest.json", e))?;
 
     let mut out: HashMap<usize, (String, u64, u64)> = HashMap::new();
+    let mut ambiguous: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for entry in &entries {
         let Some(key) = entry.get("key").and_then(|v| v.as_str()) else {
             continue;
@@ -163,7 +183,40 @@ fn parse_manifest_for_up(
         let Some(layer) = parse_layer_from_key(key) else {
             continue;
         };
+        // Two tensors of one layer both named `…up_proj…` (per-expert
+        // weights) leave no single row to write. The layer is dropped from
+        // the lookup, and an override that needs it is refused by name.
+        if ambiguous.contains(&layer) {
+            continue;
+        }
+        if out.remove(&layer).is_some() {
+            ambiguous.insert(layer);
+            continue;
+        }
         out.insert(layer, (file.to_string(), offset, length));
+    }
+    Ok(out)
+}
+
+/// Every manifest tensor that says where its bytes are, by key.
+fn parse_manifest_tensors(
+    manifest_path: &std::path::Path,
+) -> Result<HashMap<String, (String, u64, u64)>, LqlError> {
+    let text = std::fs::read_to_string(manifest_path)
+        .map_err(|e| LqlError::exec("read weight_manifest.json", e))?;
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(&text).map_err(|e| LqlError::exec("parse weight_manifest.json", e))?;
+    let mut out = HashMap::new();
+    for entry in &entries {
+        let field = |name: &str| entry.get(name);
+        if let (Some(key), Some(file), Some(offset), Some(length)) = (
+            field("key").and_then(|v| v.as_str()),
+            field("file").and_then(|v| v.as_str()),
+            field("offset").and_then(|v| v.as_u64()),
+            field("length").and_then(|v| v.as_u64()),
+        ) {
+            out.insert(key.to_string(), (file.to_string(), offset, length));
+        }
     }
     Ok(out)
 }
@@ -517,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn patch_up_weights_skips_layers_not_in_manifest() {
+    fn patch_up_weights_refuses_a_layer_the_manifest_does_not_locate() {
         let dir = unique_dir("skip_layer");
         let src = dir.join("src");
         let dst = dir.join("dst");
@@ -533,9 +586,11 @@ mod tests {
         let mut overrides: HashMap<(usize, usize), Vec<f32>> = HashMap::new();
         overrides.insert((1, 0), vec![1.0; 4]); // layer 1 — no manifest entry
 
-        // Should silently skip.
-        let result = patch_up_weights(&src, &dst, &cfg, &overrides);
-        assert!(result.is_ok());
+        // An up vector with nowhere to go is refused, not dropped.
+        let err = patch_up_weights(&src, &dst, &cfg, &overrides)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("L1 F0"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
