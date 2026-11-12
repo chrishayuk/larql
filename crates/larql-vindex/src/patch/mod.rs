@@ -17,12 +17,14 @@ pub mod knn_store_io;
 pub mod overlay;
 pub mod overlay_apply;
 pub mod overlay_gate_trait;
+pub mod overlay_meta_bake;
 pub mod refine;
 pub mod validate;
 
 pub use format::*;
 pub use knn_store::{KnnEntry, KnnStore};
 pub use overlay::*;
+pub use overlay_meta_bake::{LabelStoredAsToken, UnstorableMetaEdit};
 pub use refine::{refine_gates, RefineInput, RefineResult, RefinedGate};
 pub use validate::PatchGeometry;
 
