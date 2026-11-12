@@ -28,7 +28,7 @@ test-models:
 	cargo test -p larql-inference --test test_logits_goldens -- --ignored
 	cargo test -p larql-inference --test test_gemma3_smoke -- --ignored
 	cargo test -p larql-inference --test test_generate_q4k_cpu -- --ignored
-	cargo test -p larql-inference --test bench_probe_latency -- --ignored --nocapture
+	cargo test -p larql-kv --test bench_probe_latency -- --ignored --nocapture
 	cargo test -p larql-inference --test test_llm_dispatch -- --ignored --nocapture
 	cargo test -p larql-inference --test test_constrained_dispatch -- --ignored --nocapture
 	cargo test -p larql-inference --test test_trie_dispatch -- --ignored --nocapture
