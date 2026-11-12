@@ -104,6 +104,27 @@ class Behaviour(unittest.TestCase):
         self.assertEqual(self.get("just-below-tie")["expect"]["bf16"][0], "3f81")
 
 
+class Frozen(unittest.TestCase):
+    """FREEZE.json holds the frozen files at their recorded bytes; any change is a new version (v3), never an edit to v2."""
+
+    def test_the_frozen_files_match_their_recorded_hashes(self):
+        freeze = json.load(open(os.path.join(HERE, "FREEZE.json")))
+        for name, want in freeze["sha256"].items():
+            with open(os.path.join(HERE, name), "rb") as f:
+                self.assertEqual(hashlib.sha256(f.read()).hexdigest(), want, name)
+        ind = freeze["independent_reproduction"]
+        for key, name in (("evaluator_sha256", "evaluate.py"), ("record_sha256", "RECORD.json"), ("history_sha256", "HISTORY.md")):
+            with open(os.path.join(HERE, "independent", name), "rb") as f:
+                self.assertEqual(hashlib.sha256(f.read()).hexdigest(), ind[key], name)
+        self.assertEqual((ind["cases_reproduced"], ind["cases"]), (91, 91))
+
+    def test_the_v1_files_it_extends_are_unchanged(self):
+        recorded = json.load(open(os.path.join(HERE, "FREEZE.json")))["extends_v1_unchanged"]
+        for name, want in recorded.items():
+            with open(os.path.join(V1, name), "rb") as f:
+                self.assertEqual(hashlib.sha256(f.read()).hexdigest(), want, name)
+
+
 class Independent(unittest.TestCase):
     """The committed independent reproduction (see independent/HISTORY.md)."""
 

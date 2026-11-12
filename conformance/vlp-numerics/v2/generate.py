@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VLP numerics v2 golden vectors: `add_low_rank_columns`. DRAFT, not frozen.
+"""VLP numerics v2 golden vectors: `add_low_rank_columns`. FROZEN: see FREEZE.json.
 
 Standard library only; imports nothing from LARQL. It reuses v1's exact-rational arithmetic (the one rounder in the
 repository) by loading v1/generate.py read-only, and never writes into v1. Every expected value is computed here, none is

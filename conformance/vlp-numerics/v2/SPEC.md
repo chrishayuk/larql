@@ -1,7 +1,10 @@
 # VLP structured-op numerics, v2: `add_low_rank_columns`
 
-**Status: DRAFT 2026-11-12. Not frozen.** It becomes final only after an independent evaluator, written from this text
-alone, reproduces every case in `vectors.json`. Then `FREEZE.json` is written, as for v1.
+**Status: FROZEN 2026-11-12** after independent reproduction: an evaluator written from this text and the frozen v1 spec
+alone reproduced all 91 cases blind (`independent/HISTORY.md`, `independent/RECORD.json`), and the SG-EDIT-1 review accepted
+the operand-level `written` rule and the NaN-inside-J precondition. The sha256 values of this file, `vectors.json` and
+`generate.py` are in `FREEZE.json`, and `test_generate.py` checks them. Any change is a new version (`v3`), never an edit
+to `v2`. The only difference between this text and the text the evaluator last reviewed is this status paragraph.
 
 **Relation to v1.** v1 (`../v1/`, frozen) is **unchanged and is not edited by this version**. v2 adds one op and reuses
 v1's values, formats, profiles, arithmetic rules and refusal vocabulary and phases (v1 §1, §2, §4), with only the
