@@ -88,7 +88,7 @@ fn test_matches_etag_mismatch_returns_false() {
 async fn session_get_or_create_new_session_returns_empty_patched() {
     let sm = SessionManager::new(3600);
     let m = make_loaded_model_for_warmup();
-    let patched = sm.get_or_create("new-session", &m).await;
+    let patched = sm.get_or_create("new-session", &m).await.expect("overlay");
     assert_eq!(patched.num_patches(), 0);
 }
 
@@ -97,9 +97,9 @@ async fn session_count_increments_on_first_create() {
     let sm = SessionManager::new(3600);
     let m = make_loaded_model_for_warmup();
     assert_eq!(sm.session_count().await, 0);
-    sm.get_or_create("s1", &m).await;
+    sm.get_or_create("s1", &m).await.expect("overlay");
     assert_eq!(sm.session_count().await, 1);
-    sm.get_or_create("s2", &m).await;
+    sm.get_or_create("s2", &m).await.expect("overlay");
     assert_eq!(sm.session_count().await, 2);
 }
 
@@ -107,8 +107,8 @@ async fn session_count_increments_on_first_create() {
 async fn session_get_or_create_same_id_does_not_add_session() {
     let sm = SessionManager::new(3600);
     let m = make_loaded_model_for_warmup();
-    sm.get_or_create("same", &m).await;
-    sm.get_or_create("same", &m).await;
+    sm.get_or_create("same", &m).await.expect("overlay");
+    sm.get_or_create("same", &m).await.expect("overlay");
     assert_eq!(sm.session_count().await, 1);
 }
 

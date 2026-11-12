@@ -280,7 +280,7 @@ fn main() {
     // Note: clone cost dominates in debug builds. Run with --release for accurate numbers.
     bench("apply + remove patch (1 op)", 20, 200, || {
         let mut p = PatchedVindex::new(patched.base().clone());
-        p.apply_patch(test_patch());
+        p.try_apply_patch(test_patch()).expect("patch applies");
         p.remove_patch(0);
     });
 
@@ -331,7 +331,7 @@ fn main() {
                 },
             ],
         };
-        session.apply_patch(patch);
+        session.try_apply_patch(patch).expect("patch applies");
         session
     });
 

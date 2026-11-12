@@ -556,6 +556,13 @@ UPDATE EDGES
 UPDATE EDGES
     SET target = "London", confidence = 0.95
     WHERE layer = 26 AND feature = 8821;
+
+-- Settable fields: `target` (also spelled `top_token`), a non-empty
+-- string, and `confidence` (also `c_score`), a finite number. The SET
+-- clause is checked whole before anything runs: an unknown field, a value
+-- of the wrong type or a field set twice refuses the statement, and
+-- nothing is updated. `target` changes the record's text and keeps its
+-- token id.
 ```
 
 ```
@@ -566,6 +573,13 @@ MERGE <source_vindex>
 MERGE "medical-knowledge.vindex"
     INTO "gemma3-4b.vindex"
     ON CONFLICT HIGHEST_CONFIDENCE;
+
+-- A MERGE writes to the patch overlay of the bound vindex, and each record
+-- it writes is recorded as an UPDATE, so SAVE PATCH includes it. A saved
+-- UPDATE carries the record's token and score, not its top-k list.
+-- INTO may name the bound vindex; any other target is refused. A source
+-- built from another model, or holding a record at a slot the bound vindex
+-- does not have, is refused whole: nothing is merged.
 ```
 
 ```
@@ -588,6 +602,20 @@ SAVE PATCH;
 -- Saved: medical-knowledge.vlp (3 operations, 30 KB)
 ```
 
+`SAVE PATCH` takes no path: the file is the one `BEGIN PATCH` named. It either writes that file or
+leaves the session as it was.
+
+- **A refusal keeps the recording.** A mutation with no `BEGIN PATCH` starts an anonymous recording,
+  which has no file. `SAVE PATCH` on it is refused and the recorded operations stay pending:
+  `BEGIN PATCH "file.vlp"` adopts them, and `SAVE PATCH` then writes them.
+- **A failed write keeps the recording.** If the file cannot be written, the session is still the named
+  patch session with every operation pending, so `SAVE PATCH` can be run again once the cause is fixed.
+  The file itself is not written atomically: a write that fails part-way can leave a truncated file at
+  the destination, which the repeated `SAVE PATCH` overwrites.
+
+`BEGIN PATCH ""` is refused: an empty name is how the session marks an anonymous recording, and a
+recording with that name could be neither saved nor renamed.
+
 ```
 APPLY PATCH <patch_path>
 
@@ -597,6 +625,36 @@ APPLY PATCH <patch_path>
 APPLY PATCH "medical-knowledge.vlp";
 APPLY PATCH "fix-hallucinations.vlp";
 ```
+
+`APPLY PATCH` applies every operation in the file or none of them. The whole patch is checked before
+anything is applied, on VINDEX2 and VINDEX3 alike, and a patch that fails any check is refused with an
+error that names the operation. The overlay, including the patches already stacked, is then exactly as
+it was.
+
+| Check | Refused when |
+|---|---|
+| Model | `base_model` is empty, or is not the name of the bound vindex's model |
+| Layer | an operation names a layer the index does not have |
+| Feature slot | an `insert`, `update` or `delete` names a slot its layer does not have |
+| Vector | a gate, up, down or KNN key vector does not decode, or is not `hidden_size` wide |
+
+The model check compares names. A VINDEX2 vindex is named by its `index.json` `model`; a VINDEX3
+container by the name it was encoded under. A patch written on one is accepted on the other only when
+the two names are the same string. A matching shape is not evidence of the same model: two models of
+one architecture have identical dimensions and unrelated weights.
+
+What this does not yet cover:
+
+- **The name is the only identity.** Nothing binds a patch to the weights it was read from, so two
+  different models published under one name are indistinguishable here. A stable model identifier and
+  a source-weight fingerprint, carried by both formats, are a separate piece of work.
+- **The server does not check the model.** `POST /v1/patches/apply` applies the same slot, bounds and
+  width checks and refuses a patch that fails them, but it does not compare `base_model`: remote
+  `DELETE` and `UPDATE` send patches that declare none. Model identity is enforced for a local
+  `APPLY PATCH` only, not end to end.
+- **`DIFF … INTO PATCH` can write a patch `APPLY PATCH` refuses.** With no model bound, or on a
+  VINDEX3 or remote session, it records `base_model` as `"unknown"`. Such a patch names no model this
+  check can match, so it is refused until its `base_model` is set to the target's name.
 
 ```
 REMOVE PATCH <patch_path>

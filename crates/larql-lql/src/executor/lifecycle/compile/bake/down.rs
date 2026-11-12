@@ -70,6 +70,11 @@ pub(in crate::executor::lifecycle::compile) fn patch_down_weights(
                     down_vec.len()
                 )));
             }
+            if feature >= intermediate {
+                return Err(LqlError::Execution(format!(
+                    "down override at L{layer} F{feature} out of range (intermediate = {intermediate})"
+                )));
+            }
             // Splice the column for `feature` across all `hidden` rows.
             for (row, val) in down_vec.iter().enumerate() {
                 let cell = (row * intermediate + feature) * dtype_bytes;

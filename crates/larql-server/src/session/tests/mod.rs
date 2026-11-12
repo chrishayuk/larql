@@ -36,7 +36,9 @@ fn give_overlay(sm: &SessionManager, id: &str, patch_names: &[&str]) {
     let session = map.get_mut(id).expect("session bound");
     let overlay = session.overlay_mut(tiny_index);
     for name in patch_names {
-        overlay.apply_patch(named_patch(name));
+        overlay
+            .try_apply_patch(named_patch(name))
+            .expect("patch applies");
     }
 }
 

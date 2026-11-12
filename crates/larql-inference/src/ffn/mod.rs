@@ -21,6 +21,7 @@ pub mod moe_bound;
 pub mod moe_container;
 pub mod moe_remote;
 pub mod remote;
+pub mod shard_auth;
 pub mod sparse;
 pub mod sparse_compute;
 #[cfg(test)]

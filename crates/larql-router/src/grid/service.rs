@@ -12,10 +12,13 @@
 //!   an available spare, with an explicit or live-replica-derived
 //!   origin.
 //!
-//! Authentication: when `grid_key` is set on the impl, every incoming
-//! `Join` must carry `Authorization: Bearer <key>` or it gets
-//! `UNAUTHENTICATED`. The other RPCs are unauthenticated — admins
-//! should put them behind a private network or an external proxy.
+//! Authentication: when `grid_key` is set on the impl, every RPC must
+//! carry `Authorization: Bearer <key>` or it gets `UNAUTHENTICATED`:
+//! `Join`, and equally `Status`, `DrainServer` and `AssignRange`. A key
+//! that gated joining and left draining and reassignment open would let
+//! anyone who can reach the port take a serving shard out, or point a
+//! spare at an origin of their choosing. With no key set the grid port is
+//! open to every RPC (development only).
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -87,6 +90,34 @@ impl GridServiceImpl {
 
 type JoinStream = Pin<Box<dyn futures_core::Stream<Item = Result<RouterMessage, Status>> + Send>>;
 
+/// Metadata key the grid key travels under.
+const AUTHORIZATION: &str = "authorization";
+/// Scheme prefix of the grid key's metadata value.
+const BEARER: &str = "Bearer ";
+
+impl GridServiceImpl {
+    /// Refuse a request that does not carry the grid key, when one is set.
+    /// Every RPC calls this first.
+    // The error is tonic's `Status`, the type every RPC here returns; it is
+    // not ours to box.
+    #[allow(clippy::result_large_err)]
+    fn authorize<T>(&self, request: &Request<T>) -> Result<(), Status> {
+        let Some(expected) = &self.grid_key else {
+            return Ok(());
+        };
+        let presented = request
+            .metadata()
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix(BEARER));
+        if presented == Some(expected.as_str()) {
+            Ok(())
+        } else {
+            Err(Status::unauthenticated("invalid grid key"))
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl GridService for GridServiceImpl {
     type JoinStream = JoinStream;
@@ -96,16 +127,7 @@ impl GridService for GridServiceImpl {
         request: Request<Streaming<ServerMessage>>,
     ) -> Result<Response<Self::JoinStream>, Status> {
         // Auth check — reject streams that don't carry the correct grid key.
-        if let Some(expected) = &self.grid_key {
-            let token = request
-                .metadata()
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "));
-            if token.map(|t| t != expected).unwrap_or(true) {
-                return Err(Status::unauthenticated("invalid grid key"));
-            }
-        }
+        self.authorize(&request)?;
 
         let state = self.state.clone();
         let metrics = self.metrics.clone();
@@ -391,8 +413,10 @@ impl GridService for GridServiceImpl {
 
     async fn status(
         &self,
-        _request: Request<StatusRequest>,
+        request: Request<StatusRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
+        // The status names every server, its URL and its layer range.
+        self.authorize(&request)?;
         let resp = self.state.read().status_response();
         Ok(Response::new(resp))
     }
@@ -404,6 +428,7 @@ impl GridService for GridServiceImpl {
         &self,
         request: Request<DrainRequest>,
     ) -> Result<Response<AdminAck>, Status> {
+        self.authorize(&request)?;
         let req = request.into_inner();
         let reason = if req.reason.is_empty() {
             "admin_drain".to_string()
@@ -462,6 +487,7 @@ impl GridService for GridServiceImpl {
         &self,
         request: Request<AssignRangeRequest>,
     ) -> Result<Response<AdminAck>, Status> {
+        self.authorize(&request)?;
         let req = request.into_inner();
         let mut guard = self.state.write();
 

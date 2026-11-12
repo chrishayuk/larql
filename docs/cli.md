@@ -255,6 +255,8 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 | `-v, --verbose` | Verbose load / timing output | false |
 | `--emit-ids` | Print the prompt token ids and the generated ids to stderr, so the run can serve as an id-level oracle for `larql vindex3 exec --tokens` on the same model (VINDEX3 containers; `--routed-from --metal` composed runs) | false |
 
+Remote shards and FFN servers started with `--api-key` need the key from the client. Set `LARQL_SHARD_API_KEY` and it is sent as `Authorization: Bearer <key>` to every `http://`, `https://` and `unix://` shard and to `--ffn` servers. The gRPC shard transport (`grpc://`, `grpcs://`) cannot send it yet, and a gRPC shard is refused while the key is set.
+
 **VINDEX3 containers.** A container written by `larql vindex3 encode` is
 detected from its `index.json` generation and routed to its own arm: the
 container's program runs through the VINDEX3 interpreter — the same one
@@ -910,7 +912,8 @@ both, but terminating `larql` alone leaves the server running.
 | `--cors` | Enable CORS headers for browser access | false |
 | `--api-key <KEY>` | Require Bearer token auth (health exempt) | — |
 | `--rate-limit <SPEC>` | Per-IP rate limit (e.g., "100/min", "10/sec") | — |
-| `--trust-forwarded-for` | Use the first `X-Forwarded-For` IP for rate limiting. Enable only behind a trusted proxy. | false |
+| `--trust-forwarded-for` | Use the first `X-Forwarded-For` IP for rate limiting. Enable only behind a proxy that removes the header a client sends. | false |
+| `--client-ip-header <HEADER>` | Rate limit by the address in a header the proxy sets itself, e.g. `Fly-Client-IP`. Conflicts with `--trust-forwarded-for`. | — |
 | `--max-concurrent <N>` | Max concurrent requests | 100 |
 | `--cache-ttl <SECS>` | Cache TTL for DESCRIBE results (0 = disabled) | 0 |
 | `--layers <START-END>` | Only load and serve layers in this range (e.g. `0-14`). Pages outside the range are never faulted in; RSS scales with shard size. | — |
@@ -1079,7 +1082,8 @@ larql> USE "gemma3-4b.vindex";
 larql> DESCRIBE "France";
 larql> WALK "The capital of France is" TOP 5;
 larql> INSERT INTO EDGES (entity, relation, target) VALUES ("John", "lives-in", "London");
-larql> SAVE PATCH "edits.vlp";
+larql> BEGIN PATCH "edits.vlp";    -- names the patch; the INSERT above is kept
+larql> SAVE PATCH;
 ```
 
 Direct model access (no extraction needed):

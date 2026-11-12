@@ -229,9 +229,25 @@ fn build_client_config(
 /// Verifier that pins the server's certificate to a known SHA-256
 /// fingerprint. No CA chain validation is done; this is the "shared
 /// secret on a LAN" trust model.
+///
+/// The fingerprint says which certificate is expected. The certificate is
+/// public, so presenting it proves nothing: the handshake signature, made
+/// with the certificate's private key, is what shows the peer holds that
+/// key. It is verified with the provider's algorithms, as the stock rustls
+/// verifier does.
 #[derive(Debug)]
 struct FingerprintVerifier {
     expected: Vec<u8>,
+    signature_algorithms: rustls::crypto::WebPkiSupportedAlgorithms,
+}
+
+impl FingerprintVerifier {
+    fn new(expected: Vec<u8>, provider: &rustls::crypto::CryptoProvider) -> Self {
+        Self {
+            expected,
+            signature_algorithms: provider.signature_verification_algorithms,
+        }
+    }
 }
 
 impl rustls::client::danger::ServerCertVerifier for FingerprintVerifier {
@@ -253,27 +269,32 @@ impl rustls::client::danger::ServerCertVerifier for FingerprintVerifier {
         }
     }
 
-    // One-liners are intentional: rustls' `DigitallySignedStruct` has no
-    // public constructor, so these trait methods are unreachable from
-    // unit tests. Collapsing the body keeps the coverage denominator
-    // honest (one uncovered line each vs eight) and the real logic lives
-    // in the testable `pass_through_signature` / `tls13_signature_schemes`
-    // helpers below.
-    #[rustfmt::skip]
-    fn verify_tls12_signature(&self, _: &[u8], _: &CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> { pass_through_signature() }
-    #[rustfmt::skip]
-    fn verify_tls13_signature(&self, _: &[u8], _: &CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> { pass_through_signature() }
-    #[rustfmt::skip]
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> { tls13_signature_schemes() }
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.signature_algorithms)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.signature_algorithms)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.signature_algorithms.supported_schemes()
+    }
 }
 
-/// Shared stub for `verify_tls12_signature` / `verify_tls13_signature`.
-/// The TLS-level pre-check (chain validity, hostname match) doesn't
-/// apply to either of our verifier strategies: `FingerprintVerifier`
-/// validates by SHA-256 leaf hash, `AcceptAny` is LAN-only dev mode.
-/// Both delegate here so the signature methods stay one line each and
-/// the body is unit-testable without rustls' private
-/// `DigitallySignedStruct` constructor.
+/// The signature "check" of [`AcceptAny`], the LAN-only dev mode that
+/// verifies nothing by design. [`FingerprintVerifier`] does not use it: a
+/// pinned certificate's handshake signature is verified.
 fn pass_through_signature() -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error>
 {
     Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
@@ -339,11 +360,12 @@ pub(crate) fn server_rustls_config(tls: &SelfSignedTls) -> Result<rustls::Server
 fn client_config_with_fingerprint(fp_hex: String) -> Result<ClientConfig, String> {
     let expected = decode_hex(&fp_hex).map_err(|e| format!("--quic-cert-fingerprint: {e}"))?;
     let provider = rustls::crypto::ring::default_provider();
+    let verifier = Arc::new(FingerprintVerifier::new(expected, &provider));
     let cfg = ClientConfig::builder_with_provider(Arc::new(provider))
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(|e| format!("rustls ClientConfig: {e}"))?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(FingerprintVerifier { expected }))
+        .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
     Ok(cfg)
 }
@@ -365,8 +387,9 @@ impl rustls::client::danger::ServerCertVerifier for AcceptAny {
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
-    // See note on FingerprintVerifier's impl above — one-liners are
-    // intentional and the shared helpers carry the unit tests.
+    // One-liners are intentional: rustls' `DigitallySignedStruct` has no
+    // public constructor, so these trait methods are unreachable from unit
+    // tests, and the shared helpers carry the tests.
     #[rustfmt::skip]
     fn verify_tls12_signature(&self, _: &[u8], _: &CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> { pass_through_signature() }
     #[rustfmt::skip]
@@ -625,7 +648,7 @@ mod tests {
     fn fingerprint_verifier_accepts_matching_digest() {
         let cert = dummy_cert();
         let expected = ring_compat::digest_sha256(cert.as_ref());
-        let v = FingerprintVerifier { expected };
+        let v = FingerprintVerifier::new(expected, &rustls::crypto::ring::default_provider());
         let res = v.verify_server_cert(&cert, &[], &dummy_server_name(), &[], unix_now());
         assert!(res.is_ok(), "matching fingerprint must verify");
     }
@@ -633,9 +656,8 @@ mod tests {
     #[test]
     fn fingerprint_verifier_rejects_mismatched_digest() {
         let cert = dummy_cert();
-        let v = FingerprintVerifier {
-            expected: vec![0u8; 32], // never going to match a real cert
-        };
+        // A digest that is never going to match a real cert.
+        let v = FingerprintVerifier::new(vec![0u8; 32], &rustls::crypto::ring::default_provider());
         let err = v
             .verify_server_cert(&cert, &[], &dummy_server_name(), &[], unix_now())
             .unwrap_err();
@@ -644,12 +666,10 @@ mod tests {
 
     #[test]
     fn fingerprint_verifier_signature_scheme_set_is_non_empty() {
-        // rustls::DigitallySignedStruct has no public constructor so
-        // verify_tls{12,13}_signature can't be invoked directly from a
-        // unit test. supported_verify_schemes is still callable.
-        let v = FingerprintVerifier {
-            expected: vec![0u8; 32],
-        };
+        // rustls::DigitallySignedStruct has no public constructor, so
+        // verify_tls{12,13}_signature are exercised by a real handshake in
+        // `tests/test_quic_pinned_key.rs`. The scheme set is callable here.
+        let v = FingerprintVerifier::new(vec![0u8; 32], &rustls::crypto::ring::default_provider());
         let schemes = v.supported_verify_schemes();
         assert!(schemes.contains(&rustls::SignatureScheme::ED25519));
         assert!(schemes.len() >= 6, "covers TLS 1.3 standard schemes");

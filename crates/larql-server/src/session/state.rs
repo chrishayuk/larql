@@ -68,6 +68,13 @@ impl SessionState {
         self.overlay.as_mut()
     }
 
+    /// Give a session that has never been patched its overlay. Used when the
+    /// first patch was applied before the session was bound, so a refused
+    /// patch leaves nothing behind.
+    pub fn install_overlay(&mut self, overlay: PatchedVindex) {
+        self.overlay = Some(overlay);
+    }
+
     /// The overlay for writing, materialising it from `base` on first use.
     ///
     /// `base` is a closure so the (possibly expensive) index clone happens
