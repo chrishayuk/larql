@@ -556,6 +556,13 @@ UPDATE EDGES
 UPDATE EDGES
     SET target = "London", confidence = 0.95
     WHERE layer = 26 AND feature = 8821;
+
+-- Settable fields: `target` (also spelled `top_token`), a non-empty
+-- string, and `confidence` (also `c_score`), a finite number. The SET
+-- clause is checked whole before anything runs: an unknown field, a value
+-- of the wrong type or a field set twice refuses the statement, and
+-- nothing is updated. `target` changes the record's text and keeps its
+-- token id.
 ```
 
 ```
