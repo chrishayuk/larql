@@ -10,11 +10,12 @@ SELF = 999
 
 
 def run(name, conclusion="success", *, status="completed", run_id=None, workflow_id=None,
-        created_at="2026-11-10T00:00:00Z"):
+        created_at="2026-11-10T00:00:00Z", path=None):
     workflow_id = workflow_id if workflow_id is not None else zlib.crc32(name.encode())
     return {
         "id": run_id if run_id is not None else workflow_id * 10,
         "name": name,
+        "path": path if path is not None else f".github/workflows/{name}.yml",
         "workflow_id": workflow_id,
         "status": status,
         "conclusion": conclusion if status == "completed" else None,
@@ -109,6 +110,49 @@ class Advisory(unittest.TestCase):
 
     def test_the_same_failure_under_another_name_still_fails(self):
         verdict, _ = judge([run("quality"), run("larql-cli", "cancelled")], SELF)
+        self.assertEqual(verdict, FAIL)
+
+
+AI_SCAN_PATH = "dynamic/agents/github-advanced-security"
+
+
+def ai_scan(pr, conclusion="failure", **kwargs):
+    """The "Code scanning AI findings" run GitHub starts on a pull request."""
+    return run(f"Code scanning AI findings on PR #{pr}", conclusion, path=AI_SCAN_PATH,
+               **kwargs)
+
+
+class GithubStartedAdvisoryRuns(unittest.TestCase):
+    def test_a_failed_ai_scan_does_not_fail_the_gate(self):
+        # PR 798's scan concluded `failure` with `402 You have no quota`.
+        verdict, lines = judge([run("quality"), ai_scan(798)], SELF)
+        self.assertEqual(verdict, PASS)
+        self.assertTrue(any("advisory" in line and "PR #798" in line for line in lines))
+
+    def test_an_unfinished_ai_scan_is_not_waited_for(self):
+        verdict, _ = judge([run("quality"), ai_scan(798, status="in_progress")], SELF)
+        self.assertEqual(verdict, PASS)
+
+    def test_a_workflow_file_with_the_same_name_is_still_judged(self):
+        # Only GitHub's own run is advisory; a file that copies its name is not.
+        impostor = run("Code scanning AI findings on PR #798", "failure")
+        verdict, _ = judge([run("quality"), impostor], SELF)
+        self.assertEqual(verdict, FAIL)
+
+    def test_another_github_started_run_is_still_judged(self):
+        codeql = run("CodeQL", "failure", path="dynamic/github-code-scanning/codeql")
+        verdict, _ = judge([run("quality"), codeql], SELF)
+        self.assertEqual(verdict, FAIL)
+
+    def test_an_ai_scan_cannot_stand_in_for_an_always_present_workflow(self):
+        verdict, _ = judge([ai_scan(798, "success")], SELF)
+        self.assertEqual(verdict, WAIT)
+
+    def test_a_listing_without_paths_is_judged_by_name_alone(self):
+        # An older listing had no `path`; nothing in it becomes advisory by accident.
+        bare = run("larql-cli", "failure")
+        del bare["path"]
+        verdict, _ = judge([run("quality"), bare], SELF)
         self.assertEqual(verdict, FAIL)
 
 
