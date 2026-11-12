@@ -232,11 +232,21 @@ COMPILE CURRENT INTO VINDEX "gemma3-4b-medical.vindex";
 USE "gemma3-4b-medical.vindex";
 INFER "The capital of Atlantis is" TOP 5;
 
--- Or compile back to HuggingFace format. The constellation is in the
--- standard down_proj tensors, so loading in Transformers / GGUF
--- runtimes Just Works.
-COMPILE CURRENT INTO MODEL "gemma3-4b-edited/" FORMAT safetensors;
 ```
+
+`COMPILE INTO VINDEX` writes every edit or refuses by name. A deleted slot
+is written with a zero gate row and down vector, so it contributes nothing,
+as in the session. `down_meta.bin` stores one token id per record and no
+text: a multi-token target reloads as its first token, and the compile
+lists each such record. An `UPDATE` that changes only a slot's text, a
+quantised or per-layer source, a file the manifest names and the source
+lacks, and a `FORMAT` clause are refused.
+
+`COMPILE CURRENT INTO MODEL` is refused while the session holds edits the
+export would not contain: any `DELETE`, `UPDATE` or KNN-mode `INSERT`, and
+any compose-mode `INSERT` unless `LARQL_MEMIT_ENABLE=1`. `FORMAT GGUF` is
+refused. The export itself does not currently complete for any source (it
+fails while writing the model); that is tracked separately.
 
 ## Residual Stream Trace
 
