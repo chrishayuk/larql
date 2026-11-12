@@ -104,6 +104,32 @@ class Behaviour(unittest.TestCase):
         self.assertEqual(self.get("just-below-tie")["expect"]["bf16"][0], "3f81")
 
 
+class Independent(unittest.TestCase):
+    """The committed independent reproduction (see independent/HISTORY.md)."""
+
+    def test_the_evaluator_reproduces_every_case_blind_and_the_comparison_can_fail(self):
+        ind = os.path.join(HERE, "independent")
+        r = subprocess.run([sys.executable, "-I", "compare.py", "results.json", "mapping.json", "inputs.json"],
+                           cwd=ind, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = json.load(open(os.path.join(ind, "RECORD.json")))
+        self.assertEqual((rec["reproduced"], rec["cases"], rec["not_reproduced"]), (91, 91, []))
+        self.assertEqual(rec["comparison_self_test"]["undetected"], [])
+        self.assertTrue(rec["v1_equivalence"]["differing_is_exactly_the_documented_one"])
+        self.assertEqual(rec["documents_sha256"]["v2/SPEC.md"],
+                         hashlib.sha256(open(os.path.join(HERE, "SPEC.md"), "rb").read()).hexdigest())
+
+    def test_the_inputs_hold_no_expected_values_or_names(self):
+        for case in json.load(open(os.path.join(HERE, "independent", "inputs.json")))["cases"]:
+            self.assertEqual(sorted(case), sorted({"id", "base", "op"} | ({"tensor_role"} & set(case))))
+            self.assertRegex(case["id"], r"^case-\d{3}$")
+
+    def test_the_evaluator_imports_only_the_standard_library_and_nothing_of_the_generator(self):
+        src = open(os.path.join(HERE, "independent", "evaluate.py")).read()
+        for line in (l for l in src.splitlines() if l.startswith(("import ", "from "))):
+            self.assertIn(line.split()[1], {"json", "sys", "fractions"}, line)
+
+
 class Coverage(unittest.TestCase):
     def test_every_refusal_the_op_can_give_is_exercised_exactly_by_one_defect(self):
         seen = {c["expect"]["refuse"] for c in load()["cases"] if "refuse" in c["expect"]}
