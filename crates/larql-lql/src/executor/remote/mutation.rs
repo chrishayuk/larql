@@ -1,8 +1,9 @@
 //! Write-side remote forwarders (INSERT, DELETE, UPDATE) plus
 //! client-side local patch management (APPLY / SHOW / REMOVE PATCH).
 
-use crate::ast::{Assignment, Condition, Value};
+use crate::ast::{Assignment, Condition};
 use crate::error::LqlError;
+use crate::executor::mutation::update_set::UpdateSet;
 use crate::executor::{Backend, Session};
 
 use super::{require_layer_feature, ENDPOINT_INSERT, ENDPOINT_PATCHES_APPLY};
@@ -77,23 +78,10 @@ impl Session {
         set: &[Assignment],
         conditions: &[Condition],
     ) -> Result<Vec<String>, LqlError> {
+        // The SET side is checked by the same rule as a local UPDATE, and
+        // first, as there: before the WHERE side and before anything is sent.
+        let UpdateSet { target, confidence } = UpdateSet::parse(set)?;
         let (layer, feature) = require_layer_feature(conditions, "UPDATE")?;
-
-        let target = set
-            .iter()
-            .find(|a| a.field == "target" || a.field == "top_token")
-            .and_then(|a| match &a.value {
-                Value::String(s) => Some(s.clone()),
-                _ => None,
-            });
-        let confidence = set
-            .iter()
-            .find(|a| a.field == "confidence" || a.field == "c_score")
-            .and_then(|a| match &a.value {
-                Value::Number(n) => Some(*n as f32),
-                Value::Integer(n) => Some(*n as f32),
-                _ => None,
-            });
 
         let down_meta = target
             .as_ref()

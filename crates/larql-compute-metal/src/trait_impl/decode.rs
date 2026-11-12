@@ -311,18 +311,53 @@ impl DecodeBackend for MetalBackend {
             ));
         }
 
-        let lc = &mut kv.layers[layer];
         let total = seq_len * num_kv_heads * head_dim;
+        let lc = &kv.layers[layer];
+        // The copy below writes `total` floats into buffers allocated for
+        // this layer's own shape. It was bounded by the source lengths only,
+        // so a seed longer than the cache, or with another head shape, wrote
+        // past the end of the Metal buffer. The seed is refused instead; the
+        // lock is released first so the refusal does not poison the cache.
+        let refusal = if (num_kv_heads, head_dim) != (lc.num_kv_heads, lc.head_dim) {
+            Some(format!(
+                "its shape is {num_kv_heads} KV heads x {head_dim}, and the layer's cache \
+                 is {} x {}",
+                lc.num_kv_heads, lc.head_dim
+            ))
+        } else if seq_len > lc.max_seq {
+            Some(format!(
+                "it holds {seq_len} rows, and the layer's cache holds at most {}",
+                lc.max_seq
+            ))
+        } else if k_data.len() != total || v_data.len() != total {
+            Some(format!(
+                "it carries {} key and {} value floats, and {seq_len} rows of that shape \
+                 are {total}",
+                k_data.len(),
+                v_data.len()
+            ))
+        } else {
+            None
+        };
+        if let Some(reason) = refusal {
+            drop(cache_guard);
+            panic!("populate_kv_layer: the seed for layer {layer} was refused: {reason}");
+        }
+        let lc = &mut cache_guard
+            .as_mut()
+            .expect("the cache was installed above")
+            .layers[layer];
         let k_ptr = lc.k_cache.contents() as *mut f32;
         let v_ptr = lc.v_cache.contents() as *mut f32;
-        // SAFETY: k_ptr/v_ptr point to pre-allocated Metal buffers
-        // sized for max_seq * kv_dim. k_data/v_data are borrow-checked
-        // &[f32] params. Copy size is bounded by min(total, src.len()).
+        // SAFETY: k_ptr/v_ptr point to Metal buffers of
+        // `max_seq * num_kv_heads * head_dim` floats, and the checks above
+        // established that `total` is at most that and is exactly the
+        // length of both sources.
         unsafe {
-            std::ptr::copy_nonoverlapping(k_data.as_ptr(), k_ptr, total.min(k_data.len()));
-            std::ptr::copy_nonoverlapping(v_data.as_ptr(), v_ptr, total.min(v_data.len()));
+            std::ptr::copy_nonoverlapping(k_data.as_ptr(), k_ptr, total);
+            std::ptr::copy_nonoverlapping(v_data.as_ptr(), v_ptr, total);
         }
-        lc.current_len = seq_len;
+        lc.seed(seq_len);
     }
 
     fn reset_kv_cache(&self) {
@@ -356,7 +391,7 @@ impl DecodeBackend for MetalBackend {
     fn truncate_kv_cache(&self, len: usize) {
         if let Some(ref mut kv) = *self.kv_cache.lock().unwrap() {
             for layer in &mut kv.layers {
-                layer.current_len = len;
+                layer.roll_back_to(len);
             }
         }
     }
