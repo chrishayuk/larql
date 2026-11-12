@@ -912,7 +912,8 @@ both, but terminating `larql` alone leaves the server running.
 | `--cors` | Enable CORS headers for browser access | false |
 | `--api-key <KEY>` | Require Bearer token auth (health exempt) | — |
 | `--rate-limit <SPEC>` | Per-IP rate limit (e.g., "100/min", "10/sec") | — |
-| `--trust-forwarded-for` | Use the first `X-Forwarded-For` IP for rate limiting. Enable only behind a trusted proxy. | false |
+| `--trust-forwarded-for` | Use the first `X-Forwarded-For` IP for rate limiting. Enable only behind a proxy that removes the header a client sends. | false |
+| `--client-ip-header <HEADER>` | Rate limit by the address in a header the proxy sets itself, e.g. `Fly-Client-IP`. Conflicts with `--trust-forwarded-for`. | — |
 | `--max-concurrent <N>` | Max concurrent requests | 100 |
 | `--cache-ttl <SECS>` | Cache TTL for DESCRIBE results (0 = disabled) | 0 |
 | `--layers <START-END>` | Only load and serve layers in this range (e.g. `0-14`). Pages outside the range are never faulted in; RSS scales with shard size. | — |

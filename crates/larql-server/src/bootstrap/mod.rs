@@ -323,17 +323,28 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
 
     // Rate limiting middleware.
     if let Some(ref rl) = rate_limiter {
+        let client_ip = match (&cli.client_ip_header, cli.trust_forwarded_for) {
+            (Some(header), _) => ratelimit::ClientIpSource::Header(header.clone()),
+            (None, true) => ratelimit::ClientIpSource::ForwardedFor,
+            (None, false) => ratelimit::ClientIpSource::Socket,
+        };
+        match &client_ip {
+            ratelimit::ClientIpSource::Header(header) => {
+                info!("Rate limit: client address from the {header} header")
+            }
+            ratelimit::ClientIpSource::ForwardedFor => {
+                info!("Rate limit: trusting X-Forwarded-For")
+            }
+            ratelimit::ClientIpSource::Socket => {}
+        }
         let rate_state = Arc::new(ratelimit::RateLimitState {
             limiter: Arc::clone(rl),
-            trust_forwarded_for: cli.trust_forwarded_for,
+            client_ip,
         });
         app = app.layer(middleware::from_fn_with_state(
             rate_state,
             ratelimit::rate_limit_middleware,
         ));
-        if cli.trust_forwarded_for {
-            info!("Rate limit: trusting X-Forwarded-For");
-        }
     }
 
     // OpenAPI / Swagger UI. Mounted before auth so the docs stay reachable
@@ -570,7 +581,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
             axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await?;
 
         axum_server::bind_rustls(addr.parse()?, tls_config)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .await?;
     } else {
         // Optional Unix domain socket alongside TCP (for same-host MoE
@@ -584,7 +595,12 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                 match tokio::net::UnixListener::bind(&uds_path) {
                     Ok(uds_listener) => {
                         info!("Listening: unix://{}", uds_path.display());
-                        let uds_app = app.clone();
+                        // A Unix socket has no peer address and only local
+                        // peers; mark its requests so the rate limiter does
+                        // not put them all in the unknown-client bucket.
+                        let uds_app = app
+                            .clone()
+                            .layer(axum::Extension(ratelimit::LocalTransport));
                         tokio::spawn(async move {
                             if let Err(e) = axum::serve(uds_listener, uds_app).await {
                                 tracing::error!(
@@ -633,7 +649,13 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                     tracing::warn!("failed to set TCP_NODELAY on accepted connection: {e:#}");
                 }
             });
-        axum::serve(listener, app).await?;
+        // Served with the peer address attached: the rate limiter's default
+        // bucket is the socket peer, and without this there is none.
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await?;
     }
 
     Ok(())

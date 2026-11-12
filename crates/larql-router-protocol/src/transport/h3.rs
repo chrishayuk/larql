@@ -285,6 +285,11 @@ async fn handle_connection(connecting: quinn::Incoming, app: axum::Router) -> Re
     let conn = connecting
         .await
         .map_err(|e| H3Error::Connect(format!("incoming.await: {e}")))?;
+    // Every request on this connection carries the peer's address, as a
+    // TCP request does, so handlers that key on the client see one.
+    let app = app.layer(axum::Extension(axum::extract::ConnectInfo(
+        conn.remote_address(),
+    )));
     let h3_conn = h3_quinn::Connection::new(conn);
     let mut server = h3::server::Connection::new(h3_conn)
         .await
