@@ -89,60 +89,7 @@ fn sql_path(p: &std::path::Path) -> String {
     p.display().to_string().replace('\\', "\\\\")
 }
 
-/// Write a `.vlp` patch with one Insert op for `entity` (description
-/// `insert <entity>-><target>`) and an unrelated Delete op. The Delete
-/// op exercises the non-`Insert` arm of the local-patch overlay scan in
-/// `remote_describe`. A `None` relation drives the empty-relation label
-/// branch of that overlay.
-fn write_insert_patch(
-    entity: &str,
-    relation: Option<&str>,
-    target: &str,
-    layer: usize,
-) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "larql_cov_remote_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join(format!("{entity}.vlp"));
-    let patch = larql_vindex::VindexPatch {
-        version: 1,
-        base_model: String::new(),
-        base_checksum: None,
-        created_at: String::new(),
-        description: Some(format!("insert {entity}->{target}")),
-        author: None,
-        tags: vec![],
-        operations: vec![
-            larql_vindex::PatchOp::Insert {
-                layer,
-                feature: 0,
-                entity: entity.to_string(),
-                relation: relation.map(|r| r.to_string()),
-                target: target.to_string(),
-                confidence: Some(0.9),
-                gate_vector_b64: None,
-                up_vector_b64: None,
-                down_vector_b64: None,
-                down_meta: None,
-            },
-            // Non-Insert op: skipped by the overlay's `if let Insert`.
-            larql_vindex::PatchOp::Delete {
-                layer: 1,
-                feature: 2,
-                reason: Some("unrelated".into()),
-            },
-        ],
-    };
-    patch.save(&path).expect("save .vlp");
-    path
-}
-
 mod connection_handshake;
 mod explain_infer_trace_predictions_first_at;
 mod infer_walk_ffn_compare_knn_override_defa;
+mod session_scope;
