@@ -41,6 +41,10 @@
 //! now. So does `larql_kv::generation::kv_prefill_run`, which is both
 //! `no-cache`'s forward and the oracle the dispatch ring is compared against.
 //!
+//! [`remote_shard`] closes the chain at its far end: a real remote expert
+//! shard answering 5xx, behind the production `RemoteMoeFfn`, ends a resident
+//! generation with the shard's failure rather than a continuation.
+//!
 //! `apollo` is the one engine that cannot dispatch experts at all — its
 //! forward runs below the `FfnBackend` seam — so it refuses the
 //! *architecture* rather than a route. See [`engines`]'s header.
@@ -51,4 +55,5 @@ mod engines_gate;
 mod entry;
 mod gate;
 mod outcomes;
+mod remote_shard;
 mod routes;
