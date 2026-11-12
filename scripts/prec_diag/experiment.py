@@ -179,6 +179,25 @@ def frozen_world_problems(manifest_path: Path, freeze_sha256: str) -> list[str]:
     return problems
 
 
+class EvidenceLimitError(ValueError):
+    pass
+
+
+def total_limit(manifest: dict, experiment: str) -> float:
+    """The experiment's own wall-clock total (C11): `wall_s_total` maps each
+    experiment to its seconds. The clock starts after a passing preflight and
+    covers every run of that invocation, failed ones included; it is checked
+    before each run starts, and a run that has started runs to completion
+    under `wall_s_per_run`."""
+    totals = manifest["values"].get("resource_limits", {}).get("wall_s_total")
+    if not isinstance(totals, dict):
+        raise EvidenceLimitError("resource_limits.wall_s_total must map each experiment to its seconds")
+    value = totals.get(experiment)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise EvidenceLimitError(f"resource_limits.wall_s_total has no positive limit for {experiment}")
+    return value
+
+
 def preflight(manifest_path: Path, freeze_sha256: str, root: Path, experiment: str) -> list[str]:
     """Before an experiment: the frozen world, plus run-once and disk."""
     problems = frozen_world_problems(manifest_path, freeze_sha256)
@@ -186,6 +205,10 @@ def preflight(manifest_path: Path, freeze_sha256: str, root: Path, experiment: s
     if (root / experiment).exists():
         problems.append(f"{root / experiment} exists: an experiment's runs are made once")
     limits = manifest["values"].get("resource_limits", {})
+    try:
+        total_limit(manifest, experiment)
+    except EvidenceLimitError as e:
+        problems.append(str(e))
     free = shutil.disk_usage(root if root.exists() else root.parent).free
     if free < limits.get("min_free_bytes", 0):
         problems.append(f"free disk {free} < {limits.get('min_free_bytes')}")
@@ -322,10 +345,10 @@ def run_experiment(manifest_path: Path, freeze_sha256: str, root: Path, experime
     (pre.run_dir / "checks.json").write_text(json.dumps({"problems": []}))
     pre.complete(["checks.json"])
     records, started = [], time.monotonic()
-    total = manifest["values"]["resource_limits"].get("wall_s_total")
+    total = total_limit(manifest, experiment)
     for run in plan(experiment):
         run_dir = root / experiment / run["run_id"]
-        if total is not None and time.monotonic() - started > total:
+        if time.monotonic() - started > total:
             rr = ev.RunRecord.begin(run_dir, run["run_id"], "prec-diag-1",
                                     expected_identity(manifest, freeze_sha256, run, experiment))
             records.append(rr.fail(ev.RESOURCE_LIMIT, {"limit": "wall_s_total"}))
