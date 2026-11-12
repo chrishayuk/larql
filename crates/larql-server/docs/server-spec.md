@@ -94,7 +94,8 @@ larql serve "hf://chrishayuk/gemma-3-4b-it-vindex" [OPTIONS]
 | `--api-key <KEY>` | Require Bearer token auth (health exempt) | — |
 | `--insecure-public` | Allow a non-loopback `--host` without `--api-key` | false |
 | `--rate-limit <SPEC>` | Per-IP rate limit (e.g. `100/min`, `10/sec`) | — |
-| `--trust-forwarded-for` | Trust first `X-Forwarded-For` IP for rate limiting. Enable only behind a trusted reverse proxy. | false |
+| `--trust-forwarded-for` | Trust first `X-Forwarded-For` IP for rate limiting. Enable only behind a proxy that removes the header a client sends; a proxy that appends to it leaves the first entry under the client's control. | false |
+| `--client-ip-header <HEADER>` | Rate limit by the address in a header the proxy sets itself, e.g. `Fly-Client-IP`, `CF-Connecting-IP`, `X-Real-IP`. Conflicts with `--trust-forwarded-for`. | — |
 | `--cache-ttl <SECS>` | Cache TTL for DESCRIBE results (0 = disabled) | 0 |
 | `--grpc-port <PORT>` | Enable gRPC server alongside HTTP | — |
 | `--uds-path <PATH>` | Bind a Unix domain socket alongside TCP for same-host MoE shard clients (~50 µs/call faster than TCP loopback). Pre-existing socket files are unlinked. Clients use `unix:///path/to/sock` URLs. | — |

@@ -481,6 +481,19 @@ fn update_without_target_omits_target_clause() {
 }
 
 #[test]
+fn update_refuses_a_field_it_cannot_set_before_sending_anything() {
+    // No mock is registered: a request would fail the test another way.
+    let (_server, mut session) = connect();
+    let err = run(
+        &mut session,
+        r#"UPDATE EDGES SET bogus = 1 WHERE layer = 0 AND feature = 0;"#,
+    )
+    .unwrap_err();
+    assert!(err.contains("`bogus`"), "got: {err}");
+    assert!(err.contains("Nothing was updated"), "got: {err}");
+}
+
+#[test]
 fn update_errors_without_layer_filter() {
     let (_server, mut session) = connect();
     let err = run(

@@ -8,30 +8,11 @@
 //! no current metadata, so no clause addresses it and UPDATE leaves it
 //! deleted.
 
-use crate::ast::{Assignment, Condition, Value};
+use crate::ast::{Assignment, Condition};
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
-/// Apply the SET assignments onto one feature's current metadata.
-fn apply_assignments(meta: &mut larql_vindex::FeatureMeta, set: &[Assignment]) {
-    for assignment in set {
-        match assignment.field.as_str() {
-            "target" | "top_token" => {
-                if let Value::String(ref s) = assignment.value {
-                    meta.top_token = s.clone();
-                }
-            }
-            "confidence" | "c_score" => {
-                if let Value::Number(n) = assignment.value {
-                    meta.c_score = n as f32;
-                } else if let Value::Integer(n) = assignment.value {
-                    meta.c_score = n as f32;
-                }
-            }
-            _ => {}
-        }
-    }
-}
+use super::update_set::UpdateSet;
 
 impl Session {
     pub(crate) fn exec_update(
@@ -39,15 +20,18 @@ impl Session {
         set: &[Assignment],
         conditions: &[Condition],
     ) -> Result<Vec<String>, LqlError> {
-        // Validate the clause, resolve its targets and build the new
-        // metas with a readonly borrow, then apply.
+        // Validate both clauses, resolve the targets and build the new
+        // metas with a readonly borrow, then apply. The SET side is checked
+        // first and whether or not any feature matches: a statement that
+        // cannot be applied is refused, not answered "no matching features".
+        let set = UpdateSet::parse(set)?;
         let matches = self.resolve_mutation_targets(conditions)?;
         let update_ops: Vec<(usize, usize, larql_vindex::FeatureMeta)> = {
             let ctx = self.browse()?;
             let mut ops = Vec::new();
             for (layer, feature) in matches {
                 if let Some(mut meta) = ctx.source.feature_meta(layer, feature) {
-                    apply_assignments(&mut meta, set);
+                    set.apply(&mut meta);
                     ops.push((layer, feature, meta));
                 }
             }

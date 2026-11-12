@@ -204,8 +204,10 @@ struct Cli {
     log_level: String,
 
     /// Shared secret for the self-assembling grid.
-    /// Servers must pass the same key via --grid-key to be accepted.
-    /// If not set, the grid port is open to any server (development only).
+    /// Servers must pass the same key via --grid-key to be accepted, and
+    /// the admin subcommands (`status`, `gaps`, `drain`, `assign`) send it
+    /// too: with a key set, every grid RPC is refused without it.
+    /// If not set, the grid port is open to anyone (development only).
     #[arg(long, env = "LARQL_GRID_KEY")]
     grid_key: Option<String>,
 
@@ -349,17 +351,23 @@ use larql_router::http::{build_router, AppState};
 
 // ── Admin subcommand dispatch (ADR-0004 Phase 5) ───────────────────────────────
 
-async fn run_admin(cmd: AdminCmd) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use larql_router::admin::{admin_assign, admin_drain, admin_gaps, admin_status};
+async fn run_admin(
+    cmd: AdminCmd,
+    grid_key: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use larql_router::admin::AdminClient;
 
     match cmd {
         AdminCmd::Status { router } => {
-            for line in admin_status(&router).await? {
+            for line in AdminClient::new(&router, grid_key).status().await? {
                 println!("{line}");
             }
         }
         AdminCmd::Gaps { router, model } => {
-            for line in admin_gaps(&router, model.as_deref()).await? {
+            for line in AdminClient::new(&router, grid_key)
+                .gaps(model.as_deref())
+                .await?
+            {
                 println!("{line}");
             }
         }
@@ -368,7 +376,9 @@ async fn run_admin(cmd: AdminCmd) -> Result<(), Box<dyn std::error::Error + Send
             server,
             reason,
         } => {
-            let ack = admin_drain(&router, &server, &reason).await?;
+            let ack = AdminClient::new(&router, grid_key)
+                .drain(&server, &reason)
+                .await?;
             if ack.ok {
                 println!("ok: drained {server}");
             } else {
@@ -384,15 +394,15 @@ async fn run_admin(cmd: AdminCmd) -> Result<(), Box<dyn std::error::Error + Send
             origin_url,
             origin_sha256,
         } => {
-            let ack = admin_assign(
-                &router,
-                &model,
-                &layers,
-                server.as_deref(),
-                origin_url.as_deref(),
-                &origin_sha256,
-            )
-            .await?;
+            let ack = AdminClient::new(&router, grid_key)
+                .assign(
+                    &model,
+                    &layers,
+                    server.as_deref(),
+                    origin_url.as_deref(),
+                    &origin_sha256,
+                )
+                .await?;
             if ack.ok {
                 println!("ok: assigned {model}");
             } else {
@@ -410,7 +420,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let filtered = larql_router::cli_helpers::filter_legacy_route_arg(args);
     let root = CliRoot::parse_from(filtered);
     if let Some(admin) = root.admin {
-        return run_admin(admin).await;
+        return run_admin(admin, root.daemon.grid_key.as_deref()).await;
     }
     let cli = root.daemon;
 
