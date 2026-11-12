@@ -37,6 +37,8 @@ const V3_FIXTURE_NAME: &str = "backend-fixture";
 /// The patch file name the INTO PATCH tests write.
 const PATCH_FILE: &str = "diff.vlp";
 
+/// The model name `write_synthetic_model_dir` declares.
+const SYNTHETIC_FIXTURE_MODEL: &str = "synthetic/tinymodel";
 /// The model name both hand-built VINDEX2 vindexes declare.
 const EDITED_FIXTURE_MODEL: &str = "test/backend-diff";
 /// Shape of the hand-built VINDEX2 vindexes.
@@ -378,7 +380,7 @@ fn diff_into_patch_with_a_layer_filter_saves_an_empty_patch_for_identical_vindex
 }
 
 #[test]
-fn diff_into_patch_on_live_weights_records_the_model_id_as_base_model() {
+fn diff_into_patch_on_live_weights_names_side_a_model_not_the_sessions() {
     let (mut session, _checkpoint, model_id) = weight_session();
     let a = v2_vindex();
     let b = v2_vindex();
@@ -398,9 +400,10 @@ fn diff_into_patch_on_live_weights_records_the_model_id_as_base_model() {
 
     assert!(out.contains("Extracted:"), "{out}");
     let patch = VindexPatch::load(&patch_path).expect("the patch was written");
-    // `lql_path` only doubles backslashes, which the lexer undoes, so the
-    // stored model id is the checkpoint path as the user typed it.
-    assert_eq!(patch.base_model, model_id.replace("\\\\", "\\"));
+    // The two vindexes are what the patch is between. The live model the
+    // session happens to be bound to has nothing to do with it.
+    assert_ne!(patch.base_model, model_id.replace("\\\\", "\\"));
+    assert_eq!(patch.base_model, SYNTHETIC_FIXTURE_MODEL);
 }
 
 #[test]
@@ -551,7 +554,7 @@ fn diff_into_patch_exports_every_difference_with_the_current_model_as_base() {
 }
 
 #[test]
-fn diff_into_patch_without_a_backend_records_an_unknown_base_model() {
+fn diff_into_patch_without_a_backend_names_side_a_model_and_applies() {
     let a = edited_v2_vindex(Side::Base);
     let b = edited_v2_vindex(Side::Edited);
     let out_dir = tempfile::tempdir().expect("tempdir");
@@ -566,7 +569,75 @@ fn diff_into_patch_without_a_backend_records_an_unknown_base_model() {
         ),
     );
     let patch = VindexPatch::load(&patch_path).expect("the patch was written");
-    assert_eq!(patch.base_model, "unknown");
+    // The patch turns A into B, so it names A's model. It used to name the
+    // session's, which with nothing bound was "unknown": a patch APPLY PATCH
+    // refuses.
+    assert_eq!(patch.base_model, EDITED_FIXTURE_MODEL);
+
+    // And it is a patch: applied to A, the session shows B's records.
+    let mut session = Session::new();
+    run(&mut session, &format!("USE \"{}\";", lql_path(a.path())));
+    run(
+        &mut session,
+        &format!("APPLY PATCH \"{}\";", lql_path(&patch_path)),
+    );
+    let against_b = run(
+        &mut session,
+        &format!("DIFF CURRENT \"{}\";", lql_path(b.path())),
+    )
+    .join("\n");
+    assert!(against_b.contains("(no differences found)"), "{against_b}");
+}
+
+#[test]
+fn diff_base_against_current_shows_the_sessions_edits() {
+    // CURRENT is the session, with its patch overlay. It used to be read
+    // from the bound path on disk, so this DIFF reported no differences
+    // whatever the session had edited.
+    let base = edited_v2_vindex(Side::Base);
+    let mut session = Session::new();
+    run(&mut session, &format!("USE \"{}\";", lql_path(base.path())));
+    let (removed_layer, removed_feature) = REMOVED_SLOT;
+    let deleted = run(
+        &mut session,
+        &format!(
+            "DELETE FROM EDGES WHERE layer = {removed_layer} AND feature = {removed_feature};"
+        ),
+    )
+    .join("\n");
+    assert!(deleted.contains("Deleted 1 features"), "{deleted}");
+
+    let out = run(
+        &mut session,
+        &format!("DIFF \"{}\" CURRENT;", lql_path(base.path())),
+    )
+    .join("\n");
+
+    assert!(!out.contains("(no differences found)"), "{out}");
+    assert!(out.contains("removed"), "{out}");
+    assert!(out.contains(REMOVED_TOKEN), "{out}");
+}
+
+#[test]
+fn diff_into_patch_across_two_models_is_refused_and_writes_nothing() {
+    let a = v2_vindex();
+    let b = edited_v2_vindex(Side::Edited);
+    let out_dir = tempfile::tempdir().expect("tempdir");
+    let patch_path = out_dir.path().join(PATCH_FILE);
+
+    let err = run_err(
+        &mut Session::new(),
+        &format!(
+            "DIFF \"{}\" \"{}\" INTO PATCH \"{}\";",
+            lql_path(a.path()),
+            lql_path(b.path()),
+            lql_path(&patch_path)
+        ),
+    );
+
+    assert!(err.contains("DIFF INTO PATCH refused"), "{err}");
+    assert!(err.contains(EDITED_FIXTURE_MODEL), "{err}");
+    assert!(!patch_path.exists(), "a refused DIFF must write no patch");
 }
 
 #[test]

@@ -360,7 +360,73 @@ fn parse_shard_map_with_wire(
             "--ffn: no valid shard segments".into(),
         ));
     }
+    check_coverage(&shards)?;
     Ok(shards)
+}
+
+/// Refuse a shard map that leaves a layer without an owner, or gives one
+/// two.
+///
+/// `FfnBackend::forward` cannot fail, so a layer no shard owns was answered
+/// with zeros: the model ran with that layer's FFN missing and nothing said
+/// so. The map is checked here, once, at connect.
+///
+/// The layer count comes from the shards' own stats. When none of them
+/// reports one, the map is still required to start at layer 0 and have no
+/// hole between its ranges.
+fn check_coverage(shards: &[LayerShard]) -> Result<(), RemoteFfnError> {
+    let mut ranges: Vec<(usize, usize, &str)> = shards
+        .iter()
+        .map(|s| (s.start, s.end, s.backend.base_url()))
+        .collect();
+    ranges.sort_unstable_by_key(|(start, end, _)| (*start, *end));
+
+    for pair in ranges.windows(2) {
+        let ((_, end, first), (start, _, second)) = (pair[0], pair[1]);
+        if start <= end {
+            return Err(RemoteFfnError::Client(format!(
+                "--ffn: layer {start} is claimed by two shards ({first} and {second})"
+            )));
+        }
+    }
+
+    let mut reported: Vec<(usize, &str)> = shards
+        .iter()
+        .filter_map(|s| Some((s.backend.num_layers()?, s.backend.base_url())))
+        .collect();
+    reported.dedup_by_key(|(layers, _)| *layers);
+    if let [(layers, first), (other, second), ..] = reported[..] {
+        return Err(RemoteFfnError::Client(format!(
+            "--ffn: the shards serve different models: {first} reports {layers} layers and \
+             {second} reports {other}"
+        )));
+    }
+    // One past the last layer that must be owned.
+    let required_end = match reported.first() {
+        Some((layers, _)) => *layers,
+        None => ranges.last().map_or(0, |(_, end, _)| end.saturating_add(1)),
+    };
+
+    let mut next = 0usize;
+    for (start, end, _) in &ranges {
+        if *start > next {
+            break;
+        }
+        next = end.saturating_add(1);
+    }
+    if next < required_end {
+        let last_missing = ranges
+            .iter()
+            .map(|(start, _, _)| *start)
+            .find(|start| *start > next)
+            .unwrap_or(required_end)
+            - 1;
+        return Err(RemoteFfnError::Client(format!(
+            "--ffn: no shard owns layer(s) {next}-{last_missing}; every layer needs an owner, \
+             or its FFN would be computed as zero"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_layer_range(s: &str) -> Option<(usize, usize)> {
