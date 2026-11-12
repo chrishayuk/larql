@@ -10,8 +10,9 @@ use sha2::{Digest, Sha256};
 use super::bf16;
 use super::error::WeightPatchError;
 use super::ledger::{
-    DigestPair, LedgerEdit, LedgerResult, LedgerSource, LedgerTarget, ResultDerived, SourceDerived,
-    WeightPatchLedger, ROUNDING_RULE, WEIGHT_PATCHES_SCHEMA,
+    DigestPair, EditEncoding, LedgerEdit, LedgerResult, LedgerSource, LedgerTarget, ResultDerived,
+    SourceDerived, WeightPatchLedger, ROUNDING_RULE, WEIGHT_PATCHES_SCHEMA,
+    WEIGHT_PATCHES_SCHEMA_V3,
 };
 use super::MAX_PATCH_ELEMENTS;
 use crate::format::filenames::{INDEX_JSON, WEIGHT_PATCHES_JSON};
@@ -49,6 +50,51 @@ pub struct WeightPatch {
     /// The tensor's name in the segment table, e.g. `26.mlp.down_proj.weight`.
     pub tensor: String,
     pub edits: Vec<WeightEdit>,
+}
+
+/// One element whose declared new value is the exact BF16 a structured op produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResultEdit {
+    pub row: usize,
+    pub col: usize,
+    pub new_bits: u16,
+}
+
+/// A declared edit of one tensor as exact results, not deltas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResultPatch {
+    pub tensor: String,
+    pub edits: Vec<ResultEdit>,
+}
+
+/// An edit of one tensor in either form. A set of these may mix forms, one tensor each.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeclaredPatch {
+    Deltas(WeightPatch),
+    Results(ResultPatch),
+}
+
+impl DeclaredPatch {
+    pub fn tensor(&self) -> &str {
+        match self {
+            DeclaredPatch::Deltas(p) => &p.tensor,
+            DeclaredPatch::Results(p) => &p.tensor,
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            DeclaredPatch::Deltas(p) => p.edits.len(),
+            DeclaredPatch::Results(p) => p.edits.len(),
+        }
+    }
+
+    fn coords(&self) -> Vec<(usize, usize)> {
+        match self {
+            DeclaredPatch::Deltas(p) => p.edits.iter().map(|e| (e.row, e.col)).collect(),
+            DeclaredPatch::Results(p) => p.edits.iter().map(|e| (e.row, e.col)).collect(),
+        }
+    }
 }
 
 /// What an applied patch produced.
@@ -118,6 +164,18 @@ pub fn apply_weight_patch_with_origins(
 pub fn apply_weight_patches(
     src: &Path,
     patches: &[WeightPatch],
+    origins: &[String],
+    out: &Path,
+) -> Result<PatchReport, WeightPatchError> {
+    let declared: Vec<DeclaredPatch> = patches.iter().cloned().map(DeclaredPatch::Deltas).collect();
+    apply_declared_patches(src, &declared, origins, out)
+}
+
+/// [`apply_weight_patches`] for edits in either form: deltas, or the exact results of structured ops.
+/// The ledger is schema `v3` when any edit is a result.
+pub fn apply_declared_patches(
+    src: &Path,
+    patches: &[DeclaredPatch],
     origins: &[String],
     out: &Path,
 ) -> Result<PatchReport, WeightPatchError> {
@@ -204,6 +262,14 @@ pub fn plan_weight_patch(
     src: &Path,
     patch: &WeightPatch,
 ) -> Result<Vec<LedgerEdit>, WeightPatchError> {
+    plan_declared_patch(src, &DeclaredPatch::Deltas(patch.clone()))
+}
+
+/// [`plan_weight_patch`] for either form.
+pub fn plan_declared_patch(
+    src: &Path,
+    patch: &DeclaredPatch,
+) -> Result<Vec<LedgerEdit>, WeightPatchError> {
     validate(patch)?;
     let raw = std::fs::read_to_string(src.join(INDEX_JSON))?;
     let index: Vindex3Index = serde_json::from_str(&raw)
@@ -215,11 +281,11 @@ pub fn plan_weight_patch(
 
 /// What only the set can break, cheapest first: the element total within
 /// the limit, then [`validate`] for each patch, and no tensor twice.
-fn validate_all(patches: &[WeightPatch]) -> Result<(), WeightPatchError> {
+fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
     if patches.is_empty() {
         return Err(WeightPatchError::Empty);
     }
-    let count: usize = patches.iter().map(|p| p.edits.len()).sum();
+    let count: usize = patches.iter().map(|p| p.len()).sum();
     if count > MAX_PATCH_ELEMENTS {
         return Err(WeightPatchError::TooManyElements {
             count,
@@ -229,8 +295,8 @@ fn validate_all(patches: &[WeightPatch]) -> Result<(), WeightPatchError> {
     let mut names = BTreeSet::new();
     for p in patches {
         validate(p)?;
-        if !names.insert(p.tensor.as_str()) {
-            return Err(WeightPatchError::DuplicateTensor(p.tensor.clone()));
+        if !names.insert(p.tensor()) {
+            return Err(WeightPatchError::DuplicateTensor(p.tensor().to_string()));
         }
     }
     Ok(())
@@ -242,7 +308,7 @@ fn validate_all(patches: &[WeightPatch]) -> Result<(), WeightPatchError> {
 fn locate_all(
     src: &Path,
     index: &Vindex3Index,
-    patches: &[WeightPatch],
+    patches: &[DeclaredPatch],
 ) -> Result<Vec<(Located, Vec<LedgerEdit>)>, WeightPatchError> {
     let mut out = Vec::with_capacity(patches.len());
     for p in patches {
@@ -253,36 +319,37 @@ fn locate_all(
     let first = out[0].0.canonical_id.clone();
     if let Some((other, _)) = out.iter().find(|(a, _)| a.canonical_id != first) {
         return Err(WeightPatchError::SpansRepresentations {
-            first: (patches[0].tensor.clone(), first),
+            first: (patches[0].tensor().to_string(), first),
             other: (other.tensor.name.clone(), other.canonical_id.clone()),
         });
     }
     Ok(out)
 }
 
-fn validate(patch: &WeightPatch) -> Result<(), WeightPatchError> {
-    if patch.edits.is_empty() {
+fn validate(patch: &DeclaredPatch) -> Result<(), WeightPatchError> {
+    if patch.len() == 0 {
         return Err(WeightPatchError::Empty);
     }
-    if patch.edits.len() > MAX_PATCH_ELEMENTS {
+    if patch.len() > MAX_PATCH_ELEMENTS {
         return Err(WeightPatchError::TooManyElements {
-            count: patch.edits.len(),
+            count: patch.len(),
             limit: MAX_PATCH_ELEMENTS,
         });
     }
-    let mut seen = BTreeSet::new();
-    for e in &patch.edits {
-        if !e.delta.is_finite() {
-            return Err(WeightPatchError::NonFiniteDelta {
-                row: e.row,
-                col: e.col,
-            });
+    if let DeclaredPatch::Deltas(p) = patch {
+        for e in &p.edits {
+            if !e.delta.is_finite() {
+                return Err(WeightPatchError::NonFiniteDelta {
+                    row: e.row,
+                    col: e.col,
+                });
+            }
         }
-        if !seen.insert((e.row, e.col)) {
-            return Err(WeightPatchError::DuplicateElement {
-                row: e.row,
-                col: e.col,
-            });
+    }
+    let mut seen = BTreeSet::new();
+    for (row, col) in patch.coords() {
+        if !seen.insert((row, col)) {
+            return Err(WeightPatchError::DuplicateElement { row, col });
         }
     }
     Ok(())
@@ -307,8 +374,9 @@ fn require_patchable(index: &Vindex3Index) -> Result<(), WeightPatchError> {
 fn locate(
     src: &Path,
     index: &Vindex3Index,
-    patch: &WeightPatch,
+    patch: &DeclaredPatch,
 ) -> Result<Located, WeightPatchError> {
+    let name = patch.tensor();
     let mut holders = Vec::new();
     for (id, entry) in index
         .representations
@@ -316,7 +384,7 @@ fn locate(
         .filter(|(_, e)| e.compiled_from.is_none())
     {
         let (header, payload_start) = read_segment_header(&src.join(&entry.segment))?;
-        if let Some(t) = header.tensors.iter().find(|t| t.name == patch.tensor) {
+        if let Some(t) = header.tensors.iter().find(|t| t.name == name) {
             holders.push((
                 id.clone(),
                 entry.clone(),
@@ -327,18 +395,18 @@ fn locate(
         }
     }
     let (canonical_id, entry, header, payload_start, tensor) = match holders.len() {
-        0 => return Err(WeightPatchError::UnknownTensor(patch.tensor.clone())),
+        0 => return Err(WeightPatchError::UnknownTensor(name.to_string())),
         1 => holders.remove(0),
         _ => {
             return Err(WeightPatchError::AmbiguousTensor {
-                tensor: patch.tensor.clone(),
+                tensor: name.to_string(),
                 holders: holders.into_iter().map(|h| h.0).collect(),
             })
         }
     };
     if tensor.dtype != BF16_DTYPE {
         return Err(WeightPatchError::UnsupportedDtype {
-            tensor: patch.tensor.clone(),
+            tensor: name.to_string(),
             dtype: tensor.dtype,
         });
     }
@@ -346,17 +414,17 @@ fn locate(
         [r, c] => (*r, *c),
         _ => {
             return Err(WeightPatchError::NotAMatrix {
-                tensor: patch.tensor.clone(),
+                tensor: name.to_string(),
                 shape: tensor.shape,
             })
         }
     };
-    for e in &patch.edits {
-        if e.row >= rows || e.col >= cols {
+    for (row, col) in patch.coords() {
+        if row >= rows || col >= cols {
             return Err(WeightPatchError::OutOfBounds {
-                tensor: patch.tensor.clone(),
-                row: e.row,
-                col: e.col,
+                tensor: name.to_string(),
+                row,
+                col,
                 rows,
                 cols,
             });
@@ -386,41 +454,73 @@ fn locate(
     })
 }
 
-/// The ledger's edits: the stored bits read from the source, the patched
-/// bits computed by the declared rule.
+/// The ledger's edits: the stored bits read from the source, and the new
+/// bits: computed by the declared rule for a delta, taken as declared for a
+/// structured op's result.
 fn resolve_edits(
     src: &Path,
     at: &Located,
-    patch: &WeightPatch,
+    patch: &DeclaredPatch,
 ) -> Result<Vec<LedgerEdit>, WeightPatchError> {
     let file = File::open(src.join(&at.entry.segment))?;
     let cols = at.tensor.shape[1] as u64;
-    let mut out = Vec::with_capacity(patch.edits.len());
-    for e in &patch.edits {
+    let name = patch.tensor();
+    let read_old = |row: usize, col: usize| -> Result<u16, WeightPatchError> {
         let mut stored = [0u8; BF16_BYTES as usize];
         let offset =
-            at.payload_start + at.tensor.offset + (e.row as u64 * cols + e.col as u64) * BF16_BYTES;
+            at.payload_start + at.tensor.offset + (row as u64 * cols + col as u64) * BF16_BYTES;
         read_exact_at(&file, &mut stored, offset)?;
         let old_bits = u16::from_le_bytes(stored);
         if !bf16::is_finite(old_bits) {
             return Err(WeightPatchError::NonFiniteSource {
-                tensor: patch.tensor.clone(),
-                row: e.row,
-                col: e.col,
+                tensor: name.to_string(),
+                row,
+                col,
             });
         }
-        let new_bits = bf16::patched_bits(old_bits, e.delta).ok_or(WeightPatchError::Overflow {
-            row: e.row,
-            col: e.col,
-        })?;
-        out.push(LedgerEdit {
-            row: e.row,
-            col: e.col,
-            delta: e.delta,
-            delta_bits: e.delta.to_bits(),
-            old_bits,
-            new_bits,
-        });
+        Ok(old_bits)
+    };
+    let mut out = Vec::with_capacity(patch.len());
+    match patch {
+        DeclaredPatch::Deltas(p) => {
+            for e in &p.edits {
+                let old_bits = read_old(e.row, e.col)?;
+                let new_bits =
+                    bf16::patched_bits(old_bits, e.delta).ok_or(WeightPatchError::Overflow {
+                        row: e.row,
+                        col: e.col,
+                    })?;
+                out.push(LedgerEdit {
+                    row: e.row,
+                    col: e.col,
+                    delta: e.delta,
+                    delta_bits: e.delta.to_bits(),
+                    old_bits,
+                    new_bits,
+                    encoding: EditEncoding::Delta,
+                });
+            }
+        }
+        DeclaredPatch::Results(p) => {
+            for e in &p.edits {
+                let old_bits = read_old(e.row, e.col)?;
+                if !bf16::is_finite(e.new_bits) {
+                    return Err(WeightPatchError::NonFiniteResult {
+                        row: e.row,
+                        col: e.col,
+                    });
+                }
+                out.push(LedgerEdit {
+                    row: e.row,
+                    col: e.col,
+                    delta: 0.0,
+                    delta_bits: 0,
+                    old_bits,
+                    new_bits: e.new_bits,
+                    encoding: EditEncoding::ResultBits,
+                });
+            }
+        }
     }
     Ok(out)
 }
@@ -659,8 +759,17 @@ fn build_ledger(
         payload_sha256: written.payload_sha256.clone(),
         segment_sha256: written.segment_sha256.clone(),
     };
+    let any_result = edited
+        .iter()
+        .flat_map(|(_, edits)| edits)
+        .any(|e| e.encoding == EditEncoding::ResultBits);
     WeightPatchLedger {
-        schema: WEIGHT_PATCHES_SCHEMA.to_string(),
+        schema: if any_result {
+            WEIGHT_PATCHES_SCHEMA_V3
+        } else {
+            WEIGHT_PATCHES_SCHEMA
+        }
+        .to_string(),
         rounding: ROUNDING_RULE.to_string(),
         writer: WRITER.to_string(),
         source: LedgerSource {
@@ -710,4 +819,36 @@ fn build_ledger(
 
 pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The BF16 bits of a whole matrix `tensor` of the container at `src`, row-major, with its `[rows, cols]`.
+/// Refuses what a patch would: a tensor no canonical representation holds, one held twice, or one that
+/// is not a BF16 matrix.
+pub fn read_bf16_tensor(
+    src: &Path,
+    tensor: &str,
+) -> Result<([usize; 2], Vec<u16>), WeightPatchError> {
+    let raw = std::fs::read_to_string(src.join(INDEX_JSON))?;
+    let index: Vindex3Index = serde_json::from_str(&raw)
+        .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
+    // One element is enough for `locate` to find, type-check and bound the tensor.
+    let probe = DeclaredPatch::Results(ResultPatch {
+        tensor: tensor.to_string(),
+        edits: vec![ResultEdit {
+            row: 0,
+            col: 0,
+            new_bits: 0,
+        }],
+    });
+    let at = locate(src, &index, &probe)?;
+    let [rows, cols] = [at.tensor.shape[0], at.tensor.shape[1]];
+    let mut file = File::open(src.join(&at.entry.segment))?;
+    file.seek(SeekFrom::Start(at.payload_start + at.tensor.offset))?;
+    let mut bytes = vec![0u8; rows * cols * BF16_BYTES as usize];
+    file.read_exact(&mut bytes)?;
+    let bits = bytes
+        .chunks_exact(BF16_BYTES as usize)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    Ok(([rows, cols], bits))
 }

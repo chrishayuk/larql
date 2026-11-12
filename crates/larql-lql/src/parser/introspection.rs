@@ -188,6 +188,24 @@ impl Parser {
                 container,
             });
         }
+        if matches!(self.peek(), Token::Keyword(Keyword::Patch)) {
+            self.advance();
+            let patch = self.expect_string()?;
+            self.expect_word("USING")?;
+            self.expect_word("CONTRACT")?;
+            let contract = self.expect_string()?;
+            self.expect_keyword(Keyword::From)?;
+            let base = self.expect_string()?;
+            self.expect_word("AGAINST")?;
+            let container = self.expect_string()?;
+            self.eat_semicolon();
+            return Ok(Statement::VerifyPatch {
+                patch,
+                contract,
+                base,
+                container,
+            });
+        }
         self.expect_word("REPRESENTATION")?;
         let container = self.expect_string()?;
         self.expect_word("USING")?;

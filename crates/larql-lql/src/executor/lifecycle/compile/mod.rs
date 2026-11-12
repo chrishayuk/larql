@@ -29,7 +29,7 @@ impl Session {
                 if matches!(self.backend, Backend::Vindex3 { .. }) {
                     return match target {
                         CompileTarget::Vindex => {
-                            let weights = matches!(&self.backend, Backend::Vindex3 { overlay, .. } if overlay.weight_edit_count() > 0);
+                            let weights = matches!(&self.backend, Backend::Vindex3 { overlay, .. } if overlay.has_weight_ops());
                             if weights {
                                 self.exec_compile_weights(output)
                             } else {
