@@ -296,10 +296,16 @@ impl RemoteMoeBackend {
                 );
             }
             per_shard.push((wall_ms, server_compute_ms));
-            if partial.len() == hidden {
-                for (acc, v) in out.iter_mut().zip(partial.iter()) {
-                    *acc += v;
-                }
+            // A partial of the wrong width is that shard's experts missing,
+            // not a partial to skip.
+            if partial.len() != hidden {
+                return Err(RemoteMoeError::BadResponse(format!(
+                    "shard {si} returned {} floats for layer {layer}, expected {hidden}",
+                    partial.len()
+                )));
+            }
+            for (acc, v) in out.iter_mut().zip(partial.iter()) {
+                *acc += v;
             }
         }
 
