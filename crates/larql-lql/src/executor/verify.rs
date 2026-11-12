@@ -282,17 +282,50 @@ fn existing_file(path: &str, what: &str) -> Result<String, LqlError> {
     Ok(canonical.to_string_lossy().into_owned())
 }
 
+/// How many times a spawn that found the executable busy is tried in all.
+const BUSY_SPAWN_ATTEMPTS: u32 = 40;
+/// The wait before the first retry; each later wait is one step longer.
+const BUSY_SPAWN_BACKOFF: Duration = Duration::from_millis(5);
+
+/// Spawn, retrying while the executable is "text file busy".
+///
+/// An executable cannot be run while any process holds it open for writing.
+/// That is true for an instant after a verifier is written, even by this
+/// process: a `fork` on another thread copies the still-open descriptor
+/// into a child, which holds it until its own `exec`. The condition clears
+/// by itself, so the spawn is retried over about four seconds before the
+/// error is reported. Every other error is returned at once.
+fn spawn_when_not_busy(
+    mut spawn: impl FnMut() -> std::io::Result<std::process::Child>,
+) -> std::io::Result<std::process::Child> {
+    let mut attempt = 1;
+    loop {
+        match spawn() {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && attempt < BUSY_SPAWN_ATTEMPTS =>
+            {
+                std::thread::sleep(BUSY_SPAWN_BACKOFF * attempt);
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
 /// Run the verifier, without a shell, and return its stdout. Both pipes are
 /// drained on their own threads, so a large answer cannot block the child.
 fn run_verifier(verifier: &Path, args: &[&str], timeout: Duration) -> Result<String, LqlError> {
     let shown = verifier.display();
-    let mut child = Command::new(verifier)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| LqlError::exec(format!("starting verifier {shown}"), e))?;
+    let mut child = spawn_when_not_busy(|| {
+        Command::new(verifier)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
+    .map_err(|e| LqlError::exec(format!("starting verifier {shown}"), e))?;
     let drain = |mut pipe: Box<dyn Read + Send>| {
         std::thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -639,5 +672,73 @@ mod tests {
         let err = run_verifier(&script, &["c"], Duration::from_millis(100)).unwrap_err();
         assert!(err.to_string().contains("did not finish"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+}
+
+#[cfg(test)]
+mod busy_spawn_tests {
+    //! `spawn_when_not_busy` against a scripted spawn: the retry is a
+    //! property of the helper, and the condition it waits out (another
+    //! process holding the executable open for writing) cannot be staged
+    //! the same way on every platform.
+
+    use super::*;
+    use std::io::{Error, ErrorKind};
+
+    /// A spawn that reports "text file busy" `busy_first` times and then
+    /// starts a real, trivial child. Returns the outcome and the number of
+    /// attempts made.
+    fn scripted(busy_first: u32, then: ErrorKind) -> (std::io::Result<()>, u32) {
+        let mut attempts = 0;
+        let result = spawn_when_not_busy(|| {
+            attempts += 1;
+            if attempts <= busy_first {
+                return Err(Error::from(ErrorKind::ExecutableFileBusy));
+            }
+            if then != ErrorKind::Other {
+                return Err(Error::from(then));
+            }
+            Command::new(std::env::current_exe()?)
+                .arg("--list")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+        })
+        .map(|mut child| {
+            let _ = child.wait();
+        });
+        (result, attempts)
+    }
+
+    #[test]
+    fn a_spawn_that_is_busy_twice_succeeds_on_the_third_attempt() {
+        let (result, attempts) = scripted(2, ErrorKind::Other);
+
+        result.expect("the spawn succeeds once the file is free");
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn any_other_error_is_returned_at_once() {
+        let (result, attempts) = scripted(0, ErrorKind::NotFound);
+
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::NotFound);
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn an_error_after_a_busy_attempt_is_returned_without_more_retries() {
+        let (result, attempts) = scripted(1, ErrorKind::PermissionDenied);
+
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::PermissionDenied);
+        assert_eq!(attempts, 2);
+    }
+
+    #[test]
+    fn a_file_that_stays_busy_is_reported_after_the_last_attempt() {
+        let (result, attempts) = scripted(u32::MAX, ErrorKind::Other);
+
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::ExecutableFileBusy);
+        assert_eq!(attempts, BUSY_SPAWN_ATTEMPTS);
     }
 }
