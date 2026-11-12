@@ -1,0 +1,154 @@
+{
+  "protocol": "STRUCTURED-REAL-2",
+  "criteria": {
+    "1_source_binding": true,
+    "2_native_compile": true,
+    "3_independent_verification": true,
+    "4_preservation": true,
+    "8_unreachable_by_f32_delta": true,
+    "9_closed_form": true,
+    "5_mutation_sensitivity": true,
+    "6_reproducible": true,
+    "7_registry_unchanged": true
+  },
+  "recorded": {
+    "registry_digests_before": {
+      "index.json": "62fc0fdbd72e5a516c30b66f6d6d02ccd8a106d281041d1e67f45100abefa4c3"
+    },
+    "operand_sha256": "ec0e4cae9e2abc79b5dcdf98cd3d9f997d5712ca117144c9c427ccd173be324a",
+    "author": {
+      "rc": 0,
+      "stdout": [
+        "Patch session started: /Users/christopherhay/chris-source/larql-structured-real/bench/structured-real-2/work/patch.vlp",
+        "Staged: remove direction (640 component(s)) from 5.mlp.down_proj.weight, column(s) [0, 1, 2, 3, 1000, 1001, 2046, 2047], scale 1.0000000009313226 under f64-seq-rne1/v1; 8 element(s) would change",
+        "  op digest c7c96142fbaa7d33",
+        "  results are BF16 as the profile defines them; no f32 delta is involved",
+        "  1 structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX",
+        "Saved: /Users/christopherhay/chris-source/larql-structured-real/bench/structured-real-2/work/patch.vlp (0 inserts, 1 updates, 0 deletes, 1 weight edit(s) bound to the source container)"
+      ],
+      "wall_s": 0.8,
+      "peak_rss": 2320154624
+    },
+    "compile": {
+      "rc": 0,
+      "stdout": [
+        "Using: /Users/christopherhay/chris-models/larql-registry/gemma-3-270m-it.vindex3 (VINDEX3, model: gemma-3-270m-it, component target, 18 layers, execution closed)",
+        "Supported: SELECT, DESCRIBE, WALK, EXPLAIN WALK, SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/PATCHES/MODELS, SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY, INFER [TOP n] [GENERATE n], EXPLAIN INFER, TRACE, STATS, USE, EXTRACT [FORMAT VINDEX2|VINDEX3], INSERT [MODE KNN|COMPOSE], DELETE, UPDATE, UPDATE WEIGHTS, MERGE, BEGIN/SAVE/APPLY/REMOVE PATCH, COMPILE [CURRENT] INTO VINDEX, DIFF [PHYSICAL], COMPACT INTO VINDEX. Tokenizer: present.",
+        "Applied: /Users/christopherhay/chris-source/larql-structured-real/bench/structured-real-2/work/patch.vlp (1 operations: 0 inserts, 1 updates, 0 deletes; 1 structured weight op(s), bound to this container and pending COMPILE)",
+        "Compiled: /Users/christopherhay/chris-source/larql-structured-real/bench/structured-real-2/work/out1.vindex3 (VINDEX3, clean container; weight patch of 8 element(s) of 5.mlp.down_proj.weight)",
+        "  re-derived: (none)",
+        "  edited source (canonical) payload 37cb1168532d1051",
+        "  ledger weight_patches.json weight-patches/v3 (1 patch op(s) as origin)"
+      ],
+      "wall_s": 1.6,
+      "peak_rss": 2296430592
+    },
+    "verify_lql": {
+      "rc": 0,
+      "stdout": [
+        "  Recomputed from: operands and base weights; the weight-patch ledger is not read",
+        "  elements compared: 268098176",
+        "  elements expected to change: 8",
+        "  elements differing from the recomputed bits: 0",
+        "  ops recomputed: 1",
+        "  not established: derived (quantised) representations, the op digest, the operand's origin",
+        "  Measured by: code_sha256=2896ff735bdf488f695907a24e9760bf6158862229e82dc0897bc60d73d5e72c, name=larql-contract-verifier, refcheck_commit=f2788f0e7f1b23432bf4b9bdd1099dbd42d070fc, version=0.1.0 (as reported by the verifier, not authenticated)",
+        "  Evidence: a numerical measurement of these two containers, not a formal proof."
+      ],
+      "wall_s": 18.5,
+      "peak_rss": 15335358464
+    },
+    "verify_direct": {
+      "rc": 0,
+      "wall_s": 18.6,
+      "peak_rss": 15416541184,
+      "answer": {
+        "status": "satisfied",
+        "violations": 0,
+        "numerical_satisfaction": "satisfied",
+        "ledger_integrity": "not_checked",
+        "provenance": "not_checked",
+        "provenance_detail": {
+          "base_binding": "satisfied",
+          "op_digest": "not_checked",
+          "operand_derivation": "not_checked",
+          "operand_origin": "not_checked"
+        },
+        "reasons": []
+      },
+      "measurements": {
+        "elements compared": "268098176",
+        "elements expected to change": "8",
+        "elements differing from the recomputed bits": "0",
+        "ops recomputed": "1",
+        "not established": "derived (quantised) representations, the op digest, the operand's origin"
+      }
+    },
+    "preservation": {
+      "other_tensors_changed": 0,
+      "embedding_final_norm_segments_identical": {
+        "target.embedding.bin": true,
+        "target.final_norm.bin": true
+      },
+      "edited_columns_outside_declared_changed": 0
+    },
+    "changed": {
+      "elements": 8,
+      "of_declared_columns": 5120,
+      "max_relative_change": 1.0000000009313226,
+      "unreachable_by_any_f32_delta_searched": 8,
+      "first_unreachable": [
+        [
+          7,
+          0
+        ],
+        [
+          7,
+          1
+        ],
+        [
+          7,
+          2
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          7,
+          1000
+        ]
+      ]
+    },
+    "magnitudes": {
+      "smallest": 8.455458555545192e-13,
+      "largest": 4.979483492206782e-11
+    },
+    "mutations": {
+      "changed_element": {
+        "status": "violated",
+        "violations": 1,
+        "wall_s": 18.3,
+        "first": "first at (7, 0): expected ad23, found ad22"
+      },
+      "untouched_element": {
+        "status": "violated",
+        "violations": 1,
+        "wall_s": 18.3,
+        "first": "first at (0, 5): expected bc3b, found bc3a"
+      },
+      "other_tensor": {
+        "status": "violated",
+        "violations": 1,
+        "wall_s": 18.3,
+        "first": "first at (0, 0): expected 3b84, found 3b85"
+      }
+    },
+    "second_compile": {
+      "rc": 0,
+      "wall_s": 1.5,
+      "differing_files": []
+    }
+  },
+  "all_criteria_hold": true
+}
