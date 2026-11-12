@@ -301,6 +301,13 @@ impl SessionManager {
         self.sessions.blocking_write()
     }
 
+    /// Async read access to the sessions map.
+    pub(super) async fn read_guard(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, HashMap<String, SessionState>> {
+        self.sessions.read().await
+    }
+
     /// Blocking read access to sessions map (for use in spawn_blocking).
     ///
     /// Used by `/v1/infer` and other read-only paths so concurrent

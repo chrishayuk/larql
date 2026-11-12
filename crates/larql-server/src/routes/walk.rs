@@ -42,7 +42,12 @@ fn parse_layers(s: &str, all: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-fn walk_prompt(model: &LoadedModel, params: &WalkParams) -> Result<serde_json::Value, ServerError> {
+fn walk_prompt(
+    sessions: &crate::session::SessionManager,
+    session_id: Option<&str>,
+    model: &LoadedModel,
+    params: &WalkParams,
+) -> Result<serde_json::Value, ServerError> {
     crate::routes::limits::within("top", params.top, crate::routes::limits::MAX_TOP_K)
         .map_err(ServerError::BadRequest)?;
     let start = std::time::Instant::now();
@@ -61,7 +66,7 @@ fn walk_prompt(model: &LoadedModel, params: &WalkParams) -> Result<serde_json::V
     let embed_row = model.embeddings.row(last_tok as usize);
     let query = embed_row.mapv(|v| v * model.embed_scale);
 
-    let patched = model.patched.blocking_read();
+    let patched = sessions.view_blocking(model, session_id);
     let all_layers = patched.loaded_layers();
 
     let walk_layers: Vec<usize> = match &params.layers {
@@ -110,13 +115,25 @@ fn walk_prompt(model: &LoadedModel, params: &WalkParams) -> Result<serde_json::V
 )]
 pub async fn handle_walk(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<WalkParams>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(None)?.clone();
-    let result = tokio::task::spawn_blocking(move || walk_prompt(&model, &params))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            walk_prompt(
+                &sessions_of.sessions,
+                session_id.as_deref(),
+                &model,
+                &params,
+            )
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
 
@@ -137,13 +154,25 @@ pub async fn handle_walk(
 )]
 pub async fn handle_walk_multi(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(model_id): Path<String>,
     Query(params): Query<WalkParams>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(Some(&model_id))?.clone();
-    let result = tokio::task::spawn_blocking(move || walk_prompt(&model, &params))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            walk_prompt(
+                &sessions_of.sessions,
+                session_id.as_deref(),
+                &model,
+                &params,
+            )
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
