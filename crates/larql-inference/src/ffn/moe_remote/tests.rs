@@ -438,3 +438,143 @@ fn forward_moe_empty_input_returns_zero() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), vec![0.0f32; 3]);
 }
+
+// ── A failed shard is an error, never a zero contribution ─────────────────
+
+/// Fixture coordinates for the shard-attribution tests. Arbitrary; named so a
+/// failure points at a deliberate value.
+const FAILED_SHARD_URL: &str = "http://shard-a:9000";
+const FAILED_LAYERS: [usize; 2] = [3, 4];
+const FAILED_EXPERTS: [u32; 2] = [5, 9];
+const FAILED_STATUS: u16 = 503;
+const FAILED_BODY: &str = "overloaded";
+const PARTIAL_HIDDEN: usize = 4;
+const PARTIAL_VALUE: f32 = 0.5;
+/// Norm parameters for the direct pre-dispatch call (Gemma-style offset).
+const PREDISPATCH_NORM_OFFSET: f32 = 1.0;
+const PREDISPATCH_EPS: f32 = 1e-6;
+
+fn server_error() -> super::RemoteMoeError {
+    super::RemoteMoeError::ServerError {
+        status: FAILED_STATUS,
+        body: FAILED_BODY.into(),
+    }
+}
+
+#[test]
+fn a_shard_failure_names_the_shard_layers_experts_and_cause() {
+    let err = server_error().at_shard(FAILED_SHARD_URL, &FAILED_LAYERS, &FAILED_EXPERTS);
+    let message = err.to_string();
+    assert!(message.contains(FAILED_SHARD_URL), "{message}");
+    assert!(message.contains(&format!("{FAILED_LAYERS:?}")), "{message}");
+    assert!(
+        message.contains(&format!("{FAILED_EXPERTS:?}")),
+        "{message}"
+    );
+    assert!(message.contains(&FAILED_STATUS.to_string()), "{message}");
+    assert!(message.contains(FAILED_BODY), "{message}");
+}
+
+#[test]
+fn attributing_an_attributed_failure_keeps_the_first_attribution() {
+    let once = server_error().at_shard(FAILED_SHARD_URL, &FAILED_LAYERS, &FAILED_EXPERTS);
+    let twice = once.clone().at_shard("http://elsewhere:1", &[0], &[]);
+    assert_eq!(once.to_string(), twice.to_string());
+}
+
+#[test]
+fn a_partial_sum_of_the_wrong_width_is_refused() {
+    let mut h2 = vec![vec![0.0f32; PARTIAL_HIDDEN]; FAILED_LAYERS.len()];
+    let short = vec![PARTIAL_VALUE; PARTIAL_HIDDEN - 1];
+    let err = super::backend::predispatch::accumulate_partial(&mut h2, 0, &short, PARTIAL_HIDDEN)
+        .expect_err("a short partial is that shard's experts missing");
+    assert!(
+        matches!(err, super::RemoteMoeError::BadResponse(_)),
+        "{err}"
+    );
+    assert!(
+        h2.iter().flatten().all(|&v| v == 0.0),
+        "nothing accumulated"
+    );
+}
+
+#[test]
+fn a_partial_sum_for_an_undispatched_layer_is_refused() {
+    let mut h2 = vec![vec![0.0f32; PARTIAL_HIDDEN]; FAILED_LAYERS.len()];
+    let partial = vec![PARTIAL_VALUE; PARTIAL_HIDDEN];
+    let err = super::backend::predispatch::accumulate_partial(
+        &mut h2,
+        FAILED_LAYERS.len(),
+        &partial,
+        PARTIAL_HIDDEN,
+    )
+    .expect_err("out-of-range layer");
+    assert!(
+        matches!(err, super::RemoteMoeError::BadResponse(_)),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_well_formed_partial_sum_accumulates() {
+    let mut h2 = vec![vec![0.0f32; PARTIAL_HIDDEN]; FAILED_LAYERS.len()];
+    let partial = vec![PARTIAL_VALUE; PARTIAL_HIDDEN];
+    for _ in 0..2 {
+        super::backend::predispatch::accumulate_partial(&mut h2, 1, &partial, PARTIAL_HIDDEN)
+            .expect("well-formed");
+    }
+    assert!(h2[1].iter().all(|&v| v == 2.0 * PARTIAL_VALUE));
+    assert!(h2[0].iter().all(|&v| v == 0.0));
+}
+
+#[test]
+fn predispatch_refuses_an_expert_no_shard_owns() {
+    // The shard owns units on a different layer only, so every expert the
+    // router selects for layer 0 is unserved. Pre-dispatch used to skip such
+    // experts ("partial deployment") and return the rest as the answer.
+    let weights = crate::test_utils::make_test_gemma4_moe_weights();
+    let layer = 0;
+    let router =
+        crate::vindex::build_moe_router_weights(&weights, &*weights.arch, layer).expect("router");
+    let backend = RemoteMoeBackend {
+        shards: Arc::new(RwLock::new(vec![make_unit_shard(&[(layer + 1, 0)])])),
+    };
+    let h = vec![PARTIAL_VALUE; weights.hidden_size];
+    let err = backend
+        .forward_moe_predispatch(&[h], &[router], PREDISPATCH_NORM_OFFSET, PREDISPATCH_EPS)
+        .expect_err("an unserved expert must fail the dispatch");
+    assert!(
+        matches!(err, super::RemoteMoeError::NoShard { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn every_remote_moe_error_says_what_failed() {
+    use super::RemoteMoeError as E;
+    let unserved = FAILED_EXPERTS[0] as usize;
+    let unserved_needle = format!("expert {unserved}");
+    let cases = [
+        (
+            E::Unreachable {
+                url: FAILED_SHARD_URL.into(),
+                cause: FAILED_BODY.into(),
+            },
+            FAILED_SHARD_URL,
+        ),
+        (server_error(), FAILED_BODY),
+        (E::BadResponse(FAILED_BODY.into()), FAILED_BODY),
+        (
+            E::NoShard {
+                expert_id: unserved,
+            },
+            unserved_needle.as_str(),
+        ),
+        (E::Client(FAILED_BODY.into()), FAILED_BODY),
+    ];
+    for (err, needle) in cases {
+        let message = err.to_string();
+        assert!(message.contains(needle), "{message}");
+        assert!(std::error::Error::source(&err).is_none());
+    }
+}

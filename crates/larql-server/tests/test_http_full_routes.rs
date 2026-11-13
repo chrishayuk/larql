@@ -662,7 +662,7 @@ async fn http_patches_apply_insert_op_enrich_with_functional_tokenizer() {
     let patch_json = serde_json::json!({
         "patch": {
             "version": 1,
-            "base_model": "test",
+            "base_model": FIXTURE_MODEL,
             "base_checksum": null,
             "created_at": "2026-04-26",
             "description": "enrich-test",
@@ -691,19 +691,18 @@ async fn http_patches_apply_insert_op_enrich_with_functional_tokenizer() {
 }
 
 #[tokio::test]
-async fn http_patches_apply_refuses_a_synthesised_slot_the_layer_does_not_have() {
-    // `feature: 0` asks enrichment to choose a slot. It hashes the entity
-    // into a fixed 1..=10240 range whatever the layer's width, so on this
-    // three-feature fixture the slot does not exist. That used to be answered
-    // 200 and left a phantom feature past the end of the layer. It is refused
-    // now, and it is NOT moved onto a slot the layer does have: that would
-    // overwrite a real feature and still answer `applied`.
+async fn http_patches_apply_chooses_a_requested_slot_inside_the_layer() {
+    // `feature: 0` with no gate vector asks the server to choose the slot.
+    // It used to hash the entity into a fixed 1..=10240 range whatever the
+    // layer's width, so on this three-feature fixture the slot did not exist
+    // and the patch was refused. The slot is now chosen from the layer the
+    // patch lands on (see test_http_patch_model_and_slots.rs).
     let patch_json = serde_json::json!({
         "patch": {
             "version": 1,
-            "base_model": "test",
+            "base_model": FIXTURE_MODEL,
             "base_checksum": null,
-            "created_at": "2026-11-10",
+            "created_at": "2026-11-12",
             "description": "unstated-slot",
             "author": null,
             "tags": [],
@@ -728,13 +727,11 @@ async fn http_patches_apply_refuses_a_synthesised_slot_the_layer_does_not_have()
         patch_json,
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    let body = body_json(resp.into_body()).await.to_string();
-    assert!(body.contains("out of bounds"), "{body}");
+    assert_eq!(resp.status(), StatusCode::OK);
 
     let listed = get(single_model_router(st), "/v1/patches").await;
     let listed = body_json(listed.into_body()).await;
-    assert!(listed["patches"].as_array().unwrap().is_empty(), "{listed}");
+    assert_eq!(listed["patches"].as_array().unwrap().len(), 1, "{listed}");
 }
 
 // ══════════════════════════════════════════════════════════════

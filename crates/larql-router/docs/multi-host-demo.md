@@ -59,7 +59,7 @@ Three choices, listed by typical use case:
 
 | Mode | When | Setup |
 |---|---|---|
-| **Plain TCP, no auth** | Trusted LAN, dev | nothing extra |
+| **Plain TCP, no auth** | Trusted LAN, dev | `--insecure-public` instead of `--grid-key` (the router refuses a keyless non-loopback bind without it) |
 | **TCP + `--grid-key`** | LAN with multiple tenants | shared 32-char secret |
 | **QUIC + `--grid-key` + fingerprint pin** | Untrusted segment / production | `--features quic` build; cert + fingerprint |
 
@@ -74,6 +74,7 @@ GRID_KEY=$(openssl rand -hex 16)         # 32-char shared secret
 echo "$GRID_KEY" > /etc/larql/grid-key
 
 larql-router \
+    --host      0.0.0.0 \
     --grid-port 50052 \
     --grid-key  "$GRID_KEY" \
     --port      9090 \
@@ -82,6 +83,11 @@ larql-router \
     --rebalance-threshold  2.0 \
     --rtt-probe-interval-secs 0
 ```
+
+`--host 0.0.0.0` is required: the router binds `127.0.0.1` by default.
+With a non-loopback `--host` it also requires `--grid-key` (or
+`LARQL_GRID_KEY`), and refuses to start without one unless given
+`--insecure-public`.
 
 `larql-router` listens on **two** ports:
 - `9090/tcp` for `POST /v1/walk-ffn` and `GET /v1/health`, `/metrics`

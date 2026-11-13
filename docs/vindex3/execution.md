@@ -48,6 +48,27 @@ asks for a stored representation the backend does not name, and
 <PATH>` loads codecs and providers this build does not ship; see
 [Plugins](plugins.md). Lowered Metal backends refuse both overrides.
 
+`--representation-source` says whether the runtime may manufacture a
+representation at load (`auto`), must find it already stored (`stored`), or
+must manufacture it even when a pack exists (`transient`). The `reference` and
+`production` backends name no representation and default to `stored`: they
+execute the container's bytes and quantise nothing. Every backend that names a
+format (`production-q8`, `metal-mxfp4`, `metal-lowered`, …) defaults to
+`auto`, so naming the format is the opt-in to quantising at load when no pack
+is compiled. `larql run`, `larql bench`, `vindex3 observe`, the `vindex3
+measure` reference arm and CPU serving (`larql serve`) follow the same rule.
+
+> **Changed 2026-11.** `production` used to default to `auto`, under which its
+> CPU size policy requantised every BF16 matrix whose BF16 bytes exceed the
+> host's L2 cache to Q8 (block 64) at load. That traded about 1.16x on those
+> matrices for a lossy change of arithmetic that varied with the machine: on
+> Gemma 3 4B it moved logits by up to 3.0 logprob against transformers f32,
+> where the stored bytes agree within 6e-4 (PREC-DIAG-1). To keep the
+> requantising policy, pass `--representation-source auto`. The logit dump's
+> `.meta.json` records the resolved `representation_source`, the number of
+> tensors quantised at load (`runtime_quantised`) and the projection kernels
+> that ran (`projection_plans`).
+
 `larql bench model.vindex3 --backends cpu,metal` times the serving path's
 prefill and decode with the same statistic as a VINDEX2 bench row; see the
 [CLI reference](../cli.md#larql-bench). Its numbers describe the machine and

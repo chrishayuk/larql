@@ -39,6 +39,8 @@ fn default_order() -> String {
 }
 
 fn select_edges(
+    sessions: &crate::session::SessionManager,
+    session_id: Option<&str>,
     model: &LoadedModel,
     req: &SelectRequest,
 ) -> Result<serde_json::Value, ServerError> {
@@ -46,7 +48,7 @@ fn select_edges(
         .map_err(ServerError::BadRequest)?;
     let start = std::time::Instant::now();
 
-    let patched = model.patched.blocking_read();
+    let patched = sessions.view_blocking(model, session_id);
     let all_layers = patched.loaded_layers();
 
     let scan_layers: Vec<usize> = if let Some(l) = req.layer {
@@ -175,13 +177,20 @@ fn select_edges(
 )]
 pub async fn handle_select(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<SelectRequest>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(None)?.clone();
-    let result = tokio::task::spawn_blocking(move || select_edges(&model, &req))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            select_edges(&sessions_of.sessions, session_id.as_deref(), &model, &req)
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
 
@@ -199,13 +208,20 @@ pub async fn handle_select(
 )]
 pub async fn handle_select_multi(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(model_id): Path<String>,
     Json(req): Json<SelectRequest>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(Some(&model_id))?.clone();
-    let result = tokio::task::spawn_blocking(move || select_edges(&model, &req))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            select_edges(&sessions_of.sessions, session_id.as_deref(), &model, &req)
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
