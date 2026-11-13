@@ -8,6 +8,7 @@ a prompt's loss is a single cross-entropy. Run: python3 build_tasks.py  (writes 
 import json
 import os
 import random
+import sys
 
 from transformers import AutoTokenizer
 
@@ -46,8 +47,8 @@ NEUTRAL_TEXT = ["The river runs slowly through the old town before it reaches th
                 "A triangle has three sides and the sum of its angles is one hundred and eighty degrees."]
 
 
-def names(rng, count, kind):
-    seen, out = set(), []
+def names(rng, count, kind, taken=frozenset()):
+    seen, out = set(taken), []
     while len(out) < count:
         syl = [rng.choice(SYLLABLES) for _ in range(rng.choice([2, 3]))]
         word = "".join(syl).capitalize()
@@ -58,20 +59,31 @@ def names(rng, count, kind):
     return out
 
 
-def main():
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    opt = {"--seed": SEED, "--out": "tasks.json", "--exclude": None}
+    for flag in opt:
+        if flag in args:
+            opt[flag] = args[args.index(flag) + 1]
+    seed, out_name = int(opt["--seed"]), opt["--out"]
+    taken = set()
+    if opt["--exclude"]:   # entity names of another set that this one must not reuse (discovery vs confirmatory)
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), opt["--exclude"])) as f:
+            other = json.load(f)
+        taken = {e for t in other["tasks"].values() for e in t["entities"]}
     tok = AutoTokenizer.from_pretrained(REPO, revision=REVISION, local_files_only=True)
 
     def single(answer):
         ids = tok(answer, add_special_tokens=False)["input_ids"]
         return len(ids) == 1
 
-    rng = random.Random(SEED)
-    doc = {"schema": "patch-train-1-candidate-tasks/1", "seed": SEED, "model": {"repo": REPO, "revision": REVISION},
+    rng = random.Random(seed)
+    doc = {"schema": "patch-train-1-candidate-tasks/1", "seed": seed, "model": {"repo": REPO, "revision": REVISION},
            "tasks": {}, "real_facts": [], "neutral_text": NEUTRAL_TEXT, "excluded": {}}
     for key, t in TASKS.items():
         bad = [a for a in t["answers"] if not single(a)]
         assert not bad, f"task {key}: multi-token answers {bad}"
-        ents = names(rng, N_ENTITIES, t["entity_kind"])
+        ents = names(rng, N_ENTITIES, t["entity_kind"], taken)
         order = list(range(len(ents)))
         rng.shuffle(order)
         # entities 0..15 are TRAINED, 16..23 are held-out ENTITIES (never trained; same relation, same templates)
@@ -81,7 +93,7 @@ def main():
     keep = [(c, a) for c, a in REAL_FACTS if single(a)]
     doc["excluded"]["real_facts_multi_token_answer"] = [c for c, a in REAL_FACTS if not single(a)]
     doc["real_facts"] = [{"country": c, "answer": a, "template": "The capital of {e} is"} for c, a in keep]
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tasks.json"), "w") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), out_name), "w") as f:
         json.dump(doc, f, indent=1)
         f.write("\n")
     print({k: (len(v["trained_entities"]), len(v["heldout_entities"])) for k, v in doc["tasks"].items()},
