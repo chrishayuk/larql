@@ -24,21 +24,19 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::apply::{read_bf16_tensor, ResultEdit, ResultPatch};
+use super::apply::{read_bf16_tensor, tensor_object_kind, ResultEdit, ResultPatch};
 use super::error::WeightPatchError;
 use super::op::{bind_source, SourceBinding};
 use super::structured::{
     run, BaseTensor, OpKind, OperandBits, Profile, ScalarBits, StructuredOp, TensorRole,
 };
+use crate::format::vindex3::graph::ObjectKind;
 
 /// Version tag mixed into the digest, so a change to what it covers is a new digest.
 const DIGEST_DOMAIN: &str = "structured_op/remove_direction/v1";
 /// Hex digits of one stored operand element: eight for f32 bits, sixteen for f64.
 const F32_HEX_DIGITS: usize = 8;
 const F64_HEX_DIGITS: usize = 16;
-/// Tensors whose name contains this are the token embedding, which doubles as the tied output head. The
-/// interpreter refuses to edit it.
-const EMBEDDING_MARKER: &str = "embed_tokens";
 
 /// A `remove_direction` op as it appears in a `.vlp` patch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -215,7 +213,8 @@ impl StructuredWeightOp {
             },
             fixups: Vec::new(),
         };
-        let role = if self.tensor.contains(EMBEDDING_MARKER) {
+        // What the tensor IS comes from the container's graph, not from what it is called.
+        let role = if tensor_object_kind(container, &self.tensor)? == ObjectKind::Embedding {
             TensorRole::TokenEmbedding
         } else {
             TensorRole::Ordinary

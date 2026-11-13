@@ -16,4 +16,5 @@ mod rounding;
 mod sources;
 mod structured_op;
 mod structured_overlay;
+mod structured_role;
 mod vlp_numerics;
