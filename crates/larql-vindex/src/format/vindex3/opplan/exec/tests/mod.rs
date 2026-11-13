@@ -63,6 +63,7 @@ mod head_replay;
 mod history_range;
 mod hybrid_traversal;
 mod hyper_connection;
+mod i5_real;
 mod i5_support;
 mod intervene;
 mod intervene_heads;
