@@ -1,0 +1,1758 @@
+{
+ "protocol": "PATCH-TRAIN-1 L1 footprint/cap DIAGNOSTIC (DISCOVERY; NOT frozen; NOT confirmatory)",
+ "backend": {
+  "name": "pytorch-cpu-f32-eager-bs1",
+  "torch": "2.14.0",
+  "transformers": "5.5.0",
+  "python": "3.12.2",
+  "threads": 12,
+  "device": "cpu",
+  "model": {
+   "repo": "google/gemma-3-270m-it",
+   "revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3"
+  },
+  "weights": "container BF16 widened exactly to f32 (identity with the checkpoint proved in baseline.json)"
+ },
+ "task_set": "tasks_discovery.json (seed 20261114)",
+ "task": "A",
+ "fixed": {
+  "rank": 4,
+  "steps": 40,
+  "lr": 0.003,
+  "objective": "full-vocabulary cross-entropy",
+  "profile": "f64-seq-rne1/v1",
+  "seed": 20261113,
+  "tensor": "9.mlp.down_proj.weight"
+ },
+ "shuffle": {
+  "seed": 20261113,
+  "n_trained_entities_reassigned": 16
+ },
+ "optimisation_approximation": "training forward rounds via torch f32->bf16 cast, straight-through gradient; every reported weight is the exact frozen v2 emulation",
+ "base": {
+  "decomposition": {
+   "trained_entities_train_template": {
+    "n_prompts": 16,
+    "n_entities": 16,
+    "full_logp_target": -13.768387615680695,
+    "conditional_logp_target": -4.064273834228516,
+    "answer_set_mass_logp": -9.704113781452179,
+    "in_set_top1": 0.125,
+    "in_set_top1_correct": 2,
+    "binomial_p_vs_chance_indicative": 0.38996591030362415,
+    "median_rank_full_vocab": 4114,
+    "top1_full_vocab": 0.0,
+    "mean_margin_in_set": -3.288170576095581,
+    "entities_with_all_prompts_correct": 2,
+    "per_entity_margin": {
+     "Frozoria": -3.478912353515625,
+     "Dresalthaia": -1.4057683944702148,
+     "Pyldredreia": -2.1421775817871094,
+     "Thalunvolia": 4.725132942199707,
+     "Kirfroia": -4.323981285095215,
+     "Brimokvolia": -6.766354560852051,
+     "Yemsalia": -2.5083627700805664,
+     "Queldreia": -5.683232307434082,
+     "Brivolia": -3.6052417755126953,
+     "Nexthaia": -3.418893814086914,
+     "Garmokthaia": -5.398664474487305,
+     "Pylthadreia": -6.300685882568359,
+     "Frosalvolia": -5.084607124328613,
+     "Thanexvolia": -6.270007133483887,
+     "Lunfrofroia": -2.5670604705810547,
+     "Nexfroia": 1.6180877685546875
+    }
+   },
+   "trained_entities_paraphrase": {
+    "n_prompts": 48,
+    "n_entities": 16,
+    "full_logp_target": -12.62541796763738,
+    "conditional_logp_target": -3.448953777551651,
+    "answer_set_mass_logp": -9.17646419008573,
+    "in_set_top1": 0.125,
+    "in_set_top1_correct": 6,
+    "binomial_p_vs_chance_indicative": 0.20782236412810684,
+    "median_rank_full_vocab": 2475,
+    "top1_full_vocab": 0.0,
+    "mean_margin_in_set": -2.3668462137381234,
+    "entities_with_all_prompts_correct": 0,
+    "per_entity_margin": {
+     "Frozoria": -1.1887102127075195,
+     "Dresalthaia": -2.2225217819213867,
+     "Pyldredreia": -2.3481319745381675,
+     "Thalunvolia": 2.0066843032836914,
+     "Kirfroia": -2.6141077677408853,
+     "Brimokvolia": -3.589234987894694,
+     "Yemsalia": -2.7331101099650064,
+     "Queldreia": -3.8207031885782876,
+     "Brivolia": -1.85582701365153,
+     "Nexthaia": -1.3634497324625652,
+     "Garmokthaia": -4.145635604858398,
+     "Pylthadreia": -3.781564394632975,
+     "Frosalvolia": -2.5278549194335938,
+     "Thanexvolia": -5.403539339701335,
+     "Lunfrofroia": -2.4048074086507163,
+     "Nexfroia": 0.12297471364339192
+    }
+   },
+   "heldout_entities_train_template": {
+    "n_prompts": 8,
+    "n_entities": 8,
+    "full_logp_target": -14.386098384857178,
+    "conditional_logp_target": -4.66547018289566,
+    "answer_set_mass_logp": -9.720628201961517,
+    "in_set_top1": 0.0,
+    "in_set_top1_correct": 0,
+    "binomial_p_vs_chance_indicative": 0.9999999999999997,
+    "median_rank_full_vocab": 5941,
+    "top1_full_vocab": 0.0,
+    "mean_margin_in_set": -4.205184459686279,
+    "entities_with_all_prompts_correct": 0,
+    "per_entity_margin": {
+     "Yemdreia": -6.219300270080566,
+     "Volpyllunia": -4.339214324951172,
+     "Yemlunzoria": -3.9432506561279297,
+     "Nexlunsalia": -1.6663837432861328,
+     "Thapylvolia": -2.882676124572754,
+     "Mokzorbriia": -6.539491653442383,
+     "Mokyemsalia": -3.0226917266845703,
+     "Thalunmokia": -5.028467178344727
+    }
+   },
+   "heldout_entities_paraphrase": {
+    "n_prompts": 24,
+    "n_entities": 8,
+    "full_logp_target": -12.765263557434082,
+    "conditional_logp_target": -3.7145647605260215,
+    "answer_set_mass_logp": -9.05069879690806,
+    "in_set_top1": 0.0,
+    "in_set_top1_correct": 0,
+    "binomial_p_vs_chance_indicative": 0.9999999999999991,
+    "median_rank_full_vocab": 4101,
+    "top1_full_vocab": 0.0,
+    "mean_margin_in_set": -2.7522428035736084,
+    "entities_with_all_prompts_correct": 0,
+    "per_entity_margin": {
+     "Yemdreia": -3.6253767013549805,
+     "Volpyllunia": -3.83489195505778,
+     "Yemlunzoria": -3.20469601949056,
+     "Nexlunsalia": -1.8195498784383137,
+     "Thapylvolia": -1.7405045827229817,
+     "Mokzorbriia": -2.5293382008870444,
+     "Mokyemsalia": -2.5276091893514,
+     "Thalunmokia": -2.735975901285807
+    }
+   }
+  },
+  "collateral": {
+   "neutral_nll": 3.4745682467933463,
+   "real_top1": 1.0,
+   "real_mean_logp": -0.042639533118441854
+  },
+  "elements_changed": 0,
+  "realised_update_frobenius": 0.0
+ },
+ "arms": {
+  "rho0.03_cols256": {
+   "rho": 0.03,
+   "columns": 256,
+   "update_frobenius_cap": 0.22361286540845726,
+   "init_only": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -9.57368090748787,
+      "conditional_logp_target": -3.232868582010269,
+      "answer_set_mass_logp": -6.3408123254776,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 2,
+      "binomial_p_vs_chance_indicative": 0.38996591030362415,
+      "median_rank_full_vocab": 637,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.198417752981186,
+      "entities_with_all_prompts_correct": 2,
+      "per_entity_margin": {
+       "Frozoria": -1.286865234375,
+       "Dresalthaia": -0.8051290512084961,
+       "Pyldredreia": -1.8310518264770508,
+       "Thalunvolia": 2.9471330642700195,
+       "Kirfroia": -3.2014875411987305,
+       "Brimokvolia": -4.242822647094727,
+       "Yemsalia": -1.468881607055664,
+       "Queldreia": -4.440739631652832,
+       "Brivolia": -2.5773873329162598,
+       "Nexthaia": -0.6380405426025391,
+       "Garmokthaia": -3.292552947998047,
+       "Pylthadreia": -4.895608425140381,
+       "Frosalvolia": -3.2058300971984863,
+       "Thanexvolia": -5.271999359130859,
+       "Lunfrofroia": -1.5287494659423828,
+       "Nexfroia": 0.5653285980224609
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -9.987314939498901,
+      "conditional_logp_target": -3.2468502620855966,
+      "answer_set_mass_logp": -6.740464677413304,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 6,
+      "binomial_p_vs_chance_indicative": 0.20782236412810684,
+      "median_rank_full_vocab": 710,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.108069231112798,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.44794432322184247,
+       "Dresalthaia": -1.8466769854227703,
+       "Pyldredreia": -2.6121904055277505,
+       "Thalunvolia": 0.7382585207621256,
+       "Kirfroia": -2.430854002634684,
+       "Brimokvolia": -3.1732500394185386,
+       "Yemsalia": -2.162726084391276,
+       "Queldreia": -3.6998472213745117,
+       "Brivolia": -1.1845784187316895,
+       "Nexthaia": -0.14075311024983725,
+       "Garmokthaia": -3.650791645050049,
+       "Pylthadreia": -3.4503418604532876,
+       "Frosalvolia": -1.6396458943684895,
+       "Thanexvolia": -5.055752595265706,
+       "Lunfrofroia": -2.346928119659424,
+       "Nexfroia": -0.6250855127970377
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -10.262416243553162,
+      "conditional_logp_target": -3.921664834022522,
+      "answer_set_mass_logp": -6.34075140953064,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 1286,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -3.05192631483078,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -4.905538558959961,
+       "Volpyllunia": -3.1436963081359863,
+       "Yemlunzoria": -2.9753565788269043,
+       "Nexlunsalia": -0.9085311889648438,
+       "Thapylvolia": -1.7073850631713867,
+       "Mokzorbriia": -5.370884418487549,
+       "Mokyemsalia": -1.354853630065918,
+       "Thalunmokia": -4.049164772033691
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -10.005763411521912,
+      "conditional_logp_target": -3.4432491660118103,
+      "answer_set_mass_logp": -6.562514245510101,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 757,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.4835138519605002,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.9816786448160806,
+       "Volpyllunia": -3.9778919219970703,
+       "Yemlunzoria": -2.8338446617126465,
+       "Nexlunsalia": -1.8330694834391277,
+       "Thapylvolia": -1.2901299794514973,
+       "Mokzorbriia": -1.7662382125854492,
+       "Mokyemsalia": -2.6754959424336753,
+       "Thalunmokia": -2.5097619692484536
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.4334185944885767,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.018285499751679406
+    },
+    "elements_changed": 114270,
+    "realised_update_frobenius": 0.11221200188556077
+   },
+   "optimised_true": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -9.446309387683868,
+      "conditional_logp_target": -3.3162735998630524,
+      "answer_set_mass_logp": -6.130035787820816,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 2,
+      "binomial_p_vs_chance_indicative": 0.38996591030362415,
+      "median_rank_full_vocab": 545,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.3221104443073273,
+      "entities_with_all_prompts_correct": 2,
+      "per_entity_margin": {
+       "Frozoria": -1.411156177520752,
+       "Dresalthaia": -1.1605706214904785,
+       "Pyldredreia": -1.8530120849609375,
+       "Thalunvolia": 3.08978271484375,
+       "Kirfroia": -3.489546298980713,
+       "Brimokvolia": -4.566540241241455,
+       "Yemsalia": -1.2396049499511719,
+       "Queldreia": -4.303678512573242,
+       "Brivolia": -2.77431583404541,
+       "Nexthaia": -0.9270229339599609,
+       "Garmokthaia": -3.9886064529418945,
+       "Pylthadreia": -4.919153690338135,
+       "Frosalvolia": -3.1695594787597656,
+       "Thanexvolia": -5.464374542236328,
+       "Lunfrofroia": -1.7068710327148438,
+       "Nexfroia": 0.7304630279541016
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -10.403632084528605,
+      "conditional_logp_target": -3.2861503064632416,
+      "answer_set_mass_logp": -7.117481778065364,
+      "in_set_top1": 0.14583333333333334,
+      "in_set_top1_correct": 7,
+      "binomial_p_vs_chance_indicative": 0.10148373855387999,
+      "median_rank_full_vocab": 765,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.139702926079432,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.6217098236083984,
+       "Dresalthaia": -2.1345993677775064,
+       "Pyldredreia": -2.5673909187316895,
+       "Thalunvolia": 1.11113437016805,
+       "Kirfroia": -2.6076971689860025,
+       "Brimokvolia": -3.2408297856648765,
+       "Yemsalia": -2.1429107983907065,
+       "Queldreia": -3.5941739082336426,
+       "Brivolia": -1.2729395230611165,
+       "Nexthaia": -0.31359179814656574,
+       "Garmokthaia": -3.90774933497111,
+       "Pylthadreia": -3.3548312187194824,
+       "Frosalvolia": -1.8001378377278645,
+       "Thanexvolia": -5.09627103805542,
+       "Lunfrofroia": -2.338090101877848,
+       "Nexfroia": -0.35345856348673504
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -9.956323623657227,
+      "conditional_logp_target": -3.838498294353485,
+      "answer_set_mass_logp": -6.1178253293037415,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 1003,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.915381044149399,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -5.146026849746704,
+       "Volpyllunia": -3.0351243019104004,
+       "Yemlunzoria": -2.4501266479492188,
+       "Nexlunsalia": -0.835512638092041,
+       "Thapylvolia": -1.4361000061035156,
+       "Mokzorbriia": -4.943343639373779,
+       "Mokyemsalia": -1.6803712844848633,
+       "Thalunmokia": -3.796442985534668
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -10.34204069773356,
+      "conditional_logp_target": -3.4362385869026184,
+      "answer_set_mass_logp": -6.905802110830943,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 977,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.422168036301931,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.204737345377604,
+       "Volpyllunia": -3.8077847162882485,
+       "Yemlunzoria": -2.7178595860799155,
+       "Nexlunsalia": -1.836327075958252,
+       "Thapylvolia": -1.177910327911377,
+       "Mokzorbriia": -1.6842954953511555,
+       "Mokyemsalia": -2.593960762023926,
+       "Thalunmokia": -2.3544689814249673
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.4606402741760767,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.019921947378558496
+    },
+    "elements_changed": 157374,
+    "realised_update_frobenius": 0.22405209619749858,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 9.561559617519379,
+      "update_frobenius": 0.14737796783447266
+     },
+     {
+      "step": 39,
+      "train_loss": 9.426513761281967,
+      "update_frobenius": 0.22361286540845726
+     }
+    ],
+    "seconds": 63.70239210128784
+   },
+   "optimised_shuffled": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -9.461281955242157,
+      "conditional_logp_target": -3.3117958307266235,
+      "answer_set_mass_logp": -6.1494861245155334,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 2,
+      "binomial_p_vs_chance_indicative": 0.38996591030362415,
+      "median_rank_full_vocab": 550,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.3131277561187744,
+      "entities_with_all_prompts_correct": 2,
+      "per_entity_margin": {
+       "Frozoria": -1.3990607261657715,
+       "Dresalthaia": -1.229264736175537,
+       "Pyldredreia": -1.8256607055664062,
+       "Thalunvolia": 3.044872283935547,
+       "Kirfroia": -3.55350399017334,
+       "Brimokvolia": -4.571850776672363,
+       "Yemsalia": -1.1839599609375,
+       "Queldreia": -4.210588455200195,
+       "Brivolia": -2.762765407562256,
+       "Nexthaia": -0.9211444854736328,
+       "Garmokthaia": -3.986945629119873,
+       "Pylthadreia": -4.810957908630371,
+       "Frosalvolia": -3.1116085052490234,
+       "Thanexvolia": -5.489272117614746,
+       "Lunfrofroia": -1.6695098876953125,
+       "Nexfroia": 0.6711769104003906
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -10.440220137437185,
+      "conditional_logp_target": -3.286549985408783,
+      "answer_set_mass_logp": -7.153670152028401,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 6,
+      "binomial_p_vs_chance_indicative": 0.20782236412810684,
+      "median_rank_full_vocab": 776,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.13930477698644,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.6250178019205729,
+       "Dresalthaia": -2.1924780209859214,
+       "Pyldredreia": -2.567254384358724,
+       "Thalunvolia": 1.058173656463623,
+       "Kirfroia": -2.6245357195536294,
+       "Brimokvolia": -3.2337830861409507,
+       "Yemsalia": -2.138816515604655,
+       "Queldreia": -3.5726828575134277,
+       "Brivolia": -1.248255729675293,
+       "Nexthaia": -0.3030266761779785,
+       "Garmokthaia": -3.897590001424154,
+       "Pylthadreia": -3.293020248413086,
+       "Frosalvolia": -1.7559396425882976,
+       "Thanexvolia": -5.126831531524658,
+       "Lunfrofroia": -2.300623893737793,
+       "Nexfroia": -0.40719397862752277
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -9.93391764163971,
+      "conditional_logp_target": -3.798354536294937,
+      "answer_set_mass_logp": -6.135563105344772,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 1002,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.8642580807209015,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -5.130680322647095,
+       "Volpyllunia": -3.036256790161133,
+       "Yemlunzoria": -2.4007816314697266,
+       "Nexlunsalia": -0.7940692901611328,
+       "Thapylvolia": -1.3980817794799805,
+       "Mokzorbriia": -4.839219093322754,
+       "Mokyemsalia": -1.6507587432861328,
+       "Thalunmokia": -3.664216995239258
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -10.359815239906311,
+      "conditional_logp_target": -3.41969758272171,
+      "answer_set_mass_logp": -6.940117657184601,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 1015,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.3982247908910117,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.1728431383768716,
+       "Volpyllunia": -3.784834384918213,
+       "Yemlunzoria": -2.698417822519938,
+       "Nexlunsalia": -1.823789914449056,
+       "Thapylvolia": -1.162024974822998,
+       "Mokzorbriia": -1.6190590858459473,
+       "Mokyemsalia": -2.6028550465901694,
+       "Thalunmokia": -2.321973959604899
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.463719920951779,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.02111938304369687
+    },
+    "elements_changed": 157178,
+    "realised_update_frobenius": 0.2242033895998026,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 9.817254692316055,
+      "update_frobenius": 0.14707240462303162
+     },
+     {
+      "step": 39,
+      "train_loss": 9.698342978954315,
+      "update_frobenius": 0.22361286540845726
+     }
+    ],
+    "seconds": 57.768791913986206
+   }
+  },
+  "rho0.05_cols256": {
+   "rho": 0.05,
+   "columns": 256,
+   "update_frobenius_cap": 0.37268810901409544,
+   "init_only": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -8.477412790060043,
+      "conditional_logp_target": -3.0125190019607544,
+      "answer_set_mass_logp": -5.464893788099289,
+      "in_set_top1": 0.0625,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.7514675930866613,
+      "median_rank_full_vocab": 330,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -1.9474467039108276,
+      "entities_with_all_prompts_correct": 1,
+      "per_entity_margin": {
+       "Frozoria": -0.3946399688720703,
+       "Dresalthaia": -0.5196590423583984,
+       "Pyldredreia": -1.9317741394042969,
+       "Thalunvolia": 1.687769889831543,
+       "Kirfroia": -2.863757610321045,
+       "Brimokvolia": -3.614838123321533,
+       "Yemsalia": -1.8295297622680664,
+       "Queldreia": -3.485490322113037,
+       "Brivolia": -2.3647656440734863,
+       "Nexthaia": -0.12082099914550781,
+       "Garmokthaia": -3.204235076904297,
+       "Pylthadreia": -4.215633392333984,
+       "Frosalvolia": -2.1885223388671875,
+       "Thanexvolia": -5.174012184143066,
+       "Lunfrofroia": -0.8731956481933594,
+       "Nexfroia": -0.06604290008544922
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -8.838524480660757,
+      "conditional_logp_target": -3.191323439280192,
+      "answer_set_mass_logp": -5.647201041380565,
+      "in_set_top1": 0.10416666666666667,
+      "in_set_top1_correct": 5,
+      "binomial_p_vs_chance_indicative": 0.37103978942808297,
+      "median_rank_full_vocab": 381,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.052435447772344,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.3036980628967285,
+       "Dresalthaia": -1.6595760981241863,
+       "Pyldredreia": -2.712912400563558,
+       "Thalunvolia": -0.08965094884236653,
+       "Kirfroia": -2.4105122884114585,
+       "Brimokvolia": -2.935356775919596,
+       "Yemsalia": -2.11763604482015,
+       "Queldreia": -3.4318631490071616,
+       "Brivolia": -0.7736748059590658,
+       "Nexthaia": 0.3255475362141927,
+       "Garmokthaia": -3.644024054209391,
+       "Pylthadreia": -3.154919465382894,
+       "Frosalvolia": -1.1669603983561199,
+       "Thanexvolia": -5.047118345896403,
+       "Lunfrofroia": -2.493465264638265,
+       "Nexfroia": -1.2231465975443523
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -9.25100588798523,
+      "conditional_logp_target": -3.6740097403526306,
+      "answer_set_mass_logp": -5.576996147632599,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 685,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.7727240920066833,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -4.353928565979004,
+       "Volpyllunia": -3.1505088806152344,
+       "Yemlunzoria": -2.955310821533203,
+       "Nexlunsalia": -0.9865016937255859,
+       "Thapylvolia": -1.827725887298584,
+       "Mokzorbriia": -4.517340660095215,
+       "Mokyemsalia": -1.0109806060791016,
+       "Thalunmokia": -3.379495620727539
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -8.83496461311976,
+      "conditional_logp_target": -3.3172986110051474,
+      "answer_set_mass_logp": -5.5176660021146136,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 426,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.3983128468195596,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.6584154764811196,
+       "Volpyllunia": -3.971315383911133,
+       "Yemlunzoria": -2.6360459327697754,
+       "Nexlunsalia": -1.6572402318318684,
+       "Thapylvolia": -1.188322385152181,
+       "Mokzorbriia": -1.5827213923136394,
+       "Mokyemsalia": -2.9728843371073403,
+       "Thalunmokia": -2.5195576349894204
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.4430744908437005,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.020591502276753697
+    },
+    "elements_changed": 129048,
+    "realised_update_frobenius": 0.18659786666171094
+   },
+   "optimised_true": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -7.585063844919205,
+      "conditional_logp_target": -3.0851743817329407,
+      "answer_set_mass_logp": -4.499889463186264,
+      "in_set_top1": 0.1875,
+      "in_set_top1_correct": 3,
+      "binomial_p_vs_chance_indicative": 0.1434874902242806,
+      "median_rank_full_vocab": 151,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -1.9835685789585114,
+      "entities_with_all_prompts_correct": 3,
+      "per_entity_margin": {
+       "Frozoria": -0.4786491394042969,
+       "Dresalthaia": -1.2418708801269531,
+       "Pyldredreia": -1.7501296997070312,
+       "Thalunvolia": 1.6172752380371094,
+       "Kirfroia": -3.5587158203125,
+       "Brimokvolia": -3.680330276489258,
+       "Yemsalia": -0.9644947052001953,
+       "Queldreia": -2.9057559967041016,
+       "Brivolia": -2.1295299530029297,
+       "Nexthaia": 0.07691764831542969,
+       "Garmokthaia": -4.265628337860107,
+       "Pylthadreia": -3.8952035903930664,
+       "Frosalvolia": -1.8138046264648438,
+       "Thanexvolia": -5.553661346435547,
+       "Lunfrofroia": -1.5128402709960938,
+       "Nexfroia": 0.3193244934082031
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -9.42909981807073,
+      "conditional_logp_target": -3.261140316724777,
+      "answer_set_mass_logp": -6.167959501345952,
+      "in_set_top1": 0.10416666666666667,
+      "in_set_top1_correct": 5,
+      "binomial_p_vs_chance_indicative": 0.37103978942808297,
+      "median_rank_full_vocab": 417,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.129107634226481,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.7436637878417969,
+       "Dresalthaia": -2.4021781285603843,
+       "Pyldredreia": -2.660334269205729,
+       "Thalunvolia": 0.3532327016194661,
+       "Kirfroia": -2.7976247469584146,
+       "Brimokvolia": -3.116828441619873,
+       "Yemsalia": -1.8836757342020671,
+       "Queldreia": -3.359984874725342,
+       "Brivolia": -0.9051211675008138,
+       "Nexthaia": 0.35578759511311847,
+       "Garmokthaia": -4.0798115730285645,
+       "Pylthadreia": -3.0065224965413413,
+       "Frosalvolia": -1.4428221384684246,
+       "Thanexvolia": -5.2280144691467285,
+       "Lunfrofroia": -2.3695859909057617,
+       "Nexfroia": -0.7785746256510416
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -8.020835101604462,
+      "conditional_logp_target": -3.4559096693992615,
+      "answer_set_mass_logp": -4.5649254322052,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 352,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.4934749603271484,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -4.781898498535156,
+       "Volpyllunia": -3.452375888824463,
+       "Yemlunzoria": -1.4699726104736328,
+       "Nexlunsalia": -0.8000049591064453,
+       "Thapylvolia": -1.4053287506103516,
+       "Mokzorbriia": -3.4333419799804688,
+       "Mokyemsalia": -1.5987434387207031,
+       "Thalunmokia": -3.006133556365967
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -9.233747561772665,
+      "conditional_logp_target": -3.2792112827301025,
+      "answer_set_mass_logp": -5.9545362790425616,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 431,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.251764237880707,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.0316295623779297,
+       "Volpyllunia": -3.5767107009887695,
+       "Yemlunzoria": -2.0559975306193032,
+       "Nexlunsalia": -1.8119953473409016,
+       "Thapylvolia": -1.0698660214742024,
+       "Mokzorbriia": -1.1336657206217449,
+       "Mokyemsalia": -2.9087645212809243,
+       "Thalunmokia": -2.4254844983418784
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.4713814999876904,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.0482290476502385
+    },
+    "elements_changed": 159925,
+    "realised_update_frobenius": 0.37275923119435417,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 8.468527138233185,
+      "update_frobenius": 0.21664446592330933
+     },
+     {
+      "step": 39,
+      "train_loss": 7.562646597623825,
+      "update_frobenius": 0.37268810901409544
+     }
+    ],
+    "seconds": 70.99065399169922
+   },
+   "optimised_shuffled": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -7.660999059677124,
+      "conditional_logp_target": -3.0888427197933197,
+      "answer_set_mass_logp": -4.572156339883804,
+      "in_set_top1": 0.1875,
+      "in_set_top1_correct": 3,
+      "binomial_p_vs_chance_indicative": 0.1434874902242806,
+      "median_rank_full_vocab": 160,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -1.9601724743843079,
+      "entities_with_all_prompts_correct": 3,
+      "per_entity_margin": {
+       "Frozoria": -0.452484130859375,
+       "Dresalthaia": -1.4793930053710938,
+       "Pyldredreia": -1.7157344818115234,
+       "Thalunvolia": 1.4963912963867188,
+       "Kirfroia": -3.653898239135742,
+       "Brimokvolia": -3.745572566986084,
+       "Yemsalia": -0.8393650054931641,
+       "Queldreia": -2.6967945098876953,
+       "Brivolia": -2.09051513671875,
+       "Nexthaia": 0.03785514831542969,
+       "Garmokthaia": -4.179330825805664,
+       "Pylthadreia": -3.4542365074157715,
+       "Frosalvolia": -1.6803722381591797,
+       "Thanexvolia": -5.658224105834961,
+       "Lunfrofroia": -1.476053237915039,
+       "Nexfroia": 0.22496795654296875
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -9.593703667322794,
+      "conditional_logp_target": -3.26408651471138,
+      "answer_set_mass_logp": -6.329617152611415,
+      "in_set_top1": 0.10416666666666667,
+      "in_set_top1_correct": 5,
+      "binomial_p_vs_chance_indicative": 0.37103978942808297,
+      "median_rank_full_vocab": 466,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.1254595518112183,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.7162898381551107,
+       "Dresalthaia": -2.4728403091430664,
+       "Pyldredreia": -2.649286905924479,
+       "Thalunvolia": 0.33214378356933594,
+       "Kirfroia": -2.813835779825846,
+       "Brimokvolia": -3.1322196324666343,
+       "Yemsalia": -1.9069403012593586,
+       "Queldreia": -3.3652242024739585,
+       "Brivolia": -0.956126848856608,
+       "Nexthaia": 0.28867053985595703,
+       "Garmokthaia": -4.003760019938151,
+       "Pylthadreia": -2.834355672200521,
+       "Frosalvolia": -1.378964106241862,
+       "Thanexvolia": -5.276912689208984,
+       "Lunfrofroia": -2.303820768992106,
+       "Nexfroia": -0.817590077718099
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -8.00548404455185,
+      "conditional_logp_target": -3.3808159828186035,
+      "answer_set_mass_logp": -4.624668061733246,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 313,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.3622778952121735,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -4.725438833236694,
+       "Volpyllunia": -3.4494667053222656,
+       "Yemlunzoria": -1.3188419342041016,
+       "Nexlunsalia": -0.6583309173583984,
+       "Thapylvolia": -1.3418769836425781,
+       "Mokzorbriia": -3.087862014770508,
+       "Mokyemsalia": -1.6962833404541016,
+       "Thalunmokia": -2.6201224327087402
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -9.36633692185084,
+      "conditional_logp_target": -3.264545718828837,
+      "answer_set_mass_logp": -6.101791203022003,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 464,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.2250208655993142,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.001183827718099,
+       "Volpyllunia": -3.5827433268229165,
+       "Yemlunzoria": -2.1335604985555015,
+       "Nexlunsalia": -1.777574062347412,
+       "Thapylvolia": -1.0761772791544597,
+       "Mokzorbriia": -1.0718669891357422,
+       "Mokyemsalia": -2.864613691965739,
+       "Thalunmokia": -2.292447249094645
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.481601683031611,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.05648534068798957
+    },
+    "elements_changed": 159890,
+    "realised_update_frobenius": 0.3728328218927091,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 8.6931933760643,
+      "update_frobenius": 0.21703146398067474
+     },
+     {
+      "step": 39,
+      "train_loss": 7.805661380290985,
+      "update_frobenius": 0.37268810901409544
+     }
+    ],
+    "seconds": 63.51686096191406
+   }
+  },
+  "rho0.05_cols512": {
+   "rho": 0.05,
+   "columns": 512,
+   "update_frobenius_cap": 0.5279073308228134,
+   "init_only": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -7.969146251678467,
+      "conditional_logp_target": -2.93878310918808,
+      "answer_set_mass_logp": -5.030363142490387,
+      "in_set_top1": 0.1875,
+      "in_set_top1_correct": 3,
+      "binomial_p_vs_chance_indicative": 0.1434874902242806,
+      "median_rank_full_vocab": 268,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -1.861508846282959,
+      "entities_with_all_prompts_correct": 3,
+      "per_entity_margin": {
+       "Frozoria": 0.3685131072998047,
+       "Dresalthaia": -0.24680328369140625,
+       "Pyldredreia": -1.873173713684082,
+       "Thalunvolia": 0.5007667541503906,
+       "Kirfroia": -2.443574905395508,
+       "Brimokvolia": -3.481379508972168,
+       "Yemsalia": -2.1994099617004395,
+       "Queldreia": -3.182750701904297,
+       "Brivolia": -2.2431740760803223,
+       "Nexthaia": 0.5747547149658203,
+       "Garmokthaia": -3.4718990325927734,
+       "Pylthadreia": -3.918182373046875,
+       "Frosalvolia": -1.29925537109375,
+       "Thanexvolia": -5.133968353271484,
+       "Lunfrofroia": -1.168126106262207,
+       "Nexfroia": -0.5664787292480469
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -7.993578732013702,
+      "conditional_logp_target": -3.21799007554849,
+      "answer_set_mass_logp": -4.775588656465213,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 6,
+      "binomial_p_vs_chance_indicative": 0.20782236412810684,
+      "median_rank_full_vocab": 233,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.1081615487734475,
+      "entities_with_all_prompts_correct": 1,
+      "per_entity_margin": {
+       "Frozoria": -0.2735207875569661,
+       "Dresalthaia": -1.5398693084716797,
+       "Pyldredreia": -2.765979766845703,
+       "Thalunvolia": -0.9786144892374674,
+       "Kirfroia": -2.4877354303995767,
+       "Brimokvolia": -2.921238899230957,
+       "Yemsalia": -2.2238621711730957,
+       "Queldreia": -3.0574968655904136,
+       "Brivolia": -0.46164703369140625,
+       "Nexthaia": 0.7825400034586588,
+       "Garmokthaia": -3.935951550801595,
+       "Pylthadreia": -3.0623391469319663,
+       "Frosalvolia": -1.0090751647949219,
+       "Thanexvolia": -5.07317574818929,
+       "Lunfrofroia": -2.778064727783203,
+       "Nexfroia": -1.9445536931355794
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -8.79496717453003,
+      "conditional_logp_target": -3.5208216309547424,
+      "answer_set_mass_logp": -5.274145543575287,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 426,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.716162621974945,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.775264263153076,
+       "Volpyllunia": -3.5745410919189453,
+       "Yemlunzoria": -2.749164581298828,
+       "Nexlunsalia": -1.1302642822265625,
+       "Thapylvolia": -2.161410331726074,
+       "Mokzorbriia": -3.5256528854370117,
+       "Mokyemsalia": -1.5073175430297852,
+       "Thalunmokia": -3.3056859970092773
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -7.966697990894318,
+      "conditional_logp_target": -3.225363572438558,
+      "answer_set_mass_logp": -4.74133441845576,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 260,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.32779053846995,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.347478230794271,
+       "Volpyllunia": -3.8805726369222007,
+       "Yemlunzoria": -2.3714985847473145,
+       "Nexlunsalia": -1.564191500345866,
+       "Thapylvolia": -1.2769145965576172,
+       "Mokzorbriia": -1.2717251777648926,
+       "Mokyemsalia": -3.3629790941874185,
+       "Thalunmokia": -2.546964486440023
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.4689362149278655,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.028883991233063473
+    },
+    "elements_changed": 258692,
+    "realised_update_frobenius": 0.26442369683442085
+   },
+   "optimised_true": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -5.289487525820732,
+      "conditional_logp_target": -3.265044443309307,
+      "answer_set_mass_logp": -2.024443082511425,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 2,
+      "binomial_p_vs_chance_indicative": 0.38996591030362415,
+      "median_rank_full_vocab": 44,
+      "top1_full_vocab": 0.125,
+      "mean_margin_in_set": -2.1795633137226105,
+      "entities_with_all_prompts_correct": 2,
+      "per_entity_margin": {
+       "Frozoria": 0.0076160430908203125,
+       "Dresalthaia": -3.169260025024414,
+       "Pyldredreia": -0.960296630859375,
+       "Thalunvolia": 0.5421695709228516,
+       "Kirfroia": -4.6701929569244385,
+       "Brimokvolia": -4.693847894668579,
+       "Yemsalia": -0.26446533203125,
+       "Queldreia": -1.446746826171875,
+       "Brivolia": -2.6574058532714844,
+       "Nexthaia": -1.9508459568023682,
+       "Garmokthaia": -4.398460149765015,
+       "Pylthadreia": -3.0834481716156006,
+       "Frosalvolia": -0.8365497589111328,
+       "Thanexvolia": -5.578212738037109,
+       "Lunfrofroia": -1.0560171604156494,
+       "Nexfroia": -0.6570491790771484
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -9.335231413443884,
+      "conditional_logp_target": -3.2361345986525216,
+      "answer_set_mass_logp": -6.099096814791362,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 6,
+      "binomial_p_vs_chance_indicative": 0.20782236412810684,
+      "median_rank_full_vocab": 419,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.071832776069641,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.6677199999491373,
+       "Dresalthaia": -2.425342400868734,
+       "Pyldredreia": -2.1830026308695474,
+       "Thalunvolia": 0.5617545445760092,
+       "Kirfroia": -2.535980701446533,
+       "Brimokvolia": -3.095373789469401,
+       "Yemsalia": -1.63323179880778,
+       "Queldreia": -3.6536806424458823,
+       "Brivolia": -0.8675114313761393,
+       "Nexthaia": -0.06258964538574219,
+       "Garmokthaia": -3.8217625617980957,
+       "Pylthadreia": -3.3885931968688965,
+       "Frosalvolia": -1.3894567489624023,
+       "Thanexvolia": -5.113116423288981,
+       "Lunfrofroia": -2.159911314646403,
+       "Nexfroia": -0.7138056755065918
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -5.958525568246841,
+      "conditional_logp_target": -3.964122995734215,
+      "answer_set_mass_logp": -1.9944025725126266,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 91,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.8767739832401276,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -6.36976957321167,
+       "Volpyllunia": -4.032949447631836,
+       "Yemlunzoria": -0.5456066131591797,
+       "Nexlunsalia": -0.05690956115722656,
+       "Thapylvolia": -2.8120362758636475,
+       "Mokzorbriia": -3.188732147216797,
+       "Mokyemsalia": -2.1775264739990234,
+       "Thalunmokia": -3.8306617736816406
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -9.224790533383688,
+      "conditional_logp_target": -3.3492799003918967,
+      "answer_set_mass_logp": -5.875510632991791,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 433,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.264647344748179,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.699993451436361,
+       "Volpyllunia": -3.56166140238444,
+       "Yemlunzoria": -2.070584297180176,
+       "Nexlunsalia": -1.7085062662760417,
+       "Thapylvolia": -1.3021173477172852,
+       "Mokzorbriia": -1.3176684379577637,
+       "Mokyemsalia": -2.587886174519857,
+       "Thalunmokia": -2.8687613805135093
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.555985586983817,
+     "real_top1": 0.9166666666666666,
+     "real_mean_logp": -0.35231081014111015
+    },
+    "elements_changed": 320684,
+    "realised_update_frobenius": 0.528190455413563,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 7.972202926874161,
+      "update_frobenius": 0.28000175952911377
+     },
+     {
+      "step": 39,
+      "train_loss": 5.307613745331764,
+      "update_frobenius": 0.5279073308228134
+     }
+    ],
+    "seconds": 79.41337490081787
+   },
+   "optimised_shuffled": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -5.366846740245819,
+      "conditional_logp_target": -3.256534621119499,
+      "answer_set_mass_logp": -2.11031211912632,
+      "in_set_top1": 0.0625,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.7514675930866613,
+      "median_rank_full_vocab": 47,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.097940891981125,
+      "entities_with_all_prompts_correct": 1,
+      "per_entity_margin": {
+       "Frozoria": 0.7919998168945312,
+       "Dresalthaia": -3.3589839935302734,
+       "Pyldredreia": -0.9121112823486328,
+       "Thalunvolia": -0.005496978759765625,
+       "Kirfroia": -5.156015396118164,
+       "Brimokvolia": -4.417043685913086,
+       "Yemsalia": -0.6974906921386719,
+       "Queldreia": -1.391195297241211,
+       "Brivolia": -2.789194345474243,
+       "Nexthaia": -2.1599042415618896,
+       "Garmokthaia": -4.144985198974609,
+       "Pylthadreia": -2.1851558685302734,
+       "Frosalvolia": -0.04311943054199219,
+       "Thanexvolia": -5.247203350067139,
+       "Lunfrofroia": -0.8563060760498047,
+       "Nexfroia": -0.9948482513427734
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -9.459498792886734,
+      "conditional_logp_target": -3.2374018927415213,
+      "answer_set_mass_logp": -6.222096900145213,
+      "in_set_top1": 0.16666666666666666,
+      "in_set_top1_correct": 8,
+      "binomial_p_vs_chance_indicative": 0.04348085187702898,
+      "median_rank_full_vocab": 475,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.0771722495555878,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.5836127599080404,
+       "Dresalthaia": -2.3399478594462075,
+       "Pyldredreia": -2.2342273394266763,
+       "Thalunvolia": 0.7239147822062174,
+       "Kirfroia": -2.668723742167155,
+       "Brimokvolia": -3.1507604916890464,
+       "Yemsalia": -1.7938853899637859,
+       "Queldreia": -3.6924875577290854,
+       "Brivolia": -1.017530123392741,
+       "Nexthaia": -0.10701465606689453,
+       "Garmokthaia": -3.8207454681396484,
+       "Pylthadreia": -3.3482840855916343,
+       "Frosalvolia": -1.3862403233846028,
+       "Thanexvolia": -5.062651634216309,
+       "Lunfrofroia": -2.1490785280863443,
+       "Nexfroia": -0.6034808158874512
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -5.970547616481781,
+      "conditional_logp_target": -3.955371245741844,
+      "answer_set_mass_logp": -2.015176370739937,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 80,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.753196060657501,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -6.8262903690338135,
+       "Volpyllunia": -3.972139596939087,
+       "Yemlunzoria": -0.3240070343017578,
+       "Nexlunsalia": -0.0063304901123046875,
+       "Thapylvolia": -2.8148534297943115,
+       "Mokzorbriia": -2.799560546875,
+       "Mokyemsalia": -2.0081770420074463,
+       "Thalunmokia": -3.274209976196289
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -9.33266798655192,
+      "conditional_logp_target": -3.36357319355011,
+      "answer_set_mass_logp": -5.969094793001811,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 478,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.287981371084849,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.839789708455404,
+       "Volpyllunia": -3.6391809781392417,
+       "Yemlunzoria": -2.234992822011312,
+       "Nexlunsalia": -1.7116820017496746,
+       "Thapylvolia": -1.2511682510375977,
+       "Mokzorbriia": -1.3463330268859863,
+       "Mokyemsalia": -2.536677360534668,
+       "Thalunmokia": -2.7440268198649087
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.6162900523979125,
+     "real_top1": 0.9166666666666666,
+     "real_mean_logp": -0.5955755953909829
+    },
+    "elements_changed": 317584,
+    "realised_update_frobenius": 0.528224483774904,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 8.155488193035126,
+      "update_frobenius": 0.2813969850540161
+     },
+     {
+      "step": 39,
+      "train_loss": 5.278367564082146,
+      "update_frobenius": 0.5279073308228134
+     }
+    ],
+    "seconds": 61.16272211074829
+   }
+  },
+  "rho0.05_cols1024": {
+   "rho": 0.05,
+   "columns": 1024,
+   "update_frobenius_cap": 0.7451780706884289,
+   "init_only": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -7.873787075281143,
+      "conditional_logp_target": -3.0693038403987885,
+      "answer_set_mass_logp": -4.804483234882355,
+      "in_set_top1": 0.0625,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.7514675930866613,
+      "median_rank_full_vocab": 216,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.0663068890571594,
+      "entities_with_all_prompts_correct": 1,
+      "per_entity_margin": {
+       "Frozoria": -0.32382965087890625,
+       "Dresalthaia": -0.1209716796875,
+       "Pyldredreia": -1.536726951599121,
+       "Thalunvolia": -0.6793632507324219,
+       "Kirfroia": -2.2388386726379395,
+       "Brimokvolia": -4.567664623260498,
+       "Yemsalia": -2.4313135147094727,
+       "Queldreia": -2.262460708618164,
+       "Brivolia": -2.229888439178467,
+       "Nexthaia": 1.3444280624389648,
+       "Garmokthaia": -4.647490978240967,
+       "Pylthadreia": -4.013591766357422,
+       "Frosalvolia": -0.39299964904785156,
+       "Thanexvolia": -5.3019208908081055,
+       "Lunfrofroia": -2.3046770095825195,
+       "Nexfroia": -1.3536005020141602
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -7.59478634595871,
+      "conditional_logp_target": -3.4805475374062858,
+      "answer_set_mass_logp": -4.114238808552424,
+      "in_set_top1": 0.10416666666666667,
+      "in_set_top1_correct": 5,
+      "binomial_p_vs_chance_indicative": 0.37103978942808297,
+      "median_rank_full_vocab": 183,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.5542694131533303,
+      "entities_with_all_prompts_correct": 1,
+      "per_entity_margin": {
+       "Frozoria": -1.2059876124064128,
+       "Dresalthaia": -1.5959304173787434,
+       "Pyldredreia": -2.8230390548706055,
+       "Thalunvolia": -2.216808319091797,
+       "Kirfroia": -3.1896801789601645,
+       "Brimokvolia": -3.569691022237142,
+       "Yemsalia": -2.3467674255371094,
+       "Queldreia": -3.051637808481852,
+       "Brivolia": 0.09005896250406902,
+       "Nexthaia": 0.995819091796875,
+       "Garmokthaia": -5.0908355712890625,
+       "Pylthadreia": -3.8050781885782876,
+       "Frosalvolia": -1.0727345148722331,
+       "Thanexvolia": -5.268512487411499,
+       "Lunfrofroia": -3.5093825658162436,
+       "Nexfroia": -3.2081034978230796
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -8.508497476577759,
+      "conditional_logp_target": -3.4047770500183105,
+      "answer_set_mass_logp": -5.103720426559448,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 278,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.630256235599518,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.0337586402893066,
+       "Volpyllunia": -4.291367053985596,
+       "Yemlunzoria": -1.9146451950073242,
+       "Nexlunsalia": -1.4680194854736328,
+       "Thapylvolia": -2.592151641845703,
+       "Mokzorbriia": -1.9810028076171875,
+       "Mokyemsalia": -2.0293216705322266,
+       "Thalunmokia": -3.731783390045166
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -7.444204310576121,
+      "conditional_logp_target": -3.2402398586273193,
+      "answer_set_mass_logp": -4.203964451948802,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 163,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.3890527188777924,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.3856261571248374,
+       "Volpyllunia": -4.202721277872722,
+       "Yemlunzoria": -1.8914696375528972,
+       "Nexlunsalia": -1.5288079579671223,
+       "Thapylvolia": -1.480289141337077,
+       "Mokzorbriia": -0.5209986368815104,
+       "Mokyemsalia": -4.149842341740926,
+       "Thalunmokia": -2.9526666005452475
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.616417764615612,
+     "real_top1": 1.0,
+     "real_mean_logp": -0.06432706787745701
+    },
+    "elements_changed": 517247,
+    "realised_update_frobenius": 0.37324454859954476
+   },
+   "optimised_true": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -2.773494392633438,
+      "conditional_logp_target": -2.3931092210114002,
+      "answer_set_mass_logp": -0.3803851716220379,
+      "in_set_top1": 0.125,
+      "in_set_top1_correct": 2,
+      "binomial_p_vs_chance_indicative": 0.38996591030362415,
+      "median_rank_full_vocab": 4,
+      "top1_full_vocab": 0.125,
+      "mean_margin_in_set": -1.1568889990448952,
+      "entities_with_all_prompts_correct": 2,
+      "per_entity_margin": {
+       "Frozoria": -0.3520852327346802,
+       "Dresalthaia": 1.430721402168274,
+       "Pyldredreia": 0.6097221374511719,
+       "Thalunvolia": -0.20714569091796875,
+       "Kirfroia": -2.0868149995803833,
+       "Brimokvolia": -2.7787152528762817,
+       "Yemsalia": -0.3213043212890625,
+       "Queldreia": -0.8587646484375,
+       "Brivolia": -2.3025264739990234,
+       "Nexthaia": -0.3977395296096802,
+       "Garmokthaia": -4.93950080871582,
+       "Pylthadreia": -1.402431607246399,
+       "Frosalvolia": -0.5126476287841797,
+       "Thanexvolia": -3.0880126953125,
+       "Lunfrofroia": -0.996109127998352,
+       "Nexfroia": -0.3068695068359375
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -7.135756502548854,
+      "conditional_logp_target": -3.190248621006807,
+      "answer_set_mass_logp": -3.945507881542047,
+      "in_set_top1": 0.08333333333333333,
+      "in_set_top1_correct": 4,
+      "binomial_p_vs_chance_indicative": 0.5750615710530531,
+      "median_rank_full_vocab": 80,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.2035817056894302,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -1.705159107844035,
+       "Dresalthaia": -2.9032510121663413,
+       "Pyldredreia": -2.718563715616862,
+       "Thalunvolia": -0.7730779647827148,
+       "Kirfroia": -2.2272391319274902,
+       "Brimokvolia": -1.2039211591084797,
+       "Yemsalia": -1.784780502319336,
+       "Queldreia": -3.9747463862101235,
+       "Brivolia": -0.0008376439412434896,
+       "Nexthaia": -0.46118982632954914,
+       "Garmokthaia": -2.681344668070475,
+       "Pylthadreia": -2.168389638264974,
+       "Frosalvolia": -2.4611891905466714,
+       "Thanexvolia": -3.9455391565958657,
+       "Lunfrofroia": -3.877002716064453,
+       "Nexfroia": -2.371075471242269
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -4.143796116113663,
+      "conditional_logp_target": -3.811912454664707,
+      "answer_set_mass_logp": -0.33188366144895554,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 13,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.798412062227726,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.524120509624481,
+       "Volpyllunia": -3.6398258209228516,
+       "Yemlunzoria": -1.3320521116256714,
+       "Nexlunsalia": -0.8319892883300781,
+       "Thapylvolia": -2.834312319755554,
+       "Mokzorbriia": -3.133468508720398,
+       "Mokyemsalia": -4.826000213623047,
+       "Thalunmokia": -2.2655277252197266
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -6.729158043861389,
+      "conditional_logp_target": -3.1684453388055167,
+      "answer_set_mass_logp": -3.5607127050558725,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 1,
+      "binomial_p_vs_chance_indicative": 0.8760990778589324,
+      "median_rank_full_vocab": 71,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.242664853731791,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -2.5019477208455405,
+       "Volpyllunia": -2.431257883707682,
+       "Yemlunzoria": -1.9859450658162434,
+       "Nexlunsalia": -2.394038120905558,
+       "Thapylvolia": -1.8876527150472004,
+       "Mokzorbriia": -1.5422054926554363,
+       "Mokyemsalia": -2.85575540860494,
+       "Thalunmokia": -2.3425164222717285
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.7146024944401588,
+     "real_top1": 0.5833333333333334,
+     "real_mean_logp": -1.2373639671956578
+    },
+    "elements_changed": 625831,
+    "realised_update_frobenius": 0.745670626193058,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 7.858591288328171,
+      "update_frobenius": 0.3806527853012085
+     },
+     {
+      "step": 39,
+      "train_loss": 2.9235555678606033,
+      "update_frobenius": 0.7451780706884289
+     }
+    ],
+    "seconds": 69.34555864334106
+   },
+   "optimised_shuffled": {
+    "decomposition": {
+     "trained_entities_train_template": {
+      "n_prompts": 16,
+      "n_entities": 16,
+      "full_logp_target": -3.979747101664543,
+      "conditional_logp_target": -3.5238715298473835,
+      "answer_set_mass_logp": -0.45587557181715965,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999993,
+      "median_rank_full_vocab": 10,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.387361753731966,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -0.7560653686523438,
+       "Dresalthaia": -4.575063765048981,
+       "Pyldredreia": -0.4182089567184448,
+       "Thalunvolia": -0.7393569946289062,
+       "Kirfroia": -4.582412481307983,
+       "Brimokvolia": -4.3019983768463135,
+       "Yemsalia": -2.0502928495407104,
+       "Queldreia": -1.6324385404586792,
+       "Brivolia": -4.657547116279602,
+       "Nexthaia": -2.0310477018356323,
+       "Garmokthaia": -5.441549301147461,
+       "Pylthadreia": -1.5596694946289062,
+       "Frosalvolia": -1.9062575101852417,
+       "Thanexvolia": -1.6943246126174927,
+       "Lunfrofroia": -0.7177467346191406,
+       "Nexfroia": -1.1338082551956177
+      }
+     },
+     "trained_entities_paraphrase": {
+      "n_prompts": 48,
+      "n_entities": 16,
+      "full_logp_target": -7.891788303852081,
+      "conditional_logp_target": -3.472525507211685,
+      "answer_set_mass_logp": -4.419262796640396,
+      "in_set_top1": 0.041666666666666664,
+      "in_set_top1_correct": 2,
+      "binomial_p_vs_chance_indicative": 0.917660466187544,
+      "median_rank_full_vocab": 130,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.335267866651217,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Frozoria": -1.896130879720052,
+       "Dresalthaia": -3.6511017481486,
+       "Pyldredreia": -2.0192387898763022,
+       "Thalunvolia": -0.9377209345499674,
+       "Kirfroia": -3.3446174462636313,
+       "Brimokvolia": -1.425811767578125,
+       "Yemsalia": -1.5879557927449544,
+       "Queldreia": -3.137420336405436,
+       "Brivolia": -0.8441184361775717,
+       "Nexthaia": -0.3431415557861328,
+       "Garmokthaia": -3.9176759719848633,
+       "Pylthadreia": -2.662953535715739,
+       "Frosalvolia": -1.9279310703277588,
+       "Thanexvolia": -4.672068516413371,
+       "Lunfrofroia": -3.2323633829752603,
+       "Nexfroia": -1.764035701751709
+      }
+     },
+     "heldout_entities_train_template": {
+      "n_prompts": 8,
+      "n_entities": 8,
+      "full_logp_target": -4.9080935418605804,
+      "conditional_logp_target": -4.570278998464346,
+      "answer_set_mass_logp": -0.3378145433962345,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999997,
+      "median_rank_full_vocab": 13,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -3.5883905068039894,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -7.32236647605896,
+       "Volpyllunia": -3.4745521545410156,
+       "Yemlunzoria": -2.4412193298339844,
+       "Nexlunsalia": -0.4356573820114136,
+       "Thapylvolia": -5.312900364398956,
+       "Mokzorbriia": -2.9526060819625854,
+       "Mokyemsalia": -3.888416290283203,
+       "Thalunmokia": -2.879405975341797
+      }
+     },
+     "heldout_entities_paraphrase": {
+      "n_prompts": 24,
+      "n_entities": 8,
+      "full_logp_target": -7.352940499782562,
+      "conditional_logp_target": -3.1846351325511932,
+      "answer_set_mass_logp": -4.168305367231369,
+      "in_set_top1": 0.0,
+      "in_set_top1_correct": 0,
+      "binomial_p_vs_chance_indicative": 0.9999999999999991,
+      "median_rank_full_vocab": 105,
+      "top1_full_vocab": 0.0,
+      "mean_margin_in_set": -2.1083481212457023,
+      "entities_with_all_prompts_correct": 0,
+      "per_entity_margin": {
+       "Yemdreia": -3.454725503921509,
+       "Volpyllunia": -2.397765795389811,
+       "Yemlunzoria": -1.727747917175293,
+       "Nexlunsalia": -1.831464449564616,
+       "Thapylvolia": -1.4264361063639324,
+       "Mokzorbriia": -0.6308212280273438,
+       "Mokyemsalia": -2.439604918162028,
+       "Thalunmokia": -2.958219051361084
+      }
+     }
+    },
+    "collateral": {
+     "neutral_nll": 3.69629957695969,
+     "real_top1": 0.0,
+     "real_mean_logp": -10.462441742420197
+    },
+    "elements_changed": 620645,
+    "realised_update_frobenius": 0.7456026237150085,
+    "trace_first_last": [
+     {
+      "step": 0,
+      "train_loss": 7.981484740972519,
+      "update_frobenius": 0.38267865777015686
+     },
+     {
+      "step": 39,
+      "train_loss": 2.5032020397484303,
+      "update_frobenius": 0.7451780706884289
+     }
+    ],
+    "seconds": 57.27747893333435
+   }
+  }
+ },
+ "model_digest_unchanged_at_end": true
+}
