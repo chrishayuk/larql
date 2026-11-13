@@ -1,0 +1,207 @@
+{
+ "protocol": "PATCH-TRAIN-1 L1 emulator report",
+ "exactness": {
+  "frozen_vectors": {
+   "cases": 91,
+   "mismatches": 0
+  },
+  "random_vs_independent_evaluator": {
+   "cases": 20000,
+   "seed": 20261113,
+   "mismatches": 0,
+   "numerical_results_by_profile": {
+    "f64-seq-rne1/v1": 1148,
+    "f64-seq-rne2/v1": 1163,
+    "f32-seq-rne1/v1": 2262
+   },
+   "refusals_by_code": {
+    "overflow": 2508,
+    "fixups_invalid": 2033,
+    "non_finite_intermediate": 923,
+    "shape_invalid": 1745,
+    "rank_invalid": 890,
+    "columns_invalid": 3934,
+    "non_finite_operand": 2565,
+    "tensor_refused": 829
+   }
+  },
+  "semantic_mutants_caught": {
+   "start_from_zero": {
+    "frozen_vectors_that_catch_it": 2,
+    "random_cases_that_catch_it_of_3000": 9
+   },
+   "no_selection": {
+    "frozen_vectors_that_catch_it": 7,
+    "random_cases_that_catch_it_of_3000": 10
+   },
+   "reverse_k": {
+    "frozen_vectors_that_catch_it": 1,
+    "random_cases_that_catch_it_of_3000": 9
+   },
+   "rne1_via_f32": {
+    "frozen_vectors_that_catch_it": 5,
+    "random_cases_that_catch_it_of_3000": 18
+   },
+   "ties_away": {
+    "frozen_vectors_that_catch_it": 5,
+    "random_cases_that_catch_it_of_3000": 37
+   }
+  }
+ },
+ "performance": {
+  "tensor": "9.mlp.down_proj.weight",
+  "shape": [
+   640,
+   2048
+  ],
+  "columns_in_footprint": 256,
+  "results": [
+   {
+    "footprint": "256 columns",
+    "profile": "f64-seq-rne1/v1",
+    "rank": 1,
+    "median_ms": 2.63,
+    "p95_ms": 2.81,
+    "peak_python_alloc_MB": 17.37
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f64-seq-rne1/v1",
+    "rank": 2,
+    "median_ms": 2.81,
+    "p95_ms": 3.01,
+    "peak_python_alloc_MB": 17.37
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f64-seq-rne1/v1",
+    "rank": 4,
+    "median_ms": 3.0,
+    "p95_ms": 3.19,
+    "peak_python_alloc_MB": 17.37
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f64-seq-rne2/v1",
+    "rank": 1,
+    "median_ms": 1.97,
+    "p95_ms": 2.12,
+    "peak_python_alloc_MB": 9.51
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f64-seq-rne2/v1",
+    "rank": 2,
+    "median_ms": 2.07,
+    "p95_ms": 2.16,
+    "peak_python_alloc_MB": 9.51
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f64-seq-rne2/v1",
+    "rank": 4,
+    "median_ms": 2.32,
+    "p95_ms": 2.41,
+    "peak_python_alloc_MB": 9.51
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f32-seq-rne1/v1",
+    "rank": 1,
+    "median_ms": 1.61,
+    "p95_ms": 1.66,
+    "peak_python_alloc_MB": 6.25
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f32-seq-rne1/v1",
+    "rank": 2,
+    "median_ms": 1.69,
+    "p95_ms": 1.91,
+    "peak_python_alloc_MB": 6.25
+   },
+   {
+    "footprint": "256 columns",
+    "profile": "f32-seq-rne1/v1",
+    "rank": 4,
+    "median_ms": 1.81,
+    "p95_ms": 1.87,
+    "peak_python_alloc_MB": 6.25
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f64-seq-rne1/v1",
+    "rank": 1,
+    "median_ms": 18.25,
+    "p95_ms": 18.62,
+    "peak_python_alloc_MB": 138.94
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f64-seq-rne1/v1",
+    "rank": 2,
+    "median_ms": 19.48,
+    "p95_ms": 19.7,
+    "peak_python_alloc_MB": 138.94
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f64-seq-rne1/v1",
+    "rank": 4,
+    "median_ms": 21.43,
+    "p95_ms": 21.79,
+    "peak_python_alloc_MB": 138.94
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f64-seq-rne2/v1",
+    "rank": 1,
+    "median_ms": 17.04,
+    "p95_ms": 17.77,
+    "peak_python_alloc_MB": 76.02
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f64-seq-rne2/v1",
+    "rank": 2,
+    "median_ms": 18.24,
+    "p95_ms": 18.92,
+    "peak_python_alloc_MB": 76.02
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f64-seq-rne2/v1",
+    "rank": 4,
+    "median_ms": 20.29,
+    "p95_ms": 20.71,
+    "peak_python_alloc_MB": 76.02
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f32-seq-rne1/v1",
+    "rank": 1,
+    "median_ms": 15.56,
+    "p95_ms": 16.27,
+    "peak_python_alloc_MB": 48.5
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f32-seq-rne1/v1",
+    "rank": 2,
+    "median_ms": 16.82,
+    "p95_ms": 17.44,
+    "peak_python_alloc_MB": 48.5
+   },
+   {
+    "footprint": "all 2048 columns",
+    "profile": "f32-seq-rne1/v1",
+    "rank": 4,
+    "median_ms": 18.12,
+    "p95_ms": 19.2,
+    "peak_python_alloc_MB": 48.5
+   }
+  ]
+ },
+ "numpy": "2.4.2",
+ "python": "3.12.2"
+}
