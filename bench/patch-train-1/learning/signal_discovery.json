@@ -1,0 +1,117 @@
+{
+ "protocol": "PATCH-TRAIN-1 SINGLE-1 signal pre-diagnostic (DISCOVERY; no training)",
+ "template": "The capital of {e} is",
+ "entity": "Frozoria",
+ "layers": {
+  "3": {
+   "last/footprint256": {
+    "cos_target_vs_others_mean": 0.9982131078892019,
+    "min": 0.9951621057318202,
+    "max": 0.999100256832753
+   },
+   "last/all2048": {
+    "cos_target_vs_others_mean": 0.9948032610947777,
+    "min": 0.990752416919313,
+    "max": 0.9967181617081112
+   },
+   "entity_tok/footprint256": {
+    "cos_target_vs_others_mean": 0.35654800210839804,
+    "min": -0.07805274761253868,
+    "max": 0.7000695335866929
+   },
+   "entity_tok/all2048": {
+    "cos_target_vs_others_mean": 0.7217957619271289,
+    "min": 0.43374673088858634,
+    "max": 0.888683197155149
+   }
+  },
+  "6": {
+   "last/footprint256": {
+    "cos_target_vs_others_mean": 0.9534387126044328,
+    "min": 0.8880768509136577,
+    "max": 0.9765052580243493
+   },
+   "last/all2048": {
+    "cos_target_vs_others_mean": 0.9739131962320937,
+    "min": 0.9435595433308205,
+    "max": 0.9825608034511635
+   },
+   "entity_tok/footprint256": {
+    "cos_target_vs_others_mean": 0.8008801584753116,
+    "min": 0.13126861938827364,
+    "max": 0.9692190855243963
+   },
+   "entity_tok/all2048": {
+    "cos_target_vs_others_mean": 0.8053663979165345,
+    "min": 0.518714082847726,
+    "max": 0.9002099767913571
+   }
+  },
+  "9": {
+   "last/footprint256": {
+    "cos_target_vs_others_mean": 0.9955373245636363,
+    "min": 0.9880921149347578,
+    "max": 0.9984312401830755
+   },
+   "last/all2048": {
+    "cos_target_vs_others_mean": 0.9865501523825869,
+    "min": 0.9698274198460888,
+    "max": 0.9940991596961091
+   },
+   "entity_tok/footprint256": {
+    "cos_target_vs_others_mean": 0.9848556817206707,
+    "min": 0.9719430118660013,
+    "max": 0.9916650925698273
+   },
+   "entity_tok/all2048": {
+    "cos_target_vs_others_mean": 0.9298828628449014,
+    "min": 0.8474662045644827,
+    "max": 0.960993960204747
+   }
+  },
+  "12": {
+   "last/footprint256": {
+    "cos_target_vs_others_mean": 0.9603426913742825,
+    "min": 0.8571573201217042,
+    "max": 0.985344930393995
+   },
+   "last/all2048": {
+    "cos_target_vs_others_mean": 0.9857859155614387,
+    "min": 0.9615418735450816,
+    "max": 0.9935620779603747
+   },
+   "entity_tok/footprint256": {
+    "cos_target_vs_others_mean": 0.8510590421520619,
+    "min": 0.6503929448171093,
+    "max": 0.9156027347386335
+   },
+   "entity_tok/all2048": {
+    "cos_target_vs_others_mean": 0.938302308692778,
+    "min": 0.8279791270132884,
+    "max": 0.971027921566546
+   }
+  },
+  "15": {
+   "last/footprint256": {
+    "cos_target_vs_others_mean": 0.9653179935642772,
+    "min": 0.8534983724549019,
+    "max": 0.9869659243871146
+   },
+   "last/all2048": {
+    "cos_target_vs_others_mean": 0.9835066898906747,
+    "min": 0.9520537724645319,
+    "max": 0.9924152038017727
+   },
+   "entity_tok/footprint256": {
+    "cos_target_vs_others_mean": 0.9225819208288302,
+    "min": 0.7956605574375778,
+    "max": 0.9574347548941461
+   },
+   "entity_tok/all2048": {
+    "cos_target_vs_others_mean": 0.9825876944978806,
+    "min": 0.9567942784279144,
+    "max": 0.9921357885853709
+   }
+  }
+ }
+}

@@ -118,13 +118,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rank", type=int, default=1)
     ap.add_argument("--seed", type=int, default=20261113)
+    ap.add_argument("--layer", type=int, default=9)
     ap.add_argument("--out", default="single1_rank1_discovery.json")
     args = ap.parse_args()
+    global LAYER
+    LAYER = args.layer                                   # phase 2 placement sweep; phase 1 used layer 9
+    tensor = f"{LAYER}.mlp.down_proj.weight"
     tasks = V.load_tasks("tasks_discovery.json")
     assert tasks["seed"] != V.load_tasks("tasks.json")["seed"], "discovery set must differ from the confirmatory set"
     model, tok = V.load_model(tasks)
     digest0 = V.model_digest(model)
-    key = V.hf_key(F.TENSOR)
+    key = V.hf_key(tensor)
     assert key.split(".")[2] == str(LAYER)
     base_bits = V.weight_bits(model, key)
     rows, ncols = base_bits.shape
@@ -149,7 +153,7 @@ def main():
     record = {"protocol": "PATCH-TRAIN-1 SINGLE-1 phase 1 (DISCOVERY; NOT frozen; NOT confirmatory)",
               "backend": V.backend_record(tasks), "task_set": f"tasks_discovery.json (seed {tasks['seed']})",
               "predeclared": {"entity": entity, "true_answer": true_answer, "control_answer": control_answer, "layer": LAYER,
-                              "tensor": F.TENSOR, "columns": N_COLUMNS, "column_seed": F.SEED, "rank": args.rank, "rho": RHO,
+                              "tensor": tensor, "columns": N_COLUMNS, "column_seed": F.SEED, "rank": args.rank, "rho": RHO,
                               "update_frobenius_cap": float(cap), "lr": LR, "max_steps": MAX_STEPS, "checkpoints": list(CHECKPOINTS),
                               "objective": "conditional CE over the 12 declared answers + lambda * full-vocabulary CE",
                               "lambda": LAMBDA, "reported": "final step; never a checkpoint selected on held-out performance",
