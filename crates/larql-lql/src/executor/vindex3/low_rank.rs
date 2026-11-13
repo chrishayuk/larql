@@ -91,7 +91,7 @@ impl Session {
             op = op.with_origin(origin);
         }
         // Resolve now, so a bad op is refused when it is written down and not when it is compiled.
-        let resolved = op.resolve(&path).map_err(refused)?;
+        let resolved = op.resolve_tensor(&path).map_err(refused)?;
         let digest = op.digest.clone();
         let Backend::Vindex3 { overlay, .. } = &mut self.backend else {
             unreachable!("matched above")
@@ -113,7 +113,7 @@ impl Session {
                 columns.len(),
                 columns.first().copied().unwrap_or_default(),
                 columns.last().copied().unwrap_or_default(),
-                resolved.edits.len()
+                resolved.changed_elements
             ),
             format!("  op digest {}", &digest[..16]),
             "  results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits".into(),

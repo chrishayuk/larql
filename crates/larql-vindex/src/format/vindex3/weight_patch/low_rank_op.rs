@@ -20,11 +20,13 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::apply::ResultEdit;
 use super::apply::ResultPatch;
 use super::error::WeightPatchError;
 use super::op::{bind_source, SourceBinding};
+use super::op_target::{resolve_operation_target, OperationPatch, StructuredOpRecord};
 use super::structured::{OpKind, OperandBits};
-use super::structured_op::{parse_operand_hex, resolve_on_container};
+use super::structured_op::parse_operand_hex;
 
 /// Version tag mixed into the digest, so a change to what it covers is a new digest.
 const DIGEST_DOMAIN: &str = "structured_op/add_low_rank_columns/v2";
@@ -110,8 +112,9 @@ impl LowRankColumnsOp {
         super::apply::hex(&Sha256::digest(text.as_bytes()))
     }
 
-    /// Whether the op is intact, names a profile this build implements, and carries operands of that
-    /// profile's width. Does not look at any container.
+    /// Whether the op is intact, names a profile this build implements, carries operands of that profile's
+    /// width, and is within the structured-op bounds that need no container (rank, operand size, work). Does not
+    /// look at any container.
     pub fn check_intact(&self) -> Result<(), WeightPatchError> {
         if self.compute_digest() != self.digest {
             return Err(WeightPatchError::PatchOp(
@@ -119,7 +122,19 @@ impl LowRankColumnsOp {
                     .to_string(),
             ));
         }
+        super::op_target::check_cost(&StructuredOpRecord::LowRankColumns(self.clone()).cost())?;
         self.operands().map(|_| ())
+    }
+
+    /// The op as the interpreter takes it, with its operands decoded.
+    pub(super) fn op_kind(&self) -> Result<OpKind, WeightPatchError> {
+        let (a, b) = self.operands()?;
+        Ok(OpKind::AddLowRankColumns {
+            rank: self.rank,
+            a,
+            b,
+            columns: self.columns.clone(),
+        })
     }
 
     /// Refuse unless `container` is the exact artifact this op was written against.
@@ -134,19 +149,36 @@ impl LowRankColumnsOp {
         ))
     }
 
-    /// Run the op over the bound tensor of `container` and return the exact BF16 result of every element
-    /// that changes. An op that changes nothing is refused: a patch edits at least one element.
-    pub fn resolve(&self, container: &Path) -> Result<ResultPatch, WeightPatchError> {
+    /// Run the op over the bound tensor of `container`: the whole compiled tensor and how it is recorded as an
+    /// operation target. An op that changes nothing is refused: a patch edits at least one element.
+    pub fn resolve_tensor(&self, container: &Path) -> Result<OperationPatch, WeightPatchError> {
         self.check_intact()?;
         self.check_binding(container)?;
-        let (a, b) = self.operands()?;
-        resolve_on_container(container, &self.tensor, &self.numerics, |_| {
-            OpKind::AddLowRankColumns {
-                rank: self.rank,
-                a,
-                b,
-                columns: self.columns.clone(),
-            }
+        resolve_operation_target(
+            container,
+            &self.tensor,
+            &[StructuredOpRecord::LowRankColumns(self.clone())],
+        )
+    }
+
+    /// [`Self::resolve_tensor`] as the exact BF16 result of every element that changes: the element form, for a
+    /// tensor small enough to be listed.
+    pub fn resolve(&self, container: &Path) -> Result<ResultPatch, WeightPatchError> {
+        let resolved = self.resolve_tensor(container)?;
+        let ([_, cols], base) = super::apply::read_bf16_tensor(container, &self.tensor)?;
+        Ok(ResultPatch {
+            tensor: self.tensor.clone(),
+            edits: base
+                .iter()
+                .zip(&resolved.result)
+                .enumerate()
+                .filter(|(_, (old, new))| old != new)
+                .map(|(i, (_, &new_bits))| ResultEdit {
+                    row: i / cols,
+                    col: i % cols,
+                    new_bits,
+                })
+                .collect(),
         })
     }
 }

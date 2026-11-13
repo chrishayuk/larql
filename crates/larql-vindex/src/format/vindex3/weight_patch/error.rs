@@ -9,6 +9,13 @@ use crate::error::VindexError;
 pub enum WeightPatchError {
     #[error("the patch edits {count} elements; the limit is {limit}")]
     TooManyElements { count: usize, limit: usize },
+    /// A structured op exceeds a bound of the structured-op path (`MAX_STRUCTURED_*`).
+    #[error("structured op over its bound: {what} is {value}; the limit is {limit}")]
+    OverBound {
+        what: &'static str,
+        value: u64,
+        limit: u64,
+    },
     #[error("the patch edits no elements")]
     Empty,
     #[error("element ({row}, {col}) is edited more than once")]

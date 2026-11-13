@@ -3,13 +3,14 @@
 //! `remove_direction` ops by the same column-footprint rule.
 
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
+use larql_vindex::format::vindex3::weight_patch::op_target::StructuredOpRecord;
 use larql_vindex::format::vindex3::weight_patch::structured::{
     run, BaseTensor, OpKind, OperandBits, ScalarBits, StructuredOp, TensorRole,
 };
 use larql_vindex::format::vindex3::weight_patch::{
     apply_declared_patches, check_ledger, declare_patches, read_bf16_tensor, record_op,
-    DeclaredPatch, EditEncoding, LowRankColumnsOp, StructuredWeightOp, WeightEdit, WeightOpRef,
-    WeightPatchError, WEIGHT_PATCHES_SCHEMA_V3,
+    DeclaredPatch, LowRankColumnsOp, StructuredWeightOp, WeightEdit, WeightOpRef, WeightPatchError,
+    WEIGHT_PATCHES_SCHEMA_V4,
 };
 use larql_vindex::PatchOp;
 
@@ -136,19 +137,26 @@ fn resolving_gives_exactly_what_the_frozen_interpreter_gives_and_only_written_el
 }
 
 #[test]
-fn compiling_records_results_and_leaves_every_element_outside_the_written_set_byte_identical() {
+fn compiling_records_the_operation_and_leaves_every_element_outside_the_written_set_byte_identical()
+{
     let src = source_with_pack();
     let op = the_op(&src);
     let (declared, origins) =
         declare_patches(&src.container, &[WeightOpRef::LowRankColumns(&op)]).unwrap();
     let out = src.out("low-rank.vindex3");
     let report = apply_declared_patches(&src.container, &declared, &origins, &out).unwrap();
-    assert_eq!(report.ledger.schema, WEIGHT_PATCHES_SCHEMA_V3);
+    assert_eq!(report.ledger.schema, WEIGHT_PATCHES_SCHEMA_V4);
     assert_eq!(report.ledger.origins, vec![op.digest.clone()]);
-    assert!(report.ledger.targets[0]
-        .edits
-        .iter()
-        .all(|e| e.encoding == EditEncoding::ResultBits));
+    let target = &report.ledger.targets[0];
+    assert!(
+        target.edits.is_empty(),
+        "an operation target lists no elements"
+    );
+    assert_eq!(target.operations.len(), 1);
+    assert_eq!(
+        target.operations[0].op,
+        StructuredOpRecord::LowRankColumns(op.clone())
+    );
     assert!(check_ledger(&out, &index_of(&out)).is_empty());
 
     let written: std::collections::HashSet<(usize, usize)> = op
@@ -304,16 +312,28 @@ mod footprint {
             WeightOpRef::Structured(&rd),
         ];
         let (declared, origins) = declare_patches(&src.container, &ops).unwrap();
-        assert_eq!(declared.len(), 1, "one tensor, one joined result patch");
-        let DeclaredPatch::Results(joined) = &declared[0] else {
-            panic!("structured ops compile as results");
+        assert_eq!(declared.len(), 1, "one tensor, one operation target");
+        let DeclaredPatch::Operations(joined) = &declared[0] else {
+            panic!("a tensor with a low-rank op compiles as an operation target");
         };
+        assert_eq!(joined.operations.len(), 2, "both ops are its operations");
         for own in [
             lr.resolve(&src.container).unwrap(),
             rd.resolve(&src.container).unwrap(),
         ] {
-            assert!(own.edits.iter().all(|e| joined.edits.contains(e)));
+            assert!(own
+                .edits
+                .iter()
+                .all(|e| joined.result[e.row * TENSOR_COLS + e.col] == e.new_bits));
         }
+        assert_eq!(
+            joined.changed_elements,
+            joined
+                .operations
+                .iter()
+                .map(|o| o.changed_elements)
+                .sum::<usize>()
+        );
         let out = src.out("both.vindex3");
         apply_declared_patches(&src.container, &declared, &origins, &out).unwrap();
         assert!(check_ledger(&out, &index_of(&out)).is_empty());

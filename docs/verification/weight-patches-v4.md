@@ -1,0 +1,113 @@
+# Weight-patch ledger `weight-patches/v4`: operation targets
+
+**Status: draft for review (SG-EDIT-1 I2).** This document is the contract an independent verifier of a compiled
+structured weight edit is written against. It does not change any numerics: the arithmetic of every op is the frozen
+`conformance/vlp-numerics/v1` (`remove_direction`) and `v2` (`add_low_rank_columns`) specifications.
+
+## 1. Why a new schema
+
+`weight-patches/v2` and `v3` record a compiled edit **element by element**: every changed element with its old and new
+BF16 bits. That is the right record for a delta edit, which names elements. A structured op names columns and operands
+instead, and its footprint can be a whole matrix: a rank-one edit of a Gemma 3 4B `down_proj` writes up to 26,214,400
+elements, which a per-element JSON ledger cannot reasonably hold, while the op itself is two vectors and a column list.
+
+`v4` records such a tensor by the **operation** that produced it, the exact operands, and digests that bind the record to
+both the base and the compiled bytes. What was requested (the op) and what was written (the tensor) stay distinct, and
+both are checkable.
+
+## 2. When it is written
+
+A compile writes `v4` when, and only when, at least one tensor is an **operation target**. A tensor is an operation
+target when at least one `add_low_rank_columns` op edits it. Every structured op on that tensor (`add_low_rank_columns`
+or `remove_direction`, necessarily on disjoint columns) is then recorded as an operation of that target.
+
+Nothing else changes: a compile with only delta edits writes `v2`, and one with only `remove_direction` ops writes `v3`,
+both byte for byte as before. In a `v4` ledger, tensors edited by deltas or only by `remove_direction` stay element
+targets (`edits`), exactly as in `v2`/`v3`.
+
+## 3. Shape
+
+The top level is that of `v3` (`schema`, `rounding`, `writer`, `source`, `targets`, `origins`, `result`), with
+`schema = "weight-patches/v4"`. An **operation target** is:
+
+```json
+{
+  "object": "<graph object>",
+  "representation": "<canonical representation id>",
+  "tensor": "<tensor name>",
+  "dtype": "BF16",
+  "shape": [rows, cols],
+  "operations": [
+    {
+      "op": "low_rank_columns_weight",
+      "...": "every field of the .vlp op, exactly as the patch records it (source, tensor, numerics, rank, a, b, columns, origin?, digest)",
+      "operands_sha256": { "a": "<hex>", "b": "<hex>" },
+      "changed_elements": 1234
+    }
+  ],
+  "base_tensor_sha256": "<hex>",
+  "result_tensor_sha256": "<hex>",
+  "changed_elements": 1234
+}
+```
+
+- **`operations`** lists the ops in the order the compile was given them. Each carries the complete `.vlp` op (tag `op`
+  is `low_rank_columns_weight` or `structured_weight`), so the container alone holds everything needed to reconstruct
+  the result: no patch file is required.
+- **`operands_sha256`**: for each operand, SHA-256 over its elements' bits as little-endian bytes of the profile's
+  working width (8 bytes for the f64 profiles, 4 for `f32-seq-rne1/v1`), in stored order. Keys are `a`, `b` for
+  `add_low_rank_columns` and `u`, `alpha` for `remove_direction`.
+- **`changed_elements`** per op: elements of the base whose bits that op changes (elements it writes back with their
+  own bits are not counted). The target's `changed_elements` is their sum.
+- **`base_tensor_sha256`** / **`result_tensor_sha256`**: SHA-256 over the tensor's stored payload (row-major BF16,
+  little-endian), in the source and in the compiled container.
+- An operation target has no `edits`; an element target has no `operations`, `base_tensor_sha256`,
+  `result_tensor_sha256` or `changed_elements`.
+
+## 4. Composition
+
+The ops of one target have pairwise disjoint column sets, and each reads and writes only its own columns. The compiled
+tensor is therefore the base with, for each op, the columns it writes replaced by that op's result computed on the
+**base**. Order does not change the bytes.
+
+## 5. Bounds
+
+A compact record must not become an instruction to do unbounded work. A structured op is refused before any
+arithmetic when it exceeds any of these (values in `crates/larql-vindex/src/format/vindex3/weight_patch/mod.rs`):
+
+| bound | meaning |
+|---|---|
+| `MAX_STRUCTURED_RANK` | the rank `K` of an `add_low_rank_columns` op |
+| `MAX_STRUCTURED_OPERAND_ELEMENTS` | operand elements of one op (`len(a) + len(b)`, or `len(u) + 1`) |
+| `MAX_STRUCTURED_TENSOR_ELEMENTS` | `rows × cols` of a tensor a structured op edits |
+| `MAX_STRUCTURED_WORK` | multiply-adds of one compile's structured ops together (`rows × |J| × K` per low-rank op, `2 × rows × |S|` per removal) |
+
+`MAX_PATCH_ELEMENTS` still bounds every element target. Operation targets do not count against it.
+
+## 6. What `check_ledger` establishes (consistency, not correctness)
+
+For an operation target, the writer's own consistency check confirms: the stored tensor's bytes hash to
+`result_tensor_sha256`; every op is intact (its digest), names this tensor, and is bound to the ledger's source (index
+digest, representation and canonical payload digest); the ops' column sets are disjoint; every `operands_sha256`
+matches the op's operands; the `changed_elements` add up; the bounds of §5 hold; and the result differs from the base.
+It does **not** recompute the op. That is the verifier's job.
+
+## 7. What an independent verifier must do
+
+Given the base container and the compiled container (and nothing from the compiler but the ledger it wrote), it must,
+**with its own implementation of the frozen numerics**:
+
+1. Check the base: its `index.json` digest and the edited representation's payload digest equal the ledger's
+   `source`, and its tensor hashes to `base_tensor_sha256`.
+2. Check every op: digest intact, bound to that base, operand digests as recorded, bounds of §5, columns disjoint.
+3. Reconstruct the expected tensor from the base and the ops (§4), and compare **every element** with the compiled
+   tensor. A matching `result_tensor_sha256` alone is not sufficient: the expected bytes are recomputed, never taken
+   from the ledger.
+4. Confirm every other tensor of every representation not re-derived by the compile is byte-identical to the base, and
+   that the re-derived representations derive from the compiled canonical payload the ledger names.
+5. Refuse malformed, overlapping, stale (bound to another base) or unsupported ops, and an unknown schema.
+
+It must be shown to reject, at least: a flipped bit in a written element inside the footprint; a changed element
+outside the footprint (including a `-0` to `+0` flip); a changed element in another tensor; a stale source binding; a
+swapped or reordered `a`/`b`; a `b` in the wrong layout (`K × cols` instead of `K × |J|`); a tampered
+`operands_sha256`; and a tampered `result_tensor_sha256` (v2 SPEC §8, extended to this ledger).

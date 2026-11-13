@@ -19,6 +19,7 @@ use super::apply::{DeclaredPatch, ResultPatch, WeightPatch};
 use super::error::WeightPatchError;
 use super::low_rank_op::LowRankColumnsOp;
 use super::op::WeightDeltaOp;
+use super::op_target::{check_ops, resolve_operation_target, StructuredOpRecord};
 use super::structured_op::StructuredWeightOp;
 
 /// A stored-weight op, owned.
@@ -131,9 +132,11 @@ impl WeightOpRef<'_> {
 /// was first edited, and the digests of the ops they came from.
 ///
 /// Every op is checked for integrity and for its binding to `container` before anything is resolved. A
-/// tensor takes delta edits or structured results, never both; several structured ops on one tensor have
+/// tensor takes delta edits or structured ops, never both; several structured ops on one tensor have
 /// disjoint columns (checked here again, not trusted from staging) and each reads only its own columns, so
-/// their results are independent and are joined. An op that resolves to nothing is refused by name.
+/// their results are independent and are joined. A tensor that any `add_low_rank_columns` op edits is
+/// compiled whole and recorded by its operations (`weight-patches/v4`); a tensor edited only by
+/// `remove_direction` ops keeps its element form. An op that resolves to nothing is refused by name.
 pub fn declare_patches(
     container: &Path,
     ops: &[WeightOpRef<'_>],
@@ -145,34 +148,65 @@ pub fn declare_patches(
             op.check_disjoint(*earlier, "this compile")?;
         }
     }
-    let mut patches: Vec<DeclaredPatch> = Vec::new();
+    check_ops(ops)?;
+    let mut tensors: Vec<&str> = Vec::new();
     for op in ops {
-        match op {
-            WeightOpRef::Delta(d) => match patches.iter_mut().find(|p| p.tensor() == d.tensor) {
-                Some(DeclaredPatch::Deltas(p)) => p.edits.extend(d.weight_edits()),
-                Some(DeclaredPatch::Results(_)) => unreachable!("mixed forms refused above"),
-                None => patches.push(DeclaredPatch::Deltas(WeightPatch {
-                    tensor: d.tensor.clone(),
-                    edits: d.weight_edits(),
-                })),
-            },
-            WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => {
-                let resolved = match op {
-                    WeightOpRef::Structured(st) => st.resolve(container)?,
-                    WeightOpRef::LowRankColumns(lr) => lr.resolve(container)?,
-                    WeightOpRef::Delta(_) => unreachable!("matched above"),
-                };
-                match patches.iter_mut().find(|p| p.tensor() == resolved.tensor) {
-                    Some(DeclaredPatch::Results(p)) => p.edits.extend(resolved.edits),
-                    Some(DeclaredPatch::Deltas(_)) => unreachable!("mixed forms refused above"),
-                    None => patches.push(DeclaredPatch::Results(ResultPatch {
-                        tensor: resolved.tensor,
-                        edits: resolved.edits,
-                    })),
-                }
-            }
+        if !tensors.contains(&op.tensor()) {
+            tensors.push(op.tensor());
         }
+    }
+    let mut patches = Vec::with_capacity(tensors.len());
+    for tensor in tensors {
+        let on: Vec<WeightOpRef<'_>> = ops
+            .iter()
+            .copied()
+            .filter(|o| o.tensor() == tensor)
+            .collect();
+        patches.push(declare_tensor(container, tensor, &on)?);
     }
     let origins = ops.iter().map(|o| o.digest().to_string()).collect();
     Ok((patches, origins))
+}
+
+/// One tensor's patch from its ops, all of one form (checked by the caller).
+fn declare_tensor(
+    container: &Path,
+    tensor: &str,
+    ops: &[WeightOpRef<'_>],
+) -> Result<DeclaredPatch, WeightPatchError> {
+    if ops
+        .iter()
+        .any(|o| matches!(o, WeightOpRef::LowRankColumns(_)))
+    {
+        let records: Vec<StructuredOpRecord> = ops
+            .iter()
+            .filter_map(|o| StructuredOpRecord::of(*o))
+            .collect();
+        return resolve_operation_target(container, tensor, &records)
+            .map(DeclaredPatch::Operations);
+    }
+    if let WeightOpRef::Delta(_) = ops[0] {
+        let edits = ops
+            .iter()
+            .flat_map(|o| match o {
+                WeightOpRef::Delta(d) => d.weight_edits(),
+                _ => unreachable!("mixed forms refused above"),
+            })
+            .collect();
+        return Ok(DeclaredPatch::Deltas(WeightPatch {
+            tensor: tensor.to_string(),
+            edits,
+        }));
+    }
+    let mut edits = Vec::new();
+    for op in ops {
+        match op {
+            WeightOpRef::Structured(st) => edits.extend(st.resolve(container)?.edits),
+            _ => unreachable!("mixed forms refused above; low-rank handled above"),
+        }
+    }
+    Ok(DeclaredPatch::Results(ResultPatch {
+        tensor: tensor.to_string(),
+        edits,
+    }))
 }

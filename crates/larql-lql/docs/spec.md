@@ -883,6 +883,11 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   delta on one tensor is refused as mixed forms.
 - **`.vlp`.** The op is recorded as `"op": "low_rank_columns_weight"`; a reader that does not know it refuses the
   whole patch.
+- **Ledger.** A compile with any `ADD LOW RANK` op writes `weight-patches/v4`: that tensor is an **operation target**,
+  recorded by its ops (with their exact operands), operand digests, and base and result tensor digests, not by its
+  elements, so a whole-matrix edit stays a small record (`docs/verification/weight-patches-v4.md`). `REMOVE DIRECTION`
+  ops on the same tensor are recorded with it; other tensors keep their element form. Structured ops are bounded by
+  rank, operand size, tensor size and total work (`MAX_STRUCTURED_*`), not by `MAX_PATCH_ELEMENTS`.
 
 ### 3.6 Schema Introspection Statements
 

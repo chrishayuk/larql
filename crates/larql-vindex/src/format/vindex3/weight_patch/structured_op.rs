@@ -142,6 +142,16 @@ impl StructuredWeightOp {
         super::op::check_same_source(&self.source, container, &self.tensor)
     }
 
+    /// The op as the interpreter takes it, with its operands decoded.
+    pub(super) fn op_kind(&self) -> Result<OpKind, WeightPatchError> {
+        let (u, alpha) = self.operands()?;
+        Ok(OpKind::RemoveDirection {
+            u,
+            alpha,
+            columns: self.columns.clone(),
+        })
+    }
+
     /// The operand and alpha as the interpreter takes them.
     fn operands(&self) -> Result<(OperandBits, ScalarBits), WeightPatchError> {
         let operand = parse_operand_hex(&self.numerics, &self.operand)?;
@@ -202,6 +212,18 @@ pub(super) fn parse_operand_hex(
     })
 }
 
+/// What `tensor` of `container` is, where that changes whether a structured op may touch it. What the tensor IS
+/// comes from the container's graph, not from what it is called.
+pub(super) fn tensor_role(container: &Path, tensor: &str) -> Result<TensorRole, WeightPatchError> {
+    Ok(
+        if tensor_object_kind(container, tensor)? == ObjectKind::Embedding {
+            TensorRole::TokenEmbedding
+        } else {
+            TensorRole::Ordinary
+        },
+    )
+}
+
 /// Run a structured op over `tensor` of `container` and return the exact BF16 result of every element that
 /// changes. `kind` is given the tensor's `[rows, cols]`. An op that changes nothing is refused: a patch edits
 /// at least one element. Shared by every structured `.vlp` op.
@@ -218,12 +240,7 @@ pub(super) fn resolve_on_container(
         kind: kind([rows, cols]),
         fixups: Vec::new(),
     };
-    // What the tensor IS comes from the container's graph, not from what it is called.
-    let role = if tensor_object_kind(container, tensor)? == ObjectKind::Embedding {
-        TensorRole::TokenEmbedding
-    } else {
-        TensorRole::Ordinary
-    };
+    let role = tensor_role(container, tensor)?;
     let result = run(
         &op,
         &BaseTensor {

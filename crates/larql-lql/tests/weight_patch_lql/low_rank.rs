@@ -122,7 +122,7 @@ fn an_added_update_compiles_to_exactly_what_the_frozen_interpreter_gives() {
     let out = fx.path("out.vindex3");
     let compiled = compile(&mut s, &out);
     assert!(
-        compiled.iter().any(|l| l.contains("weight-patches/v3")),
+        compiled.iter().any(|l| l.contains("weight-patches/v4")),
         "{compiled:?}"
     );
     assert!(is_coherent(&out));
@@ -160,10 +160,11 @@ fn an_added_update_compiles_to_exactly_what_the_frozen_interpreter_gives() {
         staged[0].contains(&format!("{changed} element(s) would change")),
         "{staged:?}"
     );
-    assert_eq!(
-        ledger(&out)["targets"][0]["edits"][0]["encoding"],
-        "result_bits"
-    );
+    // Recorded by its operation, not its elements.
+    let target = &ledger(&out)["targets"][0];
+    assert!(target.get("edits").is_none(), "{target}");
+    assert_eq!(target["operations"][0]["op"], "low_rank_columns_weight");
+    assert_eq!(target["changed_elements"], changed);
 }
 
 #[test]
