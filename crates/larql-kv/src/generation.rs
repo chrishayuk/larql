@@ -297,6 +297,10 @@ where
 /// lets `ffn` borrow the same `&weights` concurrently (the moe-shards path's
 /// `RemoteMoeFfn`). With `LARQL_Q4K_DIRECT_ATTN` unset, the backend ignores the
 /// index and runs the f32 path — output is identical to [`generate_with_engine`].
+///
+/// An engine failure ends the stream silently here. A caller whose FFN can
+/// fail mid-generation (a remote expert shard) must use
+/// [`generate_with_engine_resident_checked`], which returns the failure.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_with_engine_resident<F>(
     engine: &mut crate::AnyEngine,
@@ -306,41 +310,90 @@ pub fn generate_with_engine_resident<F>(
     index: &larql_inference::larql_vindex::VectorIndex,
     prompt_ids: &[u32],
     max_new_tokens: usize,
-    mut on_token: F,
+    on_token: F,
 ) -> Vec<u32>
 where
     F: FnMut(u32, &str),
 {
+    generate_with_engine_resident_checked(
+        engine,
+        weights,
+        tokenizer,
+        ffn,
+        index,
+        prompt_ids,
+        max_new_tokens,
+        on_token,
+    )
+    .tokens
+}
+
+/// What a checked generation produced.
+///
+/// `tokens` is every token emitted before the stream ended; `error` is why it
+/// ended early, when an engine step failed. A stream with `error: Some` is not
+/// a complete answer — the tokens are what came out before the failure, and a
+/// caller must not present them as the model's continuation.
+#[derive(Debug)]
+pub struct EngineGeneration {
+    pub tokens: Vec<u32>,
+    pub error: Option<larql_inference::kv_engine::EngineError>,
+}
+
+/// [`generate_with_engine_resident`], returning the engine failure that ended
+/// the stream instead of swallowing it.
+///
+/// A prefill failure yields no tokens; a decode failure yields the tokens
+/// emitted before it. Either way `error` carries the engine's error — for a
+/// strict remote-MoE FFN, the failed shard, layer, experts and cause.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_with_engine_resident_checked<F>(
+    engine: &mut crate::AnyEngine,
+    weights: &ModelWeights,
+    tokenizer: &larql_inference::tokenizers::Tokenizer,
+    ffn: &dyn FfnBackend,
+    index: &larql_inference::larql_vindex::VectorIndex,
+    prompt_ids: &[u32],
+    max_new_tokens: usize,
+    mut on_token: F,
+) -> EngineGeneration
+where
+    F: FnMut(u32, &str),
+{
+    let mut generated = Vec::new();
     if max_new_tokens == 0 || prompt_ids.is_empty() {
-        return Vec::new();
+        return EngineGeneration {
+            tokens: generated,
+            error: None,
+        };
     }
+    let finish = |tokens: Vec<u32>, error| EngineGeneration { tokens, error };
 
     let last_hidden = match engine.prefill_resident(weights, ffn, index, prompt_ids) {
         Ok(h) => h,
-        Err(_) => return Vec::new(),
+        Err(e) => return finish(generated, Some(e)),
     };
 
-    let first = match argmax_next_token_resident(weights, tokenizer, index, &last_hidden) {
-        Some(t) => t,
-        None => return Vec::new(),
+    let Some(first) = argmax_next_token_resident(weights, tokenizer, index, &last_hidden) else {
+        return finish(generated, None);
     };
     on_token(first.0, &first.1);
 
-    let mut generated = Vec::with_capacity(max_new_tokens);
+    generated.reserve(max_new_tokens);
     generated.push(first.0);
     if is_stop(first.0, &first.1, tokenizer) || max_new_tokens == 1 {
-        return generated;
+        return finish(generated, None);
     }
 
     let mut current_id = first.0;
     for _step in 1..max_new_tokens {
         let h_step = match engine.decode_step_resident(weights, ffn, index, current_id) {
             Ok(h) => h,
-            Err(_) => break,
+            Err(e) => return finish(generated, Some(e)),
         };
-        let (id, tok_str) = match argmax_next_token_resident(weights, tokenizer, index, &h_step) {
-            Some(t) => t,
-            None => break,
+        let Some((id, tok_str)) = argmax_next_token_resident(weights, tokenizer, index, &h_step)
+        else {
+            break;
         };
         on_token(id, &tok_str);
         generated.push(id);
@@ -350,7 +403,7 @@ where
         current_id = id;
     }
 
-    generated
+    finish(generated, None)
 }
 
 /// Multi-modal-capable peer of [`generate_with_engine`]. Same shape;

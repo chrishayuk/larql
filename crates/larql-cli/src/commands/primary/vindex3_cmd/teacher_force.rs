@@ -147,13 +147,25 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     // container; this project has manufactured a "depth effect" that was
     // a backend effect before, and a bare .f32 carries no way to catch it.
     let steps_s = started.elapsed().as_secs_f64();
+    // What the projections actually executed as, so a plane says whether a
+    // matrix ran its stored bytes or an image manufactured at load — the
+    // difference PREC-DIAG-1 measured at 3.0 logprob on Gemma 3 4B.
+    let projection_plans: std::collections::BTreeMap<String, u64> =
+        larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+            .all()
+            .iter()
+            .filter(|(_, t)| t.calls > 0)
+            .map(|(plan, t)| (format!("{plan:?}"), t.calls))
+            .collect();
     let meta = format!(
         "{{\n  \"engine\": \"{engine}\",\n  \"draft_depth\": {},\n  \
          \"executed_layers\": [{}, {}],\n  \"model_layers\": {},\n  \
          \"positions\": {},\n  \"vocab\": {vocab},\n  \
          \"prepare_s\": {prepare_s:.3},\n  \"steps_s\": {steps_s:.3},\n  \
          \"ms_per_position\": {:.1},\n  \
-         \"max_format_env\": \"{}\",\n  \"rope_angles\": \"{}\"\n}}\n",
+         \"max_format_env\": \"{}\",\n  \"rope_angles\": \"{}\",\n  \
+         \"representation_source\": \"{}\",\n  \"runtime_quantised\": {},\n  \
+         \"projection_plans\": {}\n}}\n",
         match &slice {
             ExecutionSlice::Draft { end } => end.to_string(),
             _ => "null".to_string(),
@@ -165,6 +177,9 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         steps_s * 1000.0 / tokens.len() as f64,
         std::env::var("LARQL_CPU_MAX_FORMAT").unwrap_or_default(),
         rope_angles.name(),
+        super::prepare::representation_source_flag(store.representation_source()),
+        store.runtime_quantised(),
+        serde_json::to_string(&projection_plans)?,
     );
     let meta_path = out.with_extension(META_EXTENSION);
     std::fs::write(&meta_path, meta)?;

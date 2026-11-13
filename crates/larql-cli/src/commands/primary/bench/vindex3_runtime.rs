@@ -17,7 +17,6 @@ use larql_inference::vindex3::OpenedComponent;
 use larql_vindex::format::filenames::TOKENIZER_JSON;
 use larql_vindex::format::vindex3::opplan::exec::backend::{DispatchStats, PlanBackend};
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::prefill_prepared;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::tokenizers::Tokenizer;
@@ -33,7 +32,7 @@ use super::vindex3::{
 };
 use crate::commands::primary::vindex3_cmd::decode::argmax;
 use crate::commands::primary::vindex3_cmd::prepare::{
-    prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT,
+    default_representation_source, prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT,
 };
 use crate::commands::primary::vindex3_cmd::ExecBackend;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -65,7 +64,7 @@ pub(super) fn run_vindex3(
         container,
         DEFAULT_COMPONENT,
         backend,
-        RepresentationSource::Auto,
+        default_representation_source(backend),
         &plugins,
     )?;
     eprintln!(

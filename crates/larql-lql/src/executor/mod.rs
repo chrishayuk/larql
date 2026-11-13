@@ -450,9 +450,9 @@ impl Session {
                     ExplainMode::Walk => self.remote_walk(prompt, *top, layers.as_ref()),
                 }
             }
-            Statement::ApplyPatch { path } => self.remote_apply_local_patch(path),
+            Statement::ApplyPatch { path } => self.remote_apply_patch(path),
             Statement::ShowPatches => self.remote_show_patches(),
-            Statement::RemovePatch { path } => self.remote_remove_local_patch(path),
+            Statement::RemovePatch { path } => self.remote_remove_patch(path),
             Statement::Pipe { left, right } => {
                 let mut out = self.execute(left)?;
                 out.extend(self.execute(right)?);

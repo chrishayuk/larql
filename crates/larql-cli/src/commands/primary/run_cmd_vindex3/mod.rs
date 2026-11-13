@@ -41,7 +41,7 @@ use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
+use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use larql_vindex::tokenizers::Tokenizer;
@@ -51,7 +51,8 @@ use super::run_cmd::{KvCacheKind, RunArgs};
 use super::vindex3_cmd::decode::{greedy_decode, DecodeReport, Flow};
 use super::vindex3_cmd::plugins::Plugins;
 use super::vindex3_cmd::prepare::{
-    prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT, ENGINE_PREFIX,
+    default_representation_source, prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT,
+    ENGINE_PREFIX,
 };
 use super::vindex3_cmd::ExecBackend;
 
@@ -184,7 +185,7 @@ fn run_inner(
         container,
         DEFAULT_COMPONENT,
         backend,
-        RepresentationSource::Auto,
+        default_representation_source(backend),
         &plugins,
     )?;
     with_plan_backend(

@@ -77,6 +77,68 @@ pub(crate) fn parse_representation_source(spec: &str) -> Result<RepresentationSo
     }
 }
 
+/// The `--representation-source` a backend runs under when none is given.
+///
+/// **The canonical-bytes arms default to `stored`.** `reference` and
+/// `production` name no representation, so under `auto` the only thing the
+/// runtime could manufacture for them is what the CPU size policy chooses:
+/// a Q8 image of every BF16 matrix whose BF16 bytes exceed the host's L2.
+/// That is a lossy change of arithmetic nobody asked for, and it depends
+/// on the machine — on Gemma 3 4B it moved the logits by up to 3.0 against
+/// transformers f32 where the stored bytes agree within 6e-4 (PREC-DIAG-1,
+/// 2026-11-11). Under `stored` the same matrices run their BF16 bytes
+/// directly, so the default answer no longer depends on the cache size.
+/// `--representation-source auto` keeps the requantising policy as an
+/// explicit performance choice.
+///
+/// Every other arm names its format, and naming it is the opt-in: those
+/// keep `auto`, so a lossy arm still quantises at load when no pack is
+/// compiled, as before. Exhaustive so a new backend states which it is.
+pub(crate) fn default_representation_source(backend: ExecBackend) -> RepresentationSource {
+    match backend {
+        ExecBackend::Reference | ExecBackend::Production => RepresentationSource::Stored,
+        ExecBackend::ProductionNvfp4
+        | ExecBackend::ProductionQ8
+        | ExecBackend::ProductionQ6k
+        | ExecBackend::ProductionQ4k
+        | ExecBackend::ProductionQ4kQ8k
+        | ExecBackend::ProductionNvfp4Q8 => RepresentationSource::Auto,
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
+        ExecBackend::Metal
+        | ExecBackend::MetalMxfp4
+        | ExecBackend::MetalMxfp4All
+        | ExecBackend::MetalNvfp4
+        | ExecBackend::MetalNvfp4NoHead
+        | ExecBackend::MetalNvfp4Ffn
+        | ExecBackend::MetalLowered
+        | ExecBackend::MetalLoweredFfn
+        | ExecBackend::MetalLoweredNoHead
+        | ExecBackend::MetalLoweredMxfp4
+        | ExecBackend::MetalLoweredMxfp4Ffn
+        | ExecBackend::MetalLoweredF16 => RepresentationSource::Auto,
+    }
+}
+
+/// `--representation-source` as given, or the backend's default.
+pub(crate) fn resolve_representation_source(
+    spec: Option<&str>,
+    backend: ExecBackend,
+) -> Result<RepresentationSource, BoxErr> {
+    spec.map_or(
+        Ok(default_representation_source(backend)),
+        parse_representation_source,
+    )
+}
+
+/// A representation source as the flag spells it.
+pub(crate) fn representation_source_flag(source: RepresentationSource) -> &'static str {
+    match source {
+        RepresentationSource::Auto => "auto",
+        RepresentationSource::Stored => "stored",
+        RepresentationSource::Transient => "transient",
+    }
+}
+
 /// The encoding execution asks the store for: `--representation`'s, or else
 /// the backend's.
 pub(crate) fn wanted_encoding(

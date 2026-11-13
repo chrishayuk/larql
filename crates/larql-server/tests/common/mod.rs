@@ -71,10 +71,14 @@ pub fn test_index() -> VectorIndex {
     VectorIndex::new(vec![Some(gate)], vec![Some(meta)], 1, hidden)
 }
 
+/// The model every fixture here serves (`index.json` `model`). A patch must
+/// name it as its `base_model` to be applied.
+pub const FIXTURE_MODEL: &str = "test/model-4";
+
 pub fn test_config() -> VindexConfig {
     VindexConfig {
         version: 2,
-        model: "test/model-4".to_string(),
+        model: FIXTURE_MODEL.to_string(),
         family: "test".to_string(),
         source: None,
         checksums: None,
@@ -676,7 +680,7 @@ pub fn inline_delete_patch(name: &str) -> serde_json::Value {
     serde_json::json!({
         "patch": {
             "version": 1,
-            "base_model": "test",
+            "base_model": FIXTURE_MODEL,
             "base_checksum": null,
             "created_at": "2026-04-26",
             "description": name,

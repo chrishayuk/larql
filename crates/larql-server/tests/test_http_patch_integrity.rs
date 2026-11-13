@@ -20,7 +20,7 @@ fn out_of_bounds_patch(name: &str) -> serde_json::Value {
     serde_json::json!({
         "patch": {
             "version": 1,
-            "base_model": "test",
+            "base_model": FIXTURE_MODEL,
             "base_checksum": null,
             "created_at": "2026-11-10",
             "description": name,
