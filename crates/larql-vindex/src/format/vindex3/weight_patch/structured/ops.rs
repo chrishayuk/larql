@@ -1,4 +1,4 @@
-//! The three ops, with the contract's check phases (SPEC §4) in order: parse, header, tensor bytes, compute,
+//! The four ops, with the contract's check phases (SPEC §4) in order: parse, header, tensor bytes, compute,
 //! fixups. An op either returns every output element or refuses with one code.
 
 use super::arith::{exact_product_to_f32, Arith, Work};
@@ -114,6 +114,56 @@ fn interpret(
                 add_low_rank::<f64>(op, base, p, ar, k, decode(a, p)?, decode(b, p)?)
             } else {
                 add_low_rank::<f32>(op, base, p, ar, k, decode(a, p)?, decode(b, p)?)
+            }
+        }
+        (
+            OpKind::AddLowRankColumns {
+                rank,
+                a,
+                b,
+                columns,
+            },
+            Some(p),
+        ) => {
+            check_columns_sorted(columns)?;
+            let k = *rank;
+            if k < 1 {
+                return Err(refuse(RefusalCode::RankInvalid, "rank must be at least 1"));
+            }
+            let n = columns.len();
+            let (need_a, need_b) = (rows.checked_mul(k), k.checked_mul(n));
+            if need_a != Some(a.len()) || need_b != Some(b.len()) {
+                return Err(refuse(
+                    RefusalCode::ShapeInvalid,
+                    format!(
+                        "a has {}, b has {}; rank {k} over {n} columns needs {need_a:?} and {need_b:?}",
+                        a.len(),
+                        b.len(),
+                    ),
+                ));
+            }
+            if p.works_in_f64() {
+                add_low_rank_columns::<f64>(
+                    op,
+                    base,
+                    p,
+                    ar,
+                    k,
+                    decode(a, p)?,
+                    decode(b, p)?,
+                    columns,
+                )
+            } else {
+                add_low_rank_columns::<f32>(
+                    op,
+                    base,
+                    p,
+                    ar,
+                    k,
+                    decode(a, p)?,
+                    decode(b, p)?,
+                    columns,
+                )
             }
         }
         (_, None) => unreachable!("only zero_columns has no profile"),
@@ -419,4 +469,86 @@ fn add_low_rank<W: Work>(
     }
     apply_fixups(&mut out, &op.fixups, cols)?;
     Ok(out)
+}
+
+/// v2 SPEC §3. Whether an element is written is decided from the operands alone, before any arithmetic: some
+/// term has both factors nonzero. An element that is not written keeps its base bits and is never computed.
+#[allow(clippy::too_many_arguments)]
+fn add_low_rank_columns<W: Work>(
+    op: &StructuredOp,
+    base: &BaseTensor<'_>,
+    p: Profile,
+    ar: Arith,
+    k: usize,
+    a: Vec<W>,
+    b: Vec<W>,
+    columns: &[usize],
+) -> Result<Vec<u16>, Refusal> {
+    let rows = op.shape[0];
+    let cols = check_header(op, base, Some(columns), |_, c| {
+        columns.binary_search(&c).is_ok()
+    })?;
+    if ar.mutation == Mutation::ZeroPaddedFull {
+        return add_low_rank(
+            op,
+            base,
+            p,
+            ar,
+            k,
+            a,
+            pad_to_every_column(&b, k, columns, cols),
+        );
+    }
+    // The precondition covers rows × J whether or not an element is written (§5).
+    check_read_finite(
+        base,
+        (0..rows).flat_map(|r| columns.iter().map(move |&j| r * cols + j)),
+    )?;
+    let chain = through_f32(p, ar.mutation);
+    let n = columns.len();
+    let mut out = base.bits.to_vec();
+    for r in 0..rows {
+        let a_row = &a[r * k..(r + 1) * k];
+        for (q, &j) in columns.iter().enumerate() {
+            let term = |kk: usize| (a_row[kk], b[kk * n + q]);
+            let written = (0..k).any(|kk| {
+                let (x, y) = term(kk);
+                // `==` on floats: −0 and +0 are both zero (§2a).
+                x != W::zero() && y != W::zero()
+            });
+            if !written && ar.mutation != Mutation::ZeroUpdateNotKept {
+                continue;
+            }
+            let mut w = W::widen_bf16(base.bits[r * cols + j]);
+            if ar.mutation == Mutation::LowRankFromZero {
+                let mut s = W::zero();
+                for kk in 0..k {
+                    let (x, y) = term(kk);
+                    s = ar.add(s, ar.mul(x, y)?)?;
+                }
+                w = ar.add(w, s)?;
+            } else {
+                for kk in 0..k {
+                    let (x, y) = term(kk);
+                    w = ar.add(w, ar.mul(x, y)?)?;
+                }
+            }
+            out[r * cols + j] = ar.to_bf16(w, chain)?;
+        }
+    }
+    apply_fixups(&mut out, &op.fixups, cols)?;
+    Ok(out)
+}
+
+/// The compact `K × |J|` factor laid out `K × cols`, zero outside `J`: the wrong semantics the v2 vectors call
+/// `zero_padded_full`.
+fn pad_to_every_column<W: Work>(b: &[W], k: usize, columns: &[usize], cols: usize) -> Vec<W> {
+    let n = columns.len();
+    let mut full = vec![W::zero(); k * cols];
+    for kk in 0..k {
+        for (q, &j) in columns.iter().enumerate() {
+            full[kk * cols + j] = b[kk * n + q];
+        }
+    }
+    full
 }

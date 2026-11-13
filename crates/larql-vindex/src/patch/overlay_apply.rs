@@ -52,7 +52,9 @@ fn validate_patch_vectors(patch: &VindexPatch) -> Result<(), VindexError> {
                 check(i, "key_vector_b64", key_vector_b64)?;
             }
             PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => {}
-            PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {
+            PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => {
                 return Err(VindexError::Parse(format!(
                     "patch op {i}: a stored-weight op edits the stored weights of a VINDEX3 container; \
                      a VINDEX2 overlay cannot hold it"
@@ -122,7 +124,9 @@ impl PatchedVindex {
                     self.knn_store.remove_by_entity(entity);
                     continue;
                 }
-                PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {
+                PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {
                     unreachable!("rejected whole by validate_patch_vectors")
                 }
                 _ => {}
@@ -235,7 +239,8 @@ impl PatchedVindex {
                 PatchOp::InsertKnn { .. }
                 | PatchOp::DeleteKnn { .. }
                 | PatchOp::WeightDelta(_)
-                | PatchOp::StructuredWeight(_) => {
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {
                     unreachable!("KNN and weight ops handled above");
                 }
             }

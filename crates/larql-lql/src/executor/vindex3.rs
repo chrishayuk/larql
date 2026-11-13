@@ -21,6 +21,7 @@ use larql_vindex::format::vindex3::opplan::LayerAttention;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
+mod low_rank;
 mod overrides;
 mod session;
 mod weights;

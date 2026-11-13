@@ -856,6 +856,34 @@ exactly.
 - **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container
   implements the op is for `VERIFY PATCH` (section 3.9), which recomputes it from the operands.
 
+### 3.5.3 Structured weight edits: `ADD LOW RANK` (VINDEX3)
+
+```sql
+ADD LOW RANK "<operands.json>" TO "<tensor>" COLUMNS (<n>, <n>, …) NUMERICS "<profile>";
+```
+
+Adds a low-rank update to chosen columns `J` of one stored BF16 matrix: `W[r, J[p]] <- W[r, J[p]] + Σ_k a[r,k]·b[k,p]`,
+summed sequentially in `k` from the widened base, one rounding per operation, converted to BF16 once. This is
+`add_low_rank_columns` of VLP numerics v2 (`conformance/vlp-numerics/v2/SPEC.md`). Like `REMOVE DIRECTION`, the edit
+is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 delta is involved.
+
+- **Axes.** The tensor is the stored `[rows, cols]` (for a linear weight, `[out_features, in_features]`). Rows are the
+  output axis and `COLUMNS` index the input axis, so an `o_proj` head slice is that head's block of columns.
+- **Operand file.** JSON `{"rank": K, "a": [...], "b": [...], "origin": "<optional note>"}`. `a` is `rows × K` and `b`
+  is `K × |COLUMNS|`, both row-major, as bit patterns in the profile's working width: 16 lowercase hex digits for the
+  f64 profiles, 8 for `f32-seq-rne1/v1`. `b` is **compact**: a `b` laid out over every column is refused
+  (`shape_invalid`). There is no scale: a producer with `α·u·vᵀ` folds `α` into its operands and may record
+  `α`, `u`, `v` in `origin`, which the digest covers and nothing computes with.
+- **Untouched elements.** An element whose `K` terms all have a zero factor (`−0` counts as zero) keeps its base
+  bits and is never computed, so `a = 0` or `b = 0` changes nothing, a base `−0` included. Such an op is refused
+  as empty, at staging and at compile. Elements outside `COLUMNS` are never read.
+- **Numerics** is any v2 profile: `f64-seq-rne1/v1`, `f64-seq-rne2/v1` or `f32-seq-rne1/v1`.
+- **Conflicts** are by declared footprint, the columns over every row, exactly as for `REMOVE DIRECTION`: the two
+  kinds of structured op may share a tensor only on disjoint columns, and either kind beside an `UPDATE WEIGHTS`
+  delta on one tensor is refused as mixed forms.
+- **`.vlp`.** The op is recorded as `"op": "low_rank_columns_weight"`; a reader that does not know it refuses the
+  whole patch.
+
 ### 3.6 Schema Introspection Statements
 
 ```

@@ -64,17 +64,21 @@ fn operands(v: &Value, f32_width: bool) -> OperandBits {
     }
 }
 
-struct Case {
-    id: String,
+pub(crate) struct Case {
+    pub(crate) id: String,
     op: StructuredOp,
     base_shape: [usize; 2],
     base_bits: Vec<u16>,
     role: TensorRole,
 }
 
-fn case(c: &Value) -> Case {
+pub(crate) fn case(c: &Value) -> Case {
     let op = &c["op"];
-    let numerics = op.get("numerics").map(|n| n.as_str().unwrap().to_string());
+    // An absent profile and a JSON `null` one are both "no profile".
+    let numerics = op
+        .get("numerics")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let f32_width = numerics.as_deref() == Some(Profile::F32SeqRne1.id());
     let shape = usizes(&op["shape"]);
     let kind = match op["kind"].as_str().unwrap() {
@@ -94,6 +98,12 @@ fn case(c: &Value) -> Case {
             rank: op["rank"].as_u64().unwrap() as usize,
             a: operands(&op["a"], f32_width),
             b: operands(&op["b"], f32_width),
+        },
+        "add_low_rank_columns" => OpKind::AddLowRankColumns {
+            rank: op["rank"].as_u64().unwrap() as usize,
+            a: operands(&op["a"], f32_width),
+            b: operands(&op["b"], f32_width),
+            columns: usizes(&op["columns"]),
         },
         "zero_columns" => OpKind::ZeroColumns {
             columns: usizes(&op["columns"]),
@@ -130,14 +140,14 @@ fn case(c: &Value) -> Case {
 }
 
 /// An outcome in the vectors' terms: `Ok(bits)` or `Err(code)`.
-fn outcome(v: &Value) -> Result<Vec<u16>, String> {
+pub(crate) fn outcome(v: &Value) -> Result<Vec<u16>, String> {
     match v.get("refuse") {
         Some(code) => Err(code.as_str().unwrap().to_string()),
         None => Ok(bits_list(&v["bf16"])),
     }
 }
 
-fn ours(c: &Case, m: Mutation) -> Result<Vec<u16>, String> {
+pub(crate) fn ours(c: &Case, m: Mutation) -> Result<Vec<u16>, String> {
     let base = BaseTensor {
         shape: c.base_shape,
         bits: &c.base_bits,

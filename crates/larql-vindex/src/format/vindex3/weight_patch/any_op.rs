@@ -1,13 +1,15 @@
 //! A stored-weight `.vlp` op of either form, and the rule for when two of them may be held together.
 //!
-//! The delta op ([`super::WeightDeltaOp`]) names elements; the structured op ([`super::StructuredWeightOp`])
-//! names columns and an operation over them. Two ops conflict by their **declared write footprint**, never by
+//! The delta op ([`super::WeightDeltaOp`]) names elements; the structured ops ([`super::StructuredWeightOp`],
+//! `remove_direction`, and [`super::LowRankColumnsOp`], `add_low_rank_columns`) name columns and an operation
+//! over them. Two ops conflict by their **declared write footprint**, never by
 //! the elements an op happens to change after rounding: an op that rounds back to a stored value still
 //! declared its write, and a later op on that element must not silently compose with it. Footprint is the
 //! only thing the rule looks at, so it can be read off the op without opening a container.
 //!
 //! - delta against delta: the same element;
-//! - structured against structured: the same column (a structured op writes down whole columns);
+//! - structured against structured, of either kind: the same column (a structured op writes down whole
+//!   columns, and reads only its own);
 //! - delta against structured, on one tensor: refused as a mixed form. Resolving the delta's rounding
 //!   against the structured result is a composition rule this version does not define.
 
@@ -15,6 +17,7 @@ use std::path::Path;
 
 use super::apply::{DeclaredPatch, ResultPatch, WeightPatch};
 use super::error::WeightPatchError;
+use super::low_rank_op::LowRankColumnsOp;
 use super::op::WeightDeltaOp;
 use super::structured_op::StructuredWeightOp;
 
@@ -23,6 +26,7 @@ use super::structured_op::StructuredWeightOp;
 pub enum WeightOp {
     Delta(WeightDeltaOp),
     Structured(StructuredWeightOp),
+    LowRankColumns(LowRankColumnsOp),
 }
 
 /// A stored-weight op, borrowed.
@@ -30,6 +34,7 @@ pub enum WeightOp {
 pub enum WeightOpRef<'a> {
     Delta(&'a WeightDeltaOp),
     Structured(&'a StructuredWeightOp),
+    LowRankColumns(&'a LowRankColumnsOp),
 }
 
 impl WeightOp {
@@ -37,6 +42,7 @@ impl WeightOp {
         match self {
             WeightOp::Delta(op) => WeightOpRef::Delta(op),
             WeightOp::Structured(op) => WeightOpRef::Structured(op),
+            WeightOp::LowRankColumns(op) => WeightOpRef::LowRankColumns(op),
         }
     }
 }
@@ -46,6 +52,7 @@ impl WeightOpRef<'_> {
         match self {
             WeightOpRef::Delta(op) => &op.tensor,
             WeightOpRef::Structured(op) => &op.tensor,
+            WeightOpRef::LowRankColumns(op) => &op.tensor,
         }
     }
 
@@ -53,6 +60,7 @@ impl WeightOpRef<'_> {
         match self {
             WeightOpRef::Delta(op) => &op.digest,
             WeightOpRef::Structured(op) => &op.digest,
+            WeightOpRef::LowRankColumns(op) => &op.digest,
         }
     }
 
@@ -60,6 +68,7 @@ impl WeightOpRef<'_> {
         match self {
             WeightOpRef::Delta(op) => op.check_intact(),
             WeightOpRef::Structured(op) => op.check_intact(),
+            WeightOpRef::LowRankColumns(op) => op.check_intact(),
         }
     }
 
@@ -67,6 +76,16 @@ impl WeightOpRef<'_> {
         match self {
             WeightOpRef::Delta(op) => op.check_binding(container),
             WeightOpRef::Structured(op) => op.check_binding(container),
+            WeightOpRef::LowRankColumns(op) => op.check_binding(container),
+        }
+    }
+
+    /// The columns a structured op writes down, over every row; `None` for a delta op, which names elements.
+    pub fn structured_columns(&self) -> Option<&[usize]> {
+        match self {
+            WeightOpRef::Delta(_) => None,
+            WeightOpRef::Structured(op) => Some(&op.columns),
+            WeightOpRef::LowRankColumns(op) => Some(&op.columns),
         }
     }
 
@@ -90,20 +109,20 @@ impl WeightOpRef<'_> {
                     None => Ok(()),
                 }
             }
-            (WeightOpRef::Structured(new), WeightOpRef::Structured(old)) => {
-                match new.columns.iter().find(|c| old.columns.contains(c)) {
+            _ => match (self.structured_columns(), held.structured_columns()) {
+                (Some(new), Some(old)) => match new.iter().find(|c| old.contains(c)) {
                     Some(&col) => Err(WeightPatchError::ColumnConflict {
                         tensor,
                         col,
                         by: by.to_string(),
                     }),
                     None => Ok(()),
-                }
-            }
-            _ => Err(WeightPatchError::MixedForms {
-                tensor,
-                by: by.to_string(),
-            }),
+                },
+                _ => Err(WeightPatchError::MixedForms {
+                    tensor,
+                    by: by.to_string(),
+                }),
+            },
         }
     }
 }
@@ -137,9 +156,13 @@ pub fn declare_patches(
                     edits: d.weight_edits(),
                 })),
             },
-            WeightOpRef::Structured(st) => {
-                let resolved = st.resolve(container)?;
-                match patches.iter_mut().find(|p| p.tensor() == st.tensor) {
+            WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => {
+                let resolved = match op {
+                    WeightOpRef::Structured(st) => st.resolve(container)?,
+                    WeightOpRef::LowRankColumns(lr) => lr.resolve(container)?,
+                    WeightOpRef::Delta(_) => unreachable!("matched above"),
+                };
+                match patches.iter_mut().find(|p| p.tensor() == resolved.tensor) {
                     Some(DeclaredPatch::Results(p)) => p.edits.extend(resolved.edits),
                     Some(DeclaredPatch::Deltas(_)) => unreachable!("mixed forms refused above"),
                     None => patches.push(DeclaredPatch::Results(ResultPatch {

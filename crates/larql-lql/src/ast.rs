@@ -217,6 +217,16 @@ pub enum Statement {
         witness: String,
         container: String,
     },
+    /// `ADD LOW RANK "<operand file>" TO "<tensor>" COLUMNS (<n>, …) NUMERICS "<profile>"`: stage a structured
+    /// `add_low_rank_columns` (VLP numerics v2) on a VINDEX3 container's stored weights, declared by its
+    /// operands `a` and `b` (in the file), its columns and its numerical profile. The compile writes the exact
+    /// BF16 results the profile defines. See `weight_patch::low_rank_op`.
+    AddLowRank {
+        operands: String,
+        tensor: String,
+        columns: Vec<usize>,
+        numerics: String,
+    },
     /// `VERIFY PATCH "<patch.vlp>" USING CONTRACT "<id>" FROM "<base>" AGAINST "<container>";`:
     /// an external verifier recomputes what the patch declares of the base from its operands and
     /// compares it with the compiled container. Read-only. LQL never evaluates it.
@@ -294,6 +304,7 @@ impl Statement {
             Statement::Update { .. } => "UPDATE",
             Statement::UpdateWeights { .. } => "UPDATE WEIGHTS",
             Statement::RemoveDirection { .. } => "REMOVE DIRECTION",
+            Statement::AddLowRank { .. } => "ADD LOW RANK",
             Statement::Merge { .. } => "MERGE",
             Statement::Rebalance { .. } => "REBALANCE",
             Statement::ShowRelations { .. } => "SHOW RELATIONS",

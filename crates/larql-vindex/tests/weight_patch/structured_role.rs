@@ -18,7 +18,7 @@ const ALPHA_NEAR_ONE: u64 = 0x3ff0_0000_4000_0000;
 /// The fixture's embedding tensor is called `weight`, like the final norm's, so it is ambiguous by name. A name of the
 /// SAME LENGTH keeps the segment header's size, and so every offset in the file, unchanged.
 const ORIGINAL_NAME: &str = "weight";
-const UNIQUE_NAME: &str = "embeds";
+pub(crate) const UNIQUE_NAME: &str = "embeds";
 const EMBEDDING_SEGMENT: &str = "segments/target.embedding.bin";
 const EMBEDDING_REPRESENTATION: &str = "target.embedding@BF16";
 /// The BF16-only container the fixture builder leaves beside the packed one. In a container WITH a derived pack an
@@ -40,7 +40,7 @@ fn copy_tree(from: &Path, to: &Path) {
 
 /// A copy of the fixture container in which the embedding tensor has a unique name, with the segment hash re-sealed so
 /// the container still reads as intact.
-fn container_with_addressable_embedding(src: &Source) -> PathBuf {
+pub(crate) fn container_with_addressable_embedding(src: &Source) -> PathBuf {
     let dir = src.out("renamed.vindex3");
     copy_tree(&src.dir.path().join(BF16_ONLY), &dir);
     let segment = dir.join(EMBEDDING_SEGMENT);

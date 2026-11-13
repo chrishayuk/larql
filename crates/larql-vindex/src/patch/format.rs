@@ -120,6 +120,24 @@ pub enum PatchOp {
     /// `format::vindex3::weight_patch::structured_op`.
     #[serde(rename = "structured_weight")]
     StructuredWeight(crate::format::vindex3::weight_patch::StructuredWeightOp),
+    /// Edit stored weights by `add_low_rank_columns` (VLP numerics v2), declared by its operands and resolved
+    /// to exact BF16 results at compile. Same refusal rule as `weight_delta`. See
+    /// `format::vindex3::weight_patch::low_rank_op`.
+    #[serde(rename = "low_rank_columns_weight")]
+    LowRankColumnsWeight(crate::format::vindex3::weight_patch::LowRankColumnsOp),
+}
+
+impl PatchOp {
+    /// The stored-weight op this is, of any form; `None` for a knowledge op.
+    pub fn weight_op(&self) -> Option<crate::format::vindex3::weight_patch::WeightOpRef<'_>> {
+        use crate::format::vindex3::weight_patch::WeightOpRef;
+        match self {
+            PatchOp::WeightDelta(w) => Some(WeightOpRef::Delta(w)),
+            PatchOp::StructuredWeight(w) => Some(WeightOpRef::Structured(w)),
+            PatchOp::LowRankColumnsWeight(w) => Some(WeightOpRef::LowRankColumns(w)),
+            _ => None,
+        }
+    }
 }
 
 /// Compact down_meta for a patch operation.
@@ -143,7 +161,8 @@ impl PatchOp {
             PatchOp::InsertKnn { .. }
             | PatchOp::DeleteKnn { .. }
             | PatchOp::WeightDelta(_)
-            | PatchOp::StructuredWeight(_) => None,
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => None,
         }
     }
 }
@@ -223,9 +242,10 @@ impl VindexPatch {
         for op in &self.operations {
             match op {
                 PatchOp::Insert { .. } | PatchOp::InsertKnn { .. } => ins += 1,
-                PatchOp::Update { .. } | PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {
-                    upd += 1
-                }
+                PatchOp::Update { .. }
+                | PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => upd += 1,
                 PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => del += 1,
             }
         }

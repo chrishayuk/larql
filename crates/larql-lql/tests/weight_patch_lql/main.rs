@@ -7,6 +7,7 @@
 mod cross_language;
 mod direct;
 mod golden;
+mod low_rank;
 mod parsing;
 mod refusals;
 mod structured;

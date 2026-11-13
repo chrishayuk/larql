@@ -31,6 +31,7 @@ pub mod any_op;
 pub mod bf16;
 pub mod error;
 pub mod ledger;
+pub mod low_rank_op;
 pub mod op;
 pub mod structured;
 pub mod structured_op;
@@ -48,6 +49,7 @@ pub use ledger::{
     check_ledger, parse_ledger, EditEncoding, LedgerEdit, LedgerTarget, WeightPatchLedger,
     WEIGHT_PATCHES_SCHEMA, WEIGHT_PATCHES_SCHEMA_V1, WEIGHT_PATCHES_SCHEMA_V3,
 };
+pub use low_rank_op::LowRankColumnsOp;
 pub use op::{bind_source, record_op, DeltaEdit, SourceBinding, WeightDeltaOp};
 pub use structured_op::StructuredWeightOp;
 

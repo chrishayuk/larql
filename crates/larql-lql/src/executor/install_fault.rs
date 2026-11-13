@@ -184,6 +184,9 @@ impl Session {
                         larql_vindex::format::vindex3::weight_patch::WeightOpRef::Structured(s) => {
                             serde_json::to_string(s)
                         }
+                        larql_vindex::format::vindex3::weight_patch::WeightOpRef::LowRankColumns(
+                            l,
+                        ) => serde_json::to_string(l),
                     };
                     weights.bytes(text.unwrap_or_default().as_bytes());
                 }

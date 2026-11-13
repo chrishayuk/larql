@@ -1,13 +1,15 @@
-//! **Structured weight-patch ops**: the numerical interpreter of VLP numerics v1.
+//! **Structured weight-patch ops**: the numerical interpreter of VLP numerics v1 and v2.
 //!
-//! Three ops edit one row-major BF16 matrix and produce BF16:
+//! Four ops edit one row-major BF16 matrix and produce BF16:
 //! - `remove_direction`: `w − (α·u)·c` on columns `S`, where `c = uᵀw` is reduced sequentially in `r`;
 //! - `add_low_rank`: `w + Σ_k a[:,k]·b[k,:]`, sequential in `k`, starting from the widened base;
+//! - `add_low_rank_columns` (v2): the same update confined to columns `J`, with a compact `b` (`K × |J|`), and
+//!   an element whose terms all have a zero factor left bit for bit untouched;
 //! - `zero_columns`: `0x0000` on columns `S`.
 //!
-//! The arithmetic follows a versioned numerical profile ([`Profile`]). The language-neutral contract is
-//! `conformance/vlp-numerics/v1/SPEC.md`, and its frozen golden vectors are the acceptance test for this
-//! module. This module never changes to fit a vector: a disagreement is a defect here, or a specification
+//! The arithmetic follows a versioned numerical profile ([`Profile`]). The language-neutral contracts are
+//! `conformance/vlp-numerics/v1/SPEC.md` and `conformance/vlp-numerics/v2/SPEC.md`, and their frozen golden
+//! vectors are the acceptance test for this module. This module never changes to fit a vector: a disagreement is a defect here, or a specification
 //! defect that needs a new version of the contract.
 //!
 //! This is the numerics only. Binding a patch to a container, the `.vlp` encoding, the digest, resource limits
@@ -101,6 +103,16 @@ pub enum OpKind {
         /// `rank × cols`, row-major.
         b: OperandBits,
     },
+    /// VLP numerics v2.
+    AddLowRankColumns {
+        rank: usize,
+        /// `rows × rank`, row-major.
+        a: OperandBits,
+        /// `rank × columns.len()`, row-major and compact: `b[k, p]` is the factor for column `columns[p]`.
+        b: OperandBits,
+        /// `J`: strictly increasing column indices (the input axis).
+        columns: Vec<usize>,
+    },
     ZeroColumns {
         columns: Vec<usize>,
     },
@@ -137,7 +149,7 @@ pub struct BaseTensor<'a> {
 
 /// A deliberately wrong semantics, threaded through the production path so that a test can show it changes
 /// bytes. Every public entry point except [`run_with`] passes [`Mutation::None`]. The variants are the
-/// contract's named wrong semantics (SPEC §5).
+/// contracts' named wrong semantics (v1 SPEC §5, v2 SPEC §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mutation {
     None,
@@ -152,4 +164,8 @@ pub enum Mutation {
     Bf16OutputFlush,
     LowRankFromZero,
     ZeroKeepsSign,
+    /// v2: `add_low_rank_columns` run as v1 `add_low_rank` on a `b` zero-padded to every column.
+    ZeroPaddedFull,
+    /// v2: an element whose terms are all zero is still computed, so `(−0) + (+0) = +0`.
+    ZeroUpdateNotKept,
 }

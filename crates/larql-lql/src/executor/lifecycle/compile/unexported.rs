@@ -67,7 +67,9 @@ fn census(patched: &PatchedVindex, recording_ops: &[PatchOp]) -> EditCensus {
             PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } => census.knn += 1,
             PatchOp::Insert { .. } => census.inserts += 1,
             // Applies to a VINDEX3 container, which has its own compile.
-            PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {}
+            PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => {}
         }
     }
     // Overlay state no recorded operation accounts for is still an edit.

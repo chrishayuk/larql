@@ -123,22 +123,7 @@ impl WeightDeltaOp {
     /// Refuse unless `container` is the exact artifact this edit was written
     /// against.
     pub fn check_binding(&self, container: &Path) -> Result<(), WeightPatchError> {
-        let now = bind_source(container, &self.tensor)?;
-        if now != self.source {
-            return Err(WeightPatchError::WrongSource {
-                expected: format!(
-                    "{} / {}",
-                    short(&self.source.index_sha256),
-                    short(&self.source.payload_sha256)
-                ),
-                found: format!(
-                    "{} / {}",
-                    short(&now.index_sha256),
-                    short(&now.payload_sha256)
-                ),
-            });
-        }
-        Ok(())
+        check_same_source(&self.source, container, &self.tensor)
     }
 
     /// The edits as library edits.
@@ -152,6 +137,31 @@ impl WeightDeltaOp {
             })
             .collect()
     }
+}
+
+/// Refuse unless `container` is the exact artifact `source` binds: the same index, representation and
+/// payload of `tensor`. Shared by every stored-weight op.
+pub(super) fn check_same_source(
+    source: &SourceBinding,
+    container: &Path,
+    tensor: &str,
+) -> Result<(), WeightPatchError> {
+    let now = bind_source(container, tensor)?;
+    if &now != source {
+        return Err(WeightPatchError::WrongSource {
+            expected: format!(
+                "{} / {}",
+                short(&source.index_sha256),
+                short(&source.payload_sha256)
+            ),
+            found: format!(
+                "{} / {}",
+                short(&now.index_sha256),
+                short(&now.payload_sha256)
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn short(digest: &str) -> &str {

@@ -41,6 +41,7 @@ impl Statement {
             | Statement::Update { .. }
             | Statement::UpdateWeights { .. }
             | Statement::RemoveDirection { .. }
+            | Statement::AddLowRank { .. }
             | Statement::Merge { .. }
             | Statement::Rebalance { .. }
             | Statement::ShowRelations { .. }
