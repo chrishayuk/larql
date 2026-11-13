@@ -116,7 +116,11 @@ impl Session {
                 resolved.changed_elements
             ),
             format!("  op digest {}", &digest[..16]),
-            "  results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits".into(),
+            if resolved.is_sham().map_err(refused)? {
+                "  zero-valued (every term has a zero factor): a declared sham, compiled to the base's exact bytes".into()
+            } else {
+                "  results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits".into()
+            },
             format!(
                 "  {pending} structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX"
             ),

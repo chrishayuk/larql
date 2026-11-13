@@ -353,7 +353,8 @@ fn locate_all<'a>(
 
 fn validate(patch: &DeclaredPatch) -> Result<(), WeightPatchError> {
     if let DeclaredPatch::Operations(p) = patch {
-        if p.changed_elements == 0 || p.operations.is_empty() {
+        // Nothing changed is refused unless every op is zero-valued: a declared sham compiles to the base's bytes.
+        if p.operations.is_empty() || (p.changed_elements == 0 && !p.is_sham()?) {
             return Err(WeightPatchError::Empty);
         }
         if p.result.len() != p.shape[0] * p.shape[1] {

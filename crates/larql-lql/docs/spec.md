@@ -883,8 +883,11 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   (`shape_invalid`). There is no scale: a producer with `α·u·vᵀ` folds `α` into its operands and may record
   `α`, `u`, `v` in `origin`, which the digest covers and nothing computes with.
 - **Untouched elements.** An element whose `K` terms all have a zero factor (`−0` counts as zero) keeps its base
-  bits and is never computed, so `a = 0` or `b = 0` changes nothing, a base `−0` included. Such an op is refused
-  as empty, at staging and at compile. Elements outside `COLUMNS` are never read.
+  bits and is never computed, so `a = 0` or `b = 0` changes nothing, a base `−0` included. Such a **zero-valued**
+  op (for every term, `a`'s column or `b`'s row is all zero) is a declared **sham**: it stages and compiles to a
+  container whose tensor bytes are the base's, recorded with `changed_elements: 0`. Any other op that changes no
+  element (one whose results all round back to the stored bits) is refused. Elements outside `COLUMNS` are never
+  read.
 - **Numerics** is any v2 profile: `f64-seq-rne1/v1`, `f64-seq-rne2/v1` or `f32-seq-rne1/v1`.
 - **Conflicts** are by declared footprint, the columns over every row, exactly as for `REMOVE DIRECTION`: the two
   kinds of structured op may share a tensor only on disjoint columns, and either kind beside an `UPDATE WEIGHTS`

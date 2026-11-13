@@ -150,7 +150,8 @@ impl LowRankColumnsOp {
     }
 
     /// Run the op over the bound tensor of `container`: the whole compiled tensor and how it is recorded as an
-    /// operation target. An op that changes nothing is refused: a patch edits at least one element.
+    /// operation target. An op that changes nothing is refused (a patch edits at least one element) unless it is
+    /// zero-valued: then it is a declared sham and resolves to its base's bytes.
     pub fn resolve_tensor(&self, container: &Path) -> Result<OperationPatch, WeightPatchError> {
         self.check_intact()?;
         self.check_binding(container)?;
@@ -166,19 +167,24 @@ impl LowRankColumnsOp {
     pub fn resolve(&self, container: &Path) -> Result<ResultPatch, WeightPatchError> {
         let resolved = self.resolve_tensor(container)?;
         let ([_, cols], base) = super::apply::read_bf16_tensor(container, &self.tensor)?;
+        let edits: Vec<ResultEdit> = base
+            .iter()
+            .zip(&resolved.result)
+            .enumerate()
+            .filter(|(_, (old, new))| old != new)
+            .map(|(i, (_, &new_bits))| ResultEdit {
+                row: i / cols,
+                col: i % cols,
+                new_bits,
+            })
+            .collect();
+        // The element form lists changes, so it cannot carry a sham (a zero-valued op); only the operation form can.
+        if edits.is_empty() {
+            return Err(WeightPatchError::Empty);
+        }
         Ok(ResultPatch {
             tensor: self.tensor.clone(),
-            edits: base
-                .iter()
-                .zip(&resolved.result)
-                .enumerate()
-                .filter(|(_, (old, new))| old != new)
-                .map(|(i, (_, &new_bits))| ResultEdit {
-                    row: i / cols,
-                    col: i % cols,
-                    new_bits,
-                })
-                .collect(),
+            edits,
         })
     }
 }

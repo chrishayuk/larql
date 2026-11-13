@@ -24,6 +24,9 @@ use super::{
     MAX_STRUCTURED_WORK,
 };
 
+const F64_SIGN: u64 = 1 << 63;
+const F32_SIGN: u32 = 1 << 31;
+
 /// Multiply-adds per element of a removal's footprint: the reduction `uᵀw` and the update `w − (αu)c`.
 const REMOVAL_WORK_PER_ELEMENT: u64 = 2;
 
@@ -58,6 +61,26 @@ pub struct OperationPatch {
     pub base_tensor_sha256: String,
     pub operations: Vec<LedgerOperation>,
     pub changed_elements: usize,
+}
+
+impl OperationPatch {
+    /// Whether every operation is zero-valued: the target is a declared sham, compiled to its base's bytes.
+    pub fn is_sham(&self) -> Result<bool, WeightPatchError> {
+        all_zero_valued(&self.operations)
+    }
+}
+
+/// Whether every one of `operations` is zero-valued (false for none).
+pub fn all_zero_valued(operations: &[LedgerOperation]) -> Result<bool, WeightPatchError> {
+    if operations.is_empty() {
+        return Ok(false);
+    }
+    for o in operations {
+        if !o.op.is_zero_valued()? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 impl StructuredOpRecord {
@@ -135,6 +158,31 @@ impl StructuredOpRecord {
             work: self.work(),
             tensor_elements: 0,
         }
+    }
+
+    /// Whether the op is **zero-valued** (VLP numerics v2 §5): an `add_low_rank_columns` op in which no element
+    /// has a term with both factors nonzero, i.e. for every `k` either column `k` of `a` or row `k` of `b` is all
+    /// zero (`−0` included). Under the v2 identity rule it leaves its tensor byte-identical, so it is the declared
+    /// form of a sham edit. Decided from the operands alone. A `remove_direction` op is never zero-valued.
+    pub fn is_zero_valued(&self) -> Result<bool, WeightPatchError> {
+        Ok(match self.kind()? {
+            OpKind::AddLowRankColumns {
+                rank,
+                a,
+                b,
+                columns,
+            } => {
+                let zero = |bits: &OperandBits, i: usize| match bits {
+                    OperandBits::F64(v) => v[i] & !F64_SIGN == 0,
+                    OperandBits::F32(v) => v[i] & !F32_SIGN == 0,
+                };
+                let (rows, n) = (a.len() / rank.max(1), columns.len());
+                (0..rank).all(|k| {
+                    (0..rows).all(|r| zero(&a, r * rank + k)) || (0..n).all(|p| zero(&b, k * n + p))
+                })
+            }
+            _ => false,
+        })
     }
 
     /// Multiply-adds the op costs, from its declared operands (§5).
@@ -263,8 +311,16 @@ pub fn resolve_operation_target(
                 changed += 1;
             }
         }
-        if changed == 0 {
-            return Err(WeightPatchError::Empty);
+        // A zero-valued op is the declared identity (a sham) and changes nothing by construction; any other op
+        // that changes nothing is refused, as at staging.
+        match (op.is_zero_valued()?, changed) {
+            (false, 0) => return Err(WeightPatchError::Empty),
+            (true, n) if n > 0 => {
+                return Err(WeightPatchError::Structured(format!(
+                    "a zero-valued op changed {n} element(s) of `{tensor}`; the v2 identity rule forbids it"
+                )))
+            }
+            _ => {}
         }
         operations.push(LedgerOperation {
             operands_sha256: op.operands_sha256()?,

@@ -288,22 +288,6 @@ fn bad_inputs_are_refused_by_name_before_anything_is_staged() {
     let error = try_run(&mut s, &add(&wrong_layout, &COLUMNS, PROFILE)).unwrap_err();
     assert!(error.contains("shape_invalid"), "{error}");
 
-    let zero = fx.path("zero.json");
-    let ([rows, _], _) = read_bf16_tensor(&fx.container, TENSOR).unwrap();
-    std::fs::write(
-        &zero,
-        serde_json::json!({
-            "rank": 1,
-            "a": vec![format!("{:016x}", 0u64); rows],
-            "b": vec![format!("{F64_ONE:016x}"); COLUMNS.len()],
-        })
-        .to_string(),
-    )
-    .unwrap();
-    assert!(try_run(&mut s, &add(&q(&zero), &COLUMNS, PROFILE))
-        .unwrap_err()
-        .contains("ADD LOW RANK refused"));
-
     // Nothing above staged anything: a compile has nothing to write.
     let out = fx.path("none.vindex3");
     let compiled = try_run(
@@ -311,4 +295,63 @@ fn bad_inputs_are_refused_by_name_before_anything_is_staged() {
         &format!("COMPILE CURRENT INTO VINDEX \"{}\";", q(&out)),
     );
     assert!(compiled.is_err() || !out.join("weight_patches.json").exists());
+}
+
+fn uniform_file(fx: &Fixture, name: &str, a: u64, b: u64, columns: usize) -> String {
+    let ([rows, _], _) = read_bf16_tensor(&fx.container, TENSOR).unwrap();
+    let path = fx.path(name);
+    std::fs::write(
+        &path,
+        serde_json::json!({
+            "rank": 1,
+            "a": vec![format!("{a:016x}"); rows],
+            "b": vec![format!("{b:016x}"); columns],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    q(path)
+}
+
+/// SG-EDIT-1's sham: a zero-valued op (every term has a zero factor) stages, and compiles to a container whose
+/// tensor bytes are the base's, recorded as an operation target that changed nothing.
+#[test]
+fn a_zero_valued_update_stages_as_a_sham_and_compiles_to_the_bases_bytes() {
+    let fx = Fixture::new();
+    let sham = uniform_file(&fx, "zero.json", 0, F64_ONE, COLUMNS.len());
+    let mut s = session_on(&fx.container);
+    let staged = run(&mut s, &add(&sham, &COLUMNS, PROFILE));
+    assert!(
+        staged[0].contains("0 element(s) would change"),
+        "{staged:?}"
+    );
+    assert!(
+        staged.iter().any(|l| l.contains("declared sham")),
+        "{staged:?}"
+    );
+
+    let out = fx.path("sham.vindex3");
+    compile(&mut s, &out);
+    assert!(is_coherent(&out));
+    for representation in [CANONICAL, DERIVED] {
+        assert_eq!(
+            tensor_bytes(&out, representation, TENSOR),
+            tensor_bytes(&fx.container, representation, TENSOR),
+            "{representation}"
+        );
+    }
+    let target = &ledger(&out)["targets"][0];
+    assert_eq!(target["changed_elements"], 0);
+    assert_eq!(target["base_tensor_sha256"], target["result_tensor_sha256"]);
+}
+
+/// A nonzero op whose every result rounds back to the stored bits is not a sham: it is refused as changing nothing.
+#[test]
+fn a_nonzero_update_that_rounds_away_entirely_is_refused() {
+    const F64_TWO_POW_MINUS_60: u64 = 0x3c30_0000_0000_0000;
+    let fx = Fixture::new();
+    let tiny = uniform_file(&fx, "tiny.json", F64_TWO_POW_MINUS_60, F64_ONE, 1);
+    let mut s = session_on(&fx.container);
+    let error = try_run(&mut s, &add(&tiny, &[33], PROFILE)).unwrap_err();
+    assert!(error.contains("ADD LOW RANK refused"), "{error}");
 }

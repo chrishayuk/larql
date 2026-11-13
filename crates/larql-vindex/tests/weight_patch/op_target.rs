@@ -559,3 +559,118 @@ mod apply {
         assert_eq!(report.tensors, vec![TENSOR.to_string()]);
     }
 }
+
+mod sham {
+    use super::*;
+
+    fn zero_valued(src: &Source, a: Vec<u64>, b: Vec<u64>, rank: usize) -> LowRankColumnsOp {
+        LowRankColumnsOp::bind(
+            &src.container,
+            TENSOR,
+            PROFILE,
+            rank,
+            &OperandBits::F64(a),
+            &OperandBits::F64(b),
+            COLUMNS.to_vec(),
+        )
+        .unwrap()
+    }
+
+    const F64_NEG_ZERO: u64 = 1 << 63;
+
+    #[test]
+    fn a_zero_valued_op_compiles_to_the_bases_bytes_and_a_consistent_ledger() {
+        let src = source_with_pack();
+        let [rows, _] = tensor_shape(&src.container, TENSOR).unwrap();
+        // a = -0 everywhere: zero by operands, sign notwithstanding.
+        let op = zero_valued(
+            &src,
+            vec![F64_NEG_ZERO; rows],
+            vec![F64_ONE; COLUMNS.len()],
+            1,
+        );
+        assert!(StructuredOpRecord::LowRankColumns(op.clone())
+            .is_zero_valued()
+            .unwrap());
+        let resolved = op.resolve_tensor(&src.container).unwrap();
+        assert!(resolved.is_sham().unwrap());
+        assert_eq!(resolved.changed_elements, 0);
+        assert!(
+            matches!(op.resolve(&src.container), Err(WeightPatchError::Empty)),
+            "the element form cannot carry a sham"
+        );
+
+        let out = compile(&src, &[WeightOpRef::LowRankColumns(&op)], "sham.vindex3");
+        for representation in [CANONICAL, DERIVED] {
+            for tensor in [TENSOR, OTHER_TENSOR] {
+                assert_eq!(
+                    tensor_bytes(&out, representation, tensor),
+                    tensor_bytes(&src.container, representation, tensor),
+                    "{representation} / {tensor}"
+                );
+            }
+        }
+        let ledger = read_ledger(&out);
+        assert_eq!(ledger.schema, WEIGHT_PATCHES_SCHEMA_V4);
+        assert_eq!(ledger.targets[0].changed_elements, Some(0));
+        assert_eq!(
+            ledger.targets[0].base_tensor_sha256,
+            ledger.targets[0].result_tensor_sha256
+        );
+        assert!(check_ledger(&out, &index_of(&out)).is_empty());
+
+        // A sham that claims a change, or a non-sham that claims none, is a defect.
+        let d = defects_after(&out, |l| {
+            l.targets[0].changed_elements = Some(1);
+            l.targets[0].operations[0].changed_elements = 1;
+        });
+        assert!(d.iter().any(|x| x.contains("zero-valued")), "{d:?}");
+    }
+
+    /// Zero-valued is decided per term: K = 2 with term 0 zero in `a` and term 1 zero in `b` is zero-valued; a term
+    /// with both factors nonzero anywhere is not.
+    #[test]
+    fn zero_valued_is_decided_term_by_term() {
+        let src = source_with_pack();
+        let [rows, _] = tensor_shape(&src.container, TENSOR).unwrap();
+        let n = COLUMNS.len();
+        // a is rows x 2 row-major: column 0 zero, column 1 one. b is 2 x n: row 0 one, row 1 zero.
+        let a: Vec<u64> = (0..rows * 2)
+            .map(|i| if i % 2 == 0 { 0 } else { F64_ONE })
+            .collect();
+        let b: Vec<u64> = (0..2 * n)
+            .map(|i| if i < n { F64_ONE } else { 0 })
+            .collect();
+        let crossed = zero_valued(&src, a.clone(), b, 2);
+        assert!(StructuredOpRecord::LowRankColumns(crossed)
+            .is_zero_valued()
+            .unwrap());
+
+        let mut b_live: Vec<u64> = (0..2 * n)
+            .map(|i| if i < n { F64_ONE } else { 0 })
+            .collect();
+        b_live[n] = F64_ONE; // term 1 now has a nonzero factor on both sides at column 0
+        let live = zero_valued(&src, a, b_live, 2);
+        assert!(!StructuredOpRecord::LowRankColumns(live)
+            .is_zero_valued()
+            .unwrap());
+    }
+
+    #[test]
+    fn a_removal_is_never_a_sham() {
+        let src = source_with_pack();
+        let [rows, _] = tensor_shape(&src.container, TENSOR).unwrap();
+        let rd = larql_vindex::format::vindex3::weight_patch::StructuredWeightOp::bind(
+            &src.container,
+            TENSOR,
+            PROFILE,
+            &OperandBits::F64(vec![0; rows]),
+            larql_vindex::format::vindex3::weight_patch::structured::ScalarBits::F64(F64_ONE),
+            vec![40],
+        )
+        .unwrap();
+        assert!(!StructuredOpRecord::RemoveDirection(rd)
+            .is_zero_valued()
+            .unwrap());
+    }
+}

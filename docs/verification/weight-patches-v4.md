@@ -58,7 +58,7 @@ The top level is that of `v3` (`schema`, `rounding`, `writer`, `source`, `target
   working width (8 bytes for the f64 profiles, 4 for `f32-seq-rne1/v1`), in stored order. Keys are `a`, `b` for
   `add_low_rank_columns` and `u`, `alpha` for `remove_direction`.
 - **`changed_elements`** per op: elements of the base whose bits that op changes (elements it writes back with their
-  own bits are not counted). The target's `changed_elements` is their sum.
+  own bits are not counted). The target's `changed_elements` is their sum. It is zero only for a sham (§4a).
 - **`base_tensor_sha256`** / **`result_tensor_sha256`**: SHA-256 over the tensor's stored payload (row-major BF16,
   little-endian), in the source and in the compiled container.
 - An operation target has no `edits`; an element target has no `operations`, `base_tensor_sha256`,
@@ -69,6 +69,19 @@ The top level is that of `v3` (`schema`, `rounding`, `writer`, `source`, `target
 The ops of one target have pairwise disjoint column sets, and each reads and writes only its own columns. The compiled
 tensor is therefore the base with, for each op, the columns it writes replaced by that op's result computed on the
 **base**. Order does not change the bytes.
+
+## 4a. Shams: zero-valued ops
+
+An `add_low_rank_columns` op is **zero-valued** when no element has a term with both factors nonzero: for every
+`k`, column `k` of `a` or row `k` of `b` is all zero (`−0` counts as zero). This is decided from the operands alone,
+before any arithmetic, and under the v2 identity rule (v2 SPEC §4) such an op leaves its tensor byte-identical,
+given the §5 precondition of v2 (no NaN or infinity inside rows × J, which is still refused).
+
+A zero-valued op is the declared form of a **sham** edit (SG-EDIT-1 §4.3). It compiles: its tensor is an operation
+target with `changed_elements = 0` and `result_tensor_sha256 = base_tensor_sha256`. Every other op that changes no
+element (a `remove_direction` op, or a nonzero op whose results all round back to the stored bits) is refused, as
+before: an edit that is not declared as an identity must change something. A target is a sham only if every one of
+its operations is zero-valued; a zero-valued op never changes an element, and recording that it did is a defect.
 
 ## 5. Bounds
 
@@ -89,7 +102,8 @@ arithmetic when it exceeds any of these (values in `crates/larql-vindex/src/form
 For an operation target, the writer's own consistency check confirms: the stored tensor's bytes hash to
 `result_tensor_sha256`; every op is intact (its digest), names this tensor, and is bound to the ledger's source (index
 digest, representation and canonical payload digest); the ops' column sets are disjoint; every `operands_sha256`
-matches the op's operands; the `changed_elements` add up; the bounds of §5 hold; and the result differs from the base.
+matches the op's operands; the `changed_elements` add up; the bounds of §5 hold; and the result differs from the base,
+unless the target is a sham (§4a), in which case the result equals the base and nothing is recorded as changed.
 It does **not** recompute the op. That is the verifier's job.
 
 ## 7. What an independent verifier must do
@@ -106,6 +120,11 @@ Given the base container and the compiled container (and nothing from the compil
 4. Confirm every other tensor of every representation not re-derived by the compile is byte-identical to the base, and
    that the re-derived representations derive from the compiled canonical payload the ledger names.
 5. Refuse malformed, overlapping, stale (bound to another base) or unsupported ops, and an unknown schema.
+6. For a sham (§4a), decide zero-valuedness from the operands itself and confirm the compiled tensor is the base's
+   bytes exactly.
+7. Report **numerical satisfaction** (step 3) separately from **ledger integrity and provenance** (steps 1, 2, 4,
+   5): a container whose bytes are right but whose ledger is inconsistent, or the reverse, is not verified, and the
+   report says which half failed.
 
 It must be shown to reject, at least: a flipped bit in a written element inside the footprint; a changed element
 outside the footprint (including a `-0` to `+0` flip); a changed element in another tensor; a stale source binding; a

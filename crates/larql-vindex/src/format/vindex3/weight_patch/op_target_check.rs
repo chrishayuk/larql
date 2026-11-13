@@ -6,7 +6,9 @@ use std::path::Path;
 
 use super::any_op::WeightOpRef;
 use super::ledger::{LedgerSource, LedgerTarget};
-use super::op_target::{check_cost, cost_of, tensor_sha256, StructuredCost, StructuredOpRecord};
+use super::op_target::{
+    all_zero_valued, check_cost, cost_of, tensor_sha256, StructuredCost, StructuredOpRecord,
+};
 use crate::format::vindex3::encode::segment::{read_exact_at, read_segment_header};
 
 const BF16_DTYPE: &str = "BF16";
@@ -50,7 +52,14 @@ pub(super) fn check_operation_target(
         )),
         Err(e) => defects.push(e),
     }
-    if base_sha == result_sha || changed == 0 {
+    // A sham (every op zero-valued) records no change and its result is its base; anything else records one.
+    let sham = all_zero_valued(&target.operations).unwrap_or(false);
+    if sham && (base_sha != result_sha || changed != 0) {
+        defects.push(format!(
+            "operation target `{name}` holds only zero-valued ops but records a change to its tensor"
+        ));
+    }
+    if !sham && (base_sha == result_sha || changed == 0) {
         defects.push(format!(
             "operation target `{name}` records no change to its tensor"
         ));
@@ -89,8 +98,12 @@ pub(super) fn check_operation_target(
                 ));
             }
         }
-        if entry.changed_elements == 0 {
-            defects.push(format!("{at} records no changed element"));
+        match (op.is_zero_valued().unwrap_or(false), entry.changed_elements) {
+            (false, 0) => defects.push(format!("{at} records no changed element")),
+            (true, n) if n > 0 => defects.push(format!(
+                "{at} is zero-valued but records {n} changed element(s)"
+            )),
+            _ => {}
         }
         total = total.saturating_add(entry.changed_elements);
     }
