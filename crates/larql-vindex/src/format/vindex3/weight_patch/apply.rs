@@ -822,9 +822,6 @@ pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The BF16 bits of a whole matrix `tensor` of the container at `src`, row-major, with its `[rows, cols]`.
-/// Refuses what a patch would: a tensor no canonical representation holds, one held twice, or one that
-/// is not a BF16 matrix.
 /// The kind of the graph object whose representation holds `tensor` (the token embedding, a decoder stack, ...), as the
 /// container's own system graph declares it. A tensor's NAME says nothing reliable about this: families name their
 /// embedding differently, and some containers hold it under a name no pattern would match. When the kind cannot be
@@ -862,6 +859,9 @@ pub(super) fn tensor_object_kind(src: &Path, tensor: &str) -> Result<ObjectKind,
         .ok_or_else(|| undetermined(format!("the graph has no object {}", at.entry.object)))
 }
 
+/// The BF16 bits of a whole matrix `tensor` of the container at `src`, row-major, with its `[rows, cols]`.
+/// Refuses what a patch would: a tensor no canonical representation holds, one held twice, or one that
+/// is not a BF16 matrix.
 pub fn read_bf16_tensor(
     src: &Path,
     tensor: &str,
