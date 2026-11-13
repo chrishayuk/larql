@@ -1,0 +1,26 @@
+{
+ "frozen_at_utc": "2026-11-12T23:50:01+00:00",
+ "statement": "VLP numerics v2 conformance suite (add_low_rank_columns), frozen after independent reproduction: an evaluator written from SPEC.md and the frozen v1 SPEC.md alone reproduced all 91 cases blind, and the SG-EDIT-1 review accepted the operand-level written rule and the NaN-inside-J precondition. An implementation gate for LARQL's column-scoped additive structured op and its independent verifier. v1 is unchanged.",
+ "sha256": {
+  "SPEC.md": "82a2f52070e5479b492b07b53edb40fb9fe0d39e92c5eda7bcc7c96e4feab314",
+  "vectors.json": "11322d3cb4d3503d037d16943f024401291de6c0a34d591f3bee439ecd378231",
+  "generate.py": "e13449f52b87dd9496df4d06b5fe1fca6c47e031eb50b0f26aef3fdbbca5d388"
+ },
+ "reviewed_text": {
+  "spec_sha256": "e9455179b200dc480fdeb6c2717178ac743f528703099347d1d73514171d0c3c",
+  "commit": "7a3c224f",
+  "difference_from_frozen": "the status paragraph at the top of SPEC.md and the status line in generate.py's docstring only; no rule, case or vector changed"
+ },
+ "independent_reproduction": {
+  "evaluator_sha256": "6aac918424044cc70d37c97d695df4291dbcfb7de289aba5649d7fe4e8ccdf66",
+  "record_sha256": "53652960b2cba5a00f140ed13351b79de0cdf615a64dfe3724baf33aa56b6069",
+  "history_sha256": "e92ea0d13ca0658b4b9b0f567f8a6f3a746aea3840a7bff84fe681e0a2a12e9d",
+  "cases_reproduced": 91,
+  "cases": 91,
+  "limits": "one evaluator of the same model family in a fresh context; the spec was revised in response to it; the two vectors added after its first report (ref-column-negative, ref-base-word-count) are not independent predictions. See independent/HISTORY.md."
+ },
+ "extends_v1_unchanged": {
+  "vectors.json": "4ce5df4e5ae743ff90ee28adebc1f315621c3c44430dd193bcc430c139ac24ed",
+  "generate.py": "a293835f5d3c579082c81ac06d9d4f4f06141d55606a7083e8ead4dbe55951c2"
+ }
+}
