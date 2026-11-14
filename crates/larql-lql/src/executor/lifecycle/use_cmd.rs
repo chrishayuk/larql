@@ -190,7 +190,7 @@ impl Session {
         let knn_path = path.join(KNN_STORE_BIN);
         if knn_path.exists() {
             match larql_vindex::KnnStore::load(&knn_path) {
-                Ok(store) => overlay.knn_store = store,
+                Ok(store) => overlay.bind_base_knn(store),
                 Err(e) => {
                     eprintln!("warning: failed to load knn_store.bin: {e}");
                 }

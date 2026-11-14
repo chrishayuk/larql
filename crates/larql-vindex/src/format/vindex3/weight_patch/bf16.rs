@@ -5,13 +5,18 @@
 //! `delta` is an `f32`, added **as real numbers** and rounded once to the
 //! nearest bfloat16, ties to even. Adding in `f32` first and rounding that to
 //! bfloat16 is two roundings and can differ from the exact sum on a tie, so
-//! the sum is taken in `f64`, which holds it exactly whenever it can matter.
+//! the sum is taken in `f64` together with its exact rounding error.
 //!
-//! Why `f64` is exact enough: a bfloat16 has 8 significant bits and an `f32`
-//! 24, so the sum is exact in `f64` (53 bits) whenever the two exponents are
-//! within 29 of each other. Past that gap the `f32` is far below half a
-//! bfloat16 step of the old value, the sum rounds back to `old` whatever the
-//! rounding of the sum, and no tie is possible.
+//! A bfloat16 has 8 significant bits and an `f32` 24, so the sum is exact in
+//! `f64` (53 bits) whenever the two exponents are within 29 of each other.
+//! Past that gap the `f64` sum drops the smaller term. That matters in one
+//! case only: the `f64` sum lands exactly halfway between two bfloat16
+//! values while the exact sum does not, which happens when the larger term
+//! is itself on a tie (a delta of `2^60·(1 + 2^-8)` added to `1.0`). The
+//! dropped part then decides the direction, not the parity of the
+//! neighbours. Anywhere else the `f64` sum and the exact sum round alike: a
+//! halfway point is an `f64`, so none lies strictly between a sum and its
+//! nearest `f64`.
 
 /// Smallest normal exponent of a bfloat16 (same range as `f32`).
 const MIN_NORMAL_EXPONENT: i32 = -126;
@@ -42,9 +47,19 @@ pub fn is_finite(bits: u16) -> bool {
     bits & BF16_EXPONENT_MASK != BF16_EXPONENT_MASK
 }
 
+/// The fractional part of a quotient that sits exactly halfway between two bfloat16 values.
+const HALFWAY: f64 = 0.5;
+
 /// The nearest bfloat16 to `x`, ties to even, or `None` when `x` is not
 /// finite or rounds to a magnitude of `2^128` or more.
 pub fn round_to_bf16(x: f64) -> Option<u16> {
+    round_exact_to_bf16(x, 0.0)
+}
+
+/// The nearest bfloat16 to the real number `x + residue`, ties to even, where
+/// `residue` is what the `f64` addition that produced `x` rounded away (zero
+/// when it was exact). The residue only ever breaks a tie.
+fn round_exact_to_bf16(x: f64, residue: f64) -> Option<u16> {
     if !x.is_finite() {
         return None;
     }
@@ -60,7 +75,16 @@ pub fn round_to_bf16(x: f64) -> Option<u16> {
     }
     let exponent = (field - F64_EXPONENT_BIAS).max(MIN_NORMAL_EXPONENT);
     let step = pow2(exponent - MANTISSA_BITS);
-    let rounded = (x / step).round_ties_even() * step;
+    let steps = x / step;
+    let on_a_tie = (steps - steps.trunc()).abs() == HALFWAY;
+    let whole = if on_a_tie && residue > 0.0 {
+        steps.ceil()
+    } else if on_a_tie && residue < 0.0 {
+        steps.floor()
+    } else {
+        steps.round_ties_even()
+    };
+    let rounded = whole * step;
     if rounded.abs() >= pow2(OVERFLOW_EXPONENT) {
         return None;
     }
@@ -70,5 +94,14 @@ pub fn round_to_bf16(x: f64) -> Option<u16> {
 
 /// `RNE_bf16(old + delta)`, or `None` when the result overflows.
 pub fn patched_bits(old: u16, delta: f32) -> Option<u16> {
-    round_to_bf16(bf16_to_f32(old) as f64 + delta as f64)
+    let (stored, added) = (bf16_to_f32(old) as f64, delta as f64);
+    let sum = stored + added;
+    if !sum.is_finite() {
+        return None;
+    }
+    // Knuth's two-sum: `stored + added == sum + residue` exactly. Both terms
+    // are f32 values, so nothing here overflows.
+    let added_part = sum - stored;
+    let residue = (stored - (sum - added_part)) + (added - added_part);
+    round_exact_to_bf16(sum, residue)
 }

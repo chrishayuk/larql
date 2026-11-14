@@ -231,6 +231,7 @@ pub fn apply_declared_patches(
         .into_iter()
         .collect();
     let assembled = rederive(&stage_a, &stage_b, at, &derived_encodings, &index)?;
+    carry_top_level_files(src, &assembled)?;
 
     let mut ledger = build_ledger(&index, &raw, &edited, &written, &assembled);
     ledger.origins = origins.to_vec();
@@ -589,6 +590,27 @@ fn resolve_edits<'a>(
         DeclaredPatch::Operations(_) => unreachable!("returned above"),
     }
     Ok(Resolved::Edits(out))
+}
+
+/// Copy into `assembled` every top-level file of `src` it lacks, other than the three this patch writes itself.
+/// Stage A carries them, but the re-derivation compiles a fresh container from stage A and keeps only what a
+/// representation compile knows about. A file such as the container's L0 knowledge (`knn_store.bin`) is part of
+/// what the container means and must not be lost with the weights it sits beside.
+fn carry_top_level_files(src: &Path, assembled: &Path) -> Result<(), WeightPatchError> {
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if entry.file_type()?.is_dir()
+            || [INDEX_JSON, CANDIDATE_JSON, WEIGHT_PATCHES_JSON].contains(&name.as_str())
+        {
+            continue;
+        }
+        let to = assembled.join(&name);
+        if !to.exists() {
+            std::fs::copy(entry.path(), to)?;
+        }
+    }
+    Ok(())
 }
 
 /// A scratch path beside `out`, on the same filesystem so the final rename is

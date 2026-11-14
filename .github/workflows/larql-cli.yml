@@ -20,6 +20,8 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-cli/**'
+      # tests/test_compile_patch_refusal.rs runs the binary on the verifier's committed structured patch
+      - 'verifier/conformance/**'
       - 'crates/vindex-cli/**'
       - 'docs/generated/**'
       - 'crates/larql-lql/**'
@@ -40,6 +42,8 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-cli/**'
+      # tests/test_compile_patch_refusal.rs runs the binary on the verifier's committed structured patch
+      - 'verifier/conformance/**'
       - 'crates/vindex-cli/**'
       - 'docs/generated/**'
       - 'crates/larql-lql/**'

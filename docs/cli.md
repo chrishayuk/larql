@@ -1818,6 +1818,12 @@ larql compile --base <BASE> --output <OUTPUT> [OPTIONS]
 | `--layer <N>` | Layer to install the compiled edge at | 30 |
 | `--slot <N>` | FFN slot to install the compiled edge at | 9000 |
 
+Patch mode (`--vindex`) installs one FFN edge per `insert` op. A patch set holding any other op (`update`,
+`delete`, `insert_knn`, `delete_knn`, or a stored-weight op: `weight_delta`, `structured_weight`,
+`low_rank_columns_weight`) is refused whole before the model is loaded, and nothing is written: the mode has no
+form for those ops, and compiling the inserts alone would drop the rest. Stored-weight ops compile into a
+VINDEX3 container with `APPLY PATCH` and `COMPILE CURRENT INTO VINDEX`.
+
 The balancer is opt-in (`--max-iters 0` by default) because
 `larql_inference::forward::predict` is systematically peakier than HF's
 `forward` on the same weights — leaving the balancer off installs at the

@@ -255,6 +255,43 @@ mod consistency {
         pristine
     }
 
+    /// A ledger is read from disk and may be malformed in ways no compile produces. Operand lengths that do not
+    /// fit the op's rank and columns are a defect: checking the ledger must never index past them.
+    #[test]
+    fn an_op_whose_operand_lengths_do_not_fit_its_rank_is_a_defect_not_a_panic() {
+        const F64_ZERO_HEX: &str = "0000000000000000";
+        let src = source_with_pack();
+        let reshape = |name: &str, change: fn(&mut LowRankColumnsOp)| {
+            let out = src.out(name);
+            copy_tree(&compiled_copy_source(&src), &out);
+            defects_after(&out, |l| {
+                let StructuredOpRecord::LowRankColumns(op) = &mut l.targets[0].operations[0].op
+                else {
+                    panic!("the fixture compiles a low-rank op");
+                };
+                change(op);
+                // Resealed, so the digest check passes and the lengths are what is judged.
+                op.digest = op.compute_digest();
+            })
+        };
+        // A zero `b` shorter than rank x columns: the zero test would read past its end.
+        let d = reshape("short-b.vindex3", |op| {
+            op.b = vec![F64_ZERO_HEX.to_string()]
+        });
+        assert!(has(&d, "`b` rank x columns"), "{d:?}");
+        // No `b` at all, a rank of zero, and an `a` that is not a whole number of rows.
+        let d = reshape("no-b.vindex3", |op| op.b.clear());
+        assert!(has(&d, "`b` rank x columns"), "{d:?}");
+        let d = reshape("rank-zero.vindex3", |op| op.rank = 0);
+        assert!(has(&d, "rank-0"), "{d:?}");
+        let d = reshape("ragged-a.vindex3", |op| {
+            op.rank = 2;
+            op.b = [op.b.clone(), op.b.clone()].concat();
+            op.a.pop();
+        });
+        assert!(has(&d, "`a` must be"), "{d:?}");
+    }
+
     #[test]
     fn an_altered_op_a_foreign_binding_or_overlapping_columns_is_a_defect() {
         let src = source_with_pack();
