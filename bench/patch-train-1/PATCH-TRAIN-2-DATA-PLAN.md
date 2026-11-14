@@ -61,8 +61,9 @@ back as an unrelated leakage entity. Rules:
 Distillation directly optimises stability on the 23 RET entities, so leakage measured **only** on those would flatter D. Leakage is
 therefore reported on two disjoint sets of unrelated prompts:
 
-- **uncovered unrelated set (the one the X gates use, identical for every arm):** the pair's partner, the 24th RET-split entity, and the other 22
-  entities of the CONF split (CAL: the other 6 CAL entities) that belong to other pairs and are never patched in this pair's chain;
+- **uncovered unrelated set (the one the X gates use, identical for every arm):** the 24th RET-split entity and the other 22 entities of the CONF
+  split (CAL: the other 6 CAL entities) that belong to other pairs and are never patched in this pair's chain (generator helper
+  `uncovered_unrelated`), **plus the pair's partner at the stages where it is still unpatched** (added by the harness);
 - **RET-covered set (descriptive only):** the 23 RET prompts; reported, never gated, flagged as optimised-for under D.
 
 ## 3. What is forbidden

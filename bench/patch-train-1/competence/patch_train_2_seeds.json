@@ -1,0 +1,7 @@
+{
+ "schema": "patch-train-2-seeds/1",
+ "note": "Approved 2026-11-14 before any real generation. Never changed. Tests must use dummy seeds, never these.",
+ "cal": 20261121,
+ "conf": 20261122,
+ "ret": 20261123
+}
