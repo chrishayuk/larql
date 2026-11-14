@@ -2,3 +2,4 @@
 conformance/** -text
 verifier/conformance/structured_patch/** -text
 verifier/conformance/weight_patches_v4/** -text
+verifier/conformance/execution_residency/** -text
