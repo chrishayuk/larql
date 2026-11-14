@@ -264,6 +264,16 @@
           ]
         },
         {
+          "name": "larql-router-protocol",
+          "alias": "larql-router-protocol",
+          "kind": "dev-dependencies",
+          "path": "crates/larql-router-protocol",
+          "target": null,
+          "optional": false,
+          "default_features": true,
+          "features": []
+        },
+        {
           "name": "larql-vindex",
           "alias": "larql-vindex",
           "kind": "dev-dependencies",
