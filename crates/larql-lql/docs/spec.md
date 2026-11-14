@@ -903,6 +903,8 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   elements, so a whole-matrix edit stays a small record (`docs/verification/weight-patches-v4.md`). `REMOVE DIRECTION`
   ops on the same tensor are recorded with it; other tensors keep their element form. Structured ops are bounded by
   rank, operand size, tensor size and total work (`MAX_STRUCTURED_*`), not by `MAX_PATCH_ELEMENTS`.
+- **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container holds
+  what the ledger's ops compute is for `VERIFY LEDGER` (section 3.9), which recomputes them from the base.
 
 ### 3.6 Schema Introspection Statements
 
@@ -1133,6 +1135,29 @@ the rest against the base) and every other BF16 tensor against the base. A stale
 profile, an operation of another kind, overlapping columns, or a malformed operand is `could_not_evaluate`.
 It does not establish the derived (quantised) representations, the op digest, or the operand's origin, and
 says so. Everything above about an unauthenticated verifier applies.
+
+```sql
+VERIFY LEDGER "<container>" USING CONTRACT "<id>" FROM "<base>";
+
+-- Judge whether <container> is what its own weight-patch ledger declares of <base>, using an independent verifier.
+
+VERIFY LEDGER "edited.vindex3"
+  USING CONTRACT "WEIGHT_PATCHES_V4"
+  FROM "model.vindex3";
+```
+
+**No patch file is needed: a `weight-patches/v4` ledger records every op it applied.** This is how a compile with an
+`ADD LOW RANK` op is verified. `WEIGHT_PATCHES_V4` recomputes each recorded op from the base's weights and the
+ledger's operands, and gives two verdicts that are kept apart:
+
+- **Numerical satisfaction:** every element of every tensor the ledger names equals the recomputed BF16 bits.
+- **Ledger integrity and provenance:** the ledger is bound to this base, every op is intact and within the
+  structured-op bounds, every digest and count agrees with the containers, and nothing outside the edit changed.
+
+The statement is satisfied only when both halves are; the output names a half that failed. An answer whose overall
+status is not the one its halves make is refused. A ledger of another schema (`v2`, `v3`) is `could_not_evaluate`:
+a `REMOVE DIRECTION`-only compile is verified with `VERIFY PATCH`. It judges the canonical BF16 weights only: **the
+re-derived (quantised) representations, which inference may execute, are not judged**, and the output says so.
 
 **`larql lql` exit status:**
 

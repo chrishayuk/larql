@@ -217,6 +217,11 @@ impl Session {
                 base,
                 container,
             } => self.exec_verify_patch(patch, contract, base, container),
+            Statement::VerifyLedger {
+                container,
+                contract,
+                base,
+            } => self.exec_verify_ledger(container, contract, base),
             Statement::VerifyRepresentation {
                 container,
                 contract,

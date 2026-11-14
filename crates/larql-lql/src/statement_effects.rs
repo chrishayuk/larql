@@ -56,6 +56,7 @@ impl Statement {
             | Statement::VerifyRepresentation { .. }
             | Statement::VerifyOperator { .. }
             | Statement::VerifyPatch { .. }
+            | Statement::VerifyLedger { .. }
             | Statement::Stats { .. }
             | Statement::ShowCompactStatus
             | Statement::CompactMinor
