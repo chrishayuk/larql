@@ -29,6 +29,7 @@ mod carrier_write_real;
 mod codec_owned_weight;
 mod compact_consumption;
 mod composed_floor;
+mod consumption_real;
 mod continuation;
 mod continuation_handoff;
 mod continuation_identity;
