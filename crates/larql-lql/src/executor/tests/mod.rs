@@ -202,7 +202,10 @@ fn make_test_vindex_dir(tag: &str) -> std::path::PathBuf {
     use larql_models::TopKEntry;
     use larql_vindex::{ExtractLevel, FeatureMeta, StorageDtype, VectorIndex, VindexConfig};
 
-    let dir = std::env::temp_dir().join(format!("larql_lql_test_vindex_{tag}"));
+    let dir = std::env::temp_dir().join(format!(
+        "larql_lql_test_vindex_{tag}_{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -354,7 +357,10 @@ fn make_rich_test_vindex_dir(tag: &str) -> std::path::PathBuf {
     use larql_models::TopKEntry;
     use larql_vindex::{ExtractLevel, FeatureMeta, StorageDtype, VectorIndex, VindexConfig};
 
-    let dir = std::env::temp_dir().join(format!("larql_lql_rich_test_vindex_{tag}"));
+    let dir = std::env::temp_dir().join(format!(
+        "larql_lql_rich_test_vindex_{tag}_{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 

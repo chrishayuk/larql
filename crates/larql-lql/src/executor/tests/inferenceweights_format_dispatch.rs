@@ -10,7 +10,10 @@ fn knn_insert_q4k_flagged_no_weights_uses_embedding_fallback() {
     use larql_models::TopKEntry;
     use larql_vindex::{ExtractLevel, FeatureMeta, StorageDtype, VectorIndex, VindexConfig};
 
-    let dir = std::env::temp_dir().join("larql_lql_test_q4k_embed_fallback");
+    let dir = std::env::temp_dir().join(format!(
+        "larql_lql_test_q4k_embed_fallback_{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -108,7 +111,10 @@ fn trace_on_q4k_vindex_returns_clear_error() {
     use larql_models::TopKEntry;
     use larql_vindex::{ExtractLevel, FeatureMeta, StorageDtype, VectorIndex, VindexConfig};
 
-    let dir = std::env::temp_dir().join("larql_lql_test_q4k_trace_error");
+    let dir = std::env::temp_dir().join(format!(
+        "larql_lql_test_q4k_trace_error_{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
