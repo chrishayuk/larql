@@ -41,6 +41,20 @@ VIRTUAL_ENV=$PWD/.venv uv pip install --no-deps .
 The [protocol](../docs/verification/contract-protocol.md) specifies the invocation and the answer, how LQL finds a verifier, and how to
 write a different one.
 
+### `EXECUTION_RESIDENCY_V1`: what a run loaded against the container it loaded from
+
+```sh
+.venv/bin/larql-verifier residency --contract EXECUTION_RESIDENCY_V1 --record <residency record> --container <container>
+```
+
+Implements [execution-residency-v1.md](../docs/verification/execution-residency-v1.md). The engine writes a residency
+record of what each matrix operand was made resident as. This re-derives every resident representation from the
+container's stored bytes (the loader's 64-element-block Q8, exact widening to binary32, or the stored bytes kept) and
+re-decides every choice from the recorded policy and cache size, as two separate verdicts: **derivation** and
+**selection**. A record that omits an operand, names a rule this contract does not derive, or was made from another
+container is never satisfied. It judges the engine's own account of what it loaded; it does not show that a kernel
+consumed those bytes.
+
 ### `WEIGHT_PATCHES_V4`: a compiled structured edit against its base
 
 ```sh

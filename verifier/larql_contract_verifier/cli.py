@@ -20,12 +20,14 @@ from pathlib import Path
 import refcheck
 
 from . import __version__, checkpoint
-from .contracts import CONTRACTS, OPERATOR_CONTRACTS, q8_0_gemv, q8_0_t2, structured_patch, weight_patches_v4
+from .contracts import (CONTRACTS, OPERATOR_CONTRACTS, execution_residency, q8_0_gemv, q8_0_t2, structured_patch,
+                        weight_patches_v4)
 
 SCHEMA = "larql-verify-contract/1"
 OPERATOR_SCHEMA = "larql-verify-operator/1"
 PATCH_SCHEMA = "larql-verify-patch/1"
 LEDGER_SCHEMA = "larql-verify-ledger/1"
+RESIDENCY_SCHEMA = "larql-verify-residency/1"
 # refcheck/ is copied unmodified from this commit of the isolated checker. See provenance/PROVENANCE.md.
 REFCHECK_COMMIT = "f2788f0e7f1b23432bf4b9bdd1099dbd42d070fc"
 
@@ -177,6 +179,36 @@ def evaluate_ledger(contract: str, base: str, container: str) -> dict:
     return out
 
 
+def evaluate_residency(contract: str, record: str, container: str) -> dict:
+    """`residency`: is what the residency record at `record` says a run made resident the declared derivation of
+    `container`'s stored weights (derivation), and the representation the recorded policy and cache size select
+    (selection)? Two verdicts. Re-derived from the container's bytes; the record's digests are checked, never used
+    as expected values."""
+    out = {"schema": RESIDENCY_SCHEMA, "contract": contract, "contract_statement": execution_residency.STATEMENT,
+           "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
+           "record": {"path": record, "sha256": None}, "container": {"path": container, "sha256": None},
+           "measurements": [], "offending": [], "reasons": [],
+           "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
+                        "code_sha256": code_sha256()}}
+    if contract != execution_residency.CONTRACT:
+        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows "
+                                      f"{[execution_residency.CONTRACT]}")
+    if not os.path.isfile(record) or not os.path.isdir(container):
+        return q8_0_t2.could_not(out, "the record must be a file and the container a directory")
+    execution_residency.evaluate(out, os.path.abspath(record), os.path.abspath(container))
+    if out["status"] == "could_not_evaluate":
+        return out
+    # The digest and the bytes judged came from separate reads, so a verdict needs the input not to have changed.
+    try:
+        unchanged = checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        out.update(violations=0, offending=[])
+        q8_0_t2.could_not(out, "the container changed during the evaluation")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="larql-verifier")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -198,8 +230,14 @@ def main() -> None:
     le.add_argument("--contract", required=True)
     le.add_argument("--base", required=True)
     le.add_argument("--container", required=True)
+    rs = sub.add_parser("residency")
+    rs.add_argument("--contract", required=True)
+    rs.add_argument("--record", required=True)
+    rs.add_argument("--container", required=True)
     a = ap.parse_args()
-    if a.cmd == "ledger":
+    if a.cmd == "residency":
+        answer = evaluate_residency(a.contract, a.record, a.container)
+    elif a.cmd == "ledger":
         answer = evaluate_ledger(a.contract, a.base, a.container)
     elif a.cmd == "patch":
         answer = evaluate_patch(a.contract, a.patch, a.base, a.container)
