@@ -54,7 +54,20 @@ It then runs the corrected container through LARQL with the capture on, checks t
 `VERIFY OPERATOR` about three operators under both contracts. Last, it builds two faulty kernels in a temporary worktree and checks they're judged as expected: summing
 blocks in reverse must fail `Q8_0_GEMV_SEQ` and pass `Q8_0_GEMV_B1`, and reading codes as unsigned must fail both.
 
-It needs git, curl, a Rust toolchain, whatever LARQL needs to build and about 15 GB of disk.
+For each checked operator it also compares the verifier's worst error as a fraction of the B1 bound with the expected value.
+
+It needs git, curl, a Rust toolchain, whatever LARQL needs to build and about 12 GB of disk.
+
+Every engine step writes a log under the work directory (`build.log`, `encode.log`, `represent.log`, `exec.log`, and one answer
+file per `VERIFY OPERATOR` statement). Whatever stops the run, it ends with `Reproduced.` or `NOT reproduced.`, says which step
+failed and where its log is, and removes its temporary worktree. A fault that can no longer be injected, or a capture the engine
+refuses, is reported as not checked, never as a pass.
+
+**What the expected values are.** The digests, the record and call counts and the worst-error ratios in
+`expected/qwen3-0.6b.json` are regression pins: they were recorded from one run of the pinned LARQL commits, not derived
+independently. They show that a run reproduces that one, not that its numbers are right. Two expectations are derived in advance:
+summing blocks in reverse is a reassociation, so it breaks `Q8_0_GEMV_SEQ` but stays within `Q8_0_GEMV_B1`'s bound; and reading
+signed codes as unsigned gives wrong values, which both contracts reject.
 
 **Where it has been run:** macOS on Apple silicon only. Encoding on other platforms hasn't been compared.
 
