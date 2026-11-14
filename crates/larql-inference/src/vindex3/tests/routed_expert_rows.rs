@@ -5,6 +5,7 @@
 //! provider `admit_expert_provider` returns. The transport records what it
 //! was sent, counts each path separately and can answer wrongly on demand.
 use super::*;
+use crate::vindex3::dense_ffn::profile;
 use crate::vindex3::routed_experts::{
     self, BoundExpertWorker, ExpertOutput, ExpertRow, ExpertTransport,
 };
@@ -20,6 +21,8 @@ use std::sync::{
 };
 
 const LAYER: usize = 1;
+/// Marks the stub transport's own per-request profile record.
+const STUB_WIRE: &str = "stub-expert-rows";
 /// Three rows over all four experts. Expert 1 is selected by every row, and
 /// under the split topology the first and last rows span both workers.
 const SELECTIONS: [[usize; TOP_K]; 3] = [[0, 3], [1, 2], [3, 1]];
@@ -101,6 +104,13 @@ impl ExpertTransport for InProcess {
         rows: &[rows_wire::Row],
     ) -> Result<Vec<rows_wire::Output>, String> {
         self.probe.rows_calls.fetch_add(1, Ordering::SeqCst);
+        // Stand in for a real transport's per-request profile record, made
+        // on whichever thread the coordinator dispatched this request from.
+        if profile::enabled() {
+            profile::record_provider_call(serde_json::json!({
+                "wire": STUB_WIRE, "shard": shard, "rows": rows.len(),
+            }));
+        }
         self.probe.frames.lock().unwrap().push((
             shard,
             rows.iter().map(|r| (r.id, r.experts.clone())).collect(),
@@ -459,4 +469,173 @@ fn admitting_a_provider_runs_every_check_coordinator_preparation_ran() {
         transport(container.path(), &topology, &Probe::default()),
     )
     .is_ok());
+}
+
+/// Records of one kind from a finished capture.
+fn of_kind<'a>(calls: &'a [serde_json::Value], kind: &str) -> Vec<&'a serde_json::Value> {
+    calls.iter().filter(|c| c["kind"] == kind).collect()
+}
+
+#[test]
+fn profiling_sees_every_request_of_its_own_call_and_changes_no_output() {
+    let container = container_with(miniature_routed);
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    for topology in topologies() {
+        let probe = Probe::default();
+        let provider = routed_experts::admit_expert_provider(
+            container.path(),
+            runtime.plan(),
+            runtime.operands(),
+            runtime.backend(),
+            transport(container.path(), &topology, &probe),
+        )
+        .unwrap();
+        let inputs = inputs();
+        let rows = batch(&inputs);
+        let pairs = SELECTIONS.len() * TOP_K;
+        let key =
+            |outputs: &[routed_experts::RowExpertOutput]| -> BTreeMap<(u32, usize), Vec<u32>> {
+                outputs
+                    .iter()
+                    .map(|o| ((o.row, o.expert), bits(&o.output)))
+                    .collect()
+            };
+        let unprofiled = key(&provider.apply_rows(LAYER, &rows).unwrap());
+
+        // Two profiled calls in a row: each capture holds exactly its own
+        // call's records, so nothing leaks from one operation to the next.
+        for _ in 0..2 {
+            probe.rows_calls.store(0, Ordering::SeqCst);
+            let capture = profile::Capture::start().unwrap();
+            let outputs = provider.apply_rows(LAYER, &rows).unwrap();
+            let calls = capture.finish_provider_calls();
+            assert_eq!(key(&outputs), unprofiled, "profiling changed an output");
+
+            let fanout = of_kind(&calls, "expert_rows_fanout");
+            assert_eq!(fanout.len(), 1, "one operation, one record");
+            assert_eq!(fanout[0]["complete"], true);
+            assert_eq!(fanout[0]["layer"], LAYER);
+            assert_eq!(fanout[0]["shards"], topology.len());
+            assert_eq!(fanout[0]["rows"], rows.len());
+            assert_eq!(fanout[0]["pairs"], pairs);
+
+            // One shard record per contacted worker, each carrying exactly
+            // the one request its dispatch thread made.
+            let shards = of_kind(&calls, "expert_rows_shard");
+            assert_eq!(shards.len(), topology.len());
+            assert_eq!(shards.len(), probe.rows_calls.load(Ordering::SeqCst));
+            let mut seen = std::collections::BTreeSet::new();
+            let mut shard_pairs = 0;
+            for shard in &shards {
+                assert_eq!(shard["complete"], true);
+                assert!(
+                    seen.insert(shard["shard"].as_u64().unwrap()),
+                    "a worker recorded twice"
+                );
+                let requests = shard["transport"].as_array().unwrap();
+                assert_eq!(requests.len(), 1, "one request per worker");
+                assert_eq!(requests[0]["wire"], STUB_WIRE);
+                assert_eq!(requests[0]["shard"], shard["shard"]);
+                assert_eq!(requests[0]["rows"], shard["rows"]);
+                shard_pairs += shard["pairs"].as_u64().unwrap() as usize;
+            }
+            assert_eq!(shard_pairs, pairs);
+            // Requests are recorded only inside their shard record.
+            assert!(calls.iter().all(|c| c["wire"] != STUB_WIRE));
+            assert_eq!(calls.len(), 1 + topology.len());
+        }
+    }
+}
+
+#[test]
+fn a_failed_call_is_never_profiled_as_complete() {
+    let container = container_with(miniature_routed);
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    for topology in topologies() {
+        let probe = Probe::default();
+        let provider = routed_experts::admit_expert_provider(
+            container.path(),
+            runtime.plan(),
+            runtime.operands(),
+            runtime.backend(),
+            transport(container.path(), &topology, &probe),
+        )
+        .unwrap();
+        let inputs = inputs();
+        let rows = batch(&inputs);
+        for fault in FAULTS {
+            *probe.fault.lock().unwrap() = Some(fault);
+            let capture = profile::Capture::start().unwrap();
+            assert!(provider.apply_rows(LAYER, &rows).is_err());
+            let calls = capture.finish_provider_calls();
+            let fanout = of_kind(&calls, "expert_rows_fanout");
+            assert_eq!(fanout.len(), 1);
+            assert_eq!(fanout[0]["complete"], false, "{fault:?}");
+            let shards = of_kind(&calls, "expert_rows_shard");
+            assert_eq!(
+                shards.len(),
+                topology.len(),
+                "every worker was still recorded"
+            );
+            let failed: Vec<_> = shards.iter().filter(|s| s["complete"] == false).collect();
+            assert_eq!(failed.len(), 1, "{fault:?}: only the faulty worker failed");
+            assert_eq!(failed[0]["shard"], topology.len() - 1);
+        }
+        *probe.fault.lock().unwrap() = None;
+
+        // A call refused before fan-out records nothing and sends nothing.
+        probe.rows_calls.store(0, Ordering::SeqCst);
+        let capture = profile::Capture::start().unwrap();
+        assert!(provider.apply_rows(LAYERS, &rows).is_err());
+        assert!(capture.finish_provider_calls().is_empty());
+        assert_eq!(probe.rows_calls.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn a_call_over_the_frame_limit_contacts_no_worker() {
+    let container = container_with(miniature_routed);
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    // Two workers. Every row but the first selects an expert on the second
+    // worker, so the second worker's frame is the one over the limit while
+    // the first worker's frame is a single, perfectly valid row.
+    let topology = vec![(0, EXPERTS / 2), (EXPERTS / 2, EXPERTS)];
+    let probe = Probe::default();
+    let provider = routed_experts::admit_expert_provider(
+        container.path(),
+        runtime.plan(),
+        runtime.operands(),
+        runtime.backend(),
+        transport(container.path(), &topology, &probe),
+    )
+    .unwrap();
+    let input = inputs().remove(0);
+    let (first, second) = ([0usize], [EXPERTS - 1]);
+    let build = |count: usize| -> Vec<ExpertRow<'_>> {
+        (0..count)
+            .map(|i| ExpertRow {
+                id: i as u32,
+                input: &input,
+                experts: if i == 0 { &first } else { &second },
+            })
+            .collect()
+    };
+    let over = build(rows_wire::MAX_ROWS + 2);
+    let error = provider.apply_rows(LAYER, &over).err().unwrap().to_string();
+    assert!(error.contains("at most"), "{error}");
+    assert_eq!(
+        probe.rows_calls.load(Ordering::SeqCst),
+        0,
+        "the valid first worker was asked before the call was refused"
+    );
+    // At the limit the same shape is accepted and reaches both workers.
+    let at_limit = build(rows_wire::MAX_ROWS);
+    assert_eq!(
+        provider.apply_rows(LAYER, &at_limit).unwrap().len(),
+        rows_wire::MAX_ROWS
+    );
+    assert_eq!(probe.rows_calls.load(Ordering::SeqCst), topology.len());
 }

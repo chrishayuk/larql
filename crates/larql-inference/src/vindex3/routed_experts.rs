@@ -342,6 +342,18 @@ impl<T: ExpertTransport> Grid<T> {
         if rows.is_empty() {
             return Err(VindexError::Parse("expert rows call carries no row".into()));
         }
+        // A worker's frame holds at most one entry per row, so bounding the
+        // call bounds every frame. Refused here, before any worker is
+        // contacted: a frame over the limit would otherwise fail inside its
+        // own dispatch after the other workers had already been asked.
+        if rows.len() > rows_wire::MAX_ROWS {
+            return Err(VindexError::Parse(format!(
+                "expert rows call carries {} rows; a frame holds at most {}",
+                rows.len(),
+                rows_wire::MAX_ROWS
+            )));
+        }
+        let started = profile::enabled().then(std::time::Instant::now);
         let mut frames = std::collections::BTreeMap::<usize, Vec<rows_wire::Row>>::new();
         for row in rows {
             let mut by_owner = std::collections::BTreeMap::<usize, Vec<usize>>::new();
@@ -364,39 +376,90 @@ impl<T: ExpertTransport> Grid<T> {
                 .iter()
                 .map(|(shard, frame)| {
                     scope.spawn(move || {
-                        let outputs = self
-                            .transport
-                            .forward_rows(*shard, layer, frame)
+                        // Profile records are per thread. Capture what the
+                        // transport records on this dispatch thread so the
+                        // caller's profile sees every request it caused.
+                        let capture = started
+                            .map(|_| profile::Capture::start().expect("fresh dispatch thread"));
+                        let result = (|| {
+                            let outputs = self
+                                .transport
+                                .forward_rows(*shard, layer, frame)
+                                .map_err(VindexError::Parse)?;
+                            let binding = &self.bindings[*shard];
+                            rows_wire::check_correspondence(
+                                frame,
+                                &outputs,
+                                binding.program.hidden,
+                            )
                             .map_err(VindexError::Parse)?;
-                        let binding = &self.bindings[*shard];
-                        rows_wire::check_correspondence(frame, &outputs, binding.program.hidden)
-                            .map_err(VindexError::Parse)?;
-                        // Ownership needs no second check: a frame holds only
-                        // experts its worker owns, and correspondence admits
-                        // nothing outside the frame.
-                        Ok(outputs)
+                            // Ownership needs no second check: a frame holds
+                            // only experts its worker owns, and correspondence
+                            // admits nothing outside the frame.
+                            Ok(outputs)
+                        })();
+                        let trace = capture.map(|c| {
+                            serde_json::json!({
+                                "kind": "expert_rows_shard", "layer": layer, "shard": *shard,
+                                "rows": frame.len(),
+                                "pairs": frame.iter().map(|row| row.experts.len()).sum::<usize>(),
+                                // Complete only if this worker's answer was
+                                // received AND passed correspondence.
+                                "complete": result.is_ok(),
+                                "transport": c.finish_provider_calls(),
+                            })
+                        });
+                        (result, trace)
                     })
                 })
                 .collect();
             // Join every dispatch before deciding: no request outlives the
             // call, and one failure discards every shard's answer.
-            let joined: Vec<Result<Vec<rows_wire::Output>, VindexError>> = pending
+            let joined: Vec<_> = pending
                 .into_iter()
                 .map(|p| {
                     p.join().unwrap_or_else(|_| {
-                        Err(VindexError::Parse("expert rows dispatch panicked".into()))
+                        (
+                            Err(VindexError::Parse("expert rows dispatch panicked".into())),
+                            None,
+                        )
                     })
                 })
                 .collect();
+            let shards = joined.len();
             let mut out = Vec::new();
-            for outputs in joined {
-                out.extend(outputs?.into_iter().map(|o| RowExpertOutput {
-                    row: o.row,
-                    expert: o.expert,
-                    output: o.values,
+            let mut error = None;
+            for (outputs, trace) in joined {
+                if let Some(trace) = trace {
+                    profile::record_provider_call(trace);
+                }
+                match outputs {
+                    Ok(outputs) => out.extend(outputs.into_iter().map(|o| RowExpertOutput {
+                        row: o.row,
+                        expert: o.expert,
+                        output: o.values,
+                    })),
+                    Err(e) => {
+                        error.get_or_insert(e);
+                    }
+                }
+            }
+            if let Some(started) = started {
+                // One record for the operation. It is complete only if every
+                // worker's answer was accepted, so a failed call can never
+                // read as a successful one.
+                profile::record_provider_call(serde_json::json!({
+                    "kind": "expert_rows_fanout", "layer": layer, "shards": shards,
+                    "rows": rows.len(),
+                    "pairs": rows.iter().map(|row| row.experts.len()).sum::<usize>(),
+                    "total_ns": started.elapsed().as_nanos() as u64,
+                    "complete": error.is_none(),
                 }));
             }
-            Ok(out)
+            match error {
+                Some(e) => Err(e),
+                None => Ok(out),
+            }
         })
     }
 }

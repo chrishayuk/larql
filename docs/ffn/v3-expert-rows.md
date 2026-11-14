@@ -83,7 +83,8 @@ enforce that, each before anything is handed upward:
 1. **Worker.** Every row is validated before any transform runs; one bad row
    refuses the frame.
 2. **Coordinator, before dispatch.** Row ids must be distinct across the
-   whole call and experts distinct within each row. This is judged before
+   whole call, experts distinct within each row, and the call no larger than
+   one frame may hold (256 rows, which bounds every worker's frame). This is judged before
    rows are split by worker, because two rows sharing an id could otherwise
    land in separate frames that are each well formed and come back as one
    row built from two inputs. No worker is contacted for a refused call.
@@ -115,10 +116,18 @@ isolation is designed.
 
 | Counter | Where | Shows |
 |---|---|---|
-| One `expert-rows-f32-v1` provider-call record per request | Client profile | Network requests, with `rows` and `pairs` carried |
+| One `expert_rows_fanout` record per call | Coordinator profile | The operation: workers contacted, `rows`, `pairs`, and `complete` only if every worker's answer was accepted |
+| One `expert_rows_shard` record per contacted worker | Coordinator profile | That worker's exchange, with the transport's own request records nested under `transport` |
+| One `expert-rows-f32-v1` record per request | Nested in its shard record | A network request, with `rows` and `pairs` carried |
 | `pairs` | Worker accounting | `(row, expert)` outputs served |
 | `distinct_experts` | Worker accounting | Logical grouping: experts shared by rows |
 | `transform_calls` | Worker accounting | Expert kernel invocations |
+
+Requests are made on per-worker dispatch threads, and profile records are
+per thread. The coordinator captures each dispatch thread's records and
+re-records them on the calling thread, so a caller's profile holds every
+request its call caused and no other call's. A call refused before fan-out
+records nothing. With profiling off, none of this runs.
 
 Worker accounting is returned in `x-larql-expert-rows-accounting` only when
 the request carries the profile header; it is never part of the numerical
