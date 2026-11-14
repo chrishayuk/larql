@@ -12,6 +12,16 @@ spec.loader.exec_module(gate)
 WHY = "Verifier-and-engine justification: the container format changed on both sides."
 
 
+#: Paths that resemble the frozen numerics directory and are not in it: a sibling with a longer name, the directory
+#: itself with nothing under it, the same words under another root, and a prefixed root. Neither rule may take them.
+NUMERICS_LOOK_ALIKES = (
+    "conformance/vlp-numerics-old/x.json",
+    "conformance/vlp-numerics",
+    "docs/conformance/vlp-numerics/x.json",
+    "xconformance/vlp-numerics/x.json",
+)
+
+
 class Sides(unittest.TestCase):
     def test_what_counts_as_the_measurement(self):
         for path in (
@@ -21,13 +31,16 @@ class Sides(unittest.TestCase):
             "verifier/provenance/PROVENANCE.md",
             "verifier/requirements.lock",
             "verifier/pyproject.toml",
+            "conformance/vlp-numerics/v2/vectors.json",
+            "conformance/vlp-numerics/v1/SPEC.md",
             "scripts/check_verifier_boundary.py",
             ".github/workflows/verifier-boundary.yml",
         ):
             self.assertEqual(gate.sides([path]), ([path], []), path)
 
     def test_what_does_not(self):
-        for path in ("verifier/README.md", "verifier/tests/test_e1.py", "docs/verification/independence.md", "scripts/x.py"):
+        for path in ("verifier/README.md", "verifier/tests/test_e1.py", "docs/verification/independence.md", "scripts/x.py",
+                     "conformance/other/x.json", *NUMERICS_LOOK_ALIKES):
             self.assertEqual(gate.sides([path]), ([], []), path)
 
     def test_the_engine(self):
@@ -78,6 +91,8 @@ class ReviewEvidence(unittest.TestCase):
             "verifier/README.md",
             "verifier/tests/test_e1.py",
             "docs/verification/independence.md",
+            "conformance/vlp-numerics/v2/FREEZE.json",
+            "conformance/vlp-numerics/v1/vectors.json",
             "scripts/check_verifier_boundary.py",
             ".github/workflows/verifier.yml",
             ".github/workflows/verifier-boundary.yml",
@@ -86,7 +101,8 @@ class ReviewEvidence(unittest.TestCase):
             self.assertEqual(gate.owned([path]), [path], path)
 
     def test_what_does_not(self):
-        for path in ("crates/x/src/lib.rs", "docs/spec.md", "scripts/x.py", ".github/workflows/quality.yml", "xverifier/a"):
+        for path in ("crates/x/src/lib.rs", "docs/spec.md", "scripts/x.py", ".github/workflows/quality.yml", "xverifier/a",
+                     "conformance/other/x.json", *NUMERICS_LOOK_ALIKES):
             self.assertEqual(gate.owned([path]), [], path)
 
     def test_nothing_on_the_record_is_refused(self):
