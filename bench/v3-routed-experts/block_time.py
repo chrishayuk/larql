@@ -117,6 +117,7 @@ def execute(args, root, model, out, kind):
     manifest = {
         "schema": bt.SCHEMA, "protocol": bt.PROTOCOL, "kind": kind, "label": args.diagnostic,
         "counts": kind == "admissible",
+        "continue_unsettled": args.continue_unsettled,
         "revision": revision, "source_dirty": dirty, "model": str(model), "topology": TOPOLOGY,
         "settings": SETTINGS, "link_qos": os.environ.get(LINK_QOS_ENV, "default"),
         "ids": str(args.ids), "ids_sha256": sha(args.ids), "prompt_tokens": len(saved["prompt"]),
@@ -153,8 +154,13 @@ def execute(args, root, model, out, kind):
                 if len(warm) > 1 and agreement(warm[-2], warm[-1]) <= bt.GATE:
                     break
             else:
-                raise Stop(f"warm-up never settled within {bt.GATE}: {warm}")
-            save(out / "warm.json", {"per_position_ns": warm})
+                # The protocol's rule is to stop. A diagnostic may be told to
+                # go on, to exercise the rest of the driver on a busy machine.
+                if not args.continue_unsettled:
+                    raise Stop(f"warm-up never settled within {bt.GATE}: {warm}")
+                print(f"warm-up never settled within {bt.GATE}; continuing as declared: {warm}", flush=True)
+            save(out / "warm.json", {"per_position_ns": warm, "settled": len(warm) < bt.MAX_WARMUPS
+                                     or agreement(warm[-2], warm[-1]) <= bt.GATE})
             floor_ns = warm[-1]
             for entry in order:
                 trial, relay_records = run_trial(root, model, args.ids, out, env, entry, worker_urls)
@@ -192,6 +198,8 @@ def main():
                         help="Passing block-frame qualifying receipt; --admissible needs two distinct ones")
     parser.add_argument("--peer-handshake", type=Path, help="Saved peer-session quiet acknowledgements")
     parser.add_argument("--port", type=int, default=19581)
+    parser.add_argument("--continue-unsettled", action="store_true",
+                        help="Diagnostic only: run the schedule even if warm-up never settles")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     for binary in (TRIAL, SERVER, RELAY):
@@ -201,6 +209,8 @@ def main():
         parser.error("the relay binary is not the frozen build LINK-2 certifies")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
+    if args.admissible and args.continue_unsettled:
+        parser.error("--continue-unsettled is for diagnostics; the admissible run stops if warm-up never settles")
     if args.admissible:
         if lp.busy_processes():
             parser.error("a compiler or model process is running; the admissible run needs a quiet machine")
