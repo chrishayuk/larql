@@ -3,6 +3,7 @@ pub mod capability;
 pub mod describe;
 pub mod error;
 pub mod executor;
+pub mod help;
 pub(crate) mod lexer;
 pub mod parser;
 pub mod relations;

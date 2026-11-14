@@ -290,6 +290,13 @@ pub enum Statement {
         save: Option<String>,
     },
 
+    // ── Help ──
+    /// `HELP;` prints every statement's syntax; `HELP <topic>;` prints one page of the help catalogue
+    /// (`crate::help`). `topic` is the words after `HELP`, as written. Read-only, and it needs no backend.
+    Help {
+        topic: Option<String>,
+    },
+
     // ── Pipe ──
     Pipe {
         left: Box<Statement>,
@@ -344,6 +351,7 @@ impl Statement {
             Statement::ShowPatches => "SHOW PATCHES",
             Statement::RemovePatch { .. } => "REMOVE PATCH",
             Statement::Trace { .. } => "TRACE",
+            Statement::Help { .. } => "HELP",
             Statement::Pipe { .. } => "|> (pipe)",
         }
     }

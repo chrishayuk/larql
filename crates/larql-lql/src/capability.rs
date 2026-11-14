@@ -28,7 +28,7 @@ use crate::error::LqlError;
 /// contract, printed whenever the profile declines one.
 pub const PUBLIC_EXPLORER_SERVES: &str =
     "SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY/RELATIONS/LAYERS/FEATURES/ENTITIES/MODELS, \
-     DESCRIBE, WALK, SELECT, EXPLAIN, STATS, INFER [TOP n] [GENERATE <= 32]";
+     DESCRIBE, WALK, SELECT, EXPLAIN, STATS, INFER [TOP n] [GENERATE <= 32], HELP";
 
 /// What a session is allowed to execute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -90,6 +90,9 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | ShowProvenance { .. }
         | ShowAuthority
         | Stats { .. } => Ok(()),
+
+        // ── Documentation: reads no session state and writes nothing ──
+        Help { .. } => Ok(()),
 
         // ── Bounded execution: the model is enterable, not rentable ──
         Infer { generate, .. } => match generate {
@@ -187,6 +190,8 @@ mod tests {
             "STATS;",
             "INFER \"paris\" TOP 3;",
             "INFER \"paris\" GENERATE 32;",
+            "HELP;",
+            "HELP COMPILE;",
         ] {
             assert!(check_public(stmt).is_ok(), "{stmt} must be permitted");
         }
