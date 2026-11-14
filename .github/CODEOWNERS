@@ -2,6 +2,7 @@
 # See docs/verification/independence.md.
 /verifier/                  @chrishayuk
 /docs/verification/         @chrishayuk
+/conformance/vlp-numerics/  @chrishayuk
 /.github/workflows/verifier.yml @chrishayuk
 /.github/workflows/verifier-boundary.yml @chrishayuk
 /scripts/check_verifier_boundary.py @chrishayuk
