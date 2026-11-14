@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Knowledge pipeline for LARQL — reference databases and probe labels"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = []
 dependencies = [
     "numpy",

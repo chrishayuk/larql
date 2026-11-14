@@ -11,8 +11,13 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
+// Pinned so that upgrading the Cloudflare tooling doesn't change the Workers runtime's
+// semantics; the plugin otherwise takes its own default date. Move it on purpose.
+const WORKERS_COMPATIBILITY_DATE = "2026-05-15";
+
 const localBindingConfig = {
   main: "./worker/index.ts",
+  compatibility_date: WORKERS_COMPATIBILITY_DATE,
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
