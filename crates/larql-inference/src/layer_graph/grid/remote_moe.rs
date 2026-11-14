@@ -544,9 +544,9 @@ pub fn generate_with_remote_moe_batch(
             let h2_per_layer = if skip_moe || h_capture.is_empty() {
                 vec![vec![0.0f32; hidden]; num_layers]
             } else {
-                remote
-                    .forward_moe_predispatch(&h_capture, &routers_all, norm_offset, eps)
-                    .unwrap_or_else(|_| vec![vec![0.0f32; hidden]; num_layers])
+                // A failed shard aborts generation, as it does on every other
+                // remote-MoE path, rather than prefilling without its experts.
+                remote.forward_moe_predispatch(&h_capture, &routers_all, norm_offset, eps)?
             };
             if !is_final {
                 let mut new_cap: Vec<Vec<f32>> = Vec::with_capacity(num_layers);

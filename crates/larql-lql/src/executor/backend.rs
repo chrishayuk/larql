@@ -76,13 +76,17 @@ pub(crate) enum Backend {
         /// (`v2_and_v3_prompt_encoders_agree_on_a_bos_requiring_model`).
         bos_token: Option<u32>,
     },
-    /// Remote server backend — queries forwarded via HTTP.
-    /// Local patches can be applied for client-side overlay.
+    /// Remote server backend — queries forwarded via HTTP. Every request
+    /// carries `session_id`, so mutations and patches live in this
+    /// session's overlay on the server and reads are answered against it.
     Remote {
         url: String,
         client: reqwest::blocking::Client,
-        local_patches: Vec<larql_vindex::VindexPatch>,
         session_id: String,
+        /// The served model's identity from `/v1/stats` (`None` when the
+        /// server named none). Patches sent by this session declare it as
+        /// their `base_model`.
+        model_name: Option<String>,
     },
     None,
 }

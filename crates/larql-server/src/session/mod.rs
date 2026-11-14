@@ -40,6 +40,7 @@ mod clock;
 mod lease;
 mod manager;
 mod state;
+mod view;
 
 #[cfg(test)]
 mod tests;
@@ -48,6 +49,7 @@ pub use clock::{unix_now, SessionClock};
 pub use lease::SessionLease;
 pub use manager::{SessionManager, SessionSummary};
 pub use state::SessionState;
+pub use view::PatchedView;
 
 use axum::http::HeaderMap;
 

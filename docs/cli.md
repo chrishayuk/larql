@@ -1061,10 +1061,12 @@ larql repl
 > USE REMOTE "http://localhost:8080";
 > DESCRIBE "France";
 > INFER "The capital of France is" TOP 5;
-> APPLY PATCH "local-facts.vlp";    -- stays client-side
+> APPLY PATCH "local-facts.vlp";    -- applied to this session on the server
 ```
 
 **Sessions:** Clients can send `X-Session-Id` header to isolate patches per session. Without the header, patches apply globally.
+The REPL's `USE REMOTE` mints one session id and sends it on every request, so its INSERT, DELETE,
+UPDATE and APPLY/SHOW/REMOVE PATCH only ever change its own session, and its reads carry the same id.
 
 See `crates/larql-server/README.md` for full API documentation.
 

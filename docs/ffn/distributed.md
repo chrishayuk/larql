@@ -96,8 +96,10 @@ larql-router \
 **Grid mode** — servers self-register via gRPC; no static config needed:
 
 ```bash
-# Router listens for server registrations on gRPC port 50052
-larql-router --grid-port 50052 --grid-key "$KEY" --port 9090
+# Router listens for server registrations on gRPC port 50052.
+# It binds loopback by default; --host 0.0.0.0 makes it reachable, which
+# needs the grid key (or --insecure-public).
+larql-router --host 0.0.0.0 --grid-port 50052 --grid-key "$KEY" --port 9090
 
 # Servers announce themselves on startup
 larql-server model.vindex --ffn-only --layers 0-16 \
@@ -214,6 +216,8 @@ Key flags:
 | `--shards` | — | Static `START-END=URL` shard map |
 | `--grid-port` | — | Enable self-assembling grid gRPC server |
 | `--grid-key` | — | Shared auth secret (`LARQL_GRID_KEY` env var) |
+| `--host` | 127.0.0.1 | Bind address for every listener (HTTP, grid gRPC, QUIC). A non-loopback address needs `--grid-key`, or `--insecure-public` |
+| `--insecure-public` | off | Accept a non-loopback `--host` without a grid key (or with no grid at all) |
 | `--port` | 9090 | HTTP listen port |
 | `--timeout-secs` | 120 | Per-request timeout to backend shards |
 

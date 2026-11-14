@@ -474,3 +474,26 @@ async fn v3_layer_workers_over_http_match_local_execution_and_refuse_bad_request
         server.abort();
     }
 }
+
+/// CPU serving binds the stored bytes: its size policy would otherwise
+/// requantise large BF16 matrices to Q8 at load, a lossy change of
+/// arithmetic that depends on the host's L2 (PREC-DIAG-1). Metal keeps its
+/// declared representation.
+#[test]
+fn cpu_serving_binds_the_stored_bytes_and_manufactures_nothing() {
+    use larql_server::vindex3::{load_v3_model_with_backend, V3Backend};
+    use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+    assert_eq!(
+        V3Backend::Cpu.representation_source(),
+        RepresentationSource::Stored
+    );
+    assert_eq!(
+        V3Backend::Metal.representation_source(),
+        RepresentationSource::Auto
+    );
+    let container = v3_container();
+    let model = load_v3_model_with_backend(container.path(), V3Backend::Cpu).unwrap();
+    let store = model.runtime.store();
+    assert_eq!(store.representation_source(), RepresentationSource::Stored);
+    assert_eq!(store.runtime_quantised(), 0);
+}

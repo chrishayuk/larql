@@ -53,9 +53,7 @@ use super::super::shannon_trace::dump::{
 use larql_inference::vindex3::OpenedComponent;
 
 use super::plugins::Plugins;
-use super::prepare::{
-    parse_representation_source, prepare, with_plan_backend, BackendVisitor, ENGINE_PREFIX,
-};
+use super::prepare::{prepare, with_plan_backend, BackendVisitor, ENGINE_PREFIX};
 use super::ExecArgs;
 
 /// Extra planes beyond the layer table, matching
@@ -103,7 +101,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     super::generate::admission::refuse_evidence_outside_the_curve(&args, lowered)?;
     refuse_rope_angles_outside_the_logit_arms(&args, lowered)?;
     let tokens = parse_tokens(&args.tokens)?;
-    let source = parse_representation_source(&args.representation_source)?;
+    let source = args.representation_source()?;
     let witness = match &args.gemv_witness {
         Some(dir) => Some(begin_gemv_witness(dir, &args)?),
         None => None,
@@ -123,7 +121,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(want) = &want {
         println!(
             "representation: {want}  source: {}  objects from a compiled pack: {}/{}",
-            args.representation_source,
+            super::prepare::representation_source_flag(source),
             from_pack,
             store.selection().len()
         );
@@ -255,7 +253,7 @@ fn capture_identity(
         component: args.component.clone(),
         engine: engine.to_string(),
         backend: format!("{:?}", args.backend),
-        representation_source: args.representation_source.clone(),
+        representation_source: args.representation_source_flag()?.to_string(),
         tokens_sha256: super::site_capture_dump::tokens_sha256(tokens),
         rope_angles: args.rope_angles.angles().name().to_string(),
         draft_depth: args.draft_depth,
@@ -307,7 +305,7 @@ fn write_gemv_witness(
             component: &args.component,
             backend: &format!("{:?}", args.backend),
             representation: want.unwrap_or("none"),
-            representation_source: &args.representation_source,
+            representation_source: args.representation_source_flag()?,
             execution_arm: &format!("{:?}", kquant_execution()),
             tokens,
             draft_depth: args.draft_depth,
