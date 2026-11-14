@@ -236,6 +236,21 @@ pub trait ContinuationProvider {
         Err(ContinuationError::TruncateUnsupported { position })
     }
 
+    /// Declare this state unusable: a failed advance changed it and it
+    /// could not be put back, so it matches no position of any sequence.
+    ///
+    /// Required, with no default, so every provider answers and a wrapper
+    /// cannot silently drop the declaration: after this call
+    /// [`invalidated`](Self::invalidated) reports the reason for as long
+    /// as the state lives, and every traversal over it refuses. A failed
+    /// rollback means the STATE cannot be reused, not only the session
+    /// that saw it.
+    fn invalidate(&mut self, reason: &str);
+
+    /// Why this state is unusable, if it was declared so. Required for
+    /// the same reason [`invalidate`](Self::invalidate) is.
+    fn invalidated(&self) -> Option<&str>;
+
     /// Announce the FULL continuation geometry, KV and recurrent alike.
     ///
     /// Separate from [`prepare`](Self::prepare) so a provider that holds
@@ -404,6 +419,53 @@ impl std::fmt::Display for ContinuationError {
     }
 }
 
+/// The transactional boundary of a block advance: a failed advance leaves
+/// the continuation unchanged, or unusable. Never advanced and usable.
+///
+/// A block traversal changes `state` as it goes (rows appended, recurrent
+/// buffers updated) and only then learns whether the call succeeded. On
+/// success the position moves to `base + advanced`. On failure the state is
+/// put back with [`KvState::truncate`], which restores the whole logical
+/// state at `base` or refuses, and the original error is returned.
+///
+/// When the provider cannot restore it (recurrent buffers, a latent cache,
+/// or no rollback at all), the state matches no position. It is declared
+/// unusable on the provider, and in `fault` for the session that saw it,
+/// which covers a provider that does not record the declaration.
+pub(super) fn settle_block<T>(
+    state: &mut dyn KvState,
+    base: usize,
+    advanced: usize,
+    fault: &mut Option<String>,
+    outcome: Result<T, crate::error::VindexError>,
+) -> Result<T, crate::error::VindexError> {
+    let error = match outcome {
+        Ok(value) => {
+            state.set_position(base + advanced);
+            return Ok(value);
+        }
+        Err(error) => error,
+    };
+    match state.truncate(base) {
+        Ok(()) => Err(error),
+        Err(unrestored) => {
+            let reason = format!(
+                "{error}; the continuation could not be restored to position {base} ({unrestored})"
+            );
+            state.invalidate(&reason);
+            *fault = Some(reason.clone());
+            Err(unusable(&reason))
+        }
+    }
+}
+
+/// The refusal of a continuation that was declared unusable.
+pub(super) fn unusable(reason: &str) -> crate::error::VindexError {
+    crate::error::VindexError::Parse(format!(
+        "this continuation is unusable and must be discarded: {reason}"
+    ))
+}
+
 impl From<ContinuationError> for crate::error::VindexError {
     fn from(value: ContinuationError) -> Self {
         Self::Parse(value.to_string())
@@ -447,6 +509,9 @@ pub struct RowKvState {
     /// would look like the start of a sequence.
     latent: Vec<Option<LatentKvRows>>,
     position: usize,
+    /// Why this state can no longer be continued, once a failed advance
+    /// could not be put back.
+    invalid: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -499,6 +564,11 @@ impl KvState for RowKvState {
             reason,
         };
         // Everything is checked before anything is changed.
+        if let Some(reason) = &self.invalid {
+            return Err(refuse(format!(
+                "the state was declared unusable and a rewind does not restore it: {reason}"
+            )));
+        }
         if position > self.position {
             return Err(refuse(format!(
                 "the state continues from position {}; a rewind cannot move forward",
@@ -538,6 +608,14 @@ impl KvState for RowKvState {
         }
         self.position = position;
         Ok(())
+    }
+
+    fn invalidate(&mut self, reason: &str) {
+        self.invalid = Some(reason.to_string());
+    }
+
+    fn invalidated(&self) -> Option<&str> {
+        self.invalid.as_deref()
     }
 
     fn prepare(&mut self, layers: &[LayerKvGeometry]) {

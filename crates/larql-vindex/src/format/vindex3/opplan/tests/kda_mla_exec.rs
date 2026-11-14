@@ -505,6 +505,12 @@ fn a_provider_without_latent_rows_is_refused_at_announcement() {
         fn set_position(&mut self, position: usize) {
             self.0.set_position(position)
         }
+        fn invalidate(&mut self, reason: &str) {
+            self.0.invalidate(reason)
+        }
+        fn invalidated(&self) -> Option<&str> {
+            self.0.invalidated()
+        }
         fn prepare_continuation(
             &mut self,
             layers: &[crate::format::vindex3::opplan::exec::continuation::LayerContinuationGeometry],

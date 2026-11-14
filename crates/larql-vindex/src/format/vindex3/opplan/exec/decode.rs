@@ -195,6 +195,9 @@ pub struct DecodeSession<'a, B: PlanBackend> {
     backend: &'a B,
     ops: OperandsSlot<'a>,
     kv: KvSlot<'a>,
+    /// Set when a failed block advance could not be put back. The session
+    /// then refuses every step, whether or not the provider records it.
+    fault: Option<String>,
 }
 
 impl<'a, B: PlanBackend> DecodeSession<'a, B> {}
