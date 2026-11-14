@@ -395,6 +395,12 @@ The delta is added to the stored value and rounded once to bfloat16 (ties to eve
 two patches that touch one element, is refused. Quantised representations are re-derived from the edited
 weights. See the spec (§3.5.1) for the limits and for what is and is not verified.
 
+While an edit is pending, `INFER` and `TRACE` in that session compute with the edited weights: the edited
+tensor's bytes are produced by the compile path and held in memory, and nothing on disk changes.
+`REMOVE PATCH` restores the stored weights. If the edit cannot be executed exactly (for example the session's
+representation source is not `stored`), `INFER` is refused with the reason and does not fall back to the
+stored weights. `DESCRIBE`, `WALK`, `SELECT` and `DIFF` keep reading the stored weights (spec §3.5.1).
+
 ## Statement Reference
 
 | Category | Statements |

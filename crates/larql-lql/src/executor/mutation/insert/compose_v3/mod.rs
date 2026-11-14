@@ -115,6 +115,18 @@ impl Session {
         confidence: Option<f32>,
         alpha_override: Option<f32>,
     ) -> Result<Vec<String>, LqlError> {
+        // A compose install is synthesised from captures on the STORED weights (residual, decoys, layer
+        // norms). With a stored-weight op pending those captures would describe a program this session no
+        // longer executes, and COMPILE refuses the mix; refuse before anything is captured or installed.
+        if matches!(&self.backend, Backend::Vindex3 { overlay, .. } if overlay.has_weight_ops()) {
+            return Err(LqlError::Execution(
+                "INSERT MODE COMPOSE refused: stored-weight ops are pending in this session. A compose install \
+                 is computed on the stored weights, which this session does not execute while they are pending, \
+                 and COMPILE cannot combine the two. REMOVE the weight patch first, or compile it and install on \
+                 that container."
+                    .into(),
+            ));
+        }
         self.inject_install_fault(InstallFaultPoint::BeforeInstall)?;
         let bos = self.v3_bos_token();
         let alpha_mul = alpha_override.unwrap_or(DEFAULT_INSERT_ALPHA_MUL);

@@ -29,6 +29,17 @@ impl OperandStore {
     /// measurable on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
         let raw = self.load_raw(operand)?;
+        self.decode_stored(operand, raw)
+    }
+
+    /// Decode `raw` — `operand`'s bytes under its stored label — to f32: the tail of [`Self::load`], and the
+    /// one place such bytes are widened, whether the container holds them or they stand in for what it holds
+    /// (a whole-operand replacement).
+    pub(super) fn decode_stored(
+        &self,
+        operand: &OperandRef,
+        raw: RawOperand,
+    ) -> Result<Vec<f32>, VindexError> {
         let codec = self.registry.resolve(&raw.dtype, &operand.tensor)?;
         // Everything the representation holds: this loader is asked for
         // values, not for a fidelity, so it asks the codec for its deepest

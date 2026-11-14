@@ -28,7 +28,8 @@ use crate::executor::tuning::{
     MAX_PRIORS_CHECKED, MAX_STALE, PRIOR_FLOOR, PROB_CEILING, PROB_FLOOR, UP_SCALE,
 };
 use crate::executor::vindex3::{
-    compose_overrides, encode_raw_prompt, top_k_probs, v3_continuation, V3Runtime,
+    confirm_patched_weights_ran, encode_raw_prompt, execution_overrides, top_k_probs,
+    v3_continuation, V3Runtime,
 };
 use crate::executor::{Backend, Session};
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
@@ -50,14 +51,18 @@ pub(crate) fn probe_target_prob(
     target: &str,
 ) -> Result<f64, LqlError> {
     let continuation = v3_continuation(runtime)?;
-    let output = match compose_overrides(runtime, overlay)? {
-        Some(overrides) => {
-            runtime
-                .execute_streaming_overlaid(prompt_ids, &overrides, &continuation, &mut |_| Ok(()))
-        }
+    let overrides = execution_overrides(runtime, overlay)?;
+    let output = match &overrides {
+        Some(overrides) => runtime.execute_streaming_overlaid(
+            prompt_ids,
+            overrides,
+            &continuation,
+            &mut |_| Ok(()),
+        ),
         None => runtime.execute_streaming(prompt_ids, &continuation, &mut |_| Ok(())),
     }
     .map_err(|e| LqlError::exec("balance: v3 probe failed", e))?;
+    confirm_patched_weights_ran(overrides.as_ref())?;
     let logits = output
         .logits
         .ok_or_else(|| LqlError::Execution("balance: no output head".into()))?;

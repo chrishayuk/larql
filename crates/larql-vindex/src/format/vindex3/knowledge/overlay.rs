@@ -25,6 +25,8 @@
 //! overlay and reach execution through the operand-source seam
 //! (`KnowledgeOverlay::operand_overrides` → `OperandSource`), so a compose patch
 //! alters what the program computes without touching the container.
+//! Stored-weight ops reach execution through the same seam as whole-tensor
+//! replacements (`super::live_weights`).
 
 use crate::format::vindex3::weight_patch::{
     LowRankColumnsOp, StructuredWeightOp, WeightDeltaOp, WeightOp, WeightOpRef, WeightPatchError,
@@ -70,6 +72,9 @@ pub struct KnowledgeOverlay {
     /// patch. Each is bound to the container it was staged against.
     /// `remove_patch` leaves these alone: it replays only the patch list.
     weight_session: Vec<WeightOp>,
+    /// What execution runs for the stored-weight ops in effect — see [`super::live_weights`]. Stale whenever
+    /// the op set may have changed since it was built.
+    pub(super) live: super::live_weights::LiveWeightState,
 }
 
 impl KnowledgeOverlay {
@@ -363,6 +368,7 @@ impl KnowledgeOverlay {
         self.check_weight_conflicts(&patch)?;
         self.apply_unchecked(&patch);
         self.patches.push(patch);
+        self.invalidate_live_weights();
         Ok(())
     }
 
@@ -443,6 +449,7 @@ impl KnowledgeOverlay {
         op.as_ref().check_intact()?;
         self.conflict_with_existing(&[op.as_ref()])?;
         self.weight_session.push(op);
+        self.invalidate_live_weights();
         Ok(())
     }
 
@@ -512,6 +519,7 @@ impl KnowledgeOverlay {
             return;
         }
         self.patches.remove(index);
+        self.invalidate_live_weights();
         self.knn_store = self.base_knn.clone();
         self.overrides_meta.clear();
         self.deleted.clear();
@@ -552,9 +560,10 @@ impl KnowledgeOverlay {
                 PatchOp::DeleteKnn { entity } => {
                     self.knn_store.remove_by_entity(entity);
                 }
-                // Stored-weight edits have no overlay state: they take
-                // effect when COMPILE writes a new container, and are read
-                // back from the patch list by `weight_ops`.
+                // Stored-weight edits have no slot state: they are read back
+                // from the patch list by `weight_ops`, written into a new
+                // container by COMPILE, and executed meanwhile through the
+                // live view built from that list (`live_weights`).
                 PatchOp::WeightDelta(_)
                 | PatchOp::StructuredWeight(_)
                 | PatchOp::LowRankColumnsWeight(_) => {}

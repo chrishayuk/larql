@@ -99,7 +99,8 @@ impl Session {
         let diff =
             semantic_diff(&side_a, &side_b).map_err(|e| LqlError::exec("diff: compare", e))?;
         let mut out = vec![format!("Diff (logical): {} vs {}", name(a), name(b))];
-        // A staged stored-weight op has no effect until COMPILE writes a container, so CURRENT is compared
+        // CURRENT is the container plus its knowledge overlay. A pending stored-weight op is not part of it:
+        // INFER executes the op in this session, but DIFF compares stored tensors and compares CURRENT
         // without it. Say so: "equivalent" must not read as "the pending edit changed nothing".
         let pending = match (&self.backend, a, b) {
             (Backend::Vindex3 { overlay, .. }, VindexRef::Current, _)
@@ -110,8 +111,9 @@ impl Session {
         };
         let pending_note = (pending > 0).then(|| {
             format!(
-                "  note: {pending} stored-weight op(s) are pending COMPILE and are not part of CURRENT here; \
-                 compile them and DIFF the container to compare the edited weights"
+                "  note: {pending} stored-weight op(s) are pending COMPILE and are not part of CURRENT here \
+                 (INFER in this session executes them; DIFF does not see them); compile them and DIFF the \
+                 container to compare the edited weights"
             )
         });
         if diff.is_empty() {

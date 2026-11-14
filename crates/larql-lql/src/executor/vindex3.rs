@@ -21,10 +21,12 @@ use larql_vindex::format::vindex3::opplan::LayerAttention;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
+mod live;
 mod low_rank;
 mod overrides;
 mod session;
 mod weights;
+pub(crate) use live::live_weight_lines;
 pub(crate) use overrides::*;
 pub(crate) use session::*;
 
@@ -138,14 +140,15 @@ impl Session {
                     }
                     Ok(())
                 };
-                // Compose edits reach execution through the operand-
-                // source seam; without them this is the plain pass,
-                // bit for bit.
-                let output = match compose_overrides(runtime, overlay)? {
+                // Compose edits and pending stored-weight ops reach
+                // execution through the operand-source seam; without
+                // either this is the plain pass, bit for bit.
+                let overrides = execution_overrides(runtime, overlay)?;
+                let output = match &overrides {
                     Some(overrides) => runtime
                         .execute_streaming_overlaid(
                             &prompt_ids,
-                            &overrides,
+                            overrides,
                             &v3_continuation(runtime)?,
                             &mut sink,
                         )
@@ -154,6 +157,7 @@ impl Session {
                         .execute_streaming(&prompt_ids, &v3_continuation(runtime)?, &mut sink)
                         .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
                 };
+                confirm_patched_weights_ran(overrides.as_ref())?;
                 let logits = output.logits.ok_or_else(|| {
                     LqlError::Execution("the component carries no output head".into())
                 })?;
@@ -234,7 +238,7 @@ impl Session {
             }
             Some(n) => {
                 let mut kv = v3_continuation(runtime)?.build();
-                let overrides = compose_overrides(runtime, overlay)?;
+                let overrides = execution_overrides(runtime, overlay)?;
                 let prefill_logits = match &overrides {
                     Some(ov) => runtime.prefill_into_overlaid(&prompt_ids, ov, &mut *kv),
                     None => runtime.prefill_into(&prompt_ids, &mut *kv),
@@ -245,6 +249,7 @@ impl Session {
                     None => runtime.session_with_kv(&mut *kv),
                 }
                 .map_err(|e| LqlError::exec("v3 session failed", e))?;
+                confirm_patched_weights_ran(overrides.as_ref())?;
                 let mut detok = Detokenizer::new(tokenizer);
                 detok.seed(&prompt_ids);
                 let mut text = String::new();
