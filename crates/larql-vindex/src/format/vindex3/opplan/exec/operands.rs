@@ -118,6 +118,8 @@ pub struct OperandStore {
     /// Tensors quantised at load in this session — see
     /// [`Self::runtime_quantised`].
     runtime_quantised: std::sync::atomic::AtomicU64,
+    /// An open residency record of this store's loads, if one was asked for. See [`super::residency_record`].
+    residency: std::sync::Mutex<Option<Vec<super::residency_record::OperandRecord>>>,
     /// Tensors bound at their stored precision rather than the format the
     /// backend asked for — see [`Self::bound_at_stored_precision`].
     stored_precision: std::sync::atomic::AtomicU64,

@@ -265,6 +265,7 @@ impl OperandStore {
             loads: std::sync::atomic::AtomicU64::new(0),
             read_bytes: std::sync::atomic::AtomicU64::new(0),
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
+            residency: std::sync::Mutex::new(None),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
             #[cfg(test)]
@@ -344,6 +345,45 @@ impl OperandStore {
     pub fn runtime_quantised(&self) -> u64 {
         self.runtime_quantised
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Begin recording what each matrix operand this store loads is made resident as, discarding any record
+    /// already open. See [`super::super::residency_record`].
+    pub fn record_residency(&self) {
+        *self.residency.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
+    }
+
+    /// Whether a residency record is open on this store.
+    pub fn records_residency(&self) -> bool {
+        self.residency
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+    }
+
+    /// Stop recording and take what was recorded, in the order operands reached it; empty if no record was open.
+    pub fn take_residency_record(&self) -> Vec<super::super::residency_record::OperandRecord> {
+        self.residency
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .unwrap_or_default()
+    }
+
+    /// Append one operand to the open record, numbering it; dropped if none is open.
+    pub(in crate::format::vindex3::opplan::exec) fn push_residency(
+        &self,
+        mut operand: super::super::residency_record::OperandRecord,
+    ) {
+        if let Some(records) = self
+            .residency
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
+            operand.order = records.len() as u64;
+            records.push(operand);
+        }
     }
 
     /// Where this store was allowed to source representations from.

@@ -81,6 +81,7 @@ pub mod quantise;
 pub mod realization;
 pub mod reference;
 pub mod requirements;
+pub mod residency_record;
 pub mod rope_angles;
 pub mod routed_experts;
 pub mod routing_trace;
