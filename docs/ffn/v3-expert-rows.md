@@ -82,12 +82,23 @@ enforce that, each before anything is handed upward:
 
 1. **Worker.** Every row is validated before any transform runs; one bad row
    refuses the frame.
-2. **Coordinator, before dispatch.** Row ids must be distinct across the
-   whole call, experts distinct within each row, and the call no larger than
-   one frame may hold (256 rows, which bounds every worker's frame). This is judged before
-   rows are split by worker, because two rows sharing an id could otherwise
-   land in separate frames that are each well formed and come back as one
-   row built from two inputs. No worker is contacted for a refused call.
+2. **Coordinator, before dispatch: everything it can decide alone.** For
+   the whole call, before any worker is contacted, the coordinator checks:
+   distinct row ids; at least one expert per row, each at most once; no more
+   experts per row than the layer's top-k; every input the bound width and
+   finite; every selected expert owned by an admitted worker; the layer
+   owned; and no more rows than one frame may hold (256, which bounds every
+   worker's frame). **A call refused by any of these sends zero requests.**
+   Judging the whole call matters: a fault confined to one worker's share
+   would otherwise be found only after the other workers had been asked, and
+   two rows sharing an id could land in separate, individually well-formed
+   frames and come back as one row built from two inputs.
+
+   **What cannot be decided here is a worker's own state:** a stale handle
+   after a restart, a worker that is unreachable or fails, a worker whose
+   request-size limit is lower than the frame. Those are discovered only by
+   asking, after other workers may already have answered. They still fail
+   the whole call; they do not guarantee zero requests.
 3. **Client and coordinator, on response.** A response must answer every requested
    `(row, expert)` exactly once and nothing else, from a worker that owns the
    expert, with the request's handle, sequence, layer and row count. When a

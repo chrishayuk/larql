@@ -639,3 +639,102 @@ fn a_call_over_the_frame_limit_contacts_no_worker() {
     );
     assert_eq!(probe.rows_calls.load(Ordering::SeqCst), topology.len());
 }
+
+#[test]
+fn a_fault_confined_to_one_workers_share_is_refused_before_any_worker_is_asked() {
+    let container = container_with(miniature_routed);
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    // The second worker owns three experts, so a row can exceed the layer's
+    // top-k on that worker alone. The first row is always valid and lives
+    // entirely on the first worker: left to the workers, it would be
+    // computed before the second worker refused its own frame.
+    let topology = vec![(0, 1), (1, EXPERTS)];
+    let probe = Probe::default();
+    let provider = routed_experts::admit_expert_provider(
+        container.path(),
+        runtime.plan(),
+        runtime.operands(),
+        runtime.backend(),
+        transport(container.path(), &topology, &probe),
+    )
+    .unwrap();
+    let good = inputs().remove(0);
+    let narrow = good[..HIDDEN - 1].to_vec();
+    let mut nonfinite = good.clone();
+    nonfinite[HIDDEN / 2] = f32::INFINITY;
+    let (first, second) = ([0usize], [EXPERTS - 1]);
+    let over_on_one_worker: Vec<usize> = (1..EXPERTS).collect();
+    assert!(over_on_one_worker.len() > TOP_K);
+    // Within top-k on each worker separately, over it for the row.
+    let over_across_workers: Vec<usize> = (0..=TOP_K).collect();
+    let healthy = ExpertRow {
+        id: 0,
+        input: &good,
+        experts: &first,
+    };
+    let cases: [(&str, ExpertRow<'_>); 4] = [
+        (
+            "narrow input",
+            ExpertRow {
+                id: 1,
+                input: &narrow,
+                experts: &second,
+            },
+        ),
+        (
+            "nonfinite input",
+            ExpertRow {
+                id: 1,
+                input: &nonfinite,
+                experts: &second,
+            },
+        ),
+        (
+            "over top-k on one worker",
+            ExpertRow {
+                id: 1,
+                input: &good,
+                experts: &over_on_one_worker,
+            },
+        ),
+        (
+            "over top-k across workers",
+            ExpertRow {
+                id: 1,
+                input: &good,
+                experts: &over_across_workers,
+            },
+        ),
+    ];
+    for (name, bad) in cases {
+        probe.rows_calls.store(0, Ordering::SeqCst);
+        assert!(
+            provider.apply_rows(LAYER, &[healthy, bad]).is_err(),
+            "{name} was accepted"
+        );
+        assert_eq!(
+            probe.rows_calls.load(Ordering::SeqCst),
+            0,
+            "{name}: a worker was asked before the call was refused"
+        );
+    }
+    // The same call with a valid second row reaches both workers.
+    let valid = ExpertRow {
+        id: 1,
+        input: &good,
+        experts: &second,
+    };
+    assert_eq!(
+        provider.apply_rows(LAYER, &[healthy, valid]).unwrap().len(),
+        2
+    );
+    assert_eq!(probe.rows_calls.load(Ordering::SeqCst), topology.len());
+
+    // A worker's own state cannot be known in advance: a failing worker is
+    // still discovered only by asking, and still fails the whole call.
+    *probe.fault.lock().unwrap() = Some(Fault::Fail);
+    probe.rows_calls.store(0, Ordering::SeqCst);
+    assert!(provider.apply_rows(LAYER, &[healthy, valid]).is_err());
+    assert_eq!(probe.rows_calls.load(Ordering::SeqCst), topology.len());
+}

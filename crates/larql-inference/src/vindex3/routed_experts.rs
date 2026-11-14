@@ -186,6 +186,11 @@ struct Grid<T> {
     transport: T,
     owners: Vec<Vec<usize>>,
     bindings: Vec<Binding>,
+    /// Each routed layer's selection limit, from the admitted plan: the
+    /// most experts one row may select there.
+    top_k: Vec<usize>,
+    /// The carrier width every admitted worker is bound to.
+    hidden: usize,
 }
 impl<T: ExpertTransport> RoutedExpertProvider for Grid<T> {
     fn apply_rows(
@@ -321,10 +326,19 @@ impl<T: ExpertTransport> Grid<T> {
             .owners
             .get(layer)
             .ok_or_else(|| VindexError::Parse("unowned expert layer".into()))?;
-        // Row and expert identity is decided here, for the whole call, and
-        // not left to each worker's frame: two rows sharing an id could
-        // otherwise be split across workers into frames that are each
-        // well formed, and come back as one row built from two inputs.
+        // Everything the coordinator can decide on its own is decided here,
+        // for the whole call, before any worker is contacted. Left to each
+        // worker's frame, a fault confined to one worker's share would be
+        // found only after the others had been asked; and two rows sharing
+        // an id could be split into frames that are each well formed and
+        // come back as one row built from two inputs. What cannot be known
+        // here is a worker's own state (a stale handle, a worker that has
+        // gone): that still surfaces from the worker, and still fails the
+        // whole call.
+        let top_k = *self
+            .top_k
+            .get(layer)
+            .ok_or_else(|| VindexError::Parse("unowned expert layer".into()))?;
         let mut ids = std::collections::BTreeSet::new();
         for row in rows {
             if !ids.insert(row.id) {
@@ -337,6 +351,24 @@ impl<T: ExpertTransport> Grid<T> {
                 return Err(VindexError::Parse(
                     "a row must select at least one expert, each at most once".into(),
                 ));
+            }
+            if row.experts.len() > top_k {
+                return Err(VindexError::Parse(format!(
+                    "a row selects {} experts; layer {layer} admits at most {top_k}",
+                    row.experts.len()
+                )));
+            }
+            if row.input.len() != self.hidden || row.input.iter().any(|v| !v.is_finite()) {
+                return Err(VindexError::Parse(
+                    "expert rows input width or finiteness mismatch".into(),
+                ));
+            }
+            if row
+                .experts
+                .iter()
+                .any(|expert| owners.get(*expert).is_none())
+            {
+                return Err(VindexError::Parse("unowned selected expert".into()));
             }
         }
         if rows.is_empty() {
@@ -551,10 +583,25 @@ pub fn admit_expert_provider<B: PlanBackend, T: ExpertTransport + 'static>(
     {
         return Err(InferenceError::Parse("incomplete expert coverage".into()));
     }
+    let top_k = plan
+        .layers
+        .iter()
+        .map(|l| {
+            l.ffn
+                .as_ref()
+                .and_then(|f| f.routed())
+                .map(|r| r.top_k)
+                .ok_or_else(|| InferenceError::Parse("routed layer required".into()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // Every binding was held to this plan's dimensions above.
+    let hidden = bindings[0].program.hidden;
     Ok(Arc::new(Grid {
         transport,
         owners,
         bindings,
+        top_k,
+        hidden,
     }))
 }
 pub fn prepare_coordinator<B: PlanBackend, T: ExpertTransport + 'static>(
