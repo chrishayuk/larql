@@ -160,7 +160,7 @@ impl Session {
         let source = self.representation_source;
         let (runtime, tokenizer, knowledge) = crate::executor::vindex3::bind(&path, source)?;
         let plan_layers = runtime.plan().layers.len();
-        let out = vec![
+        let mut out = vec![
             format!(
                 "Using: {} (VINDEX3, model: {}, component {}, {} layers, \
                  execution closed)",
@@ -171,18 +171,25 @@ impl Session {
             ),
             format!(
                 "Supported: {}. Tokenizer: {}.",
-                crate::executor::vindex3::SUPPORTED,
+                crate::executor::vindex3::supported(),
                 if tokenizer.is_some() {
                     "present"
                 } else {
                     "absent (token-id capability only)"
                 },
             ),
-            format!(
-                "Execution: representation source {}.",
-                crate::executor::vindex3::describe_source(source)
-            ),
         ];
+        if tokenizer.is_none() {
+            out.push(format!(
+                "Refused without a tokenizer: {}.",
+                crate::help::render::vindex3_needs_tokenizer()
+            ));
+        }
+        out.push("Syntax: HELP; lists every statement. HELP <statement>; prints one page.".into());
+        out.push(format!(
+            "Execution: representation source {}.",
+            crate::executor::vindex3::describe_source(source)
+        ));
         // A compiled container carries its L0 knowledge as
         // `knn_store.bin` (the same file V2 binds) — load it into the
         // overlay's store, exactly as the V2 arm does.

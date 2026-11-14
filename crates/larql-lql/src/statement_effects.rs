@@ -64,7 +64,8 @@ impl Statement {
             | Statement::BeginPatch { .. }
             | Statement::ApplyPatch { .. }
             | Statement::ShowPatches
-            | Statement::RemovePatch { .. } => false,
+            | Statement::RemovePatch { .. }
+            | Statement::Help { .. } => false,
         }
     }
 }
