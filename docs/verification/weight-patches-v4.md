@@ -86,14 +86,16 @@ its operations is zero-valued; a zero-valued op never changes an element, and re
 ## 5. Bounds
 
 A compact record must not become an instruction to do unbounded work. A structured op is refused before any
-arithmetic when it exceeds any of these (values in `crates/larql-vindex/src/format/vindex3/weight_patch/mod.rs`):
+arithmetic when it exceeds any of these:
 
-| bound | meaning |
-|---|---|
-| `MAX_STRUCTURED_RANK` | the rank `K` of an `add_low_rank_columns` op |
-| `MAX_STRUCTURED_OPERAND_ELEMENTS` | operand elements of one op (`len(a) + len(b)`, or `len(u) + 1`) |
-| `MAX_STRUCTURED_TENSOR_ELEMENTS` | `rows × cols` of a tensor a structured op edits |
-| `MAX_STRUCTURED_WORK` | multiply-adds of one compile's structured ops together (`rows × |J| × K` per low-rank op, `2 × rows × |S|` per removal) |
+| bound | value | meaning |
+|---|---|---|
+| `MAX_STRUCTURED_RANK` | 256 | the rank `K` of an `add_low_rank_columns` op |
+| `MAX_STRUCTURED_OPERAND_ELEMENTS` | 2^24 | operand elements of one op (`len(a) + len(b)`, or `len(u) + 1`) |
+| `MAX_STRUCTURED_TENSOR_ELEMENTS` | 2^30 | `rows × cols` of a tensor a structured op edits |
+| `MAX_STRUCTURED_WORK` | 2^32 | multiply-adds of one compile's structured ops together (`rows × |J| × K` per low-rank op, `2 × rows × |S|` per removal) |
+
+Each bound is inclusive: a value equal to it is admitted.
 
 `MAX_PATCH_ELEMENTS` still bounds every element target. Operation targets do not count against it.
 
