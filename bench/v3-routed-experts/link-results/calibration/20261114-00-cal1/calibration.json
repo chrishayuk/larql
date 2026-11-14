@@ -1,0 +1,180 @@
+{
+  "schema": "larql.v3.link-calibration.v1",
+  "peer": "python echo, loopback",
+  "request_bytes": 11576,
+  "response_bytes": 46136,
+  "floor_median_ns": 111042.0,
+  "points": [
+    {
+      "point": {
+        "kind": "floor",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": "inf"
+      },
+      "exchanges": 200,
+      "median_ns": 111042.0,
+      "min_ns": 85000,
+      "expected_extra_ns": 0.0,
+      "achieved_extra_ns": 0.0,
+      "error_ns": 0.0,
+      "tolerance_ns": 50000,
+      "relay_late_mean_ns": 11670.70340909091,
+      "relay_late_max_ns": 2218792,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.2,
+        "rate_bits_per_s": "inf"
+      },
+      "exchanges": 200,
+      "median_ns": 350291.5,
+      "min_ns": 278709,
+      "expected_extra_ns": 200000.0,
+      "achieved_extra_ns": 239249.5,
+      "error_ns": 39249.5,
+      "tolerance_ns": 50000,
+      "relay_late_mean_ns": 19766.982954545456,
+      "relay_late_max_ns": 2614708,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 1.0,
+        "rate_bits_per_s": "inf"
+      },
+      "exchanges": 200,
+      "median_ns": 1241104.5,
+      "min_ns": 1160792,
+      "expected_extra_ns": 1000000.0,
+      "achieved_extra_ns": 1130062.5,
+      "error_ns": 130062.5,
+      "tolerance_ns": 50000.0,
+      "relay_late_mean_ns": 187783.39772727274,
+      "relay_late_max_ns": 10609625,
+      "within_tolerance": false
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf"
+      },
+      "exchanges": 200,
+      "median_ns": 6209229.5,
+      "min_ns": 5297542,
+      "expected_extra_ns": 5000000.0,
+      "achieved_extra_ns": 6098187.5,
+      "error_ns": 1098187.5,
+      "tolerance_ns": 250000.0,
+      "relay_late_mean_ns": 787866.0011363636,
+      "relay_late_max_ns": 10743583,
+      "within_tolerance": false
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf"
+      },
+      "exchanges": 200,
+      "median_ns": 24779083.5,
+      "min_ns": 20304209,
+      "expected_extra_ns": 20000000.0,
+      "achieved_extra_ns": 24668041.5,
+      "error_ns": 4668041.5,
+      "tolerance_ns": 1000000.0,
+      "relay_late_mean_ns": 2376978.284090909,
+      "relay_late_max_ns": 17411917,
+      "within_tolerance": false
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": 1000000000.0
+      },
+      "exchanges": 200,
+      "median_ns": 765791.5,
+      "min_ns": 512334,
+      "expected_extra_ns": 461760.0,
+      "achieved_extra_ns": 654749.5,
+      "error_ns": 192989.5,
+      "tolerance_ns": 50000,
+      "relay_late_mean_ns": 228509.50568181818,
+      "relay_late_max_ns": 22350023,
+      "within_tolerance": false
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "exchanges": 200,
+      "median_ns": 4813437.5,
+      "min_ns": 4757417,
+      "expected_extra_ns": 4617600.0,
+      "achieved_extra_ns": 4702395.5,
+      "error_ns": 84795.5,
+      "tolerance_ns": 230880.0,
+      "relay_late_mean_ns": 42461.77954545455,
+      "relay_late_max_ns": 1860238,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 1.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "exchanges": 200,
+      "median_ns": 5990583.5,
+      "min_ns": 5825667,
+      "expected_extra_ns": 5617600.0,
+      "achieved_extra_ns": 5879541.5,
+      "error_ns": 261941.5,
+      "tolerance_ns": 280880.0,
+      "relay_late_mean_ns": 92329.85227272728,
+      "relay_late_max_ns": 232822,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": 1000000000.0
+      },
+      "exchanges": 200,
+      "median_ns": 6216895.5,
+      "min_ns": 5760834,
+      "expected_extra_ns": 5461760.0,
+      "achieved_extra_ns": 6105853.5,
+      "error_ns": 644093.5,
+      "tolerance_ns": 273088.0,
+      "relay_late_mean_ns": 309819.16818181815,
+      "relay_late_max_ns": 449244,
+      "within_tolerance": false
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "exchanges": 200,
+      "median_ns": 27266416.5,
+      "min_ns": 24782375,
+      "expected_extra_ns": 24617600.0,
+      "achieved_extra_ns": 27155374.5,
+      "error_ns": 2537774.5,
+      "tolerance_ns": 1230880.0,
+      "relay_late_mean_ns": 1090864.3386363636,
+      "relay_late_max_ns": 2626238,
+      "within_tolerance": false
+    }
+  ],
+  "all_within_tolerance": false
+}

@@ -19,6 +19,12 @@ import urllib.parse
 import urllib.request
 
 
+# Workload v2: `larql run --raw` on VINDEX3 prepends the declared BOS, so the
+# v1 IDs in prompts.json (and receipts recorded against them) cannot be
+# reproduced on main. v1 stays as recorded; new runs name the workload they ran.
+PROMPTS = "prompts-v2.json"
+
+
 LAYOUTS = {
     "local": [], "one": [(0, 23, 0, 31)],
     "experts": [(0, 23, 0, 15), (0, 23, 16, 31)],
@@ -241,13 +247,15 @@ def main():
         ["git", "diff", "HEAD", "--name-only", "--", "crates", "Cargo.toml", "Cargo.lock"],
         cwd=root, text=True))
     out.mkdir(parents=True, exist_ok=False)
-    prompt = json.loads(Path(__file__).with_name("prompts.json").read_text())["p3"]
+    fixture = json.loads(Path(__file__).with_name(PROMPTS).read_text())
+    prompt = fixture["p3"]
     settings = dict(LARQL_CPU_WORKERS="8", RAYON_NUM_THREADS="8",
                     VECLIB_MAXIMUM_THREADS="1", TOKIO_WORKER_THREADS="2", LARQL_KV_ENGINE="")
     env = dict(os.environ, **settings)
     handshake = args.peer_handshake.read_text() if args.peer_handshake else None
     save(out / "manifest.json", {
         "schema": "larql.v3.routed-profile.v1", "revision": revision,
+        "workload": fixture["workload"],
         "tracked_source_dirty": source_dirty, "model": str(model), "topology": args.topology,
         "worker_lifecycle": "external" if remote_urls else "managed-loopback",
         "worker_urls": remote_urls,
@@ -274,7 +282,7 @@ def main():
         nonlocal reference
         profile = directory / f"{label}.jsonl"
         command = [str(root / "target/release/larql"), "run", str(model), prompt["text"],
-                   "--max-tokens", str(args.max_tokens), "--emit-ids", "--v3-profile", str(profile)]
+                   "--max-tokens", str(args.max_tokens), "--emit-ids", "--raw", "--v3-profile", str(profile)]
         if urls:
             command += ["--v3-ffn-shards", ",".join(urls), "--v3-ffn-wire", "binary"]
         print(f"running {directory.name}/{label}", flush=True)

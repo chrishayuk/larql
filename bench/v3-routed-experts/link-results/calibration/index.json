@@ -1,0 +1,73 @@
+{
+  "note": "Every DEC-V3-1 calibration run to date, in order. None passes. Tolerances were never changed: max(5% of expected, 50 us) per exchange. Contract v1 = one baseline per run; v2 = a zero-delay baseline before and after every point, pass required against both. Diagnostics are listed separately and never count as qualifying runs.",
+  "qualifying_runs": 0,
+  "required": 2,
+  "runs": [
+    {
+      "receipt": "20261114-00-cal1/calibration.json",
+      "contract": "v1",
+      "probe": "python-blocking",
+      "relay": "threaded relay, single sleep then spin",
+      "verdict": "FAIL 4/10 within tolerance; relay 10-25% late at long delays"
+    },
+    {
+      "receipt": "20261114-01-cal2/calibration.json",
+      "contract": "v1",
+      "probe": "python-blocking",
+      "relay": "threaded relay, halving sleep then spin",
+      "verdict": "FAIL 7/10 (reported earlier as 7 of 10); host load ~30"
+    },
+    {
+      "receipt": "20261114-02-cal3/calibration.json",
+      "contract": "v1",
+      "probe": "python-blocking",
+      "relay": "threaded relay, halving sleep then spin",
+      "verdict": "FAIL 8/10"
+    },
+    {
+      "receipt": "20261114-03-cal4/calibration.json",
+      "contract": "v1",
+      "probe": "python-blocking",
+      "relay": "threaded relay, halving sleep then spin",
+      "verdict": "FAIL 7/10"
+    },
+    {
+      "receipt": "20261114-04-n1/calibration.json",
+      "contract": "v2",
+      "probe": "native-polling",
+      "relay": "threaded relay, halving sleep then spin",
+      "verdict": "FAIL 7/9; zero-delay relay baseline wandered 66-161 us"
+    },
+    {
+      "receipt": "20261114-05-n2/calibration.json",
+      "contract": "v2",
+      "probe": "native-polling",
+      "relay": "single polling loop per connection",
+      "verdict": "FAIL 7/9; baseline bimodal near 80 and 127 us"
+    },
+    {
+      "receipt": "20261114-06-n3/calibration.json",
+      "contract": "v2",
+      "probe": "native-polling",
+      "relay": "single polling loop per connection",
+      "verdict": "FAIL 6/9; first five points within tolerance, then host load rose 14 to 32 and the relay missed its schedule by milliseconds"
+    }
+  ],
+  "diagnostics": [
+    {
+      "receipt": "20261114-07-qos-ab/qos_ab.json",
+      "what": "zero-delay relay baseline, 12 interleaved rounds per scheduling class, polling relay 7b1097f8, a peer process using about 5 cores throughout",
+      "finding": "no effect: default 104-116 us, user-interactive 108-120 us (medians). The earlier bimodal baseline did not occur in either class in this session, so its cause is not identified; the efficiency-core hypothesis is not supported."
+    },
+    {
+      "receipt": "20261114-08-python-diagnostic/calibration.json",
+      "what": "contract v2 with the blocking Python probe; never an authority",
+      "finding": "8/9 within tolerance; relay self-reported lateness mean 22 us on shaped arms"
+    },
+    {
+      "receipt": "20261114-09-native-diagnostic/calibration.json",
+      "what": "contract v2 with the native probe, run back to back with the Python one under the same peer load. Declared a diagnostic BEFORE it ran: it is not a qualification attempt and does not count toward the two required runs.",
+      "finding": "9/9 within tolerance. Relay self-reported lateness mean 48 us on shaped arms, about twice the Python-probe figure, with single releases up to 13 ms late; under peer load this cannot separate a probe observer effect from preemption by the peer."
+    }
+  ]
+}
