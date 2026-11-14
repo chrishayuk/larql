@@ -23,6 +23,7 @@ mod codec;
 mod codec_recent;
 mod registry_parity;
 mod resume_anti_cheat;
+mod truncate;
 mod window;
 
 use larql_vindex::format::vindex3::fixtures::{

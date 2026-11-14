@@ -97,7 +97,18 @@ pub struct Session {
     pub(crate) install_fault: crate::executor::install_fault::FaultSlot,
     /// Resolves a `USE` literal that is not a path. See [`model_resolver`].
     pub(crate) model_resolver: Option<model_resolver::ModelResolver>,
+    /// Whether a VINDEX3 container this session binds may have a representation manufactured for it at load.
+    /// See [`Self::set_representation_source`].
+    pub(crate) representation_source: RepresentationSource,
 }
+
+/// Where a VINDEX3 execution representation may come from, as the session's binding policy.
+pub use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+
+/// What a session binds a VINDEX3 container under unless told otherwise: the stored weights, with nothing
+/// manufactured at load. The same default as `vindex3 exec --backend production` and the CPU server, so that
+/// `INFER` in a session computes with the weights the session's edits and `VERIFY` statements are about.
+pub const DEFAULT_REPRESENTATION_SOURCE: RepresentationSource = RepresentationSource::Stored;
 
 impl Default for Session {
     fn default() -> Self {
@@ -124,7 +135,35 @@ impl Session {
             balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
             install_fault: crate::executor::install_fault::FaultSlot::default(),
             model_resolver: None,
+            representation_source: DEFAULT_REPRESENTATION_SOURCE,
         }
+    }
+
+    /// Choose where a VINDEX3 container bound by a LATER `USE` may take its execution representation from.
+    ///
+    /// The default, [`RepresentationSource::Stored`], executes the stored weights: the loader manufactures
+    /// nothing. [`RepresentationSource::Auto`] lets the CPU loader quantise a matrix whose stored image does
+    /// not fit the host's cache, which is faster on large models and changes the arithmetic, and so the
+    /// logits. It is a performance choice the embedding program makes explicitly. A container already bound
+    /// keeps the source it was bound under.
+    pub fn set_representation_source(&mut self, source: RepresentationSource) {
+        self.representation_source = source;
+    }
+
+    /// The tensors of the bound VINDEX3 container that were quantised at load so far, by name: the operands
+    /// this session does not execute from their stored bytes. `None` without a VINDEX3 binding. Empty under
+    /// [`RepresentationSource::Stored`]. Operands load when first needed, so ask after the statement whose
+    /// execution is in question.
+    pub fn runtime_quantised_tensors(&self) -> Option<Vec<String>> {
+        match &self.backend {
+            Backend::Vindex3 { runtime, .. } => Some(runtime.store().runtime_quantised_tensors()),
+            _ => None,
+        }
+    }
+
+    /// The source a later `USE` will bind a VINDEX3 container under.
+    pub fn representation_source(&self) -> RepresentationSource {
+        self.representation_source
     }
 
     /// Sets (or, with `None`, removes) the hook `USE` asks about a literal
@@ -217,6 +256,11 @@ impl Session {
                 base,
                 container,
             } => self.exec_verify_patch(patch, contract, base, container),
+            Statement::VerifyLedger {
+                container,
+                contract,
+                base,
+            } => self.exec_verify_ledger(container, contract, base),
             Statement::VerifyRepresentation {
                 container,
                 contract,

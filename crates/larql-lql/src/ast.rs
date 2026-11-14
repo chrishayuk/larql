@@ -236,6 +236,14 @@ pub enum Statement {
         base: String,
         container: String,
     },
+    /// `VERIFY LEDGER "<container>" USING CONTRACT "<id>" FROM "<base>";`: an external verifier recomputes
+    /// what the compiled container's own weight-patch ledger declares of the base, from the ops the ledger
+    /// records, and compares it with the container. No patch file is needed. Read-only. LQL never evaluates it.
+    VerifyLedger {
+        container: String,
+        contract: String,
+        base: String,
+    },
     Stats {
         vindex: Option<String>,
     },
@@ -319,6 +327,7 @@ impl Statement {
             Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
             Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
             Statement::VerifyPatch { .. } => "VERIFY PATCH",
+            Statement::VerifyLedger { .. } => "VERIFY LEDGER",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",

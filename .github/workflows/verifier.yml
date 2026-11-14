@@ -8,6 +8,9 @@ on:
     paths:
       - 'verifier/**'
       - 'docs/verification/**'
+      # verifier/tests/test_vlp_numerics.py runs the frozen VLP numerics vectors: a change to them must run the
+      # verifier, or it falls out of conformance unnoticed until its own files next change.
+      - 'conformance/vlp-numerics/**'
       - 'scripts/check_verifier_boundary.py'
       - '.github/workflows/verifier.yml'
   push:
@@ -15,6 +18,9 @@ on:
     paths:
       - 'verifier/**'
       - 'docs/verification/**'
+      # verifier/tests/test_vlp_numerics.py runs the frozen VLP numerics vectors: a change to them must run the
+      # verifier, or it falls out of conformance unnoticed until its own files next change.
+      - 'conformance/vlp-numerics/**'
       - 'scripts/check_verifier_boundary.py'
       - '.github/workflows/verifier.yml'
 

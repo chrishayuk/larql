@@ -2,11 +2,12 @@
 
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
-use larql_inference::vindex3::Vindex3Runtime;
+use larql_inference::vindex3::{OpenPolicy, Vindex3Runtime};
 use larql_inference::SamplingConfig;
 use larql_kv::CanonicalFactory;
 use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationFactory;
 use larql_vindex::format::vindex3::opplan::exec::lowering::{LoweringIdentity, LoweringRegistry};
+use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::tokenizers::Tokenizer;
 
 #[allow(unused_imports)]
@@ -422,12 +423,16 @@ pub(crate) type V3Knowledge = larql_vindex::format::vindex3::knowledge::Knowledg
 
 pub(crate) fn bind(
     path: &std::path::Path,
+    source: RepresentationSource,
 ) -> Result<(V3Runtime, Option<Tokenizer>, Option<V3Knowledge>), LqlError> {
-    let runtime = Vindex3Runtime::open_via(
+    // The canonical program (`want: None`), under the session's source. Spelled out and not
+    // `OpenPolicy::default()`, whose source permits the loader to manufacture a lossy residency.
+    let runtime = Vindex3Runtime::open_with_via(
         path,
         V3_COMPONENT,
         std::sync::Arc::new(LoweringRegistry::shipped()),
         &LoweringIdentity::cpu_production(),
+        OpenPolicy { want: None, source },
     )
     .map_err(|e| LqlError::exec("failed to open VINDEX3 container", e))?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(path).ok();

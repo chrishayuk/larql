@@ -47,6 +47,10 @@ pub struct KnowledgeOverlay {
     /// type with V2 — same logical semantics, same `knn_store.bin`
     /// persistence format.
     pub knn_store: KnnStore,
+    /// The L0 knowledge the bound container itself carries (its `knn_store.bin`), as it stood when the
+    /// container was bound. It is the container's meaning, not an edit: only a difference from it is session
+    /// state, and removing a patch replays over it. Set by [`Self::bind_base_knn`].
+    base_knn: KnnStore,
     /// Patches applied to this session, in application order.
     pub patches: Vec<VindexPatch>,
     /// Feature-meta overrides: `Some(meta)` replaces the base view's
@@ -442,9 +446,29 @@ impl KnowledgeOverlay {
         Ok(())
     }
 
-    /// Whether any retrieval or slot state exists besides weight edits.
+    /// Bind the L0 knowledge the container carries. It becomes both the store in effect and the baseline
+    /// [`Self::knn_edited`] measures against.
+    pub fn bind_base_knn(&mut self, store: KnnStore) {
+        self.base_knn = store.clone();
+        self.knn_store = store;
+    }
+
+    /// Whether the retrieval store differs from what the bound container carries: a KNN insert or delete, made
+    /// directly or by an applied patch.
+    pub fn knn_edited(&self) -> bool {
+        !self.knn_store.same_entries(&self.base_knn)
+    }
+
+    /// Whether the session holds any retrieval or slot edit besides weight edits. Knowledge the bound container
+    /// already carries is not an edit.
     pub fn has_knowledge_state(&self) -> bool {
-        self.num_overrides() > 0 || !self.knn_store.is_empty() || !self.deleted.is_empty()
+        self.num_overrides() > 0 || self.knn_edited() || !self.deleted.is_empty()
+    }
+
+    /// Whether the session holds any edit at all, of knowledge or of stored weights: anything a statement that
+    /// writes the bound container's meaning unchanged would lose.
+    pub fn has_pending_edits(&self) -> bool {
+        self.has_knowledge_state() || self.has_weight_ops()
     }
 
     fn check_weight_conflicts(&self, patch: &VindexPatch) -> Result<(), WeightPatchError> {
@@ -479,14 +503,16 @@ impl KnowledgeOverlay {
     }
 
     /// Remove a previously applied patch and rebuild the overlay by
-    /// replaying the remaining patch list — V2's removal contract:
-    /// session-added state outside a patch is reset too.
+    /// replaying the remaining patch list over what the container
+    /// carries — V2's removal contract: session-added knowledge state
+    /// outside a patch is reset too. The container's own L0 knowledge
+    /// is kept, and so are stored-weight edits staged in the session.
     pub fn remove_patch(&mut self, index: usize) {
         if index >= self.patches.len() {
             return;
         }
         self.patches.remove(index);
-        self.knn_store = KnnStore::default();
+        self.knn_store = self.base_knn.clone();
         self.overrides_meta.clear();
         self.deleted.clear();
         self.overrides_gate.clear();

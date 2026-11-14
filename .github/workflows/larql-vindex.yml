@@ -12,6 +12,8 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-vindex/**'
+      # tests/weight_patch/vlp_numerics{,_v2}.rs include the frozen VLP numerics vectors
+      - 'conformance/vlp-numerics/**'
       # the macOS `gpu` check compiles against larql-compute-metal's API (#508)
       - 'crates/larql-compute-metal/**'
       - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
@@ -24,6 +26,8 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-vindex/**'
+      # tests/weight_patch/vlp_numerics{,_v2}.rs include the frozen VLP numerics vectors
+      - 'conformance/vlp-numerics/**'
       # the macOS `gpu` check compiles against larql-compute-metal's API (#508)
       - 'crates/larql-compute-metal/**'
       - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'

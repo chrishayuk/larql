@@ -1112,6 +1112,13 @@ larql lql 'USE "gemma3-4b.vindex"; DESCRIBE "France";'
 larql lql 'USE "gemma3-4b.vindex"; WALK "Einstein" TOP 10;'
 ```
 
+| Flag | Description | Default |
+|---|---|---|
+| `--representation-source <stored\|auto\|transient>` | Where a VINDEX3 container bound by `USE` may take its execution representation from. `stored` executes the stored weights; `auto` lets the CPU loader quantise large matrices at load, which is faster and is not the stored arithmetic. `LARQL_LQL_REPRESENTATION_SOURCE` sets it when the flag does not, for `larql repl` too. An unrecognised word is an error | `stored` |
+
+`USE` prints the source it bound under. Sessions bound under `auto` before this default changed; see the LQL
+spec, section 3.2.
+
 ## Research commands (dev)
 
 Research builds only (see
@@ -1810,6 +1817,12 @@ larql compile --base <BASE> --output <OUTPUT> [OPTIONS]
 | `--answer <TEXT>` | Correct answer token to compile into the weights | — |
 | `--layer <N>` | Layer to install the compiled edge at | 30 |
 | `--slot <N>` | FFN slot to install the compiled edge at | 9000 |
+
+Patch mode (`--vindex`) installs one FFN edge per `insert` op. A patch set holding any other op (`update`,
+`delete`, `insert_knn`, `delete_knn`, or a stored-weight op: `weight_delta`, `structured_weight`,
+`low_rank_columns_weight`) is refused whole before the model is loaded, and nothing is written: the mode has no
+form for those ops, and compiling the inserts alone would drop the rest. Stored-weight ops compile into a
+VINDEX3 container with `APPLY PATCH` and `COMPILE CURRENT INTO VINDEX`.
 
 The balancer is opt-in (`--max-iters 0` by default) because
 `larql_inference::forward::predict` is systematically peakier than HF's

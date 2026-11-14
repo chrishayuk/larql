@@ -81,6 +81,94 @@ pub trait RoutedExpertProvider: Send + Sync {
         input: &[f32],
         experts: &[usize],
     ) -> Result<Vec<ExpertOutput>, VindexError>;
+
+    /// Several rows in one operation, each with its own selected experts.
+    /// Results may arrive in any order but must name every requested
+    /// `(row, expert)` exactly once. The whole call succeeds or fails: an
+    /// implementation never returns the rows it managed to compute.
+    ///
+    /// The default is the single-row operation once per row, so a provider
+    /// that only knows [`Self::apply`] already answers a one-row call with
+    /// exactly what `apply` returns.
+    fn apply_rows(
+        &self,
+        layer: usize,
+        rows: &[ExpertRow<'_>],
+    ) -> Result<Vec<RowExpertOutput>, VindexError> {
+        let mut out = Vec::new();
+        for row in rows {
+            out.extend(
+                self.apply(layer, row.input, row.experts)?
+                    .into_iter()
+                    .map(|o| RowExpertOutput {
+                        row: row.id,
+                        expert: o.expert,
+                        output: o.row,
+                    }),
+            );
+        }
+        Ok(out)
+    }
+}
+
+/// One input row of a multi-row call. The id is the caller's: the provider
+/// echoes it and attaches no meaning to it.
+#[derive(Clone, Copy)]
+pub struct ExpertRow<'a> {
+    pub id: u32,
+    pub input: &'a [f32],
+    pub experts: &'a [usize],
+}
+
+pub struct RowExpertOutput {
+    pub row: u32,
+    pub expert: usize,
+    pub output: Vec<f32>,
+}
+
+/// What a worker did for one multi-row call. `transform_calls` equals
+/// `pairs` for a kernel that takes one row at a time: grouping changes the
+/// order experts are visited in, not how often their weights are read. This
+/// counts grouping only and is never evidence of avoided memory traffic.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RowsAccounting {
+    pub rows: usize,
+    pub pairs: usize,
+    pub distinct_experts: usize,
+    pub transform_calls: usize,
+}
+
+/// Split a multi-row response by row and reduce each row in its own
+/// production selection order. Every row is validated and reduced before
+/// anything is returned, so a bad pair anywhere fails the whole call.
+pub(super) fn reduce_rows(
+    selected: &[(u32, Vec<(usize, f32)>)],
+    outputs: Vec<RowExpertOutput>,
+    hidden: usize,
+) -> Result<Vec<Vec<f32>>, VindexError> {
+    let mut by_row: std::collections::BTreeMap<u32, Vec<ExpertOutput>> =
+        selected.iter().map(|(id, _)| (*id, Vec::new())).collect();
+    if by_row.len() != selected.len() {
+        return Err(VindexError::Parse(
+            "duplicate row id in expert rows call".into(),
+        ));
+    }
+    for output in outputs {
+        by_row
+            .get_mut(&output.row)
+            .ok_or_else(|| VindexError::Parse("unsolicited row in expert rows response".into()))?
+            .push(ExpertOutput {
+                expert: output.expert,
+                row: output.output,
+            });
+    }
+    selected
+        .iter()
+        .map(|(id, experts)| {
+            let rows = by_row.remove(id).expect("every selected row has an entry");
+            reduce_selected(experts, rows, hidden)
+        })
+        .collect()
 }
 
 impl<'a> RoutedFfnCall<'a> {

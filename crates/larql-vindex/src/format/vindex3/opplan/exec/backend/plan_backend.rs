@@ -232,6 +232,22 @@ pub trait PlanBackend: Sync {
         )))
     }
 
+    /// [`Self::routed_ffn_placed`] for several rows of one layer: route each
+    /// row locally, run every row's selected experts through ONE provider
+    /// call, reduce each row in its own selection order. Returns one output
+    /// per call, in call order, or fails as a whole.
+    fn routed_ffn_placed_rows(
+        &self,
+        _calls: &[RoutedFfnCall<'_>],
+        _layer: usize,
+        _provider: &dyn super::super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<Vec<f32>>, VindexError> {
+        Err(VindexError::Parse(format!(
+            "{} does not support multi-row routed expert placement",
+            self.name()
+        )))
+    }
+
     /// Vocabulary projection plus the head's optional multiplier and
     /// softcap, in that order.
     fn output_head(

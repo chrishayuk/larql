@@ -23,7 +23,11 @@
 //!   policy decision this rung does not take;
 //! - an overridden object that carries alternate variants — the
 //!   catalogue's other physical encodings would go stale;
-//! - the legacy `.lyrw` bank layout (encode-layout containers only).
+//! - the legacy `.lyrw` bank layout (encode-layout containers only);
+//! - a weight-patched source whose ledger describes a representation this
+//!   bake would rewrite — the ledger's digests would no longer be the
+//!   container's. A bake that leaves those representations alone carries
+//!   the ledger with them, unchanged.
 
 #[cfg(test)]
 mod tests;
@@ -52,6 +56,36 @@ pub struct BakeReport {
 /// Safetensors dtype label for the widened representation rewritten
 /// tensors are stored in.
 const DTYPE_F32: &str = "F32";
+const MOE_MANIFEST_JSON: &str = "moe_manifest.json";
+const TOKENIZER_JSON: &str = "tokenizer.json";
+
+/// The representations a weight-patched source's ledger describes: the edited canonical one and every
+/// representation re-derived from it. Empty for a source with no ledger. A ledger that is named but cannot be
+/// read is an error: its container is already incoherent.
+fn ledgered_representations(
+    src: &Path,
+    index: &Vindex3Index,
+) -> Result<BTreeSet<String>, VindexError> {
+    let Some(name) = index.weight_patches.as_deref() else {
+        return Ok(BTreeSet::new());
+    };
+    let text = std::fs::read_to_string(src.join(name))
+        .map_err(|e| VindexError::Parse(format!("weight-patch ledger `{name}`: {e}")))?;
+    let ledger = super::weight_patch::parse_ledger(&text)
+        .map_err(|e| VindexError::Parse(format!("weight-patch ledger `{name}`: {e}")))?;
+    Ok(ledger
+        .targets
+        .iter()
+        .map(|t| t.representation.clone())
+        .chain(
+            ledger
+                .result
+                .derived
+                .iter()
+                .map(|d| d.representation.clone()),
+        )
+        .collect())
+}
 
 /// Bake `overrides` over the container at `src` into a clean container
 /// at `out`.
@@ -102,6 +136,8 @@ fn bake_into(
     let store = OperandStore::open(src, &inspection)?;
     let source = OperandSource::overlaid(&store, overrides);
 
+    let ledgered = ledgered_representations(src, &index)?;
+
     let mut report = BakeReport {
         rewritten_segments: 0,
         linked_segments: 0,
@@ -139,6 +175,14 @@ fn bake_into(
             continue;
         }
 
+        if ledgered.contains(&rep_id) {
+            return Err(VindexError::Parse(format!(
+                "the source is a weight-patched container and its ledger describes `{rep_id}`, \
+                 which this compile would rewrite — the ledger would no longer describe the \
+                 stored weights. Compile the knowledge into the unpatched base first, then \
+                 apply the weight edits to that container; the compile was not performed"
+            )));
+        }
         if !index.variants.is_empty() {
             return Err(VindexError::Parse(format!(
                 "the container carries alternate representation variants and object `{}` \
@@ -213,11 +257,16 @@ fn bake_into(
     }
 
     // The programme manifest and capability files travel with the
-    // container unchanged.
-    for aux in [SYSTEM_GRAPH_JSON, "moe_manifest.json", "tokenizer.json"] {
+    // container unchanged. So does a weight-patch ledger: every
+    // representation it describes was linked above, byte for byte, or
+    // the bake refused.
+    let aux_files = [SYSTEM_GRAPH_JSON, MOE_MANIFEST_JSON, TOKENIZER_JSON]
+        .into_iter()
+        .chain(index.weight_patches.as_deref());
+    for aux in aux_files {
         let from = src.join(aux);
         if from.exists() {
-            std::fs::copy(&from, out.join(aux))?;
+            std::fs::copy(&from, super::container_path::prepare_write(out, aux)?)?;
         }
     }
 

@@ -49,6 +49,10 @@ use crate::error::LqlError;
 const SCHEMA: &str = "larql-verify-contract/1";
 const OPERATOR_SCHEMA: &str = "larql-verify-operator/1";
 const PATCH_SCHEMA: &str = "larql-verify-patch/1";
+const LEDGER_SCHEMA: &str = "larql-verify-ledger/1";
+const SATISFIED: &str = "satisfied";
+const VIOLATED: &str = "violated";
+const COULD_NOT_EVALUATE: &str = "could_not_evaluate";
 const WITNESS_BASIS: &str = "engine_reported";
 const EVIDENCE_KIND: &str = "numerical_measurement";
 const VERIFIER_ENV: &str = "LARQL_VERIFIER";
@@ -116,6 +120,40 @@ struct PatchResult {
     container: Identified,
     #[serde(default)]
     recomputed_from: String,
+    #[serde(default)]
+    measurements: Vec<Measurement>,
+    #[serde(default)]
+    offending: Vec<Offending>,
+    #[serde(default)]
+    reasons: Vec<String>,
+    verifier: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    report_sha256: Option<String>,
+}
+
+/// A `larql-verify-ledger/1` answer: one overall status, and the two halves it is made of.
+#[derive(Debug, Deserialize)]
+struct LedgerResult {
+    schema: String,
+    contract: String,
+    #[serde(default)]
+    contract_statement: String,
+    evidence_kind: String,
+    status: String,
+    violations: u64,
+    base: Identified,
+    container: Identified,
+    #[serde(default)]
+    recomputed_from: String,
+    /// Does every element of every tensor the ledger names equal the recomputed bits. Absent when the question
+    /// could not be put at all (an unknown contract).
+    #[serde(default)]
+    numerical_satisfaction: String,
+    /// Is the ledger bound to this base, intact, admissible and consistent with the containers.
+    #[serde(default)]
+    ledger_integrity: String,
+    #[serde(default)]
+    failed_halves: Vec<String>,
     #[serde(default)]
     measurements: Vec<Measurement>,
     #[serde(default)]
@@ -273,6 +311,41 @@ impl Session {
             self.contract_violations += 1;
         }
         Ok(render_patch(&result))
+    }
+
+    pub(crate) fn exec_verify_ledger(
+        &mut self,
+        container: &str,
+        contract: &str,
+        base: &str,
+    ) -> Result<Vec<String>, LqlError> {
+        let verifier = self.discover_verifier("VERIFY LEDGER")?;
+        let container = existing_dir(container, "container")?;
+        let base = existing_dir(base, "base")?;
+        let stdout = run_verifier(
+            &verifier,
+            &[
+                "ledger",
+                "--contract",
+                contract,
+                "--base",
+                &base,
+                "--container",
+                &container,
+            ],
+            TIMEOUT,
+        )?;
+        let result = parse_ledger_result(&stdout, contract, &base, &container)?;
+        if result.status == COULD_NOT_EVALUATE {
+            return Err(LqlError::Execution(format!(
+                "contract {contract} could not be evaluated for {container}: {}",
+                result.reasons.join("; ")
+            )));
+        }
+        if result.status == VIOLATED {
+            self.contract_violations += 1;
+        }
+        Ok(render_ledger(&result))
     }
 
     fn discover_verifier(&self, statement: &str) -> Result<PathBuf, LqlError> {
@@ -554,6 +627,110 @@ fn parse_patch_result(
     }
     check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
     Ok(r)
+}
+
+/// The same refusals as [`parse_result`], for a question about what a container's own ledger declares of a
+/// base. The overall status must also be the one its two halves make: satisfied only when both are, violated
+/// when either is, and otherwise not evaluated. An answer whose halves say something else is refused.
+fn parse_ledger_result(
+    stdout: &str,
+    contract: &str,
+    base: &str,
+    container: &str,
+) -> Result<LedgerResult, LqlError> {
+    let bad =
+        |why: String| LqlError::Execution(format!("the verifier's answer was refused: {why}"));
+    let r: LedgerResult =
+        serde_json::from_str(stdout).map_err(|e| bad(format!("not a valid result: {e}")))?;
+    let mismatch = |field: &str, got: &str, want: &str| {
+        (got != want).then(|| bad(format!("its {field} is {got:?}, not {want:?}")))
+    };
+    let first = mismatch("schema", &r.schema, LEDGER_SCHEMA)
+        .or_else(|| mismatch("contract", &r.contract, contract))
+        .or_else(|| mismatch("base", &r.base.path, base))
+        .or_else(|| mismatch("container", &r.container.path, container))
+        .or_else(|| mismatch("evidence kind", &r.evidence_kind, EVIDENCE_KIND));
+    if let Some(e) = first {
+        return Err(e);
+    }
+    check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
+    if r.status == COULD_NOT_EVALUATE {
+        // Refused before either half was judged, or with neither violated: the reasons say why.
+        return Ok(r);
+    }
+    let halves = [
+        r.numerical_satisfaction.as_str(),
+        r.ledger_integrity.as_str(),
+    ];
+    if let Some(unknown) = halves
+        .iter()
+        .find(|h| ![SATISFIED, VIOLATED, COULD_NOT_EVALUATE].contains(h))
+    {
+        return Err(bad(format!("unknown status {unknown:?} for one half")));
+    }
+    let made = if halves.contains(&VIOLATED) {
+        VIOLATED
+    } else if halves == [SATISFIED, SATISFIED] {
+        SATISFIED
+    } else {
+        COULD_NOT_EVALUATE
+    };
+    if r.status != made {
+        return Err(bad(format!(
+            "status {:?}, but its halves are {:?} and {:?}",
+            r.status, r.numerical_satisfaction, r.ledger_integrity
+        )));
+    }
+    Ok(r)
+}
+
+fn render_ledger(r: &LedgerResult) -> Vec<String> {
+    let verdict = if r.status == SATISFIED {
+        "SATISFIED"
+    } else {
+        "VIOLATED"
+    };
+    let mut out = vec![format!("Ledger contract {}: {verdict}", r.contract)];
+    if !r.contract_statement.is_empty() {
+        out.push(format!("  Requires: {}", r.contract_statement));
+    }
+    out.push(format!(
+        "  Numerical satisfaction: {}",
+        r.numerical_satisfaction
+    ));
+    out.push(format!(
+        "  Ledger integrity and provenance: {}",
+        r.ledger_integrity
+    ));
+    if !r.failed_halves.is_empty() {
+        out.push(format!("  Failed: {}", r.failed_halves.join(", ")));
+    }
+    out.push(format!(
+        "  Base: {} (sha256 {})",
+        r.base.path,
+        r.base.sha256.as_deref().unwrap_or("not reported")
+    ));
+    out.push(format!(
+        "  Container: {} (sha256 {})",
+        r.container.path,
+        r.container.sha256.as_deref().unwrap_or("not reported")
+    ));
+    if !r.recomputed_from.is_empty() {
+        out.push(format!("  Recomputed from: {}", r.recomputed_from));
+    }
+    render_findings(
+        &mut out,
+        &r.measurements,
+        &r.offending,
+        &r.verifier,
+        &r.report_sha256,
+    );
+    out.push(
+        "  Evidence: a numerical measurement of the canonical weights of these two containers, not a formal \
+         proof. It does not judge the re-derived (quantised) representations, which inference may execute."
+            .into(),
+    );
+    out
 }
 
 fn render_patch(r: &PatchResult) -> Vec<String> {

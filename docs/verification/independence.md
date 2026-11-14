@@ -7,7 +7,7 @@ enforced, because one pull request could otherwise change both the engine and th
 |---|---|---|
 | No LARQL code in the numerics | `verifier/tests/test_boundaries.py` refuses any import but the standard library, NumPy and `gguf`, and any way of running a program | Enforced by CI |
 | Measurement code stays what was approved | `verifier/tests/test_verifier.py` checks `refcheck/` and its tests against the hash table in `verifier/provenance/PROVENANCE.md` | Enforced by CI |
-| One change can't move both sides | The `boundary` check in `verifier-boundary.yml`, required on `main`, fails a pull request that changes both the measurement and `crates/`. It runs from the base branch, so a pull request can't rewrite it | Enforced by a required check |
+| One change can't move both sides | The `boundary` check in `verifier-boundary.yml`, required on `main`, fails a pull request that changes both the measurement and `crates/`. The measurement includes the frozen VLP numerics (`conformance/vlp-numerics/`): the specification and golden vectors both sides are held to, so a new numerics version lands on its own, before the engine that implements it. It runs from the base branch, so a pull request can't rewrite it | Enforced by a required check |
 | Results are bound to what they measured | Each answer carries the verifier's version and code digest, the container's digest, and the source's pinned identity. These say what was measured. They don't authenticate who measured it (below) | By construction |
 | No circular answers | The expected results in `verifier/expected/` come from the verifier, and LARQL's tests don't generate them | By review |
 | Accountability for verifier changes | The `boundary` check requires review evidence or a written maintainer exception | Enforced by a required check. **Not independent review** (below) |
@@ -18,7 +18,7 @@ enforced, because one pull request could otherwise change both the engine and th
 - `main branch`, with no bypass: changes arrive by pull request, `boundary` must pass, and the branch can't be deleted or force-pushed.
 - `verifier code owners`: disabled. It asks for code owner review, but it does nothing at 0 approvals, and at 1 it applies to every pull request, because a branch ruleset can't be limited to paths.
 
-**Review evidence for verifier paths.** A pull request that changes `verifier/`, `docs/verification/`, the gate, or `CODEOWNERS` fails `boundary` until its exact head commit has one of these on the record:
+**Review evidence for verifier paths.** A pull request that changes `verifier/`, `docs/verification/`, `conformance/vlp-numerics/`, the gate, or `CODEOWNERS` fails `boundary` until its exact head commit has one of these on the record:
 
 - an approval from a maintainer or admin who isn't the author; or
 - a comment or review from a maintainer or admin, with a line starting `Verifier-review exception (<head sha>):`, followed by the reason.

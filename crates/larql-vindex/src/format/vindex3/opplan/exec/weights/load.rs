@@ -16,8 +16,21 @@ use staged::StagedF32;
 use super::*;
 
 /// Load one matrix operand in `format`, through the closure-verified
-/// path only.
+/// path only. Every matrix operand becomes resident here, so this is
+/// where an open [`residency_record`](super::super::residency_record)
+/// sees what was asked for and what was left resident.
 pub fn load_weight(
+    store: OperandSource<'_>,
+    operand: &OperandRef,
+    format: WeightFormat,
+) -> Result<LoadedWeight, VindexError> {
+    let loaded = load_weight_as(store, operand, format)?;
+    super::super::residency_record::note(store, operand, format, &loaded);
+    Ok(loaded)
+}
+
+/// [`load_weight`]'s work, unobserved.
+fn load_weight_as(
     store: OperandSource<'_>,
     operand: &OperandRef,
     format: WeightFormat,

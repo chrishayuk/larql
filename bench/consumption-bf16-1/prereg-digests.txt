@@ -1,0 +1,6 @@
+5084d9c9071b6e0a163386fbcddcb1e83a40c3d514c055c16bdbe1e349478c30  docs/consumption-bf16-1.md
+80e43a8dcb8d93fa096a3a73463f3cce86fefd74331e01c849e196ddb151ed25  bench/consumption-bf16-1/prompts.json
+f2cb093dc33e7ecaf1cb1d6c402aa6a93bc525108fdccc057850be52a85cf708  scripts/consumption_reference.py
+8486ccee2e63384d593f307dcfc6fbc803ceef22d8c807df9bb7645ab056c765  scripts/consumption_edit_operands.py
+cbe11892d388b3f4f09cb03a350ac9364fe4660c753df05464947bd24b64ae0c  crates/larql-vindex/src/format/vindex3/opplan/exec/tests/consumption_real.rs
+2026-11-14T13:00:17Z frozen before the edit was compiled or any fresh prompt was run
