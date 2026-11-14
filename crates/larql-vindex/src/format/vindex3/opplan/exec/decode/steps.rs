@@ -298,7 +298,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     .to_string(),
             ));
         }
-        let embed_table = ops.embed_table().ok_or_else(|| refusal(NO_EMBED_TABLE))?;
+        let embed_table = ops
+            .embed_table()
+            .ok_or_else(|| VindexError::Parse(NO_EMBED_TABLE.into()))?;
         // Checked for EVERY token before any state moves, as `step_many` does.
         for token in tokens {
             if (*token as usize + 1) * hidden > embed_table.len() {
@@ -334,7 +336,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             Mutation::None,
         )?;
         let reported = exit_rows.filter(|rows| rows.len() == tokens.len());
-        let rows = reported.ok_or_else(|| refusal(NO_EXIT_ROWS))?;
+        let rows = reported.ok_or_else(|| VindexError::Parse(NO_EXIT_ROWS.into()))?;
         let mut logits = Vec::with_capacity(rows.len());
         for row in &rows {
             let final_hidden = match ops.final_norm() {
@@ -342,14 +344,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 None => row.clone(),
             };
             let row_logits = ops.head_over_normed(*backend, &final_hidden)?;
-            logits.push(row_logits.ok_or_else(|| refusal(NO_HEAD_LOGITS))?);
+            logits.push(row_logits.ok_or_else(|| VindexError::Parse(NO_HEAD_LOGITS.into()))?);
         }
         // The last row went through the same exit the traversal ran itself.
         // If the two ever disagree, the per-position exit is not the exit.
         let agrees = out.logits.as_deref().map(bits) == logits.last().map(|row| bits(row));
         agrees
             .then_some(())
-            .ok_or_else(|| refusal(EXIT_DISAGREES))?;
+            .ok_or_else(|| VindexError::Parse(EXIT_DISAGREES.into()))?;
         // The provider is the position authority, and the traversal does
         // not move it — the same contract `step_many` keeps.
         state.set_position(base + tokens.len());
@@ -563,10 +565,6 @@ const NO_EXIT_ROWS: &str = "the traversal did not report one final residual per 
 const NO_HEAD_LOGITS: &str = "the output head produced no logits";
 const EXIT_DISAGREES: &str =
     "the per-position exit disagrees with the traversal's own exit for the last position";
-
-fn refusal(message: &str) -> VindexError {
-    VindexError::Parse(message.to_string())
-}
 
 /// A row's exact bit pattern, for comparisons that must not tolerate drift.
 fn bits(row: &[f32]) -> Vec<u32> {
