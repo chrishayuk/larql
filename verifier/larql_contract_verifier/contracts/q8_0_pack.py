@@ -29,7 +29,7 @@ from refcheck import numconv
 from refcheck import q8_0 as Q
 
 from . import vlp_numerics as V
-from .weight_patches_v4 import Store, container_digest, file_digests
+from .weight_patches_v4 import CannotEvaluate, Store, container_digest, file_digests
 
 CONTRACT = "Q8_0_PACK_DERIVATION"
 STATEMENT = (
@@ -53,7 +53,7 @@ F16_INFINITY = 0x7C00
 F16_MIN_EXPONENT = -14
 F16_FRACTION_BITS = 10
 OFFENDING_LIMIT = 10
-BAD_INPUT = (OSError, ValueError, KeyError, TypeError, IndexError, C.ContainerError)
+BAD_INPUT = (OSError, ValueError, KeyError, TypeError, IndexError, C.ContainerError, CannotEvaluate)
 NOT_ESTABLISHED = (
     "that the canonical weights are the intended ones (a ledger or source contract's claim, not this one's)",
     "that the right tensors were chosen for quantisation (read from the pack's own table, not re-derived from policy)",
@@ -197,32 +197,43 @@ class Judge:
         V.check_platform()
         self.files = file_digests(self.root)
         store = Store(self.root)
-        derived = sorted(rid for rid, e in store.reps.items() if "compiled_from" in e)
+        # Every representation that is a pack: one that says it was compiled from another, and one encoded as Q8_0
+        # whether or not it says so. A Q8_0 representation that names no source is still what a Q8_0 execution
+        # would read, so it is judged (and cannot be) and never passed over.
+        derived = sorted(rid for rid, e in store.reps.items() if "compiled_from" in e or e["encoding"] == C.Q8_0)
         if not derived:
             self.cannot("the container has no re-derived representation, so the contract would hold vacuously")
             return
         for rid in derived:
-            self.judge_representation(store, rid)
-        if not self.reasons and not self.counts["q8_tensors"]:
-            self.cannot("no Q8_0 tensor was judged, so the contract would hold vacuously")
+            before = self.counts["blocks"]
+            judged = self.judge_representation(store, rid)
+            if judged and self.counts["blocks"] == before:
+                self.cannot(f"{rid}: no Q8_0 block was derived for it, so the contract would hold vacuously")
 
-    def judge_representation(self, store: Store, rid: str) -> None:
+    def judge_representation(self, store: Store, rid: str) -> bool:
+        """Judge one pack. Returns whether its tensors were reached: `False` when it was refused or found in
+        violation before any tensor could be derived."""
         e = store.reps[rid]
-        source = e.get("compiled_from")
         if e["encoding"] != C.Q8_0:
             self.cannot(f"{rid}: encoding {e['encoding']!r} is not one this contract derives")
-            return
-        if e.get("encoder") != ENCODER:
-            self.cannot(f"{rid}: the pack names derivation rule {e.get('encoder')!r}; this contract implements "
+            return False
+        if "compiled_from" not in e:
+            self.cannot(f"{rid}: a Q8_0 representation that names no source (no compiled_from) cannot be derived")
+            return False
+        source = e["compiled_from"]
+        encoder = e.get("encoder")
+        # Exactly the rule: the same keys, and an integer revision (2.0 and True are not 2).
+        if encoder != ENCODER or type(encoder.get("revision")) is not int:
+            self.cannot(f"{rid}: the pack names derivation rule {encoder!r}; this contract implements "
                         f"{ENCODER!r} only")
-            return
+            return False
         if not isinstance(source, str) or source not in store.reps:
             self.violate(rid, f"compiled_from {source!r} is not a representation of this container")
-            return
+            return False
         s = store.reps[source]
         if "compiled_from" in s or s["encoding"] != C.BF16 or s["object"] != e["object"]:
             self.violate(rid, f"compiled_from {source!r} is not the canonical BF16 representation of {e['object']!r}")
-            return
+            return False
         # Both segments are parsed by the validating reader, which holds their bytes to the index's digests.
         cseg, dseg = store.seg(source), store.seg(rid)
         if e.get("source_representation_digest") != s["payload_sha256"]:
@@ -231,13 +242,14 @@ class Judge:
         if [(t.name, t.shape) for t in cseg.tensors] != [(t.name, t.shape) for t in dseg.tensors]:
             self.violate(rid, "the pack's tensors are not the canonical representation's, name for name and shape "
                               "for shape, in order")
-            return
+            return False
         self.counts["representations"] += 1
         self.derivations.append({"representation": rid, "source": source,
                                  "source_payload_sha256": s["payload_sha256"], "rule": dict(ENCODER),
                                  "codec": dict(C.CODEC_Q8_0)})
         for ct, dt in zip(cseg.tensors, dseg.tensors):
             self.judge_tensor(store, source, rid, ct, dt)
+        return True
 
     def judge_tensor(self, store: Store, source: str, rid: str, ct, dt) -> None:
         where = f"{rid}/{dt.name}"
@@ -319,12 +331,13 @@ def evaluate(out: dict, container: str) -> dict:
         {"name": "not established", "value": "; ".join(NOT_ESTABLISHED)},
     ]
     out["derivations"] = judge.derivations
-    if judge.reasons:
-        # An unjudged part is never folded into a verdict on the rest.
-        return could_not(out, *judge.reasons)
     if not judge.violations:
+        if judge.reasons:
+            # An unjudged part is never folded into a pass on the rest.
+            return could_not(out, *judge.reasons)
         out.update(status="satisfied", violations=0, offending=[], reasons=[])
         return out
+    # A violation is a finding whatever else could not be judged: it is reported, with the unjudged parts beside it.
     offending = sorted(judge.violations, key=lambda o: -o["violations"])
     if len(offending) > OFFENDING_LIMIT:
         tail = offending[OFFENDING_LIMIT - 1:]
@@ -332,5 +345,5 @@ def evaluate(out: dict, container: str) -> dict:
             "name": f"{len(tail)} further findings", "violations": sum(o["violations"] for o in tail),
             "detail": "folded: the protocol lists at most ten"}]
     out.update(status="violated", violations=sum(o["violations"] for o in judge.violations), offending=offending,
-               reasons=[])
+               reasons=list(judge.reasons))
     return out

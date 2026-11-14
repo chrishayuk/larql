@@ -159,8 +159,8 @@ class TwoRoutes(unittest.TestCase):
             self.assertSame(values)
 
     def test_where_the_reciprocal_of_the_scale_overflows(self):
-        # The smallest BF16 magnitudes: the scale is a binary32 subnormal and its reciprocal is infinite, so a
-        # nonzero value saturates by its sign and a zero takes the NaN code, 0.
+        # The smallest BF16 magnitudes: the scale is at most 2^-128, so its reciprocal is infinite, a nonzero value
+        # saturates by its sign and a zero takes the NaN code, 0.
         tiny = 2.0 ** -133
         values = [tiny, -tiny, 0.0, 2 * tiny] + [0.0] * 28
         self.assertSame(values)
@@ -170,7 +170,13 @@ class TwoRoutes(unittest.TestCase):
         top = float(np.array([0x7F7F0000], dtype=np.uint32).view(np.float32)[0])
         self.assertSame([top, -top, top / 2, 1.0] + [0.0] * 28)
 
-    def test_on_every_block_of_a_committed_tensor(self):
+    def test_where_a_subnormal_scale_still_has_a_finite_reciprocal(self):
+        # amax = 2^-121: the scale, about 1.008 × 2^-128, is a binary32 subnormal above the overflow point.
+        values = [2.0 ** -121, -(2.0 ** -122), 2.0 ** -128] + [0.0] * 29
+        self.assertSame(values)
+        self.assertEqual(derived(values)[1][:4], [127, -64, 1, 0])
+
+    def test_on_a_sample_of_the_blocks_of_a_committed_tensor(self):
         raw = location(BASE, CANONICAL, QUANTISED)
         seg, start, e = raw
         with open(seg.path, "rb") as f:
@@ -327,7 +333,165 @@ class WrongPacksWithRightDigests(Fixture):
         self.assertIn("does not name the weights this container holds", self.findings(out))
 
 
+def load_segment(root, rep):
+    """A representation's segment as `(header, [(tensor entry, bytes), ...])`."""
+    entry = read_json(os.path.join(root, "index.json"))["representations"][rep]
+    with open(os.path.join(root, entry["segment"]), "rb") as f:
+        data = f.read()
+    (header_length,) = struct.unpack("<Q", data[:8])
+    header = json.loads(data[8:8 + header_length])
+    payload = data[8 + header_length:]
+    return header, [(t, payload[t["offset"]:t["offset"] + t["len"]]) for t in header["tensors"]]
+
+
+def store_segment(root, rep, header, tensors, segment=None, entry=None):
+    """Write a representation's segment from `tensors` and make its index entry agree with it: a structurally
+    valid container, whatever it now says. Returns the payload digest."""
+    table, payload, offset = [], b"", 0
+    for t, data in tensors:
+        table.append(dict(t, offset=offset, len=len(data)))
+        payload += data
+        offset += len(data)
+    text = json.dumps(dict(header, tensors=table, representation=rep)).encode()
+    text += b" " * (-(8 + len(text)) % 4)
+    data = struct.pack("<Q", len(text)) + text + payload
+    path = os.path.join(root, "index.json")
+    index = read_json(path)
+    e = index["representations"].setdefault(rep, {})
+    if segment:
+        e["segment"] = segment
+    with open(os.path.join(root, e["segment"]), "wb") as f:
+        f.write(data)
+    e.update(tensor_count=len(table), payload_bytes=len(payload), payload_sha256=sha(payload), segment_sha256=sha(data))
+    e.update(entry or {})
+    write_json(path, index)
+    return e["payload_sha256"]
+
+
+EMBEDDING = "target.embedding@BF16"
+EMBEDDING_PACK = "target.embedding@Q8_0"
+
+
+def add_honest_embedding_pack(root):
+    """A second pack, of another object, correctly derived and correctly declared."""
+    header, tensors = load_segment(root, EMBEDDING)
+    reps = read_json(os.path.join(root, "index.json"))["representations"]
+    packed = [(dict(t, dtype="Q8_0"), P.derive_q8_0(P.bf16_to_f32(data)).tobytes()) for t, data in tensors]
+    store_segment(root, EMBEDDING_PACK, header, packed, segment="segments/target.embedding@Q8_0.bin", entry={
+        "object": "target.embedding", "encoding": "Q8_0", "compiled_from": EMBEDDING, "codec": reps[PACK]["codec"],
+        "encoder": reps[PACK]["encoder"], "source_representation_digest": reps[EMBEDDING]["payload_sha256"]})
+
+
+class StructuralFaults(Fixture):
+    """A pack that is wrong before any block is compared is a violation, reported with its cause, never an
+    unexplained `could_not_evaluate`."""
+
+    def assertViolated(self, root, said):
+        out = self.judge(root)
+        self.assertEqual(out["status"], VIOL, self.findings(out))
+        self.assertGreater(out["violations"], 0)
+        self.assertIn(said, self.findings(out))
+
+    def retabled(self, change):
+        root = self.copy()
+        header, tensors = load_segment(root, PACK)
+        change(tensors)
+        store_segment(root, PACK, header, tensors)
+        return root
+
+    def test_a_pack_whose_tensor_table_is_not_the_canonical_one(self):
+        def swap_names(t):
+            t[2][0]["name"], t[3][0]["name"] = t[3][0]["name"], t[2][0]["name"]
+
+        cases = {
+            "drops a quantised tensor": lambda t: t.pop(3),
+            "drops a carried tensor": lambda t: t.pop(0),
+            "reorders two tensors": lambda t: t.__setitem__(slice(2, 4), [t[3], t[2]]),
+            "swaps two names": swap_names,
+            "renames a tensor": lambda t: t[2][0].update(name="0.mlp.gate_proj.weighT"),
+            "adds a tensor": lambda t: t.append(({"name": "zz.extra", "dtype": "BF16", "shape": [2]}, bytes(4))),
+            "reshapes a tensor": lambda t: t[5][0].update(shape=[8, 128]),
+        }
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.assertViolated(self.retabled(change), "name for name and shape for shape")
+
+    def test_a_pack_that_names_the_wrong_source(self):
+        for source in (EMBEDDING, PACK, "nope@BF16", 7, None, []):
+            with self.subTest(compiled_from=source):
+                root = self.copy()
+                self.edit_index(root, lambda d: d["representations"][PACK].update(compiled_from=source))
+                self.assertViolated(root, "compiled_from")
+
+    def test_a_violation_is_reported_beside_a_part_that_could_not_be_judged(self):
+        # One pack has a damaged block; another names a rule this contract does not implement.
+        root = self.copy()
+        add_honest_embedding_pack(root)
+        self.edit_index(root, lambda d: d["representations"][EMBEDDING_PACK].update(encoder={"algorithm": "other"}))
+        patch_bytes(root, PACK, QUANTISED, 2, b"\x7f")
+        reseal(root, PACK)
+        out = self.judge(root)
+        self.assertEqual(out["status"], VIOL, self.findings(out))
+        self.assertIn(f"{PACK}/{QUANTISED}", self.findings(out))
+        self.assertIn("this contract implements", " ".join(out["reasons"]))
+
+
 class NeverAVacuousPass(Fixture):
+    def carried_only(self, root):
+        """Rewrite the decoder pack to carry every tensor unquantised, with the canonical bytes."""
+        _, canonical = load_segment(root, CANONICAL)
+        header, tensors = load_segment(root, PACK)
+        store_segment(root, PACK, header, [(dict(t, dtype="BF16"), canonical[i][1]) for i, (t, _) in enumerate(tensors)])
+
+    def test_a_q8_0_pack_that_names_no_source_is_not_passed_over(self):
+        # A zeroed pack with its compiled_from removed, beside an honest pack of another object: the zeroed one is
+        # still what a Q8_0 execution would read, so it may not be skipped on the way to `satisfied`.
+        root = self.copy()
+        _, tensors = load_segment(root, PACK)
+        patch_bytes(root, PACK, "0.mlp.down_proj.weight", 0, bytes(tensors[1][0]["len"]))
+        reseal(root, PACK)
+        add_honest_embedding_pack(root)
+        out = self.judge(root)
+        self.assertEqual(out["status"], VIOL, "declared, the zeroed pack is a violation")
+
+        def undeclare(d):
+            for field in ("compiled_from", "source_representation_digest"):
+                del d["representations"][PACK][field]
+
+        self.edit_index(root, undeclare)
+        self.assertNotJudged(self.judge(root), "names no source")
+
+    def test_a_pack_with_no_block_to_derive(self):
+        # Its only Q8_0 tensor is empty: a tensor is counted and nothing is compared.
+        root = self.copy()
+        header, canonical = load_segment(root, CANONICAL)
+        empty = {"name": "zz.empty", "dtype": "BF16", "shape": [0, 32]}
+        payload = store_segment(root, CANONICAL, header, canonical + [(empty, b"")])
+        self.carried_only(root)
+        header, tensors = load_segment(root, PACK)
+        store_segment(root, PACK, header, tensors + [(dict(empty, dtype="Q8_0"), b"")],
+                      entry={"source_representation_digest": payload})
+        self.assertNotJudged(self.judge(root), "no Q8_0 block was derived")
+
+    def test_a_pack_that_quantises_nothing_beside_an_honest_one(self):
+        root = self.copy()
+        self.carried_only(root)
+        add_honest_embedding_pack(root)
+        self.assertNotJudged(self.judge(root), f"{PACK}: no Q8_0 block was derived")
+
+    def test_an_encoder_that_is_only_equal_to_the_rule(self):
+        for encoder in ({"algorithm": "kquant-larql-native", "revision": 2.0},
+                        {"algorithm": "kquant-larql-native", "revision": True}):
+            with self.subTest(encoder=encoder):
+                root = self.copy()
+                self.edit_index(root, lambda d: d["representations"][PACK].update(encoder=encoder))
+                self.assertNotJudged(self.judge(root), "this contract implements")
+
+    def test_a_container_the_reader_refuses_is_not_an_exception(self):
+        root = self.copy()
+        os.symlink("index.json", os.path.join(root, "link.json"))
+        self.assertNotJudged(self.judge(root), "symlink")
+
     def assertNotJudged(self, out, reason):
         self.assertEqual((out["status"], out["violations"], out["offending"]), (CNE, 0, []), self.findings(out))
         self.assertIn(reason, self.findings(out))

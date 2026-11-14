@@ -46,8 +46,9 @@ dimension is a multiple of 32, so no block spans two rows. For one block of valu
 Corners the steps already decide, stated so that no reader has to guess:
 
 - **A zero block** (`amax = 0`, signs ignored): `d = +0`, every code 0.
-- **A reciprocal that overflows** (a binary32-subnormal `s`): `r = +inf`, so a nonzero element saturates by its sign
-  (`+127`, `−128`), and a zero element gives `0 × inf`, a NaN, whose code is 0.
+- **A reciprocal that overflows** (`s ≤ 2^-128`): `r = +inf`, so a nonzero element saturates by its sign
+  (`+127`, `−128`), and a zero element gives `0 × inf`, a NaN, whose code is 0. A binary32-subnormal `s` above
+  `2^-128` has a finite reciprocal and is quantised by the ordinary steps.
 - **A non-finite element** is outside the rule: the contract does not judge such a tensor.
 
 A tensor the pack does not quantise is **carried**: stored in the canonical dtype with the canonical bytes.
@@ -58,10 +59,12 @@ error.
 
 ## 3. What is checked
 
-For every representation with `compiled_from`:
+For every representation that has `compiled_from`, and every representation whose `encoding` is `Q8_0` whether or
+not it has one:
 
-1. Its `encoding` is `Q8_0`, its `codec` is the Q8_0 identity and its `encoder` is the rule of §2. Anything else is
-   `could_not_evaluate`.
+1. Its `encoding` is `Q8_0`, it names a source in `compiled_from`, its `codec` is the Q8_0 identity and its `encoder`
+   is the rule of §2, with an integer revision. Anything else is `could_not_evaluate`. A Q8_0 representation that
+   names no source is what a Q8_0 execution would read, so it is not passed over.
 2. `compiled_from` names a canonical BF16 representation of the same graph object in this container.
 3. Both segments parse under the validating reader and their bytes hash to the index's digests.
 4. `source_representation_digest` is the canonical representation's payload digest.
@@ -71,9 +74,12 @@ For every representation with `compiled_from`:
 7. **Every carried tensor** has the canonical dtype and the canonical bytes.
 
 `status` is `satisfied` only when every representation, tensor and block was derived and matched. One differing
-block is a violation, counted per block. Any part that could not be judged makes the whole answer
-`could_not_evaluate`: an unjudged part is never folded into a verdict on the rest. A container with no re-derived
-representation, or with no Q8_0 tensor, is `could_not_evaluate`, not vacuously satisfied.
+block is a violation, counted per block; a pack that fails item 2, 4 or 5 is a violation too. A violation found is
+reported as `violated` even when another part could not be judged, and the answer then lists the unjudged parts
+under `reasons`: the violation count is of what was judged, not of the container. With no violation, any part that
+could not be judged makes the whole answer `could_not_evaluate`: an unjudged part is never folded into
+`satisfied`. A container with no re-derived representation, and a pack for which no Q8_0 block was derived, are
+`could_not_evaluate`, not vacuously satisfied.
 
 ## 4. What is not established
 
@@ -85,14 +91,23 @@ The answer lists these under `not established`:
   leaves unquantised so that a pack that quantises nothing of interest is visible, but it does not judge the choice.
 - **That a runtime kernel consumes these bytes, or consumes them correctly.**
 
+Two limits of scope that follow from §3:
+
+- **Other encodings.** A re-derived representation in any encoding but Q8_0 (a Q4_K pack beside the Q8_0 one, say)
+  makes the whole container `could_not_evaluate`, not only that representation. An honest multi-pack container is
+  therefore not judged by this contract as it stands.
+- **Non-finite elements are looked for only in quantised tensors.** A carried tensor is compared byte for byte and
+  nothing else: a NaN carried identically is not a finding.
+
 ## 5. Independence
 
 The expected bytes are derived in `verifier/larql_contract_verifier/contracts/q8_0_pack.py` from this document. The
 engine's packer is not run, imported or translated, and nothing the engine wrote is an expected value. The module
 holds the rule twice: vectorised binary32 arithmetic, which judges containers, and exact rational arithmetic with
 every rounding explicit, which shares no arithmetic with the first. The tests hold the two to each other on
-hand-derived blocks, on the committed containers and on seeded blocks across the BF16 range, and hold the
-binary32-to-binary16 conversion to the library's.
+hand-derived blocks, on a sample of one committed tensor's blocks (every seventh: the exact route is slow) and on
+seeded blocks across the BF16 range, and hold the binary32-to-binary16 conversion to the library's. Every block of
+every committed container is checked by the vectorised route only, against the bytes the engine wrote.
 
 **A limit on that independence.** The rule of §2 was written down by reading the engine's encoder, because no
 specification of it existed. So this document and the engine can share a misreading of what the rule *should* be;
