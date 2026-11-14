@@ -1,0 +1,3 @@
+USE "../structured_patch/base";
+ADD LOW RANK "sham/operands/a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (10, 11, 12) NUMERICS "f64-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "compiled";

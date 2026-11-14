@@ -179,6 +179,62 @@ There's no `source`.
 
 **What it does not establish:** the derived (quantised) representations a compile re-derives, the digest the op carries (which detects accidental damage, not tampering), and the operand's `origin`. It recomputes with exact rational arithmetic, not by running LARQL's interpreter, so agreement between the two is evidence that neither shares the other's mistake; the interpreter's profile definitions are the common specification.
 
+## Ledger contracts: `larql-verify-ledger/1`
+
+The same arrangement, for whether a compiled container is what its own weight-patch ledger declares of a base container. No patch file is
+needed: a `weight-patches/v4` ledger carries every op it applied ([weight-patches-v4.md](weight-patches-v4.md)).
+
+```text
+<verifier> ledger --contract <id> --base <dir> --container <dir>
+```
+
+The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Exactly `larql-verify-ledger/1` |
+| `base.path`, `container.path` | The values asked about, unchanged. `sha256` is the verifier's digest of each directory, as for `contract` |
+| `recomputed_from` | What the expected result was derived from: the base's weights and the operands the ledger records. The ledger's hashes and counts are checked, never used as expected values |
+| `numerical_satisfaction` | `satisfied`, `violated` or `could_not_evaluate`: does every element of every tensor the ledger names equal the bits recomputed from the base and the ops (§7 step 3, with step 6 for a sham) |
+| `ledger_integrity`, `provenance` | The other half, one verdict reported under both names: the ledger is bound to this base, every op is intact and admissible, every digest and count agrees with the containers and the recomputation, and nothing outside the edit changed (§7 steps 1, 2, 4, 5) |
+| `verdicts` | Each half in full: `status`, `violations`, `offending` (each finding tagged with its `half`), `reasons` and `measurements` |
+| `failed_halves` | The halves that are not `satisfied`, by name: `numerical_satisfaction`, `ledger_integrity_and_provenance` |
+| `provenance_detail` | `base_binding` and `op_digest` (the §3a digest of every op recomputed and compared), each `satisfied`, `violated` or `could_not_evaluate`; `operand_origin` is `not_checked` |
+| `engine_reported` | What the ledger says about the engine that wrote it: its schema, `writer`, `rounding`, the derived representations' encoders and the ledger's SHA-256. Reported, not established |
+| `verifier` | This program only: name, version, code digest. Nothing in it comes from the engine |
+
+There's no `source`.
+
+**The two halves are kept apart.** `status` is `satisfied` only when both are. It's `violated` if either is, and `could_not_evaluate`
+otherwise. `offending` holds both halves' findings, each tagged, worst first, and still sums to `violations`. Past ten, the rest are
+folded into one entry, and the full lists stay under `verdicts`. A container whose bytes are right but whose ledger is inconsistent, or
+the reverse, isn't verified, and `failed_halves` says which half failed. Which half a refusal belongs to follows §7a of the ledger
+contract:
+
+| Defect | Numerical half | Ledger half |
+|---|---|---|
+| A malformed, stale, overlapping, out-of-bounds or wrongly targeted op, an op whose digest isn't intact, or whose `operands_sha256` contradicts its operands | `could_not_evaluate` for that tensor | `violated` |
+| A tensor-level record that contradicts the containers (`base_tensor_sha256`, `result_tensor_sha256`, `changed_elements`) | judged | `violated` |
+| An unknown schema, op kind, op field or profile | `could_not_evaluate` | `could_not_evaluate` |
+| A wrong element, inside or outside the footprint, where the ops are sound | `violated` | judged |
+| A changed tensor or file outside the edit | judged | `violated` |
+
+| Contract | What it measures | What `violated` means |
+|---|---|---|
+| `WEIGHT_PATCHES_V4` | Every element of each edited tensor equals the BF16 result of the ledger's ops recomputed on the base with the verifier's own implementation of `conformance/vlp-numerics` v1 and v2, or the base outside them; and the ledger is bound to the base and consistent with both containers | `failed_halves` names the half. `offending` names the tensor and the first wrong element with the expected and found bits, or the ledger field that disagrees |
+
+**Before judging anything, the verifier checks** that the edited and re-derived segments of both containers pass its validating reader
+(framing, an unambiguous tensor table and both digests), that every other segment file hashes to its own index entry, and that the
+compiled `index.json` names a ledger. Those other segments are never parsed: each is judged as a whole file, byte for byte against the
+base's (§7 step 4). A container that fails, or a ledger of an unknown schema, is
+`could_not_evaluate`. Both directories are digested again afterwards, and a change during the evaluation is `could_not_evaluate`.
+
+**What it doesn't establish:** the content of re-derived (quantised) representations, whose digests it chains to the compiled canonical
+payload without re-quantising; where the operands came from; and `candidate.json`, which every compile regenerates and which isn't an
+authority for anything checked. An element target that records `result_bits` of an op the ledger doesn't carry is held to its recorded
+bits under the ledger half, and its numerical half is `could_not_evaluate`. The op digest detects damage and casual edits. It isn't a
+signature: someone who rewrites an op can re-seal it, and then only the recomputation can object.
+
 ## The contract `Q8_0_T2`
 
 LARQL's own verifier, [`verifier/`](../../verifier/README.md), implements this protocol for one contract, `Q8_0_T2`. It accepts only
