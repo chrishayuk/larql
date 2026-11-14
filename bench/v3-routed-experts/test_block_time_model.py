@@ -406,6 +406,24 @@ class Admission(unittest.TestCase):
         self.assertNotEqual(refused.exception.code, 0)
         self.assertIn("--continue-unsettled is for diagnostics", message.getvalue())
 
+    def test_missing_worker_timing_is_named_and_is_not_the_same_as_unprofiled(self):
+        import block_time as driver
+        arm = next(e for e in bt.schedule() if e["role"] == bt.ROLE_ARM and e["arm"] == "block-4")
+        plain = next(e for e in bt.schedule() if e["role"] == bt.ROLE_UNPROFILED and e["arm"] == "block-4")
+        full = driver.observe(arm, trial("block-4"), None, HASHES, BASE_NS)
+        self.assertEqual(full["worker_timing"], driver.WORKER_TIMING_COMPLETE)
+        # One exchange came back without worker fields, as from an older worker.
+        partial = trial("block-4")
+        partial["worker_records"][3] = {"worker_profile_complete": False}
+        lacking = driver.observe(arm, partial, None, HASHES, BASE_NS)
+        self.assertEqual(lacking["worker_timing"], driver.WORKER_TIMING_INCOMPLETE)
+        self.assertIsNone(lacking["summary"]["worker"])
+        # Its wall time is still a measurement and no gate voids it for this.
+        self.assertEqual(lacking["frame_defects"], [])
+        self.assertEqual(lacking["summary"]["per_position_ns"], full["summary"]["per_position_ns"])
+        unasked = driver.observe(plain, trial("block-4", profiled=False), None, HASHES, BASE_NS)
+        self.assertEqual(unasked["worker_timing"], driver.WORKER_TIMING_NOT_REQUESTED)
+
     def test_provenance_binds_a_receipt_to_source_and_environment(self):
         import os
         from pathlib import Path

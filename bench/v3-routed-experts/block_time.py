@@ -68,6 +68,23 @@ def run_trial(root, model, ids, out, env, entry, worker_urls):
     return json.loads(raw.read_text()), records
 
 
+WORKER_TIMING_COMPLETE = "complete"
+WORKER_TIMING_NOT_REQUESTED = "not requested"
+WORKER_TIMING_INCOMPLETE = "incomplete"
+
+
+def worker_timing_state(entry, summary):
+    """Whether a trial has the worker's timing, said in words.
+
+    An unprofiled trial never asks for it. A profiled trial that lacks it for
+    any exchange is a different thing and must not look the same: its wall
+    time is still a measurement, but its decomposition is not available.
+    """
+    if not entry["profiled"]:
+        return WORKER_TIMING_NOT_REQUESTED
+    return WORKER_TIMING_COMPLETE if summary["worker"] is not None else WORKER_TIMING_INCOMPLETE
+
+
 def observe(entry, trial, relay_records, reference, floor_ns):
     """Apply the per-trial gates. A parity failure stops the run."""
     wrong = bt.parity_mismatches(reference, trial)
@@ -75,6 +92,7 @@ def observe(entry, trial, relay_records, reference, floor_ns):
         raise Stop(f"{entry['label']}: logits differ from the reference at positions {wrong[:8]}")
     summary = bt.summarize(trial, entry["rtt_ms"])
     observation = dict(entry, summary=summary, frame_defects=bt.frame_defects(trial),
+                       worker_timing=worker_timing_state(entry, summary),
                        host_load_average=os.getloadavg(), relay=None)
     if relay_records is not None:
         # The relay carried the untimed positions too.
@@ -184,6 +202,17 @@ def execute(args, root, model, out, kind):
     complete = stop is None and len(judged) == len(order)
     report = bt.analyse(judged) if complete else {"note": "the run stopped; nothing is analysed"}
     report.update(kind=kind, counts=kind == "admissible" and complete, complete=complete, stopped=stop,
+                  scheduled=len(order), observed=len(judged),
+                  # Three different things, never merged: a trial that ran and
+                  # failed a validity gate, a trial that never ran because the
+                  # run stopped, and a trial that ran without worker timing.
+                  outcomes={
+                      "valid": [o["label"] for o in judged if o["valid"]],
+                      "void_by_gate": {o["label"]: o["void_reasons"] for o in judged if not o["valid"]},
+                      "not_run": [entry["label"] for entry in order[len(judged):]],
+                      "worker_timing_incomplete": [o["label"] for o in judged
+                                                   if o.get("worker_timing") == WORKER_TIMING_INCOMPLETE],
+                  },
                   host_after=lp.host_state(), exclusivity_evidence_supplied=handshake is not None)
     save(out / "analysis.json", report)
     save(out / "verification.json",
