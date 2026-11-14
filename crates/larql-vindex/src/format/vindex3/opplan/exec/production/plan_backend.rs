@@ -250,6 +250,51 @@ impl PlanBackend for ProductionBackend {
     ) -> Result<Vec<f32>, VindexError> {
         self.routed_ffn_impl(call, Some((layer, provider)))
     }
+    fn routed_ffn_placed_rows(
+        &self,
+        calls: &[RoutedFfnCall<'_>],
+        layer: usize,
+        provider: &dyn super::super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<Vec<f32>>, VindexError> {
+        use super::super::routed_experts::{reduce_rows, ExpertRow};
+        if calls.is_empty() {
+            return Err(VindexError::Parse(
+                "multi-row routed call carries no row".into(),
+            ));
+        }
+        let hidden = calls[0].hidden;
+        if calls.iter().any(|call| call.hidden != hidden) {
+            return Err(VindexError::Parse(
+                "multi-row routed call mixes hidden widths".into(),
+            ));
+        }
+        // Route every row exactly as the single-row path does, before any
+        // expert runs: the provider only ever sees ids, never weights.
+        let mut selected = Vec::with_capacity(calls.len());
+        for (index, call) in calls.iter().enumerate() {
+            let id = u32::try_from(index)
+                .map_err(|_| VindexError::Parse("too many rows in one routed call".into()))?;
+            let routed = self.route(call)?;
+            routing_trace::record(&routed);
+            selected.push((id, routed));
+        }
+        let ids: Vec<Vec<usize>> = selected
+            .iter()
+            .map(|(_, routed)| routed.iter().map(|(expert, _)| *expert).collect())
+            .collect();
+        let rows: Vec<ExpertRow<'_>> = calls
+            .iter()
+            .zip(&selected)
+            .zip(&ids)
+            .map(|((call, (id, _)), experts)| ExpertRow {
+                id: *id,
+                input: call.x,
+                experts,
+            })
+            .collect();
+        let outputs = provider.apply_rows(layer, &rows)?;
+        reduce_rows(&selected, outputs, hidden)
+    }
     fn expert_transform(
         &self,
         call: super::super::routed_experts::ExpertTransformCall<'_>,
@@ -350,6 +395,22 @@ impl PlanBackend for ProductionBackend {
 }
 
 impl ProductionBackend {
+    /// Router projection and top-k selection for one row: `(expert, weight)`
+    /// in production selection order. Shared by the single-row and multi-row
+    /// paths so both select from identical arithmetic.
+    fn route(&self, call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)>, VindexError> {
+        let _stage = stage(Stage::Router);
+        let routed_input = router_input(call)?;
+        // The router's `k` is the width of what it READS, which is
+        // not `call.hidden` once the experts run behind a bottleneck:
+        // `call.hidden` is then the latent width, while the router
+        // still projects from the block input. Taking it from the
+        // vector itself keeps the two impossible to desync.
+        let k = routed_input.len();
+        let mut logits = matmul_vec(&routed_input, call.router, call.experts, k);
+        select_experts(call, &mut logits)
+    }
+
     pub(super) fn routed_ffn_impl(
         &self,
         call: RoutedFfnCall<'_>,
@@ -359,18 +420,7 @@ impl ProductionBackend {
         )>,
     ) -> Result<Vec<f32>, VindexError> {
         let started = super::super::profile::enabled().then(std::time::Instant::now);
-        let selected = {
-            let _stage = stage(Stage::Router);
-            let routed_input = router_input(&call)?;
-            // The router's `k` is the width of what it READS, which is
-            // not `call.hidden` once the experts run behind a bottleneck:
-            // `call.hidden` is then the latent width, while the router
-            // still projects from the block input. Taking it from the
-            // vector itself keeps the two impossible to desync.
-            let k = routed_input.len();
-            let mut logits = matmul_vec(&routed_input, call.router, call.experts, k);
-            select_experts(&call, &mut logits)?
-        };
+        let selected = self.route(&call)?;
         let router_ns = started.map(|s| s.elapsed().as_nanos() as u64);
         routing_trace::record(&selected);
         if placed.is_none() {

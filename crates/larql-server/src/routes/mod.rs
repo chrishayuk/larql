@@ -174,6 +174,11 @@ pub fn single_model_router(state: Arc<AppState>) -> Router {
             VINDEX3_EXPERTS_BINARY,
             post(vindex3_experts::forward).layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),
         )
+        .at(
+            VINDEX3_EXPERTS_ROWS,
+            post(vindex3_experts::forward_rows)
+                .layer(DefaultBodyLimit::max(EXPERT_BATCH_BODY_LIMIT)),
+        )
         .at(VINDEX3_FFN_STREAM, get(vindex3_ffn::stream_upgrade))
         .at(
             VINDEX3_FFN_OPEN,

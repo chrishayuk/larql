@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use std::sync::{atomic::AtomicUsize, Arc};
-fn binding() -> wire::Binding {
+pub(super) fn binding() -> wire::Binding {
     use larql_router_protocol::{vindex3, vindex3_ffn::OperandIdentity};
     wire::Binding {
         program: vindex3::Binding {
@@ -35,7 +35,7 @@ fn binding() -> wire::Binding {
         }],
     }
 }
-async fn open(
+pub(super) async fn open(
     State(mode): State<Arc<AtomicUsize>>,
     Json(mut binding): Json<wire::Binding>,
 ) -> Json<wire::Opened> {

@@ -42,6 +42,8 @@ pub mod vindex3_ffn;
 
 pub mod vindex3_experts;
 
+pub mod vindex3_expert_rows;
+
 pub mod vindex3_transport;
 
 pub mod provider_calls;
