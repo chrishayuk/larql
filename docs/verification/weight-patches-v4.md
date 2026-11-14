@@ -64,6 +64,62 @@ The top level is that of `v3` (`schema`, `rounding`, `writer`, `source`, `target
 - An operation target has no `edits`; an element target has no `operations`, `base_tensor_sha256`,
   `result_tensor_sha256` or `changed_elements`.
 
+## 3a. The op digest
+
+Each `.vlp` op carries `digest`: the lowercase hex SHA-256 of the UTF-8 text below, built from the op's own fields.
+Every line ends with `\n`, including the last. `columns` are decimal integers joined by `,`; operand lists are their
+hex strings joined by `,` exactly as stored; `origin` is `-` when absent and `+` followed by its text when present.
+`{source.*}` are the fields of the op's `source` object.
+
+`add_low_rank_columns` (`"op": "low_rank_columns_weight"`):
+
+```text
+structured_op/add_low_rank_columns/v2
+model={source.model}
+index_sha256={source.index_sha256}
+representation={source.representation}
+payload_sha256={source.payload_sha256}
+tensor={tensor}
+numerics={numerics}
+rank={rank}
+columns={columns}
+a={a}
+b={b}
+origin={origin}
+```
+
+`remove_direction` (`"op": "structured_weight"`):
+
+```text
+structured_op/remove_direction/v1
+model={source.model}
+index_sha256={source.index_sha256}
+representation={source.representation}
+payload_sha256={source.payload_sha256}
+tensor={tensor}
+numerics={numerics}
+alpha={alpha}
+columns={columns}
+operand={operand}
+origin={origin}
+```
+
+The digest detects damage and casual edits; it is not a signature. An op is **intact** when its recomputed digest
+equals `digest`.
+
+## 3b. Element targets in a `v4` ledger
+
+An element target (`edits`, no `operations`) is read exactly as in `v2`/`v3`:
+
+- `encoding` absent or `delta`: `new_bits = RNE_bf16(exact(old_bits) + exact(delta_bits as f32))`, one rounding, ties to
+  even, IEEE signed zeros, refused if the result is not finite. `delta` must equal the f32 value of `delta_bits`.
+- `encoding: result_bits`: `new_bits` is the declared result of a `remove_direction` op that the ledger does **not**
+  carry (a tensor edited only by removals stays an element target, §2). Only the op's digest is in `origins`, so an
+  independent verifier can hold the container to the recorded bits but cannot recompute them from the ledger alone;
+  it reports that tensor's numerical half as not evaluated unless it is given the patch.
+- No element is listed twice; every element is inside the tensor; all element targets together list at most
+  `MAX_PATCH_ELEMENTS` = 2^18 elements. Operation targets do not count against it.
+
 ## 4. Composition
 
 The ops of one target have pairwise disjoint column sets, and each reads and writes only its own columns. The compiled
@@ -123,14 +179,28 @@ Given the base container and the compiled container (and nothing from the compil
    of the whole tensor are recomputed, never taken from the ledger or from the compiler.
 4. Confirm every other tensor, edited or not by name, of every representation not re-derived by the compile is
    byte-identical to the base, every file outside the edited and re-derived segments is unchanged apart from
-   `index.json` and the ledger, and the re-derived representations derive from the compiled canonical payload the
-   ledger names.
+   `index.json`, the ledger and `candidate.json`, and the re-derived representations derive from the compiled
+   canonical payload the ledger names. In `index.json` only the edited and re-derived representations' digests,
+   the re-derived `source_representation_digest` and the `weight_patches` pointer may differ.
+   `candidate.json` is the representation compiler's record of the container it produced (artifact and graph
+   hashes, segment digests, a `locator_hint` naming where it was written); every compile regenerates it. It holds no
+   weights and is not an authority for anything the verifier checks, so it may differ and is not judged.
 5. Refuse malformed, overlapping, stale (bound to another base) or unsupported ops, and an unknown schema.
 6. For a sham (§4a), decide zero-valuedness from the operands itself and confirm the compiled tensor is the base's
    bytes exactly.
 7. Report **numerical satisfaction** (step 3) separately from **ledger integrity and provenance** (steps 1, 2, 4,
    5): a container whose bytes are right but whose ledger is inconsistent, or the reverse, is not verified, and the
    report says which half failed.
+
+## 7a. Which half a refusal belongs to
+
+- A malformed, stale, overlapping, out-of-bounds or wrongly targeted op, or a ledger record that contradicts the
+  containers (digests, counts, operand digests, an element target that also has operations): the **ledger half is
+  violated**, and the affected tensor's numerical half is **not evaluated** (nothing trustworthy to recompute).
+- An unknown schema, op kind, op field or profile: **both halves not evaluated**; the verifier cannot read the claim.
+- A wrong element, inside or outside the footprint, where the ops themselves are sound: the **numerical half is
+  violated**.
+- A changed tensor or file outside the edit: the **ledger half is violated** (step 4 belongs to it).
 
 It must be shown to reject, at least: a flipped bit in a written element inside the footprint; a changed element
 outside the footprint (including a `-0` to `+0` flip); a changed element in another tensor; a stale source binding; a
