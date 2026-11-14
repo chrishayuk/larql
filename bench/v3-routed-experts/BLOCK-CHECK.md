@@ -31,7 +31,9 @@ connects to running expert workers and, for each prompt of
    compares the greedy ids with a saved control.
 
 Every comparison is of f32 bit patterns, per position. Frames are counted at
-the transport, separately for the single-row and multi-row routes.
+the transport seam, one per call to the single-row or multi-row route. The
+HTTP transport makes one request per such call, with no retry or splitting,
+so on these successful runs a frame is one network exchange.
 
 The container is opened as `larql run` and the worker open it on the CPU
 production arm: stored bytes, nothing requantised at load.
@@ -44,7 +46,7 @@ Three prompts, 70, 78 and 216 positions (364 in all).
 |---|---|---|
 | Mismatched positions, every width and prompt | 0 | 0 |
 | Mismatched kept positions, partial and chained commit | 0 | 0 |
-| Single-row frames during any block | 0 | 0 |
+| Single-row frames during any whole-block, partial or chained phase | 0 | 0 |
 | Negative controls detected | 3 of 3 prompts | 3 of 3 prompts |
 | Greedy ids equal the saved control (216-position prompt, 64 ids) | yes | yes |
 | Remote sequential equals local decode, all 364 positions | yes | not run |
@@ -70,9 +72,13 @@ The token streams of the two topologies are identical for all three prompts.
 - One bit flipped in one returned logit is reported at exactly that
   position.
 - One expert output value negated inside one multi-row answer is reported as
-  a mismatch (at the affected row and the rows after it in the block).
+  a mismatch. The reported positions are a run of consecutive positions
+  ending at the block's last (for example 4 to 7), which is what a change to
+  one row and everything that later attends to it would give. The receipts
+  do not record which row was changed, so that reading is not checked.
 
-A control the checker misses fails the run.
+A control the checker misses fails the run. The controls' own frames are not
+in any of the frame counts above.
 
 ## Receipts
 
@@ -82,9 +88,11 @@ A control the checker misses fails the run.
 | Two workers, with saved control | [`20261114-03-two-workers`](block-results/20261114-03-two-workers/receipt.json) |
 | Superseded first run | [`20261114-01-one-worker`](block-results/20261114-01-one-worker/receipt.json) |
 
-Each run directory also holds the worker bindings and logs, the source
-revision and worktree status, and SHA-256 of the binaries, the model's
-`index.json` and `system_graph.json`, the workload and the saved control.
+Each of the two corrected run directories also holds the worker bindings
+and logs, the source revision and worktree status, and SHA-256 of the
+binaries, the model's `index.json` and `system_graph.json`, the workload and
+the saved control. The superseded run's directory holds only its receipt,
+binding, logs, revision and binary hashes.
 
 **The first run is superseded, not wrong.** Its harness opened the container
 under the library's default policy, which may requantise at load, where
@@ -92,7 +100,10 @@ under the library's default policy, which may requantise at load, where
 shared that coordinator, so its parity and frame counts hold, but its logits
 were not the production arithmetic and its greedy stream left the saved
 control at the fourth generated token. The corrected runs match the control
-for all 64.
+for all 64. That run also predates the negative controls and the local and
+saved-control comparisons, and decoded 16 greedy tokens per prompt, not 64:
+it was never self-checked, and the comparison with the control was made
+afterwards from its recorded stream.
 
 ## What this does not show
 
@@ -109,3 +120,15 @@ for all 64.
 The receipts record revision `ab303e92` with a modified worktree. The
 modifications were this harness, its dev-dependency and the lock file; the
 runtime crates were as committed.
+
+**The receipts are not bound to the harness source.** The harness was an
+untracked file when the runs were made, and the receipts record a hash of
+its built binary, not of its source. Nothing in them proves the committed
+file is the one that ran. The worker logs also record no command line or
+environment; the expert ranges and backend are in the binding files.
+
+The sequential reference shares the coordinator's attention, router and
+head code and the worker's per-row transform with the block path, so a
+defect common to both would not show in the block comparison. The local
+decode comparison (one worker) and the saved control (token ids, one
+prompt) are the checks that reach outside it.
