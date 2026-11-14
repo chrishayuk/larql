@@ -185,6 +185,11 @@ Given the base container and the compiled container (and nothing from the compil
    `candidate.json` is the representation compiler's record of the container it produced (artifact and graph
    hashes, segment digests, a `locator_hint` naming where it was written); every compile regenerates it. It holds no
    weights and is not an authority for anything the verifier checks, so it may differ and is not judged.
+   A segment that is neither edited nor re-derived is checked as a **whole file**: byte-identical to the base's file
+   of the same path satisfies step 4 for every tensor in it, and the verifier need not parse its tensor table. (A
+   byte-identical file is a stronger check than tensor-by-tensor equality, and it judges a base whose untouched
+   segments a strict reader could not parse, such as one with a duplicate tensor name.) Only the edited and
+   re-derived segments must be parsed, and their tensor tables must be unambiguous.
 5. Refuse malformed, overlapping, stale (bound to another base) or unsupported ops, and an unknown schema.
 6. For a sham (§4a), decide zero-valuedness from the operands itself and confirm the compiled tensor is the base's
    bytes exactly.
