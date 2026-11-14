@@ -9,6 +9,7 @@ use super::golden::{G_TOKENS, G_VOCAB, G_WINDOW};
 use crate::format::vindex3::opplan::exec::backend::PlanBackend;
 use crate::format::vindex3::opplan::exec::decode::DecodeSession;
 use crate::format::vindex3::opplan::exec::kv::{KvState, RowKvState};
+use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 
@@ -124,4 +125,24 @@ fn a_refused_block_moves_no_state() {
     }
     assert_eq!(kv.position(), 1);
     assert_eq!(kv.rows(0).end(), 1, "a refused block appended rows");
+}
+
+/// A layer-range image has no output head, so no position has logits to
+/// return: refused before any state moves.
+#[test]
+fn a_headless_image_is_refused_before_any_state_moves() {
+    let (_container, plan, store) = super::decode::fixture();
+    let backend = ProductionBackend::new();
+    let slice = ExecutionSlice::LayerRange { start: 0, end: 1 };
+    let sliced = PreparedOperands::load(&plan, &store, &backend, slice).unwrap();
+    let mut kv = RowKvState::default();
+    {
+        let mut session = DecodeSession::over_prepared(&plan, &sliced, &backend, &mut kv).unwrap();
+        let error = session
+            .step_many_logits(&[token(0), token(1)])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no output head"), "{error}");
+    }
+    assert_eq!(kv.position(), 0);
 }
