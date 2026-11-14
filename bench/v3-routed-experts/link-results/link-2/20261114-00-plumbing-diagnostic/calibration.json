@@ -1,0 +1,569 @@
+{
+  "schema": "larql.v3.link-pair-calibration.v1",
+  "protocol": "LINK-2 revision 2",
+  "kind": "diagnostic",
+  "label": "plumbing check under peer load; declared before start; does not count",
+  "counts_toward_qualification": false,
+  "frozen": {
+    "warmup": 20,
+    "block": 10,
+    "pairs": 100,
+    "bootstrap_block": 5,
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 20261114,
+    "gated_lags": [
+      5,
+      10
+    ],
+    "autocorrelation_bound": 0.2,
+    "tolerance_relative": 0.05,
+    "tolerance_absolute_ns": 50000,
+    "precision_share": 0.5,
+    "null_bound_ns": 25000
+  },
+  "binary_sha256": {
+    "v3_link_shaper": "7b1097f814216208141e09dd9a8a4f53c598743568140c528510e4d092e5479e",
+    "v3_link_pair": "5231e4e50a4b6cbba12ae9685c20bfbedadfbbed8af42a8299dd1ae6ec3b8153"
+  },
+  "harness_sha256": {
+    "link_pair.py": "001a79802b921dd8e902980d5716e1154c7ccbb6a3276d2d01ce98c8f8e4aba9",
+    "link_pair_model.py": "c5b7591167498103b091ebabf076c2bf9ca86defff5e61bef80eae715b44eb9a",
+    "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb"
+  },
+  "host_before": {
+    "load_average": [
+      4.40625,
+      6.7431640625,
+      9.13671875
+    ],
+    "busy_processes": [
+      "/bin/zsh -c source /Users/christopherhay/.claude/shell-snapshots/snapshot-zsh-1794657101606-xjezq0.sh 2>/dev/null || tru"
+    ],
+    "utc": "2026-11-14T15:20:47Z"
+  },
+  "host_after": {
+    "load_average": [
+      6.70947265625,
+      6.966796875,
+      8.87109375
+    ],
+    "busy_processes": [
+      "/bin/zsh -c source /Users/christopherhay/.claude/shell-snapshots/snapshot-zsh-1794657101606-xjezq0.sh 2>/dev/null || tru"
+    ],
+    "utc": "2026-11-14T15:23:08Z"
+  },
+  "points": [
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.2,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_ns": 200000.0,
+      "estimate_ns": 201770.75,
+      "error_ns": 1770.75,
+      "tolerance_ns": 50000,
+      "interval_ns": [
+        199281.0,
+        203719.0
+      ],
+      "interval_half_width_ns": 2219.0,
+      "independent_bootstrap_interval_ns": [
+        199562.5,
+        203667.0
+      ],
+      "autocorrelation": {
+        "1": 0.35551429949633334,
+        "2": -0.03320196101440737,
+        "3": -0.1311465932688612,
+        "4": -0.03503156280893795,
+        "5": 0.011432007383655709,
+        "6": -0.16361090913044402,
+        "7": -0.017705095448755384,
+        "8": 0.04087467543637456,
+        "9": 0.06327295051289762,
+        "10": -0.029807267104212193
+      },
+      "autocorrelation_within_bound": true,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 9810.717282313,
+      "repaired_spread_ns": 17779.828729306562,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 347.30284653465344,
+        "late_max_ns": 10375,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 970.0914603960396,
+        "late_max_ns": 35834,
+        "chunks": 8080
+      },
+      "raw": "point-00.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 1.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_ns": 1000000.0,
+      "estimate_ns": 1014635.0,
+      "error_ns": 14635.0,
+      "tolerance_ns": 50000.0,
+      "interval_ns": [
+        1012989.5,
+        1016167.5
+      ],
+      "interval_half_width_ns": 1589.0,
+      "independent_bootstrap_interval_ns": [
+        1013062.5,
+        1015687.5
+      ],
+      "autocorrelation": {
+        "1": 0.08455856383778727,
+        "2": 0.016163063321687578,
+        "3": 0.05066883759201662,
+        "4": -0.04105630801717776,
+        "5": 0.06166279903980049,
+        "6": -0.04722990891448928,
+        "7": -0.07905325614008567,
+        "8": 0.06749043309044221,
+        "9": -0.12038278648604138,
+        "10": -0.1266191326653928
+      },
+      "autocorrelation_within_bound": true,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 6054.117820316598,
+      "repaired_spread_ns": 12900.764001301435,
+      "pairing_removed_common_mode": true,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 280.02908415841586,
+        "late_max_ns": 5834,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 1567.4153465346535,
+        "late_max_ns": 26459,
+        "chunks": 8080
+      },
+      "raw": "point-01.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_ns": 5000000.0,
+      "estimate_ns": 5028781.25,
+      "error_ns": 28781.25,
+      "tolerance_ns": 250000.0,
+      "interval_ns": [
+        5027104.25,
+        5030864.5
+      ],
+      "interval_half_width_ns": 1880.125,
+      "independent_bootstrap_interval_ns": [
+        5027146.0,
+        5030125.5
+      ],
+      "autocorrelation": {
+        "1": 0.5870887818072409,
+        "2": 0.4318578681724154,
+        "3": 0.41227525594741615,
+        "4": 0.36266958216095163,
+        "5": 0.41535778162054243,
+        "6": 0.39177946661339086,
+        "7": 0.2814391355530025,
+        "8": 0.4241389268202406,
+        "9": 0.3790813714705474,
+        "10": 0.32941492121726174
+      },
+      "autocorrelation_within_bound": false,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 10084.13780554763,
+      "repaired_spread_ns": 12831.052805840798,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": false,
+      "passes": false,
+      "baseline_relay": {
+        "late_mean_ns": 302.0131188118812,
+        "late_max_ns": 7667,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 2353.806683168317,
+        "late_max_ns": 287667,
+        "chunks": 8080
+      },
+      "raw": "point-02.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_ns": 20000000.0,
+      "estimate_ns": 20084010.75,
+      "error_ns": 84010.75,
+      "tolerance_ns": 1000000.0,
+      "interval_ns": [
+        20079687.5,
+        20090354.5
+      ],
+      "interval_half_width_ns": 5333.5,
+      "independent_bootstrap_interval_ns": [
+        20080000.5,
+        20090250.0
+      ],
+      "autocorrelation": {
+        "1": 0.23965435005015773,
+        "2": 0.13457973817080723,
+        "3": -0.03956812571694799,
+        "4": -0.1527139796672452,
+        "5": 0.1381955066230425,
+        "6": -0.09113601000494455,
+        "7": 0.12336435548242682,
+        "8": 0.006734110100298165,
+        "9": -0.038676040264825844,
+        "10": 0.07744169439238441
+      },
+      "autocorrelation_within_bound": true,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 16515.74250781962,
+      "repaired_spread_ns": 16873.759250967167,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 339.4240099009901,
+        "late_max_ns": 13458,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 3955.1954207920794,
+        "late_max_ns": 523750,
+        "chunks": 8080
+      },
+      "raw": "point-03.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": 1000000000.0
+      },
+      "expected_ns": 461760.0,
+      "estimate_ns": 459781.5,
+      "error_ns": -1978.5,
+      "tolerance_ns": 50000,
+      "interval_ns": [
+        457666.5,
+        461208.5
+      ],
+      "interval_half_width_ns": 1771.0,
+      "independent_bootstrap_interval_ns": [
+        457666.5,
+        461198.0
+      ],
+      "autocorrelation": {
+        "1": 0.2585387204934394,
+        "2": 0.060102668826161075,
+        "3": -0.07677809750492934,
+        "4": -0.11645487414898127,
+        "5": -0.1519814505904069,
+        "6": -0.06177998372594643,
+        "7": -0.15171984302090996,
+        "8": -0.1739088581607221,
+        "9": 0.026490192427583534,
+        "10": -0.002534848651290473
+      },
+      "autocorrelation_within_bound": true,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 7950.382312191031,
+      "repaired_spread_ns": 12740.092087971734,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 354.4625,
+        "late_max_ns": 8458,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 280.55668316831685,
+        "late_max_ns": 8689,
+        "chunks": 8080
+      },
+      "raw": "point-04.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "expected_ns": 4617600.0,
+      "estimate_ns": 4630937.5,
+      "error_ns": 13337.5,
+      "tolerance_ns": 230880.0,
+      "interval_ns": [
+        4628750.25,
+        4633770.75
+      ],
+      "interval_half_width_ns": 2510.25,
+      "independent_bootstrap_interval_ns": [
+        4629478.75,
+        4633208.0
+      ],
+      "autocorrelation": {
+        "1": 0.2685115143221668,
+        "2": 0.1999585161115816,
+        "3": 0.28727511518420396,
+        "4": 0.2964756209700584,
+        "5": 0.30808897682681635,
+        "6": 0.14758345465057077,
+        "7": 0.19798581522430597,
+        "8": 0.13708947411694664,
+        "9": 0.1313138016849243,
+        "10": 0.08892315186969141
+      },
+      "autocorrelation_within_bound": false,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 11194.66478093471,
+      "repaired_spread_ns": 11530.941184591135,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": false,
+      "passes": false,
+      "baseline_relay": {
+        "late_mean_ns": 302.26658415841587,
+        "late_max_ns": 6208,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 530.8944306930694,
+        "late_max_ns": 955685,
+        "chunks": 8080
+      },
+      "raw": "point-05.json"
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 1.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "expected_ns": 5617600.0,
+      "estimate_ns": 5640083.25,
+      "error_ns": 22483.25,
+      "tolerance_ns": 280880.0,
+      "interval_ns": [
+        5634291.5,
+        5645291.75
+      ],
+      "interval_half_width_ns": 5500.125,
+      "independent_bootstrap_interval_ns": [
+        5636084.0,
+        5644625.5
+      ],
+      "autocorrelation": {
+        "1": 0.38229672779620905,
+        "2": 0.16021584836441627,
+        "3": 0.009649228101745429,
+        "4": -0.04375507817594976,
+        "5": -0.027236415926541576,
+        "6": -0.15381269558181931,
+        "7": -0.04482659801267504,
+        "8": 0.016419094378602485,
+        "9": 0.009820529368356411,
+        "10": -0.00832510528186932
+      },
+      "autocorrelation_within_bound": true,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 16697.485532306953,
+      "repaired_spread_ns": 15831.257354727071,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 283.2564356435644,
+        "late_max_ns": 6833,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 387.6634900990099,
+        "late_max_ns": 597065,
+        "chunks": 8080
+      },
+      "raw": "point-06.json"
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": 1000000000.0
+      },
+      "expected_ns": 5461760.0,
+      "estimate_ns": 5474343.5,
+      "error_ns": 12583.5,
+      "tolerance_ns": 273088.0,
+      "interval_ns": [
+        5470437.75,
+        5476750.25
+      ],
+      "interval_half_width_ns": 3156.25,
+      "independent_bootstrap_interval_ns": [
+        5471229.25,
+        5475604.0
+      ],
+      "autocorrelation": {
+        "1": 0.42377292506388214,
+        "2": 0.19518246566855557,
+        "3": 0.15917008519850465,
+        "4": 0.10939085084574798,
+        "5": 0.11011927156538956,
+        "6": 0.2149681673736596,
+        "7": 0.13853201648299676,
+        "8": 0.11169352998933732,
+        "9": -0.014195648570870602,
+        "10": -0.000756322897668047
+      },
+      "autocorrelation_within_bound": true,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 10327.946269510701,
+      "repaired_spread_ns": 10884.439277284797,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 286.40445544554456,
+        "late_max_ns": 6667,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 337.775,
+        "late_max_ns": 49845,
+        "chunks": 8080
+      },
+      "raw": "point-07.json"
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "expected_ns": 24617600.0,
+      "estimate_ns": 24648906.25,
+      "error_ns": 31306.25,
+      "tolerance_ns": 1230880.0,
+      "interval_ns": [
+        24641395.5,
+        24668375.0
+      ],
+      "interval_half_width_ns": 13489.75,
+      "independent_bootstrap_interval_ns": [
+        24642270.5,
+        24664760.25
+      ],
+      "autocorrelation": {
+        "1": 0.7591514428559055,
+        "2": 0.6203651915248666,
+        "3": 0.5381291887588305,
+        "4": 0.5189925829089252,
+        "5": 0.4689668818768133,
+        "6": 0.4577933635317868,
+        "7": 0.5174454551842101,
+        "8": 0.546106755730863,
+        "9": 0.5266364362410536,
+        "10": 0.4820941168163492
+      },
+      "autocorrelation_within_bound": false,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 23346.40692653315,
+      "repaired_spread_ns": 21881.408195983982,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": false,
+      "passes": false,
+      "baseline_relay": {
+        "late_mean_ns": 310.4579207920792,
+        "late_max_ns": 6875,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 304.2875,
+        "late_max_ns": 125786,
+        "chunks": 8080
+      },
+      "raw": "point-08.json"
+    },
+    {
+      "point": {
+        "kind": "null",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_ns": 0.0,
+      "estimate_ns": 572.5,
+      "error_ns": 572.5,
+      "tolerance_ns": 25000,
+      "interval_ns": [
+        -1562.75,
+        1937.75
+      ],
+      "interval_half_width_ns": 1750.25,
+      "independent_bootstrap_interval_ns": [
+        -1219.25,
+        1260.5
+      ],
+      "autocorrelation": {
+        "1": 0.6716039965331841,
+        "2": 0.4622475425004502,
+        "3": 0.2961113849199312,
+        "4": 0.1585160795075243,
+        "5": 0.09793255052542787,
+        "6": 0.038805463147361434,
+        "7": -0.05301099075419022,
+        "8": -0.1813827123424511,
+        "9": -0.244864046689488,
+        "10": -0.24430627525138893
+      },
+      "autocorrelation_within_bound": false,
+      "autocorrelation_note": "a pragmatic diagnostic of whether correlation outlasts the block; passing it does not establish independence",
+      "paired_spread_ns": 8158.121232629177,
+      "repaired_spread_ns": 18890.042020368164,
+      "pairing_removed_common_mode": true,
+      "accurate": true,
+      "precise": false,
+      "passes": false,
+      "baseline_relay": {
+        "late_mean_ns": 354.3709158415842,
+        "late_max_ns": 11708,
+        "chunks": 8080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 344.0184405940594,
+        "late_max_ns": 4125,
+        "chunks": 8080
+      },
+      "raw": "point-09.json"
+    }
+  ],
+  "run_passes": false,
+  "scope": "certifies the cost the relay adds under this paired probe; not the timing of inference endpoints"
+}

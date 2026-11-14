@@ -1,12 +1,16 @@
 # DEC-V3-1: exact routed experts behind a controlled link
 
-Status: **draft protocol; instrument built but NOT calibrated; no timed model
-run performed.** Seven calibration runs on 2026-11-14 all failed
-([receipts](link-results/calibration/index.json)); the sweep refuses to start
-without two passing ones.
-Correctness smoke on main `7b5334dd`: `one` and `experts` layouts, direct and
-through a 5 ms / 1 Gbit/s relay, all reproduce the local control IDs.
-Timed runs wait for an authorized quiet window, as PROFILE-1 and LAN-1 do.
+Status: **draft protocol; no timed model run performed.** LINK-1's own
+calibration never qualified: seven calibration runs and one qualifying
+attempt failed on 2026-11-14 ([receipts](link-results/calibration/index.json)),
+and that record stands unchanged. The relay was then qualified under a
+separate, paired protocol, [LINK-2 revision 3](LINK-2-revision-3.md), by two
+passing runs ([receipts](link-results/link-2/README.md)). The sweep now
+requires those LINK-2 receipts and refuses anything else. LINK-2 certifies
+the cost the relay adds under its probe, not the timing of the inference
+endpoints, so every gate of the sweep below is unchanged and still decides
+what the sweep shows. The one-worker sweep has been authorised and has not
+yet been run.
 
 This is the VINDEX3 form of the DEC funnel's DEC-1A transport decomposition
 ([`docs/dec-funnel.md`](../../docs/dec-funnel.md) §3). It reuses that
@@ -84,8 +88,10 @@ Two things keep the instrument honest:
   is void. This is the relay's own clock: it cannot see delay added on the
   receiving side, which is why it does not replace calibration.
 
-`--execute` requires two `--calibration` receipts: complete, passing, native,
-and recorded for the relay binary about to be used.
+`--execute` requires two distinct `--calibration` receipts, each a passing
+LINK-2 revision 3 qualifying run recorded for the relay binary about to be
+used. A diagnostic, a receipt from LINK-1's own calibration, another
+revision's receipt or the same receipt twice is refused.
 
 The polling probe and relay each occupy cores. Calibration records the
 relay's lateness under the polling probe; comparing it with the same figure
@@ -132,8 +138,9 @@ worker banks unloaded.
 cargo build --release -p larql-cli -p larql-server --no-default-features
 cargo build --release -p larql-server --no-default-features --example v3_link_shaper
 cargo build --release -p larql-server --no-default-features --example v3_link_probe
-python3 bench/v3-routed-experts/link_sweep.py --calibrate --out /path/to/calibration-a
-python3 bench/v3-routed-experts/link_sweep.py --calibrate --out /path/to/calibration-b
+cargo build --release -p larql-server --no-default-features --example v3_link_pair
+python3 bench/v3-routed-experts/link_pair.py --qualifying --out /path/to/calibration-a
+python3 bench/v3-routed-experts/link_pair.py --qualifying --out /path/to/calibration-b
 python3 bench/v3-routed-experts/link_sweep.py --execute \
   --model /path/to/gpt-oss-20b.vindex3 --out /path/to/new-sweep \
   --calibration /path/to/calibration-a/calibration.json \

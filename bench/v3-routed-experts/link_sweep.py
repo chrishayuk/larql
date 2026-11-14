@@ -27,6 +27,7 @@ import threading
 import time
 
 import link_model as lm
+import link_pair_model as pm
 from profile_exact import LAYOUTS, PROMPTS, agreement, save, sha, summarize, workers
 
 # GPT-OSS 20B, the only shape this harness admits (as PROFILE-1).
@@ -255,20 +256,36 @@ def calibrate(root, out, probe):
 
 
 def qualified_calibrations(root, paths):
-    """The timed sweep needs two complete passing native calibrations of this relay build."""
+    """The timed sweep needs LINK-2's qualification: two distinct passing
+    qualifying runs of the frozen revision, recorded for this relay build.
+
+    LINK-1's own calibration (`--calibrate` above) never qualified and its
+    receipts are not accepted here; they remain as history. LINK-2 certifies
+    the relay's added cost, not the inference endpoints, so every sweep gate
+    below stays in force.
+    """
     if len(paths) < CALIBRATIONS_REQUIRED:
-        raise ValueError(f"need {CALIBRATIONS_REQUIRED} passing calibration receipts")
+        raise ValueError(f"need {CALIBRATIONS_REQUIRED} passing {pm.REVISION} qualifying receipts")
+    if os.environ.get(LINK_QOS_ENV, "default") != "default":
+        raise ValueError("LINK-2 qualified the relay at the default scheduling class only")
     receipts = []
     for path in paths:
-        receipt = json.loads(path.read_text())
-        if not (receipt.get("calibration_authority") and receipt.get("all_within_tolerance")):
-            raise ValueError(f"not a passing authoritative calibration: {path}")
-        if receipt["binary_sha256"]["v3_link_shaper"] != sha(root / RELAY):
-            raise ValueError(f"calibration was recorded for a different relay build: {path}")
-        if receipt["link_qos"] != os.environ.get(LINK_QOS_ENV, "default"):
-            raise ValueError(f"calibration used a different relay scheduling class: {path}")
-        receipts.append({"path": str(path), "sha256": sha(path), "recorded_utc": receipt["recorded_utc"]})
+        try:
+            pm.check_qualifying_receipt(json.loads(path.read_text()), sha(root / RELAY))
+        except ValueError as error:
+            raise ValueError(f"{path}: {error}") from None
+        receipts.append({"path": str(path), "sha256": sha(path), "protocol": pm.REVISION})
+    if len({receipt["sha256"] for receipt in receipts}) < CALIBRATIONS_REQUIRED:
+        raise ValueError("the same receipt was supplied twice; qualification needs two runs")
     return receipts
+
+
+def host_state():
+    """Load and competing executables, recorded and never used to excuse a result."""
+    listing = subprocess.check_output(["ps", "-Ao", "comm"], text=True).splitlines()[1:]
+    busy = sorted({Path(line.strip()).name for line in listing} & {"rustc", "cargo"})
+    return {"load_average": os.getloadavg(), "compilers_running": busy,
+            "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
 def sweep(args, root, model, out):
@@ -288,7 +305,7 @@ def sweep(args, root, model, out):
     handshake = args.peer_handshake.read_text() if args.peer_handshake else None
     save(out / "manifest.json", {
         "schema": "larql.v3.link-sweep.v1", "revision": revision, "source_dirty": dirty.splitlines(),
-        "workload": fixture["workload"], "calibrations": calibrations,
+        "workload": fixture["workload"], "calibrations": calibrations, "host_before": host_state(),
         "link_qos": os.environ.get(LINK_QOS_ENV, "default"),
         "model": str(model), "topology": args.topology, "settings": settings, "prompt": prompt,
         "max_tokens": args.max_tokens, "skip_decode": args.skip_decode, "gate": lm.GATE,
@@ -333,6 +350,7 @@ def sweep(args, root, model, out):
         measured = records[1:][len(ids["prompt"]) + args.skip_decode:]
         per_position = summarize(measured, True, HIDDEN, LAYERS, TOP_K)
         result = {"label": label, "point": point, "measured_positions": len(measured),
+                  "host_load_average": os.getloadavg(),
                   "total_ns": per_position["total_ns"], "ffn_ns": per_position["ffn_ns"],
                   "per_position": per_position, "shape": lm.link_shape(measured, LAYERS)}
         if relay_records is not None:
@@ -359,6 +377,7 @@ def sweep(args, root, model, out):
                 floor_ns = result["total_ns"]
     report = lm.analyse(trials)
     report.update(warm_total_ns=warm, warm_plateau=plateau, topology=args.topology,
+                  host_after=host_state(),
                   exclusivity_evidence_supplied=handshake is not None,
                   performance_claim_requires_peer_handshake_review=True,
                   note="void points stay in observations and are never fitted or pooled")
@@ -389,7 +408,7 @@ def main():
     parser.add_argument("--link-qos", choices=["default", "user-interactive"], default="default",
                         help="Scheduling class requested by relay and probe threads (a request, not core affinity)")
     parser.add_argument("--calibration", type=Path, action="append", default=[],
-                        help="Passing native calibration receipt; --execute needs two")
+                        help="Passing LINK-2 qualifying receipt; --execute needs two distinct ones")
     parser.add_argument("--peer-handshake", type=Path, help="Saved peer-session exclusivity acknowledgements")
     args = parser.parse_args()
     os.environ[LINK_QOS_ENV] = args.link_qos
