@@ -110,6 +110,8 @@ mod projection_bench;
 mod provenance;
 mod qwen2_moe;
 mod realization;
+mod residency_record;
+mod residency_record_real;
 mod vq8_shared_execution;
 // Each module carries its OWN cfg: inserting a bare `mod` line above a
 // gated one hands the attribute to the newcomer and silently un-gates
