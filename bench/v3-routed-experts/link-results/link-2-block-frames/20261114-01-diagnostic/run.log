@@ -1,0 +1,18 @@
+width 1  null   0.0 ms  expected       0.0 us  error    -0.6  ±   2.6  tol    25.0  pass
+width 1  axis   1.0 ms  expected    1000.0 us  error    18.5  ±   4.8  tol    50.0  pass
+width 1  axis   5.0 ms  expected    5000.0 us  error    26.6  ±   2.2  tol   250.0  pass
+width 1  axis  20.0 ms  expected   20000.0 us  error    50.6  ±  13.3  tol  1000.0  pass
+width 2  null   0.0 ms  expected       0.0 us  error    -0.3  ±   6.0  tol    25.0  pass
+width 2  axis   1.0 ms  expected    1000.0 us  error    -6.1  ±   7.5  tol    50.0  pass
+width 2  axis   5.0 ms  expected    5000.0 us  error     3.0  ±   7.8  tol   250.0  pass
+width 2  axis  20.0 ms  expected   20000.0 us  error    38.7  ±  17.4  tol  1000.0  pass
+width 4  null   0.0 ms  expected       0.0 us  error     1.7  ±   3.5  tol    25.0  pass
+width 4  axis   1.0 ms  expected    1000.0 us  error   -35.3  ±   9.8  tol    50.0  pass
+width 4  axis   5.0 ms  expected    5000.0 us  error   -49.6  ±  12.4  tol   250.0  pass
+width 4  axis  20.0 ms  expected   20000.0 us  error   -16.5  ±   6.7  tol  1000.0  pass
+width 8  null   0.0 ms  expected       0.0 us  error    -3.2  ±   3.0  tol    25.0  pass
+width 8  axis   1.0 ms  expected    1000.0 us  error   -53.7  ±   2.0  tol    50.0  FAIL
+width 8  axis   5.0 ms  expected    5000.0 us  error   -78.4  ±   1.6  tol   250.0  pass
+width 8  axis  20.0 ms  expected   20000.0 us  error   -85.4  ±   2.9  tol  1000.0  pass
+run FAILS (diagnostic: does not count)
+exit 0
