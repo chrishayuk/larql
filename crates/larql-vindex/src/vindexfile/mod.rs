@@ -279,8 +279,10 @@ impl InstalledFacts {
                 PatchOp::Delete { layer, feature, .. } | PatchOp::Update { layer, feature, .. } => {
                     self.vacate((*layer, *feature))
                 }
-                PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } | PatchOp::WeightDelta(_) => {
-                }
+                PatchOp::InsertKnn { .. }
+                | PatchOp::DeleteKnn { .. }
+                | PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_) => {}
             }
         }
     }

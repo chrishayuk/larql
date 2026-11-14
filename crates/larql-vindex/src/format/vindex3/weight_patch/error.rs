@@ -42,6 +42,18 @@ pub enum WeightPatchError {
     },
     #[error("the patched value of element ({row}, {col}) overflows bfloat16")]
     Overflow { row: usize, col: usize },
+    #[error("the declared result of element ({row}, {col}) is not a finite bfloat16")]
+    NonFiniteResult { row: usize, col: usize },
+    #[error("column {col} of `{tensor}` is already written by {by}; two structured ops do not share a column")]
+    ColumnConflict {
+        tensor: String,
+        col: usize,
+        by: String,
+    },
+    #[error("`{tensor}` is edited by a delta op and a structured op ({by}); one tensor takes one form in this version")]
+    MixedForms { tensor: String, by: String },
+    #[error("structured op: {0}")]
+    Structured(String),
     #[error("the source is not a canonical container ({0}); a deployment image cannot be patched")]
     NotCanonical(String),
     #[error("the source already carries a weight-patch ledger; patching a patched container is not supported")]

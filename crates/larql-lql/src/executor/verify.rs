@@ -48,6 +48,7 @@ use crate::error::LqlError;
 
 const SCHEMA: &str = "larql-verify-contract/1";
 const OPERATOR_SCHEMA: &str = "larql-verify-operator/1";
+const PATCH_SCHEMA: &str = "larql-verify-patch/1";
 const WITNESS_BASIS: &str = "engine_reported";
 const EVIDENCE_KIND: &str = "numerical_measurement";
 const VERIFIER_ENV: &str = "LARQL_VERIFIER";
@@ -90,6 +91,31 @@ struct OperatorResult {
     operator: String,
     witness: Witness,
     container: Identified,
+    #[serde(default)]
+    measurements: Vec<Measurement>,
+    #[serde(default)]
+    offending: Vec<Offending>,
+    #[serde(default)]
+    reasons: Vec<String>,
+    verifier: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    report_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchResult {
+    schema: String,
+    contract: String,
+    #[serde(default)]
+    contract_statement: String,
+    evidence_kind: String,
+    status: String,
+    violations: u64,
+    patch: Identified,
+    base: Identified,
+    container: Identified,
+    #[serde(default)]
+    recomputed_from: String,
     #[serde(default)]
     measurements: Vec<Measurement>,
     #[serde(default)]
@@ -208,6 +234,45 @@ impl Session {
             self.contract_violations += 1;
         }
         Ok(render_operator(&result))
+    }
+
+    pub(crate) fn exec_verify_patch(
+        &mut self,
+        patch: &str,
+        contract: &str,
+        base: &str,
+        container: &str,
+    ) -> Result<Vec<String>, LqlError> {
+        let verifier = self.discover_verifier("VERIFY PATCH")?;
+        let patch = existing_file(patch, "patch")?;
+        let base = existing_dir(base, "base")?;
+        let container = existing_dir(container, "container")?;
+        let stdout = run_verifier(
+            &verifier,
+            &[
+                "patch",
+                "--contract",
+                contract,
+                "--patch",
+                &patch,
+                "--base",
+                &base,
+                "--container",
+                &container,
+            ],
+            TIMEOUT,
+        )?;
+        let result = parse_patch_result(&stdout, contract, &patch, &base, &container)?;
+        if result.status == "could_not_evaluate" {
+            return Err(LqlError::Execution(format!(
+                "contract {contract} could not be evaluated for {patch}: {}",
+                result.reasons.join("; ")
+            )));
+        }
+        if result.status == "violated" {
+            self.contract_violations += 1;
+        }
+        Ok(render_patch(&result))
     }
 
     fn discover_verifier(&self, statement: &str) -> Result<PathBuf, LqlError> {
@@ -461,6 +526,75 @@ fn parse_operator_result(
     }
     check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
     Ok(r)
+}
+
+/// The same refusals as [`parse_result`], for a question about what a patch declares of a base.
+fn parse_patch_result(
+    stdout: &str,
+    contract: &str,
+    patch: &str,
+    base: &str,
+    container: &str,
+) -> Result<PatchResult, LqlError> {
+    let bad =
+        |why: String| LqlError::Execution(format!("the verifier's answer was refused: {why}"));
+    let r: PatchResult =
+        serde_json::from_str(stdout).map_err(|e| bad(format!("not a valid result: {e}")))?;
+    let mismatch = |field: &str, got: &str, want: &str| {
+        (got != want).then(|| bad(format!("its {field} is {got:?}, not {want:?}")))
+    };
+    let first = mismatch("schema", &r.schema, PATCH_SCHEMA)
+        .or_else(|| mismatch("contract", &r.contract, contract))
+        .or_else(|| mismatch("patch", &r.patch.path, patch))
+        .or_else(|| mismatch("base", &r.base.path, base))
+        .or_else(|| mismatch("container", &r.container.path, container))
+        .or_else(|| mismatch("evidence kind", &r.evidence_kind, EVIDENCE_KIND));
+    if let Some(e) = first {
+        return Err(e);
+    }
+    check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
+    Ok(r)
+}
+
+fn render_patch(r: &PatchResult) -> Vec<String> {
+    let verdict = if r.status == "satisfied" {
+        "SATISFIED"
+    } else {
+        "VIOLATED"
+    };
+    let mut out = vec![format!("Patch contract {}: {verdict}", r.contract)];
+    if !r.contract_statement.is_empty() {
+        out.push(format!("  Requires: {}", r.contract_statement));
+    }
+    out.push(format!(
+        "  Patch: {} (sha256 {})",
+        r.patch.path,
+        r.patch.sha256.as_deref().unwrap_or("not reported")
+    ));
+    out.push(format!(
+        "  Base: {} (sha256 {})",
+        r.base.path,
+        r.base.sha256.as_deref().unwrap_or("not reported")
+    ));
+    out.push(format!(
+        "  Container: {} (sha256 {})",
+        r.container.path,
+        r.container.sha256.as_deref().unwrap_or("not reported")
+    ));
+    if !r.recomputed_from.is_empty() {
+        out.push(format!("  Recomputed from: {}", r.recomputed_from));
+    }
+    render_findings(
+        &mut out,
+        &r.measurements,
+        &r.offending,
+        &r.verifier,
+        &r.report_sha256,
+    );
+    out.push(
+        "  Evidence: a numerical measurement of these two containers, not a formal proof.".into(),
+    );
+    out
 }
 
 fn render(r: &ContractResult) -> Vec<String> {

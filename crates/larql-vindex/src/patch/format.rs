@@ -115,6 +115,11 @@ pub enum PatchOp {
     /// `format::vindex3::weight_patch::op`.
     #[serde(rename = "weight_delta")]
     WeightDelta(crate::format::vindex3::weight_patch::WeightDeltaOp),
+    /// Edit stored weights by a structured operation (`remove_direction`), declared by its operands and
+    /// resolved to exact BF16 results at compile. Same refusal rule as `weight_delta`. See
+    /// `format::vindex3::weight_patch::structured_op`.
+    #[serde(rename = "structured_weight")]
+    StructuredWeight(crate::format::vindex3::weight_patch::StructuredWeightOp),
 }
 
 /// Compact down_meta for a patch operation.
@@ -135,7 +140,10 @@ impl PatchOp {
             PatchOp::Insert { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::Update { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::Delete { layer, feature, .. } => Some((*layer, *feature)),
-            PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } | PatchOp::WeightDelta(_) => None,
+            PatchOp::InsertKnn { .. }
+            | PatchOp::DeleteKnn { .. }
+            | PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_) => None,
         }
     }
 }
@@ -215,7 +223,9 @@ impl VindexPatch {
         for op in &self.operations {
             match op {
                 PatchOp::Insert { .. } | PatchOp::InsertKnn { .. } => ins += 1,
-                PatchOp::Update { .. } | PatchOp::WeightDelta(_) => upd += 1,
+                PatchOp::Update { .. } | PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {
+                    upd += 1
+                }
                 PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => del += 1,
             }
         }

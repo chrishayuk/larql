@@ -4,9 +4,11 @@
 //! The fixture is a small BF16 container with a Q8_0 pack compiled by the
 //! production compiler, so every test goes through the real derive path.
 
+mod cross_language;
 mod direct;
 mod golden;
 mod parsing;
 mod refusals;
+mod structured;
 mod support;
 mod vlp;

@@ -211,6 +211,12 @@ impl Session {
                 witness,
                 container,
             } => self.exec_verify_operator(operator, contract, witness, container),
+            Statement::VerifyPatch {
+                patch,
+                contract,
+                base,
+                container,
+            } => self.exec_verify_patch(patch, contract, base, container),
             Statement::VerifyRepresentation {
                 container,
                 contract,
@@ -364,6 +370,13 @@ impl Session {
                 cols,
                 delta,
             } => self.exec_update_weights(tensor, *row, cols, *delta),
+            Statement::RemoveDirection {
+                operand,
+                tensor,
+                columns,
+                scale,
+                numerics,
+            } => self.exec_remove_direction(operand, tensor, columns, *scale, numerics),
             Statement::Merge {
                 source,
                 target,
@@ -519,6 +532,7 @@ impl Session {
             .iter()
             .map(|op| match op {
                 larql_vindex::PatchOp::WeightDelta(w) => w.edits.len(),
+                larql_vindex::PatchOp::StructuredWeight(_) => 1,
                 _ => 0,
             })
             .sum();
@@ -589,15 +603,27 @@ impl Session {
 
         // Stored-weight ops are bound to the exact container they were written
         // against. Check that before anything is applied.
-        let weight_ops: Vec<&larql_vindex::format::vindex3::weight_patch::WeightDeltaOp> = patch
+        use larql_vindex::format::vindex3::weight_patch::WeightOpRef;
+        let weight_ops: Vec<WeightOpRef<'_>> = patch
             .operations
             .iter()
             .filter_map(|op| match op {
-                larql_vindex::PatchOp::WeightDelta(w) => Some(w),
+                larql_vindex::PatchOp::WeightDelta(w) => Some(WeightOpRef::Delta(w)),
+                larql_vindex::PatchOp::StructuredWeight(w) => Some(WeightOpRef::Structured(w)),
                 _ => None,
             })
             .collect();
-        let weight_edits: usize = weight_ops.iter().map(|w| w.edits.len()).sum();
+        let weight_edits: usize = weight_ops
+            .iter()
+            .map(|w| match w {
+                WeightOpRef::Delta(d) => d.edits.len(),
+                WeightOpRef::Structured(_) => 0,
+            })
+            .sum();
+        let structured = weight_ops
+            .iter()
+            .filter(|w| matches!(w, WeightOpRef::Structured(_)))
+            .count();
         if !weight_ops.is_empty() {
             match &self.backend {
                 Backend::Vindex3 {
@@ -664,11 +690,17 @@ impl Session {
             _ => return Err(LqlError::NoBackend),
         }
 
-        let weights = if weight_edits > 0 {
-            format!("; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE")
-        } else {
-            String::new()
-        };
+        let mut weights = String::new();
+        if weight_edits > 0 {
+            weights.push_str(&format!(
+                "; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE"
+            ));
+        }
+        if structured > 0 {
+            weights.push_str(&format!(
+                "; {structured} structured weight op(s), bound to this container and pending COMPILE"
+            ));
+        }
         Ok(vec![format!(
             "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes{weights})"
         )])

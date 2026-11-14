@@ -837,6 +837,33 @@ the declared edit is a claim for an independent verifier, and a representation c
 the **unedited** upstream checkpoint (for example `Q8_0_T2`) will correctly report the edited elements:
 measure the new representation against the edited canonical weights the ledger names.
 
+### 3.5.2 Structured weight edits: `REMOVE DIRECTION` (VINDEX3)
+
+```sql
+REMOVE DIRECTION "<operand.json>" FROM "<tensor>" COLUMNS (<n>, <n>, …)
+  SCALE <number> NUMERICS "<profile>";
+```
+
+Removes a direction `u` from chosen columns of one stored BF16 matrix: `W[:, S] <- W[:, S] - alpha * u * (u^T W[:, S])`.
+Unlike `UPDATE WEIGHTS`, the edit is declared by its **operands**, not by the elements it changes, and
+`COMPILE` writes the exact BF16 results of the frozen numerics. **No f32 delta is computed anywhere on the
+path**, so a result no single f32 delta can reach (a near-cancellation that leaves a tiny nonzero) is written
+exactly.
+
+- **Operand file.** JSON `{"bits": ["<16 lowercase hex digits>", …], "origin": "<optional note>"}`: one f64
+  bit pattern per row of the tensor. `origin` names where the direction came from (a feature artifact id, a
+  file hash). It is covered by the op's digest and read by nothing that computes.
+- **Scale** is the literal's exact f64; an integer beyond 2^53 is refused rather than rounded. Negative
+  scales are allowed.
+- **Numerics** is a profile id, `f64-seq-rne1/v1` or `f64-seq-rne2/v1`. The f32 working profile is refused.
+- **Conflicts are by declared footprint, not by what changes after rounding.** Two structured ops sharing a
+  column are refused. A structured op and an `UPDATE WEIGHTS` delta on one tensor are refused as mixed forms,
+  whichever came first. An op that changes nothing is refused at resolve and compile.
+- **Ledger.** A compile with any structured op writes `weight-patches/v3` with the exact result bits. A
+  delta-only compile still writes `weight-patches/v2`, unchanged.
+- **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container
+  implements the op is for `VERIFY PATCH` (section 3.9), which recomputes it from the operands.
+
 ### 3.6 Schema Introspection Statements
 
 ```
@@ -1047,6 +1074,25 @@ answer is `could_not_evaluate`, which is an error here as above. `<tensor>` is t
 
 - **`Q8_0_GEMV_B1` is experimental:** a measured bound check on one call, not a machine-checked proof. The bound is loose, so satisfying it doesn't rule out small defects.
 - **A witness is the engine's own report.** A result says the recorded output is right for the recorded input and the container's bytes. It can't show the production kernel produced it, and the output says the witness isn't authenticated. Together with an unauthenticated verifier, this means a result must not gate a release.
+
+```sql
+VERIFY PATCH "<patch.vlp>" USING CONTRACT "<id>" FROM "<base>" AGAINST "<container>";
+
+-- Judge whether <container> implements what the patch declares of <base>, using an independent verifier.
+
+VERIFY PATCH "removal.vlp"
+  USING CONTRACT "STRUCTURED_REMOVE_DIRECTION"
+  FROM "model.vindex3"
+  AGAINST "edited.vindex3";
+```
+
+**The verifier recomputes; it does not read the compiler's ledger.** `STRUCTURED_REMOVE_DIRECTION` takes the
+patch's operands (bits, alpha, columns, profile), recomputes the expected BF16 of every element on exact
+rationals, and compares **every** element of the edited tensor (declared columns against the recomputed bits,
+the rest against the base) and every other BF16 tensor against the base. A stale binding, an unimplemented
+profile, an operation of another kind, overlapping columns, or a malformed operand is `could_not_evaluate`.
+It does not establish the derived (quantised) representations, the op digest, or the operand's origin, and
+says so. Everything above about an unauthenticated verifier applies.
 
 **`larql lql` exit status:**
 

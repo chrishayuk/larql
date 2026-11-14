@@ -1,0 +1,89 @@
+{
+  "schema": "weight-patches/v3",
+  "rounding": "bf16-rne-of-exact-sum",
+  "writer": "larql-vindex weight_patch v1",
+  "source": {
+    "model": "wsp",
+    "index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+    "canonical": {
+      "payload_sha256": "fc7c2807decd21c939155e6f84f25d351ce8dff86bfc1b6070d3a8158c1d6fad",
+      "segment_sha256": "1ae6b26382292bf208a53b545562bf707e30b38bb5a05f490b22edb6aadb5e06"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "payload_sha256": "57ef1b1c57bf1b9bd7463ad1d1e788800a2c469e4d387a860b3a27a59e051b80",
+        "segment_sha256": "ce9d8624980ea9d155add245e869219d78cc4823cfba73a6cb347c4d8b7939c7",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  },
+  "targets": [
+    {
+      "object": "target.decoder_stack",
+      "representation": "target.decoder_stack@BF16",
+      "tensor": "1.mlp.down_proj.weight",
+      "dtype": "BF16",
+      "shape": [
+        64,
+        256
+      ],
+      "edits": [
+        {
+          "row": 0,
+          "col": 33,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15611,
+          "new_bits": 44539,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 1,
+          "col": 40,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48459,
+          "new_bits": 48034,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 1,
+          "col": 41,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15667,
+          "new_bits": 15247,
+          "encoding": "result_bits"
+        }
+      ]
+    }
+  ],
+  "origins": [
+    "f8fcc883bf21ce8a8bca18569b7e6de72f1419c32c30034aa88e7734f441fbc2",
+    "a44583b84576e86f1baf2b5fbc7f724afc8e5fda954c680a23b337b600e37b83"
+  ],
+  "result": {
+    "canonical": {
+      "payload_sha256": "9a191d4c1f5bf07b6749eeedbe0e50c2be84365cc1e396a63392f4c01254574c",
+      "segment_sha256": "2e0affca646867bccf2c67b7765cb5cbee886d030c7b4ea7a8e84cecb6d9191d"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "source_representation_digest": "9a191d4c1f5bf07b6749eeedbe0e50c2be84365cc1e396a63392f4c01254574c",
+        "payload_sha256": "c7f2eb43ac90bae3472a6a1214e56cafa04995007d316aa7ee671e922e039bd2",
+        "segment_sha256": "d464c139f22ff80ac767f4ad622eb9df43c8b1c29c941fd3c918f1d4da7134f1",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  }
+}
