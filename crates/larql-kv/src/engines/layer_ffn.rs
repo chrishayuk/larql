@@ -67,8 +67,8 @@ pub(crate) fn apply_ple_and_layer_scalar(
 ///
 /// Whether an `Err` can arrive at all is the *policy*'s decision, not the
 /// route's: `MoeFfn::best_effort` records the refusal and returns the dense
-/// half, so a shard outage still degrades rather than stopping. Only
-/// `MoeFfn::strict` converts it into an error here.
+/// half (an explicit opt-in), while `MoeFfn::strict` — and `RemoteMoeFfn`,
+/// which is strict — converts it into an error here.
 ///
 /// Before this returned a `Result`, a refusal was printed to stderr and the
 /// dense half was returned — a complete-looking hidden state whose experts

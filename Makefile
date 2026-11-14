@@ -28,7 +28,7 @@ test-models:
 	cargo test -p larql-inference --test test_logits_goldens -- --ignored
 	cargo test -p larql-inference --test test_gemma3_smoke -- --ignored
 	cargo test -p larql-inference --test test_generate_q4k_cpu -- --ignored
-	cargo test -p larql-inference --test bench_probe_latency -- --ignored --nocapture
+	cargo test -p larql-kv --test bench_probe_latency -- --ignored --nocapture
 	cargo test -p larql-inference --test test_llm_dispatch -- --ignored --nocapture
 	cargo test -p larql-inference --test test_constrained_dispatch -- --ignored --nocapture
 	cargo test -p larql-inference --test test_trie_dispatch -- --ignored --nocapture
@@ -844,6 +844,9 @@ larql-inference-bench-test:
 # live-shard / mmap-backed surface. See
 # crates/larql-inference/coverage-policy.json for the policy_note.
 LARQL_INFERENCE_COVERAGE_MIN ?= 70
+# The Metal backend is what a developer machine measures with. CI measures on
+# Linux, where it does not build, and overrides this to empty.
+LARQL_INFERENCE_COVERAGE_FEATURES ?= --features gpu
 LARQL_INFERENCE_COVERAGE_POLICY ?= crates/larql-inference/coverage-policy.json
 LARQL_INFERENCE_COVERAGE_REPORT ?= coverage/larql-inference/summary.json
 
@@ -872,7 +875,7 @@ larql-inference-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
-	cargo llvm-cov --package larql-inference --features gpu --summary-only --fail-under-lines $(LARQL_INFERENCE_COVERAGE_MIN)
+	cargo llvm-cov --package larql-inference $(LARQL_INFERENCE_COVERAGE_FEATURES) --summary-only --fail-under-lines $(LARQL_INFERENCE_COVERAGE_MIN)
 	@mkdir -p coverage/larql-inference
 	cargo llvm-cov report --package larql-inference --json --summary-only --output-path $(LARQL_INFERENCE_COVERAGE_REPORT)
 	$(MAKE) larql-inference-coverage-policy

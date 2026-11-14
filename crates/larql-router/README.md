@@ -21,6 +21,15 @@ cargo build --release -p larql-router
 larql-router --shards 0-14=http://shard-a:9181,15-29=http://shard-b:9182 --port 9090
 ```
 
+The router binds `127.0.0.1` by default. Every listener (HTTP `--port`, grid
+`--grid-port`, QUIC `--quic-port`) shares `--host`, and a non-loopback
+`--host` is refused at startup unless the grid is keyed with `--grid-key` (or
+`LARQL_GRID_KEY`) or the operator passes `--insecure-public`. A router with no
+`--grid-port` has no credential, so on a network address it always needs
+`--insecure-public`. This is the same convention `larql-server` follows with
+`--api-key` / `--insecure-public`. The HTTP surface itself is not
+authenticated in either case.
+
 The static map example assumes those shards are already serving compatible
 artifacts. Grid mode instead uses `--grid-port` and server registration via
 `--join`; consult each binary's help and the [protocol crate](../larql-router-protocol/README.md).

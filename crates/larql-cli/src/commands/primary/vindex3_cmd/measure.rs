@@ -28,13 +28,13 @@ use larql_vindex::format::vindex3::represent::measure::plan::{
 };
 
 use super::plugins::{PluginArgs, Plugins};
-use super::prepare::{lowerings_with, parse_representation_source, prepare, DEFAULT_COMPONENT};
+use super::prepare::{
+    lowerings_with, parse_representation_source, prepare, resolve_representation_source,
+    DEFAULT_COMPONENT,
+};
 use super::ExecBackend;
 
 type BoxErr = Box<dyn std::error::Error>;
-
-/// The reference reads canonical bytes unless told otherwise.
-const DEFAULT_REFERENCE_SOURCE: &str = "auto";
 
 /// The candidate may not manufacture its representation: a pack arm must
 /// read the pack it names, or the procedure refuses it.
@@ -49,8 +49,11 @@ pub struct MeasureArgs {
     #[arg(long, value_enum)]
     pub reference_backend: ExecBackend,
     /// Reference representation source: auto, stored or transient.
-    #[arg(long, default_value = DEFAULT_REFERENCE_SOURCE)]
-    pub reference_source: String,
+    /// Default: `--reference-backend`'s, as `vindex3 exec` resolves it, so
+    /// a `production` reference reads its canonical bytes rather than a Q8
+    /// image the size policy would manufacture under `auto`.
+    #[arg(long, value_name = "auto|stored|transient")]
+    pub reference_source: Option<String>,
     /// Candidate container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     #[arg(long)]
     pub candidate: PathBuf,
@@ -158,7 +161,10 @@ pub fn run(args: MeasureArgs) -> Result<(), BoxErr> {
     let reference = ArmSpec {
         container: &args.reference,
         backend: args.reference_backend,
-        source: parse_representation_source(&args.reference_source)?,
+        source: resolve_representation_source(
+            args.reference_source.as_deref(),
+            args.reference_backend,
+        )?,
         plugins: loaded.selecting(
             args.reference_lowering.as_deref(),
             args.reference_representation.as_deref(),

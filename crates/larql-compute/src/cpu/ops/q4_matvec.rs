@@ -15,6 +15,12 @@ pub fn dispatch(q4_data: &[u8], x: &[f32], num_rows: usize, hidden: usize) -> Ve
 }
 
 /// Q4 matvec with pre-quantized Q8 input (avoids re-quantizing).
+///
+/// # Panics
+///
+/// If `hidden` is not a multiple of 32, `q4_data` is not
+/// `num_rows * hidden / 32 * 18` bytes, `q8_x` is not `hidden` long, or
+/// `q8_scales` is not `hidden / 32` long.
 pub fn dispatch_q8(
     q4_data: &[u8],
     q8_x: &[i8],
@@ -25,14 +31,16 @@ pub fn dispatch_q8(
     // The C kernel assumes `hidden % 32 == 0` and reads exactly 18 bytes
     // per Q4_0 block × `num_rows` rows. Validate at the FFI boundary so a
     // malformed manifest fails on the Rust side with a clear message
-    // rather than reading OOB inside `q4_0_matvec_c`.
-    debug_assert_eq!(
+    // rather than reading OOB inside `q4_0_matvec_c`. Checked in every
+    // build: these were debug-only, so a release build of this safe
+    // function read past a short slice.
+    assert_eq!(
         hidden % 32,
         0,
         "q4_0 matvec requires hidden to be a multiple of 32 (got {hidden})"
     );
     let blocks = hidden / 32;
-    debug_assert_eq!(
+    assert_eq!(
         q4_data.len(),
         num_rows * blocks * 18,
         "q4_0 matvec: q4_data is {} bytes; expected {} \
@@ -40,13 +48,13 @@ pub fn dispatch_q8(
         q4_data.len(),
         num_rows * blocks * 18,
     );
-    debug_assert_eq!(
+    assert_eq!(
         q8_x.len(),
         hidden,
         "q4_0 matvec: q8_x len {} != hidden {hidden}",
         q8_x.len()
     );
-    debug_assert_eq!(
+    assert_eq!(
         q8_scales.len(),
         blocks,
         "q4_0 matvec: q8_scales len {} != hidden/32 = {blocks}",

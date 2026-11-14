@@ -154,7 +154,16 @@ impl SessionManager {
     /// The returned overlay is a *copy* — the session's patches replayed
     /// onto a fresh clone of the model's base — so the caller can read it
     /// without holding any session lock.
-    pub async fn get_or_create(&self, session_id: &str, model: &Arc<LoadedModel>) -> PatchedVindex {
+    ///
+    /// # Errors
+    /// When a patch the session holds no longer fits the model's base. Each
+    /// was checked when it was applied, so this means the base changed under
+    /// the session; the overlay is not handed back with that patch missing.
+    pub async fn get_or_create(
+        &self,
+        session_id: &str,
+        model: &Arc<LoadedModel>,
+    ) -> Result<PatchedVindex, larql_vindex::VindexError> {
         // Read the base outside the sessions lock: cloning it is not free
         // and `model.patched` must never be awaited under the map guard.
         let base = model.patched.read().await.base().clone();
@@ -171,9 +180,9 @@ impl SessionManager {
         );
         let mut cloned = PatchedVindex::new(base);
         for patch in session.patches() {
-            cloned.apply_patch(patch.clone());
+            cloned.try_apply_patch(patch.clone())?;
         }
-        cloned
+        Ok(cloned)
     }
 
     /// Apply a patch to a session (not global).
@@ -192,7 +201,25 @@ impl SessionManager {
         session_id: &str,
         model: &Arc<LoadedModel>,
         patch: VindexPatch,
-    ) -> (usize, usize) {
+    ) -> Result<(usize, usize), larql_vindex::VindexError> {
+        self.apply_patch_with(session_id, model, patch, |_, _| Ok(()))
+            .await
+    }
+
+    /// [`Self::apply_patch`], with `prepare` run on the session's overlay
+    /// just before the patch is applied to it, under the same lock. It can
+    /// complete the patch from the overlay's state (the server picks free
+    /// slots this way) or refuse it; a refusal applies nothing.
+    pub async fn apply_patch_with<F>(
+        &self,
+        session_id: &str,
+        model: &Arc<LoadedModel>,
+        mut patch: VindexPatch,
+        prepare: F,
+    ) -> Result<(usize, usize), larql_vindex::VindexError>
+    where
+        F: FnOnce(&PatchedVindex, &mut VindexPatch) -> Result<(), larql_vindex::VindexError>,
+    {
         // Fast path: the session already has an overlay, so no base clone
         // is needed and the whole operation fits under one lock.
         {
@@ -202,8 +229,9 @@ impl SessionManager {
                 session.touch(now);
                 if let Some(overlay) = session.overlay_existing_mut() {
                     let op_count = patch.operations.len();
-                    overlay.apply_patch(patch);
-                    return (op_count, overlay.num_patches());
+                    prepare(overlay, &mut patch)?;
+                    overlay.try_apply_patch(patch)?;
+                    return Ok((op_count, overlay.num_patches()));
                 }
             }
         }
@@ -214,18 +242,37 @@ impl SessionManager {
 
         let mut sessions = self.sessions.write().await;
         let now = Instant::now();
-        let session = bind_in(
+        let op_count = patch.operations.len();
+
+        // Another task may have given the session its overlay while the base
+        // was being read. A refusal there changes nothing, as on the fast path.
+        if let Some(overlay) = sessions
+            .get_mut(session_id)
+            .and_then(SessionState::overlay_existing_mut)
+        {
+            prepare(overlay, &mut patch)?;
+            overlay.try_apply_patch(patch)?;
+            return Ok((op_count, overlay.num_patches()));
+        }
+
+        // Apply onto an overlay the session does not hold yet, and bind the
+        // session only once the patch is in: a refused first patch must not
+        // leave a session behind with an empty overlay, which reads as
+        // "patched" where an unpatched session reads as the model itself.
+        let mut overlay = PatchedVindex::new(base);
+        prepare(&overlay, &mut patch)?;
+        overlay.try_apply_patch(patch)?;
+        let active = overlay.num_patches();
+        bind_in(
             &mut sessions,
             self.clock,
             self.ttl,
             session_id,
             &model.id,
             now,
-        );
-        let op_count = patch.operations.len();
-        let overlay = session.overlay_mut(|| base);
-        overlay.apply_patch(patch);
-        (op_count, overlay.num_patches())
+        )
+        .install_overlay(overlay);
+        Ok((op_count, active))
     }
 
     /// List patches for a session.
@@ -273,6 +320,13 @@ impl SessionManager {
         &self,
     ) -> tokio::sync::RwLockWriteGuard<'_, HashMap<String, SessionState>> {
         self.sessions.blocking_write()
+    }
+
+    /// Async read access to the sessions map.
+    pub(super) async fn read_guard(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, HashMap<String, SessionState>> {
+        self.sessions.read().await
     }
 
     /// Blocking read access to sessions map (for use in spawn_blocking).

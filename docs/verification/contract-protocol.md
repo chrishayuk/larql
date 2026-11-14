@@ -145,6 +145,40 @@ Both are numerical measurements of one recorded call.
 - **`Q8_0_GEMV_SEQ`'s order was chosen to describe LARQL's own CPU kernel.** Passing shows this recorded output matches the declared program, not that the declared order is the right one.
 - **A witness is the engine's report.** These contracts judge the recorded output. They can't show the production kernel produced it, and a faulty or malicious engine could forge a witness.
 
+## Patch contracts: `larql-verify-patch/1`
+
+The same arrangement, for whether a compiled container implements what a `.vlp` patch declares of a base container. It answers `VERIFY PATCH`.
+
+```text
+<verifier> patch --contract <id> --patch <patch.vlp> --base <dir> --container <dir>
+```
+
+The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Exactly `larql-verify-patch/1` |
+| `patch.path`, `base.path`, `container.path` | The values asked about, unchanged. `sha256` is the verifier's digest of each |
+| `recomputed_from` | What the expected result was derived from. For `STRUCTURED_REMOVE_DIRECTION`: the operands and the base weights, **not the compiler's ledger** |
+
+There's no `source`.
+
+**What a verdict covers.** `status` is the verdict on the weights and is unchanged. Three further fields, additive, say what it does not cover, so a satisfied weight check can't be read as more:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `numerical_satisfaction` | `satisfied`, `violated`, `could_not_evaluate` | The same as `status`: do the actual BF16 weights implement the declared transformation |
+| `ledger_integrity` | `not_checked` | The ledger is not read, so nothing is claimed of it. A corrupted ledger leaves the weight verdict as it was |
+| `provenance` | `not_checked` | Never `satisfied` by this contract. `provenance_detail` breaks it down: `base_binding` is `satisfied` when the patch was judged (a stale binding is refused) and `could_not_evaluate` otherwise; `operand_origin`, `operand_derivation` and `op_digest` are `not_checked` |
+
+| Contract | What it measures | What `violated` means |
+|---|---|---|
+| `STRUCTURED_REMOVE_DIRECTION` | Every element of each edited tensor equals the BF16 result of the declared `remove_direction` recomputed on exact rationals (declared columns), or the base (all other elements), and every other BF16 tensor equals the base | Some element differs. `offending` names the tensor and the first element, with the expected and found bits |
+
+**Before judging anything, the verifier checks** that the patch holds only `structured_weight` operations of an implemented profile (`f64-seq-rne1/v1`, `f64-seq-rne2/v1`), that each op's binding matches the base (the SHA-256 of its `index.json` and the representation's payload digest), that operands and columns fit the tensor, and that no two ops declare the same column. Otherwise the answer is `could_not_evaluate`. Both containers are read by the validating reader, and all three inputs are digested again afterwards: a change during the evaluation is `could_not_evaluate`.
+
+**What it does not establish:** the derived (quantised) representations a compile re-derives, the digest the op carries (which detects accidental damage, not tampering), and the operand's `origin`. It recomputes with exact rational arithmetic, not by running LARQL's interpreter, so agreement between the two is evidence that neither shares the other's mistake; the interpreter's profile definitions are the common specification.
+
 ## The contract `Q8_0_T2`
 
 LARQL's own verifier, [`verifier/`](../../verifier/README.md), implements this protocol for one contract, `Q8_0_T2`. It accepts only

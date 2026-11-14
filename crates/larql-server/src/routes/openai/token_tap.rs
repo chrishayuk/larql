@@ -61,6 +61,12 @@ impl<'a> TokenTap<'a> {
             return;
         }
         self.buffered.push_str(text);
+        // A token can decode to no text (a special token, or the first half
+        // of a multi-byte character). There is nothing to send for it, and
+        // an empty delta event is noise a client has to filter.
+        if text.is_empty() {
+            return;
+        }
         if self.emitting && !emit(text) {
             self.emitting = false;
             if self.on_emit_failure == EmitFailure::Halt {
@@ -96,6 +102,21 @@ mod tests {
 
     fn stops(words: &[&str]) -> Vec<String> {
         words.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn a_token_with_no_text_is_not_emitted() {
+        let stop = stops(&[]);
+        let mut tap = TokenTap::new(&stop, EmitFailure::Halt);
+        let mut emitted = Vec::new();
+        for text in ["Par", "", "is"] {
+            tap.feed(text, |t| {
+                emitted.push(t.to_string());
+                true
+            });
+        }
+        assert_eq!(emitted, ["Par", "is"]);
+        assert_eq!(tap.text(), "Paris");
     }
 
     #[test]

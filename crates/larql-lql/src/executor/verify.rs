@@ -48,6 +48,7 @@ use crate::error::LqlError;
 
 const SCHEMA: &str = "larql-verify-contract/1";
 const OPERATOR_SCHEMA: &str = "larql-verify-operator/1";
+const PATCH_SCHEMA: &str = "larql-verify-patch/1";
 const WITNESS_BASIS: &str = "engine_reported";
 const EVIDENCE_KIND: &str = "numerical_measurement";
 const VERIFIER_ENV: &str = "LARQL_VERIFIER";
@@ -90,6 +91,31 @@ struct OperatorResult {
     operator: String,
     witness: Witness,
     container: Identified,
+    #[serde(default)]
+    measurements: Vec<Measurement>,
+    #[serde(default)]
+    offending: Vec<Offending>,
+    #[serde(default)]
+    reasons: Vec<String>,
+    verifier: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    report_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchResult {
+    schema: String,
+    contract: String,
+    #[serde(default)]
+    contract_statement: String,
+    evidence_kind: String,
+    status: String,
+    violations: u64,
+    patch: Identified,
+    base: Identified,
+    container: Identified,
+    #[serde(default)]
+    recomputed_from: String,
     #[serde(default)]
     measurements: Vec<Measurement>,
     #[serde(default)]
@@ -210,6 +236,45 @@ impl Session {
         Ok(render_operator(&result))
     }
 
+    pub(crate) fn exec_verify_patch(
+        &mut self,
+        patch: &str,
+        contract: &str,
+        base: &str,
+        container: &str,
+    ) -> Result<Vec<String>, LqlError> {
+        let verifier = self.discover_verifier("VERIFY PATCH")?;
+        let patch = existing_file(patch, "patch")?;
+        let base = existing_dir(base, "base")?;
+        let container = existing_dir(container, "container")?;
+        let stdout = run_verifier(
+            &verifier,
+            &[
+                "patch",
+                "--contract",
+                contract,
+                "--patch",
+                &patch,
+                "--base",
+                &base,
+                "--container",
+                &container,
+            ],
+            TIMEOUT,
+        )?;
+        let result = parse_patch_result(&stdout, contract, &patch, &base, &container)?;
+        if result.status == "could_not_evaluate" {
+            return Err(LqlError::Execution(format!(
+                "contract {contract} could not be evaluated for {patch}: {}",
+                result.reasons.join("; ")
+            )));
+        }
+        if result.status == "violated" {
+            self.contract_violations += 1;
+        }
+        Ok(render_patch(&result))
+    }
+
     fn discover_verifier(&self, statement: &str) -> Result<PathBuf, LqlError> {
         find_verifier(
             self.verifier.clone(),
@@ -282,17 +347,50 @@ fn existing_file(path: &str, what: &str) -> Result<String, LqlError> {
     Ok(canonical.to_string_lossy().into_owned())
 }
 
+/// How many times a spawn that found the executable busy is tried in all.
+const BUSY_SPAWN_ATTEMPTS: u32 = 40;
+/// The wait before the first retry; each later wait is one step longer.
+const BUSY_SPAWN_BACKOFF: Duration = Duration::from_millis(5);
+
+/// Spawn, retrying while the executable is "text file busy".
+///
+/// An executable cannot be run while any process holds it open for writing.
+/// That is true for an instant after a verifier is written, even by this
+/// process: a `fork` on another thread copies the still-open descriptor
+/// into a child, which holds it until its own `exec`. The condition clears
+/// by itself, so the spawn is retried over about four seconds before the
+/// error is reported. Every other error is returned at once.
+fn spawn_when_not_busy(
+    mut spawn: impl FnMut() -> std::io::Result<std::process::Child>,
+) -> std::io::Result<std::process::Child> {
+    let mut attempt = 1;
+    loop {
+        match spawn() {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && attempt < BUSY_SPAWN_ATTEMPTS =>
+            {
+                std::thread::sleep(BUSY_SPAWN_BACKOFF * attempt);
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
 /// Run the verifier, without a shell, and return its stdout. Both pipes are
 /// drained on their own threads, so a large answer cannot block the child.
 fn run_verifier(verifier: &Path, args: &[&str], timeout: Duration) -> Result<String, LqlError> {
     let shown = verifier.display();
-    let mut child = Command::new(verifier)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| LqlError::exec(format!("starting verifier {shown}"), e))?;
+    let mut child = spawn_when_not_busy(|| {
+        Command::new(verifier)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
+    .map_err(|e| LqlError::exec(format!("starting verifier {shown}"), e))?;
     let drain = |mut pipe: Box<dyn Read + Send>| {
         std::thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -428,6 +526,75 @@ fn parse_operator_result(
     }
     check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
     Ok(r)
+}
+
+/// The same refusals as [`parse_result`], for a question about what a patch declares of a base.
+fn parse_patch_result(
+    stdout: &str,
+    contract: &str,
+    patch: &str,
+    base: &str,
+    container: &str,
+) -> Result<PatchResult, LqlError> {
+    let bad =
+        |why: String| LqlError::Execution(format!("the verifier's answer was refused: {why}"));
+    let r: PatchResult =
+        serde_json::from_str(stdout).map_err(|e| bad(format!("not a valid result: {e}")))?;
+    let mismatch = |field: &str, got: &str, want: &str| {
+        (got != want).then(|| bad(format!("its {field} is {got:?}, not {want:?}")))
+    };
+    let first = mismatch("schema", &r.schema, PATCH_SCHEMA)
+        .or_else(|| mismatch("contract", &r.contract, contract))
+        .or_else(|| mismatch("patch", &r.patch.path, patch))
+        .or_else(|| mismatch("base", &r.base.path, base))
+        .or_else(|| mismatch("container", &r.container.path, container))
+        .or_else(|| mismatch("evidence kind", &r.evidence_kind, EVIDENCE_KIND));
+    if let Some(e) = first {
+        return Err(e);
+    }
+    check_consistent(&r.status, r.violations, &r.offending, &r.reasons).map_err(bad)?;
+    Ok(r)
+}
+
+fn render_patch(r: &PatchResult) -> Vec<String> {
+    let verdict = if r.status == "satisfied" {
+        "SATISFIED"
+    } else {
+        "VIOLATED"
+    };
+    let mut out = vec![format!("Patch contract {}: {verdict}", r.contract)];
+    if !r.contract_statement.is_empty() {
+        out.push(format!("  Requires: {}", r.contract_statement));
+    }
+    out.push(format!(
+        "  Patch: {} (sha256 {})",
+        r.patch.path,
+        r.patch.sha256.as_deref().unwrap_or("not reported")
+    ));
+    out.push(format!(
+        "  Base: {} (sha256 {})",
+        r.base.path,
+        r.base.sha256.as_deref().unwrap_or("not reported")
+    ));
+    out.push(format!(
+        "  Container: {} (sha256 {})",
+        r.container.path,
+        r.container.sha256.as_deref().unwrap_or("not reported")
+    ));
+    if !r.recomputed_from.is_empty() {
+        out.push(format!("  Recomputed from: {}", r.recomputed_from));
+    }
+    render_findings(
+        &mut out,
+        &r.measurements,
+        &r.offending,
+        &r.verifier,
+        &r.report_sha256,
+    );
+    out.push(
+        "  Evidence: a numerical measurement of these two containers, not a formal proof.".into(),
+    );
+    out
 }
 
 fn render(r: &ContractResult) -> Vec<String> {
@@ -639,5 +806,73 @@ mod tests {
         let err = run_verifier(&script, &["c"], Duration::from_millis(100)).unwrap_err();
         assert!(err.to_string().contains("did not finish"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+}
+
+#[cfg(test)]
+mod busy_spawn_tests {
+    //! `spawn_when_not_busy` against a scripted spawn: the retry is a
+    //! property of the helper, and the condition it waits out (another
+    //! process holding the executable open for writing) cannot be staged
+    //! the same way on every platform.
+
+    use super::*;
+    use std::io::{Error, ErrorKind};
+
+    /// A spawn that reports "text file busy" `busy_first` times and then
+    /// starts a real, trivial child. Returns the outcome and the number of
+    /// attempts made.
+    fn scripted(busy_first: u32, then: ErrorKind) -> (std::io::Result<()>, u32) {
+        let mut attempts = 0;
+        let result = spawn_when_not_busy(|| {
+            attempts += 1;
+            if attempts <= busy_first {
+                return Err(Error::from(ErrorKind::ExecutableFileBusy));
+            }
+            if then != ErrorKind::Other {
+                return Err(Error::from(then));
+            }
+            Command::new(std::env::current_exe()?)
+                .arg("--list")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+        })
+        .map(|mut child| {
+            let _ = child.wait();
+        });
+        (result, attempts)
+    }
+
+    #[test]
+    fn a_spawn_that_is_busy_twice_succeeds_on_the_third_attempt() {
+        let (result, attempts) = scripted(2, ErrorKind::Other);
+
+        result.expect("the spawn succeeds once the file is free");
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn any_other_error_is_returned_at_once() {
+        let (result, attempts) = scripted(0, ErrorKind::NotFound);
+
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::NotFound);
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn an_error_after_a_busy_attempt_is_returned_without_more_retries() {
+        let (result, attempts) = scripted(1, ErrorKind::PermissionDenied);
+
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::PermissionDenied);
+        assert_eq!(attempts, 2);
+    }
+
+    #[test]
+    fn a_file_that_stays_busy_is_reported_after_the_last_attempt() {
+        let (result, attempts) = scripted(u32::MAX, ErrorKind::Other);
+
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::ExecutableFileBusy);
+        assert_eq!(attempts, BUSY_SPAWN_ATTEMPTS);
     }
 }

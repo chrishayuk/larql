@@ -50,7 +50,9 @@ larql-router \
 ### Grid mode (self-assembling)
 
 ```bash
-# Router — grid gRPC on 50052, HTTP on 9090
+# Router — grid gRPC on 50052, HTTP on 9090, both on loopback (the
+# default). A non-loopback --host needs --grid-key (see below) or
+# --insecure-public.
 larql-router --grid-port 50052 --port 9090
 
 # Servers connect to the router on startup, no router restart needed
@@ -71,6 +73,7 @@ larql-server output/gemma3-4b-q4k.vindex \
 
 ```bash
 larql-router \
+  --host 0.0.0.0 \
   --grid-port 50052 \
   --grid-key "$(cat /run/secrets/grid_key)" \
   --port 9090
@@ -92,9 +95,10 @@ larql-server output/gemma3-4b-q4k.vindex \
 |------|---------|-------------|
 | `--shards <SPEC>` | — | Static shard map: `"START-END=URL[,...]"`. Optional when `--grid-port` is set. |
 | `--grid-port <PORT>` | — | Enable self-assembling grid gRPC server on this port. |
-| `--grid-key <SECRET>` | — | Shared secret. Servers must present the same key. Also read from `LARQL_GRID_KEY` env var. If not set, the grid is open (dev only). |
+| `--grid-key <SECRET>` | — | Shared secret. Servers must present the same key. Also read from `LARQL_GRID_KEY` env var. If not set, the grid is open, so the router refuses a non-loopback `--host` unless `--insecure-public` is given. |
 | `--port <PORT>` | 9090 | HTTP listen port. |
-| `--host <ADDR>` | 0.0.0.0 | Bind address. |
+| `--host <ADDR>` | 127.0.0.1 | Bind address for every listener (HTTP, grid gRPC, QUIC). A non-loopback address with `--grid-port` needs `--grid-key`; otherwise the router refuses to start unless `--insecure-public` is given. |
+| `--insecure-public` | off | Accept a non-loopback `--host` without a grid key (or, with no `--grid-port`, at all). |
 | `--timeout-secs <N>` | 120 | Per-request timeout to backend shards. |
 | `--target-replicas <N>` | 1 | Phase 4 replication target per shard range. `>1` enables auto-replication from the available pool. |
 | `--rebalance-interval <SECS>` | 30 | GT6 rebalancer tick cadence. `0` disables dynamic rebalancing entirely. |
@@ -368,7 +372,7 @@ larql-router --shards "0-16=http://127.0.0.1:8080,17-33=http://127.0.0.1:8081"
 ### Grid with 3× redundancy across 10 servers
 
 ```bash
-larql-router --grid-port 50052 --grid-key "$KEY" --port 9090
+larql-router --host 0.0.0.0 --grid-port 50052 --grid-key "$KEY" --port 9090
 
 # Range A: layers 0-10, 4 replicas
 for port in 8080 8081 8082 8083; do
@@ -385,8 +389,8 @@ done
 
 ```bash
 # Two routers — servers connect to both
-larql-router --grid-port 50052 --grid-key "$KEY" --port 9090  # router-a
-larql-router --grid-port 50052 --grid-key "$KEY" --port 9090  # router-b
+larql-router --host 0.0.0.0 --grid-port 50052 --grid-key "$KEY" --port 9090  # router-a
+larql-router --host 0.0.0.0 --grid-port 50052 --grid-key "$KEY" --port 9090  # router-b
 
 larql-server model.vindex --ffn-only --layers 0-16 \
   --join "http://router-a:50052,http://router-b:50052" \

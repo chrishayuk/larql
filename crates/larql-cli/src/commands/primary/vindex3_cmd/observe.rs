@@ -31,7 +31,7 @@ use larql_vindex::format::vindex3::opplan::exec::observe_stats::{FixedBasis, Sta
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 
 use super::intervention;
-use super::prepare::{parse_representation_source, prepare, with_plan_backend, BackendVisitor};
+use super::prepare::{prepare, resolve_representation_source, with_plan_backend, BackendVisitor};
 use super::ExecBackend;
 
 type BoxErr = Box<dyn std::error::Error>;
@@ -73,9 +73,12 @@ pub struct ObserveArgs {
     #[arg(long, value_enum, default_value_t = ExecBackend::Production)]
     pub backend: ExecBackend,
 
-    /// Which stored representation to execute (`auto`, or a label).
-    #[arg(long, default_value = "auto")]
-    pub representation_source: String,
+    /// Where an execution representation may come from: auto, stored or
+    /// transient. Default: `--backend`'s, as `vindex3 exec` resolves it
+    /// (`stored` for `production`, so no BF16 matrix is requantised to Q8
+    /// at load unless `auto` is asked for).
+    #[arg(long, value_name = "auto|stored|transient")]
+    pub representation_source: Option<String>,
 
     /// Where the run record (JSON lines) is written.
     #[arg(long)]
@@ -169,7 +172,8 @@ pub struct ObserveArgs {
 }
 
 pub fn run(args: ObserveArgs) -> Result<(), BoxErr> {
-    let source = parse_representation_source(&args.representation_source)?;
+    let source =
+        resolve_representation_source(args.representation_source.as_deref(), args.backend)?;
     let plugins = super::plugins::Plugins::none();
     let opened = prepare(
         &args.container,

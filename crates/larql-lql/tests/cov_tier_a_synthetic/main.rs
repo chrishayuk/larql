@@ -203,7 +203,9 @@ fn make_featured_source_dir() -> tempfile::TempDir {
     );
     let mut config = VindexConfig {
         version: 2,
-        model: "test/merge-source".into(),
+        // MERGE refuses a source built from another model, so the source
+        // names the model the synthetic session is bound to.
+        model: "synthetic/tinymodel".into(),
         family: "llama".into(),
         source: None,
         checksums: None,

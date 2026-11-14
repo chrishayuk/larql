@@ -1,0 +1,53 @@
+{
+  "changed_elements": [
+    [
+      0,
+      33
+    ],
+    [
+      1,
+      40
+    ],
+    [
+      1,
+      41
+    ]
+  ],
+  "files": {
+    "base": {
+      "candidate.json": "c4492a9500829a49e32ea26294bc4086f723fd0d87b5798182a20b346ab956d2",
+      "index.json": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+      "segments/target.decoder_stack.bin": "1ae6b26382292bf208a53b545562bf707e30b38bb5a05f490b22edb6aadb5e06",
+      "segments/target.decoder_stack@Q8_0.bin": "ce9d8624980ea9d155add245e869219d78cc4823cfba73a6cb347c4d8b7939c7",
+      "segments/target.embedding.bin": "426a642b56c14f9b8e741cc10399c435a28afe85e2b62e357b922aa0fb750a57",
+      "segments/target.final_norm.bin": "70415ac26cf2e1b72e1dc932a7d36b7b88f4ae5246786ec0d2b77ab67b2d41ca",
+      "segments/target.output_head.bin": "5272c14f65e0cb9bf6b6526fcd2d1c6be0edf75c6f39a0ce1738ed9e9374a731",
+      "system_graph.json": "908a52df5c20943f271f2e8ed7d0785cac856548b926235b51a01bdac145c712"
+    },
+    "compiled": {
+      "candidate.json": "c6a0fe0c002702f6487948deab22a23075bf975278c10b86da983d03de49ce1a",
+      "index.json": "3c89c7bfe302cb102495ca39dc063e38d7420e9b626ef50bb6a2257742476693",
+      "segments/target.decoder_stack.bin": "2e0affca646867bccf2c67b7765cb5cbee886d030c7b4ea7a8e84cecb6d9191d",
+      "segments/target.decoder_stack@Q8_0.bin": "d464c139f22ff80ac767f4ad622eb9df43c8b1c29c941fd3c918f1d4da7134f1",
+      "segments/target.embedding.bin": "426a642b56c14f9b8e741cc10399c435a28afe85e2b62e357b922aa0fb750a57",
+      "segments/target.final_norm.bin": "70415ac26cf2e1b72e1dc932a7d36b7b88f4ae5246786ec0d2b77ab67b2d41ca",
+      "segments/target.output_head.bin": "5272c14f65e0cb9bf6b6526fcd2d1c6be0edf75c6f39a0ce1738ed9e9374a731",
+      "system_graph.json": "908a52df5c20943f271f2e8ed7d0785cac856548b926235b51a01bdac145c712",
+      "weight_patches.json": "3d7fabf7d367a0be5c176aee986875b1216070f91f11e32240048fc6e5cc8edd"
+    },
+    "patch.vlp": "8d3a87d9ea00e0c1a2e3905021967b23b4b2fe4e8c1e6b9b61bddba3ff9a94f9"
+  },
+  "near_cancelling_element": [
+    0,
+    33
+  ],
+  "profile": "f64-seq-rne1/v1",
+  "schema": "larql-structured-patch-golden/1",
+  "tensor": "1.mlp.down_proj.weight",
+  "unreachable_by_any_f32_delta": [
+    [
+      0,
+      33
+    ]
+  ]
+}

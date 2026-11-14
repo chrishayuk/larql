@@ -104,7 +104,6 @@ impl<'a> FfnBackend for LocalMoeFfn<'a> {
 mod tests {
     use super::*;
     use crate::ffn::moe_remote::RemoteMoeBackend;
-    use crate::ffn::RemoteMoeFfn;
     use crate::test_utils::make_test_gemma4_moe_weights;
     use ndarray::Array2;
 
@@ -130,8 +129,8 @@ mod tests {
     /// The local path must actually evaluate experts in-process, not take the
     /// dense early-return fallback. `build_moe_weights` returning `Some` means
     /// `moe_ffn_block_cpu(.., moe_remote = None)` runs `cpu_moe_forward` per
-    /// position — the local expert kernel. A *disconnected* `RemoteMoeFfn`
-    /// zeroes `h2` (its dispatch errors), so the local output must carry a
+    /// position — the local expert kernel. A *disconnected* best-effort remote
+    /// route zeroes `h2` (its dispatch errors), so the local output must carry a
     /// non-zero expert delta relative to it; we assert both signals.
     #[test]
     fn in_process_expert_path_is_live() {
@@ -157,11 +156,10 @@ mod tests {
             weights: &weights,
             index: None,
         };
+        // Best-effort by name: the zero-expert baseline is exactly the
+        // degradation the remote adapter no longer performs by default.
         let disconnected = RemoteMoeBackend::new_disconnected();
-        let remote = RemoteMoeFfn {
-            weights: &weights,
-            remote: &disconnected,
-        };
+        let remote = crate::ffn::MoeFfn::best_effort(&weights, &disconnected);
         let h_post_attn = Array2::<f32>::from_elem((2, weights.hidden_size), 0.1);
         let out_local = local
             .forward_moe_full_layer(0, &h_post_attn)

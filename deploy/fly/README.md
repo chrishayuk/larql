@@ -42,6 +42,18 @@ The live slice is already published at
 
 ## Step 2 — Deploy two shards (recommended)
 
+These apps are reachable from the public internet (`fly.toml` publishes
+both the HTTP and the gRPC port), so each one needs an API key. The start
+script refuses to boot without `API_KEY`. Pick one key for the shards and
+give it to the client as `LARQL_SHARD_API_KEY`:
+
+```bash
+export SHARD_KEY="$(openssl rand -hex 32)"
+```
+
+The client sends the key over `https://` shard URLs. It cannot send it
+over `grpcs://` yet, and refuses a gRPC shard while the key is set.
+
 Each shard serves half the expert bank. Pages for the owned half are
 pre-faulted at startup; the other half is never touched.
 
@@ -49,7 +61,7 @@ pre-faulted at startup; the other half is never touched.
 ```bash
 fly apps create larql-expert-server-a
 fly volumes create expert_data --size 25 --app larql-expert-server-a --region lhr --yes
-fly secrets set HF_TOKEN=hf_... EXPERTS="0-63" WARMUP="1" --app larql-expert-server-a
+fly secrets set HF_TOKEN=hf_... API_KEY="$SHARD_KEY" EXPERTS="0-63" WARMUP="1" --app larql-expert-server-a
 fly deploy --app larql-expert-server-a --config deploy/fly/fly.toml --remote-only
 ```
 
@@ -57,7 +69,7 @@ fly deploy --app larql-expert-server-a --config deploy/fly/fly.toml --remote-onl
 ```bash
 fly apps create larql-expert-server-b
 fly volumes create expert_data --size 25 --app larql-expert-server-b --region lhr --yes
-fly secrets set HF_TOKEN=hf_... EXPERTS="64-127" WARMUP="1" --app larql-expert-server-b
+fly secrets set HF_TOKEN=hf_... API_KEY="$SHARD_KEY" EXPERTS="64-127" WARMUP="1" --app larql-expert-server-b
 fly deploy --app larql-expert-server-b --config deploy/fly/fly.toml --remote-only
 ```
 
@@ -68,6 +80,7 @@ ever faulted into RAM.
 ## Step 3 — Point the client at the two shards
 
 ```bash
+LARQL_SHARD_API_KEY="$SHARD_KEY" \
 larql run output/gemma4-26b-a4b-q4k.vindex --max-tokens 20 \
   --moe-shards "0-63=https://larql-expert-server-a.fly.dev,\
 64-127=https://larql-expert-server-b.fly.dev" \
@@ -82,12 +95,13 @@ tolerates some page pressure under sustained load.
 ```bash
 fly apps create larql-expert-server
 fly volumes create expert_data --size 25 --app larql-expert-server --region lhr --yes
-fly secrets set HF_TOKEN=hf_... --app larql-expert-server
+fly secrets set HF_TOKEN=hf_... API_KEY="$SHARD_KEY" --app larql-expert-server
 fly deploy --app larql-expert-server --config deploy/fly/fly.toml --remote-only
 ```
 
 Test:
 ```bash
+LARQL_SHARD_API_KEY="$SHARD_KEY" \
 larql run output/gemma4-26b-a4b-q4k.vindex --max-tokens 1 \
   --moe-shards "0-127=https://larql-expert-server.fly.dev" \
   "The capital of France is"

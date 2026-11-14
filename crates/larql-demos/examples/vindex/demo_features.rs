@@ -346,7 +346,9 @@ fn main() {
     );
 
     // Apply
-    patched.apply_patch(loaded_patch);
+    patched
+        .try_apply_patch(loaded_patch)
+        .expect("patch applies");
     println!(
         "  Applied: {} patches, {} overrides",
         patched.num_patches(),

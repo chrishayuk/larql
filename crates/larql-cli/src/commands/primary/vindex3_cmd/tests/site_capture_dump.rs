@@ -29,7 +29,7 @@ fn exec_args(
         dump_layers: None,
         resume: false,
         backend,
-        representation_source: "auto".to_string(),
+        representation_source: Some("auto".to_string()),
         generate: None,
         speculate: None,
         stop_at_eos: false,

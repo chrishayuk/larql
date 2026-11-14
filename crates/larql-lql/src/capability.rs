@@ -121,8 +121,10 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | Use { .. }
         | VerifyRepresentation { .. }
         | VerifyOperator { .. }
+        | VerifyPatch { .. }
         | Insert { .. }
         | UpdateWeights { .. }
+        | RemoveDirection { .. }
         | Delete { .. }
         | Update { .. }
         | Merge { .. }
@@ -198,6 +200,7 @@ mod tests {
             r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "c");"#,
             "DELETE FROM EDGES WHERE layer = 0;",
             "UPDATE EDGES SET confidence = 0.5 WHERE layer = 0;",
+            "REMOVE DIRECTION \"u.json\" FROM \"t\" COLUMNS (1) SCALE 1.0 NUMERICS \"f64-seq-rne1/v1\";",
             "MERGE \"other.vindex\";",
             "REBALANCE;",
             "COMPACT MINOR;",

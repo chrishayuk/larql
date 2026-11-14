@@ -177,7 +177,15 @@ impl Session {
                 let mut weights = Hasher::new();
                 for (name, op) in overlay.weight_ops() {
                     weights.bytes(name.as_bytes());
-                    weights.bytes(serde_json::to_string(op).unwrap_or_default().as_bytes());
+                    let text = match op {
+                        larql_vindex::format::vindex3::weight_patch::WeightOpRef::Delta(d) => {
+                            serde_json::to_string(d)
+                        }
+                        larql_vindex::format::vindex3::weight_patch::WeightOpRef::Structured(s) => {
+                            serde_json::to_string(s)
+                        }
+                    };
+                    weights.bytes(text.unwrap_or_default().as_bytes());
                 }
                 c.insert("overlay.weight_ops", weights.finish());
 

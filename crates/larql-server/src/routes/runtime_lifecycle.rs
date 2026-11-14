@@ -614,7 +614,11 @@ mod tests {
             },
             vec![Arc::clone(&model)],
         );
-        state.sessions.get_or_create("sess1", &model).await;
+        state
+            .sessions
+            .get_or_create("sess1", &model)
+            .await
+            .expect("overlay");
         assert_eq!(state.sessions.session_count().await, 1);
 
         let result = unload_model(&state, Duration::from_secs(1)).await;
