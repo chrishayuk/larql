@@ -1,0 +1,5 @@
+USE "../structured_patch/base";
+ADD LOW RANK "mixed/operands/a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (8, 9) NUMERICS "f64-seq-rne1/v1";
+REMOVE DIRECTION "mixed/operands/u.json" FROM "1.mlp.down_proj.weight" COLUMNS (33, 34) SCALE 0.5 NUMERICS "f64-seq-rne1/v1";
+UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL IN (12, 13);
+COMPILE CURRENT INTO VINDEX "compiled";

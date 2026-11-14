@@ -1,0 +1,562 @@
+{
+  "model": "wsp",
+  "source": {
+    "identity": {
+      "artifact": "8ee884f5d5f6a5fdec8cd1b44c05d4be6dd8e52c17420d9a83b454b3ac6bf94c",
+      "semantic": {
+        "graph_hash": "908a52df5c20943f271f2e8ed7d0785cac856548b926235b51a01bdac145c712",
+        "representations": [
+          {
+            "representation": "target.decoder_stack@BF16",
+            "object": "target.decoder_stack",
+            "encoding": "BF16",
+            "segment": "segments/target.decoder_stack.bin",
+            "tensor_count": 18,
+            "payload_bytes": 238080,
+            "payload_sha256": "891e09e7df66009f0816541ec765ac29b88081087bbbbd5a276be21c154ac537",
+            "segment_sha256": "cf0b0529b3b7d72578ce8562384e9b6371bbfa73a6b7038c8a3865e887f5e8b9",
+            "codec": null
+          },
+          {
+            "representation": "target.embedding@BF16",
+            "object": "target.embedding",
+            "encoding": "BF16",
+            "segment": "segments/target.embedding.bin",
+            "tensor_count": 1,
+            "payload_bytes": 16384,
+            "payload_sha256": "350d043ca432b900df262d4bc3a3e27003feb7ae50b72a72740affb896f6e575",
+            "segment_sha256": "426a642b56c14f9b8e741cc10399c435a28afe85e2b62e357b922aa0fb750a57",
+            "codec": null
+          },
+          {
+            "representation": "target.final_norm@BF16",
+            "object": "target.final_norm",
+            "encoding": "BF16",
+            "segment": "segments/target.final_norm.bin",
+            "tensor_count": 1,
+            "payload_bytes": 128,
+            "payload_sha256": "6094f12744fea040d0092c0b196f90b61968486548093b93d7ea50d0871a776a",
+            "segment_sha256": "70415ac26cf2e1b72e1dc932a7d36b7b88f4ae5246786ec0d2b77ab67b2d41ca",
+            "codec": null
+          },
+          {
+            "representation": "target.output_head@BF16",
+            "object": "target.output_head",
+            "encoding": "BF16",
+            "segment": "segments/target.output_head.bin",
+            "tensor_count": 1,
+            "payload_bytes": 16384,
+            "payload_sha256": "07859669cd01523d90a47d133c27597a93742deb4f58072be7dd01c400ad5ee4",
+            "segment_sha256": "5272c14f65e0cb9bf6b6526fcd2d1c6be0edf75c6f39a0ce1738ed9e9374a731",
+            "codec": null
+          }
+        ],
+        "catalogue_hash": "642242656e070c49c60e1dad7d6240691cc88a0d6a4bab8399beaef09cb093ca"
+      }
+    },
+    "locator_hint": "/var/folders/s0/jr8xqb3j4knghlz30kw3pfyc0000gn/T/tmpiynh7m7i/.compiled.vindex3.wsp-95582-1794616532032814000-a"
+  },
+  "object": "",
+  "map": {
+    "name": "r0-uniform",
+    "encoding": "Q8_0",
+    "roles": [
+      "decoder-linear",
+      "recurrence-projection",
+      "recurrence-control",
+      "expert-weight"
+    ]
+  },
+  "can_represent_as": [
+    "Q8_0"
+  ],
+  "selected_representation": "source",
+  "ledger": {
+    "map_name": "r0-uniform",
+    "sealed": {
+      "target.decoder_stack\u00010.mlp.down_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.mlp.down_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "5b0751345ee110a1e69863acce206c87017577f47c9284c8e5f734a71fc09cfb",
+        "target_hash": "e6c3dbad250f48538b06885b524bb546362fdd17fc94b892983b46cf68d2000e",
+        "target_offset": 1888,
+        "target_len": 17408
+      },
+      "target.decoder_stack\u00010.mlp.gate_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.mlp.gate_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "9c0ee7b81262329e62c4a436d69535ec256af0a8a8e207d519c8ac436d4ac955",
+        "target_hash": "e7859d1629961814267d97e6040ce68e4941fa48d256a31c3a668c20dbd46ea9",
+        "target_offset": 19296,
+        "target_len": 17408
+      },
+      "target.decoder_stack\u00010.mlp.up_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.mlp.up_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "cf069f68094177a6d954c9a1e25d330a0ece5ad7045b185e7e2b980ccfb74358",
+        "target_hash": "8e636e6c8f56d430b02da910767acc9e1c43d937b66b8c3e484e8eb6b8286aa7",
+        "target_offset": 36704,
+        "target_len": 17408
+      },
+      "target.decoder_stack\u00010.self_attn.k_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.self_attn.k_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "1c754649e29000565dee313aeb75374d6526c11b3f41b7edaaf2af0d32c2c356",
+        "target_hash": "52b062f9151c1d34f09ccfa92a7dc3d57c38ddf29a5485f412edb14661e3f745",
+        "target_offset": 54240,
+        "target_len": 1088
+      },
+      "target.decoder_stack\u00010.self_attn.o_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.self_attn.o_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "742f222be118a89efeb53dfa3ff68e6b5a532a7a25af0a41b545c751ecfdcf47",
+        "target_hash": "45f2b1d341505f7dffa5ab07282dbf01969d4c89be4a22ce3dd88ca39605d412",
+        "target_offset": 55328,
+        "target_len": 4352
+      },
+      "target.decoder_stack\u00010.self_attn.q_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.self_attn.q_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "1f547bc60213d04a91c6d911395cae1e06bfafcb82cfa499d3e63fae4b92e680",
+        "target_hash": "3aceb191415360a21ca4c94f07c09ac9d94d761c8c353d43a4e7139d220126fc",
+        "target_offset": 59680,
+        "target_len": 4352
+      },
+      "target.decoder_stack\u00010.self_attn.v_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "0.self_attn.v_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "aa4d4ebacd7d277a97cedbcbffebcb0e02aca7c0fccd102b64d351138337ca17",
+        "target_hash": "18ccac044d6075464022532c612f52cfd500ca841c313ad1339da4e8d701ae33",
+        "target_offset": 64032,
+        "target_len": 1088
+      },
+      "target.decoder_stack\u00011.mlp.down_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.mlp.down_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "161ad806bfea2514aee3fb3b34e8397e9873123f0234bdd246e6bee9aa10ff51",
+        "target_hash": "ba45b260fd05dcb73f4934e2b5503d52ef69f31b1fac56702ac40e8e671f82ea",
+        "target_offset": 65248,
+        "target_len": 17408
+      },
+      "target.decoder_stack\u00011.mlp.gate_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.mlp.gate_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "63dbbf1f5ad8d5e39775fa095cd48211f3ea81f240607d54317a36ea10d6381c",
+        "target_hash": "5ff868ed1e0c1f85ba616d67d93b15c5ee79a5b1581503391289847843e5b363",
+        "target_offset": 82656,
+        "target_len": 17408
+      },
+      "target.decoder_stack\u00011.mlp.up_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.mlp.up_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "b92e8bc8e499499e7a2f5a923779634e89353d02a6000967ba2e620f13ef5d04",
+        "target_hash": "33ec9291c5416155c3dddbd1efb46ce801167689933ec3b14b8489e14ee89542",
+        "target_offset": 100064,
+        "target_len": 17408
+      },
+      "target.decoder_stack\u00011.self_attn.k_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.self_attn.k_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "b67a0d9e7e03f12afa3de938451a0e1afa0a1ca6fb6e3212c50c83960b2ca05c",
+        "target_hash": "0fe4d059fa63ad9b4b1b7fdd43ecf89a2178debd85030f31bf840f2d04c9de55",
+        "target_offset": 117600,
+        "target_len": 1088
+      },
+      "target.decoder_stack\u00011.self_attn.o_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.self_attn.o_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "a744994630505265c134249abd51330bc8395f532c2ca830ad9a1c1fbd176ec7",
+        "target_hash": "325cce316fa9185419b85376b05d1c5c3370068793831f876dae9bd24d7e7875",
+        "target_offset": 118688,
+        "target_len": 4352
+      },
+      "target.decoder_stack\u00011.self_attn.q_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.self_attn.q_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "b640f5ff8b1a9973edf1d6e33d3a27016c22d1db8b377aeeb1d3b6c90db1cfac",
+        "target_hash": "2f08f2e0cffffc6899e5847fbe634589eb6d2da00e282e1c787aab52fee1ab37",
+        "target_offset": 123040,
+        "target_len": 4352
+      },
+      "target.decoder_stack\u00011.self_attn.v_proj.weight": {
+        "object": "target.decoder_stack",
+        "tensor": "1.self_attn.v_proj.weight",
+        "encoding": "Q8_0",
+        "source_hash": "3caaf855d56977451c45b6d9a2e3f8a8922fdc33e346824bbea5fd65a661a7bd",
+        "target_hash": "7ff968aad7b04d3d2ada1d9e3e8695a1b6736671d192239dd654b8daa033473c",
+        "target_offset": 127392,
+        "target_len": 1088
+      }
+    }
+  },
+  "authority": {
+    "schema": "represent-candidate-authority/v1",
+    "state_semantics": "represent-state-id/v2",
+    "surface": {
+      "entries": [
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.input_layernorm.weight",
+          "role": "small-vector",
+          "shape": [
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.mlp.down_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            256
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.mlp.gate_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            256,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.mlp.up_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            256,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.post_attention_layernorm.weight",
+          "role": "small-vector",
+          "shape": [
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.k_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            16,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.o_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.q_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.v_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            16,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.input_layernorm.weight",
+          "role": "small-vector",
+          "shape": [
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.mlp.down_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            256
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.mlp.gate_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            256,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.mlp.up_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            256,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.post_attention_layernorm.weight",
+          "role": "small-vector",
+          "shape": [
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.k_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            16,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.o_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.q_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            64,
+            64
+          ]
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.v_proj.weight",
+          "role": "decoder-linear",
+          "shape": [
+            16,
+            64
+          ]
+        },
+        {
+          "object": "target.embedding",
+          "tensor": "weight",
+          "role": "embedding",
+          "shape": [
+            128,
+            64
+          ]
+        },
+        {
+          "object": "target.final_norm",
+          "tensor": "weight",
+          "role": "small-vector",
+          "shape": [
+            64
+          ]
+        },
+        {
+          "object": "target.output_head",
+          "tensor": "weight",
+          "role": "output-head",
+          "shape": [
+            128,
+            64
+          ]
+        }
+      ]
+    },
+    "decisions": {
+      "decisions": [
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.input_layernorm.weight",
+          "encoding": "Source"
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.mlp.down_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.mlp.gate_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.mlp.up_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.post_attention_layernorm.weight",
+          "encoding": "Source"
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.k_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.o_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.q_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "0.self_attn.v_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.input_layernorm.weight",
+          "encoding": "Source"
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.mlp.down_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.mlp.gate_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.mlp.up_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.post_attention_layernorm.weight",
+          "encoding": "Source"
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.k_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.o_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.q_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.decoder_stack",
+          "tensor": "1.self_attn.v_proj.weight",
+          "encoding": {
+            "Compiled": "Q8_0"
+          }
+        },
+        {
+          "object": "target.embedding",
+          "tensor": "weight",
+          "encoding": "Source"
+        },
+        {
+          "object": "target.final_norm",
+          "tensor": "weight",
+          "encoding": "Source"
+        },
+        {
+          "object": "target.output_head",
+          "tensor": "weight",
+          "encoding": "Source"
+        }
+      ]
+    },
+    "payloads": {
+      "target.decoder_stack": {
+        "file": "segments/target.decoder_stack@Q8_0.bin",
+        "len": 128480,
+        "sha256": "07d5cffddc3402d80a0bbb64902c9648a7f0fcb4bef9e50b4bcc8801991d8de7"
+      },
+      "target.embedding": {
+        "file": "segments/target.embedding.bin",
+        "len": 16544,
+        "sha256": "426a642b56c14f9b8e741cc10399c435a28afe85e2b62e357b922aa0fb750a57"
+      },
+      "target.final_norm": {
+        "file": "segments/target.final_norm.bin",
+        "len": 272,
+        "sha256": "70415ac26cf2e1b72e1dc932a7d36b7b88f4ae5246786ec0d2b77ab67b2d41ca"
+      },
+      "target.output_head": {
+        "file": "segments/target.output_head.bin",
+        "len": 16544,
+        "sha256": "5272c14f65e0cb9bf6b6526fcd2d1c6be0edf75c6f39a0ce1738ed9e9374a731"
+      }
+    },
+    "executable_root": {
+      "kind": "vindex3",
+      "semantic_digest": "b08291bff5b35546431b79301b4f56567f8ab8a82659334b6ca9b8a7c1af308e"
+    },
+    "binding_sha256": "e5125b8929a1e9ba22acda7a855745b734304740d0554fd7b904b921afb04ec7",
+    "state_id": "07f76dfe15be5be7a1fbcd7c40b5f309f3df38af5ad1453aca7e49d0a38b4fe2"
+  }
+}

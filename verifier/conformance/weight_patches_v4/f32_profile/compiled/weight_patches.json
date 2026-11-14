@@ -1,0 +1,161 @@
+{
+  "schema": "weight-patches/v4",
+  "rounding": "bf16-rne-of-exact-sum",
+  "writer": "larql-vindex weight_patch v1",
+  "source": {
+    "model": "wsp",
+    "index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+    "canonical": {
+      "payload_sha256": "fc7c2807decd21c939155e6f84f25d351ce8dff86bfc1b6070d3a8158c1d6fad",
+      "segment_sha256": "1ae6b26382292bf208a53b545562bf707e30b38bb5a05f490b22edb6aadb5e06"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "payload_sha256": "57ef1b1c57bf1b9bd7463ad1d1e788800a2c469e4d387a860b3a27a59e051b80",
+        "segment_sha256": "ce9d8624980ea9d155add245e869219d78cc4823cfba73a6cb347c4d8b7939c7",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  },
+  "targets": [
+    {
+      "object": "target.decoder_stack",
+      "representation": "target.decoder_stack@BF16",
+      "tensor": "1.self_attn.o_proj.weight",
+      "dtype": "BF16",
+      "shape": [
+        64,
+        64
+      ],
+      "operations": [
+        {
+          "op": "low_rank_columns_weight",
+          "source": {
+            "model": "wsp",
+            "index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+            "representation": "target.decoder_stack@BF16",
+            "payload_sha256": "fc7c2807decd21c939155e6f84f25d351ce8dff86bfc1b6070d3a8158c1d6fad"
+          },
+          "tensor": "1.self_attn.o_proj.weight",
+          "numerics": "f32-seq-rne1/v1",
+          "rank": 1,
+          "a": [
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000",
+            "3e000000",
+            "be000000",
+            "bd800000",
+            "00000000",
+            "3d800000"
+          ],
+          "b": [
+            "3f400000",
+            "bf800000",
+            "40000000",
+            "3e000000"
+          ],
+          "columns": [
+            0,
+            1,
+            2,
+            63
+          ],
+          "origin": "conformance f32_profile",
+          "digest": "e263cfc55e6bf124dcd4c69c8769e45c54c671c6464d38a62e482e15069daaa1",
+          "operands_sha256": {
+            "a": "52309e964e577344ea8e36be92fccf87edd053009a163b89e19ba0564e5b1b36",
+            "b": "e16f27e501569fa12bbeb8f32720b63763299d2a4507a77ac6d8f3c63a44c6ee"
+          },
+          "changed_elements": 204
+        }
+      ],
+      "base_tensor_sha256": "05ea6083ae8910f0c53eb7449b8c7db6de3ea5193610afc8df787ef6ed08a19c",
+      "result_tensor_sha256": "a744994630505265c134249abd51330bc8395f532c2ca830ad9a1c1fbd176ec7",
+      "changed_elements": 204
+    }
+  ],
+  "origins": [
+    "e263cfc55e6bf124dcd4c69c8769e45c54c671c6464d38a62e482e15069daaa1"
+  ],
+  "result": {
+    "canonical": {
+      "payload_sha256": "891e09e7df66009f0816541ec765ac29b88081087bbbbd5a276be21c154ac537",
+      "segment_sha256": "cf0b0529b3b7d72578ce8562384e9b6371bbfa73a6b7038c8a3865e887f5e8b9"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "source_representation_digest": "891e09e7df66009f0816541ec765ac29b88081087bbbbd5a276be21c154ac537",
+        "payload_sha256": "d405416db8b6a3c2c380121a155a321de8babd205f2522284f5ff4556dd7ee5c",
+        "segment_sha256": "07d5cffddc3402d80a0bbb64902c9648a7f0fcb4bef9e50b4bcc8801991d8de7",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  }
+}
