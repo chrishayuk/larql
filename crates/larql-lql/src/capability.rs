@@ -127,6 +127,7 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | UpdateWeights { .. }
         | RemoveDirection { .. }
         | AddLowRank { .. }
+        | DiscardWeightEdits
         | Delete { .. }
         | Update { .. }
         | Merge { .. }

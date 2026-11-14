@@ -85,6 +85,9 @@ impl Parser {
             Token::Keyword(Keyword::Compact) => self.parse_compact(),
             // `ADD` is a word in this position, not a reserved keyword.
             Token::Ident(ref s) if s.eq_ignore_ascii_case("ADD") => self.parse_add_low_rank(),
+            Token::Ident(ref s) if s.eq_ignore_ascii_case("DISCARD") => {
+                self.parse_discard_weight_edits()
+            }
             _ => Err(ParseError(format!(
                 "expected statement keyword, got {:?}",
                 self.peek()

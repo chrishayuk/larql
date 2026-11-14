@@ -244,6 +244,10 @@ pub enum Statement {
         contract: String,
         base: String,
     },
+    /// `DISCARD WEIGHT EDITS`: drop every stored-weight op staged directly in the session (`UPDATE WEIGHTS`,
+    /// `REMOVE DIRECTION`, `ADD LOW RANK`), and the copies an open `BEGIN PATCH` recording holds. Ops carried by
+    /// an applied patch are that patch's: `REMOVE PATCH` removes them. Nothing is written.
+    DiscardWeightEdits,
     Stats {
         vindex: Option<String>,
     },
@@ -328,6 +332,7 @@ impl Statement {
             Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
             Statement::VerifyPatch { .. } => "VERIFY PATCH",
             Statement::VerifyLedger { .. } => "VERIFY LEDGER",
+            Statement::DiscardWeightEdits => "DISCARD WEIGHT EDITS",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",

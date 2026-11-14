@@ -439,6 +439,12 @@ impl KnowledgeOverlay {
         self.stage(WeightOp::LowRankColumns(op))
     }
 
+    /// Drop every stored-weight op staged directly in the session and return how many there were. Ops carried
+    /// by applied patches are untouched: they are removed with their patch.
+    pub fn discard_session_weight_ops(&mut self) -> usize {
+        std::mem::take(&mut self.weight_session).len()
+    }
+
     fn stage(&mut self, op: WeightOp) -> Result<(), WeightPatchError> {
         op.as_ref().check_intact()?;
         self.conflict_with_existing(&[op.as_ref()])?;

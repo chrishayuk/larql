@@ -112,6 +112,15 @@ impl Parser {
         Ok(columns)
     }
 
+    /// `DISCARD WEIGHT EDITS`. All three are read as words in this position, not reserved.
+    pub(crate) fn parse_discard_weight_edits(&mut self) -> Result<Statement, ParseError> {
+        self.expect_ident_eq("DISCARD")?;
+        self.expect_ident_eq("WEIGHT")?;
+        self.expect_ident_eq("EDITS")?;
+        self.eat_semicolon();
+        Ok(Statement::DiscardWeightEdits)
+    }
+
     /// `ADD LOW RANK "<operand file>" TO "<tensor>" COLUMNS (<n>, …) NUMERICS "<profile>"`. `ADD`, `LOW`,
     /// `RANK`, `COLUMNS` and `NUMERICS` are read as words in this position, not reserved. The rank and both
     /// operands are in the file, as exact bits.

@@ -6,6 +6,7 @@
 
 mod cross_language;
 mod direct;
+mod discard;
 mod golden;
 mod lifecycle;
 mod low_rank;

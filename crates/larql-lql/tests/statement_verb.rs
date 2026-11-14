@@ -57,6 +57,7 @@ const CASES: &[(&str, &str)] = &[
         "VERIFY LEDGER 'm' USING CONTRACT 'c' FROM 'b';",
         "VERIFY LEDGER",
     ),
+    ("DISCARD WEIGHT EDITS;", "DISCARD WEIGHT EDITS"),
     ("STATS;", "STATS"),
     ("SHOW COMPACT STATUS;", "SHOW COMPACT STATUS"),
     (
