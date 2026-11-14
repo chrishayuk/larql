@@ -656,8 +656,7 @@ class Judge:
         if src.get("model") != self.base_index.get("model"):
             L.violate("source.model", f"{src.get('model')!r} is not the base's model {self.base_index.get('model')!r}")
             ok = False
-        canon = src.get("canonical") or {}
-        entry = self.bc.reps[self.rep]
+        canon, entry = canonical_object(src), self.bc.reps[self.rep]
         for field in CANONICAL_INDEX_FIELDS:
             if canon.get(field) != entry[field]:
                 L.violate(f"source.canonical.{field}", f"is not the base's {self.rep} {field}")
@@ -1294,7 +1293,7 @@ class Judge:
         if not isinstance(res, dict):
             L.violate("result", "the ledger has no result object")
             return
-        canon, entry = res.get("canonical") or {}, self.nc.reps[self.rep]
+        canon, entry = canonical_object(res), self.nc.reps[self.rep]
         for field in CANONICAL_INDEX_FIELDS:
             if canon.get(field) != entry[field]:
                 L.violate(f"result.canonical.{field}", f"is not the compiled {self.rep} {field}")
@@ -1317,6 +1316,13 @@ class Judge:
             if d.get("source_representation_digest") != entry["payload_sha256"]:
                 L.violate(f"result.derived[{rid}]", "does not derive from the compiled canonical payload")
         self.engine["encoders"] = {d.get("representation"): d.get("encoder") for d in derived if isinstance(d, dict)}
+
+
+def canonical_object(section: dict) -> dict:
+    """A ledger section's `canonical` object. Anything that is not an object holds no field, so every field of it is
+    reported as not the container's, as for an absent one."""
+    canon = section.get("canonical")
+    return canon if isinstance(canon, dict) else {}
 
 
 def could_not(out: dict, *reasons: str) -> dict:

@@ -324,8 +324,13 @@ def _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha, new_c) -
         violations += len(only_new)
         offending.append({"name": "/".join(only_new[0]), "violations": len(only_new), "detail": "tensors absent from the base"})
     offending.sort(key=lambda o: -o["violations"])
+    if len(offending) > OFFENDING_LIMIT:  # the protocol: `offending` sums to `violations`, so fold the tail into one
+        tail = offending[OFFENDING_LIMIT - 1:]
+        offending = offending[:OFFENDING_LIMIT - 1] + [{
+            "name": f"{len(tail)} further tensors", "violations": sum(o["violations"] for o in tail),
+            "detail": "not listed one by one"}]
     out.update(status="violated" if violations else "satisfied", violations=violations,
-               offending=offending[:OFFENDING_LIMIT],
+               offending=offending,
                measurements=[{"name": "elements compared", "value": str(checked)},
                              {"name": "elements expected to change", "value": str(expected_changes)},
                              {"name": "other canonical tensors compared byte for byte (not BF16)", "value": str(len(base_other))},
