@@ -74,6 +74,11 @@ fn compact_into(src: &Path, out: &Path) -> Result<CompactReport, VindexError> {
     for entry in index.representations.values() {
         referenced.insert(entry.segment.clone());
     }
+    // The weight-patch ledger is named by the index and describes the segments carried here: it is part of the
+    // container, and an index that names a ledger the output lacks is incoherent.
+    if let Some(ledger) = &index.weight_patches {
+        referenced.insert(ledger.clone());
+    }
 
     let mut report = CompactReport {
         carried_segments: 0,
@@ -120,6 +125,13 @@ fn compact_into(src: &Path, out: &Path) -> Result<CompactReport, VindexError> {
             return Err(VindexError::Parse(format!(
                 "referenced segment `{}` is missing from the source container",
                 entry.segment
+            )));
+        }
+    }
+    if let Some(ledger) = &index.weight_patches {
+        if !out.join(ledger).exists() {
+            return Err(VindexError::Parse(format!(
+                "the weight-patch ledger `{ledger}` the index names is missing from the source container"
             )));
         }
     }

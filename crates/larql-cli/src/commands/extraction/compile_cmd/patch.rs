@@ -13,27 +13,49 @@ use super::edge::install_edge;
 use super::save::{copy_model_config, merge_for_save, write_safetensors};
 use super::CompileArgs;
 
+/// What this mode calls each kind of op it does not install, for the refusal.
+fn uncompilable_kind(op: &larql_vindex::PatchOp) -> Option<&'static str> {
+    use larql_vindex::PatchOp;
+    match op {
+        PatchOp::Insert { .. } => None,
+        PatchOp::Update { .. } => Some("update"),
+        PatchOp::Delete { .. } => Some("delete"),
+        PatchOp::InsertKnn { .. } => Some("insert_knn"),
+        PatchOp::DeleteKnn { .. } => Some("delete_knn"),
+        PatchOp::WeightDelta(_) => Some("weight_delta"),
+        PatchOp::StructuredWeight(_) => Some("structured_weight"),
+        PatchOp::LowRankColumnsWeight(_) => Some("low_rank_columns_weight"),
+    }
+}
+
+/// Refuse a patch set holding any op this mode does not install. Patch mode writes one FFN edge per `Insert`;
+/// it has no form for a tombstone, a relabel, a retrieval entry or a stored-weight edit. Compiling the inserts
+/// and reporting success would silently drop the rest, so the whole set is refused and nothing is written.
+fn refuse_uncompilable(ops: &[larql_vindex::PatchOp]) -> Result<(), String> {
+    let mut kinds: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for kind in ops.iter().filter_map(uncompilable_kind) {
+        *kinds.entry(kind).or_default() += 1;
+    }
+    if kinds.is_empty() {
+        return Ok(());
+    }
+    let held: Vec<String> = kinds.iter().map(|(k, n)| format!("{n} {k}")).collect();
+    Err(format!(
+        "patch mode compiles `insert` ops into FFN weights and cannot compile the other ops these patches \
+         hold ({}); nothing was written. Stored-weight ops (weight_delta, structured_weight, \
+         low_rank_columns_weight) compile into a VINDEX3 container with APPLY PATCH and \
+         COMPILE CURRENT INTO VINDEX",
+        held.join(", ")
+    ))
+}
+
 pub fn run(args: CompileArgs) -> Result<(), Box<dyn std::error::Error>> {
     let vindex_path = args.vindex.as_ref().unwrap();
     eprintln!("LARQL AOT Compiler — patch mode");
     eprintln!("  base model: {}", args.base.display());
     eprintln!("  vindex:     {}", vindex_path.display());
     eprintln!("  output:     {}", args.output.display());
-
-    eprintln!("\nLoading base model...");
-    let weights = larql_models::loading::load_model_dir(&args.base)?;
-    let config = weights.arch.config();
-    eprintln!(
-        "  {} layers, hidden={}, ffn={}",
-        config.num_layers, config.hidden_size, config.intermediate_size
-    );
-
-    let gate_pattern = detect_ffn_pattern(&weights.tensors, "gate");
-    let up_pattern = detect_ffn_pattern(&weights.tensors, "up");
-    let down_pattern = detect_ffn_pattern(&weights.tensors, "down");
-    eprintln!("  gate pattern: {}", gate_pattern.replace("{}", "N"));
-    eprintln!("  up pattern:   {}", up_pattern.replace("{}", "N"));
-    eprintln!("  down pattern:  {}", down_pattern.replace("{}", "N"));
 
     eprintln!("\nLoading patches...");
     let patch_files: Vec<PathBuf> = if vindex_path.is_file() {
@@ -58,6 +80,23 @@ pub fn run(args: CompileArgs) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  no patches found — nothing to compile");
         return Ok(());
     }
+    // Before the model is loaded and long before anything is written: every op is installed, or none is.
+    refuse_uncompilable(&all_ops)?;
+
+    eprintln!("\nLoading base model...");
+    let weights = larql_models::loading::load_model_dir(&args.base)?;
+    let config = weights.arch.config();
+    eprintln!(
+        "  {} layers, hidden={}, ffn={}",
+        config.num_layers, config.hidden_size, config.intermediate_size
+    );
+
+    let gate_pattern = detect_ffn_pattern(&weights.tensors, "gate");
+    let up_pattern = detect_ffn_pattern(&weights.tensors, "up");
+    let down_pattern = detect_ffn_pattern(&weights.tensors, "down");
+    eprintln!("  gate pattern: {}", gate_pattern.replace("{}", "N"));
+    eprintln!("  up pattern:   {}", up_pattern.replace("{}", "N"));
+    eprintln!("  down pattern:  {}", down_pattern.replace("{}", "N"));
 
     eprintln!("\nCompiling patches into weights...");
     let mut modified: HashMap<String, ArcArray2<f32>> = HashMap::new();
