@@ -197,6 +197,9 @@ The exit status, stdout and the rules for an acceptable answer are as above, wit
 | `derived_from` | What the expected bytes were derived from: the container's own canonical tensor bytes, by the rule the pack names |
 | `derivations` | One entry per representation judged: the pack, its canonical source and that source's payload digest, the derivation rule and the codec |
 
+A `violated` answer may carry `reasons` too: the parts of the container that could not be judged, beside the
+violations found in the parts that were. A consumer shows both.
+
 There's no `source`: the container is its own. `Q8_0_PACK_DERIVATION` is the one contract. It says nothing about whether
 the canonical weights are the intended ones, whether the right tensors were quantised, or whether a kernel reads the pack:
 see the contract document, §1 and §4.

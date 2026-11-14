@@ -310,13 +310,18 @@ def evaluate(out: dict, container: str) -> dict:
     judge = Judge(container)
     try:
         judge.run()
+    except RecursionError:
+        judge.cannot("an input can't be read: it is nested more deeply than this reader follows")
     except RuntimeError as e:
         judge.cannot(f"the platform cannot run the rule: {e}")
     except BAD_INPUT as e:
         judge.cannot(f"an input can't be read: {type(e).__name__}: {e}")
     files = getattr(judge, "files", None)
     if files is not None:
-        out["container"]["sha256"] = container_digest(files)
+        try:
+            out["container"]["sha256"] = container_digest(files)
+        except ValueError:  # a file name that is not text (non-UTF-8 bytes, on a file system that allows them)
+            judge.cannot("the container holds a file whose name is not valid UTF-8, so it has no container digest")
     c = judge.counts
     out["measurements"] = [
         {"name": "re-derived representations judged", "value": str(c["representations"])},

@@ -9,6 +9,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from fractions import Fraction
 
 import numpy as np
@@ -290,7 +291,9 @@ class WrongPacksWithRightDigests(Fixture):
         self.assertIn("first is block 0 (row 0, columns 0..=31)", self.findings(out))
 
     def test_one_code_or_one_scale_bit(self):
-        for at, what in ((2 + 5, "0 stored scales, 1 codes"), (0, "1 stored scales, 0 codes")):
+        last = P.BLOCK_BYTES - 1
+        for at, what in ((2 + 5, "0 stored scales, 1 codes"), (0, "1 stored scales, 0 codes"),
+                         (1, "1 stored scales, 0 codes"), (last, "0 stored scales, 1 codes")):
             with self.subTest(at=at):
                 root = self.copy()
                 seg, start, _ = location(root, PACK, QUANTISED)
@@ -423,6 +426,11 @@ class StructuralFaults(Fixture):
                 self.edit_index(root, lambda d: d["representations"][PACK].update(compiled_from=source))
                 self.assertViolated(root, "compiled_from")
 
+    def test_a_source_that_is_itself_re_derived_is_not_a_canonical_source(self):
+        root = self.copy()
+        self.edit_index(root, lambda d: d["representations"][CANONICAL].update(compiled_from=EMBEDDING))
+        self.assertViolated(root, f"compiled_from {CANONICAL!r} is not the canonical BF16 representation")
+
     def test_a_violation_is_reported_beside_a_part_that_could_not_be_judged(self):
         # One pack has a damaged block; another names a rule this contract does not implement.
         root = self.copy()
@@ -486,6 +494,40 @@ class NeverAVacuousPass(Fixture):
                 root = self.copy()
                 self.edit_index(root, lambda d: d["representations"][PACK].update(encoder=encoder))
                 self.assertNotJudged(self.judge(root), "this contract implements")
+
+    def test_a_re_derived_representation_in_another_encoding_is_not_passed_over(self):
+        root = self.copy()
+        self.edit_index(root, lambda d: d["representations"][EMBEDDING].update(compiled_from=CANONICAL))
+        self.assertNotJudged(self.judge(root), "is not one this contract derives")
+
+    def test_a_file_name_that_is_not_text_is_not_an_exception(self):
+        # Such a name cannot be created on every file system, so the listing is given one: it arrives from the
+        # operating system surrogate-escaped, which is what a strict encode refuses.
+        real = P.file_digests
+
+        def with_a_bad_name(root):
+            files = real(root)
+            files["segments/bad\udcff"] = (0, hashlib.sha256(b"").hexdigest())
+            return files
+
+        for tamper in (False, True):
+            with self.subTest(pack_also_wrong=tamper):
+                root = self.copy()
+                if tamper:
+                    patch_bytes(root, PACK, QUANTISED, 2, b"\x7f")
+                    reseal(root, PACK)
+                with mock.patch.object(P, "file_digests", with_a_bad_name):
+                    out = self.judge(root)
+                self.assertEqual(out["status"], CNE, out["reasons"])
+                self.assertEqual((out["violations"], out["offending"]), (0, []))
+
+    def test_an_index_nested_too_deeply_is_an_input_fault_not_a_platform_one(self):
+        root = self.copy()
+        with open(os.path.join(root, "index.json"), "w") as f:
+            f.write("[" * 100000 + "]" * 100000)
+        out = self.judge(root)
+        self.assertEqual(out["status"], CNE)
+        self.assertNotIn("platform", " ".join(out["reasons"]))
 
     def test_a_container_the_reader_refuses_is_not_an_exception(self):
         root = self.copy()

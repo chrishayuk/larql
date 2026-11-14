@@ -73,10 +73,13 @@ not it has one:
    compared, stored scale and all 32 codes. Nothing is sampled and no digest stands in for a comparison.
 7. **Every carried tensor** has the canonical dtype and the canonical bytes.
 
-`status` is `satisfied` only when every representation, tensor and block was derived and matched. One differing
-block is a violation, counted per block; a pack that fails item 2, 4 or 5 is a violation too. A violation found is
+`status` is `satisfied` only when every representation, tensor and block was derived and matched. `violations`
+counts findings in their own units: one per differing block of a quantised tensor, one per carried tensor that
+differs, and one per pack that fails item 2, 4 or 5. A violation found is
 reported as `violated` even when another part could not be judged, and the answer then lists the unjudged parts
-under `reasons`: the violation count is of what was judged, not of the container. With no violation, any part that
+under `reasons`: the violation count is of what was judged, not of the container. If the reader refuses a
+segment outright, judging stops there: packs after it in name order are neither judged nor listed, and the one
+reason given is the refusal. With no violation, any part that
 could not be judged makes the whole answer `could_not_evaluate`: an unjudged part is never folded into
 `satisfied`. A container with no re-derived representation, and a pack for which no Q8_0 block was derived, are
 `could_not_evaluate`, not vacuously satisfied.
@@ -94,8 +97,12 @@ The answer lists these under `not established`:
 Two limits of scope that follow from §3:
 
 - **Other encodings.** A re-derived representation in any encoding but Q8_0 (a Q4_K pack beside the Q8_0 one, say)
-  makes the whole container `could_not_evaluate`, not only that representation. An honest multi-pack container is
-  therefore not judged by this contract as it stands.
+  is not judged, so the container can never be `satisfied`: it is `could_not_evaluate`, or `violated` if a Q8_0
+  pack beside it was reached and found wrong. An encoding the container reader itself refuses stops the judgement
+  before any pack is reached. An honest multi-pack container is therefore not judged by this contract as it stands.
+- **The files of the container.** A file whose name is not valid UTF-8 leaves the container without a digest, and
+  the answer is `could_not_evaluate`. Keys this contract does not read, in a segment header or a tensor entry, are
+  ignored.
 - **Non-finite elements are looked for only in quantised tensors.** A carried tensor is compared byte for byte and
   nothing else: a NaN carried identically is not a finding.
 

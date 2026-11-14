@@ -200,11 +200,11 @@ def evaluate_pack(contract: str, container: str) -> dict:
     # The digest and the bytes judged came from separate reads, so a verdict needs the input not to have changed.
     try:
         unchanged = checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
-    except OSError:
+    except (OSError, ValueError):  # ValueError: a file name with no digest (not valid UTF-8)
         unchanged = False
     if not unchanged:
         out.update(violations=0, offending=[])
-        q8_0_t2.could_not(out, "the container changed during the evaluation")
+        q8_0_t2.could_not(out, "the container changed during the evaluation, or has no digest to hold it to")
     return out
 
 
