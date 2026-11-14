@@ -191,9 +191,18 @@ struct Cli {
     #[arg(long, default_value = "9090")]
     port: u16,
 
-    /// Bind address.
-    #[arg(long, default_value = "0.0.0.0")]
+    /// Bind address for every listener (HTTP, grid gRPC, QUIC). Loopback
+    /// by default; a non-loopback address with a grid needs `--grid-key`
+    /// (or `LARQL_GRID_KEY`), otherwise `--insecure-public`.
+    #[arg(long, default_value = larql_router::exposure::DEFAULT_HOST)]
     host: String,
+
+    /// Allow binding a non-loopback `--host` without a grid key (or, with
+    /// no `--grid-port`, at all). Without it the router refuses to start
+    /// unauthenticated on a network address, because the grid accepts
+    /// registrations and admin RPCs from anyone who can reach it.
+    #[arg(long)]
+    insecure_public: bool,
 
     /// Per-request timeout to backend shards, in seconds.
     #[arg(long, default_value = "120")]
@@ -207,7 +216,8 @@ struct Cli {
     /// Servers must pass the same key via --grid-key to be accepted, and
     /// the admin subcommands (`status`, `gaps`, `drain`, `assign`) send it
     /// too: with a key set, every grid RPC is refused without it.
-    /// If not set, the grid port is open to anyone (development only).
+    /// If not set, the grid port is open to anyone who can reach it, so
+    /// a non-loopback `--host` is refused unless `--insecure-public`.
     #[arg(long, env = "LARQL_GRID_KEY")]
     grid_key: Option<String>,
 
@@ -414,6 +424,9 @@ async fn run_admin(
     Ok(())
 }
 
+/// Process exit status for a daemon configuration the router refuses.
+const EXIT_CONFIG_ERROR: i32 = 1;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
@@ -437,7 +450,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         larql_router::cli_helpers::validate_daemon_inputs(cli.shards.as_deref(), cli.grid_port)
     {
         eprintln!("error: {msg}");
-        std::process::exit(1);
+        std::process::exit(EXIT_CONFIG_ERROR);
+    }
+
+    let exposure = larql_router::exposure::BindRequest {
+        host: &cli.host,
+        grid_enabled: cli.grid_port.is_some(),
+        grid_key: cli.grid_key.as_deref(),
+        insecure_public: cli.insecure_public,
+    };
+    if let Err(msg) = exposure.check_network_exposure() {
+        eprintln!("error: {msg}");
+        std::process::exit(EXIT_CONFIG_ERROR);
     }
 
     let client = larql_router::cli_helpers::build_shard_client(cli.timeout_secs)?;

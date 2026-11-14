@@ -9,7 +9,7 @@ use super::router::{rms_norm, MoeRouterWeights};
 use super::shard::{Shard, ShardTransport};
 use super::wire::{ExpertCallItem, ExpertResultItem};
 
-mod predispatch;
+pub(super) mod predispatch;
 mod stream;
 
 /// Per-shard call list element: (position, expert_id, residual).
@@ -154,7 +154,19 @@ impl RemoteMoeBackend {
                     );
                 }
                 let call_start = std::time::Instant::now();
-                let result = shards[*si].call_layer_batch(layer, h, ids, ws);
+                let result = shards[*si]
+                    .call_layer_batch(layer, h, ids, ws)
+                    .and_then(|out| {
+                        if out.len() == hidden {
+                            Ok(out)
+                        } else {
+                            Err(RemoteMoeError::BadResponse(format!(
+                                "shard returned {} floats, expected {hidden}",
+                                out.len()
+                            )))
+                        }
+                    })
+                    .map_err(|e| e.at_shard(shard_url, &[layer], ids));
                 if shard_timing {
                     let done_us = layer_start.elapsed().as_secs_f64() * 1e6;
                     let wall_us = call_start.elapsed().as_secs_f64() * 1e6;
@@ -170,13 +182,9 @@ impl RemoteMoeBackend {
         // 4. Sum shard partials into the layer's combined expert output.
         let mut out = vec![0.0f32; hidden];
         for result in results_per_shard {
+            // Any shard failing fails the layer: a missing partial sum is
+            // missing experts, and summing the rest would hide that.
             let shard_out = result?;
-            if shard_out.len() != hidden {
-                return Err(RemoteMoeError::BadResponse(format!(
-                    "shard returned {} floats, expected {hidden}",
-                    shard_out.len()
-                )));
-            }
             for (acc, &v) in out.iter_mut().zip(shard_out.iter()) {
                 *acc += v;
             }
@@ -257,7 +265,12 @@ impl RemoteMoeBackend {
                             residual: residual.clone(),
                         })
                         .collect();
-                    (*si, shards[*si].call_batch(&calls))
+                    let result = shards[*si].call_batch(&calls).map_err(|e| {
+                        let expert_ids: Vec<u32> =
+                            items.iter().map(|(_, eid, _)| *eid as u32).collect();
+                        e.at_shard(&shards[*si].config.url, &[layer], &expert_ids)
+                    });
+                    (*si, result)
                 })
                 .collect();
 

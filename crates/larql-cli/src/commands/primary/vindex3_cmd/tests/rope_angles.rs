@@ -11,7 +11,7 @@ use super::fixture_dir;
 
 const TOKENS: &str = "1,2,3";
 
-fn exec_args(container: std::path::PathBuf, backend: ExecBackend) -> ExecArgs {
+pub(super) fn exec_args(container: std::path::PathBuf, backend: ExecBackend) -> ExecArgs {
     ExecArgs {
         container,
         component: "target".to_string(),
@@ -19,7 +19,7 @@ fn exec_args(container: std::path::PathBuf, backend: ExecBackend) -> ExecArgs {
         dump_layers: None,
         resume: false,
         backend,
-        representation_source: "auto".to_string(),
+        representation_source: Some("auto".to_string()),
         generate: None,
         speculate: None,
         stop_at_eos: false,
@@ -50,7 +50,7 @@ fn exec_args(container: std::path::PathBuf, backend: ExecBackend) -> ExecArgs {
     }
 }
 
-fn encoded_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+pub(super) fn encoded_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = fixture_dir(true);
     let container = dir.path().join("container");
     run(Vindex3Command::Encode(EncodeArgs {
@@ -62,7 +62,7 @@ fn encoded_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, container)
 }
 
-fn read_json(path: &std::path::Path) -> serde_json::Value {
+pub(super) fn read_json(path: &std::path::Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
 }
 

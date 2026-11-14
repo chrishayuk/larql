@@ -187,6 +187,92 @@ class Refusals(Base):
         self.assertEqual(out["status"], "could_not_evaluate")
 
 
+OTHER_CANONICAL = "target.decoder_stack@Q8_0"
+
+
+def as_canonical(index: dict) -> None:
+    """Make the Q8_0 representation canonical (no `compiled_from`): a non-BF16 tensor the compile must leave alone."""
+    e = index["representations"][OTHER_CANONICAL]
+    e.pop("compiled_from")
+    e.pop("source_representation_digest")
+
+
+def flip_last_byte(rid: str, seg: bytes) -> bytes:
+    return seg[:-1] + bytes([seg[-1] ^ 1]) if rid == OTHER_CANONICAL else seg
+
+
+class NonBf16Canonical(Base):
+    """`everything else is unchanged` covers canonical tensors that are not BF16: they are compared byte for byte."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.base)
+        self.base_q8 = synth.write_container(self.base, self.written.source, hooks=synth.Hooks(index=as_canonical)).q8_bytes
+        self.write_patch()
+
+    def compiled_with(self, name, hooks):
+        src = dict(self.written.source)
+        src[HF_KEY] = self.right()
+        root = os.path.join(self.d, name)
+        # canonical means the compile leaves it alone: the edited tensor's Q8_0 bytes stay the base's
+        synth.write_container(root, src, hooks=hooks, q8_override=self.base_q8)
+        return root
+
+    def test_an_unchanged_non_bf16_canonical_tensor_satisfies_and_is_counted(self):
+        out = self.run_patch(self.compiled_with("same", synth.Hooks(index=as_canonical)))
+        self.assertEqual(out["status"], "satisfied", out)
+        counted = {m["name"]: m["value"] for m in out["measurements"]}
+        self.assertNotEqual(counted["other canonical tensors compared byte for byte (not BF16)"], "0")
+
+    def test_a_changed_non_bf16_canonical_tensor_is_found(self):
+        out = self.run_patch(self.compiled_with("q8", synth.Hooks(index=as_canonical, segment=flip_last_byte)))
+        self.assertEqual(out["status"], "violated", out)
+        self.assertTrue(any(o["name"].startswith(OTHER_CANONICAL) and "differs from the base" in o["detail"]
+                            for o in out["offending"]), out["offending"])
+
+    def test_a_derived_representation_is_not_judged(self):
+        # without the hook the Q8_0 representation is derived (compiled_from) in the compiled container only
+        out = self.run_patch(self.compiled_with("derived", synth.Hooks(segment=flip_last_byte)))
+        self.assertEqual(out["status"], "violated", out)
+        self.assertTrue(any("present in only one" in o["detail"] for o in out["offending"]), out["offending"])
+
+
+class NonFiniteBase(Base):
+    """The op reads every base element of a declared column; one that is not finite is refused, not crashed on."""
+
+    def setUp(self):
+        super().setUp()
+        quiet = np.errstate(invalid="ignore")  # the synthetic Q8_0 encoder meets the non-finite value too
+        quiet.__enter__()
+        self.addCleanup(quiet.__exit__, None, None, None)
+
+    def rebase_with(self, value, col):
+        src = dict(self.written.source)
+        w = self.w.copy()
+        w[0, col] = value
+        src[HF_KEY] = w
+        shutil.rmtree(self.base)
+        synth.write_container(self.base, src)
+        self.w = w
+        self.write_patch()
+
+    def test_an_infinite_base_element_in_a_declared_column_is_not_evaluated(self):
+        self.rebase_with(np.inf, self.columns[0])
+        out = self.run_patch(self.compiled("inf", self.w))
+        self.assertEqual(out["status"], "could_not_evaluate", out)
+        self.assertIn("not finite", out["reasons"][0])
+
+    def test_a_nan_base_element_in_a_declared_column_is_not_evaluated(self):
+        self.rebase_with(np.nan, self.columns[0])
+        self.assertEqual(self.run_patch(self.compiled("nan", self.w))["status"], "could_not_evaluate")
+
+    def test_an_infinite_base_element_outside_the_columns_is_judged(self):
+        self.rebase_with(np.inf, 0)
+        self.assertNotIn(0, self.columns)
+        out = self.run_patch(self.compiled("inf_outside", self.right()))
+        self.assertEqual(out["status"], "satisfied", out)
+
+
 class Arithmetic(unittest.TestCase):
     """The exact-rational route against the host's floating point, on the cases where they could disagree."""
 
@@ -223,7 +309,8 @@ class Arithmetic(unittest.TestCase):
     def test_an_underflow_keeps_its_sign(self):
         tiny = struct.unpack("<f", struct.pack("<I", 0x0001 << 16))[0]  # the smallest positive BF16 subnormal
         got = self.bits([tiny, 0.0], [1.0, 0.0], 1.0 + 2.0**-20)
-        self.assertIn(got[0], (0x8000, 0x8001, 0x0000, 0x0001))
+        # tiny - (1 + 2^-20) * tiny = -2^-153: below half the smallest subnormal, so it rounds to -0, sign kept
+        self.assertEqual(got[0], 0x8000)
 
     def test_ties_round_to_even(self):
         # 1 + 2^-8 is exactly halfway between the BF16 values 1 and 1 + 2^-7; the even one is 1

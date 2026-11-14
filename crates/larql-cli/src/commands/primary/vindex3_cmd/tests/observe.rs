@@ -33,7 +33,7 @@ fn args(container: &std::path::Path, record: &std::path::Path) -> ObserveArgs {
         tokens: Some(PROMPT_IDS.to_string()),
         generate: 0,
         backend: ExecBackend::Reference,
-        representation_source: "auto".to_string(),
+        representation_source: Some("auto".to_string()),
         record: record.to_path_buf(),
         run_id: Some("fixture-run".to_string()),
         basis_dims: DIMS,

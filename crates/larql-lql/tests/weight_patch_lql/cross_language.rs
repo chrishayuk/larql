@@ -45,7 +45,14 @@ fn file_digests(root: &Path) -> BTreeMap<String, String> {
             if p.is_dir() {
                 walk(root, &p, out);
             } else {
-                let rel = p.strip_prefix(root).unwrap().to_string_lossy().to_string();
+                // Keys are '/'-joined on every platform, so the committed golden matches Windows too.
+                let rel = p
+                    .strip_prefix(root)
+                    .unwrap()
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
                 out.insert(rel, hex(&comparable_bytes(&p)));
             }
         }

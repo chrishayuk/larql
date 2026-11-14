@@ -199,9 +199,16 @@ USE REMOTE <url>;
 -- USE with a .vindex path: fast, pre-extracted, all statements available.
 -- USE MODEL: live weight access, reads safetensors directly. Slower but
 --   zero setup — point at any model, start querying immediately.
--- USE REMOTE: HTTP client to a `larql serve` instance. All read queries
---   are forwarded over the wire. Mutations create a local patch overlay
---   (the remote vindex is not modified).
+-- USE REMOTE: HTTP client to a `larql serve` instance. Every statement is
+--   forwarded over the wire, and every request carries this client's
+--   session id (`x-session-id`, minted at USE REMOTE). Mutations
+--   (INSERT/DELETE/UPDATE) and APPLY/SHOW/REMOVE PATCH act on this
+--   session's patch overlay on the server, never on the model other
+--   clients share, and the vindex files are not modified. Reads send the
+--   same header so the server can answer them against that overlay.
+--   Patches the session sends declare the served model (the `model` of
+--   /v1/stats) as their `base_model`; if the server names no model,
+--   DELETE, UPDATE and APPLY PATCH are refused before anything is sent.
 -- AUTO_EXTRACT: create vindex automatically on first mutation.
 --
 -- Mutation (INSERT/DELETE/UPDATE) and COMPILE require a vindex.
@@ -648,10 +655,11 @@ What this does not yet cover:
 - **The name is the only identity.** Nothing binds a patch to the weights it was read from, so two
   different models published under one name are indistinguishable here. A stable model identifier and
   a source-weight fingerprint, carried by both formats, are a separate piece of work.
-- **The server does not check the model.** `POST /v1/patches/apply` applies the same slot, bounds and
-  width checks and refuses a patch that fails them, but it does not compare `base_model`: remote
-  `DELETE` and `UPDATE` send patches that declare none. Model identity is enforced for a local
-  `APPLY PATCH` only, not end to end.
+- **The server does not check the model yet.** `POST /v1/patches/apply` applies the same slot,
+  bounds and width checks and refuses a patch that fails them, but it does not compare `base_model`.
+  The client does its half: a remote `APPLY PATCH` checks the patch against the model the server
+  named at `USE REMOTE`, and remote `DELETE` and `UPDATE` send patches declaring that model. Until the
+  server compares it too, model identity is enforced by the client only.
 - **`DIFF … INTO PATCH` can write a patch `APPLY PATCH` refuses.** With no model bound, or on a
   VINDEX3 or remote session, it records `base_model` as `"unknown"`. Such a patch names no model this
   check can match, so it is refused until its `base_model` is set to the target's name.
@@ -1963,7 +1971,7 @@ pub enum ExtractLevel {
 | Split weight files | ✅ Done — attn, up, down, norms, lm_head (no gate duplication) |
 | f16 storage | ✅ Done — `--f16` flag, halves file sizes |
 | Vindexfile | ✅ Done — declarative builds (FROM + PATCH + INSERT), `larql build` CLI |
-| USE REMOTE | ✅ Done — HTTP client to larql-server, all queries forwarded, local patch overlay |
+| USE REMOTE | ✅ Done — HTTP client to larql-server, all queries forwarded with the session id; mutations and patches are per-session on the server |
 | `larql serve` | ✅ Done — HTTP/gRPC server, all endpoints, multi-model, per-session patches |
 | WeightBackend (USE MODEL) | ✅ Done — direct safetensors, INFER/EXPLAIN INFER/STATS; browse ops guide to EXTRACT |
 | GGUF output format | 🔴 Planned — COMPILE INTO MODEL FORMAT gguf |

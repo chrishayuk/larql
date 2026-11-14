@@ -1,5 +1,8 @@
 {
-  "source": {"model": "Qwen/Qwen3-0.6B", "revision": "c1899de289a04d12100db370d81485cdf75e47ca"},
+  "source": {
+    "model": "Qwen/Qwen3-0.6B",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca"
+  },
   "contract": "Q8_0_T2",
   "containers": {
     "original": {
@@ -15,6 +18,58 @@
       "violations": 0,
       "report_sha256": "dcf60b8f763510e0d129d66ad2137b68a8b7bba97bf0c8647bb040c08406e545",
       "q8_0_segment_sha256": "5bb75033104bdbc05af205fe43b38bdce3cbde048885eed04366374c4ec372ee"
+    }
+  },
+  "operators": {
+    "larql_commit": "bb15f826f18c2f9c2b16e7bee8a02dfafbfce8f0",
+    "tokens": [
+      9707,
+      1879,
+      13,
+      576,
+      374,
+      264,
+      1273,
+      315,
+      279,
+      5333,
+      323,
+      1181,
+      2550,
+      9963,
+      11,
+      8365
+    ],
+    "container": "corrected",
+    "calls_observed": 3136,
+    "records": 196,
+    "logit_dump_sha256": "5d7f418f1508ebe39c511159f408c0e5f621724c2db7a2e1b8eb0985f9053114",
+    "checked": {
+      "0.self_attn.q_proj.weight": {
+        "x_sha256": "91f8b492533a36abe178538e0f66caa626c7376576c3c4e51a2f0b0b00df6b8e",
+        "y_sha256": "76e13c61727076d841630d39e9c0be5e5819c1dbe16968aca8f967a4f61d3185",
+        "worst_b1_ratio": "7.285623400380e-3"
+      },
+      "0.mlp.down_proj.weight": {
+        "x_sha256": "3f2934a5b3e64aa683881582ef9817ba35dc56f15468fd3154d8ae118ffa2755",
+        "y_sha256": "113a458bdf9c3746be9c92ea7b2259b4d4feef8d0d5b0833a3d1ac702496bce9",
+        "worst_b1_ratio": "2.895133564541e-3"
+      },
+      "27.mlp.gate_proj.weight": {
+        "x_sha256": "0147c993c37c5826ca5f8566951d60ead8e81ed4e67d1f3a89ab558db5b71f4b",
+        "y_sha256": "940400755f02ec39899af5a0234633c9bb1c97f18800c83c8dd4ce412252e08a",
+        "worst_b1_ratio": "4.611242046075e-2"
+      }
+    },
+    "faults": {
+      "reverse_blocks": {
+        "Q8_0_GEMV_SEQ": "violated",
+        "Q8_0_GEMV_B1": "satisfied"
+      },
+      "unsigned_codes": {
+        "Q8_0_GEMV_SEQ": "violated",
+        "Q8_0_GEMV_B1": "violated"
+      }
     }
   }
 }

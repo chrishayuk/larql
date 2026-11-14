@@ -87,6 +87,8 @@ fn format_lens(token: &str, probability: f64) -> serde_json::Value {
 }
 
 fn explain_infer(
+    sessions: &crate::session::SessionManager,
+    session_id: Option<&str>,
     model: &LoadedModel,
     req: &ExplainRequest,
 ) -> Result<serde_json::Value, ServerError> {
@@ -112,7 +114,7 @@ fn explain_infer(
         Vec::new()
     };
 
-    let patched = model.patched.blocking_read();
+    let patched = sessions.view_blocking(model, session_id);
     let walk_ffn = larql_inference::vindex::WalkFfn::new_unlimited_with_trace(weights, &*patched);
 
     let (predictions_raw, attention_captures, lens_residuals) = if req.with_attention {
@@ -300,13 +302,20 @@ fn explain_infer(
 )]
 pub async fn handle_explain(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<ExplainRequest>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(None)?.clone();
-    let result = tokio::task::spawn_blocking(move || explain_infer(&model, &req))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            explain_infer(&sessions_of.sessions, session_id.as_deref(), &model, &req)
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
 
@@ -324,14 +333,21 @@ pub async fn handle_explain(
 )]
 pub async fn handle_explain_multi(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(model_id): Path<String>,
     Json(req): Json<ExplainRequest>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(Some(&model_id))?.clone();
-    let result = tokio::task::spawn_blocking(move || explain_infer(&model, &req))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            explain_infer(&sessions_of.sessions, session_id.as_deref(), &model, &req)
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
 

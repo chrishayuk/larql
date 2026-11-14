@@ -41,6 +41,7 @@ PROFILE_VIA_F32 = "f64-seq-rne2/v1"
 PROFILES = (PROFILE_ONE_ROUNDING, PROFILE_VIA_F32)
 BF16_FORMAT = (8, -126, 127)
 F64_HEX_DIGITS = 16
+BF16_EXPONENT_MASK = 0x7F80
 BF16_SIGN = 0x8000
 BF16_BIAS = 127
 BF16_MANTISSA_BITS = 7
@@ -80,6 +81,8 @@ def _from_f64_bits(bits: int) -> Num:
 
 
 def _from_bf16_bits(bits: int) -> Num:
+    if bits & BF16_EXPONENT_MASK == BF16_EXPONENT_MASK:
+        raise Refused("a base element in an edited column is not finite (the op reads it; no valid compile contains one)")
     (x,) = struct.unpack("<f", struct.pack("<I", bits << 16))
     return Num(Fraction(x), x == 0 and bool(bits & BF16_SIGN))
 
@@ -207,6 +210,18 @@ def _bf16_tensors(root: str):
     return {(ref.rep_id, ref.name): ref for ref in c.tensors("BF16")}, c
 
 
+def _other_canonical_tensors(c) -> dict:
+    """Tensors of every canonical representation that is not BF16, by `(representation, name)`. A derived (compiled)
+    representation is not canonical and is not in here: it is re-derived by the compile and is not judged."""
+    out = {}
+    for rep_id, entry in c.reps.items():
+        if entry["encoding"] == "BF16" or entry.get("compiled_from"):
+            continue
+        for t in c.segments[rep_id].tensors:
+            out[(rep_id, t.name)] = c.locate(entry["object"], t.name, entry["encoding"])
+    return out
+
+
 def _read(ref: C.TensorRef) -> bytes:
     with open(ref.segment_path, "rb") as f:
         f.seek(ref.abs_start)
@@ -236,16 +251,16 @@ def evaluate(out: dict, patch: str, base: str, container: str) -> dict:
     try:
         ops = read_ops(patch)
         base_tensors, base_c = _bf16_tensors(base)
-        new_tensors, _ = _bf16_tensors(container)
+        new_tensors, new_c = _bf16_tensors(container)
         base_index_sha = _sha256_file(os.path.join(base, "index.json"))
-        return _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha)
+        return _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha, new_c)
     except Refused as e:
         return could_not(out, str(e))
     except BAD_INPUT as e:
         return could_not(out, f"an input can't be read: {type(e).__name__}: {e}")
 
 
-def _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha) -> dict:
+def _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha, new_c) -> dict:
     footprint: dict[str, set[int]] = {}
     expected_bits: dict[str, dict[int, int]] = {}
     for op in ops:
@@ -293,6 +308,17 @@ def _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha) -> dict:
             i, target, n = first
             offending.append({"name": name, "violations": bad,
                               "detail": f"first at {_position(i, base_ref.shape)}: expected {target:04x}, found {n:04x}"})
+    # every canonical tensor that is not BF16 must be byte-for-byte what the base holds
+    base_other, new_other = _other_canonical_tensors(base_c), _other_canonical_tensors(new_c)
+    for key in sorted(set(base_other) | set(new_other)):
+        b, n = base_other.get(key), new_other.get(key)
+        name = f"{key[0]}/{key[1]}"
+        if b is None or n is None:
+            violations += 1
+            offending.append({"name": name, "violations": 1, "detail": "present in only one of the containers"})
+        elif b.shape != n.shape or b.dtype != n.dtype or _read(b) != _read(n):
+            violations += 1
+            offending.append({"name": name, "violations": 1, "detail": f"canonical {b.dtype} tensor differs from the base"})
     only_new = sorted(set(new_tensors) - set(base_tensors))
     if only_new:
         violations += len(only_new)
@@ -302,6 +328,7 @@ def _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha) -> dict:
                offending=offending[:OFFENDING_LIMIT],
                measurements=[{"name": "elements compared", "value": str(checked)},
                              {"name": "elements expected to change", "value": str(expected_changes)},
+                             {"name": "other canonical tensors compared byte for byte (not BF16)", "value": str(len(base_other))},
                              {"name": "elements differing from the recomputed bits", "value": str(violations)},
                              {"name": "ops recomputed", "value": str(len(ops))},
                              {"name": "not established",

@@ -19,6 +19,7 @@ use crate::format::filenames::{INDEX_JSON, WEIGHT_PATCHES_JSON};
 use crate::format::vindex3::encode::segment::{
     read_exact_at, read_segment_header, write_segment, PlannedTensor, SegmentHeader, SegmentTensor,
 };
+use crate::format::vindex3::graph::{ObjectKind, SystemGraph};
 use crate::format::vindex3::index::{ContainerAuthority, RepresentationEntry, Vindex3Index};
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::represent::policy::{Protections, RolePolicy};
@@ -819,6 +820,43 @@ fn build_ledger(
 
 pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The kind of the graph object whose representation holds `tensor` (the token embedding, a decoder stack, ...), as the
+/// container's own system graph declares it. A tensor's NAME says nothing reliable about this: families name their
+/// embedding differently, and some containers hold it under a name no pattern would match. When the kind cannot be
+/// determined the answer is an error, never a guess.
+pub(super) fn tensor_object_kind(src: &Path, tensor: &str) -> Result<ObjectKind, WeightPatchError> {
+    let raw = std::fs::read_to_string(src.join(INDEX_JSON))?;
+    let index: Vindex3Index = serde_json::from_str(&raw)
+        .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
+    let probe = DeclaredPatch::Results(ResultPatch {
+        tensor: tensor.to_string(),
+        edits: vec![ResultEdit {
+            row: 0,
+            col: 0,
+            new_bits: 0,
+        }],
+    });
+    let at = locate(src, &index, &probe)?;
+    let undetermined = |why: String| {
+        WeightPatchError::Structured(format!(
+            "cannot tell what kind of object holds {tensor}: {why}"
+        ))
+    };
+    let graph_name = index
+        .system_graph
+        .as_deref()
+        .ok_or_else(|| undetermined("the container declares no system graph".into()))?;
+    let graph_text = std::fs::read_to_string(src.join(graph_name))?;
+    let graph: SystemGraph = serde_json::from_str(&graph_text)
+        .map_err(|e| crate::error::VindexError::Parse(format!("parse {graph_name}: {e}")))?;
+    graph
+        .objects
+        .iter()
+        .find(|o| o.id == at.entry.object)
+        .map(|o| o.kind)
+        .ok_or_else(|| undetermined(format!("the graph has no object {}", at.entry.object)))
 }
 
 /// The BF16 bits of a whole matrix `tensor` of the container at `src`, row-major, with its `[rows, cols]`.

@@ -30,3 +30,16 @@ updates:
       - "dependencies"
       - "github-actions"
     open-pull-requests-limit: 5
+
+  # scripts/prec_diag is pinned to transformers 5.5.0: PREC-DIAG-1's CI checks
+  # the sha256 of its modeling_gemma3.py, so a bump fails by design. Limit 0
+  # turns off version updates for this directory; the ignore also stops
+  # security-update PRs for transformers here (its alerts are dismissed as
+  # accepted risk for this local research harness).
+  - package-ecosystem: "pip"
+    directory: "/scripts/prec_diag"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "transformers"
