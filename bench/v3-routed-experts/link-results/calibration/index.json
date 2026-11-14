@@ -68,6 +68,23 @@
       "receipt": "20261114-09-native-diagnostic/calibration.json",
       "what": "contract v2 with the native probe, run back to back with the Python one under the same peer load. Declared a diagnostic BEFORE it ran: it is not a qualification attempt and does not count toward the two required runs.",
       "finding": "9/9 within tolerance. Relay self-reported lateness mean 48 us on shaped arms, about twice the Python-probe figure, with single releases up to 13 ms late; under peer load this cannot separate a probe observer effect from preemption by the peer."
+    },
+    {
+      "receipt": "20261114-11-jitter-trace/summary.json",
+      "what": "per-exchange boundary timestamps at zero delay; direct, fresh relay, persistent relay and persistent connection arms, interleaved; raw traces run1.json.gz and run2.json.gz beside it",
+      "finding": "baseline variation is common-mode in the measuring endpoints and host, present without the relay and identical for fresh and persistent relay processes; cause inside the host not identified"
+    }
+  ],
+  "qualifying_attempts": [
+    {
+      "receipt": "20261114-10-qualifying-1/calibration.json",
+      "contract": "v2",
+      "probe": "native-polling",
+      "relay": "single polling loop per connection, frozen, binary 7b1097f8",
+      "conditions": "three peer sessions confirmed quiet beforehand; no compiler or model process running; host load average about 4 from desktop applications",
+      "verdict": "FAIL 8/9. The 1 Gbit/s zero-delay point read 78.5 us low against its preceding baseline (tolerance 50 us) and 36.9 us low against its following baseline.",
+      "mechanism": "The zero-delay relay baseline is bimodal across relay instances: most of the 18 baselines in this run sit at 75-106 us, three sit at 118-130 us. The failing point's preceding baseline was one of the high ones (127.8 us). Relay self-reported lateness stayed at or below 5 us mean throughout, so the relay met its own schedule; the extra time is in the end-to-end path of some instances and its cause is not identified.",
+      "consequence": "Under the bounded-investigation rule a failed qualifying attempt stops the work: no second attempt, no sweep, no relay change."
     }
   ]
 }
