@@ -41,6 +41,19 @@ VIRTUAL_ENV=$PWD/.venv uv pip install --no-deps .
 The [protocol](../docs/verification/contract-protocol.md) specifies the invocation and the answer, how LQL finds a verifier, and how to
 write a different one.
 
+### `Q8_0_PACK_DERIVATION`: a container's quantised pack against its own canonical weights
+
+```sh
+.venv/bin/larql-verifier pack --contract Q8_0_PACK_DERIVATION --container <container>
+```
+
+Implements [q8-0-pack-derivation.md](../docs/verification/q8-0-pack-derivation.md). It derives every re-derived Q8_0
+representation from the container's own canonical BF16 bytes, by the rule the pack names, and compares every block:
+the stored scale and all 32 codes. The engine's packer is not run. This is the check the ledger contract below does not
+make: that one chains the pack's digests to the edited weights and does not re-quantise, so a pack with arbitrary bytes
+and recomputed digests passes it and is violated here. It does not establish that the canonical weights are the intended
+ones (the ledger contract's claim), that the right tensors were quantised, or that a kernel reads the pack.
+
 ### `WEIGHT_PATCHES_V4`: a compiled structured edit against its base
 
 ```sh
