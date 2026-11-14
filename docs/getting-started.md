@@ -89,7 +89,8 @@ larql run  granite-4.1-3b "Write a haiku about Rust."
 ```
 
 The ready-made models are `granite-4.1-3b` (6.8 GB), `gemma-3-4b-it` (8.6 GB),
-`gemma-3-12b-it` (24.4 GB) and `gemma-4-12b-it` (24.0 GB). Each was checked
+`gemma-3-12b-it` (24.4 GB), `gemma-4-12b-it` (24.0 GB) and `gemma-4-31b-it`
+(63.7 GB). Each was checked
 against Hugging Face transformers on the same checkpoint; the model card on
 Hugging Face (`larql/<name>`) records the comparison.
 
@@ -236,7 +237,7 @@ Results from 2026-11-06:
 | `Qwen/Qwen3-0.6B` | **runs**: everything in this guide |
 | `google/gemma-3-4b-it` (gated) | **runs** via `larql run hf://` (8.6 GB) |
 | `granite-4.1-3b` (registry) | **runs** via `larql pull` |
-| `gemma-3-4b-it`, `gemma-3-12b-it`, `gemma-4-12b-it` (registry) | **runs** via `larql pull` (2026-11-07) |
+| `gemma-3-4b-it`, `gemma-3-12b-it`, `gemma-4-12b-it`, `gemma-4-31b-it` (registry) | **runs** via `larql pull` (2026-11-07) |
 | `Qwen/Qwen3-1.7B`, `Qwen/Qwen3-4B`, `Qwen/Qwen2.5-1.5B-Instruct` | admitted, not yet run end to end |
 | `meta-llama/Llama-3.2-1B-Instruct` (gated), `mistralai/Mistral-7B-Instruct-v0.3`, `openai/gpt-oss-20b` | admitted, not yet run end to end |
 | `microsoft/Phi-4-mini-instruct`, `HuggingFaceTB/SmolLM2-1.7B-Instruct` | **refused** |
