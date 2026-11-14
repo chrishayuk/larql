@@ -114,11 +114,15 @@ Given the base container and the compiled container (and nothing from the compil
 1. Check the base: its `index.json` digest and the edited representation's payload digest equal the ledger's
    `source`, and its tensor hashes to `base_tensor_sha256`.
 2. Check every op: digest intact, bound to that base, operand digests as recorded, bounds of §5, columns disjoint.
-3. Reconstruct the expected tensor from the base and the ops (§4), and compare **every element** with the compiled
-   tensor. A matching `result_tensor_sha256` alone is not sufficient: the expected bytes are recomputed, never taken
-   from the ledger.
-4. Confirm every other tensor of every representation not re-derived by the compile is byte-identical to the base, and
-   that the re-derived representations derive from the compiled canonical payload the ledger names.
+3. Reconstruct the expected tensor from the base and the ops (§4), and compare **every element** of the compiled
+   tensor, not only the elements the ops change: every element outside the ops' column footprint, and every element
+   inside it that the v2 rules leave untouched, must equal the base bit for bit. A matching `result_tensor_sha256`
+   alone is not sufficient, and neither is checking the elements recorded or expected as changed: the expected bytes
+   of the whole tensor are recomputed, never taken from the ledger or from the compiler.
+4. Confirm every other tensor, edited or not by name, of every representation not re-derived by the compile is
+   byte-identical to the base, every file outside the edited and re-derived segments is unchanged apart from
+   `index.json` and the ledger, and the re-derived representations derive from the compiled canonical payload the
+   ledger names.
 5. Refuse malformed, overlapping, stale (bound to another base) or unsupported ops, and an unknown schema.
 6. For a sham (§4a), decide zero-valuedness from the operands itself and confirm the compiled tensor is the base's
    bytes exactly.
