@@ -134,6 +134,12 @@ impl ContinuationProvider for Spy {
     fn set_position(&mut self, position: usize) {
         self.inner.set_position(position)
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
+    }
     fn prepare_continuation(
         &mut self,
         layers: &[LayerContinuationGeometry],

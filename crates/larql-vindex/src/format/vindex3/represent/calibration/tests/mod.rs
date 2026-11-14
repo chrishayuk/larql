@@ -230,6 +230,12 @@ impl ContinuationProvider for RefusingState {
     fn set_position(&mut self, position: usize) {
         self.0.set_position(position)
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.0.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.0.invalidated()
+    }
     fn prepare_continuation(
         &mut self,
         _: &[LayerContinuationGeometry],

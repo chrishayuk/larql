@@ -91,6 +91,14 @@ fn plan_geometry_carries_the_ops_authority() {
         };
         let kv = g.kv().expect("a softmax layer keeps K/V rows");
         assert_eq!(kv.history, op.history(), "geometry and plan op must agree");
+        // The geometry's own range is the authority's, not a second derivation.
+        for position in [0, G_WINDOW - 1, G_WINDOW, 3 * G_WINDOW] {
+            assert_eq!(
+                kv.required_range(position),
+                op.history().required_range(position),
+                "position {position}"
+            );
+        }
         if kv.history == HistoryRange::Trailing(G_WINDOW) {
             trailing += 1;
         }

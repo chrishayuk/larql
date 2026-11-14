@@ -31,6 +31,11 @@ pub(super) fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     mut kv: Option<&mut K>,
     mutation: Mutation,
 ) -> Result<FinalOutput, VindexError> {
+    // A state a failed advance left unusable is refused by every traversal,
+    // batch or block, before it is read or written.
+    if let Some(reason) = kv.as_deref().and_then(|state| state.invalidated()) {
+        return Err(super::kv::unusable(reason));
+    }
     let embedding = plan.embedding.as_ref().ok_or_else(|| {
         VindexError::Parse(format!(
             "component `{}` has no embedding op — external hidden-state input is a later rung",
