@@ -41,6 +41,33 @@ VIRTUAL_ENV=$PWD/.venv uv pip install --no-deps .
 The [protocol](../docs/verification/contract-protocol.md) specifies the invocation and the answer, how LQL finds a verifier, and how to
 write a different one.
 
+### `Q8_0_PACK_DERIVATION`: a container's quantised pack against its own canonical weights
+
+```sh
+.venv/bin/larql-verifier pack --contract Q8_0_PACK_DERIVATION --container <container>
+```
+
+Implements [q8-0-pack-derivation.md](../docs/verification/q8-0-pack-derivation.md). It derives every re-derived Q8_0
+representation from the container's own canonical BF16 bytes, by the rule the pack names, and compares every block:
+the stored scale and all 32 codes. The engine's packer is not run. This is the check the ledger contract below does not
+make: that one chains the pack's digests to the edited weights and does not re-quantise, so a pack with arbitrary bytes
+and recomputed digests passes it and is violated here. It does not establish that the canonical weights are the intended
+ones (the ledger contract's claim), that the right tensors were quantised, or that a kernel reads the pack.
+
+### `EXECUTION_RESIDENCY_V1`: what a run loaded against the container it loaded from
+
+```sh
+.venv/bin/larql-verifier residency --contract EXECUTION_RESIDENCY_V1 --record <residency record> --container <container>
+```
+
+Implements [execution-residency-v1.md](../docs/verification/execution-residency-v1.md). The engine writes a residency
+record of what each matrix operand was made resident as. This re-derives every resident representation from the
+container's stored bytes (the loader's 64-element-block Q8, exact widening to binary32, or the stored bytes kept) and
+re-decides every choice from the recorded policy and cache size, as two separate verdicts: **derivation** and
+**selection**. A record that omits a matrix of an object it covers, names a rule this contract does not derive, or was made from another
+container is never satisfied. It judges the engine's own account of what it loaded; it does not show that a kernel
+consumed those bytes.
+
 ### `WEIGHT_PATCHES_V4`: a compiled structured edit against its base
 
 ```sh

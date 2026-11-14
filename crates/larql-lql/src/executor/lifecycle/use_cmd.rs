@@ -157,7 +157,8 @@ impl Session {
         &mut self,
         path: std::path::PathBuf,
     ) -> Result<Vec<String>, LqlError> {
-        let (runtime, tokenizer, knowledge) = crate::executor::vindex3::bind(&path)?;
+        let source = self.representation_source;
+        let (runtime, tokenizer, knowledge) = crate::executor::vindex3::bind(&path, source)?;
         let plan_layers = runtime.plan().layers.len();
         let out = vec![
             format!(
@@ -177,6 +178,10 @@ impl Session {
                     "absent (token-id capability only)"
                 },
             ),
+            format!(
+                "Execution: representation source {}.",
+                crate::executor::vindex3::describe_source(source)
+            ),
         ];
         // A compiled container carries its L0 knowledge as
         // `knn_store.bin` (the same file V2 binds) — load it into the
@@ -185,7 +190,7 @@ impl Session {
         let knn_path = path.join(KNN_STORE_BIN);
         if knn_path.exists() {
             match larql_vindex::KnnStore::load(&knn_path) {
-                Ok(store) => overlay.knn_store = store,
+                Ok(store) => overlay.bind_base_knn(store),
                 Err(e) => {
                     eprintln!("warning: failed to load knn_store.bin: {e}");
                 }

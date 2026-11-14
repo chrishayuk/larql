@@ -1,0 +1,106 @@
+{
+  "schema": "larql.v3.link-trace-summary.v1",
+  "purpose": "diagnostic of the zero-delay baseline variation; not a calibration and not a qualification attempt",
+  "tool": "crates/larql-server/examples/v3_link_trace.rs",
+  "relay": "frozen v3_link_shaper, binary 7b1097f8, unmodified, zero delay, unlimited rate",
+  "conditions": "three peer sessions confirmed quiet; no compiler or model process; two runs of 40 interleaved rounds, 200 measured exchanges per batch",
+  "per_arm_us": {
+    "run1": {
+      "direct": {
+        "median_of_batch_medians": 17.3,
+        "fastest_third": 15.0,
+        "slowest_third": 23.0,
+        "segments_fast": [
+          5.7,
+          3.9,
+          5.5
+        ],
+        "segments_slow": [
+          9.3,
+          4.5,
+          8.9
+        ]
+      },
+      "fresh": {
+        "median_of_batch_medians": 39.1,
+        "fastest_third": 33.6,
+        "slowest_third": 52.5,
+        "segments_fast": [
+          11.4,
+          3.6,
+          18.6
+        ],
+        "segments_slow": [
+          19.1,
+          6.5,
+          26.1
+        ]
+      },
+      "persistent": {
+        "median_of_batch_medians": 38.3,
+        "fastest_third": 33.2,
+        "slowest_third": 51.7,
+        "segments_fast": [
+          11.0,
+          3.6,
+          18.4
+        ],
+        "segments_slow": [
+          19.1,
+          7.1,
+          25.0
+        ]
+      },
+      "persistent-connection": {
+        "median_of_batch_medians": 28.2,
+        "fastest_third": 27.5,
+        "slowest_third": 39.7,
+        "segments_fast": [
+          8.5,
+          3.1,
+          15.6
+        ],
+        "segments_slow": [
+          12.8,
+          4.2,
+          22.1
+        ]
+      }
+    },
+    "run2": {
+      "direct": {
+        "median_of_batch_medians": 16.9,
+        "fastest_third": 15.0,
+        "slowest_third": 20.6
+      },
+      "fresh": {
+        "median_of_batch_medians": 36.4,
+        "fastest_third": 32.4,
+        "slowest_third": 49.3
+      },
+      "persistent": {
+        "median_of_batch_medians": 35.7,
+        "fastest_third": 32.5,
+        "slowest_third": 48.6
+      },
+      "persistent-connection": {
+        "median_of_batch_medians": 28.8,
+        "fastest_third": 27.8,
+        "slowest_third": 35.5
+      }
+    }
+  },
+  "segments": "outbound (client send start to peer holding the request), peer (peer holding the request to response handed over), inbound (handed over to client holding the response)",
+  "findings": [
+    "Relay lifecycle is not the source: a fresh relay process per batch and one persistent relay process give the same distribution in both runs (39.1 vs 38.3 us and 36.4 vs 35.7 us medians; the same fastest and slowest thirds).",
+    "The variation is common-mode across the whole exchange: in slow batches the outbound, peer and inbound segments all grow by a similar factor (about 1.4 to 1.8). The peer segment does not pass through the relay at all.",
+    "The no-relay arm varies by the same proportion (15.0 to 23.0 us between its fastest and slowest thirds), so the variation exists without the relay.",
+    "Core class is not supported as the cause: cycles per CPU second differ by at most 8 percent between fast and slow batches (about 3.2 to 3.6 GHz equivalent in every arm), far too little to explain a 1.5x slowdown.",
+    "Slow batches are scattered across rounds, not clustered in time, so this is a per-batch state and not a drifting machine condition.",
+    "Reusing one connection narrows the spread (most batches at 27.5 us) but does not remove slow batches.",
+    "The absolute level here (about 33 to 52 us through the relay) is well below calibration's baseline (about 75 to 130 us). Calibration starts a new probe client process for every measurement and keeps the echo peer in a second process; this tracer holds both ends in one long-lived process. The difference was not isolated arm by arm."
+  ],
+  "diagnosis": "The baseline variation belongs to the measuring endpoints and the host, not to the relay and not to starting a new relay. Its root cause inside the host (thread placement relative to each other, cache or kernel socket state) is NOT identified: bounded inconclusive on cause, conclusive on locus.",
+  "consequence_for_calibration_v2": "Calibration v2 compares a shaped measurement with a baseline taken by a different probe process and connection. A per-batch common-mode factor of about 1.5 on a baseline near 85 us is about 40 us, which is the size of the 50 us tolerance floor. That is enough to explain misses at the points whose tolerance is the 50 us floor and nowhere else. It does not convert any failed run into a pass.",
+  "not_done": "No relay change, no threshold change, no further calibration attempt, no sweep."
+}

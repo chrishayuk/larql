@@ -23,13 +23,21 @@ impl Session {
                     .into(),
             ));
         };
-        if overlay.num_overrides() > 0 || !overlay.knn_store.is_empty() {
-            return Err(LqlError::Execution(
-                "the session holds overlay state — COMPACT preserves meaning and cannot \
+        // Any pending edit, of knowledge or of stored weights: COMPACT writes the bound container's meaning
+        // unchanged, so compacting past an edit would report success and lose it. Knowledge the container
+        // already carries is not an edit and travels with it.
+        if overlay.has_pending_edits() {
+            let weight_ops = overlay.weight_ops().len();
+            let held = if weight_ops > 0 {
+                format!("{weight_ops} pending stored-weight op(s)")
+            } else {
+                "overlay state".to_string()
+            };
+            return Err(LqlError::Execution(format!(
+                "the session holds {held} — COMPACT preserves meaning and cannot \
                  absorb edits; COMPILE CURRENT INTO VINDEX first (materialise the meaning), \
                  then COMPACT the result"
-                    .into(),
-            ));
+            )));
         }
 
         let out = PathBuf::from(output);

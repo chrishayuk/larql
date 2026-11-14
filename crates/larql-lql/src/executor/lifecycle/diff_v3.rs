@@ -99,10 +99,27 @@ impl Session {
         let diff =
             semantic_diff(&side_a, &side_b).map_err(|e| LqlError::exec("diff: compare", e))?;
         let mut out = vec![format!("Diff (logical): {} vs {}", name(a), name(b))];
+        // A staged stored-weight op has no effect until COMPILE writes a container, so CURRENT is compared
+        // without it. Say so: "equivalent" must not read as "the pending edit changed nothing".
+        let pending = match (&self.backend, a, b) {
+            (Backend::Vindex3 { overlay, .. }, VindexRef::Current, _)
+            | (Backend::Vindex3 { overlay, .. }, _, VindexRef::Current) => {
+                overlay.weight_ops().len()
+            }
+            _ => 0,
+        };
+        let pending_note = (pending > 0).then(|| {
+            format!(
+                "  note: {pending} stored-weight op(s) are pending COMPILE and are not part of CURRENT here; \
+                 compile them and DIFF the container to compare the edited weights"
+            )
+        });
         if diff.is_empty() {
             out.push("  no semantic differences — the models are equivalent".into());
+            out.extend(pending_note);
             return Ok(out);
         }
+        out.extend(pending_note);
 
         let edges: Vec<_> = diff
             .knowledge_added

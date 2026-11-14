@@ -298,6 +298,14 @@ impl<T: PlanBackend + Send + ?Sized> PlanBackend for std::sync::Arc<T> {
     ) -> Result<Vec<f32>, VindexError> {
         (**self).routed_ffn_placed(call, layer, provider)
     }
+    fn routed_ffn_placed_rows(
+        &self,
+        calls: &[RoutedFfnCall<'_>],
+        layer: usize,
+        provider: &dyn super::super::routed_experts::RoutedExpertProvider,
+    ) -> Result<Vec<Vec<f32>>, VindexError> {
+        (**self).routed_ffn_placed_rows(calls, layer, provider)
+    }
 
     fn output_head(
         &self,

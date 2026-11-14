@@ -12,6 +12,9 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-lql/**'
+      # tests/weight_patch_lql/cross_language.rs pins the verifier's committed structured-patch fixture:
+      # the engine half of the cross-language check has to run when that fixture changes
+      - 'verifier/conformance/**'
       - 'crates/larql-core/**'
       - 'crates/larql-vindex/**'
       - 'crates/larql-models/**'
@@ -25,6 +28,9 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-lql/**'
+      # tests/weight_patch_lql/cross_language.rs pins the verifier's committed structured-patch fixture:
+      # the engine half of the cross-language check has to run when that fixture changes
+      - 'verifier/conformance/**'
       - 'crates/larql-core/**'
       - 'crates/larql-vindex/**'
       - 'crates/larql-models/**'

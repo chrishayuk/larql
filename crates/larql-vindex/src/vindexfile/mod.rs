@@ -110,6 +110,9 @@ pub fn build_from_vindexfile(
             VindexfileDirective::Patch(path) => {
                 let resolved = resolve_vindexfile_path(path, working_dir)?;
                 let patch = VindexPatch::load(&resolved)?;
+                // A patch is written against one model; one that fits another model's geometry would
+                // otherwise be built in.
+                patch.check_base_model(&config.model)?;
                 let op_count = patch.len();
                 let operations = patch.operations.clone();
                 // Fallible apply: a corrupt embedded vector fails the
