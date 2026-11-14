@@ -1,9 +1,22 @@
 //! Unit tests for `speak_serve`: request parsing, block draining and
-//! the reporting helpers.
+//! the reporting helpers. `serve` drives one utterance end to end against
+//! the synthetic speech model; `fifo` covers the reply and listen FIFOs.
+
+#[cfg(unix)]
+mod fifo;
+mod serve;
 
 use super::*;
 use larql_inference::speech::moss_realtime::FrameStages;
 use std::cell::RefCell;
+
+/// A fresh, empty directory for one test, unique per process and name.
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("larql_speak_serve_{}_{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}
 
 /// Run `drain` over a canned request stream, returning the `text:` of
 /// every request that actually reached the server. Replies go to
