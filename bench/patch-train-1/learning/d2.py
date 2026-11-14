@@ -79,7 +79,10 @@ def main():
     ap.add_argument("--entity-a", default=None, help="entity name for patch A (default: trained_entities[0], Frozoria)")
     ap.add_argument("--entity-b", default=None, help="entity name for patch B (default: trained_entities[1], Dresalthaia)")
     ap.add_argument("--label", default="PATCH-TRAIN-2 D2 discovery dry-run")
+    ap.add_argument("--rho", type=float, default=0.20, help="update-norm cap as a fraction of the W0 footprint RMS (default 0.20)")
     args = ap.parse_args()
+    global RHO
+    RHO = args.rho
     tasks = V.load_tasks("tasks_discovery.json")
     assert tasks["seed"] != V.load_tasks("tasks.json")["seed"], "discovery set must differ from the confirmatory set"
     model, tok = V.load_model(tasks)
