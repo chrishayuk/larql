@@ -57,13 +57,7 @@ impl Parser {
         self.expect_keyword(Keyword::From)?;
         let tensor = self.expect_string()?;
         self.expect_ident_eq("COLUMNS")?;
-        self.expect_token(&Token::LParen)?;
-        let mut columns = vec![self.expect_u32()? as usize];
-        while matches!(self.peek(), Token::Comma) {
-            self.advance();
-            columns.push(self.expect_u32()? as usize);
-        }
-        self.expect_token(&Token::RParen)?;
+        let columns = self.parse_column_list()?;
         self.expect_ident_eq("SCALE")?;
         let negative = matches!(self.peek(), Token::Dash);
         if negative {
@@ -100,6 +94,43 @@ impl Parser {
             tensor,
             columns,
             scale,
+            numerics,
+        })
+    }
+}
+
+impl Parser {
+    /// `(<n>, <n>, …)`: a parenthesised, non-empty list of column indices.
+    fn parse_column_list(&mut self) -> Result<Vec<usize>, ParseError> {
+        self.expect_token(&Token::LParen)?;
+        let mut columns = vec![self.expect_u32()? as usize];
+        while matches!(self.peek(), Token::Comma) {
+            self.advance();
+            columns.push(self.expect_u32()? as usize);
+        }
+        self.expect_token(&Token::RParen)?;
+        Ok(columns)
+    }
+
+    /// `ADD LOW RANK "<operand file>" TO "<tensor>" COLUMNS (<n>, …) NUMERICS "<profile>"`. `ADD`, `LOW`,
+    /// `RANK`, `COLUMNS` and `NUMERICS` are read as words in this position, not reserved. The rank and both
+    /// operands are in the file, as exact bits.
+    pub(crate) fn parse_add_low_rank(&mut self) -> Result<Statement, ParseError> {
+        self.expect_ident_eq("ADD")?;
+        self.expect_ident_eq("LOW")?;
+        self.expect_ident_eq("RANK")?;
+        let operands = self.expect_string()?;
+        self.expect_keyword(Keyword::To)?;
+        let tensor = self.expect_string()?;
+        self.expect_ident_eq("COLUMNS")?;
+        let columns = self.parse_column_list()?;
+        self.expect_ident_eq("NUMERICS")?;
+        let numerics = self.expect_string()?;
+        self.eat_semicolon();
+        Ok(Statement::AddLowRank {
+            operands,
+            tensor,
+            columns,
             numerics,
         })
     }

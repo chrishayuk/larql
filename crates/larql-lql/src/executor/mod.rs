@@ -377,6 +377,12 @@ impl Session {
                 scale,
                 numerics,
             } => self.exec_remove_direction(operand, tensor, columns, *scale, numerics),
+            Statement::AddLowRank {
+                operands,
+                tensor,
+                columns,
+                numerics,
+            } => self.exec_add_low_rank(operands, tensor, columns, numerics),
             Statement::Merge {
                 source,
                 target,
@@ -532,7 +538,8 @@ impl Session {
             .iter()
             .map(|op| match op {
                 larql_vindex::PatchOp::WeightDelta(w) => w.edits.len(),
-                larql_vindex::PatchOp::StructuredWeight(_) => 1,
+                larql_vindex::PatchOp::StructuredWeight(_)
+                | larql_vindex::PatchOp::LowRankColumnsWeight(_) => 1,
                 _ => 0,
             })
             .sum();
@@ -607,22 +614,18 @@ impl Session {
         let weight_ops: Vec<WeightOpRef<'_>> = patch
             .operations
             .iter()
-            .filter_map(|op| match op {
-                larql_vindex::PatchOp::WeightDelta(w) => Some(WeightOpRef::Delta(w)),
-                larql_vindex::PatchOp::StructuredWeight(w) => Some(WeightOpRef::Structured(w)),
-                _ => None,
-            })
+            .filter_map(larql_vindex::PatchOp::weight_op)
             .collect();
         let weight_edits: usize = weight_ops
             .iter()
             .map(|w| match w {
                 WeightOpRef::Delta(d) => d.edits.len(),
-                WeightOpRef::Structured(_) => 0,
+                WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => 0,
             })
             .sum();
         let structured = weight_ops
             .iter()
-            .filter(|w| matches!(w, WeightOpRef::Structured(_)))
+            .filter(|w| w.structured_columns().is_some())
             .count();
         if !weight_ops.is_empty() {
             match &self.backend {

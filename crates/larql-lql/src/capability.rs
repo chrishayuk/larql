@@ -125,6 +125,7 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | Insert { .. }
         | UpdateWeights { .. }
         | RemoveDirection { .. }
+        | AddLowRank { .. }
         | Delete { .. }
         | Update { .. }
         | Merge { .. }
@@ -201,6 +202,7 @@ mod tests {
             "DELETE FROM EDGES WHERE layer = 0;",
             "UPDATE EDGES SET confidence = 0.5 WHERE layer = 0;",
             "REMOVE DIRECTION \"u.json\" FROM \"t\" COLUMNS (1) SCALE 1.0 NUMERICS \"f64-seq-rne1/v1\";",
+            "ADD LOW RANK \"ab.json\" TO \"t\" COLUMNS (1) NUMERICS \"f64-seq-rne1/v1\";",
             "MERGE \"other.vindex\";",
             "REBALANCE;",
             "COMPACT MINOR;",

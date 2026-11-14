@@ -12,8 +12,9 @@ use super::error::WeightPatchError;
 use super::ledger::{
     DigestPair, EditEncoding, LedgerEdit, LedgerResult, LedgerSource, LedgerTarget, ResultDerived,
     SourceDerived, WeightPatchLedger, ROUNDING_RULE, WEIGHT_PATCHES_SCHEMA,
-    WEIGHT_PATCHES_SCHEMA_V3,
+    WEIGHT_PATCHES_SCHEMA_V3, WEIGHT_PATCHES_SCHEMA_V4,
 };
+use super::op_target::{tensor_sha256, OperationPatch};
 use super::MAX_PATCH_ELEMENTS;
 use crate::format::filenames::{INDEX_JSON, WEIGHT_PATCHES_JSON};
 use crate::format::vindex3::encode::segment::{
@@ -68,11 +69,20 @@ pub struct ResultPatch {
     pub edits: Vec<ResultEdit>,
 }
 
-/// An edit of one tensor in either form. A set of these may mix forms, one tensor each.
+/// An edit of one tensor in any form. A set of these may mix forms, one tensor each.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeclaredPatch {
     Deltas(WeightPatch),
     Results(ResultPatch),
+    /// The whole tensor compiled from structured ops, recorded by its operations (`weight-patches/v4`). It is
+    /// not an element list, so [`MAX_PATCH_ELEMENTS`] does not bound it; the `MAX_STRUCTURED_*` bounds did.
+    Operations(OperationPatch),
+}
+
+/// What a located patch resolved to: element edits, or a tensor compiled from its operations.
+enum Resolved<'a> {
+    Edits(Vec<LedgerEdit>),
+    Operations(&'a OperationPatch),
 }
 
 impl DeclaredPatch {
@@ -80,13 +90,16 @@ impl DeclaredPatch {
         match self {
             DeclaredPatch::Deltas(p) => &p.tensor,
             DeclaredPatch::Results(p) => &p.tensor,
+            DeclaredPatch::Operations(p) => &p.tensor,
         }
     }
 
+    /// Listed elements: what counts against [`MAX_PATCH_ELEMENTS`]. An operation patch lists none.
     fn len(&self) -> usize {
         match self {
             DeclaredPatch::Deltas(p) => p.edits.len(),
             DeclaredPatch::Results(p) => p.edits.len(),
+            DeclaredPatch::Operations(_) => 0,
         }
     }
 
@@ -94,6 +107,7 @@ impl DeclaredPatch {
         match self {
             DeclaredPatch::Deltas(p) => p.edits.iter().map(|e| (e.row, e.col)).collect(),
             DeclaredPatch::Results(p) => p.edits.iter().map(|e| (e.row, e.col)).collect(),
+            DeclaredPatch::Operations(_) => Vec::new(),
         }
     }
 }
@@ -172,8 +186,9 @@ pub fn apply_weight_patches(
     apply_declared_patches(src, &declared, origins, out)
 }
 
-/// [`apply_weight_patches`] for edits in either form: deltas, or the exact results of structured ops.
-/// The ledger is schema `v3` when any edit is a result.
+/// [`apply_weight_patches`] for edits in any form: deltas, the exact results of structured ops, or a tensor
+/// compiled from structured ops. The ledger is schema `v4` when any tensor is an operation target, else `v3` when
+/// any edit is a result, else `v2`.
 pub fn apply_declared_patches(
     src: &Path,
     patches: &[DeclaredPatch],
@@ -238,7 +253,12 @@ pub fn apply_declared_patches(
     std::fs::rename(&assembled, out)?;
     scratch.0.retain(|p| p != &assembled);
     Ok(PatchReport {
-        elements: ledger.edit_count(),
+        elements: ledger.edit_count()
+            + ledger
+                .targets
+                .iter()
+                .filter_map(|t| t.changed_elements)
+                .sum::<usize>(),
         tensors: ledger.targets.iter().map(|t| t.tensor.clone()).collect(),
         object: at.entry.object.clone(),
         canonical: ledger.result.canonical.clone(),
@@ -277,7 +297,10 @@ pub fn plan_declared_patch(
         .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
     require_patchable(&index)?;
     let at = locate(src, &index, patch)?;
-    resolve_edits(src, &at, patch)
+    match resolve_edits(src, &at, patch)? {
+        Resolved::Edits(edits) => Ok(edits),
+        Resolved::Operations(_) => Ok(Vec::new()),
+    }
 }
 
 /// What only the set can break, cheapest first: the element total within
@@ -286,6 +309,7 @@ fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
     if patches.is_empty() {
         return Err(WeightPatchError::Empty);
     }
+    // Element patches only: an operation patch lists no elements and is bounded by `MAX_STRUCTURED_*`.
     let count: usize = patches.iter().map(|p| p.len()).sum();
     if count > MAX_PATCH_ELEMENTS {
         return Err(WeightPatchError::TooManyElements {
@@ -306,11 +330,11 @@ fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
 /// Locate and resolve every patch; refuse unless one canonical
 /// representation holds them all, since the re-derivation and the result
 /// digests belong to one representation.
-fn locate_all(
+fn locate_all<'a>(
     src: &Path,
     index: &Vindex3Index,
-    patches: &[DeclaredPatch],
-) -> Result<Vec<(Located, Vec<LedgerEdit>)>, WeightPatchError> {
+    patches: &'a [DeclaredPatch],
+) -> Result<Vec<(Located, Resolved<'a>)>, WeightPatchError> {
     let mut out = Vec::with_capacity(patches.len());
     for p in patches {
         let at = locate(src, index, p)?;
@@ -328,6 +352,29 @@ fn locate_all(
 }
 
 fn validate(patch: &DeclaredPatch) -> Result<(), WeightPatchError> {
+    if let DeclaredPatch::Operations(p) = patch {
+        // Nothing changed is refused unless every op is zero-valued: a declared sham compiles to the base's bytes.
+        if p.operations.is_empty() || (p.changed_elements == 0 && !p.is_sham()?) {
+            return Err(WeightPatchError::Empty);
+        }
+        if p.result.len() != p.shape[0] * p.shape[1] {
+            return Err(WeightPatchError::Structured(format!(
+                "the compiled `{}` has {} elements, not {} x {}",
+                p.tensor,
+                p.result.len(),
+                p.shape[0],
+                p.shape[1]
+            )));
+        }
+        if let Some(i) = p.result.iter().position(|&b| !bf16::is_finite(b)) {
+            let cols = p.shape[1];
+            return Err(WeightPatchError::NonFiniteResult {
+                row: i / cols,
+                col: i % cols,
+            });
+        }
+        return Ok(());
+    }
     if patch.len() == 0 {
         return Err(WeightPatchError::Empty);
     }
@@ -458,11 +505,28 @@ fn locate(
 /// The ledger's edits: the stored bits read from the source, and the new
 /// bits: computed by the declared rule for a delta, taken as declared for a
 /// structured op's result.
-fn resolve_edits(
+fn resolve_edits<'a>(
     src: &Path,
     at: &Located,
-    patch: &DeclaredPatch,
-) -> Result<Vec<LedgerEdit>, WeightPatchError> {
+    patch: &'a DeclaredPatch,
+) -> Result<Resolved<'a>, WeightPatchError> {
+    if let DeclaredPatch::Operations(p) = patch {
+        if at.tensor.shape != p.shape {
+            return Err(WeightPatchError::Structured(format!(
+                "`{}` is {:?} in the container, but was compiled as {:?}",
+                p.tensor, at.tensor.shape, p.shape
+            )));
+        }
+        // The ops were resolved against a base; refuse to write them over another.
+        let (_, base) = read_bf16_tensor(src, &p.tensor)?;
+        if tensor_sha256(&base) != p.base_tensor_sha256 {
+            return Err(WeightPatchError::Structured(format!(
+                "`{}` differs from the base its operations were compiled against",
+                p.tensor
+            )));
+        }
+        return Ok(Resolved::Operations(p));
+    }
     let file = File::open(src.join(&at.entry.segment))?;
     let cols = at.tensor.shape[1] as u64;
     let name = patch.tensor();
@@ -522,8 +586,9 @@ fn resolve_edits(
                 });
             }
         }
+        DeclaredPatch::Operations(_) => unreachable!("returned above"),
     }
-    Ok(out)
+    Ok(Resolved::Edits(out))
 }
 
 /// A scratch path beside `out`, on the same filesystem so the final rename is
@@ -566,7 +631,7 @@ fn write_index(root: &Path, index: &Vindex3Index) -> Result<(), WeightPatchError
 fn write_stage(
     src: &Path,
     index: &Vindex3Index,
-    edited: &[(Located, Vec<LedgerEdit>)],
+    edited: &[(Located, Resolved<'_>)],
     stage: &Path,
 ) -> Result<crate::format::vindex3::encode::segment::WrittenSegment, WeightPatchError> {
     let at = &edited[0].0;
@@ -620,17 +685,12 @@ fn write_stage(
 fn write_patched_segment(
     src: &Path,
     stage: &Path,
-    edited: &[(Located, Vec<LedgerEdit>)],
+    edited: &[(Located, Resolved<'_>)],
 ) -> Result<crate::format::vindex3::encode::segment::WrittenSegment, WeightPatchError> {
     let at = &edited[0].0;
-    let by_tensor: BTreeMap<&str, (u64, &[LedgerEdit])> = edited
+    let by_tensor: BTreeMap<&str, (u64, &Resolved<'_>)> = edited
         .iter()
-        .map(|(a, e)| {
-            (
-                a.tensor.name.as_str(),
-                (a.tensor.shape[1] as u64, e.as_slice()),
-            )
-        })
+        .map(|(a, r)| (a.tensor.name.as_str(), (a.tensor.shape[1] as u64, r)))
         .collect();
     let planned: Vec<PlannedTensor> = at
         .header
@@ -658,12 +718,24 @@ fn write_patched_segment(
                 .find(|t| t.name == name)
                 .expect("planned from this header");
             source.seek(SeekFrom::Start(at.payload_start + t.offset))?;
-            if let Some(&(cols, edits)) = by_tensor.get(name) {
+            if let Some(&(cols, resolved)) = by_tensor.get(name) {
                 let mut bytes = vec![0u8; t.len as usize];
                 source.read_exact(&mut bytes)?;
-                for e in edits {
-                    let at_byte = ((e.row as u64 * cols + e.col as u64) * BF16_BYTES) as usize;
-                    bytes[at_byte..at_byte + 2].copy_from_slice(&e.new_bits.to_le_bytes());
+                match resolved {
+                    Resolved::Edits(edits) => {
+                        for e in edits {
+                            let at_byte =
+                                ((e.row as u64 * cols + e.col as u64) * BF16_BYTES) as usize;
+                            bytes[at_byte..at_byte + 2].copy_from_slice(&e.new_bits.to_le_bytes());
+                        }
+                    }
+                    Resolved::Operations(p) => {
+                        for (chunk, bits) in
+                            bytes.chunks_exact_mut(BF16_BYTES as usize).zip(&p.result)
+                        {
+                            chunk.copy_from_slice(&bits.to_le_bytes());
+                        }
+                    }
                 }
                 w.write_all(&bytes)?;
                 tap(&bytes);
@@ -750,7 +822,7 @@ fn encoder_of(e: &RepresentationEntry) -> Option<serde_json::Value> {
 fn build_ledger(
     source_index: &Vindex3Index,
     raw_source_index: &str,
-    edited: &[(Located, Vec<LedgerEdit>)],
+    edited: &[(Located, Resolved<'_>)],
     written: &crate::format::vindex3::encode::segment::WrittenSegment,
     assembled: &Path,
 ) -> WeightPatchLedger {
@@ -760,12 +832,17 @@ fn build_ledger(
         payload_sha256: written.payload_sha256.clone(),
         segment_sha256: written.segment_sha256.clone(),
     };
-    let any_result = edited
+    let any_operations = edited
         .iter()
-        .flat_map(|(_, edits)| edits)
-        .any(|e| e.encoding == EditEncoding::ResultBits);
+        .any(|(_, r)| matches!(r, Resolved::Operations(_)));
+    let any_result = edited.iter().any(|(_, r)| match r {
+        Resolved::Edits(edits) => edits.iter().any(|e| e.encoding == EditEncoding::ResultBits),
+        Resolved::Operations(_) => false,
+    });
     WeightPatchLedger {
-        schema: if any_result {
+        schema: if any_operations {
+            WEIGHT_PATCHES_SCHEMA_V4
+        } else if any_result {
             WEIGHT_PATCHES_SCHEMA_V3
         } else {
             WEIGHT_PATCHES_SCHEMA
@@ -790,13 +867,29 @@ fn build_ledger(
         },
         targets: edited
             .iter()
-            .map(|(a, edits)| LedgerTarget {
-                object: a.entry.object.clone(),
-                representation: a.canonical_id.clone(),
-                tensor: a.tensor.name.clone(),
-                dtype: a.tensor.dtype.clone(),
-                shape: a.tensor.shape.clone(),
-                edits: edits.clone(),
+            .map(|(a, resolved)| {
+                let mut target = LedgerTarget {
+                    object: a.entry.object.clone(),
+                    representation: a.canonical_id.clone(),
+                    tensor: a.tensor.name.clone(),
+                    dtype: a.tensor.dtype.clone(),
+                    shape: a.tensor.shape.clone(),
+                    edits: Vec::new(),
+                    operations: Vec::new(),
+                    base_tensor_sha256: None,
+                    result_tensor_sha256: None,
+                    changed_elements: None,
+                };
+                match resolved {
+                    Resolved::Edits(edits) => target.edits = edits.clone(),
+                    Resolved::Operations(p) => {
+                        target.operations = p.operations.clone();
+                        target.base_tensor_sha256 = Some(p.base_tensor_sha256.clone());
+                        target.result_tensor_sha256 = Some(tensor_sha256(&p.result));
+                        target.changed_elements = Some(p.changed_elements);
+                    }
+                }
+                target
             })
             .collect(),
         origins: Vec::new(),
@@ -820,6 +913,20 @@ fn build_ledger(
 
 pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The `[rows, cols]` of BF16 matrix `tensor` of the container at `src`, from its segment header alone (no
+/// payload is read). Refuses what [`read_bf16_tensor`] refuses.
+pub fn tensor_shape(src: &Path, tensor: &str) -> Result<[usize; 2], WeightPatchError> {
+    let raw = std::fs::read_to_string(src.join(INDEX_JSON))?;
+    let index: Vindex3Index = serde_json::from_str(&raw)
+        .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
+    let probe = DeclaredPatch::Results(ResultPatch {
+        tensor: tensor.to_string(),
+        edits: Vec::new(),
+    });
+    let at = locate(src, &index, &probe)?;
+    Ok([at.tensor.shape[0], at.tensor.shape[1]])
 }
 
 /// The kind of the graph object whose representation holds `tensor` (the token embedding, a decoder stack, ...), as the

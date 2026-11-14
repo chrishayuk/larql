@@ -27,7 +27,7 @@
 //! alters what the program computes without touching the container.
 
 use crate::format::vindex3::weight_patch::{
-    StructuredWeightOp, WeightDeltaOp, WeightOp, WeightOpRef, WeightPatchError,
+    LowRankColumnsOp, StructuredWeightOp, WeightDeltaOp, WeightOp, WeightOpRef, WeightPatchError,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -368,10 +368,8 @@ impl KnowledgeOverlay {
         let mut out = Vec::new();
         for p in &self.patches {
             for op in &p.operations {
-                let held = match op {
-                    PatchOp::WeightDelta(w) => WeightOpRef::Delta(w),
-                    PatchOp::StructuredWeight(w) => WeightOpRef::Structured(w),
-                    _ => continue,
+                let Some(held) = op.weight_op() else {
+                    continue;
                 };
                 out.push((
                     p.description
@@ -396,16 +394,16 @@ impl KnowledgeOverlay {
             .iter()
             .map(|(_, w)| match w {
                 WeightOpRef::Delta(d) => d.edits.len(),
-                WeightOpRef::Structured(_) => 0,
+                WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => 0,
             })
             .sum()
     }
 
-    /// Number of structured stored-weight ops in effect.
+    /// Number of structured stored-weight ops in effect, of any kind.
     pub fn structured_op_count(&self) -> usize {
         self.weight_ops()
             .iter()
-            .filter(|(_, w)| matches!(w, WeightOpRef::Structured(_)))
+            .filter(|(_, w)| w.structured_columns().is_some())
             .count()
     }
 
@@ -428,6 +426,15 @@ impl KnowledgeOverlay {
         self.stage(WeightOp::Structured(op))
     }
 
+    /// Stage an `add_low_rank_columns` op directly in the session, under the same rule as
+    /// [`Self::stage_structured_op`].
+    pub fn stage_low_rank_columns_op(
+        &mut self,
+        op: LowRankColumnsOp,
+    ) -> Result<(), WeightPatchError> {
+        self.stage(WeightOp::LowRankColumns(op))
+    }
+
     fn stage(&mut self, op: WeightOp) -> Result<(), WeightPatchError> {
         op.as_ref().check_intact()?;
         self.conflict_with_existing(&[op.as_ref()])?;
@@ -444,11 +451,7 @@ impl KnowledgeOverlay {
         let ops: Vec<WeightOpRef<'_>> = patch
             .operations
             .iter()
-            .filter_map(|o| match o {
-                PatchOp::WeightDelta(w) => Some(WeightOpRef::Delta(w)),
-                PatchOp::StructuredWeight(w) => Some(WeightOpRef::Structured(w)),
-                _ => None,
-            })
+            .filter_map(PatchOp::weight_op)
             .collect();
         if ops.is_empty() {
             return Ok(());
@@ -526,7 +529,9 @@ impl KnowledgeOverlay {
                 // Stored-weight edits have no overlay state: they take
                 // effect when COMPILE writes a new container, and are read
                 // back from the patch list by `weight_ops`.
-                PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {}
+                PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {}
                 PatchOp::Delete { layer, feature, .. } => {
                     self.delete_feature(*layer, *feature);
                 }
@@ -650,12 +655,12 @@ fn validate_v3_patch(patch: &VindexPatch) -> Result<(), VindexError> {
                 })?;
             }
             PatchOp::DeleteKnn { .. } | PatchOp::Delete { .. } => {}
-            PatchOp::WeightDelta(op) => {
-                op.check_intact()
-                    .map_err(|e| VindexError::Parse(format!("patch op {i}: {e}")))?;
-            }
-            PatchOp::StructuredWeight(op) => {
-                op.check_intact()
+            PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => {
+                op.weight_op()
+                    .expect("a stored-weight op")
+                    .check_intact()
                     .map_err(|e| VindexError::Parse(format!("patch op {i}: {e}")))?;
             }
             PatchOp::Update {

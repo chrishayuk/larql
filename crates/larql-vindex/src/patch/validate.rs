@@ -96,7 +96,9 @@ impl VindexPatch {
                 // Names no slot and carries no residual vector. It is bound
                 // to a container by its own digests: the VINDEX3 overlay
                 // checks those, and the VINDEX2 overlay refuses the op.
-                PatchOp::WeightDelta(_) | PatchOp::StructuredWeight(_) => {}
+                PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {}
             }
         }
         Ok(())

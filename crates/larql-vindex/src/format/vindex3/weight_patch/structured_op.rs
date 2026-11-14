@@ -139,61 +139,27 @@ impl StructuredWeightOp {
 
     /// Refuse unless `container` is the exact artifact this op was written against.
     pub fn check_binding(&self, container: &Path) -> Result<(), WeightPatchError> {
-        let now = bind_source(container, &self.tensor)?;
-        if now != self.source {
-            return Err(WeightPatchError::WrongSource {
-                expected: format!(
-                    "{} / {}",
-                    short(&self.source.index_sha256),
-                    short(&self.source.payload_sha256)
-                ),
-                found: format!(
-                    "{} / {}",
-                    short(&now.index_sha256),
-                    short(&now.payload_sha256)
-                ),
-            });
-        }
-        Ok(())
+        super::op::check_same_source(&self.source, container, &self.tensor)
+    }
+
+    /// The op as the interpreter takes it, with its operands decoded.
+    pub(super) fn op_kind(&self) -> Result<OpKind, WeightPatchError> {
+        let (u, alpha) = self.operands()?;
+        Ok(OpKind::RemoveDirection {
+            u,
+            alpha,
+            columns: self.columns.clone(),
+        })
     }
 
     /// The operand and alpha as the interpreter takes them.
     fn operands(&self) -> Result<(OperandBits, ScalarBits), WeightPatchError> {
-        let profile = Profile::parse(Some(&self.numerics))
-            .map_err(|r| WeightPatchError::PatchOp(r.to_string()))?;
-        let width = if profile.works_in_f64() {
-            F64_HEX_DIGITS
-        } else {
-            F32_HEX_DIGITS
+        let operand = parse_operand_hex(&self.numerics, &self.operand)?;
+        let alpha = match parse_operand_hex(&self.numerics, std::slice::from_ref(&self.alpha))? {
+            OperandBits::F64(v) => ScalarBits::F64(v[0]),
+            OperandBits::F32(v) => ScalarBits::F32(v[0]),
         };
-        let parse = |text: &str| -> Result<u64, WeightPatchError> {
-            if text.len() != width
-                || !text
-                    .bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-            {
-                return Err(WeightPatchError::PatchOp(format!(
-                    "`{text}` is not {width} lowercase hex digits, the width `{}` works in",
-                    self.numerics
-                )));
-            }
-            u64::from_str_radix(text, 16)
-                .map_err(|e| WeightPatchError::PatchOp(format!("`{text}`: {e}")))
-        };
-        let bits: Vec<u64> = self
-            .operand
-            .iter()
-            .map(|t| parse(t))
-            .collect::<Result<_, _>>()?;
-        let alpha = parse(&self.alpha)?;
-        Ok(if profile.works_in_f64() {
-            (OperandBits::F64(bits), ScalarBits::F64(alpha))
-        } else {
-            (
-                OperandBits::F32(bits.into_iter().map(|b| b as u32).collect()),
-                ScalarBits::F32(alpha as u32),
-            )
-        })
+        Ok((operand, alpha))
     }
 
     /// Run the op over the bound tensor of `container` and return the exact BF16 result of every element
@@ -202,53 +168,104 @@ impl StructuredWeightOp {
         self.check_intact()?;
         self.check_binding(container)?;
         let (operand, alpha) = self.operands()?;
-        let ([rows, cols], base) = read_bf16_tensor(container, &self.tensor)?;
-        let op = StructuredOp {
-            numerics: Some(self.numerics.clone()),
-            shape: [rows, cols],
-            kind: OpKind::RemoveDirection {
+        resolve_on_container(container, &self.tensor, &self.numerics, |_| {
+            OpKind::RemoveDirection {
                 u: operand,
                 alpha,
                 columns: self.columns.clone(),
-            },
-            fixups: Vec::new(),
-        };
-        // What the tensor IS comes from the container's graph, not from what it is called.
-        let role = if tensor_object_kind(container, &self.tensor)? == ObjectKind::Embedding {
-            TensorRole::TokenEmbedding
-        } else {
-            TensorRole::Ordinary
-        };
-        let result = run(
-            &op,
-            &BaseTensor {
-                shape: [rows, cols],
-                bits: &base,
-                role,
-            },
-        )
-        .map_err(|e| WeightPatchError::Structured(e.to_string()))?;
-        let edits: Vec<ResultEdit> = base
-            .iter()
-            .zip(&result)
-            .enumerate()
-            .filter(|(_, (old, new))| old != new)
-            .map(|(i, (_, &new_bits))| ResultEdit {
-                row: i / cols,
-                col: i % cols,
-                new_bits,
-            })
-            .collect();
-        if edits.is_empty() {
-            return Err(WeightPatchError::Empty);
-        }
-        Ok(ResultPatch {
-            tensor: self.tensor.clone(),
-            edits,
+            }
         })
     }
 }
 
-fn short(digest: &str) -> &str {
-    digest.get(..12).unwrap_or(digest)
+/// Stored operand bits, one fixed-width lowercase hex string per element, at the width `numerics` works in:
+/// sixteen digits for the f64 profiles, eight for the f32 one. Shared by every structured `.vlp` op.
+pub(super) fn parse_operand_hex(
+    numerics: &str,
+    texts: &[String],
+) -> Result<OperandBits, WeightPatchError> {
+    let profile =
+        Profile::parse(Some(numerics)).map_err(|r| WeightPatchError::PatchOp(r.to_string()))?;
+    let width = if profile.works_in_f64() {
+        F64_HEX_DIGITS
+    } else {
+        F32_HEX_DIGITS
+    };
+    let parse = |text: &str| -> Result<u64, WeightPatchError> {
+        if text.len() != width
+            || !text
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err(WeightPatchError::PatchOp(format!(
+                "`{text}` is not {width} lowercase hex digits, the width `{numerics}` works in"
+            )));
+        }
+        u64::from_str_radix(text, 16)
+            .map_err(|e| WeightPatchError::PatchOp(format!("`{text}`: {e}")))
+    };
+    let bits: Vec<u64> = texts.iter().map(|t| parse(t)).collect::<Result<_, _>>()?;
+    Ok(if profile.works_in_f64() {
+        OperandBits::F64(bits)
+    } else {
+        OperandBits::F32(bits.into_iter().map(|b| b as u32).collect())
+    })
+}
+
+/// What `tensor` of `container` is, where that changes whether a structured op may touch it. What the tensor IS
+/// comes from the container's graph, not from what it is called.
+pub(super) fn tensor_role(container: &Path, tensor: &str) -> Result<TensorRole, WeightPatchError> {
+    Ok(
+        if tensor_object_kind(container, tensor)? == ObjectKind::Embedding {
+            TensorRole::TokenEmbedding
+        } else {
+            TensorRole::Ordinary
+        },
+    )
+}
+
+/// Run a structured op over `tensor` of `container` and return the exact BF16 result of every element that
+/// changes. `kind` is given the tensor's `[rows, cols]`. An op that changes nothing is refused: a patch edits
+/// at least one element. Shared by every structured `.vlp` op.
+pub(super) fn resolve_on_container(
+    container: &Path,
+    tensor: &str,
+    numerics: &str,
+    kind: impl FnOnce([usize; 2]) -> OpKind,
+) -> Result<ResultPatch, WeightPatchError> {
+    let ([rows, cols], base) = read_bf16_tensor(container, tensor)?;
+    let op = StructuredOp {
+        numerics: Some(numerics.to_string()),
+        shape: [rows, cols],
+        kind: kind([rows, cols]),
+        fixups: Vec::new(),
+    };
+    let role = tensor_role(container, tensor)?;
+    let result = run(
+        &op,
+        &BaseTensor {
+            shape: [rows, cols],
+            bits: &base,
+            role,
+        },
+    )
+    .map_err(|e| WeightPatchError::Structured(e.to_string()))?;
+    let edits: Vec<ResultEdit> = base
+        .iter()
+        .zip(&result)
+        .enumerate()
+        .filter(|(_, (old, new))| old != new)
+        .map(|(i, (_, &new_bits))| ResultEdit {
+            row: i / cols,
+            col: i % cols,
+            new_bits,
+        })
+        .collect();
+    if edits.is_empty() {
+        return Err(WeightPatchError::Empty);
+    }
+    Ok(ResultPatch {
+        tensor: tensor.to_string(),
+        edits,
+    })
 }
