@@ -43,8 +43,9 @@ mod apply;
 pub use any_op::{declare_patches, WeightOp, WeightOpRef};
 pub use apply::{
     apply_declared_patches, apply_weight_patch, apply_weight_patch_with_origins,
-    apply_weight_patches, plan_declared_patch, plan_weight_patch, read_bf16_tensor, tensor_shape,
-    DeclaredPatch, PatchReport, ResultEdit, ResultPatch, WeightEdit, WeightPatch,
+    apply_weight_patches, check_element_count, plan_declared_patch, plan_weight_patch,
+    read_bf16_tensor, tensor_shape, DeclaredPatch, PatchReport, ResultEdit, ResultPatch,
+    WeightEdit, WeightPatch,
 };
 pub use error::WeightPatchError;
 pub use ledger::{

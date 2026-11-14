@@ -884,6 +884,14 @@ exactly.
 - **Conflicts are by declared footprint, not by what changes after rounding.** Two structured ops sharing a
   column are refused. A structured op and an `UPDATE WEIGHTS` delta on one tensor are refused as mixed forms,
   whichever came first. An op that changes nothing is refused at resolve and compile.
+- **What staging refuses, and what the compile refuses.** Staging refuses what is wrong with the statement
+  alone: the operand file, the profile, the tensor, the columns, an op that changes nothing. A limit that
+  depends on the whole set of ops compiled together is enforced by `COMPILE`, so that statements meaning the
+  same edit do not differ by the order they were written in. The element limit is such a limit: a tensor
+  edited only by removals compiles as a list of elements, at most 2^18 across the compile, while an
+  `ADD LOW RANK` on the same tensor, staged before or after, makes it an operation target that the limit does
+  not bound. When the removal alone would exceed the limit, the staging reply says so in a `note:` line; it
+  is advice about the set staged so far, never a refusal.
 - **Ledger.** A compile with any structured op writes `weight-patches/v3` with the exact result bits. A
   delta-only compile still writes `weight-patches/v2`, unchanged.
 - **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container
