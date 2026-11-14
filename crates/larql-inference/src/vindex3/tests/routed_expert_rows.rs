@@ -34,7 +34,7 @@ const PATTERN_SCALE: f32 = 16.0;
 const PATTERN_OFFSET: f32 = 0.3;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum Fault {
+pub(super) enum Fault {
     None,
     Fail,
     DropPair,
@@ -61,14 +61,18 @@ type Mutation = dyn Fn(&mut Vec<wire::Binding>);
 type Frames = Arc<Mutex<Vec<(usize, Vec<(u32, Vec<usize>)>)>>>;
 
 #[derive(Clone, Default)]
-struct Probe {
-    single_calls: Arc<AtomicUsize>,
-    rows_calls: Arc<AtomicUsize>,
-    frames: Frames,
-    fault: Arc<Mutex<Option<Fault>>>,
+pub(super) struct Probe {
+    pub(super) single_calls: Arc<AtomicUsize>,
+    pub(super) rows_calls: Arc<AtomicUsize>,
+    pub(super) frames: Frames,
+    pub(super) fault: Arc<Mutex<Option<Fault>>>,
+    /// `(layer, worker, rows)` of every multi-row exchange, in call order.
+    pub(super) exchanges: Arc<Mutex<Vec<(usize, usize, usize)>>>,
+    /// When set, only a multi-row exchange for this layer is faulted.
+    pub(super) fault_layer: Arc<Mutex<Option<usize>>>,
 }
 
-struct InProcess {
+pub(super) struct InProcess {
     workers: Vec<BoundExpertWorker<ProductionBackend>>,
     /// What `bindings()` reports; normally the workers' own.
     advertised: Vec<wire::Binding>,
@@ -111,6 +115,11 @@ impl ExpertTransport for InProcess {
                 "wire": STUB_WIRE, "shard": shard, "rows": rows.len(),
             }));
         }
+        self.probe
+            .exchanges
+            .lock()
+            .unwrap()
+            .push((layer, shard, rows.len()));
         self.probe.frames.lock().unwrap().push((
             shard,
             rows.iter().map(|r| (r.id, r.experts.clone())).collect(),
@@ -137,7 +146,13 @@ impl ExpertTransport for InProcess {
         outputs.reverse();
         // Only the last worker misbehaves, so with two workers the first
         // one's answer is always correct and must still be discarded.
-        if shard + 1 == self.workers.len() {
+        let faulted_layer = self
+            .probe
+            .fault_layer
+            .lock()
+            .unwrap()
+            .is_none_or(|only| only == layer);
+        if shard + 1 == self.workers.len() && faulted_layer {
             match self.probe.fault.lock().unwrap().unwrap_or(Fault::None) {
                 Fault::Fail => return Err("injected worker timeout".into()),
                 Fault::DropPair => {
@@ -173,7 +188,7 @@ fn worker(container: &Path, experts: (usize, usize)) -> BoundExpertWorker<Produc
     BoundExpertWorker::new(container, Arc::new(prepared)).unwrap()
 }
 
-fn transport(container: &Path, topology: &[(usize, usize)], probe: &Probe) -> InProcess {
+pub(super) fn transport(container: &Path, topology: &[(usize, usize)], probe: &Probe) -> InProcess {
     let workers: Vec<_> = topology.iter().map(|t| worker(container, *t)).collect();
     InProcess {
         advertised: workers.iter().map(|w| w.binding().clone()).collect(),
@@ -182,7 +197,7 @@ fn transport(container: &Path, topology: &[(usize, usize)], probe: &Probe) -> In
     }
 }
 
-fn topologies() -> [Vec<(usize, usize)>; 2] {
+pub(super) fn topologies() -> [Vec<(usize, usize)>; 2] {
     [
         vec![(0, EXPERTS)],
         vec![(0, EXPERTS / 2), (EXPERTS / 2, EXPERTS)],
@@ -211,7 +226,7 @@ fn batch(inputs: &[Vec<f32>]) -> Vec<ExpertRow<'_>> {
         .collect()
 }
 
-fn bits(values: &[f32]) -> Vec<u32> {
+pub(super) fn bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|v| v.to_bits()).collect()
 }
 

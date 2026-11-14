@@ -19,6 +19,7 @@
 //! not against a tolerance.
 
 mod bf16_zlib_bank;
+mod block;
 mod fixture;
 mod placed;
 mod planned_bank;

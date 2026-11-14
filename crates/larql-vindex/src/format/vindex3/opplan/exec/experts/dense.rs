@@ -51,6 +51,13 @@ impl FfnOperands {
     pub(in super::super) fn routed_provider_missing(&self) -> bool {
         matches!(self, Self::Routed(r) if matches!(r.placement, Some((_, None))))
     }
+    /// Whether this layer's FFN sends a block of positions to remote
+    /// experts as one call. A property of placement, not a tuning choice:
+    /// the block traversal must take its grouped arm for such a layer
+    /// whatever the multi-position switch says.
+    pub(in super::super) fn groups_remote_rows(&self) -> bool {
+        matches!(self, Self::Routed(r) if r.groups_rows())
+    }
     pub(in super::super) fn bind_routed_provider(
         &mut self,
         provider: std::sync::Arc<dyn super::super::routed_experts::RoutedExpertProvider>,
@@ -274,11 +281,12 @@ impl FfnOperands {
 
     /// [`Self::apply_from_residual`] over several positions at once.
     ///
-    /// Only the DENSE arm groups. A routed or hybrid FFN selects experts
-    /// per position, so its weight traversal is not shared between them
-    /// and grouping it is a different rung with its own question — those
-    /// arms keep the per-position program, which is the same arithmetic
-    /// they ran before.
+    /// The DENSE arm groups its projections. A ROUTED arm whose experts
+    /// are placed behind a bound provider groups its provider call: every
+    /// position's selected experts cross to the workers together, once
+    /// per layer, and each position's arithmetic is unchanged. A routed
+    /// arm with resident experts, and a hybrid, keep the per-position
+    /// program, which is the same arithmetic they ran before.
     pub(in super::super) fn apply_from_residual_many<
         B: super::super::backend::PlanBackend + ?Sized,
     >(
@@ -292,6 +300,9 @@ impl FfnOperands {
         match (self, ffn) {
             (Self::Dense(dense), LayerFfn::Dense(op)) => {
                 dense.apply_many(op, backend, pre_ffn_normed, hidden)
+            }
+            (Self::Routed(routed), LayerFfn::Routed(op)) if routed.groups_rows() => {
+                routed.apply_many(op, backend, pre_ffn_normed, hidden)
             }
             _ => residuals
                 .iter()

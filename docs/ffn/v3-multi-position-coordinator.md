@@ -1,10 +1,18 @@
 # Design: a multi-position coordinator over multi-row remote experts
 
 Status: **architecture approved on 2026-11-14 with the decisions recorded
-below. Nothing here is implemented.** Runtime code changes wait for the
-implementation plan and gates in this document to be reported back. It
-builds on the [multi-row expert operation](v3-expert-rows.md), which exists
-but which no decode session calls.
+below. Steps 1 to 4 and 6 of the implementation plan are implemented and
+gated on the routed fixture; step 5, the GPT-OSS 20B run, is not done, so
+there is still no real-model evidence for the multi-row operation.** The
+sections below are the design as approved and describe the code before
+those steps. It builds on the [multi-row expert operation](v3-expert-rows.md).
+
+One departure from the text below: the block session takes a continuation
+selection and refuses a provider that cannot be rewound by asking the
+provider itself at construction, where the design says "from the selected
+continuation's identity". Production code may not name a built-in provider,
+and rollback is a capability a provider states by implementing it. Of the
+shipped providers only the row provider is accepted.
 
 Out of scope: drafting or speculation policy, acceptance heuristics, a
 multi-row expert kernel, cross-client batching, a Metal coordinator, and any
