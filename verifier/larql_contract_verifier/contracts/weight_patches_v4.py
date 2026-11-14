@@ -158,7 +158,7 @@ class DecimalFloat(float):
         return value
 
 
-def strict_json(data: bytes, what: str, parse_float=float):
+def strict_json(data: bytes, what: str, parse_float=float, parse_int=int):
     """JSON with no duplicate keys and no NaN/Infinity constants."""
 
     def pairs(items):
@@ -172,7 +172,18 @@ def strict_json(data: bytes, what: str, parse_float=float):
     def const(name):
         raise ValueError(f"{what}: non-finite JSON constant {name}")
 
-    return json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=const, parse_float=parse_float)
+    return json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=const, parse_float=parse_float,
+                      parse_int=parse_int)
+
+
+def ledger_int(text: str):
+    """An integer of a ledger. `-0` is the one integer spelling whose reading as a float is not its reading as an
+    integer: a binary32 reader makes it −0. It is kept with its text, as a float is; every other integer is an
+    integer. (A field that must be an integer therefore refuses `-0`, as a reader of unsigned integers does.)"""
+    return DecimalFloat(text) if text == NEGATIVE_ZERO_INTEGER else int(text)
+
+
+NEGATIVE_ZERO_INTEGER = "-0"
 
 
 def sha256_file(path: str) -> str:
@@ -360,45 +371,72 @@ def f32_value(bits: int) -> Fraction:
     return Fraction(x)
 
 
-#: A JSON number with a fraction or an exponent: sign, integer digits, fraction digits, exponent.
+#: A JSON number: sign, integer digits, fraction digits, exponent.
 JSON_FLOAT = re.compile(r"(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?")
-#: A decimal whose leading digit is at or above 10^39 is beyond binary32 (2^128 < 3.5e38), and one below 10^-47 is
-#: under half the smallest binary32 subnormal (2^-150 > 7e-46) and reads as zero. Deciding those from the exponent
-#: alone keeps a nine-character number from becoming an instruction to build a million-digit integer (§5).
 F32_SIGN_BIT = 0x80000000
+#: A decimal whose first significant digit is at or above 10^39 is beyond binary32 (2^128 < 3.5e38), and one below
+#: 10^-47 is under half the smallest binary32 subnormal (2^-150 > 7e-46) and reads as zero. Deciding those from the
+#: position of that digit keeps a nine-character number from becoming an instruction to build a million-digit
+#: integer.
 BINARY32_OVERFLOW_DECIMAL_EXPONENT = 39
 BINARY32_ZERO_DECIMAL_EXPONENT = -47
+#: An exponent with more significant digits than this is past both thresholds whatever the digits before it: no
+#: number that fits in memory has 10^18 digits to offset it. One with fewer is converted, which is cheap.
+EXPONENT_DIGITS_READ = 18
+#: Significant digits converted exactly. Every binary32, and every midpoint of two neighbours, is a multiple of 2^-150
+#: below 2^129 and so has at most 113 significant decimal digits. A decimal with more digits than are kept here and a
+#: nonzero remainder lies strictly between two neighbouring kept-length decimals, on the same side of every such
+#: value as any other number between them, so the remainder is replaced by one nonzero digit and the rounding is
+#: unchanged. This bounds the work for a number of any length.
+SIGNIFICANT_DIGITS_KEPT = 800
+STICKY_DIGIT = "1"
+WRITTEN_SHOWN = 40
+
+
+def written(delta) -> str:
+    """A `delta` as the ledger wrote it, shortened for a message."""
+    text = getattr(delta, "text", None) or repr(delta)
+    return text if len(text) <= WRITTEN_SHOWN else f"{text[:WRITTEN_SHOWN]}… ({len(text)} characters)"
 
 
 def delta_as_binary32(delta) -> tuple[Fraction | None, bool]:
     """What a binary32 reader makes of a ledger's `delta`: `(value, negative)`. The value is its decimal read exactly
     and rounded once to binary32, ties to even, or `None` when it is beyond binary32. `negative` is the sign as
-    written, which is the sign of the reading even when the value is zero (`-0.0`, or a negative number too small
-    for binary32). A writer prints a binary32 in the fewest digits that read back to it (`0.1` for 0x3dcccccd), so
-    the decimal is not the binary32's own value and is not compared as one."""
+    written, which is the sign of the reading even when the value is zero (`-0.0`, `-0`, or a negative number too
+    small for binary32). A writer prints a binary32 in the fewest digits that read back to it (`0.1` for
+    0x3dcccccd), so the decimal is not the binary32's own value and is not compared as one.
+
+    No number raises here and none costs more than its length: the digits are never converted whole."""
     text = getattr(delta, "text", None)
-    if text is None:  # written as an integer
+    if text is None:  # written as an integer (`json` has already bounded its length)
         negative, exact = delta < 0, Fraction(delta)
     else:
         m = JSON_FLOAT.fullmatch(text)
         if m is None:
-            raise ValueError(f"{text!r} is not a JSON number")
+            raise ValueError(f"{text[:WRITTEN_SHOWN]!r} is not a JSON number")
         sign, whole, fraction, exponent = m.group(1), m.group(2), m.group(3) or "", m.group(4) or "0"
         negative = sign == "-"
-        if not (whole + fraction).strip("0"):
+        digits = whole + fraction
+        significant = digits.lstrip("0")
+        if not significant:
             return Fraction(0), negative
-        try:
-            exp = int(exponent)
-        except ValueError:  # more exponent digits than an integer conversion takes
-            return (Fraction(0) if exponent.startswith("-") else None), negative
-        leading = whole.lstrip("0")
+        exponent_negative = exponent.startswith("-")
+        exponent_digits = exponent.lstrip("+-").lstrip("0")
+        if len(exponent_digits) > EXPONENT_DIGITS_READ:
+            return (Fraction(0) if exponent_negative else None), negative
+        exp = int(exponent_digits or "0") * (-1 if exponent_negative else 1)
         # the power of ten of the first significant digit
-        adjusted = exp + len(leading) - 1 if leading else exp - (len(fraction) - len(fraction.lstrip("0"))) - 1
+        adjusted = exp + len(whole) - (len(digits) - len(significant)) - 1
         if adjusted >= BINARY32_OVERFLOW_DECIMAL_EXPONENT:
             return None, negative
         if adjusted < BINARY32_ZERO_DECIMAL_EXPONENT:
             return Fraction(0), negative
-        exact = Fraction(int(sign + whole + fraction)) * Fraction(10) ** (exp - len(fraction))
+        body = significant.rstrip("0")
+        if len(body) > SIGNIFICANT_DIGITS_KEPT:
+            body = body[:SIGNIFICANT_DIGITS_KEPT] + STICKY_DIGIT
+        exact = Fraction(int(body)) * Fraction(10) ** (adjusted - (len(body) - 1))
+        if negative:
+            exact = -exact
     try:
         return numconv.round_nearest_even(exact, numconv.BINARY32), negative
     except numconv.Overflow:
@@ -469,7 +507,7 @@ class Judge:
         ledger_bytes = read_file(self.new_root, rel)
         self.engine["ledger_sha256"] = hashlib.sha256(ledger_bytes).hexdigest()
         try:
-            ledger = strict_json(ledger_bytes, "the ledger", parse_float=DecimalFloat)
+            ledger = strict_json(ledger_bytes, "the ledger", parse_float=DecimalFloat, parse_int=ledger_int)
         except ValueError as e:
             self.L.violate("ledger", f"the ledger is not valid JSON: {e}")
             self.N.cannot("the ledger cannot be read, so there are no ops to reconstruct")
@@ -918,7 +956,7 @@ class Judge:
                 recomputable = False
                 continue
             if not delta_reads_as(e["delta"], e["delta_bits"]):
-                L.violate(where, f"delta {e['delta']!r} does not read as the binary32 of delta_bits "
+                L.violate(where, f"delta {written(e['delta'])} does not read as the binary32 of delta_bits "
                                  f"{e['delta_bits']:08x}")
             if (int(base2d[r, c]) & V.BF16_EXP_MASK) == V.BF16_EXP_MASK:
                 L.violate(where, "the base element is not finite: the delta must be refused")
