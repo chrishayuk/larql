@@ -1,6 +1,6 @@
 # PATCH-TRAIN-2: retention-aware sequential patch learning (confirmatory protocol)
 
-**Status: DRAFT r3, 2026-11-14. NOT FROZEN. Not reviewed. No calibration, data generation, confirmation, native integration or
+**Status: DRAFT r3.1, 2026-11-14 (direction approved; consistency edits after the plan review). NOT FROZEN. Not reviewed. No calibration, data generation, confirmation, native integration or
 optimiser search has been run or started.** r3 revises r2 (`8827975f`) after the reviewer decisions in §10. r2 followed RETAIN-1
 (registered `c209ba0b`, results `1807596c`). Companion drafts: `PATCH-TRAIN-2-CALIBRATION-PLAN.md`, `PATCH-TRAIN-2-DATA-PLAN.md`.
 Branch `research/structured-real-1`, worktree `larql-structured-real`. CPU only. Gemma 3 270M (`google/gemma-3-270m-it` at
@@ -65,7 +65,7 @@ PATCH-TRAIN-1 discovery, all emulated, all on `tasks_discovery.json`:
 |---|---|---|
 | **N** new-task only | `L_B` | nothing |
 | **R** rehearsal | `L_B + 1.0 * L_A`, `L_A` on the first patch's **original training prompt** | the first patch's training prompt (one string + target) |
-| **D** distillation | `L_B + 1.0 * mean KL(P_W1 \|\| P_student)` over a retention set RET of full-vocabulary last-token distributions | the first patch's **training prompt** *and* the training-template prompts of a fixed set of other fictional entities; teacher = W1 |
+| **D** distillation | `L_B + 1.0 * mean KL(P_W1 \|\| P_student)` over a retention set RET of full-vocabulary last-token distributions | **exactly 24 prompts**: `RET = {x_A} ∪ {x_1..x_23}`, `x_A` the first patch's original training prompt and `x_1..x_23` the training-template prompts of the first 23 entities of the RET split (fixed, same for every pair); teacher = W1. R stores 1 prompt, D stores 24 prompts plus teacher distributions (`PATCH-TRAIN-2-DATA-PLAN.md` §2.2) |
 | **C** independent composition | `P_B` learned on W0, rebound and re-applied on W1 | nothing |
 
 **Distillation here uses a stored first-patch training prompt (it is in RET). It is therefore not example-free retention, and no
@@ -111,8 +111,8 @@ on W0, asserted bitwise at every position used (a failed assertion is a harness 
 - The unit of replication is the **entity pair**. Reverse orders, paraphrases, training prompts and patches are not replications.
 - **Primary order** per pair is fixed by the generator's seeded draw. The reverse order is a secondary descriptive analysis and is
   never counted toward the 12.
-- The retention set RET for D and the leakage-comparison entities are drawn from a **third, disjoint generated split** (also in the
-  data plan), never from the pair entities and never from discovery.
+- The retention set RET for D (24 prompts, data plan §2.2) is drawn from a **third, disjoint generated split**, never from the pair
+  entities and never from discovery; no held-out paraphrase, real-fact or neutral prompt enters optimisation or distillation.
 
 ### 5.2 Arms per pair (primary order)
 
@@ -159,6 +159,13 @@ alone, per arm.
   conditions on both learning in isolation. No pair is excluded after the fact.
 - The trade-off (§2) is a pre-declared secondary endpoint: paired difference in B's paraphrase top-1 count and log-p gain, R and D vs N.
 
+### 6.1a Three conclusions that are never merged
+
+The final report states three separate conclusions, each with its own evidence and its own rate over pairs, and never one blended
+"it works": (1) **two training answers coexist** (L and R on training prompts); (2) **the new association transfers to unseen
+paraphrases** (P); (3) **unrelated entity behaviour is acceptably unchanged** (X_stat, X_func, G). RETAIN-1 supports only (1) with any
+strength. The combined primary endpoint is reported beside them, not in place of them.
+
 ### 6.2 Statistical feasibility for 12 pairs (computed now, before any data)
 
 Exact one-sided McNemar on the primary endpoint is a sign test on the discordant pairs `d` (pairs where exactly one arm succeeds).
@@ -182,8 +189,9 @@ table and the intervals. Per-verdict rates are secondary and descriptive: they d
 
 ### 6.3 Leakage: statistical change and functional interference are separate, independently gated
 
-Measured for every patched entity and every **unrelated** entity (the pair's partner plus all RET/comparison entities of the third
-split), on the training prompt and on each held-out template, at each stage, against the model before that stage (W0 for A, W1 for
+Measured for every patched entity and every **unrelated** entity. The X gates use the **uncovered unrelated set** (the pair's partner, the
+24th RET-split entity and the other 22 CONF entities, never trained or distilled on: data plan §2.3), identical for every arm; the 23 RET-covered
+prompts are reported descriptively only because D optimises them directly. Measured on the training prompt and on each held-out template, at each stage, against the model before that stage (W0 for A, W1 for
 B) **and** against W0. All of these are always reported:
 
 - continuous: change in log p of each patched answer on each unrelated prompt (nats), `S`, in-set conditional change;
@@ -193,10 +201,11 @@ B) **and** against W0. All of these are always reported:
 
 Gates (frozen from CAL, §7):
 
-- **X_stat**: the continuous log-p changes are at or below the null floors `T_null` (99th percentile of the null-patch distribution).
+- **X_stat**: the largest *increase* in a patched answer's log p over the uncovered unrelated prompts is at or below the null floor `T_null` (directional upper-tail 99th
+  percentile of the per-draw null, §7).
 - **X_func**: (a) **zero** unrelated prompts whose full-vocabulary top-1 *becomes a patched answer*; this defines harm and is not a
-  number taken from data; (b) the F2 in-set argmax-flip rate is at or below the null 99th percentile of that rate; (c) the F3 margin
-  increase of a patched answer on unrelated prompts is at or below `T_null_margin`.
+  number taken from data; (b) the F2 in-set argmax-flip rate is at or below the null upper-tail 99th percentile of that rate; (c) the F3 margin
+  increase of a patched answer on unrelated prompts is at or below `T_null_margin` (upper tail). **X_func is independent of the null-derived X_stat floor.**
 
 A patch can pass X_stat and fail X_func (a broad null makes X_stat lenient) and the reverse; they are reported separately and X
 passes only if both do. If a null distribution is so broad that its floor would allow a changed answer, the functional gate still binds.
@@ -208,8 +217,9 @@ discovery files and from the confirmatory split. The stress-pair results set no 
 
 1. **Null patches** (no learning): `>= 200` random `(a, b)` of the same footprint, rank and norm as the learned patches, applied on
    W0 and on a learned W1, to get the distribution of every continuous and functional metric under "no learning".
-2. **Floors from the null distribution only**: `T_null_*` = 99th percentile of the absolute null change (the flip rate for F2).
-   `Delta_retain` = `T_null` for first-patch log-p drift. The method's own CAL results are used only to check feasibility and to
+2. **Floors from the null distribution only, directional** (§ calibration plan 3.1): the upper-tail 99th percentile of the per-draw
+   *deterioration* for retention (`Delta_retain`), of the per-draw *gain* for P, and of the per-draw *increase* for leakage, flip rate and
+   margin; never an absolute value. The order statistic, its uncertainty and the N1-vs-N2 difference are reported. The method's own CAL results are used only to check feasibility and to
    report; **they are never used to loosen a threshold.** If R or D cannot meet a floor, the floor stays.
 3. **Isolated learning** at rho 0.40 on the CAL pairs, to check the configuration learns on untouched entities. A failure is a
    negative result for the configuration, reported, with no re-tuning inside this protocol.
