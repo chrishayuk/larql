@@ -20,8 +20,13 @@ import link_block_frames_model as bm
 import link_model as lm
 import link_pair as lp
 import link_pair_model as pm
+from block_time import provenance
 from link_sweep import ECHO_HEADER, RELAY
 from profile_exact import save, sha
+
+
+PROBE_SOURCES = ("crates/larql-server/examples/v3_link_pair.rs", "crates/larql-server/examples/v3_link_shaper.rs",
+                 "crates/larql-server/examples/support/polling.rs", "crates/larql-server/examples/support/qos.rs")
 
 
 def measure(root, out, index, point):
@@ -56,6 +61,7 @@ def run(root, out, kind, label):
         "frozen": pm.frozen_parameters(),
         "geometry": {str(width): list(sizes) for width, sizes in bm.geometry().items()},
         "binary_sha256": {"v3_link_shaper": sha(root / RELAY), "v3_link_pair": sha(root / lp.PROBE)},
+        "provenance": provenance(root, PROBE_SOURCES),
         "harness_sha256": {name: sha(Path(__file__).with_name(name))
                            for name in ("link_block_frames.py", "link_block_frames_model.py",
                                         "link_pair_model.py", "link_model.py", bm.GEOMETRY_FILE)},

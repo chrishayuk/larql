@@ -26,6 +26,10 @@ from profile_exact import agreement, save, sha, workers
 
 TRIAL = "target/release/examples/v3_block_time"
 SERVER = "target/release/larql-server"
+TRIAL_SOURCES = ("crates/larql-cli/examples/v3_block_time.rs", "crates/larql-server/examples/v3_link_shaper.rs")
+# Environment recorded with every receipt: anything that can change how the
+# runtime, its thread pools or the relay behave.
+ENVIRONMENT_PREFIXES = ("LARQL_", "RAYON_", "VECLIB_", "TOKIO_", "OMP_", "MKL_", "OPENBLAS_")
 TOPOLOGY = "one"
 TRIAL_TIMEOUT_SECONDS = 3600
 # LINK-1's settings, recorded in the manifest.
@@ -119,6 +123,9 @@ def execute(args, root, model, out, kind):
         "counts": kind == "admissible",
         "continue_unsettled": args.continue_unsettled,
         "revision": revision, "source_dirty": dirty, "model": str(model), "topology": TOPOLOGY,
+        "provenance": provenance(root, TRIAL_SOURCES),
+        "trial_environment": {name: value for name, value in sorted(env.items())
+                              if name.startswith(ENVIRONMENT_PREFIXES)},
         "settings": SETTINGS, "link_qos": os.environ.get(LINK_QOS_ENV, "default"),
         "ids": str(args.ids), "ids_sha256": sha(args.ids), "prompt_tokens": len(saved["prompt"]),
         "positions": bt.POSITIONS, "measure_from": bt.MEASURE_FROM,
@@ -185,7 +192,24 @@ def execute(args, root, model, out, kind):
     return report
 
 
-def main():
+def provenance(root, sources):
+    """What produced a receipt: revision, uncommitted changes, source hashes and environment.
+
+    A binary's hash alone does not say which source built it, so the sources
+    are hashed too, and the worktree's uncommitted and untracked files listed.
+    """
+    def git(*command):
+        return subprocess.check_output(["git", *command], cwd=root, text=True)
+    return {
+        "revision": git("rev-parse", "HEAD").strip(),
+        "uncommitted": git("status", "--porcelain").splitlines(),
+        "source_sha256": {source: sha(root / source) for source in sources},
+        "environment": {name: value for name, value in sorted(os.environ.items())
+                        if name.startswith(ENVIRONMENT_PREFIXES)},
+    }
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--diagnostic", metavar="LABEL", help="Development run; never counts")
@@ -200,7 +224,10 @@ def main():
     parser.add_argument("--port", type=int, default=19581)
     parser.add_argument("--continue-unsettled", action="store_true",
                         help="Diagnostic only: run the schedule even if warm-up never settles")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    # Refused before anything is looked for, built or started.
+    if args.admissible and args.continue_unsettled:
+        parser.error("--continue-unsettled is for diagnostics; the admissible run stops if warm-up never settles")
     root = Path(__file__).resolve().parents[2]
     for binary in (TRIAL, SERVER, RELAY):
         if not (root / binary).exists():
@@ -209,8 +236,6 @@ def main():
         parser.error("the relay binary is not the frozen build LINK-2 certifies")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
-    if args.admissible and args.continue_unsettled:
-        parser.error("--continue-unsettled is for diagnostics; the admissible run stops if warm-up never settles")
     if args.admissible:
         if lp.busy_processes():
             parser.error("a compiler or model process is running; the admissible run needs a quiet machine")

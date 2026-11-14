@@ -378,5 +378,51 @@ class Judging(unittest.TestCase):
         self.assertEqual(driver.point_of({"rtt_ms": 5.0})["rate_bits_per_s"], lm.UNLIMITED)
 
 
+class Admission(unittest.TestCase):
+    """What the driver refuses before it starts anything."""
+
+    def test_an_admissible_run_refuses_to_continue_unsettled_before_starting_anything(self):
+        import contextlib
+        import io
+        import block_time as driver
+
+        def must_not_run(*args, **kwargs):
+            raise AssertionError("the driver started work for a run it must refuse")
+
+        started = {name: getattr(driver, name) for name in ("workers", "relays", "run_trial", "execute")}
+        popen, run = driver.subprocess.Popen, driver.subprocess.run
+        try:
+            for name in started:
+                setattr(driver, name, must_not_run)
+            driver.subprocess.Popen = driver.subprocess.run = must_not_run
+            message = io.StringIO()
+            with self.assertRaises(SystemExit) as refused, contextlib.redirect_stderr(message):
+                driver.main(["--admissible", "--continue-unsettled", "--model", "unused",
+                             "--out", "/nonexistent/never-created"])
+        finally:
+            for name, original in started.items():
+                setattr(driver, name, original)
+            driver.subprocess.Popen, driver.subprocess.run = popen, run
+        self.assertNotEqual(refused.exception.code, 0)
+        self.assertIn("--continue-unsettled is for diagnostics", message.getvalue())
+
+    def test_provenance_binds_a_receipt_to_source_and_environment(self):
+        import os
+        from pathlib import Path
+        import block_time as driver
+        root = Path(driver.__file__).resolve().parents[2]
+        os.environ["LARQL_PROVENANCE_PROBE"] = "1"
+        try:
+            record = driver.provenance(root, driver.TRIAL_SOURCES)
+        finally:
+            del os.environ["LARQL_PROVENANCE_PROBE"]
+        self.assertEqual(len(record["revision"]), 40)
+        self.assertIsInstance(record["uncommitted"], list)
+        self.assertEqual(set(record["source_sha256"]), set(driver.TRIAL_SOURCES))
+        self.assertTrue(all(len(digest) == 64 for digest in record["source_sha256"].values()))
+        self.assertEqual(record["environment"]["LARQL_PROVENANCE_PROBE"], "1")
+        self.assertNotIn("PATH", record["environment"])
+
+
 if __name__ == "__main__":
     unittest.main()
