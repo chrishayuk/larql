@@ -1,5 +1,7 @@
 //! LQL Parser — recursive descent from token stream to AST.
 
+mod expected;
+mod help;
 mod helpers;
 mod introspection;
 mod lifecycle;
@@ -88,10 +90,8 @@ impl Parser {
             Token::Ident(ref s) if s.eq_ignore_ascii_case("DISCARD") => {
                 self.parse_discard_weight_edits()
             }
-            _ => Err(ParseError(format!(
-                "expected statement keyword, got {:?}",
-                self.peek()
-            ))),
+            Token::Ident(ref s) if s.eq_ignore_ascii_case("HELP") => self.parse_help(),
+            _ => Err(self.unknown_statement()),
         }
     }
 }

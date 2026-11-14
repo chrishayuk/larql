@@ -104,7 +104,9 @@ $ larql vindex3 observe Qwen3-0.6B --backend production \
 ```
 
 `observe` writes a record of every layer's contribution while the model runs;
-`larql repl` opens an interactive LQL shell.
+`larql repl` opens an interactive LQL shell. `larql lql 'HELP;'` prints every
+LQL statement with its syntax, and `larql lql --help` says how several
+statements share one session and what the exit status means.
 
 ## What you can do
 

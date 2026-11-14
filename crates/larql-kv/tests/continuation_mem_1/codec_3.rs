@@ -206,6 +206,12 @@ impl ContinuationProvider for HidesACopy {
     fn set_position(&mut self, position: usize) {
         self.inner.set_position(position)
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
+    }
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         self.inner.recurrent_state(layer)
     }

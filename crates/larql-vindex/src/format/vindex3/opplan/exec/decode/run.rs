@@ -24,6 +24,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         interventions: &InterventionPlan,
         head_interventions: &HeadInterventionPlan,
     ) -> Result<StepRun, VindexError> {
+        self.usable()?;
         let mut profile = super::super::profile::Token::start(
             self.kv.state().position(),
             match &entry {

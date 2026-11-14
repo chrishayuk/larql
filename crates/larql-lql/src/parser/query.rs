@@ -242,9 +242,11 @@ impl Parser {
         let mode = if self.check_keyword(Keyword::Infer) {
             self.advance();
             ExplainMode::Infer
-        } else {
-            self.expect_keyword(Keyword::Walk)?;
+        } else if self.check_keyword(Keyword::Walk) {
+            self.advance();
             ExplainMode::Walk
+        } else {
+            return Err(self.expected_one_of("EXPLAIN", &["WALK", "INFER"], "EXPLAIN"));
         };
 
         let prompt = self.expect_string()?;

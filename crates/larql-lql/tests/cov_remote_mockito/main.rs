@@ -91,5 +91,6 @@ fn sql_path(p: &std::path::Path) -> String {
 
 mod connection_handshake;
 mod explain_infer_trace_predictions_first_at;
+mod help_statement;
 mod infer_walk_ffn_compare_knn_override_defa;
 mod session_scope;

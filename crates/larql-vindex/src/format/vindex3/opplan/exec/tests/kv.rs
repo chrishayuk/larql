@@ -60,6 +60,12 @@ impl KvState for RecordingKvState {
     fn set_position(&mut self, position: usize) {
         self.inner.set_position(position);
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
+    }
 
     /// A KV-only recorder: it records rows, so it says so.
     fn recurrent_state(

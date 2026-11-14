@@ -8,7 +8,7 @@ impl Parser {
     /// Parse a statement starting with BEGIN (BEGIN PATCH "file.vlp").
     pub(crate) fn parse_begin(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Begin)?;
-        self.expect_keyword(Keyword::Patch)?;
+        self.expect_keyword_after("BEGIN", Keyword::Patch)?;
         let path = self.expect_string()?;
         self.eat_semicolon();
         Ok(Statement::BeginPatch { path })
@@ -17,7 +17,7 @@ impl Parser {
     /// Parse SAVE PATCH.
     pub(crate) fn parse_save(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Save)?;
-        self.expect_keyword(Keyword::Patch)?;
+        self.expect_keyword_after("SAVE", Keyword::Patch)?;
         self.eat_semicolon();
         Ok(Statement::SavePatch)
     }
@@ -25,7 +25,7 @@ impl Parser {
     /// Parse APPLY PATCH "file.vlp".
     pub(crate) fn parse_apply(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Apply)?;
-        self.expect_keyword(Keyword::Patch)?;
+        self.expect_keyword_after("APPLY", Keyword::Patch)?;
         let path = self.expect_string()?;
         self.eat_semicolon();
         Ok(Statement::ApplyPatch { path })
@@ -37,7 +37,7 @@ impl Parser {
         if matches!(self.peek(), Token::Ident(ref s) if s.eq_ignore_ascii_case("DIRECTION")) {
             return self.parse_remove_direction();
         }
-        self.expect_keyword(Keyword::Patch)?;
+        self.expect_keyword_after("REMOVE", Keyword::Patch)?;
         let path = self.expect_string()?;
         self.eat_semicolon();
         Ok(Statement::RemovePatch { path })
@@ -115,8 +115,7 @@ impl Parser {
     /// `DISCARD WEIGHT EDITS`. All three are read as words in this position, not reserved.
     pub(crate) fn parse_discard_weight_edits(&mut self) -> Result<Statement, ParseError> {
         self.expect_ident_eq("DISCARD")?;
-        self.expect_ident_eq("WEIGHT")?;
-        self.expect_ident_eq("EDITS")?;
+        self.expect_words_after("DISCARD", &["WEIGHT", "EDITS"])?;
         self.eat_semicolon();
         Ok(Statement::DiscardWeightEdits)
     }
@@ -126,8 +125,7 @@ impl Parser {
     /// operands are in the file, as exact bits.
     pub(crate) fn parse_add_low_rank(&mut self) -> Result<Statement, ParseError> {
         self.expect_ident_eq("ADD")?;
-        self.expect_ident_eq("LOW")?;
-        self.expect_ident_eq("RANK")?;
+        self.expect_words_after("ADD", &["LOW", "RANK"])?;
         let operands = self.expect_string()?;
         self.expect_keyword(Keyword::To)?;
         let tensor = self.expect_string()?;

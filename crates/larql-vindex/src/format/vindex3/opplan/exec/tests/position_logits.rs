@@ -92,3 +92,41 @@ fn the_last_row_must_be_the_traversals_own_exit() {
     assert!(same_as_exit(&[1.0, 2.0], Some(&[1.0, 2.5])).is_err());
     assert!(same_as_exit(&[1.0], None).is_err());
 }
+
+/// Two quiet NaNs with different payloads, and the two zeros: equal or
+/// unequal as numbers in ways that are not how their bits compare.
+const NAN_PAYLOAD_A: u32 = 0x7fc0_0001;
+const NAN_PAYLOAD_B: u32 = 0x7fc0_0002;
+
+/// The self-check is on bit patterns, as "bit for bit" says: it decides
+/// whether a per-position exit is refused, so each case is pinned.
+#[test]
+fn the_exit_self_check_compares_bit_patterns() {
+    use crate::format::vindex3::opplan::exec::position_logits::same_as_exit;
+    let nan_a = f32::from_bits(NAN_PAYLOAD_A);
+    let nan_b = f32::from_bits(NAN_PAYLOAD_B);
+    let refused = |row: &[f32], exit: Option<&[f32]>| {
+        let error = same_as_exit(row, exit).unwrap_err().to_string();
+        assert!(
+            error.contains("differ from the traversal's own exit"),
+            "{error}"
+        );
+    };
+
+    // The same bits are the same exit, finite or not.
+    same_as_exit(&[1.5, -2.0], Some(&[1.5, -2.0])).unwrap();
+    same_as_exit(&[1.5, nan_a], Some(&[1.5, nan_a])).unwrap();
+    same_as_exit(&[f32::INFINITY, -0.0], Some(&[f32::INFINITY, -0.0])).unwrap();
+    same_as_exit(&[], Some(&[])).unwrap();
+
+    // NaNs of different payloads are different exits.
+    refused(&[1.5, nan_a], Some(&[1.5, nan_b]));
+    // The zeros are equal as numbers and are not the same bits.
+    refused(&[0.0], Some(&[-0.0]));
+    refused(&[-0.0], Some(&[0.0]));
+    // A different value, a different length either way, and no exit at all.
+    refused(&[1.5, -2.0], Some(&[1.5, -2.5]));
+    refused(&[1.5], Some(&[1.5, -2.0]));
+    refused(&[1.5, -2.0], Some(&[1.5]));
+    refused(&[1.5], None);
+}
