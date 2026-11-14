@@ -1,6 +1,6 @@
 //! Connection handshake
 //! STATS (covers remote_stats + layer_bands + loaded branches)
-//! DESCRIBE (success, no-edges, all modes, local-patch overlay)
+//! DESCRIBE (success, no-edges, all modes)
 //! WALK (hits, latency, layer-range branch, defaults, error)
 
 use super::*;
@@ -157,53 +157,6 @@ fn describe_with_band() {
     // KNOWLEDGE band exercises band_str on a non-None branch.
     let joined = ok_joined(&mut session, r#"DESCRIBE "X" KNOWLEDGE;"#);
     assert!(joined.contains("(no edges found)"));
-}
-
-#[test]
-fn describe_overlays_local_patch_edges() {
-    // APPLY PATCH on a remote session stores the patch client-side; a
-    // subsequent DESCRIBE of the patched entity overlays the local edge.
-    let (mut server, mut session) = connect();
-    server
-        .mock("GET", mockito::Matcher::Regex(r"/v1/describe".into()))
-        .with_status(200)
-        .with_body(serde_json::json!({"edges": [], "latency_ms": 1.0}).to_string())
-        .create();
-
-    let patch_path = write_insert_patch("Atlantis", Some("capital"), "Poseidon", 26);
-    let applied = ok_joined(
-        &mut session,
-        &format!(r#"APPLY PATCH "{}";"#, sql_path(&patch_path)),
-    );
-    assert!(applied.contains("Applied locally"));
-
-    let joined = ok_joined(&mut session, r#"DESCRIBE "Atlantis";"#);
-    assert!(joined.contains("Local patch edges:"), "got: {joined}");
-    assert!(joined.contains("Poseidon"));
-    assert!(joined.contains("(local)"));
-    let _ = std::fs::remove_file(patch_path);
-}
-
-#[test]
-fn describe_overlays_local_patch_edge_without_relation() {
-    // A patched Insert with no relation drives the empty-relation label
-    // branch of the local-patch overlay in remote_describe.
-    let (mut server, mut session) = connect();
-    server
-        .mock("GET", mockito::Matcher::Regex(r"/v1/describe".into()))
-        .with_status(200)
-        .with_body(serde_json::json!({"edges": [], "latency_ms": 1.0}).to_string())
-        .create();
-
-    let patch_path = write_insert_patch("Mu", None, "Lemuria", 20);
-    let _ = ok_joined(
-        &mut session,
-        &format!(r#"APPLY PATCH "{}";"#, sql_path(&patch_path)),
-    );
-    let joined = ok_joined(&mut session, r#"DESCRIBE "Mu";"#);
-    assert!(joined.contains("Local patch edges:"), "got: {joined}");
-    assert!(joined.contains("Lemuria"));
-    let _ = std::fs::remove_file(patch_path);
 }
 
 #[test]

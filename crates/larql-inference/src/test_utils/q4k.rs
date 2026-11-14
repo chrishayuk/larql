@@ -461,6 +461,9 @@ impl Q4KTestFixtures {
 pub struct MockGpuBackend {
     inner: larql_compute::CpuBackend,
     kv_len: std::sync::atomic::AtomicUsize,
+    /// `decode_token` answers `None` once this many calls have succeeded.
+    /// `usize::MAX` never fails.
+    decode_steps_before_failure: usize,
 }
 
 impl Default for MockGpuBackend {
@@ -474,6 +477,16 @@ impl MockGpuBackend {
         Self {
             inner: larql_compute::CpuBackend,
             kv_len: std::sync::atomic::AtomicUsize::new(0),
+            decode_steps_before_failure: usize::MAX,
+        }
+    }
+
+    /// A backend whose `decode_token` succeeds `steps` times and then
+    /// answers `None`: a GPU that fails part-way through a generation.
+    pub fn failing_after(steps: usize) -> Self {
+        Self {
+            decode_steps_before_failure: steps,
+            ..Self::new()
         }
     }
 }
@@ -529,8 +542,12 @@ impl larql_compute::DecodeBackend for MockGpuBackend {
         hidden: usize,
         _inter: usize,
     ) -> Option<Vec<f32>> {
-        self.kv_len
+        let succeeded = self
+            .kv_len
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if succeeded >= self.decode_steps_before_failure {
+            return None;
+        }
         Some(vec![0.0f32; hidden])
     }
 

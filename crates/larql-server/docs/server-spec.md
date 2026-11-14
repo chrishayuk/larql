@@ -94,7 +94,8 @@ larql serve "hf://chrishayuk/gemma-3-4b-it-vindex" [OPTIONS]
 | `--api-key <KEY>` | Require Bearer token auth (health exempt) | — |
 | `--insecure-public` | Allow a non-loopback `--host` without `--api-key` | false |
 | `--rate-limit <SPEC>` | Per-IP rate limit (e.g. `100/min`, `10/sec`) | — |
-| `--trust-forwarded-for` | Trust first `X-Forwarded-For` IP for rate limiting. Enable only behind a trusted reverse proxy. | false |
+| `--trust-forwarded-for` | Trust first `X-Forwarded-For` IP for rate limiting. Enable only behind a proxy that removes the header a client sends; a proxy that appends to it leaves the first entry under the client's control. | false |
+| `--client-ip-header <HEADER>` | Rate limit by the address in a header the proxy sets itself, e.g. `Fly-Client-IP`, `CF-Connecting-IP`, `X-Real-IP`. Conflicts with `--trust-forwarded-for`. | — |
 | `--cache-ttl <SECS>` | Cache TTL for DESCRIBE results (0 = disabled) | 0 |
 | `--grpc-port <PORT>` | Enable gRPC server alongside HTTP | — |
 | `--uds-path <PATH>` | Bind a Unix domain socket alongside TCP for same-host MoE shard clients (~50 µs/call faster than TCP loopback). Pre-existing socket files are unlinked. Clients use `unix:///path/to/sock` URLs. | — |
@@ -398,7 +399,9 @@ POST /v1/infer
 
 #### POST /v1/patches/apply
 
-Apply a patch to the server's in-memory vindex. Per-session — does not modify base files.
+Apply a patch to the server's in-memory vindex. With an `X-Session-Id` header it applies to that session only; without one it applies to the shared model every client sees (§8.5). It never modifies base files.
+
+The patch's `base_model` must equal the served model's name (the `model` field of its `index.json`, which `GET /v1/stats` reports as `model`). A patch for another model, or one that names no model, is refused with 400 and nothing is applied.
 
 ```json
 POST /v1/patches/apply
@@ -414,6 +417,7 @@ POST /v1/patches/apply
 {
   "patch": {
     "version": 1,
+    "base_model": "google/gemma-3-4b-it",
     "operations": [
       {"op": "insert", "layer": 26, "feature": 8821, ...}
     ]
@@ -1284,10 +1288,11 @@ Without the header, patches go to the global shared state.
 
 ### 8.6 Patch Validation
 
-Patches uploaded via API are validated before application:
-- Base model checksum must match
+Patches uploaded via API are validated before application, and a patch that fails any check is refused whole (400, nothing applied):
+- `base_model` must equal the served model's name. This is a name, not a fingerprint of the weights: two models served under one name are not told apart, and `base_checksum` is not checked.
 - Operations must reference valid layers and features
 - Gate vectors must have correct dimensions
+- An INSERT with no gate vector and `feature: 0` asks the server to choose the slot. It is given a slot free on the overlay the patch lands on (the session's, or the shared model's) and not stated or chosen for another op of the same patch, preferring a slot with no feature, then the weakest feature the overlay has not claimed, as local `INSERT` does. A layer with no such slot refuses the patch.
 
 ### 8.4 No Write Access
 

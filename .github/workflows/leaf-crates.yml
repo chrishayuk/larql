@@ -1,0 +1,129 @@
+# CI for the workspace crates that have no workflow of their own.
+#
+# Each larger crate (larql-vindex, larql-lql, larql-server, ...) has a
+# workflow. These did not, so nothing compiled, linted or tested them on a
+# pull request: a change to the router's grid service or to the QUIC
+# transport merged on the strength of whatever its author ran by hand.
+#
+# One job per crate, on Linux: format, clippy with warnings denied, and
+# the tests, under the feature sets the crate ships. A crate that grows a
+# platform matrix, a coverage floor or model-backed tests should move to a
+# workflow of its own; this file is the floor, not the ceiling.
+#
+# Not covered here, and still without CI:
+#   - larql-python: a PyO3 extension, built and tested through maturin.
+#   - crates/larql-experts: a separate Cargo workspace of WASM experts.
+
+name: leaf-crates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-router/**'
+      - 'crates/larql-router-protocol/**'
+      - 'crates/larql-execution/**'
+      - 'crates/larql-vindex-spec/**'
+      - 'crates/vindex-cli/**'
+      - 'crates/model-compute/**'
+      - 'crates/larql-continuation-fixture/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/leaf-crates.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-router/**'
+      - 'crates/larql-router-protocol/**'
+      - 'crates/larql-execution/**'
+      - 'crates/larql-vindex-spec/**'
+      - 'crates/vindex-cli/**'
+      - 'crates/model-compute/**'
+      - 'crates/larql-continuation-fixture/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/leaf-crates.yml'
+  workflow_dispatch: {}
+
+# Supersede in-flight pull-request runs; never evict a main run. See
+# larql-demos.yml for why non-PR runs are keyed by run_id.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  crate:
+    name: ${{ matrix.crate }}${{ matrix.features && format(' · {0}', matrix.features) || '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: larql-router-protocol
+            features: ''
+          # QUIC and HTTP/3 are off by default, and are where the grid's
+          # transport security lives. `http3` implies `quic`.
+          - crate: larql-router-protocol
+            features: http3
+          - crate: larql-router
+            features: ''
+          - crate: larql-router
+            features: http3
+          - crate: larql-execution
+            features: ''
+          - crate: larql-vindex-spec
+            features: ''
+          - crate: larql-vindex-spec
+            features: test-utils
+          - crate: vindex-cli
+            features: ''
+          - crate: model-compute
+            features: ''
+          - crate: larql-continuation-fixture
+            features: ''
+
+    env:
+      FEATURE_ARGS: ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install OpenBLAS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev pkg-config
+
+      - name: Cache cargo registry (downloads only, never target/)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-reg2-leaf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg2-leaf-
+
+      - name: No compiled workspace artefacts may be restored
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
+
+      - name: Format check
+        run: cargo fmt -p ${{ matrix.crate }} -- --check
+
+      - name: Clippy
+        run: cargo clippy -p ${{ matrix.crate }} $FEATURE_ARGS --all-targets --no-deps -- -D warnings
+
+      - name: Tests
+        run: cargo test -p ${{ matrix.crate }} $FEATURE_ARGS

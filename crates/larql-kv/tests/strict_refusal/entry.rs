@@ -90,7 +90,7 @@ impl Entry {
 /// tests), so it exists only to satisfy the signature. The resident routes
 /// differ from the plain ones exactly by threading `Some(index)` through
 /// `do_prefill` / `do_decode_step`, which is what is under test.
-fn empty_index(weights: &ModelWeights) -> larql_vindex::VectorIndex {
+pub fn empty_index(weights: &ModelWeights) -> larql_vindex::VectorIndex {
     larql_vindex::VectorIndex::new(
         vec![None; weights.num_layers],
         vec![None; weights.num_layers],

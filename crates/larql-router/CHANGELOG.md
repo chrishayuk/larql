@@ -11,6 +11,20 @@ Entries were migrated from `ROADMAP.md` on 2026-08-04 and preserve the date and
 voice they were originally written in. Each retains its original `### GTn` /
 `### Phase n` heading so cross-references from ADRs and specs still resolve.
 
+## [2026-11-12] — Keyless public binds are refused; default bind is loopback
+
+**Breaking default:** `--host` now defaults to `127.0.0.1` (was `0.0.0.0`),
+matching `larql-server`. A router that must be reachable from other hosts
+needs an explicit `--host`.
+
+With a non-loopback `--host`, the router refuses to start (exit 1, message on
+stderr) unless the grid is keyed — `--grid-key` or `LARQL_GRID_KEY`, non-empty
+— or the operator passes the new `--insecure-public` flag. The check covers
+every listener, since HTTP, grid gRPC and QUIC all bind `--host`. A router with
+no `--grid-port` has no credential, so on a network address it needs
+`--insecure-public` even if a key is given. Policy lives in
+[`exposure.rs`](src/exposure.rs).
+
 ## [2026-08-22] — N0-router: OpenAI surface on the grid front door
 
 Clients can now point an unmodified `openai` SDK at the **router** and the

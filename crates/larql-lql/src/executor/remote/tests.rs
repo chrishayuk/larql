@@ -71,6 +71,7 @@ fn endpoint_constants_share_prefix() {
         ENDPOINT_SELECT,
         ENDPOINT_INSERT,
         ENDPOINT_PATCHES_APPLY,
+        ENDPOINT_PATCHES,
     ] {
         assert!(
             ep.starts_with("/v1/"),
@@ -511,7 +512,7 @@ fn remote_delete_errors_when_layer_missing() {
 }
 
 #[test]
-fn remote_show_patches_empty_when_none_applied() {
+fn remote_apply_patch_errors_when_file_missing() {
     let mut server = mockito::Server::new();
     let _stats = server
         .mock("GET", ENDPOINT_STATS)
@@ -520,39 +521,32 @@ fn remote_show_patches_empty_when_none_applied() {
         .create();
 
     let session = connect(&server.url());
-    let out = session.remote_show_patches().unwrap();
-    let joined = out.join("\n");
-    assert!(joined.contains("(no local patches)"));
-}
-
-#[test]
-fn remote_remove_local_patch_errors_on_unknown_name() {
-    let mut server = mockito::Server::new();
-    let _stats = server
-        .mock("GET", ENDPOINT_STATS)
-        .with_status(200)
-        .with_body(stats_body())
-        .create();
-
-    let mut session = connect(&server.url());
-    let err = session.remote_remove_local_patch("nope").unwrap_err();
-    assert!(err.to_string().contains("not found"));
-}
-
-#[test]
-fn remote_apply_local_patch_errors_when_file_missing() {
-    let mut server = mockito::Server::new();
-    let _stats = server
-        .mock("GET", ENDPOINT_STATS)
-        .with_status(200)
-        .with_body(stats_body())
-        .create();
-
-    let mut session = connect(&server.url());
     let err = session
-        .remote_apply_local_patch("/tmp/definitely_not_a_real_patch_file.vlp")
+        .remote_apply_patch("/tmp/definitely_not_a_real_patch_file.vlp")
         .unwrap_err();
     assert!(err.to_string().contains("patch not found"));
+}
+
+#[test]
+fn remote_model_name_is_refused_when_stats_named_none() {
+    let mut server = mockito::Server::new();
+    let _stats = server
+        .mock("GET", ENDPOINT_STATS)
+        .with_status(200)
+        .with_body(serde_json::json!({"model": "", "layers": 1}).to_string())
+        .create();
+
+    let session = connect(&server.url());
+    let err = session.remote_model_name("APPLY PATCH").unwrap_err();
+    assert!(err.to_string().contains("remote APPLY PATCH refused"));
+    let err = session.remote_apply_patch("unused.vlp").unwrap_err();
+    assert!(err.to_string().contains("named no model"));
+}
+
+#[test]
+fn remote_model_name_errors_when_not_remote() {
+    let err = Session::new().remote_model_name("DELETE").unwrap_err();
+    assert!(err.to_string().contains("not connected"));
 }
 
 #[test]

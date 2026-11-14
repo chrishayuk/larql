@@ -655,10 +655,14 @@ async fn http_patches_apply_insert_op_enrich_with_functional_tokenizer() {
     // The enrich_patch_ops function will synthesize one from the entity embedding.
     // This exercises the branch in enrich_patch_ops that tokenizes the entity.
     // Use JSON to avoid needing to know exact PatchOp field layout.
+    //
+    // The slot is stated, and is one the fixture's layer has. A patch is now
+    // checked against the index, and the slot enrichment would assign for an
+    // unstated one is past this fixture's three features: see the test below.
     let patch_json = serde_json::json!({
         "patch": {
             "version": 1,
-            "base_model": "test",
+            "base_model": FIXTURE_MODEL,
             "base_checksum": null,
             "created_at": "2026-04-26",
             "description": "enrich-test",
@@ -668,7 +672,7 @@ async fn http_patches_apply_insert_op_enrich_with_functional_tokenizer() {
                 {
                     "op": "insert",
                     "layer": 0,
-                    "feature": 0,
+                    "feature": 1,
                     "entity": "France",
                     "relation": "capital",
                     "target": "Paris",
@@ -686,6 +690,50 @@ async fn http_patches_apply_insert_op_enrich_with_functional_tokenizer() {
     assert!(body["active_patches"].as_u64().is_some());
 }
 
+#[tokio::test]
+async fn http_patches_apply_chooses_a_requested_slot_inside_the_layer() {
+    // `feature: 0` with no gate vector asks the server to choose the slot.
+    // It used to hash the entity into a fixed 1..=10240 range whatever the
+    // layer's width, so on this three-feature fixture the slot did not exist
+    // and the patch was refused. The slot is now chosen from the layer the
+    // patch lands on (see test_http_patch_model_and_slots.rs).
+    let patch_json = serde_json::json!({
+        "patch": {
+            "version": 1,
+            "base_model": FIXTURE_MODEL,
+            "base_checksum": null,
+            "created_at": "2026-11-12",
+            "description": "unstated-slot",
+            "author": null,
+            "tags": [],
+            "operations": [
+                {
+                    "op": "insert",
+                    "layer": 0,
+                    "feature": 0,
+                    "entity": "France",
+                    "relation": "capital",
+                    "target": "Paris",
+                    "gate_vector_b64": null
+                }
+            ]
+        }
+    });
+
+    let st = state(vec![model_functional("test")]);
+    let resp = post_json(
+        single_model_router(st.clone()),
+        "/v1/patches/apply",
+        patch_json,
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let listed = get(single_model_router(st), "/v1/patches").await;
+    let listed = body_json(listed.into_body()).await;
+    assert_eq!(listed["patches"].as_array().unwrap().len(), 1, "{listed}");
+}
+
 // ══════════════════════════════════════════════════════════════
 // DELETE /v1/patches — session-scoped remove (patches.rs lines 228-237)
 // ══════════════════════════════════════════════════════════════
@@ -695,7 +743,10 @@ async fn http_patches_session_remove_returns_session_field() {
     let st = state(vec![model_functional("test")]);
     let m = st.first_model().unwrap();
     // Pre-create the session to avoid blocking_read in async context.
-    st.sessions.get_or_create("rm-session", &m).await;
+    st.sessions
+        .get_or_create("rm-session", &m)
+        .await
+        .expect("overlay");
 
     // Apply a session-scoped patch.
     let app1 = single_model_router(st.clone());

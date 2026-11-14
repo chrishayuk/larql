@@ -115,50 +115,6 @@ impl Session {
             out.push(format!("\n{:.1}ms (remote)", ms));
         }
 
-        // Overlay local patch edges.
-        if let Backend::Remote { local_patches, .. } = &self.backend {
-            if !local_patches.is_empty() {
-                let entity_lower = entity.to_lowercase();
-                let mut local_edges = Vec::new();
-                for patch in local_patches {
-                    for op in &patch.operations {
-                        if let larql_vindex::PatchOp::Insert {
-                            entity: ent,
-                            target,
-                            relation,
-                            layer,
-                            confidence,
-                            ..
-                        } = op
-                        {
-                            if ent.to_lowercase() == entity_lower {
-                                local_edges.push((
-                                    relation.as_deref().unwrap_or(""),
-                                    target.as_str(),
-                                    *layer,
-                                    confidence.unwrap_or(0.9),
-                                ));
-                            }
-                        }
-                    }
-                }
-                if !local_edges.is_empty() {
-                    out.push("  Local patch edges:".into());
-                    for (relation, target, layer, conf) in &local_edges {
-                        let label = if relation.is_empty() {
-                            format!("{:<12}", "")
-                        } else {
-                            format!("{:<12}", relation)
-                        };
-                        out.push(format!(
-                            "    {} → {:20} {:>7.2}  L{:<3}  (local)",
-                            label, target, conf, layer,
-                        ));
-                    }
-                }
-            }
-        }
-
         Ok(out)
     }
 
@@ -216,7 +172,7 @@ impl Session {
             "mode": mode,
         });
 
-        let result = self.remote_post_json(ENDPOINT_INFER, &request, true)?;
+        let result = self.remote_post_json(ENDPOINT_INFER, &request)?;
 
         let mut out = Vec::new();
 
@@ -278,7 +234,7 @@ impl Session {
             "with_attention": with_attention,
         });
 
-        let result = self.remote_post_json(ENDPOINT_EXPLAIN_INFER, &request, false)?;
+        let result = self.remote_post_json(ENDPOINT_EXPLAIN_INFER, &request)?;
 
         let mut out = Vec::new();
         out.push(format!(
@@ -577,8 +533,7 @@ impl Session {
             body.insert("min_confidence".into(), serde_json::json!(score.threshold));
         }
 
-        let result =
-            self.remote_post_json(ENDPOINT_SELECT, &serde_json::Value::Object(body), false)?;
+        let result = self.remote_post_json(ENDPOINT_SELECT, &serde_json::Value::Object(body))?;
 
         let mut out = Vec::new();
 

@@ -79,6 +79,8 @@ pub mod kv_dispatch_impl;
 #[cfg(target_os = "macos")]
 pub mod kv_residency_contract;
 #[cfg(target_os = "macos")]
+pub mod kv_seed_contract;
+#[cfg(target_os = "macos")]
 pub mod lowering;
 #[cfg(target_os = "macos")]
 pub mod ops;

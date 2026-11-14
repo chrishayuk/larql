@@ -202,19 +202,15 @@ impl MetalBackend {
         WAIT_MS.with(|c| c.set(c.get() + wait_ms));
         drop(held);
 
-        // Each MLA layer's cache advanced by one position — but only
-        // once the dispatch that wrote the latent has actually run, so
-        // this happens after the wait and not at encode time.
-        for (call, &vis) in layers.iter().zip(&visible) {
-            if let AttentionSpec::Mla { state, .. } = call.weights.attention {
-                state.advance_to(vis);
-            }
-        }
-
         // Every layer's refusal counter, read AFTER the wait. A route
         // that named a non-resident expert produced numbers from slot
         // 0's weights, and returning them would be the silent wrong
         // answer this seam exists to prevent.
+        //
+        // Checked before any cache advances: a refused call returns no
+        // output, so it must leave no position behind either. The MLA
+        // caches used to advance first, and a caller that handled the
+        // refusal and retried ran one position ahead of its own stream.
         let mut refusal: Option<(usize, u32)> = None;
         for (i, s) in scratch.iter().enumerate() {
             let n = read_u32(&s.refusals, 1)[0];
@@ -228,6 +224,16 @@ impl MetalBackend {
                 layer,
                 refusals: count,
             });
+        }
+
+        // Each MLA layer's cache advanced by one position — but only
+        // once the dispatch that wrote the latent has actually run, so
+        // this happens after the wait and not at encode time, and only
+        // for a call that is about to return its output.
+        for (call, &vis) in layers.iter().zip(&visible) {
+            if let AttentionSpec::Mla { state, .. } = call.weights.attention {
+                state.advance_to(vis);
+            }
         }
         Ok((scratch, kda_scratch, head_scratch, gpu_ms))
     }

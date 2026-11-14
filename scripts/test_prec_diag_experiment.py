@@ -93,7 +93,7 @@ class World:
         values = {"larql_commit": "5c375d43", "checkpoint_revision": "synthetic", "packages": ho.packages(),
                   "threads": dict(ex.HF_THREADS), "python": sys.executable,
                   "capture_positions": {"I_rep": POSITIONS, "I_nr1": POSITIONS},
-                  "resource_limits": {"wall_s_per_run": 300, "wall_s_total": 7200, "rss_bytes": 16 * 10**9,
+                  "resource_limits": {"wall_s_per_run": 300, "wall_s_total": {"E1": 7200, "E2": 7200, "E3": 7200}, "rss_bytes": 16 * 10**9,
                                       "capture_bytes_per_run": 2 << 30, "min_free_bytes": 1},
                   "larql_environment": {"HOME": str(root), "PATH": "/usr/bin:/bin", "RAYON_NUM_THREADS": "16"}}
         spec = {"files": files, "container": str(self.container),
@@ -312,6 +312,44 @@ class HfRuns(Tmp):
         self.assertEqual(rec["status"], ev.RESOURCE_LIMIT, rec)
         on_disk = json.loads((w.runs / "E1" / run["run_id"] / ev.RESULT_FILE).read_text())
         self.assertEqual(on_disk["status"], ev.RESOURCE_LIMIT)
+
+
+class TotalLimit(Tmp):
+    """C11: each experiment has its own wall-clock total."""
+
+    def rewrite(self, w, totals):
+        m = json.loads(w.freeze.read_text())
+        m["values"]["resource_limits"]["wall_s_total"] = totals
+        other = self.tmp / "other.json"
+        return other, fz.write(other, m)
+
+    def test_each_experiment_reads_its_own_total(self):
+        m = World(self.tmp / "w").manifest
+        m["values"]["resource_limits"]["wall_s_total"] = {"E1": 10800, "E2": 14400, "E3": 7200}
+        self.assertEqual([ex.total_limit(m, e) for e in ("E1", "E2", "E3")], [10800, 14400, 7200])
+
+    def test_a_single_total_for_every_experiment_is_refused(self):
+        m = World(self.tmp / "w").manifest
+        m["values"]["resource_limits"]["wall_s_total"] = 3600
+        with self.assertRaisesRegex(ex.EvidenceLimitError, "map each experiment"):
+            ex.total_limit(m, "E2")
+
+    def test_a_missing_or_nonpositive_total_aborts_preflight_and_nothing_runs(self):
+        w = World(self.tmp / "w")
+        for totals in ({"E1": 1, "E3": 1}, {"E2": 0}, {"E2": True}):
+            other, sha = self.rewrite(w, totals)
+            problems = ex.preflight(other, sha, self.tmp / f"runs-{len(totals)}", "E2")
+            self.assertTrue(any("no positive limit for E2" in p for p in problems), problems)
+            other.unlink()
+
+    def test_past_the_total_every_remaining_run_is_resource_limit(self):
+        w = World(self.tmp / "w")
+        other, sha = self.rewrite(w, {"E1": 7200, "E2": 1e-9, "E3": 7200})
+        records = {r["run_id"]: r for r in ex.run_experiment(other, sha, self.tmp / "runs", "E2")}
+        self.assertEqual(sorted(records), sorted(r["run_id"] for r in ex.plan("E2")))
+        statuses = [r["status"] for r in records.values()]
+        self.assertLessEqual(statuses.count(ev.COMPLETE), 1)
+        self.assertGreaterEqual(statuses.count(ev.RESOURCE_LIMIT), 17)
 
 
 class EndToEnd(unittest.TestCase):

@@ -178,7 +178,11 @@ async fn infer_with_existing_session_uses_session_patched() {
     let (model, _fixture) = common::model_with_real_weights("synthetic");
     let sid = "session-abc";
     let state = common::state(vec![model.clone()]);
-    let _ = state.sessions.get_or_create(sid, &model).await;
+    state
+        .sessions
+        .get_or_create(sid, &model)
+        .await
+        .expect("overlay");
 
     let app = larql_server::routes::single_model_router(state);
     let resp = app
