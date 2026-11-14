@@ -27,8 +27,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import struct
-from decimal import Decimal
 from fractions import Fraction
 from pathlib import PurePosixPath
 
@@ -145,12 +145,16 @@ class Half:
 
 
 class DecimalFloat(float):
-    """A JSON number with a fraction or exponent: the binary64 `json` would give, plus the decimal as written. The
-    binary64 is already a rounded reading, and a `delta` is judged as the binary32 its decimal denotes (§3b)."""
+    """A JSON number with a fraction or exponent: the binary64 `json` would give, plus the text as written. The
+    binary64 is already a rounded reading, and a `delta` is judged as the binary32 its decimal denotes (§3b).
+
+    Only the text is kept. Nothing is computed from it here: every float of a ledger passes through this, whatever
+    field it is in, and a number such as `1e99999999999999999999` must not cost anything, or raise, merely for
+    being present."""
 
     def __new__(cls, text: str):
         value = super().__new__(cls, text)
-        value.decimal = Decimal(text)
+        value.text = text
         return value
 
 
@@ -356,16 +360,58 @@ def f32_value(bits: int) -> Fraction:
     return Fraction(x)
 
 
-def delta_as_binary32(delta) -> Fraction | None:
-    """The binary32 value a ledger's `delta` denotes: its decimal read exactly and rounded once to binary32, ties to
-    even, which is how a binary32 reader reads it. A writer prints a binary32 in the fewest digits that read back to
-    it (`0.1` for 0x3dcccccd), so the decimal is not the binary32's own value and is not compared as one. `None`
-    when it is beyond binary32."""
-    decimal = getattr(delta, "decimal", None)
+#: A JSON number with a fraction or an exponent: sign, integer digits, fraction digits, exponent.
+JSON_FLOAT = re.compile(r"(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?")
+#: A decimal whose leading digit is at or above 10^39 is beyond binary32 (2^128 < 3.5e38), and one below 10^-47 is
+#: under half the smallest binary32 subnormal (2^-150 > 7e-46) and reads as zero. Deciding those from the exponent
+#: alone keeps a nine-character number from becoming an instruction to build a million-digit integer (§5).
+F32_SIGN_BIT = 0x80000000
+BINARY32_OVERFLOW_DECIMAL_EXPONENT = 39
+BINARY32_ZERO_DECIMAL_EXPONENT = -47
+
+
+def delta_as_binary32(delta) -> tuple[Fraction | None, bool]:
+    """What a binary32 reader makes of a ledger's `delta`: `(value, negative)`. The value is its decimal read exactly
+    and rounded once to binary32, ties to even, or `None` when it is beyond binary32. `negative` is the sign as
+    written, which is the sign of the reading even when the value is zero (`-0.0`, or a negative number too small
+    for binary32). A writer prints a binary32 in the fewest digits that read back to it (`0.1` for 0x3dcccccd), so
+    the decimal is not the binary32's own value and is not compared as one."""
+    text = getattr(delta, "text", None)
+    if text is None:  # written as an integer
+        negative, exact = delta < 0, Fraction(delta)
+    else:
+        m = JSON_FLOAT.fullmatch(text)
+        if m is None:
+            raise ValueError(f"{text!r} is not a JSON number")
+        sign, whole, fraction, exponent = m.group(1), m.group(2), m.group(3) or "", m.group(4) or "0"
+        negative = sign == "-"
+        if not (whole + fraction).strip("0"):
+            return Fraction(0), negative
+        try:
+            exp = int(exponent)
+        except ValueError:  # more exponent digits than an integer conversion takes
+            return (Fraction(0) if exponent.startswith("-") else None), negative
+        leading = whole.lstrip("0")
+        # the power of ten of the first significant digit
+        adjusted = exp + len(leading) - 1 if leading else exp - (len(fraction) - len(fraction.lstrip("0"))) - 1
+        if adjusted >= BINARY32_OVERFLOW_DECIMAL_EXPONENT:
+            return None, negative
+        if adjusted < BINARY32_ZERO_DECIMAL_EXPONENT:
+            return Fraction(0), negative
+        exact = Fraction(int(sign + whole + fraction)) * Fraction(10) ** (exp - len(fraction))
     try:
-        return numconv.round_nearest_even(Fraction(delta if decimal is None else decimal), numconv.BINARY32)
+        return numconv.round_nearest_even(exact, numconv.BINARY32), negative
     except numconv.Overflow:
-        return None
+        return None, negative
+
+
+def delta_reads_as(delta, delta_bits: int) -> bool:
+    """Whether `delta`, read as a binary32, is exactly the finite binary32 `delta_bits`: the same value, and for a
+    zero the same sign. The sign of a zero is part of the delta: −0 + −0 is −0 (§3b)."""
+    value, negative = delta_as_binary32(delta)
+    if value is None or value != f32_value(delta_bits):
+        return False
+    return value != 0 or negative == bool(delta_bits & F32_SIGN_BIT)
 
 
 def exact_sum_to_bf16(old_bits: int, delta_bits: int) -> int:
@@ -871,7 +917,7 @@ class Judge:
                 L.violate(where, f"delta_bits {e['delta_bits']:08x} is not finite: the delta must be refused")
                 recomputable = False
                 continue
-            if delta_as_binary32(e["delta"]) != f32_value(e["delta_bits"]):
+            if not delta_reads_as(e["delta"], e["delta_bits"]):
                 L.violate(where, f"delta {e['delta']!r} does not read as the binary32 of delta_bits "
                                  f"{e['delta_bits']:08x}")
             if (int(base2d[r, c]) & V.BF16_EXP_MASK) == V.BF16_EXP_MASK:

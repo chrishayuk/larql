@@ -16,6 +16,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -118,6 +119,12 @@ def reseal_compiled(root):
     write_json(ledger_path, ledger)
 
 
+def reseal_compiled_index_only(root):
+    """Make the index and the ledger's result digests agree with the container again after the LEDGER FILE'S TEXT
+    was rewritten by hand. Nothing here parses the ledger, so a number no JSON writer would emit survives."""
+    reseal_index(root, REP)
+
+
 def operand_sha(op, key):
     digits = 8 if op["numerics"] == V.PROFILE_F32 else 16
     field = "operand" if key == "u" else key
@@ -133,6 +140,8 @@ def rehash_operands(op):
     op["digest"] = W.op_digest(op)
 
 
+#: A verdict on one small fixture takes well under a second; this is the bound that separates it from a stall.
+ANSWER_AT_ONCE_SECONDS = 5.0
 #: 0.1 rounded to binary32, which an engine prints as `0.1`.
 TENTH_BINARY32_BITS = 0x3DCCCCCD
 BINARY32_INFINITY_BITS = 0x7F800000
@@ -638,6 +647,79 @@ class LedgerFaults(Fixture):
         out = self.judge(root)
         self.assertHalves(out, SAT, VIOL)
         self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def set_delta_text(self, root, text, delta_bits=TENTH_BINARY32_BITS, field="delta"):
+        """Put the literal JSON number `text` in the ledger: as the first delta edit's `delta`, or as a top-level
+        field of that name. Written as text, because these are numbers a JSON writer would not emit."""
+        marker = 123454321.5
+        def place(d):
+            if field == "delta":
+                d["targets"][1]["edits"][0].update(delta=marker, delta_bits=delta_bits)
+            else:
+                d[field] = marker
+        self.edit_ledger(root, place)
+        path = os.path.join(root, LEDGER_FILE)
+        with open(path) as f:
+            ledger = f.read()
+        self.assertEqual(ledger.count(repr(marker)), 1)
+        with open(path, "w") as f:
+            f.write(ledger.replace(repr(marker), text))
+        reseal_compiled_index_only(root)
+
+    def test_an_enormous_delta_is_answered_at_once_and_never_raises(self):
+        # Nine characters must not become a million-digit integer (§5), and no number may raise out of the verifier.
+        for text in ("1e400", "1e2000000", "1e999999999", "1e99999999999999999999", "-1e99999999999999999999",
+                     "1e" + "9" * 5000, "123456789e31"):
+            with self.subTest(delta=text[:24]):
+                root = self.copy("mixed")
+                self.set_delta_text(root, text)
+                started = time.monotonic()
+                out = self.judge(root)
+                self.assertLess(time.monotonic() - started, ANSWER_AT_ONCE_SECONDS)
+                self.assertEqual(out["ledger_integrity"], VIOL, out["reasons"])
+                self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def test_a_vanishing_delta_reads_as_a_zero_of_its_sign(self):
+        for text, bits, reads in (("1e-99999999999999999999", 0x00000000, True),
+                                  ("-1e-2000000", 0x80000000, True),
+                                  ("1e-2000000", 0x80000000, False),
+                                  ("-1e-" + "9" * 5000, 0x80000000, True),
+                                  ("7e-46", 0x00000000, True),  # under half the smallest subnormal
+                                  ("7.1e-46", 0x00000001, True)):  # over it
+            with self.subTest(delta=text[:24], bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+
+    def test_the_sign_of_a_zero_delta_is_part_of_what_it_reads_as(self):
+        # −0 + −0 is −0 (§3b), so a zero's sign is not decoration. A binary32 reader reads `-0.0` as 0x80000000.
+        for text, bits, reads in (("0.0", 0x00000000, True), ("-0.0", 0x80000000, True),
+                                  ("-0.0", 0x00000000, False), ("0.0", 0x80000000, False),
+                                  ("0e5", 0x00000000, True), ("-0.000e-3", 0x80000000, True)):
+            with self.subTest(delta=text, bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+        self.assertTrue(W.delta_reads_as(0, 0x00000000))  # written as an integer
+        self.assertFalse(W.delta_reads_as(0, 0x80000000))
+
+    def test_the_reading_is_one_rounding_of_the_exact_decimal_ties_to_even(self):
+        tenth = TENTH_BINARY32_BITS
+        # The exact midpoint of 0x3dcccccd and 0x3dccccce, as a decimal: it goes to the even pattern, …ce.
+        midpoint = "0.10000000521540641784667968750"
+        for text, bits, reads in (("0.1", tenth, True), ("0.10000000149011612", tenth, True),
+                                  ("0.10000001", tenth, False), (midpoint, tenth + 1, True), (midpoint, tenth, False),
+                                  ("1e-1", tenth, True), ("100000000e-9", tenth, True), ("0.000001E5", tenth, True),
+                                  ("3.4028235e38", 0x7F7FFFFF, True), ("3.4028236e38", 0x7F7FFFFF, False),
+                                  ("1e-45", 0x00000001, True)):
+            with self.subTest(delta=text, bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+        self.assertTrue(W.delta_reads_as(1, 0x3F800000))
+        self.assertFalse(W.delta_reads_as(2 ** 200, 0x7F7FFFFF))
+
+    def test_an_enormous_number_in_another_field_costs_nothing(self):
+        # Every float of the ledger is read through the same hook: one that is not a delta must not raise or stall.
+        root = self.copy("mixed")
+        self.set_delta_text(root, "1e99999999999999999999", field="writer_note")
+        out = self.judge(root)
+        self.assertNotIn("Traceback", json.dumps(out))
+        self.assertEqual(out["numerical_satisfaction"], SAT, out["reasons"])
 
     def test_non_finite_delta_bits_are_a_ledger_violation_not_a_crash(self):
         for bits in (BINARY32_INFINITY_BITS, BINARY32_NAN_BITS):
