@@ -21,13 +21,16 @@ class Sides(unittest.TestCase):
             "verifier/provenance/PROVENANCE.md",
             "verifier/requirements.lock",
             "verifier/pyproject.toml",
+            "conformance/vlp-numerics/v2/vectors.json",
+            "conformance/vlp-numerics/v1/SPEC.md",
             "scripts/check_verifier_boundary.py",
             ".github/workflows/verifier-boundary.yml",
         ):
             self.assertEqual(gate.sides([path]), ([path], []), path)
 
     def test_what_does_not(self):
-        for path in ("verifier/README.md", "verifier/tests/test_e1.py", "docs/verification/independence.md", "scripts/x.py"):
+        for path in ("verifier/README.md", "verifier/tests/test_e1.py", "docs/verification/independence.md", "scripts/x.py",
+                     "conformance/other/x.json"):
             self.assertEqual(gate.sides([path]), ([], []), path)
 
     def test_the_engine(self):
@@ -78,6 +81,7 @@ class ReviewEvidence(unittest.TestCase):
             "verifier/README.md",
             "verifier/tests/test_e1.py",
             "docs/verification/independence.md",
+            "conformance/vlp-numerics/v2/FREEZE.json",
             "scripts/check_verifier_boundary.py",
             ".github/workflows/verifier.yml",
             ".github/workflows/verifier-boundary.yml",
@@ -86,7 +90,8 @@ class ReviewEvidence(unittest.TestCase):
             self.assertEqual(gate.owned([path]), [path], path)
 
     def test_what_does_not(self):
-        for path in ("crates/x/src/lib.rs", "docs/spec.md", "scripts/x.py", ".github/workflows/quality.yml", "xverifier/a"):
+        for path in ("crates/x/src/lib.rs", "docs/spec.md", "scripts/x.py", ".github/workflows/quality.yml", "xverifier/a",
+                     "conformance/other/x.json", "docs/conformance/vlp-numerics/x"):
             self.assertEqual(gate.owned([path]), [], path)
 
     def test_nothing_on_the_record_is_refused(self):

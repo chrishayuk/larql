@@ -23,6 +23,9 @@ import sys
 MEASUREMENT = re.compile(
     r"^verifier/(refcheck|larql_contract_verifier|expected|provenance)/"
     r"|^verifier/(pyproject\.toml|requirements\.lock)$"
+    # The frozen VLP numerics: the specification and golden vectors the engine and the verifier are both
+    # held to. Moving them together with the engine could make a wrong result the expected one.
+    r"|^conformance/vlp-numerics/"
     r"|^scripts/check_verifier_boundary\.py$"
     r"|^\.github/workflows/verifier-boundary\.yml$"
 )
@@ -34,6 +37,7 @@ GITHUB_FILE_LIST_LIMIT = 3000
 OWNED = re.compile(
     r"^verifier/"
     r"|^docs/verification/"
+    r"|^conformance/vlp-numerics/"
     r"|^scripts/check_verifier_boundary\.py$"
     r"|^\.github/workflows/verifier(-boundary)?\.yml$"
     r"|^\.github/CODEOWNERS$"
