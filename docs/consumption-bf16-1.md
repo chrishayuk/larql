@@ -192,3 +192,25 @@ an f32 scale of `peak / 127` per block (1 for an all-zero block), codes `round_h
 So under the default policy the run computes with that Q8 derivation of the stored weights, to the same precision
 the exact path reproduces BF16. This is a hypothesis-generating result on a record already seen; the verifier it
 points to is specified in `docs/cpu-load-time-q8-residency.md`.
+
+## 12. Correction (2026-11-14, after the run): "default policy" was the wrong name
+
+Sections 2, 8, 9 and 11 above call the manufactured Q8 residency "the default policy". They are left as they were
+frozen or first written; this section corrects them. The gate, the run and the verdict are unaffected: the
+qualification ran under a recorded `LARQL_CPU_MAX_FORMAT=bf16` and its reference calibrated to 1e-6.
+
+- **What the exploratory "default-policy" run actually was:** a run through the library entry point
+  `OperandStore::open`, whose representation source is `Auto`. `Auto` permits the loader to manufacture a lossy
+  residency; `Stored` forbids it (`docs/cpu-load-time-q8-residency.md` §2a).
+- **This was already known.** PREC-DIAG-1 measured the same manufacture on Gemma 3 4B on 2026-11-11, and PR #778
+  made `vindex3 exec --backend production` and the server's CPU path default to `stored`. This experiment
+  rediscovered it from the harness side, and adds the written rule and the per-position reproduction.
+- **§9, corrected.** I3 ran `larql vindex3 exec --backend production` at build `39fcf1c7`, which contains #778, and
+  its record says "default representation source (stored)". It therefore ran under `stored`, the exact path, not
+  under an unrecorded policy. I5 ran as a library test through `OperandStore::open`, so under `Auto`; that stands as
+  written.
+- **Still open, read from code and not run:** LQL's `USE` opens with `OpenPolicy::default()`, whose source is
+  `Auto`, so `INFER` in an LQL session would execute the manufactured residency for large matrices.
+- **A cleaner exact setting for the harness** is `OperandStore::open_for(.., RepresentationSource::Stored)`, the
+  mechanism the CLI uses, rather than the environment cap. Not changed here, so that the instrument stays the one
+  that was frozen.

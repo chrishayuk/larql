@@ -4,9 +4,15 @@
 CONSUMPTION-BF16-1 (`docs/consumption-bf16-1.md`).
 
 A VINDEX3 container that stores BF16 weights is not necessarily executed from them. On the production CPU backend
-the loader chooses, per matrix, what to hold in memory, and for large matrices its default choice is a lossy Q8
-derivation it manufactures at load. That derivation is in no container, has no digest, and until now had no
-written rule.
+the loader chooses, per matrix, what to hold in memory, and when it is allowed to (§2a) its choice for a large
+matrix is a lossy Q8 derivation it manufactures at load. That derivation is in no container, has no digest, and
+until now had no written rule.
+
+**Correction (2026-11-14, same day).** The first version of this document called the manufacture "the default
+policy". That was wrong as a general statement. PREC-DIAG-1 had already found this behaviour (2026-11-11) and PR
+#778 made `vindex3 exec --backend production` and the server's CPU path default to a policy that forbids it. It is
+the default of the library entry point the CONSUMPTION-BF16-1 harness used, and, as read from the code, of LQL's
+`INFER`. §2a says which entry point runs which.
 
 ## 1. Three representations, not two
 
@@ -37,6 +43,25 @@ For a matrix of `elements = rows × cols` stored as BF16, against the host's per
 - **`LARQL_CPU_ARITHMETIC`** selects other arms for the same population (`bf16xq8`, `q8xq8`, `q4xq8`), which also
   quantise the activation. Unset, the activation stays f32.
 
+## 2a. Which entry point is allowed to manufacture it
+
+Whether the loader may manufacture anything is `RepresentationSource` (`opplan/exec/operands.rs`): `Stored` forbids
+it (a matrix that would be quantised keeps its stored BF16 bytes), `Auto` permits it, `Transient` requires it.
+`LARQL_CPU_MAX_FORMAT=bf16` is a second, independent cap that forbids Q8 under any source.
+
+| Entry point | Source | Large BF16 matrices execute as | How established |
+|---|---|---|---|
+| `larql vindex3 exec --backend production` / `reference` | `stored` by default since #778 | stored BF16 | read from `vindex3_cmd/prepare.rs` |
+| `larql-server`, CPU | `Stored` | stored BF16 | read from `larql-server/src/vindex3.rs` |
+| `larql vindex3 exec --representation-source auto` | `Auto` | manufactured Q8 | read from the same |
+| **LQL `USE` + `INFER`** | `OpenPolicy::default()` = `Auto` | **manufactured Q8** | read from `larql-lql/src/executor/vindex3/session.rs` and `larql-inference/src/vindex3/runtime.rs`; **not confirmed by a run** |
+| `OperandStore::open` (library; the I5 and CONSUMPTION-BF16-1 harnesses) | `Auto` | manufactured Q8 | measured (CONSUMPTION-BF16-1 exploratory run) |
+| `larql run`, Metal backends | not traced | — | — |
+
+So the exact path already exists and is the CLI's and the server's default. What is new here is the written rule
+(§3), the measurement that an `Auto` run computes with it (§4), and that LQL's `INFER` appears to be an `Auto`
+caller: the statement a user edits and verifies through would execute the requantised arithmetic.
+
 ## 3. The rule (`opplan/exec/quantise.rs`, `quantise_q8`)
 
 Over the matrix widened to f32, row by row, in blocks of 64 consecutive elements (a row's last block is short;
@@ -57,10 +82,11 @@ layer-12 FFN write to 2.9e-8 .. 6.7e-7 at 40 run-positions, where the stored BF1
 
 ## 5. What this means for claims
 
-- "The container's canonical weights are verified" plus "the run used `--backend production`" does **not** give
-  "the run computed with the verified weights". It does under `LARQL_CPU_MAX_FORMAT=bf16`, for the tensor
-  CONSUMPTION-BF16-1 qualified.
-- A default-policy run of an edited container computes with a quantisation of the edit. A difference in its
+- "The container's canonical weights are verified" gives "the run computed with the verified weights" only for a
+  run whose representation source is `stored` (or that sets `LARQL_CPU_MAX_FORMAT=bf16`), and CONSUMPTION-BF16-1
+  qualified that for one tensor under the second setting. Which source a run used has to be recorded, because it
+  differs by entry point (§2a).
+- An `Auto` run of an edited container computes with a quantisation of the edit. A difference in its
   output is partly the edit and partly that quantisation, and the two are not separated by anything recorded.
 - A run's manifest must record the policy variables and the host's L2 size, or it does not say which model ran.
 
@@ -96,7 +122,7 @@ the GEMV witness document already says.
 
 ## 7. Open decisions
 
-1. Should the manufactured residency stay the default for a container that carries an edit ledger, or should an
-   edited container default to exact BF16?
+1. Should LQL's `INFER` and the library default open under `Stored`, as the CLI and server already do, so that
+   `Auto` is always an explicit choice?
 2. Should the selection stop depending on the host's cache size, or be recorded in every run's identity?
 3. Does the load-time rule get frozen and versioned (`q8-load/1`) with conformance vectors, like the VLP numerics?
