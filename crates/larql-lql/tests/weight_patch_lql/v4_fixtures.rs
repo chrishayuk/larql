@@ -23,7 +23,7 @@ const RECORDED_OUTPUT: &str = "\"compiled\"";
 /// The one file that is not compared: it records where the container was built (`source.locator_hint`), a
 /// different temporary path on every run, and holds no weight and nothing the verifier judges.
 const BUILD_RECORD: &str = "candidate.json";
-const CASES: [&str; 4] = ["low_rank_k2", "mixed", "sham", "f32_profile"];
+const CASES: [&str; 5] = ["low_rank_k2", "mixed", "sham", "f32_profile", "split"];
 
 /// Not canonicalised: on Windows that yields a verbatim path, which does not take the `/` the recorded
 /// statements join operand files with.

@@ -124,7 +124,9 @@ An element target (`edits`, no `operations`) is read exactly as in `v2`/`v3`:
 - `encoding: result_bits`: `new_bits` is the declared result of a `remove_direction` op that the ledger does **not**
   carry (a tensor edited only by removals stays an element target, §2). Only the op's digest is in `origins`, so an
   independent verifier can hold the container to the recorded bits but cannot recompute them from the ledger alone;
-  it reports that tensor's numerical half as not evaluated unless it is given the patch.
+  it reports that tensor's numerical half as not evaluated unless it is given the patch (`ledger --patch`,
+  [contract-protocol.md](contract-protocol.md)): then each `remove_direction` op of the patch on that tensor must be
+  intact, bound to the base and listed in `origins`, and the tensor is recomputed from them.
 - No element is listed twice; every element is inside the tensor; all element targets together list at most
   `MAX_PATCH_ELEMENTS` = 2^18 elements. Operation targets do not count against it.
 
@@ -174,7 +176,8 @@ It does **not** recompute the op. That is the verifier's job.
 
 ## 7. What an independent verifier must do
 
-Given the base container and the compiled container (and nothing from the compiler but the ledger it wrote), it must,
+Given the base container and the compiled container (and nothing from the compiler but the ledger it wrote, and
+optionally the patch, for the tensors §3b records by result bits), it must,
 **with its own implementation of the frozen numerics**:
 
 1. Check the base: its `index.json` digest and the edited representation's payload digest equal the ledger's
