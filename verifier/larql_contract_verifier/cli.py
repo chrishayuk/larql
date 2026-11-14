@@ -1,6 +1,7 @@
-"""`larql-verifier contract`, `operator`, `patch` and `ledger`: protocols `larql-verify-contract/1`,
-`larql-verify-operator/1`, `larql-verify-patch/1` (docs/verification/contract-protocol.md) and `larql-verify-ledger/1`
-(`WEIGHT_PATCHES_V4`, docs/verification/weight-patches-v4.md §7).
+"""`larql-verifier contract`, `operator`, `patch`, `ledger` and `pack`: protocols `larql-verify-contract/1`,
+`larql-verify-operator/1`, `larql-verify-patch/1` (docs/verification/contract-protocol.md), `larql-verify-ledger/1`
+(`WEIGHT_PATCHES_V4`, docs/verification/weight-patches-v4.md §7) and `larql-verify-pack/1` (`Q8_0_PACK_DERIVATION`,
+docs/verification/q8-0-pack-derivation.md).
 
 One JSON object on stdout, and nothing else there. Exit 0 whenever the contract was judged or could not be evaluated. A
 non-zero exit means the verifier itself failed. It reads what it's given, and writes nothing else.
@@ -20,12 +21,14 @@ from pathlib import Path
 import refcheck
 
 from . import __version__, checkpoint
-from .contracts import CONTRACTS, OPERATOR_CONTRACTS, q8_0_gemv, q8_0_t2, structured_patch, weight_patches_v4
+from .contracts import (CONTRACTS, OPERATOR_CONTRACTS, q8_0_gemv, q8_0_pack, q8_0_t2, structured_patch,
+                        weight_patches_v4)
 
 SCHEMA = "larql-verify-contract/1"
 OPERATOR_SCHEMA = "larql-verify-operator/1"
 PATCH_SCHEMA = "larql-verify-patch/1"
 LEDGER_SCHEMA = "larql-verify-ledger/1"
+PACK_SCHEMA = "larql-verify-pack/1"
 # refcheck/ is copied unmodified from this commit of the isolated checker. See provenance/PROVENANCE.md.
 REFCHECK_COMMIT = "f2788f0e7f1b23432bf4b9bdd1099dbd42d070fc"
 
@@ -177,6 +180,34 @@ def evaluate_ledger(contract: str, base: str, container: str) -> dict:
     return out
 
 
+def evaluate_pack(contract: str, container: str) -> dict:
+    """`pack`: is every re-derived representation of `container` byte for byte what its declared derivation rule
+    produces from the container's own canonical weights? Derived here, from the canonical bytes; the engine's packer
+    is not run."""
+    out = {"schema": PACK_SCHEMA, "contract": contract, "contract_statement": q8_0_pack.STATEMENT,
+           "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
+           "container": {"path": container, "sha256": None},
+           "measurements": [], "offending": [], "reasons": [],
+           "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
+                        "code_sha256": code_sha256()}}
+    if contract != q8_0_pack.CONTRACT:
+        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[q8_0_pack.CONTRACT]}")
+    if not os.path.isdir(container):
+        return q8_0_t2.could_not(out, "the container must be a directory")
+    q8_0_pack.evaluate(out, os.path.abspath(container))
+    if out["status"] == "could_not_evaluate":
+        return out
+    # The digest and the bytes judged came from separate reads, so a verdict needs the input not to have changed.
+    try:
+        unchanged = checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
+    except (OSError, ValueError):  # ValueError: a file name with no digest (not valid UTF-8)
+        unchanged = False
+    if not unchanged:
+        out.update(violations=0, offending=[])
+        q8_0_t2.could_not(out, "the container changed during the evaluation, or has no digest to hold it to")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="larql-verifier")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -198,8 +229,13 @@ def main() -> None:
     le.add_argument("--contract", required=True)
     le.add_argument("--base", required=True)
     le.add_argument("--container", required=True)
+    pk = sub.add_parser("pack")
+    pk.add_argument("--contract", required=True)
+    pk.add_argument("--container", required=True)
     a = ap.parse_args()
-    if a.cmd == "ledger":
+    if a.cmd == "pack":
+        answer = evaluate_pack(a.contract, a.container)
+    elif a.cmd == "ledger":
         answer = evaluate_ledger(a.contract, a.base, a.container)
     elif a.cmd == "patch":
         answer = evaluate_patch(a.contract, a.patch, a.base, a.container)
