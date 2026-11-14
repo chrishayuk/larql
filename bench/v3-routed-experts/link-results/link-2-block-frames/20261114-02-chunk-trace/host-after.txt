@@ -1,0 +1,33 @@
+utc: 2026-11-14T21:45:30Z
+load: { 38.98 48.82 40.72 }
+swap: total = 1024.00M  used = 155.38M  free = 868.62M  (encrypted)
+System-wide memory free percentage: 91%
+Pages free:                                  1438721.
+Pages active:                                2456301.
+Pages wired down:                             251096.
+Pages stored in compressor:                   694831.
+Pages occupied by compressor:                 421604.
+Pageins:                                   144517348.
+Pageouts:                                      14434.
+Swapins:                                      644249.
+Swapouts:                                     684824.
+--- top by cpu
+  PID STAT  %CPU    RSS COMM
+95280 R    318.1 271632 /Users/christopherhay/chris-source/larql/.claude/worktrees/v3-rows-worker-timing/target/llvm-cov-target/debug/deps/larql_vindex-56f12386a0f8c035
+57099 R    154.3 14961360 /Users/christopherhay/chris-source/larql-edit-verifier-patch/target/release/larql
+27214 R    150.1 4941904 target/release/examples/gwbreadcrumb1
+80584 R    107.4 928560 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin/rustc
+44792 R     79.0 1980480 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin/rustc
+86455 R     74.9 223712 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin/rustc
+57098 R     24.7  30064 /Users/christopherhay/chris-source/larql-live-vlp/target/debug/deps/vindex3_mutation-175ad611d96115e7
+--- top by resident memory (kB)
+  PID STAT  %CPU    RSS COMM
+44792 R     79.0 1976672 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin/rustc
+96803 S      0.0 953760 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+80584 R     78.8 928880 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin/rustc
+36924 S+     6.2 886112 claude
+17466 S      0.0 871920 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+27214 R    150.1 4941904 target/release/examples/gwbreadcrumb1
+86151 S      0.9 746176 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+--- stopped processes
+  PID STAT  %CPU    RSS COMM
