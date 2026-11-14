@@ -171,12 +171,16 @@ def evaluate_ledger(contract: str, base: str, container: str, patch: str | None 
         out["patch"] = {"path": patch, "sha256": None}
         if not os.path.isfile(patch):
             return q8_0_t2.could_not(out, "the patch must be a file")
+        if os.path.islink(patch):
+            return q8_0_t2.could_not(out, "the patch is a symlink; this contract reads regular files only")
+        # Read once: the digest reported is of the bytes that are judged.
         try:
-            out["patch"]["sha256"] = hashlib.sha256(Path(patch).read_bytes()).hexdigest()
+            patch_bytes = Path(patch).read_bytes()
         except OSError as e:
             return q8_0_t2.could_not(out, f"the patch can't be read: {e}")
+        out["patch"]["sha256"] = hashlib.sha256(patch_bytes).hexdigest()
     weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container),
-                               None if patch is None else os.path.abspath(patch))
+                               None if patch is None else patch_bytes)
     if out["status"] == "could_not_evaluate":
         return out
     # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.

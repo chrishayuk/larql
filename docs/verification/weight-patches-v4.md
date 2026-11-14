@@ -176,7 +176,8 @@ It does **not** recompute the op. That is the verifier's job.
 
 ## 7. What an independent verifier must do
 
-Given the base container and the compiled container (and nothing from the compiler but the ledger it wrote), it must,
+Given the base container and the compiled container (and nothing from the compiler but the ledger it wrote, and
+optionally the patch, for the tensors §3b records by result bits), it must,
 **with its own implementation of the frozen numerics**:
 
 1. Check the base: its `index.json` digest and the edited representation's payload digest equal the ledger's

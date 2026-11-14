@@ -1105,14 +1105,123 @@ class PatchSupplied(Fixture):
         self.assertEqual(out["status"], CNE)
         self.assertIn("the patch must be a file", " ".join(out["reasons"]))
         out = self.judge_with(compiled, self.patch_copy(lambda doc: doc.pop("operations")))
-        self.assertEqual(out["status"], CNE)
+        self.assertHalves(out, CNE, SAT)  # the ledger is still judged
         self.assertIn("no operations list", " ".join(out["reasons"]))
+        link = os.path.join(self.work, "link.vlp")
+        os.symlink(self.PATCH, link)
+        out = self.judge_with(compiled, link)
+        self.assertEqual(out["status"], CNE)
+        self.assertIn("symlink", " ".join(out["reasons"]))
 
-    def test_the_patch_changes_nothing_for_a_ledger_that_needs_none(self):
+    def without_removals(self):
+        def drop(doc):
+            doc["operations"] = [op for op in doc["operations"] if op["op"] != W.OP_REMOVE]
+
+        return self.patch_copy(drop)
+
+    def test_a_patch_with_no_removal_changes_nothing_for_a_ledger_that_needs_none(self):
+        patch = self.without_removals()
+        for case in CASES:
+            with self.subTest(case=case):
+                self.assertHalves(self.judge_with(os.path.join(FIXTURES, case, "compiled"), patch), SAT, SAT)
+
+    def test_another_compiles_patch_is_a_violation_wherever_its_removal_lands(self):
+        # The split fixture's patch, given for containers it was not compiled into: its removal is on a tensor their
+        # ledgers do not record by result bits.
         for case in CASES:
             with self.subTest(case=case):
                 out = self.judge_with(os.path.join(FIXTURES, case, "compiled"), self.PATCH)
-                self.assertHalves(out, SAT, SAT)
+                self.assertEqual(out["ledger_integrity"], VIOL)
+                self.assertIn("a tensor the ledger does not record by result bits", self.findings(out, W.LEDGER))
+
+    def test_every_removal_in_the_patch_is_held_to_the_ledger(self):
+        compiled = os.path.join(FIXTURES, self.CASE, "compiled")
+        ledger = self.ledger(compiled)
+        low_rank_tensor = ledger["targets"][1 - self.REMOVAL_TARGET]["tensor"]
+
+        def extra_on(tensor, columns):
+            def change(doc):
+                op = dict(self.removal(doc), tensor=tensor, columns=columns)
+                op["digest"] = W.op_digest(op)
+                doc["operations"].append(op)
+            return change
+
+        for name, change in (("a tensor the ledger does not list", extra_on("0.mlp.gate_proj.weight", [100, 101])),
+                             ("the low-rank tensor, other columns", extra_on(low_rank_tensor, [100, 101])),
+                             ("the low-rank tensor, its own columns", extra_on(low_rank_tensor, [8, 9]))):
+            with self.subTest(extra_removal_on=name):
+                out = self.judge_with(compiled, self.patch_copy(change))
+                self.assertEqual(out["ledger_integrity"], VIOL, self.findings(out, W.LEDGER))
+                self.assertIn("a tensor the ledger does not record by result bits", self.findings(out, W.LEDGER))
+
+    def test_a_patch_never_weakens_what_the_ledger_alone_establishes(self):
+        # One element of the removal's tensor flipped, outside the ledger's edits. Without a patch that is a ledger
+        # violation (the container is not the base with the recorded bits). No patch may make it less than that.
+        root = self.copy(self.CASE)
+        target = self.ledger(root)["targets"][self.REMOVAL_TARGET]
+        row, col = 5, 100
+        self.assertNotIn((row, col), {(e["row"], e["col"]) for e in target["edits"]})
+        write_element(root, target["tensor"], row, col, read_element(root, target["tensor"], row, col) ^ 1)
+        reseal_compiled(root)
+        self.assertEqual(self.judge(root)["status"], VIOL)
+        self.assertEqual(self.judge_with(root, self.PATCH)["status"], VIOL)
+
+        def garbage(path):
+            with open(path, "wb") as f:
+                f.write(b'{"operations": [')
+            return path
+
+        unusable = {
+            "an op with an extra field": self.patch_copy(lambda d: self.removal(d).update(note="x")),
+            "an unknown numerics profile": self.patch_copy(lambda d: self.removal(d).update(profile="f64-nope/v9")),
+            "not JSON": garbage(os.path.join(self.work, "garbage.vlp")),
+            "no operations": self.patch_copy(lambda d: d.pop("operations")),
+            "no removal": self.without_removals(),
+        }
+        for name, patch in unusable.items():
+            with self.subTest(patch=name):
+                out = self.judge_with(root, patch)
+                self.assertEqual(out["status"], VIOL, out["reasons"])
+                self.assertIn("differ from the base with the ledger's recorded bits", self.findings(out, W.LEDGER))
+
+    def test_the_digest_reported_is_of_the_bytes_judged(self):
+        # The file is read once. It is swapped between the digest and the judgement, in each direction: the answer
+        # must be about the bytes whose digest it reports, never about what the path holds later.
+        compiled = os.path.join(FIXTURES, self.CASE, "compiled")
+        with open(self.PATCH, "rb") as f:
+            real = f.read()
+        empty = b'{"operations": [], "note": "not the patch"}'
+        evaluate = W.evaluate
+        for first, then, halves in ((real, empty, (SAT, SAT)), (empty, real, (CNE, SAT))):
+            with self.subTest(digest_of="the patch" if first is real else "another file"):
+                path = os.path.join(self.work, f"swap-{len(os.listdir(self.work))}.vlp")
+                with open(path, "wb") as f:
+                    f.write(first)
+
+                def swapped(*args, **kwargs):
+                    with open(path, "wb") as f:
+                        f.write(then)
+                    return evaluate(*args, **kwargs)
+
+                reads = []
+                read_bytes = cli.Path.read_bytes
+
+                def counted(file):
+                    reads.append(str(file))
+                    return read_bytes(file)
+
+                with mock.patch.object(W, "evaluate", swapped), mock.patch.object(cli.Path, "read_bytes", counted):
+                    out = self.judge_with(compiled, path)
+                self.assertEqual(reads.count(path), 1, "the patch is read exactly once")
+                self.assertEqual(out["patch"]["sha256"], sha(first))
+                self.assertHalves(out, *halves)
+
+    def test_a_target_of_mixed_edit_forms_is_judged_the_same_with_and_without_a_patch(self):
+        root = self.copy(self.CASE)
+        self.edit_ledger(root, lambda d: d["targets"][self.REMOVAL_TARGET]["edits"][0].pop("encoding"))
+        without, with_patch = self.judge(root), self.judge_with(root, self.PATCH)
+        self.assertEqual((without["numerical_satisfaction"], without["ledger_integrity"]),
+                         (with_patch["numerical_satisfaction"], with_patch["ledger_integrity"]))
 
 
 class ExactSumRounding(unittest.TestCase):

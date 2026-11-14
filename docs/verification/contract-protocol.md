@@ -231,8 +231,9 @@ engine's own report: the contract says nothing about whether a kernel consumed w
 
 ## Ledger contracts: `larql-verify-ledger/1`
 
-The same arrangement, for whether a compiled container is what its own weight-patch ledger declares of a base container. No patch file is
-needed: a `weight-patches/v4` ledger carries every op it applied ([weight-patches-v4.md](weight-patches-v4.md)).
+The same arrangement, for whether a compiled container is what its own weight-patch ledger declares of a base container. A
+`weight-patches/v4` ledger carries every op it applied except `remove_direction` ops on a tensor it records by result
+bits; for those the patch can be given as well ([weight-patches-v4.md](weight-patches-v4.md)).
 
 ```text
 <verifier> ledger --contract <id> --base <dir> --container <dir> [--patch <file>]
@@ -243,9 +244,20 @@ recorded by its result bits, with the ops' digests in `origins` and the ops them
 ([weight-patches-v4.md](weight-patches-v4.md) §3b). Without the patch that tensor's numerical half is
 `could_not_evaluate`. With it, the patch's `remove_direction` ops on that tensor are admitted exactly as a ledger's ops
 are (binding, digest, bounds, disjoint columns), each must be one of the ledger's `origins`, and the tensor is
-recomputed from the base and compared in full; the ledger's edits must be exactly the elements the ops change. A patch
-op that is not among the origins is a ledger violation: the patch is not the one this container was compiled from.
-The answer then carries `patch.path` and `patch.sha256`. Ops of other kinds in the patch are not read from it.
+recomputed from the base and compared in full; the ledger's edits must be exactly the elements the ops change.
+
+What is held of the patch, and what is not:
+
+- **Every `remove_direction` op in it** must be on a tensor the ledger records by result bits and must be one of the
+  ledger's `origins`, with its digest intact. One that is not is a ledger violation: the patch is not the one this
+  container was compiled from.
+- **Ops of other kinds are not read.** A low-rank op is judged from the ledger's own record of it, so the answer does
+  not attest the patch as a whole, and the patch's header (`version`, `base_model`, `base_checksum`) is not read:
+  each op binds itself to the base through its source and its digest.
+- **A patch never weakens the judgement.** One that cannot be read, or whose ops on a tensor cannot be used, leaves
+  that tensor judged as it is without a patch: held to the bits the ledger records, with the numerical half
+  `could_not_evaluate` and the reason given.
+- The patch must be a regular file. It is read once: `patch.sha256` in the answer is the digest of the bytes judged.
 
 The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
 
@@ -253,7 +265,8 @@ The exit status, stdout and the rules for an acceptable answer are as above, wit
 |---|---|
 | `schema` | Exactly `larql-verify-ledger/1` |
 | `base.path`, `container.path` | The values asked about, unchanged. `sha256` is the verifier's digest of each directory, as for `contract` |
-| `recomputed_from` | What the expected result was derived from: the base's weights and the operands the ledger records. The ledger's hashes and counts are checked, never used as expected values |
+| `patch.path`, `patch.sha256` | Present only when a patch was given: the value asked about, and the digest of the bytes that were judged |
+| `recomputed_from` | What the expected result was derived from: the base's weights and the operands the ledger records, and, when a patch was given, its `remove_direction` ops. The ledger's hashes and counts are checked, never used as expected values |
 | `numerical_satisfaction` | `satisfied`, `violated` or `could_not_evaluate`: does every element of every tensor the ledger names equal the bits recomputed from the base and the ops (§7 step 3, with step 6 for a sham) |
 | `ledger_integrity`, `provenance` | The other half, one verdict reported under both names: the ledger is bound to this base, every op is intact and admissible, every digest and count agrees with the containers and the recomputation, and nothing outside the edit changed (§7 steps 1, 2, 4, 5) |
 | `verdicts` | Each half in full: `status`, `violations`, `offending` (each finding tagged with its `half`), `reasons` and `measurements` |
