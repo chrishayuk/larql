@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use larql_router_protocol::vindex3_expert_rows as rows_wire;
 use larql_router_protocol::vindex3_experts as wire;
 use std::sync::Arc;
 fn worker(state: &AppState) -> Result<Arc<V3Model>, ServerError> {
@@ -148,6 +149,123 @@ pub async fn forward(
             value
                 .parse()
                 .map_err(|e| ServerError::Internal(format!("expert timing header: {e}")))?,
+        );
+    }
+    Ok(response)
+}
+
+/// Optional diagnostics for a multi-row call: what the worker grouped. It
+/// counts invocations, never memory traffic.
+pub const ROWS_ACCOUNTING_HEADER: &str = "x-larql-expert-rows-accounting";
+
+/// Multi-row selected-expert frame (`VXR1` in, `VXS1` out). A separate
+/// endpoint from [`forward`]: it never accepts a single-row frame and the
+/// single-row endpoint never accepts this one. The reply is every requested
+/// `(row, expert)` output or an error; nothing partial is ever encoded.
+pub async fn forward_rows(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+) -> Result<Response, ServerError> {
+    let accounted = request
+        .headers()
+        .get(wire::PROFILE_HEADER)
+        .is_some_and(|h| h == "1");
+    if request
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .is_none_or(|h| h != rows_wire::CONTENT_TYPE)
+    {
+        return Err(ServerError::BadRequest(
+            "expert rows content type required".into(),
+        ));
+    }
+    let bytes = match axum::body::Bytes::from_request(request, &state).await {
+        Ok(b) => b,
+        Err(e) => return Ok(e.into_response()),
+    };
+    state.bump_requests();
+    let model = worker(&state)?;
+    let w = model.expert_wire.as_ref().unwrap();
+    let b = w.execution.binding();
+    let hidden = b.program.hidden;
+    let request = rows_wire::decode_request(
+        &bytes,
+        hidden,
+        rows_wire::MAX_ROWS,
+        w.execution.max_selected(),
+    )
+    .map_err(ServerError::BadRequest)?;
+    if request.handle != w.handle {
+        return Err(ServerError::BadRequest(
+            "unknown or stale expert worker handle".into(),
+        ));
+    }
+    if !(b.program.start..b.program.end).contains(&request.layer)
+        || request.rows.iter().any(|row| {
+            row.experts
+                .iter()
+                .any(|id| !(b.expert_start..b.expert_end).contains(id))
+        })
+    {
+        return Err(ServerError::BadRequest(
+            "layer or expert outside worker ownership".into(),
+        ));
+    }
+    let (handle, sequence, layer, row_count) = (
+        request.handle,
+        request.sequence,
+        request.layer,
+        request.rows.len(),
+    );
+    let (outputs, accounting) = tokio::task::spawn_blocking(move || {
+        let rows: Vec<_> = request
+            .rows
+            .iter()
+            .map(|row| larql_inference::vindex3::routed_experts::ExpertRow {
+                id: row.id,
+                input: &row.input,
+                experts: &row.experts,
+            })
+            .collect();
+        let mut accounting = Default::default();
+        model
+            .expert_wire
+            .as_ref()
+            .unwrap()
+            .execution
+            .apply_rows(layer, &rows, Some(&mut accounting))
+            .map(|outputs| (outputs, accounting))
+            .map_err(|e| ServerError::BadRequest(e.to_string()))
+    })
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let outputs: Vec<_> = outputs
+        .into_iter()
+        .map(|o| rows_wire::Output {
+            row: o.row,
+            expert: o.expert,
+            values: o.output,
+        })
+        .collect();
+    let bytes = rows_wire::encode_response(handle, sequence, layer, hidden, row_count, &outputs)
+        .map_err(ServerError::Internal)?;
+    let mut response = (
+        [(axum::http::header::CONTENT_TYPE, rows_wire::CONTENT_TYPE)],
+        bytes,
+    )
+        .into_response();
+    if accounted {
+        let value = serde_json::json!({
+            "rows": accounting.rows, "pairs": accounting.pairs,
+            "distinct_experts": accounting.distinct_experts,
+            "transform_calls": accounting.transform_calls,
+        })
+        .to_string();
+        response.headers_mut().insert(
+            ROWS_ACCOUNTING_HEADER,
+            value
+                .parse()
+                .map_err(|e| ServerError::Internal(format!("expert rows accounting: {e}")))?,
         );
     }
     Ok(response)

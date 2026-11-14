@@ -22,6 +22,7 @@ mod bf16_zlib_bank;
 mod fixture;
 mod placed;
 mod planned_bank;
+mod rows;
 
 use crate::format::vindex3::opplan::exec::backend::ExpertSlices;
 use crate::format::vindex3::opplan::{ExpertBank, OperandRef, PackedProjection};

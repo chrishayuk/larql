@@ -194,6 +194,11 @@ pub const ROUTE_CAPABILITIES: &[RouteCapability] = &[
         source: None,
     },
     RouteCapability {
+        key: "/runtime/routed_experts_rows",
+        route: paths::VINDEX3_EXPERTS_ROWS,
+        source: None,
+    },
+    RouteCapability {
         key: "/runtime/dense_ffn_stream",
         route: paths::VINDEX3_FFN_STREAM,
         source: None,

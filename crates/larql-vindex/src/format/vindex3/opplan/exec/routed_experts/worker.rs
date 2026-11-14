@@ -290,32 +290,12 @@ impl PreparedRoutedExperts {
         experts
             .iter()
             .map(|expert| {
-                let e = expert - self.first_expert;
-                let inter = layer.op.expert_intermediate_size;
                 let transform = expert_ns.as_ref().map(|_| std::time::Instant::now());
-                let row = backend.expert_transform(ExpertTransformCall {
-                    x,
-                    hidden: self.hidden,
-                    intermediate: inter,
-                    activation: layer.op.activation,
-                    gate_policy: layer.op.gate_policy,
-                    weights: ExpertWeights::Fused {
-                        gate_up: layer.gate_up[e].slice(),
-                        down: layer.down[e].slice(),
-                        layout: layer.op.gate_up_layout.expect("validated layout"),
-                        gate_up_bias: layer
-                            .gate_up_bias
-                            .as_ref()
-                            .map(|b| &b[e * 2 * inter..(e + 1) * 2 * inter]),
-                        down_bias: layer
-                            .down_bias
-                            .as_ref()
-                            .map(|b| &b[e * self.hidden..(e + 1) * self.hidden]),
-                    },
-                })?;
+                let row = self.transform(backend, layer, *expert, x);
                 if let (Some(total), Some(transform)) = (expert_ns.as_deref_mut(), transform) {
                     *total += transform.elapsed().as_nanos() as u64;
                 }
+                let row = row?;
                 super::super::dense_ffn::validate_row(&row, self.hidden)?;
                 Ok(ExpertOutput {
                     expert: *expert,
@@ -323,6 +303,109 @@ impl PreparedRoutedExperts {
                 })
             })
             .collect()
+    }
+    /// Several rows in one call, executed grouped by expert: every row that
+    /// selected an expert is run through it before the next expert starts.
+    /// Each `(row, expert)` goes through the same transform as [`Self::apply`],
+    /// so a row's outputs are the bits a single-row call would produce.
+    ///
+    /// Everything is validated before any transform runs and nothing is
+    /// returned unless every pair succeeded.
+    pub fn apply_rows<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        layer: usize,
+        rows: &[ExpertRow<'_>],
+        accounting: Option<&mut RowsAccounting>,
+    ) -> Result<Vec<RowExpertOutput>, VindexError> {
+        if backend.identity() != self.lowering {
+            return Err(err("expert numerical provider mismatch"));
+        }
+        let prepared = layer
+            .checked_sub(self.first_layer)
+            .and_then(|l| self.layers.get(l))
+            .ok_or_else(|| err("layer outside expert worker"))?;
+        if rows.is_empty() {
+            return Err(err("expert rows call carries no row"));
+        }
+        let mut ids = std::collections::BTreeSet::new();
+        let mut groups = std::collections::BTreeMap::<usize, Vec<usize>>::new();
+        let mut pairs = 0;
+        for (index, row) in rows.iter().enumerate() {
+            super::super::dense_ffn::validate_row(row.input, self.hidden)?;
+            if !ids.insert(row.id) {
+                return Err(err("duplicate row id in expert rows call"));
+            }
+            if row.experts.is_empty() || row.experts.len() > prepared.op.top_k {
+                return Err(err("expert request count outside top-k bound"));
+            }
+            let mut seen = std::collections::BTreeSet::new();
+            for expert in row.experts {
+                if !seen.insert(*expert)
+                    || expert
+                        .checked_sub(self.first_expert)
+                        .is_none_or(|e| e >= prepared.gate_up.len())
+                {
+                    return Err(err("duplicate or unowned expert"));
+                }
+                groups.entry(*expert).or_default().push(index);
+                pairs += 1;
+            }
+        }
+        let mut out = Vec::with_capacity(pairs);
+        for (expert, members) in &groups {
+            for index in members {
+                let row = &rows[*index];
+                let output = self.transform(backend, prepared, *expert, row.input)?;
+                super::super::dense_ffn::validate_row(&output, self.hidden)?;
+                out.push(RowExpertOutput {
+                    row: row.id,
+                    expert: *expert,
+                    output,
+                });
+            }
+        }
+        if let Some(accounting) = accounting {
+            *accounting = RowsAccounting {
+                rows: rows.len(),
+                pairs,
+                distinct_experts: groups.len(),
+                transform_calls: out.len(),
+            };
+        }
+        Ok(out)
+    }
+    /// One owned expert on one row: the transform both entry points share.
+    /// Output validation stays with the caller, outside any transform timing.
+    fn transform<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        layer: &Layer,
+        expert: usize,
+        x: &[f32],
+    ) -> Result<Vec<f32>, VindexError> {
+        let e = expert - self.first_expert;
+        let inter = layer.op.expert_intermediate_size;
+        backend.expert_transform(ExpertTransformCall {
+            x,
+            hidden: self.hidden,
+            intermediate: inter,
+            activation: layer.op.activation,
+            gate_policy: layer.op.gate_policy,
+            weights: ExpertWeights::Fused {
+                gate_up: layer.gate_up[e].slice(),
+                down: layer.down[e].slice(),
+                layout: layer.op.gate_up_layout.expect("validated layout"),
+                gate_up_bias: layer
+                    .gate_up_bias
+                    .as_ref()
+                    .map(|b| &b[e * 2 * inter..(e + 1) * 2 * inter]),
+                down_bias: layer
+                    .down_bias
+                    .as_ref()
+                    .map(|b| &b[e * self.hidden..(e + 1) * self.hidden]),
+            },
+        })
     }
     pub(in super::super) fn bias_bytes(&self) -> usize {
         self.layers
