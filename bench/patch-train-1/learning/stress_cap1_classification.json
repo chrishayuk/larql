@@ -1,0 +1,231 @@
+{
+ "protocol": "STRESS-CAP-1 classification (DISCOVERY ONLY)",
+ "pairs": [
+  {
+   "index": 1,
+   "A": "Brimokvolia",
+   "B": "Thapylvolia",
+   "isolated_class": "both",
+   "isolated_top1": {
+    "A": true,
+    "B": true
+   },
+   "isolated_train_rank": {
+    "A": 1,
+    "B": 1
+   },
+   "cap_binding_steps": {
+    "P_A|W0": 175,
+    "P_B|W0": 173,
+    "P_B|W1_A": 0,
+    "P_A|W1_B": 163
+   },
+   "stacks": {
+    "3_A_then_indepB": {
+     "A_top1": false,
+     "B_top1": true,
+     "A_rank": 15,
+     "B_rank": 1,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": false
+    },
+    "4_B_then_indepA": {
+     "A_top1": false,
+     "B_top1": true,
+     "A_rank": 15,
+     "B_rank": 1,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": false
+    },
+    "5_A_then_B_learned_on_A": {
+     "A_top1": false,
+     "B_top1": true,
+     "A_rank": 7,
+     "B_rank": 1,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": false
+    },
+    "6_B_then_A_learned_on_B": {
+     "A_top1": true,
+     "B_top1": false,
+     "A_rank": 1,
+     "B_rank": 4,
+     "coexist": false,
+     "retention_fails_A": false,
+     "retention_fails_B": true
+    },
+    "7_joint_rank2": {
+     "A_top1": false,
+     "B_top1": true,
+     "A_rank": 15,
+     "B_rank": 1,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": false
+    }
+   },
+   "rescue": {},
+   "coexist_after_sequential": {
+    "arm5": false,
+    "arm6": false
+   }
+  },
+  {
+   "index": 2,
+   "A": "Frosalvolia",
+   "B": "Thapylvolia",
+   "isolated_class": "both",
+   "isolated_top1": {
+    "A": true,
+    "B": true
+   },
+   "isolated_train_rank": {
+    "A": 1,
+    "B": 1
+   },
+   "cap_binding_steps": {
+    "P_A|W0": 169,
+    "P_B|W0": 173,
+    "P_B|W1_A": 173,
+    "P_A|W1_B": 156
+   },
+   "stacks": {
+    "3_A_then_indepB": {
+     "A_top1": false,
+     "B_top1": false,
+     "A_rank": 13,
+     "B_rank": 5,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": true
+    },
+    "4_B_then_indepA": {
+     "A_top1": false,
+     "B_top1": false,
+     "A_rank": 13,
+     "B_rank": 5,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": true
+    },
+    "5_A_then_B_learned_on_A": {
+     "A_top1": false,
+     "B_top1": true,
+     "A_rank": 14,
+     "B_rank": 1,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": false
+    },
+    "6_B_then_A_learned_on_B": {
+     "A_top1": true,
+     "B_top1": true,
+     "A_rank": 1,
+     "B_rank": 1,
+     "coexist": true,
+     "retention_fails_A": false,
+     "retention_fails_B": false
+    },
+    "7_joint_rank2": {
+     "A_top1": false,
+     "B_top1": false,
+     "A_rank": 13,
+     "B_rank": 5,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": true
+    }
+   },
+   "rescue": {},
+   "coexist_after_sequential": {
+    "arm5": false,
+    "arm6": true
+   }
+  },
+  {
+   "index": 3,
+   "A": "Brimokvolia",
+   "B": "Frosalvolia",
+   "isolated_class": "both",
+   "isolated_top1": {
+    "A": true,
+    "B": true
+   },
+   "isolated_train_rank": {
+    "A": 1,
+    "B": 1
+   },
+   "cap_binding_steps": {
+    "P_A|W0": 175,
+    "P_B|W0": 169,
+    "P_B|W1_A": 152,
+    "P_A|W1_B": 161
+   },
+   "stacks": {
+    "3_A_then_indepB": {
+     "A_top1": true,
+     "B_top1": false,
+     "A_rank": 1,
+     "B_rank": 4,
+     "coexist": false,
+     "retention_fails_A": false,
+     "retention_fails_B": true
+    },
+    "4_B_then_indepA": {
+     "A_top1": true,
+     "B_top1": false,
+     "A_rank": 1,
+     "B_rank": 4,
+     "coexist": false,
+     "retention_fails_A": false,
+     "retention_fails_B": true
+    },
+    "5_A_then_B_learned_on_A": {
+     "A_top1": false,
+     "B_top1": true,
+     "A_rank": 4,
+     "B_rank": 1,
+     "coexist": false,
+     "retention_fails_A": true,
+     "retention_fails_B": false
+    },
+    "6_B_then_A_learned_on_B": {
+     "A_top1": true,
+     "B_top1": false,
+     "A_rank": 1,
+     "B_rank": 3,
+     "coexist": false,
+     "retention_fails_A": false,
+     "retention_fails_B": true
+    },
+    "7_joint_rank2": {
+     "A_top1": true,
+     "B_top1": false,
+     "A_rank": 1,
+     "B_rank": 4,
+     "coexist": false,
+     "retention_fails_A": false,
+     "retention_fails_B": true
+    }
+   },
+   "rescue": {},
+   "coexist_after_sequential": {
+    "arm5": false,
+    "arm6": false
+   }
+  }
+ ],
+ "counts_out_of_3_NOT_independent": {
+  "both_learn_in_isolation": 3,
+  "only_one_learns": 0,
+  "neither_learns": 0,
+  "sequential_rescue_any": 0,
+  "sequential_rescue_over_composition_any": 0,
+  "coexist_after_sequential_arm5": 0,
+  "coexist_after_sequential_arm6": 1,
+  "retention_fails_despite_isolated_success_any_stack": 3
+ }
+}
