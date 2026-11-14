@@ -328,6 +328,22 @@ async fn v3_multi_row_expert_frames_match_single_row_execution_and_fail_whole() 
         assert_eq!(accounting["pairs"], SELECTIONS.len() * owned.len());
         assert_eq!(accounting["distinct_experts"], owned.len());
         assert_eq!(accounting["transform_calls"], accounting["pairs"]);
+        // The same request also returns the worker's own timing: the
+        // handler contains execution, which contains the transforms.
+        let timing: wire::WorkerTiming = serde_json::from_slice(
+            response
+                .headers()
+                .get(wire::PROFILE_HEADER)
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+        assert!(timing.experts_ns > 0);
+        assert!(timing.execute_ns >= timing.experts_ns);
+        assert!(
+            timing.handler_ns
+                >= timing.decode_ns + timing.queue_ns + timing.execute_ns + timing.encode_ns
+        );
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -345,6 +361,13 @@ async fn v3_multi_row_expert_frames_match_single_row_execution_and_fail_whole() 
         .await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(response.headers().get(ROWS_ACCOUNTING_HEADER).is_none());
+        assert!(response.headers().get(wire::PROFILE_HEADER).is_none());
+        // Timing is diagnostics only: the frame is the same bytes whether
+        // or not it was asked for.
+        let plain = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(plain, body);
 
         let single_frame =
             wire::encode_request(opened.handle, 1, LAYER, &owned, &inputs[0]).unwrap();

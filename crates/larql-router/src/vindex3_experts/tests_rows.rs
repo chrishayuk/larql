@@ -43,7 +43,15 @@ fn requested() -> Vec<rows_wire::Row> {
 }
 
 /// Echo each row's input as every one of its expert outputs, in reverse.
-async fn rows(State(mode): State<Arc<AtomicUsize>>, bytes: Bytes) -> axum::response::Response {
+async fn rows(
+    State(mode): State<Arc<AtomicUsize>>,
+    headers: axum::http::HeaderMap,
+    bytes: Bytes,
+) -> axum::response::Response {
+    let profiled = headers.get(wire::PROFILE_HEADER).is_some_and(|h| h == "1");
+    if profiled {
+        PROFILED_REQUESTS.fetch_add(1, Ordering::SeqCst);
+    }
     let request =
         rows_wire::decode_request(&bytes, HIDDEN, rows_wire::MAX_ROWS, MAX_SELECTED).unwrap();
     let mut outputs: Vec<rows_wire::Output> = request
@@ -91,8 +99,24 @@ async fn rows(State(mode): State<Arc<AtomicUsize>>, bytes: Bytes) -> axum::respo
         13 => response[..4].copy_from_slice(b"VEY1"),
         _ => {}
     }
-    ([(axum::http::header::CONTENT_TYPE, content_type)], response).into_response()
+    let mut reply = ([(axum::http::header::CONTENT_TYPE, content_type)], response).into_response();
+    if profiled {
+        let timing = wire::WorkerTiming {
+            handler_ns: WORKER_HANDLER_NS,
+            ..Default::default()
+        };
+        reply.headers_mut().insert(
+            wire::PROFILE_HEADER,
+            serde_json::to_string(&timing).unwrap().parse().unwrap(),
+        );
+    }
+    reply
 }
+
+/// Requests the stub saw carrying the profile header.
+static PROFILED_REQUESTS: AtomicUsize = AtomicUsize::new(0);
+/// The handler time the stub worker reports: far below any real round trip.
+const WORKER_HANDLER_NS: u64 = 1;
 
 async fn serve(app: Router) -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -139,6 +163,23 @@ async fn rows_cross_once_keep_their_bits_and_refuse_every_wrong_answer() {
         assert_eq!(trace[0]["rows"], 2);
         assert_eq!(trace[0]["pairs"], 3);
         assert_eq!(trace[0]["complete"], true);
+        // A profiled call asks the worker for its timing and records where
+        // the exchange's time went.
+        assert_eq!(PROFILED_REQUESTS.load(Ordering::SeqCst), 1);
+        assert_eq!(trace[0]["worker_profile_complete"], true);
+        assert_eq!(trace[0]["worker"]["handler_ns"], WORKER_HANDLER_NS);
+        let roundtrip = trace[0]["roundtrip_ns"].as_u64().unwrap();
+        assert_eq!(
+            trace[0]["transport_remainder_ns"],
+            roundtrip - WORKER_HANDLER_NS
+        );
+        assert!(trace[0]["total_ns"].as_u64().unwrap() >= roundtrip);
+        assert!(trace[0]["request_bytes"].as_u64().unwrap() > 0);
+        assert!(trace[0]["response_bytes"].as_u64().unwrap() > 0);
+        // Outside a capture nothing is asked of the worker.
+        let unprofiled = client.forward_rows(0, LAYER, &asked).unwrap();
+        assert_eq!(unprofiled, outputs);
+        assert_eq!(PROFILED_REQUESTS.load(Ordering::SeqCst), 1);
 
         for fault in FAULTS {
             mode.store(fault, Ordering::SeqCst);
