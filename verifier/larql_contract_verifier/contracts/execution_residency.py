@@ -33,7 +33,7 @@ import numpy as np
 from refcheck import container as C
 
 from . import vlp_numerics as V
-from .weight_patches_v4 import Store, container_digest, file_digests, strict_json
+from .weight_patches_v4 import CannotEvaluate, Store, container_digest, file_digests, strict_json
 
 CONTRACT = "EXECUTION_RESIDENCY_V1"
 STATEMENT = (
@@ -73,7 +73,7 @@ INPUT_FIELDS = {"l2_bytes", "max_format", "arithmetic", "kquant_exec"}
 INDEX_FILE = "index.json"
 OFFENDING_LIMIT = 10
 SHA_HEX = 64
-BAD_INPUT = (OSError, ValueError, KeyError, TypeError, IndexError, C.ContainerError)
+BAD_INPUT = (OSError, ValueError, KeyError, TypeError, IndexError, C.ContainerError, CannotEvaluate)
 NOT_ESTABLISHED = (
     "that the record is an honest account of what the process held (it is the engine's own report)",
     "that any kernel consumed the resident bytes, or computed correctly with them",
