@@ -1,0 +1,30 @@
+{
+ "schema": "vlp-numerics-v2-independent-reproduction/1",
+ "evaluator": {
+  "path": "independent/evaluate.py",
+  "sha256": "6aac918424044cc70d37c97d695df4291dbcfb7de289aba5649d7fe4e8ccdf66",
+  "python": "3.12.2"
+ },
+ "documents_sha256": {
+  "v2/SPEC.md": "82a2f52070e5479b492b07b53edb40fb9fe0d39e92c5eda7bcc7c96e4feab314",
+  "v1/SPEC.md": "0f97f2206027185b23163b10a9910656bde6f783d97d5555d5b480a23b8a22e1"
+ },
+ "inputs_sha256": "a402289222190c4cd4ec7036594e9651e5120cba104f1df9dcc093b7b5b43443",
+ "results_sha256": "12e9a832e4cfa4a0ee253a7f3bb9d05df6b5d64461114d5761267511ca6380e8",
+ "vectors_sha256": "11322d3cb4d3503d037d16943f024401291de6c0a34d591f3bee439ecd378231",
+ "cases": 91,
+ "reproduced": 91,
+ "not_reproduced": [],
+ "v1_equivalence": {
+  "cases": 38,
+  "identical_to_v1": 37,
+  "differing": [
+   "eq-lr-negzero-plus-poszero"
+  ],
+  "differing_is_exactly_the_documented_one": true
+ },
+ "comparison_self_test": {
+  "corruptions_tried": 546,
+  "undetected": []
+ }
+}

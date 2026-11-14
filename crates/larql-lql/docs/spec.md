@@ -199,9 +199,16 @@ USE REMOTE <url>;
 -- USE with a .vindex path: fast, pre-extracted, all statements available.
 -- USE MODEL: live weight access, reads safetensors directly. Slower but
 --   zero setup — point at any model, start querying immediately.
--- USE REMOTE: HTTP client to a `larql serve` instance. All read queries
---   are forwarded over the wire. Mutations create a local patch overlay
---   (the remote vindex is not modified).
+-- USE REMOTE: HTTP client to a `larql serve` instance. Every statement is
+--   forwarded over the wire, and every request carries this client's
+--   session id (`x-session-id`, minted at USE REMOTE). Mutations
+--   (INSERT/DELETE/UPDATE) and APPLY/SHOW/REMOVE PATCH act on this
+--   session's patch overlay on the server, never on the model other
+--   clients share, and the vindex files are not modified. Reads send the
+--   same header so the server can answer them against that overlay.
+--   Patches the session sends declare the served model (the `model` of
+--   /v1/stats) as their `base_model`; if the server names no model,
+--   DELETE, UPDATE and APPLY PATCH are refused before anything is sent.
 -- AUTO_EXTRACT: create vindex automatically on first mutation.
 --
 -- Mutation (INSERT/DELETE/UPDATE) and COMPILE require a vindex.
@@ -556,6 +563,13 @@ UPDATE EDGES
 UPDATE EDGES
     SET target = "London", confidence = 0.95
     WHERE layer = 26 AND feature = 8821;
+
+-- Settable fields: `target` (also spelled `top_token`), a non-empty
+-- string, and `confidence` (also `c_score`), a finite number. The SET
+-- clause is checked whole before anything runs: an unknown field, a value
+-- of the wrong type or a field set twice refuses the statement, and
+-- nothing is updated. `target` changes the record's text and keeps its
+-- token id.
 ```
 
 ```
@@ -566,6 +580,13 @@ MERGE <source_vindex>
 MERGE "medical-knowledge.vindex"
     INTO "gemma3-4b.vindex"
     ON CONFLICT HIGHEST_CONFIDENCE;
+
+-- A MERGE writes to the patch overlay of the bound vindex, and each record
+-- it writes is recorded as an UPDATE, so SAVE PATCH includes it. A saved
+-- UPDATE carries the record's token and score, not its top-k list.
+-- INTO may name the bound vindex; any other target is refused. A source
+-- built from another model, or holding a record at a slot the bound vindex
+-- does not have, is refused whole: nothing is merged.
 ```
 
 ```
@@ -588,6 +609,20 @@ SAVE PATCH;
 -- Saved: medical-knowledge.vlp (3 operations, 30 KB)
 ```
 
+`SAVE PATCH` takes no path: the file is the one `BEGIN PATCH` named. It either writes that file or
+leaves the session as it was.
+
+- **A refusal keeps the recording.** A mutation with no `BEGIN PATCH` starts an anonymous recording,
+  which has no file. `SAVE PATCH` on it is refused and the recorded operations stay pending:
+  `BEGIN PATCH "file.vlp"` adopts them, and `SAVE PATCH` then writes them.
+- **A failed write keeps the recording.** If the file cannot be written, the session is still the named
+  patch session with every operation pending, so `SAVE PATCH` can be run again once the cause is fixed.
+  The file itself is not written atomically: a write that fails part-way can leave a truncated file at
+  the destination, which the repeated `SAVE PATCH` overwrites.
+
+`BEGIN PATCH ""` is refused: an empty name is how the session marks an anonymous recording, and a
+recording with that name could be neither saved nor renamed.
+
 ```
 APPLY PATCH <patch_path>
 
@@ -597,6 +632,37 @@ APPLY PATCH <patch_path>
 APPLY PATCH "medical-knowledge.vlp";
 APPLY PATCH "fix-hallucinations.vlp";
 ```
+
+`APPLY PATCH` applies every operation in the file or none of them. The whole patch is checked before
+anything is applied, on VINDEX2 and VINDEX3 alike, and a patch that fails any check is refused with an
+error that names the operation. The overlay, including the patches already stacked, is then exactly as
+it was.
+
+| Check | Refused when |
+|---|---|
+| Model | `base_model` is empty, or is not the name of the bound vindex's model |
+| Layer | an operation names a layer the index does not have |
+| Feature slot | an `insert`, `update` or `delete` names a slot its layer does not have |
+| Vector | a gate, up, down or KNN key vector does not decode, or is not `hidden_size` wide |
+
+The model check compares names. A VINDEX2 vindex is named by its `index.json` `model`; a VINDEX3
+container by the name it was encoded under. A patch written on one is accepted on the other only when
+the two names are the same string. A matching shape is not evidence of the same model: two models of
+one architecture have identical dimensions and unrelated weights.
+
+What this does not yet cover:
+
+- **The name is the only identity.** Nothing binds a patch to the weights it was read from, so two
+  different models published under one name are indistinguishable here. A stable model identifier and
+  a source-weight fingerprint, carried by both formats, are a separate piece of work.
+- **The server does not check the model yet.** `POST /v1/patches/apply` applies the same slot,
+  bounds and width checks and refuses a patch that fails them, but it does not compare `base_model`.
+  The client does its half: a remote `APPLY PATCH` checks the patch against the model the server
+  named at `USE REMOTE`, and remote `DELETE` and `UPDATE` send patches declaring that model. Until the
+  server compares it too, model identity is enforced by the client only.
+- **`DIFF … INTO PATCH` can write a patch `APPLY PATCH` refuses.** With no model bound, or on a
+  VINDEX3 or remote session, it records `base_model` as `"unknown"`. Such a patch names no model this
+  check can match, so it is refused until its `base_model` is set to the target's name.
 
 ```
 REMOVE PATCH <patch_path>
@@ -770,6 +836,33 @@ That is **consistency of the description**, not a verdict on the patch. Whether 
 the declared edit is a claim for an independent verifier, and a representation contract measured against
 the **unedited** upstream checkpoint (for example `Q8_0_T2`) will correctly report the edited elements:
 measure the new representation against the edited canonical weights the ledger names.
+
+### 3.5.2 Structured weight edits: `REMOVE DIRECTION` (VINDEX3)
+
+```sql
+REMOVE DIRECTION "<operand.json>" FROM "<tensor>" COLUMNS (<n>, <n>, …)
+  SCALE <number> NUMERICS "<profile>";
+```
+
+Removes a direction `u` from chosen columns of one stored BF16 matrix: `W[:, S] <- W[:, S] - alpha * u * (u^T W[:, S])`.
+Unlike `UPDATE WEIGHTS`, the edit is declared by its **operands**, not by the elements it changes, and
+`COMPILE` writes the exact BF16 results of the frozen numerics. **No f32 delta is computed anywhere on the
+path**, so a result no single f32 delta can reach (a near-cancellation that leaves a tiny nonzero) is written
+exactly.
+
+- **Operand file.** JSON `{"bits": ["<16 lowercase hex digits>", …], "origin": "<optional note>"}`: one f64
+  bit pattern per row of the tensor. `origin` names where the direction came from (a feature artifact id, a
+  file hash). It is covered by the op's digest and read by nothing that computes.
+- **Scale** is the literal's exact f64; an integer beyond 2^53 is refused rather than rounded. Negative
+  scales are allowed.
+- **Numerics** is a profile id, `f64-seq-rne1/v1` or `f64-seq-rne2/v1`. The f32 working profile is refused.
+- **Conflicts are by declared footprint, not by what changes after rounding.** Two structured ops sharing a
+  column are refused. A structured op and an `UPDATE WEIGHTS` delta on one tensor are refused as mixed forms,
+  whichever came first. An op that changes nothing is refused at resolve and compile.
+- **Ledger.** A compile with any structured op writes `weight-patches/v3` with the exact result bits. A
+  delta-only compile still writes `weight-patches/v2`, unchanged.
+- **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container
+  implements the op is for `VERIFY PATCH` (section 3.9), which recomputes it from the operands.
 
 ### 3.6 Schema Introspection Statements
 
@@ -981,6 +1074,25 @@ answer is `could_not_evaluate`, which is an error here as above. `<tensor>` is t
 
 - **`Q8_0_GEMV_B1` is experimental:** a measured bound check on one call, not a machine-checked proof. The bound is loose, so satisfying it doesn't rule out small defects.
 - **A witness is the engine's own report.** A result says the recorded output is right for the recorded input and the container's bytes. It can't show the production kernel produced it, and the output says the witness isn't authenticated. Together with an unauthenticated verifier, this means a result must not gate a release.
+
+```sql
+VERIFY PATCH "<patch.vlp>" USING CONTRACT "<id>" FROM "<base>" AGAINST "<container>";
+
+-- Judge whether <container> implements what the patch declares of <base>, using an independent verifier.
+
+VERIFY PATCH "removal.vlp"
+  USING CONTRACT "STRUCTURED_REMOVE_DIRECTION"
+  FROM "model.vindex3"
+  AGAINST "edited.vindex3";
+```
+
+**The verifier recomputes; it does not read the compiler's ledger.** `STRUCTURED_REMOVE_DIRECTION` takes the
+patch's operands (bits, alpha, columns, profile), recomputes the expected BF16 of every element on exact
+rationals, and compares **every** element of the edited tensor (declared columns against the recomputed bits,
+the rest against the base) and every other BF16 tensor against the base. A stale binding, an unimplemented
+profile, an operation of another kind, overlapping columns, or a malformed operand is `could_not_evaluate`.
+It does not establish the derived (quantised) representations, the op digest, or the operand's origin, and
+says so. Everything above about an unauthenticated verifier applies.
 
 **`larql lql` exit status:**
 
@@ -1859,7 +1971,7 @@ pub enum ExtractLevel {
 | Split weight files | ✅ Done — attn, up, down, norms, lm_head (no gate duplication) |
 | f16 storage | ✅ Done — `--f16` flag, halves file sizes |
 | Vindexfile | ✅ Done — declarative builds (FROM + PATCH + INSERT), `larql build` CLI |
-| USE REMOTE | ✅ Done — HTTP client to larql-server, all queries forwarded, local patch overlay |
+| USE REMOTE | ✅ Done — HTTP client to larql-server, all queries forwarded with the session id; mutations and patches are per-session on the server |
 | `larql serve` | ✅ Done — HTTP/gRPC server, all endpoints, multi-model, per-session patches |
 | WeightBackend (USE MODEL) | ✅ Done — direct safetensors, INFER/EXPLAIN INFER/STATS; browse ops guide to EXTRACT |
 | GGUF output format | 🔴 Planned — COMPILE INTO MODEL FORMAT gguf |

@@ -224,8 +224,12 @@ pub struct ExecArgs {
     /// invariant rather than a timing to infer. `transient` ignores any
     /// pack and quantises at load; it is the oracle the representation
     /// compiler is checked against, and is retained permanently.
-    #[arg(long, value_name = "auto|stored|transient", default_value = "auto")]
-    pub representation_source: String,
+    ///
+    /// Default: `stored` for `reference` and `production`, which name no
+    /// representation (under `auto`, `production` requantises large BF16
+    /// matrices to Q8 at load); `auto` for every arm that names a format.
+    #[arg(long, value_name = "auto|stored|transient")]
+    pub representation_source: Option<String>,
 
     /// Greedy-decode this many new tokens after the prompt, printing
     /// per-step timing and a decode report instead of a single-forward
@@ -450,6 +454,30 @@ impl RopeAnglesArg {
             Self::Larql => RopeAngles::Larql,
             Self::HfF32 => RopeAngles::HfF32,
         }
+    }
+}
+
+impl ExecArgs {
+    /// The representation source this run executes under:
+    /// `--representation-source` as given, or `--backend`'s default.
+    pub fn representation_source(
+        &self,
+    ) -> Result<
+        larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource,
+        Box<dyn std::error::Error>,
+    > {
+        super::prepare::resolve_representation_source(
+            self.representation_source.as_deref(),
+            self.backend,
+        )
+    }
+
+    /// The same, as the flag spells it — what a run record states, so a
+    /// record never says "default" where it could say which.
+    pub fn representation_source_flag(&self) -> Result<&'static str, Box<dyn std::error::Error>> {
+        Ok(super::prepare::representation_source_flag(
+            self.representation_source()?,
+        ))
     }
 }
 

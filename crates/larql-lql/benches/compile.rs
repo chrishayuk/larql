@@ -121,6 +121,15 @@ fn make_compile_bench_vindex(tag: &str, with_down_weights: bool) -> PathBuf {
             bytes.extend_from_slice(&v.to_le_bytes());
         }
         std::fs::write(dir.join("down_weights.bin"), &bytes).unwrap();
+        // A vindex that declares model weights names its weight files in
+        // a manifest; COMPILE refuses one that does not.
+        let manifest = serde_json::json!([{
+            "key": "bench.down_weights",
+            "file": "down_weights.bin",
+            "offset": 0,
+            "length": bytes.len(),
+        }]);
+        std::fs::write(dir.join("weight_manifest.json"), manifest.to_string()).unwrap();
     }
 
     dir

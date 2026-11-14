@@ -26,8 +26,11 @@ use serde::{Deserialize, Serialize};
 use crate::format::vindex3::encode::segment::read_segment_header;
 use crate::format::vindex3::index::Vindex3Index;
 
-/// Current ledger schema. Bump on any breaking change.
+/// The ledger schema written when every edit is a delta. Bump on any breaking change.
 pub const WEIGHT_PATCHES_SCHEMA: &str = "weight-patches/v2";
+/// The schema written when any edit is a result-bits edit (a structured op's output). A reader that
+/// knows only `v2` refuses it by name instead of reading the edits as deltas.
+pub const WEIGHT_PATCHES_SCHEMA_V3: &str = "weight-patches/v3";
 /// The previous schema: exactly one target. Still read; never written.
 pub const WEIGHT_PATCHES_SCHEMA_V1: &str = "weight-patches/v1";
 /// The rounding rule, spelled out so a verifier cannot guess it.
@@ -91,16 +94,37 @@ pub struct LedgerTarget {
     pub edits: Vec<LedgerEdit>,
 }
 
+/// How an edit's new value is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditEncoding {
+    /// `new = RNE_bf16(old + delta)`; the delta's bits are authoritative.
+    #[default]
+    Delta,
+    /// `new_bits` is the declared result of a structured op. There is no delta: the result is the
+    /// exact BF16 a numerical profile produced, which a single f32 delta cannot always reach.
+    ResultBits,
+}
+
+impl EditEncoding {
+    fn is_delta(&self) -> bool {
+        matches!(self, EditEncoding::Delta)
+    }
+}
+
 /// One edited element, with the exact bits before and after.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LedgerEdit {
     pub row: usize,
     pub col: usize,
+    /// Zero for a [`EditEncoding::ResultBits`] edit.
     pub delta: f32,
-    /// The exact bits of `delta`, so the value is not a decimal's reading.
+    /// The exact bits of `delta`, so the value is not a decimal's reading. Zero for a result-bits edit.
     pub delta_bits: u32,
     pub old_bits: u16,
     pub new_bits: u16,
+    #[serde(default, skip_serializing_if = "EditEncoding::is_delta")]
+    pub encoding: EditEncoding,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,10 +224,32 @@ pub fn check_ledger(root: &Path, index: &Vindex3Index) -> Vec<String> {
         Ok(l) => l,
         Err(e) => return vec![format!("weight-patch ledger `{name}` is malformed: {e}")],
     };
-    if ledger.schema != WEIGHT_PATCHES_SCHEMA && ledger.schema != WEIGHT_PATCHES_SCHEMA_V1 {
+    if ![
+        WEIGHT_PATCHES_SCHEMA,
+        WEIGHT_PATCHES_SCHEMA_V3,
+        WEIGHT_PATCHES_SCHEMA_V1,
+    ]
+    .contains(&ledger.schema.as_str())
+    {
         defects.push(format!(
-            "weight-patch ledger schema `{}` is not `{WEIGHT_PATCHES_SCHEMA}` (or `{WEIGHT_PATCHES_SCHEMA_V1}`)",
+            "weight-patch ledger schema `{}` is not `{WEIGHT_PATCHES_SCHEMA}`, `{WEIGHT_PATCHES_SCHEMA_V3}` or `{WEIGHT_PATCHES_SCHEMA_V1}`",
             ledger.schema
+        ));
+    }
+    let has_results = ledger
+        .targets
+        .iter()
+        .flat_map(|t| &t.edits)
+        .any(|e| e.encoding == EditEncoding::ResultBits);
+    if has_results && ledger.schema != WEIGHT_PATCHES_SCHEMA_V3 {
+        defects.push(format!(
+            "weight-patch ledger has result-bits edits under schema `{}`; they need `{WEIGHT_PATCHES_SCHEMA_V3}`",
+            ledger.schema
+        ));
+    }
+    if !has_results && ledger.schema == WEIGHT_PATCHES_SCHEMA_V3 {
+        defects.push(format!(
+            "weight-patch ledger names schema `{WEIGHT_PATCHES_SCHEMA_V3}` but holds no result-bits edit"
         ));
     }
     if ledger.rounding != ROUNDING_RULE {
@@ -362,6 +408,12 @@ fn check_edits(root: &Path, segment: &str, target: &LedgerTarget) -> Vec<String>
         if e.delta.to_bits() != e.delta_bits {
             defects.push(format!(
                 "ledger edit ({}, {}) of `{name}`: delta and delta_bits disagree",
+                e.row, e.col
+            ));
+        }
+        if e.encoding == EditEncoding::ResultBits && e.delta_bits != 0 {
+            defects.push(format!(
+                "ledger edit ({}, {}) of `{name}` is a result-bits edit but carries a delta",
                 e.row, e.col
             ));
         }

@@ -27,24 +27,29 @@
 //! describes the container; an independent verifier is what checks the
 //! container against the declared edit.
 
+pub mod any_op;
 pub mod bf16;
 pub mod error;
 pub mod ledger;
 pub mod op;
 pub mod structured;
+pub mod structured_op;
 
 mod apply;
 
+pub use any_op::{declare_patches, WeightOp, WeightOpRef};
 pub use apply::{
-    apply_weight_patch, apply_weight_patch_with_origins, apply_weight_patches, plan_weight_patch,
-    PatchReport, WeightEdit, WeightPatch,
+    apply_declared_patches, apply_weight_patch, apply_weight_patch_with_origins,
+    apply_weight_patches, plan_declared_patch, plan_weight_patch, read_bf16_tensor, DeclaredPatch,
+    PatchReport, ResultEdit, ResultPatch, WeightEdit, WeightPatch,
 };
 pub use error::WeightPatchError;
 pub use ledger::{
-    check_ledger, parse_ledger, LedgerEdit, LedgerTarget, WeightPatchLedger, WEIGHT_PATCHES_SCHEMA,
-    WEIGHT_PATCHES_SCHEMA_V1,
+    check_ledger, parse_ledger, EditEncoding, LedgerEdit, LedgerTarget, WeightPatchLedger,
+    WEIGHT_PATCHES_SCHEMA, WEIGHT_PATCHES_SCHEMA_V1, WEIGHT_PATCHES_SCHEMA_V3,
 };
 pub use op::{bind_source, record_op, DeltaEdit, SourceBinding, WeightDeltaOp};
+pub use structured_op::StructuredWeightOp;
 
 /// The most elements one patch may edit, across all its tensors. A patch is
 /// a bounded, reviewable change; a rewrite of a tensor is a different

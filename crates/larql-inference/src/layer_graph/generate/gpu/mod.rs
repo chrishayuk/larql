@@ -264,7 +264,16 @@ where
                  this backend would silently serve the spine's banks instead",
             ));
         }
-        return generate_via_cpu_q4k(weights, tokenizer, token_ids, max_tokens, index, eos);
+        return generate_via_cpu_q4k(
+            weights,
+            tokenizer,
+            token_ids,
+            max_tokens,
+            index,
+            eos,
+            sampling,
+            &mut on_token,
+        );
     }
 
     // Register each packed weight mmap for zero-copy GPU aliasing — the
@@ -476,7 +485,7 @@ where
             detok_ms_total: outcome.t_detok,
             dequant_ms_total: 0.0,
         },
-        error: None,
+        error: outcome.error,
     }
 }
 

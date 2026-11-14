@@ -353,19 +353,23 @@ Management:
   GET  /v1/patches
 ```
 
-### 5.3 Client-Side Patches on Remote Base
+### 5.3 Client Patches on Remote Base
 
-The server hosts the base model. The client brings patches:
+The server hosts the base model. The client brings patches, which the
+server applies to that client's session only:
 
 ```sql
 USE REMOTE "https://vindex.larql.dev/gemma-3-4b-it";
-APPLY PATCH "medical-knowledge.vlp";      -- 50 MB local
+APPLY PATCH "medical-knowledge.vlp";      -- sent to this session's overlay
 DESCRIBE "aspirin";
--- side_effect → bleeding   (local patch)
+-- side_effect → bleeding   (session patch)
 -- occupation → drug        (remote base)
 ```
 
-Patches never leave the client. Proprietary knowledge stays local.
+The patch is uploaded to the server and scoped to the client's session
+(`x-session-id`); other clients never see it and the base vindex files
+are not modified. Knowledge that must not leave the client should be
+queried against a local vindex instead.
 
 ### 5.4 Multi-Tenant Serving
 
@@ -413,6 +417,9 @@ PATCH ./patches/company-facts.vlp
 # Inline edits
 INSERT ("Acme Corp", "headquarters", "London")
 INSERT ("Acme Corp", "ceo", "Jane Smith")
+# DELETE removes a fact an earlier INSERT or PATCH in this file installed,
+# matched on all three fields exactly. Base features carry no entity or
+# relation, so a DELETE that matches no installed fact fails the build.
 DELETE entity = "Acme Corp" AND relation = "competitor" AND target = "WrongCo"
 
 # Probe labels

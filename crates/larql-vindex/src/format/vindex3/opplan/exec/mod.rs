@@ -36,7 +36,9 @@ pub mod dense_ffn;
 pub mod dense_rows;
 pub mod device;
 pub mod device_refusal;
+pub mod down_input_capture;
 mod experts;
+pub mod ffn_restore;
 pub mod fidelity_carriage;
 pub mod gated_delta;
 pub mod head_replay;
@@ -84,6 +86,7 @@ pub mod routed_experts;
 pub mod routing_trace;
 pub mod sequence;
 pub mod site_capture;
+pub mod source_head;
 pub mod stack;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod stack_metal;

@@ -266,7 +266,13 @@ pub(super) fn run_with_moe_shards(
             // `moe_ffn` can borrow `&weights` concurrently) — letting the
             // Q4K-direct attention kernel fire under `LARQL_Q4K_DIRECT_ATTN`.
             // With the flag unset the backend ignores the index → identical f32.
-            let _ids = larql_kv::generation::generate_with_engine_resident(
+            //
+            // Checked: `RemoteMoeFfn` is strict, so a shard that fails (5xx,
+            // unreachable, timeout) ends the stream with an error naming the
+            // shard, layer and experts. Return it rather than print the tokens
+            // that came before as if they were the answer — the same policy as
+            // the full-recompute branch above.
+            let outcome = larql_kv::generation::generate_with_engine_resident_checked(
                 &mut engine,
                 &weights,
                 &tokenizer,
@@ -279,6 +285,13 @@ pub(super) fn run_with_moe_shards(
                     tok_times.push(std::time::Instant::now());
                 },
             );
+            if let Some(err) = outcome.error {
+                return Err(format!(
+                    "remote MoE dispatch failed, generation aborted after {} token(s): {err}",
+                    outcome.tokens.len()
+                )
+                .into());
+            }
             // Time-to-first-token (prefill) is the gap start→first emit; decode
             // is the gap between consecutive emits.
             if let Some(first) = tok_times.first() {

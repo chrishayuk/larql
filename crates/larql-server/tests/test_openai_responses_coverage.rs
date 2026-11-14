@@ -156,11 +156,10 @@ async fn responses_streaming_emits_typed_events_and_done() {
     ] {
         assert!(body.contains(needle), "missing {needle:?} in:\n{body}");
     }
-    // Per-token deltas only appear when the engine invokes the token
-    // callback; the CPU Q4K path (`generate_via_cpu_q4k`, reached by
-    // this synthetic fixture — see layer_graph/generate/gpu/mod.rs)
-    // returns buffered tokens without callbacks, so the delta event is
-    // asserted only when the stream carried any output text.
+    // A delta event is sent for each token that decodes to text. Tokens of
+    // this synthetic fixture can decode to nothing, and those send no delta,
+    // so the delta event is asserted only when the stream carried output
+    // text.
     if body.contains("\"text\":\"\"") {
         assert!(
             !body.contains("event: response.output_text.delta"),

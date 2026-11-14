@@ -49,6 +49,10 @@ const CASES: &[(&str, &str)] = &[
         "VERIFY OPERATOR 'o' USING CONTRACT 'c' IN WITNESS 'w' AGAINST 'm';",
         "VERIFY OPERATOR",
     ),
+    (
+        "VERIFY PATCH 'p' USING CONTRACT 'c' FROM 'b' AGAINST 'm';",
+        "VERIFY PATCH",
+    ),
     ("STATS;", "STATS"),
     ("SHOW COMPACT STATUS;", "SHOW COMPACT STATUS"),
     (

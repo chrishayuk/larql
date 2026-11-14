@@ -5,7 +5,8 @@
 //! INSERT (success, default confidence, error)
 //! DELETE (success, missing layer/feature precondition, error)
 //! UPDATE (with target, without target, error)
-//! Local patch management over remote (APPLY/SHOW/REMOVE)
+//! APPLY PATCH precondition (missing file); the per-session patch
+//! verbs are in `session_scope.rs`
 //! execute_remote dispatch fall-through + Pipe arm
 //! Session::default() smoke (covers Default impl)
 
@@ -422,7 +423,7 @@ fn delete_posts_patch_and_renders_summary() {
     );
     assert!(joined.contains("L26"));
     assert!(joined.contains("F7"));
-    assert!(joined.contains("remote server"));
+    assert!(joined.contains("remote session"));
 }
 
 #[test]
@@ -481,6 +482,19 @@ fn update_without_target_omits_target_clause() {
 }
 
 #[test]
+fn update_refuses_a_field_it_cannot_set_before_sending_anything() {
+    // No mock is registered: a request would fail the test another way.
+    let (_server, mut session) = connect();
+    let err = run(
+        &mut session,
+        r#"UPDATE EDGES SET bogus = 1 WHERE layer = 0 AND feature = 0;"#,
+    )
+    .unwrap_err();
+    assert!(err.contains("`bogus`"), "got: {err}");
+    assert!(err.contains("Nothing was updated"), "got: {err}");
+}
+
+#[test]
 fn update_errors_without_layer_filter() {
     let (_server, mut session) = connect();
     let err = run(
@@ -492,31 +506,7 @@ fn update_errors_without_layer_filter() {
 }
 
 #[test]
-fn apply_show_remove_local_patch_lifecycle() {
-    let (_server, mut session) = connect();
-
-    // SHOW PATCHES with none applied.
-    let empty = ok_joined(&mut session, "SHOW PATCHES;");
-    assert!(empty.contains("(no local patches)"));
-
-    // APPLY a real patch file.
-    let p = write_insert_patch("Hyrule", Some("capital"), "Hateno", 26);
-    let applied = ok_joined(&mut session, &format!(r#"APPLY PATCH "{}";"#, sql_path(&p)));
-    assert!(applied.contains("Applied locally"));
-    assert!(applied.contains("client-side"));
-
-    // SHOW PATCHES now lists the entry.
-    let listed = ok_joined(&mut session, "SHOW PATCHES;");
-    assert!(listed.contains("Local patches"));
-
-    // REMOVE by description name.
-    let removed = ok_joined(&mut session, r#"REMOVE PATCH "insert Hyrule->Hateno";"#);
-    assert!(removed.contains("Removed local patch"));
-    let _ = std::fs::remove_file(p);
-}
-
-#[test]
-fn apply_local_patch_errors_on_missing_file() {
+fn apply_patch_errors_on_missing_file() {
     let (_server, mut session) = connect();
     let err = run(
         &mut session,
@@ -524,13 +514,6 @@ fn apply_local_patch_errors_on_missing_file() {
     )
     .unwrap_err();
     assert!(err.contains("patch not found"), "got: {err}");
-}
-
-#[test]
-fn remove_local_patch_errors_on_unknown_name() {
-    let (_server, mut session) = connect();
-    let err = run(&mut session, r#"REMOVE PATCH "does-not-exist";"#).unwrap_err();
-    assert!(err.contains("not found"), "got: {err}");
 }
 
 #[test]

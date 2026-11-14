@@ -28,6 +28,8 @@ pub const WALK_FFN_PATH: &str = larql_router_protocol::walk_ffn::PATH;
 /// Q8K dense-FFN batch endpoint (shared by the DEC loadgen driver).
 pub const WALK_FFN_Q8K_PATH: &str = "/v1/walk-ffn-q8k";
 const HIDDEN_SIZE_KEY: &str = "hidden_size";
+/// Stats field holding the model's layer count. Older servers omit it.
+const LAYERS_KEY: &str = "layers";
 
 /// Default per-request timeout (connect + read) for remote-FFN calls: 60 s,
 /// overridable via [`RemoteFfnConfig::with_timeout`].
@@ -102,6 +104,10 @@ pub struct RemoteFfnConfig {
     /// to f32 — the historical request wire, so existing callers are
     /// byte-unchanged.
     pub wire_in: WireFormat,
+    /// The key sent to the server as `Authorization: Bearer <key>`. Taken
+    /// from `LARQL_SHARD_API_KEY` when the config is built; `None` sends
+    /// no key.
+    pub api_key: Option<String>,
 }
 
 impl RemoteFfnConfig {
@@ -111,7 +117,15 @@ impl RemoteFfnConfig {
             timeout: DEFAULT_REMOTE_FFN_TIMEOUT,
             wire: WirePreference::BestAvailable,
             wire_in: WireFormat::F32,
+            api_key: crate::ffn::shard_auth::shard_api_key_from_env(),
         }
+    }
+
+    /// Send `api_key` to the server, or no key for `None`, whatever the
+    /// environment said when the config was built.
+    pub fn with_api_key(mut self, api_key: Option<String>) -> Self {
+        self.api_key = api_key;
+        self
     }
 
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
@@ -147,6 +161,8 @@ pub struct RemoteWalkBackend {
     config: RemoteFfnConfig,
     client: reqwest::blocking::Client,
     hidden_size: usize,
+    /// The model's layer count, when the server's stats report one.
+    num_layers: Option<usize>,
     /// Cumulative bytes sent (request bodies) across all calls.
     wire_bytes_sent: Arc<AtomicU64>,
     /// Cumulative bytes received (response bodies) across all calls.
@@ -160,6 +176,10 @@ impl RemoteWalkBackend {
     pub fn connect(config: RemoteFfnConfig) -> Result<Self, RemoteFfnError> {
         let client = reqwest::blocking::Client::builder()
             .timeout(config.timeout)
+            .default_headers(
+                crate::ffn::shard_auth::default_headers(config.api_key.as_deref())
+                    .map_err(RemoteFfnError::Client)?,
+            )
             .build()
             .map_err(|e| RemoteFfnError::Client(e.to_string()))?;
 
@@ -184,10 +204,13 @@ impl RemoteWalkBackend {
             RemoteFfnError::BadResponse(format!("stats missing {HIDDEN_SIZE_KEY}"))
         })? as usize;
 
+        let num_layers = stats[LAYERS_KEY].as_u64().map(|n| n as usize);
+
         Ok(Self {
             config,
             client,
             hidden_size,
+            num_layers,
             wire_bytes_sent: Arc::new(AtomicU64::new(0)),
             wire_bytes_recv: Arc::new(AtomicU64::new(0)),
         })
@@ -207,6 +230,12 @@ impl RemoteWalkBackend {
     /// Total bytes received since construction or last `reset_wire_counters`.
     pub fn wire_bytes_recv(&self) -> u64 {
         self.wire_bytes_recv.load(Ordering::Relaxed)
+    }
+
+    /// The model's layer count as the remote server reports it, or `None`
+    /// from a server whose stats do not say.
+    pub fn num_layers(&self) -> Option<usize> {
+        self.num_layers
     }
 
     /// Hidden size advertised by the remote server.

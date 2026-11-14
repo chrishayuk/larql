@@ -11,6 +11,8 @@ mod bake;
 mod into_model;
 mod into_vindex;
 mod into_vindex_v3;
+mod source_files;
+mod unexported;
 
 impl Session {
     #[allow(clippy::too_many_arguments)]
@@ -18,7 +20,7 @@ impl Session {
         &mut self,
         vindex: &VindexRef,
         output: &str,
-        _format: Option<OutputFormat>,
+        format: Option<OutputFormat>,
         target: CompileTarget,
         on_conflict: Option<CompileConflict>,
     ) -> Result<Vec<String>, LqlError> {
@@ -27,7 +29,7 @@ impl Session {
                 if matches!(self.backend, Backend::Vindex3 { .. }) {
                     return match target {
                         CompileTarget::Vindex => {
-                            let weights = matches!(&self.backend, Backend::Vindex3 { overlay, .. } if overlay.weight_edit_count() > 0);
+                            let weights = matches!(&self.backend, Backend::Vindex3 { overlay, .. } if overlay.has_weight_ops());
                             if weights {
                                 self.exec_compile_weights(output)
                             } else {
@@ -43,6 +45,7 @@ impl Session {
                     Backend::Vindex { path, .. } => path.clone(),
                     _ => return Err(LqlError::NoBackend),
                 };
+                unexported::refuse_unwritten_format(target, format)?;
                 match target {
                     CompileTarget::Vindex => self.exec_compile_into_vindex(
                         &vindex_path,
@@ -59,6 +62,7 @@ impl Session {
                     Backend::Vindex { path, .. } => path.clone(),
                     _ => return Err(LqlError::NoBackend),
                 };
+                unexported::refuse_unwritten_format(target, format)?;
                 match target {
                     CompileTarget::Vindex => source_session.exec_compile_into_vindex(
                         &source_path,

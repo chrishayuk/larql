@@ -225,5 +225,8 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Coverage summary
-        run: cargo llvm-cov --package larql-cli --no-default-features --features research --summary-only
+      # The make target is the same measurement with its floor and the
+      # per-file policy in crates/larql-cli/coverage-policy.json applied.
+      # A bare `--summary-only` printed the table and passed whatever it said.
+      - name: Coverage summary, total floor and per-file policy
+        run: make larql-cli-coverage-summary

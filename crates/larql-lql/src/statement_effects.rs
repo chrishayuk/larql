@@ -40,6 +40,7 @@ impl Statement {
             | Statement::Delete { .. }
             | Statement::Update { .. }
             | Statement::UpdateWeights { .. }
+            | Statement::RemoveDirection { .. }
             | Statement::Merge { .. }
             | Statement::Rebalance { .. }
             | Statement::ShowRelations { .. }
@@ -53,6 +54,7 @@ impl Statement {
             | Statement::ShowAuthority
             | Statement::VerifyRepresentation { .. }
             | Statement::VerifyOperator { .. }
+            | Statement::VerifyPatch { .. }
             | Statement::Stats { .. }
             | Statement::ShowCompactStatus
             | Statement::CompactMinor
