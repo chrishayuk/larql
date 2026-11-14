@@ -12,7 +12,7 @@
 //!     until priors recover, capped at CROSS_ITERS.
 
 use crate::error::LqlError;
-use crate::executor::helpers::{target_prefix, TARGET_PREFIX_CHARS};
+use crate::executor::helpers::target_token_matches;
 use crate::executor::tuning::{
     canonical_prompt, BALANCE_ITERS, BALANCE_PROBE_TOP_K, CROSS_ITERS, DOWN_SCALE,
     MAX_PRIORS_CHECKED, MAX_STALE, PRIOR_FLOOR, PROB_CEILING, PROB_FLOOR, UP_SCALE,
@@ -78,11 +78,10 @@ impl Session {
                 &walk_ffn,
             );
 
-            let prefix = target_prefix(target, TARGET_PREFIX_CHARS);
             let target_prob: f64 = result
                 .predictions
                 .iter()
-                .find(|(tok, _)| tok.contains(target) || tok.starts_with(prefix))
+                .find(|(tok, _)| target_token_matches(tok, target))
                 .map(|(_, prob)| *prob)
                 .unwrap_or(0.0);
 
@@ -211,11 +210,10 @@ impl Session {
                     BALANCE_PROBE_TOP_K,
                     &walk,
                 );
-                let prefix = target_prefix(&fact.target, TARGET_PREFIX_CHARS);
                 let p: f64 = r
                     .predictions
                     .iter()
-                    .find(|(tok, _)| tok.contains(&fact.target) || tok.starts_with(prefix))
+                    .find(|(tok, _)| target_token_matches(tok, &fact.target))
                     .map(|(_, p)| *p)
                     .unwrap_or(0.0);
                 if p < PRIOR_FLOOR {

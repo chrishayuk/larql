@@ -144,20 +144,9 @@ fn run_infer(
                     req.top,
                 )
             };
-            // Same lock discipline and session fallback as the dense
-            // path below: a reader on the sessions map, and a session
-            // with no overlay reads like the global state.
-            let walk_pred = if let Some(sid) = session_id {
-                let sessions = state.sessions.sessions_blocking_read();
-                if let Some(patched) = sessions.get(sid).and_then(|s| s.patched()) {
-                    run_bitnet_walk(&patched.knn_store)
-                } else {
-                    drop(sessions);
-                    let patched = model.patched.blocking_read();
-                    run_bitnet_walk(&patched.knn_store)
-                }
-            } else {
-                let patched = model.patched.blocking_read();
+            // Same view as the dense path below (see `view_blocking`).
+            let walk_pred = {
+                let patched = state.sessions.view_blocking(model, session_id);
                 run_bitnet_walk(&patched.knn_store)
             };
 
@@ -254,33 +243,13 @@ fn run_infer(
     };
 
     if use_walk {
-        let pred = if let Some(sid) = session_id {
-            // Session-scoped walk inference.
-            //
-            // Lock discipline: take a *reader* on the sessions map (not
-            // a writer) so concurrent sessioned `/v1/infer` requests do
-            // not serialize globally, and so an in-flight forward pass
-            // does not deadlock against a concurrent `apply_patch`
-            // arriving on another worker.  The previous implementation
-            // held `sessions.write()` across the multi-second
-            // `run_walk(&session.patched)` call, which on the
-            // multi-thread tokio runtime stalled every other handler
-            // touching `sessions` (including `GET /v1/stats` and
-            // `GET /v1/walk-ffn`).  This mirrors the fix already
-            // applied in `session.rs::apply_patch`.
-            let sessions = state.sessions.sessions_blocking_read();
-            // A session with no overlay has never been patched, so it
-            // reads exactly like the global state — same fallback as an
-            // unknown session id.
-            if let Some(patched) = sessions.get(sid).and_then(|s| s.patched()) {
-                run_walk(patched)
-            } else {
-                drop(sessions);
-                let patched = model.patched.blocking_read();
-                run_walk(&patched)
-            }
-        } else {
-            let patched = model.patched.blocking_read();
+        // Session-scoped or shared, through one rule (`view_blocking`): a
+        // *reader* on the sessions map, so concurrent sessioned requests do
+        // not serialise and a forward pass does not deadlock against an
+        // `apply_patch` on another worker; and a session's overlay only for
+        // the model it was bound to (it was built from that model's vindex).
+        let pred = {
+            let patched = state.sessions.view_blocking(model, session_id);
             run_walk(&patched)
         };
 
@@ -335,9 +304,9 @@ fn run_infer(
     request_body = InferRequest,
     responses(
         (status = 200, description = "Next-token predictions", body = crate::openapi::schemas::InferResponse),
-        (status = 400, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
         (status = 503, body = crate::error::ErrorBody, description = "Inference weights unavailable"),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_infer(
@@ -361,10 +330,10 @@ pub async fn handle_infer(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body = InferRequest,
     responses(
-        (status = 200, body = crate::openapi::schemas::InferResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 503, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::InferResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 503, description = "Service unavailable", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_infer_multi(

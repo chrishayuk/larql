@@ -298,7 +298,7 @@ SHOW MODELS;
         ("SHOW LAYERS", "SHOW LAYERS RANGE 0-10;"),
         (
             "SHOW FEATURES",
-            r#"SHOW FEATURES 26 WHERE relation = "capital" LIMIT 5;"#,
+            r#"SHOW FEATURES 26 WHERE token = "Paris" LIMIT 5;"#,
         ),
         ("SHOW ENTITIES", "SHOW ENTITIES LIMIT 50;"),
         (

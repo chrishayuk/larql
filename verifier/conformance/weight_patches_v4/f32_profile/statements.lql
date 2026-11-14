@@ -1,0 +1,3 @@
+USE "../structured_patch/base";
+ADD LOW RANK "f32_profile/operands/a_b.json" TO "1.self_attn.o_proj.weight" COLUMNS (0, 1, 2, 63) NUMERICS "f32-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "compiled";

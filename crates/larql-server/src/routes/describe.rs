@@ -50,10 +50,14 @@ fn default_min_score() -> f32 {
     5.0
 }
 
+/// The edges for one entity, and whether they were read from a session's own
+/// overlay (such a result is that session's, and is never cached).
 fn describe_entity(
+    sessions: &crate::session::SessionManager,
+    session_id: Option<&str>,
     model: &LoadedModel,
     params: &DescribeParams,
-) -> Result<serde_json::Value, ServerError> {
+) -> Result<(serde_json::Value, bool), ServerError> {
     crate::routes::limits::within(
         "limit",
         params.limit,
@@ -69,12 +73,16 @@ fn describe_entity(
     let token_ids: Vec<u32> = encoding.get_ids().to_vec();
 
     if token_ids.is_empty() {
-        return Ok(serde_json::json!({
-            "entity": params.entity,
-            "model": model.config.model,
-            "edges": [],
-            "latency_ms": 0.0,
-        }));
+        // Nothing was read from any overlay: the answer is the same for all.
+        return Ok((
+            serde_json::json!({
+                "entity": params.entity,
+                "model": model.config.model,
+                "edges": [],
+                "latency_ms": 0.0,
+            }),
+            false,
+        ));
     }
 
     let hidden = model.embeddings.shape()[1];
@@ -97,7 +105,8 @@ fn describe_entity(
 
     let bands = get_layer_bands(model);
 
-    let patched = model.patched.blocking_read();
+    let patched = sessions.view_blocking(model, session_id);
+    let from_session = patched.is_session();
     let all_layers = patched.loaded_layers();
 
     let scan_layers = filter_layers_by_band(all_layers, &params.band, &bands);
@@ -214,12 +223,15 @@ fn describe_entity(
         })
         .collect();
 
-    Ok(serde_json::json!({
-        "entity": params.entity,
-        "model": model.config.model,
-        "edges": edge_json,
-        "latency_ms": elapsed_ms(start),
-    }))
+    Ok((
+        serde_json::json!({
+            "entity": params.entity,
+            "model": model.config.model,
+            "edges": edge_json,
+            "latency_ms": elapsed_ms(start),
+        }),
+        from_session,
+    ))
 }
 
 async fn describe_with_cache(
@@ -228,8 +240,16 @@ async fn describe_with_cache(
     headers: &HeaderMap,
     params: DescribeParams,
 ) -> Result<Response, ServerError> {
+    // A session with its own patches reads its own overlay; the cache holds
+    // only what the shared overlay answered, so such a request skips it.
+    let session_id = crate::session::extract_session_id(headers);
+    let reads_a_session = state
+        .sessions
+        .has_patched_view(model, session_id.as_deref())
+        .await;
+
     // Check cache.
-    let cache_key = if state.describe_cache.is_enabled() {
+    let cache_key = if state.describe_cache.is_enabled() && !reads_a_session {
         let key = crate::cache::DescribeCache::key(
             &model.id,
             &params.entity,
@@ -255,12 +275,21 @@ async fn describe_with_cache(
     };
 
     let model = Arc::clone(model);
-    let result = tokio::task::spawn_blocking(move || describe_entity(&model, &params))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let sessions_of = Arc::clone(state);
+    let (result, from_session) = tokio::task::spawn_blocking(move || {
+        describe_entity(
+            &sessions_of.sessions,
+            session_id.as_deref(),
+            &model,
+            &params,
+        )
+    })
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
 
-    // Store in cache.
-    if let Some(key) = cache_key {
+    // Store in cache. A session patched after the check above was still
+    // read from its own overlay; that answer is not the shared one.
+    if let Some(key) = cache_key.filter(|_| !from_session) {
         state.describe_cache.put(key, result.clone());
     }
 
@@ -280,9 +309,9 @@ async fn describe_with_cache(
     responses(
         (status = 200, description = "Edges for the queried entity", body = crate::openapi::schemas::DescribeResponse),
         (status = 304, description = "Not modified (ETag match)"),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_describe(
@@ -304,11 +333,11 @@ pub async fn handle_describe(
         DescribeParams,
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::DescribeResponse),
-        (status = 304),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::DescribeResponse),
+        (status = 304, description = "Not modified"),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_describe_multi(

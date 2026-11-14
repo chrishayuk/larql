@@ -581,7 +581,7 @@ fn exec_args(container: &Path) -> ExecArgs {
         dump_layers: None,
         resume: false,
         backend: ExecBackend::Production,
-        representation_source: "auto".to_string(),
+        representation_source: Some("auto".to_string()),
         generate: Some(NEW_TOKENS),
         speculate: None,
         stop_at_eos: false,
@@ -597,8 +597,13 @@ fn exec_args(container: &Path) -> ExecArgs {
         admission_basis: None,
         expert_access: "demand".to_string(),
         logit_dump: None,
+        prefill_logit_dump: None,
+        prefill_lengths: None,
+        prefill_method: super::super::prefill_dump::PrefillMethod::Batched,
         gemv_witness: None,
         gemv_witness_max_operands: 1,
+        capture: Default::default(),
+        rope_angles: Default::default(),
         bank: None,
         dump_dir: None,
         draft_depth: None,
@@ -610,7 +615,7 @@ fn exec_args(container: &Path) -> ExecArgs {
 #[test]
 fn a_campaign_refuses_a_transient_representation_source() {
     let mut args = exec_args(Path::new("c"));
-    args.representation_source = "transient".to_string();
+    args.representation_source = Some("transient".to_string());
     let refusal = refuse_evidence_outside_the_curve(&args, false).unwrap_err();
     assert!(refusal.contains("transient"), "{refusal}");
     assert!(refusal.contains("cannot be bound or verified"), "{refusal}");
@@ -619,7 +624,7 @@ fn a_campaign_refuses_a_transient_representation_source() {
     args.residency_campaign = false;
     assert!(refuse_evidence_outside_the_curve(&args, false).is_ok());
     args.residency_campaign = true;
-    args.representation_source = "stored".to_string();
+    args.representation_source = Some("stored".to_string());
     assert!(refuse_evidence_outside_the_curve(&args, false).is_ok());
 }
 

@@ -81,26 +81,28 @@ pub(super) const SURFACE_RULES: &[CarriageRule] = &[
         // sub-stack it cannot state, and refuses.
         probe: Some(probe_absent_when_zero),
     },
+    // The stride spelling of the per-layer span table ("every Nth layer
+    // attends fully", Gemma 2/3). Read back as the period the BUILT table
+    // shows — derived from the spans, never echoed from the declaration —
+    // so a period the resolution did not honour mismatches, and a table
+    // with no single period (or a non-integer spelling such as
+    // EXAONE-4's `"LLLG"`) still refuses.
     CarriageRule {
         leaf: "sliding_window_pattern",
-        reaches: Carriage::Represented,
-        // A period integer (e.g. Gemma 2's "every Nth layer is full") is a
-        // different representation from the per-layer `layer_types` array
-        // the graph actually carries; no derivation from one to the other
-        // exists yet, so this always refuses rather than assuming a
-        // pattern it hasn't checked.
-        site: "no schema field — not derived from the per-layer span table yet",
-        probe: Some(probe_unrepresented),
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].span, read back as the period of its full-attention layers → AttentionOp.window",
+        probe: Some(probe_full_attention_period),
     },
+    // Gemma 3's sliding layers' RoPE base: the flat spelling of
+    // `rope_parameters.sliding_attention.rope_theta`
+    // (`Gemma3TextConfig.convert_rope_params_to_dict`). Scoped to the
+    // sliding span by `plan::rope_scope`, and answered from those layers'
+    // carried position policy exactly as the per-section spelling is.
     CarriageRule {
         leaf: "rope_local_base_freq",
-        reaches: Carriage::Represented,
-        // A second rope base for local/sliding layers, alongside
-        // `rope_theta`. `layer_rope_theta` carries a per-layer table when a
-        // family declares one explicitly; this is a distinct declaration
-        // shape with no derivation into that table yet.
-        site: "no schema field — not derived into the per-layer rope table yet",
-        probe: Some(probe_unrepresented),
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].position on the sliding span (PositionPolicy::Rope) → AttentionOp.position",
+        probe: Some(probe_rope_theta),
     },
     // ── Norms ───────────────────────────────────────────────────────
     CarriageRule {

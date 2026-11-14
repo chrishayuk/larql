@@ -53,9 +53,14 @@ pub struct ContainerSpec {
     pub segments: Vec<SegmentSource>,
 }
 
+/// The container-relative file name a segment key composes to.
+pub fn segment_file_name(key: &str) -> String {
+    format!("{key}.{SEGMENT_EXT}")
+}
+
 /// Path a segment key resolves to. Composed, never globbed.
 pub fn segment_path(root: &Path, key: &str) -> PathBuf {
-    root.join(format!("{key}.{SEGMENT_EXT}"))
+    root.join(segment_file_name(key))
 }
 
 /// Write a complete VINDEX3 container to `root`.
@@ -76,10 +81,7 @@ pub fn write_container(root: &Path, spec: &ContainerSpec) -> Result<(), VindexEr
 
     let mut declared: BTreeMap<String, u32> = BTreeMap::new();
     for segment in &spec.segments {
-        let path = segment_path(root, &segment.key);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(VindexError::Io)?;
-        }
+        let path = super::container_path::prepare_write(root, &segment_file_name(&segment.key))?;
         std::fs::write(&path, &segment.bytes).map_err(VindexError::Io)?;
         *declared.entry(segment.key.clone()).or_insert(0) += 1;
     }

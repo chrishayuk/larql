@@ -3,6 +3,7 @@
 
 use crate::ast::{LayerBand, Range};
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope, RelationOp, ScoreOp};
 use crate::executor::{Backend, Session};
 
 use super::{
@@ -114,50 +115,6 @@ impl Session {
             out.push(format!("\n{:.1}ms (remote)", ms));
         }
 
-        // Overlay local patch edges.
-        if let Backend::Remote { local_patches, .. } = &self.backend {
-            if !local_patches.is_empty() {
-                let entity_lower = entity.to_lowercase();
-                let mut local_edges = Vec::new();
-                for patch in local_patches {
-                    for op in &patch.operations {
-                        if let larql_vindex::PatchOp::Insert {
-                            entity: ent,
-                            target,
-                            relation,
-                            layer,
-                            confidence,
-                            ..
-                        } = op
-                        {
-                            if ent.to_lowercase() == entity_lower {
-                                local_edges.push((
-                                    relation.as_deref().unwrap_or(""),
-                                    target.as_str(),
-                                    *layer,
-                                    confidence.unwrap_or(0.9),
-                                ));
-                            }
-                        }
-                    }
-                }
-                if !local_edges.is_empty() {
-                    out.push("  Local patch edges:".into());
-                    for (relation, target, layer, conf) in &local_edges {
-                        let label = if relation.is_empty() {
-                            format!("{:<12}", "")
-                        } else {
-                            format!("{:<12}", relation)
-                        };
-                        out.push(format!(
-                            "    {} → {:20} {:>7.2}  L{:<3}  (local)",
-                            label, target, conf, layer,
-                        ));
-                    }
-                }
-            }
-        }
-
         Ok(out)
     }
 
@@ -215,7 +172,7 @@ impl Session {
             "mode": mode,
         });
 
-        let result = self.remote_post_json(ENDPOINT_INFER, &request, true)?;
+        let result = self.remote_post_json(ENDPOINT_INFER, &request)?;
 
         let mut out = Vec::new();
 
@@ -277,7 +234,7 @@ impl Session {
             "with_attention": with_attention,
         });
 
-        let result = self.remote_post_json(ENDPOINT_EXPLAIN_INFER, &request, false)?;
+        let result = self.remote_post_json(ENDPOINT_EXPLAIN_INFER, &request)?;
 
         let mut out = Vec::new();
         out.push(format!(
@@ -542,38 +499,41 @@ impl Session {
             serde_json::json!(limit.unwrap_or(REMOTE_SELECT_DEFAULT_LIMIT)),
         );
 
-        for cond in conditions {
-            match cond.field.as_str() {
-                "entity" => {
-                    if let crate::ast::Value::String(s) = &cond.value {
-                        body.insert("entity".into(), serde_json::json!(s));
-                    }
-                }
-                "relation" => {
-                    if let crate::ast::Value::String(s) = &cond.value {
-                        body.insert("relation".into(), serde_json::json!(s));
-                    }
-                }
-                "layer" => {
-                    if let crate::ast::Value::Integer(n) = &cond.value {
-                        body.insert("layer".into(), serde_json::json!(n));
-                    }
-                }
-                "confidence" | "c_score" => match &cond.value {
-                    crate::ast::Value::Number(n) => {
-                        body.insert("min_confidence".into(), serde_json::json!(n));
-                    }
-                    crate::ast::Value::Integer(n) => {
-                        body.insert("min_confidence".into(), serde_json::json!(n));
-                    }
-                    _ => {}
-                },
-                _ => {}
+        // The same grammar as a local SELECT, validated before anything
+        // is sent. The server's query takes `entity`, `relation`, `layer`
+        // and a confidence floor; a condition it cannot express is
+        // refused here rather than sent as something weaker.
+        let predicate = EdgePredicate::parse(conditions, PredicateScope::EDGES)?;
+        let not_remote = |what: &str| {
+            LqlError::Execution(format!(
+                "unsupported WHERE clause: a remote SELECT does not evaluate {what}; \
+                 supported remotely: entity = <string>, relation = <string>, \
+                 layer = <integer>, score >= <number>"
+            ))
+        };
+        if predicate.feature.is_some() {
+            return Err(not_remote("`feature`"));
+        }
+        if let Some(entity) = predicate.entity {
+            body.insert("entity".into(), serde_json::json!(entity));
+        }
+        if let Some(relation) = predicate.relation {
+            if relation.op != RelationOp::Eq {
+                return Err(not_remote("`relation` with != or LIKE"));
             }
+            body.insert("relation".into(), serde_json::json!(relation.wanted));
+        }
+        if let Some(layer) = predicate.layer {
+            body.insert("layer".into(), serde_json::json!(layer));
+        }
+        if let Some(score) = predicate.score {
+            if score.op != ScoreOp::Gte {
+                return Err(not_remote("`score` with an operator other than >="));
+            }
+            body.insert("min_confidence".into(), serde_json::json!(score.threshold));
         }
 
-        let result =
-            self.remote_post_json(ENDPOINT_SELECT, &serde_json::Value::Object(body), false)?;
+        let result = self.remote_post_json(ENDPOINT_SELECT, &serde_json::Value::Object(body))?;
 
         let mut out = Vec::new();
 

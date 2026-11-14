@@ -12,6 +12,11 @@
 //! LABELS hf://chrishayuk/gemma-3-4b-it-labels@latest
 //! EXPOSE browse inference
 //! ```
+//!
+//! `DELETE` removes a fact that an earlier `INSERT` or `PATCH` in the same
+//! Vindexfile installed, matched on entity, relation and target exactly. A
+//! feature of the base vindex carries only its target token, so it cannot
+//! be deleted by fact, and a `DELETE` that matches nothing fails the build.
 
 mod parser;
 
@@ -89,6 +94,8 @@ pub fn build_from_vindexfile(
     let base = VectorIndex::load_vindex(&base_resolved, &mut cb)?;
     let mut patched = PatchedVindex::new(base);
     let mut layers = Vec::new();
+    // The facts this build has installed and not since removed.
+    let mut installed = InstalledFacts::default();
 
     layers.push(BuildLayer {
         directive: format!("FROM {}", base_path),
@@ -104,9 +111,11 @@ pub fn build_from_vindexfile(
                 let resolved = resolve_vindexfile_path(path, working_dir)?;
                 let patch = VindexPatch::load(&resolved)?;
                 let op_count = patch.len();
+                let operations = patch.operations.clone();
                 // Fallible apply: a corrupt embedded vector fails the
                 // build instead of silently skipping the patch.
                 patched.try_apply_patch(patch)?;
+                installed.record_patch(&operations);
                 layers.push(BuildLayer {
                     directive: format!("PATCH {}", path),
                     features_modified: op_count,
@@ -140,6 +149,10 @@ pub fn build_from_vindexfile(
                     top_k: vec![],
                 };
                 patched.insert_feature(layer, feature, vec![], meta);
+                installed.install(
+                    Fact::new(entity, Some(relation.as_str()), target),
+                    (layer, feature),
+                );
                 layers.push(BuildLayer {
                     directive: format!("INSERT (\"{}\", \"{}\", \"{}\")", entity, relation, target),
                     features_modified: 1,
@@ -151,13 +164,24 @@ pub fn build_from_vindexfile(
                 relation,
                 target,
             } => {
-                // Find and delete matching features
-                let matches = patched
-                    .base()
-                    .find_features(Some(target.as_str()), None, None);
-                for &(l, f) in &matches {
+                // A DELETE names a fact, and a fact has an identity only
+                // where this build installed it: a feature record of the
+                // base carries a target token and no entity or relation.
+                // Matching the base on the target alone deleted every
+                // feature whose top token merely contained it.
+                let slots = installed.remove(&Fact::new(entity, Some(relation.as_str()), target));
+                if slots.is_empty() {
+                    return Err(VindexError::Parse(format!(
+                        "DELETE (\"{entity}\", \"{relation}\", \"{target}\"): no INSERT or PATCH in \
+                         this Vindexfile installed that fact. A feature of the base vindex has no \
+                         entity or relation to match, so it cannot be deleted by fact; delete it \
+                         by slot with a PATCH"
+                    )));
+                }
+                for &(l, f) in &slots {
                     patched.delete_feature(l, f);
                 }
+                let matches = slots;
                 layers.push(BuildLayer {
                     directive: format!(
                         "DELETE entity=\"{}\" relation=\"{}\" target=\"{}\"",
@@ -193,6 +217,88 @@ pub fn build_from_vindexfile(
         config,
         layers,
     })
+}
+
+/// A fact as a directive names it. A patch insert may carry no relation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Fact {
+    entity: String,
+    relation: Option<String>,
+    target: String,
+}
+
+impl Fact {
+    fn new(entity: &str, relation: Option<&str>, target: &str) -> Self {
+        Self {
+            entity: entity.to_string(),
+            relation: relation.map(str::to_string),
+            target: target.to_string(),
+        }
+    }
+}
+
+/// The facts a build has installed, each with the slot it lives in.
+///
+/// This is the only place a fact's entity and relation are known, so it is
+/// what a `DELETE` directive is matched against.
+#[derive(Debug, Default)]
+struct InstalledFacts {
+    facts: Vec<(Fact, (usize, usize))>,
+}
+
+impl InstalledFacts {
+    /// Record `fact` at `slot`, replacing whatever the build had there.
+    fn install(&mut self, fact: Fact, slot: (usize, usize)) {
+        self.vacate(slot);
+        self.facts.push((fact, slot));
+    }
+
+    /// Forget whatever fact the build had installed at `slot`.
+    fn vacate(&mut self, slot: (usize, usize)) {
+        self.facts.retain(|(_, at)| *at != slot);
+    }
+
+    /// Follow a patch's operations in order: an insert installs its fact,
+    /// and a delete or an update of a slot ends the fact that was there (an
+    /// update rewrites the record, which may no longer be that fact).
+    fn record_patch(&mut self, operations: &[crate::patch::core::PatchOp]) {
+        use crate::patch::core::PatchOp;
+        for op in operations {
+            match op {
+                PatchOp::Insert {
+                    layer,
+                    feature,
+                    relation,
+                    entity,
+                    target,
+                    ..
+                } => self.install(
+                    Fact::new(entity, relation.as_deref(), target),
+                    (*layer, *feature),
+                ),
+                PatchOp::Delete { layer, feature, .. } | PatchOp::Update { layer, feature, .. } => {
+                    self.vacate((*layer, *feature))
+                }
+                PatchOp::InsertKnn { .. }
+                | PatchOp::DeleteKnn { .. }
+                | PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {}
+            }
+        }
+    }
+
+    /// Remove every installed instance of `fact` and return its slots.
+    fn remove(&mut self, fact: &Fact) -> Vec<(usize, usize)> {
+        let slots: Vec<(usize, usize)> = self
+            .facts
+            .iter()
+            .filter(|(installed, _)| installed == fact)
+            .map(|(_, slot)| *slot)
+            .collect();
+        self.facts.retain(|(installed, _)| installed != fact);
+        slots
+    }
 }
 
 /// Resolve a path from a Vindexfile directive.
@@ -399,7 +505,7 @@ mod tests {
 
     /// The directive loop end-to-end over a real base: INSERT claims a free
     /// slot (an override, so the result bakes down), DELETE removes the
-    /// features matching its target, LABELS and EXPOSE record/no-op, and
+    /// fact an earlier directive installed, LABELS and EXPOSE record/no-op, and
     /// the build history lists one layer per effective directive.
     #[test]
     fn build_executes_directives_over_a_real_base() {
@@ -416,8 +522,8 @@ mod tests {
                 },
                 VindexfileDirective::Delete {
                     entity: "Acme".into(),
-                    relation: "was".into(),
-                    target: "tok1".into(),
+                    relation: "hq".into(),
+                    target: "London".into(),
                 },
                 VindexfileDirective::Labels("labels.json".into()),
                 VindexfileDirective::Expose(vec!["browse".into()]),
@@ -437,12 +543,11 @@ mod tests {
             build.layers[1].features_modified, 1,
             "INSERT claims one slot"
         );
-        // DELETE's match count depends on what feature meta the loaded base
-        // exposes (matching semantics are `find_features`' own test surface);
-        // here we pin that the arm ran and recorded its count.
+        // DELETE names the fact the INSERT above installed, and removes
+        // exactly that slot (`tests/vindexfile_delete.rs` holds the rest).
         assert_eq!(
-            build.layers[2].features_modified, 0,
-            "no meta matches tok1 on this loaded base"
+            build.layers[2].features_modified, 1,
+            "DELETE removes the one inserted fact"
         );
         assert_eq!(build.config.num_layers, 2, "config comes from the base");
     }

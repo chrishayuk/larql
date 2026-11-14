@@ -100,6 +100,15 @@ pub struct Cli {
     #[arg(long)]
     pub dir: Option<PathBuf>,
 
+    /// Another name the served model answers to in a request's `model`
+    /// field, beside the id its container declares (which keeps working).
+    /// Matched exactly and case-sensitively, like the id; listed as
+    /// `aliases` on `GET /v1/models`. `larql serve <name>` passes the name
+    /// it was given, so a request can use the name the model was served
+    /// under. Single-model serving only.
+    #[arg(long, value_name = "NAME", conflicts_with = "dir")]
+    pub model_alias: Option<String>,
+
     /// Listen port.
     #[arg(long, default_value_t = DEFAULT_PORT)]
     pub port: u16,
@@ -350,8 +359,18 @@ pub struct Cli {
     ///
     /// Enable only when the server is behind a trusted reverse proxy that
     /// strips untrusted client-supplied forwarding headers.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "client_ip_header")]
     pub trust_forwarded_for: bool,
+
+    /// Rate limit by the client address in this header.
+    ///
+    /// Name the header the reverse proxy in front sets to the one client
+    /// address it saw and does not accept from the client, e.g.
+    /// `Fly-Client-IP`, `CF-Connecting-IP` or `X-Real-IP`. Prefer this to
+    /// `--trust-forwarded-for` behind a proxy that appends to
+    /// `X-Forwarded-For` instead of replacing it.
+    #[arg(long, value_name = "HEADER")]
+    pub client_ip_header: Option<axum::http::header::HeaderName>,
 
     /// Max concurrent requests.
     #[arg(long, default_value_t = DEFAULT_MAX_CONCURRENT)]

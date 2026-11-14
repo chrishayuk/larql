@@ -31,7 +31,7 @@ use larql_vindex::format::vindex3::opplan::exec::observe_stats::{FixedBasis, Sta
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 
 use super::intervention;
-use super::prepare::{parse_representation_source, prepare, with_plan_backend, BackendVisitor};
+use super::prepare::{prepare, resolve_representation_source, with_plan_backend, BackendVisitor};
 use super::ExecBackend;
 
 type BoxErr = Box<dyn std::error::Error>;
@@ -50,7 +50,7 @@ const SUPPLIED_ROWS_PROVIDER: &str = "cli-supplied-rows";
 
 #[derive(Args)]
 pub struct ObserveArgs {
-    /// VINDEX3 container directory.
+    /// VINDEX3 container: a directory, `hf://owner/name`, `owner/name` or a cache shorthand such as `Qwen3-0.6B`; never downloaded.
     pub container: PathBuf,
 
     /// Component to execute.
@@ -73,9 +73,12 @@ pub struct ObserveArgs {
     #[arg(long, value_enum, default_value_t = ExecBackend::Production)]
     pub backend: ExecBackend,
 
-    /// Which stored representation to execute (`auto`, or a label).
-    #[arg(long, default_value = "auto")]
-    pub representation_source: String,
+    /// Where an execution representation may come from: auto, stored or
+    /// transient. Default: `--backend`'s, as `vindex3 exec` resolves it
+    /// (`stored` for `production`, so no BF16 matrix is requantised to Q8
+    /// at load unless `auto` is asked for).
+    #[arg(long, value_name = "auto|stored|transient")]
+    pub representation_source: Option<String>,
 
     /// Where the run record (JSON lines) is written.
     #[arg(long)]
@@ -169,7 +172,8 @@ pub struct ObserveArgs {
 }
 
 pub fn run(args: ObserveArgs) -> Result<(), BoxErr> {
-    let source = parse_representation_source(&args.representation_source)?;
+    let source =
+        resolve_representation_source(args.representation_source.as_deref(), args.backend)?;
     let plugins = super::plugins::Plugins::none();
     let opened = prepare(
         &args.container,
@@ -401,7 +405,7 @@ fn load_tokenizer(container: &Path) -> Option<tokenizers::Tokenizer> {
     larql_vindex::load_vindex_tokenizer(container).ok()
 }
 
-fn prompt_ids(
+pub(super) fn prompt_ids(
     args: &ObserveArgs,
     tokenizer: Option<&tokenizers::Tokenizer>,
 ) -> Result<Vec<u32>, BoxErr> {
@@ -411,15 +415,11 @@ fn prompt_ids(
                 "--prompt needs the container's tokenizer, and this container carries none; \
                  pass --tokens with ids instead",
             )?;
-            let ids = tokenizer
-                .encode(prompt.as_str(), true)
-                .map_err(|e| format!("tokenising the prompt: {e}"))?
-                .get_ids()
-                .to_vec();
-            if ids.is_empty() {
-                return Err("the prompt tokenised to nothing".into());
-            }
-            Ok(ids)
+            // The shared V3 raw-prompt encoder: the same ids `larql run
+            // --raw`, the server's plain completions and LQL feed.
+            let bos = larql_inference::vindex3::declared_prompt_bos(&args.container);
+            larql_inference::vindex3::encode_raw_prompt(tokenizer, prompt.as_str(), bos)
+                .map_err(|e| format!("encoding the prompt: {e}").into())
         }
         (None, Some(list)) => parse_ids(list),
         (None, None) => Err("give --prompt or --tokens".into()),

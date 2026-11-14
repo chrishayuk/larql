@@ -29,11 +29,13 @@
 //! The verdict is fail-closed and the exit gate is mechanical:
 //! `blocking == 0` before a single weight byte is converted.
 
+pub mod admission;
 mod attention_policy;
 pub mod capability;
 pub mod carriage;
 pub mod compare;
 pub mod report;
+pub mod rope_scope;
 pub mod semantics;
 
 #[cfg(test)]

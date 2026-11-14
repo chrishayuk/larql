@@ -38,11 +38,23 @@ fn uses_mla(inventory: &ArchitectureInventory) -> bool {
         .is_some_and(|e| e.mla.is_some())
 }
 use super::report::{Finding, FindingCategory, SemanticClass};
+use super::rope_scope::{self, RopeBaseScope};
 use super::semantics::component_of;
 
 /// Sliding layer label used in the inventory's per-layer table.
 const ATTENTION_SLIDING: &str = "sliding";
+/// Full-attention layer label used in the inventory's per-layer table.
 const ATTENTION_FULL: &str = "full";
+
+/// The inventory table's label for a span.
+fn inventory_label(span: AttentionSpan) -> Option<&'static str> {
+    match span {
+        AttentionSpan::Sliding => Some(ATTENTION_SLIDING),
+        AttentionSpan::Full => Some(ATTENTION_FULL),
+        // A perception tower's spatial window is never a text-stack layer.
+        AttentionSpan::Windowed => None,
+    }
+}
 
 /// Extractor of the resolved counterpart for one declared scalar.
 type ResolvedScalar = fn(&ArchitectureInventory) -> Option<u64>;
@@ -85,57 +97,59 @@ fn declared(facts: &[ConfigKeyFact], leaf: &str) -> Option<(String, Value)> {
         .map(|f| (f.path.clone(), f.value.clone()))
 }
 
-/// The declared RoPE bases, each with the layers it speaks for: the
-/// checkpoint-wide base (flat `rope_theta`, transformers-5's flat
-/// `rope_parameters.rope_theta`) speaks for every layer; the per-layer-type
-/// bases (`rope_parameters.full_attention.rope_theta` /
-/// `…sliding_attention.rope_theta` — Gemma 3/4) each speak for their span
-/// only. Returns `(path, theta, span-or-None)` per declaration so a
-/// mismatch names its source and is judged against the right layers —
-/// Gemma 4 declares 1e6 on full layers and 1e4 on sliding ones, and
-/// comparing either against the whole table is a false mismatch.
-fn declared_rope_thetas(facts: &[ConfigKeyFact]) -> Vec<(String, f64, Option<&'static str>)> {
-    const PER_SPAN: &[(&str, &str)] = &[
-        (
-            "text_config.rope_parameters.full_attention.rope_theta",
-            ATTENTION_FULL,
-        ),
-        ("rope_parameters.full_attention.rope_theta", ATTENTION_FULL),
-        (
-            "text_config.rope_parameters.sliding_attention.rope_theta",
-            ATTENTION_SLIDING,
-        ),
-        (
-            "rope_parameters.sliding_attention.rope_theta",
-            ATTENTION_SLIDING,
-        ),
-    ];
-    const WHOLE_TABLE: &[&str] = &[
+/// The declared RoPE bases of the text stack, each with the span it
+/// speaks for (`None`: every layer). Scoped by the one derivation in
+/// [`super::rope_scope`]: a per-layer-type base (`rope_parameters.
+/// {full,sliding}_attention.rope_theta`, Gemma 4; `rope_local_base_freq`,
+/// Gemma 3) speaks for its span; the flat `rope_theta` beside a
+/// sliding-only base speaks for the full span; a whole-stack base another
+/// per-span declaration supersedes is not judged on its own. Returns
+/// `(path, theta, span)` per declaration so a mismatch names its source
+/// and is judged against the right layers — Gemma 4 declares 1e6 on full
+/// layers and 1e4 on sliding ones, and comparing either against the
+/// whole table is a false mismatch.
+fn declared_rope_thetas(facts: &[ConfigKeyFact]) -> Vec<(String, f64, Option<AttentionSpan>)> {
+    const TEXT_PREFIX: &str = "text_config.";
+    /// Whole-stack spellings, most specific first (the parser reads
+    /// `rope_parameters.rope_theta` before the legacy flat field).
+    const WHOLE_STACK_PREFERENCE: &[&str] = &[
         "text_config.rope_parameters.rope_theta",
         "rope_parameters.rope_theta",
         "text_config.rope_theta",
         "rope_theta",
     ];
-    let mut out: Vec<(String, f64, Option<&'static str>)> = PER_SPAN
+    // The text stack only: a perception tower's own rope block describes
+    // a different component, whose layers this table does not hold.
+    let text_stack = |path: &str| {
+        path.strip_prefix(TEXT_PREFIX)
+            .unwrap_or(path)
+            .split('.')
+            .all(|segment| !segment.ends_with("_config"))
+    };
+    let mut per_span = Vec::new();
+    let mut whole_stack = None;
+    for fact in facts
         .iter()
-        .filter_map(|(path, span)| {
-            facts
-                .iter()
-                .find(|f| f.path == *path)
-                .and_then(|f| f.value.as_f64().map(|v| (f.path.clone(), v, Some(*span))))
-        })
-        .collect();
-    // A whole-table base only speaks when no per-span base was declared —
-    // the per-span form is the more specific spelling of the same fact.
-    if out.is_empty() {
-        out.extend(WHOLE_TABLE.iter().find_map(|path| {
-            facts
-                .iter()
-                .find(|f| f.path == *path)
-                .and_then(|f| f.value.as_f64().map(|v| (f.path.clone(), v, None)))
-        }));
+        .filter(|f| text_stack(&f.path) && rope_scope::is_rope_base(&f.path))
+    {
+        let Some(theta) = fact.value.as_f64() else {
+            continue;
+        };
+        match rope_scope::rope_base_scope(&fact.path, facts) {
+            RopeBaseScope::Span(span) => per_span.push((fact.path.clone(), theta, Some(span))),
+            // One whole-stack base is judged: the most specific spelling,
+            // in the parser's own order of preference.
+            RopeBaseScope::Stack => {
+                let rank = WHOLE_STACK_PREFERENCE.iter().position(|p| *p == fact.path);
+                if rank.is_some_and(|rank| whole_stack.as_ref().is_none_or(|(r, _)| rank < *r)) {
+                    whole_stack = rank.map(|rank| (rank, (fact.path.clone(), theta, None)));
+                }
+            }
+            RopeBaseScope::Superseded => {}
+        }
     }
-    out
+    per_span.extend(whole_stack.map(|(_, declared)| declared));
+    per_span
 }
 
 /// Run every comparator over one inventory.
@@ -213,9 +227,13 @@ fn rope_theta_findings(inventory: &ArchitectureInventory) -> Vec<Finding> {
     declared_rope_thetas(&inventory.config_keys)
         .into_iter()
         .filter_map(|(path, declared_theta, span)| {
+            let label = match span {
+                Some(span) => Some(inventory_label(span)?),
+                None => None,
+            };
             let in_scope: Vec<_> = layers
                 .iter()
-                .filter(|l| span.is_none_or(|s| l.attention == s))
+                .filter(|l| label.is_none_or(|s| l.attention == s))
                 .collect();
             let first = in_scope.first()?;
             // A rope base declared on a stack that applies **no rotation**

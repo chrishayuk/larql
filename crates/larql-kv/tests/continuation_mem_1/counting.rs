@@ -52,6 +52,10 @@ impl CountingProjections {
 }
 
 impl DenseProjections for CountingProjections {
+    fn consumes(&self, weight: WeightRows<'_>) -> bool {
+        self.inner.consumes(weight)
+    }
+
     fn project(&self, weight: WeightRows<'_>, x: &[f32], out_dim: usize) -> Vec<f32> {
         self.bump(x.len(), out_dim, 1);
         self.inner.project(weight, x, out_dim)

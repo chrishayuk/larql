@@ -118,6 +118,24 @@ const NANOS_PER_SECOND: f64 = 1e9;
 const BYTES_PER_GB: f64 = 1e9;
 
 impl PlanTally {
+    /// What this plan did since `earlier`, a reading of the same plan taken
+    /// before. The ledger is process-wide and only ever counts up between
+    /// resets, so a window is a difference of two readings, not a reset: a
+    /// reset would erase what a concurrent reader in the same process was
+    /// counting. Saturates, so a reset inside the window reads as zero,
+    /// never as a wrapped count.
+    pub fn since(self, earlier: PlanTally) -> PlanTally {
+        PlanTally {
+            calls: self.calls.saturating_sub(earlier.calls),
+            bytes: self.bytes.saturating_sub(earlier.bytes),
+            slabs: self.slabs.saturating_sub(earlier.slabs),
+            grouped: self.grouped.saturating_sub(earlier.grouped),
+            positions: self.positions.saturating_sub(earlier.positions),
+            nanos: self.nanos.saturating_sub(earlier.nanos),
+            nanos_many: self.nanos_many.saturating_sub(earlier.nanos_many),
+        }
+    }
+
     /// The plan's effective streaming rate in decimal GB/s: bytes read over
     /// the plan's OWN projection time. `None` when no time was recorded, so
     /// an unmeasured plan cannot read as a rate of zero.

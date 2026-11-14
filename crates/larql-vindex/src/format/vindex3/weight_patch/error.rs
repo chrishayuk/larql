@@ -9,6 +9,13 @@ use crate::error::VindexError;
 pub enum WeightPatchError {
     #[error("the patch edits {count} elements; the limit is {limit}")]
     TooManyElements { count: usize, limit: usize },
+    /// A structured op exceeds a bound of the structured-op path (`MAX_STRUCTURED_*`).
+    #[error("structured op over its bound: {what} is {value}; the limit is {limit}")]
+    OverBound {
+        what: &'static str,
+        value: u64,
+        limit: u64,
+    },
     #[error("the patch edits no elements")]
     Empty,
     #[error("element ({row}, {col}) is edited more than once")]
@@ -42,6 +49,18 @@ pub enum WeightPatchError {
     },
     #[error("the patched value of element ({row}, {col}) overflows bfloat16")]
     Overflow { row: usize, col: usize },
+    #[error("the declared result of element ({row}, {col}) is not a finite bfloat16")]
+    NonFiniteResult { row: usize, col: usize },
+    #[error("column {col} of `{tensor}` is already written by {by}; two structured ops do not share a column")]
+    ColumnConflict {
+        tensor: String,
+        col: usize,
+        by: String,
+    },
+    #[error("`{tensor}` is edited by a delta op and a structured op ({by}); one tensor takes one form in this version")]
+    MixedForms { tensor: String, by: String },
+    #[error("structured op: {0}")]
+    Structured(String),
     #[error("the source is not a canonical container ({0}); a deployment image cannot be patched")]
     NotCanonical(String),
     #[error("the source already carries a weight-patch ledger; patching a patched container is not supported")]
@@ -71,8 +90,15 @@ pub enum WeightPatchError {
     WrongSource { expected: String, found: String },
     #[error("weight edit in a patch: {0}")]
     PatchOp(String),
-    #[error("a compile carries edits to one tensor; the session holds edits to {0:?}")]
-    MoreThanOneTensor(Vec<String>),
+    #[error("tensor `{0}` is edited by two parts of one patch; give each tensor once")]
+    DuplicateTensor(String),
+    #[error("one patch edits one canonical representation: `{}` is in `{}`, `{}` is in `{}`", .first.0, .first.1, .other.0, .other.1)]
+    SpansRepresentations {
+        /// (tensor, representation) of the first edited tensor.
+        first: (String, String),
+        /// (tensor, representation) of one held elsewhere.
+        other: (String, String),
+    },
     #[error(transparent)]
     Vindex(#[from] VindexError),
     #[error(transparent)]

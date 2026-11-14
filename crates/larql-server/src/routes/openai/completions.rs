@@ -177,8 +177,8 @@ pub struct CompletionsResponse {
          body = crate::openapi::schemas::OpenAiCompletionsResponse),
         (status = 200, description = "SSE stream when `stream: true`. Each event is `data: <CompletionsChunk JSON>\\n\\n`, terminated by `data: [DONE]`.",
          content_type = "text/event-stream", body = String),
-        (status = 400, body = crate::routes::openai::error::OpenAIErrorBody),
-        (status = 500, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 400, description = "Bad request", body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 500, description = "Internal server error", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_completions(

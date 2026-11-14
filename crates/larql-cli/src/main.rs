@@ -16,12 +16,13 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::large_enum_variant)]
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 mod anyres_tiler;
 mod backend_select;
 mod commands;
 mod formatting;
+mod help_layout;
 mod image_input;
 mod trampoline;
 mod utils;
@@ -35,11 +36,7 @@ use commands::primary::*;
 use commands::query::*;
 
 #[derive(Parser)]
-#[command(
-    name = "larql",
-    version,
-    about = "LARQL — decompile transformer weights into a queryable vindex"
-)]
+#[command(name = "larql", version, about = help_layout::TAGLINE)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -48,13 +45,11 @@ struct Cli {
 // ══════════════════════════════════════════════════════════════════════
 // Top-level commands
 //
-// Grouped in --help output via `next_help_heading`:
-//   * (unspecified)   — Primary user verbs
-//   * "Build"         — Extract / compile / publish
-//   * "Query"         — Graph file introspection (legacy pre-LQL)
-//   * "LQL"           — Query-language surface
-//   * "Server"        — Serve a vindex
-//   * "Research"      — `larql dev <subcmd>`
+// The root `larql --help` is grouped by `help_layout::HELP_GROUPS`
+// (everyday verbs first, research and diagnostics last): clap 4 cannot
+// group subcommands itself — `next_help_heading` below titles only each
+// subcommand's own options. A new command must be added to a group there;
+// the help_layout tests fail until it is.
 //
 // Variants marked `#[cfg(feature = "research")]` exist only in research
 // builds (the default); tagged release binaries are built without them,
@@ -70,12 +65,20 @@ enum Commands {
     /// Interactive chat — alias for `run <model>` with no prompt.
     Chat(ChatArgs),
 
-    /// Download a vindex from HuggingFace and cache it locally.
+    /// Cache or refresh a Hugging Face repo (download a vindex, encode a checkpoint).
+    ///
+    /// A published vindex is downloaded into the HF hub cache. A raw
+    /// checkpoint is encoded to VINDEX3 into the encoded cache, as `larql
+    /// run hf://…` does on first use. For a checkpoint already encoded,
+    /// `pull` is the explicit refresh: its revision is re-resolved against
+    /// the hub and re-encoded only if it moved (`run` never checks).
     Pull(pull_cmd::PullArgs),
 
     /// Manage HuggingFace *model* repos (safetensors + tokenizer + config).
-    /// Companion to `pull` (which is vindex-only). Use `model pull` to
-    /// stage a raw HF model for `convert safetensors-to-vindex`.
+    ///
+    /// Companion to `pull` (which caches vindexes and encodes checkpoints).
+    /// Use `model pull` to stage a raw HF model's own files for
+    /// `convert safetensors-to-vindex`.
     Model(model_cmd::ModelArgs),
 
     /// Register a local vindex directory with the cache so `run` / `list`
@@ -101,6 +104,13 @@ enum Commands {
 
     /// Remove a cached vindex.
     Rm(rm_cmd::RmArgs),
+
+    /// Check this install: version, hardware, backends, server, caches, HF access.
+    ///
+    /// Prints a ✓ / ! / ✗ checklist with a one-line fix under each line
+    /// that is not fine. Exits non-zero only on what would stop the quick
+    /// start working.
+    Doctor(doctor::DoctorArgs),
 
     /// Benchmark decode throughput on a real vindex (Metal / CPU / Ollama).
     Bench(bench::BenchArgs),
@@ -269,6 +279,11 @@ struct ChatArgs {
     #[arg(short = 'n', long = "max-tokens", default_value = "64")]
     max_tokens: usize,
 
+    /// VINDEX3 only: send each line verbatim (plain completion, no
+    /// history) instead of through the container's chat template.
+    #[arg(long)]
+    raw: bool,
+
     /// Route FFN to a remote larql-server.
     #[arg(long, value_name = "URL")]
     ffn: Option<String>,
@@ -289,6 +304,7 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             model: c.model,
             prompt: None,
             max_tokens: c.max_tokens,
+            raw: c.raw,
             top: 1,
             kv_cache: run_cmd::KvCacheKind::Standard,
             context_window: 0,
@@ -391,7 +407,10 @@ fn real_main() -> i32 {
             return trampoline::RESEARCH_UNAVAILABLE_EXIT_CODE;
         }
     };
-    let cli = match Cli::try_parse_from(&args) {
+    let cli = match help_layout::apply(Cli::command())
+        .try_get_matches_from(&args)
+        .and_then(|matches| Cli::from_arg_matches(&matches))
+    {
         Ok(cli) => cli,
         Err(e) => return usage_exit(e, &args),
     };
@@ -415,6 +434,7 @@ fn real_main() -> i32 {
         Commands::Publish(args) => publish_cmd::run(args),
         Commands::Registry(cmd) => registry_cmd::run(cmd),
         Commands::Rm(args) => rm_cmd::run(args),
+        Commands::Doctor(args) => doctor::run(args),
 
         // ── Build / extract ──
         Commands::Extract(args) => extract_index_cmd::run(args),
@@ -440,11 +460,12 @@ fn real_main() -> i32 {
 
         // ── LQL ──
         Commands::Repl => {
-            larql_lql::run_repl();
+            larql_lql::run_repl_in(lql_session::session());
             Ok(())
         }
         Commands::Lql(args) => {
-            let outcome = larql_lql::run_batch_outcome(&args.statement);
+            let outcome =
+                larql_lql::run_batch_outcome_in(&mut lql_session::session(), &args.statement);
             for line in &outcome.lines {
                 println!("{line}");
             }

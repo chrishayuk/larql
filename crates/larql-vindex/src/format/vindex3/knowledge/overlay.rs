@@ -26,7 +26,9 @@
 //! (`KnowledgeOverlay::operand_overrides` → `OperandSource`), so a compose patch
 //! alters what the program computes without touching the container.
 
-use crate::format::vindex3::weight_patch::{WeightDeltaOp, WeightPatchError};
+use crate::format::vindex3::weight_patch::{
+    LowRankColumnsOp, StructuredWeightOp, WeightDeltaOp, WeightOp, WeightOpRef, WeightPatchError,
+};
 use std::collections::{HashMap, HashSet};
 
 use crate::error::VindexError;
@@ -63,7 +65,7 @@ pub struct KnowledgeOverlay {
     /// Stored-weight edits staged directly in the session, outside any
     /// patch. Each is bound to the container it was staged against.
     /// `remove_patch` leaves these alone: it replays only the patch list.
-    weight_session: Vec<WeightDeltaOp>,
+    weight_session: Vec<WeightOp>,
 }
 
 impl KnowledgeOverlay {
@@ -345,8 +347,13 @@ impl KnowledgeOverlay {
 
     /// Apply a patch, all-or-nothing: on `Err` no overlay state has
     /// been touched and the patch is not recorded. Errors when an
-    /// embedded vector fails to decode, or when the patch contains
-    /// feature-slot operations the V3 overlay cannot yet represent.
+    /// embedded vector fails to decode, or when a stored-weight edit is
+    /// not intact or conflicts with one already in effect.
+    ///
+    /// This overlay holds no base, so it cannot check the patch against
+    /// the container. The caller does that first, with
+    /// [`VindexPatch::check_base_model`] and
+    /// [`VindexPatch::check_geometry`]; `APPLY PATCH` is the one caller.
     pub fn try_apply_patch(&mut self, patch: VindexPatch) -> Result<(), VindexError> {
         validate_v3_patch(&patch)?;
         self.check_weight_conflicts(&patch)?;
@@ -357,31 +364,52 @@ impl KnowledgeOverlay {
 
     /// Every stored-weight edit in effect, with where it came from: the
     /// applied patches in order, then the session's direct edits.
-    pub fn weight_ops(&self) -> Vec<(String, &WeightDeltaOp)> {
+    pub fn weight_ops(&self) -> Vec<(String, WeightOpRef<'_>)> {
         let mut out = Vec::new();
         for p in &self.patches {
             for op in &p.operations {
-                if let PatchOp::WeightDelta(w) = op {
-                    out.push((
-                        p.description
-                            .clone()
-                            .unwrap_or_else(|| "(unnamed patch)".into()),
-                        w,
-                    ));
-                }
+                let Some(held) = op.weight_op() else {
+                    continue;
+                };
+                out.push((
+                    p.description
+                        .clone()
+                        .unwrap_or_else(|| "(unnamed patch)".into()),
+                    held,
+                ));
             }
         }
         out.extend(
             self.weight_session
                 .iter()
-                .map(|w| ("this session".to_string(), w)),
+                .map(|w| ("this session".to_string(), w.as_ref())),
         );
         out
     }
 
-    /// Number of stored-weight elements currently edited.
+    /// Number of stored-weight elements currently edited by delta ops. A structured op names columns,
+    /// not elements; see [`Self::structured_op_count`].
     pub fn weight_edit_count(&self) -> usize {
-        self.weight_ops().iter().map(|(_, w)| w.edits.len()).sum()
+        self.weight_ops()
+            .iter()
+            .map(|(_, w)| match w {
+                WeightOpRef::Delta(d) => d.edits.len(),
+                WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => 0,
+            })
+            .sum()
+    }
+
+    /// Number of structured stored-weight ops in effect, of any kind.
+    pub fn structured_op_count(&self) -> usize {
+        self.weight_ops()
+            .iter()
+            .filter(|(_, w)| w.structured_columns().is_some())
+            .count()
+    }
+
+    /// Whether any stored-weight op, of either form, is in effect.
+    pub fn has_weight_ops(&self) -> bool {
+        !self.weight_ops().is_empty()
     }
 
     /// Stage a stored-weight edit directly in the session. Refused if any
@@ -389,8 +417,27 @@ impl KnowledgeOverlay {
     /// edits to one element are not composed, so staging twice can never
     /// double an edit.
     pub fn stage_weight_op(&mut self, op: WeightDeltaOp) -> Result<(), WeightPatchError> {
-        op.check_intact()?;
-        self.conflict_with_existing(std::slice::from_ref(&op), "this session")?;
+        self.stage(WeightOp::Delta(op))
+    }
+
+    /// Stage a structured op directly in the session. Refused if any column it writes is already written
+    /// by a structured op, or if its tensor is already edited by a delta op.
+    pub fn stage_structured_op(&mut self, op: StructuredWeightOp) -> Result<(), WeightPatchError> {
+        self.stage(WeightOp::Structured(op))
+    }
+
+    /// Stage an `add_low_rank_columns` op directly in the session, under the same rule as
+    /// [`Self::stage_structured_op`].
+    pub fn stage_low_rank_columns_op(
+        &mut self,
+        op: LowRankColumnsOp,
+    ) -> Result<(), WeightPatchError> {
+        self.stage(WeightOp::LowRankColumns(op))
+    }
+
+    fn stage(&mut self, op: WeightOp) -> Result<(), WeightPatchError> {
+        op.as_ref().check_intact()?;
+        self.conflict_with_existing(&[op.as_ref()])?;
         self.weight_session.push(op);
         Ok(())
     }
@@ -401,16 +448,10 @@ impl KnowledgeOverlay {
     }
 
     fn check_weight_conflicts(&self, patch: &VindexPatch) -> Result<(), WeightPatchError> {
-        let ops: Vec<WeightDeltaOp> = patch
+        let ops: Vec<WeightOpRef<'_>> = patch
             .operations
             .iter()
-            .filter_map(|o| {
-                if let PatchOp::WeightDelta(w) = o {
-                    Some(w.clone())
-                } else {
-                    None
-                }
-            })
+            .filter_map(PatchOp::weight_op)
             .collect();
         if ops.is_empty() {
             return Ok(());
@@ -421,40 +462,17 @@ impl KnowledgeOverlay {
             .unwrap_or_else(|| "this patch".into());
         // Within the patch itself first, then against everything in effect.
         for (i, a) in ops.iter().enumerate() {
-            self.conflict_between(&ops[..i], a, &name)?;
-        }
-        self.conflict_with_existing(&ops, &name)
-    }
-
-    fn conflict_with_existing(
-        &self,
-        ops: &[WeightDeltaOp],
-        _incoming: &str,
-    ) -> Result<(), WeightPatchError> {
-        for (by, existing) in self.weight_ops() {
-            for op in ops {
-                self.conflict_between(std::slice::from_ref(existing), op, &by)?;
+            for earlier in &ops[..i] {
+                a.check_disjoint(*earlier, &name)?;
             }
         }
-        Ok(())
+        self.conflict_with_existing(&ops)
     }
 
-    fn conflict_between(
-        &self,
-        held: &[WeightDeltaOp],
-        new: &WeightDeltaOp,
-        by: &str,
-    ) -> Result<(), WeightPatchError> {
-        for h in held.iter().filter(|h| h.tensor == new.tensor) {
-            let taken: std::collections::HashSet<(usize, usize)> =
-                h.edits.iter().map(|e| (e.row, e.col)).collect();
-            if let Some(e) = new.edits.iter().find(|e| taken.contains(&(e.row, e.col))) {
-                return Err(WeightPatchError::Conflict {
-                    tensor: new.tensor.clone(),
-                    row: e.row,
-                    col: e.col,
-                    by: by.to_string(),
-                });
+    fn conflict_with_existing(&self, ops: &[WeightOpRef<'_>]) -> Result<(), WeightPatchError> {
+        for (by, existing) in self.weight_ops() {
+            for op in ops {
+                op.check_disjoint(existing, &by)?;
             }
         }
         Ok(())
@@ -511,7 +529,9 @@ impl KnowledgeOverlay {
                 // Stored-weight edits have no overlay state: they take
                 // effect when COMPILE writes a new container, and are read
                 // back from the patch list by `weight_ops`.
-                PatchOp::WeightDelta(_) => {}
+                PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {}
                 PatchOp::Delete { layer, feature, .. } => {
                     self.delete_feature(*layer, *feature);
                 }
@@ -635,8 +655,12 @@ fn validate_v3_patch(patch: &VindexPatch) -> Result<(), VindexError> {
                 })?;
             }
             PatchOp::DeleteKnn { .. } | PatchOp::Delete { .. } => {}
-            PatchOp::WeightDelta(op) => {
-                op.check_intact()
+            PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => {
+                op.weight_op()
+                    .expect("a stored-weight op")
+                    .check_intact()
                     .map_err(|e| VindexError::Parse(format!("patch op {i}: {e}")))?;
             }
             PatchOp::Update {

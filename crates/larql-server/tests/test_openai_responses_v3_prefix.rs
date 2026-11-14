@@ -6,8 +6,9 @@
 //! container whose tokenizer is *template-stable*: WordLevel with a
 //! `WhitespaceSplit` pre-tokenizer and a bijective surface ↔ id map
 //! (`[0]`…`[25]` plus dedicated scaffold words `User:` / `Assistant:` /
-//! `System:`), so any emitted token re-tokenizes to itself when the
-//! conversation is re-rendered. Contrast `test_openai_responses_v3.rs`,
+//! `System:`, the words of the container's transcript chat template), so
+//! any emitted token re-tokenizes to itself when the conversation is
+//! re-rendered. Contrast `test_openai_responses_v3.rs`,
 //! whose tokenizer (no pre-tokenizer) makes every full prompt a single
 //! [UNK] and therefore pins the *fallback* path.
 //!
@@ -21,7 +22,7 @@
 //! - state another continuation authority wrote → refused by the resume
 //!   contract (C4 of CONTINUATION-PLUGIN-1), recovered by an EXPLICIT
 //!   fresh prefill that the response and `/v1/stats` both record
-//! - template census: which chat templates preserve a *string* prefix
+//! - template census: which VINDEX2 heuristic chat templates preserve a *string* prefix
 //!   under conversation growth (token-level stability additionally
 //!   needs each family's real tokenizer — out of fixture scope)
 //!
@@ -82,7 +83,9 @@ fn template_stable_tokenizer_json() -> String {
 }
 
 /// One V3 container under a KNOWN directory name (the model id derives
-/// from the basename), with the template-stable tokenizer.
+/// from the basename), with the template-stable tokenizer and the
+/// transcript chat template (`User: …\nAssistant: `) whose scaffold
+/// words it tokenizes.
 fn v3_container_named(root: &Path, name: &str) -> PathBuf {
     let checkpoint = root.join(format!("{name}-checkpoint"));
     let container = root.join(name);
@@ -94,6 +97,7 @@ fn v3_container_named(root: &Path, name: &str) -> PathBuf {
         template_stable_tokenizer_json(),
     )
     .unwrap();
+    common::chat_template::write_transcript_template(&container);
     container
 }
 
@@ -113,6 +117,7 @@ fn v3_state(containers: &[&Path], kv_entries: usize) -> Arc<AppState> {
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models: Vec::new(),
             v3_models,
+            aliases: Default::default(),
         }),
         router_topology: larql_server::state::RouterTopology::SingleModel,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),

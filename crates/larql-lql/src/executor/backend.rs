@@ -76,13 +76,17 @@ pub(crate) enum Backend {
         /// (`v2_and_v3_prompt_encoders_agree_on_a_bos_requiring_model`).
         bos_token: Option<u32>,
     },
-    /// Remote server backend — queries forwarded via HTTP.
-    /// Local patches can be applied for client-side overlay.
+    /// Remote server backend — queries forwarded via HTTP. Every request
+    /// carries `session_id`, so mutations and patches live in this
+    /// session's overlay on the server and reads are answered against it.
     Remote {
         url: String,
         client: reqwest::blocking::Client,
-        local_patches: Vec<larql_vindex::VindexPatch>,
         session_id: String,
+        /// The served model's identity from `/v1/stats` (`None` when the
+        /// server named none). Patches sent by this session declare it as
+        /// their `base_model`.
+        model_name: Option<String>,
     },
     None,
 }
@@ -128,12 +132,9 @@ impl Session {
         match &self.backend {
             Backend::Vindex { patched, .. } => Ok(patched),
             Backend::Vindex3 { .. } => Err(super::vindex3::unsupported("this statement")),
-            Backend::Weight { model_id, .. } => Err(LqlError::Execution(format!(
-                "this operation requires a vindex. Extract first:\n  \
-                 EXTRACT MODEL \"{}\" INTO \"{}.vindex\"",
-                model_id,
-                model_id.split('/').next_back().unwrap_or(model_id),
-            ))),
+            Backend::Weight { model_id, .. } => Err(LqlError::Execution(
+                super::extract_hint::extract_first("this operation requires a vindex", model_id),
+            )),
             _ => Err(LqlError::NoBackend),
         }
     }
@@ -157,12 +158,9 @@ impl Session {
                 ..
             } => Ok((path, config, patched)),
             Backend::Vindex3 { .. } => Err(super::vindex3::unsupported("mutation")),
-            Backend::Weight { model_id, .. } => Err(LqlError::Execution(format!(
-                "mutation requires a vindex. Extract first:\n  \
-                 EXTRACT MODEL \"{}\" INTO \"{}.vindex\"",
-                model_id,
-                model_id.split('/').next_back().unwrap_or(model_id),
-            ))),
+            Backend::Weight { model_id, .. } => Err(LqlError::Execution(
+                super::extract_hint::extract_first("mutation requires a vindex", model_id),
+            )),
             _ => Err(LqlError::NoBackend),
         }
     }
@@ -186,12 +184,9 @@ impl Session {
                 ..
             } => Ok((path, config, patched)),
             Backend::Vindex3 { .. } => Err(super::vindex3::unsupported("this statement")),
-            Backend::Weight { model_id, .. } => Err(LqlError::Execution(format!(
-                "this operation requires a vindex. Extract first:\n  \
-                 EXTRACT MODEL \"{}\" INTO \"{}.vindex\"",
-                model_id,
-                model_id.split('/').next_back().unwrap_or(model_id),
-            ))),
+            Backend::Weight { model_id, .. } => Err(LqlError::Execution(
+                super::extract_hint::extract_first("this operation requires a vindex", model_id),
+            )),
             _ => Err(LqlError::NoBackend),
         }
     }

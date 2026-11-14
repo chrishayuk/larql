@@ -2,6 +2,7 @@
 //!
 //! Sub-modules:
 //! - [`eos`]: stop-token detection (built-in markers + `generation_config.json`).
+//! - [`stop_ids`]: every declared stop as a token id, for id-only decode loops.
 //! - [`detok`]: incremental detokeniser preserving HF leading-space semantics.
 //! - [`sampling`]: greedy / temperature / top-k / top-p sampler.
 
@@ -15,6 +16,7 @@ mod gpu_setup;
 pub(crate) mod lm_head;
 pub(crate) mod policy;
 pub mod sampling;
+pub mod stop_ids;
 mod types;
 
 pub use chat_session::{
@@ -35,6 +37,7 @@ pub use gpu::{
 };
 pub use lm_head::lm_head_topk;
 pub use sampling::{Sampler, SamplingConfig};
+pub use stop_ids::{resolve_stop_ids, StopIds, StopIdsError};
 pub use types::{GenerateError, GenerateResult, StageTimings};
 
 #[cfg(test)]

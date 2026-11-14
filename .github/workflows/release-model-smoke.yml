@@ -1,0 +1,64 @@
+# The README quick start on a real model, against a published release:
+# `larql run hf://Qwen/Qwen3-0.6B`, the cached shorthand, `larql chat`, and
+# `larql serve` + one /v1/chat/completions — each must answer "Paris".
+#
+# Separate from the release gate (release-smoke.yml) on purpose: it pulls
+# 1.5 GB from Hugging Face and encodes it on a CPU runner, so it is slow and
+# depends on a third party. A red run here does not fail the release run.
+#
+# Cache-free on purpose: no actions/cache, and the script runs with a fresh
+# HOME, so every run is the first-run download + encode a new user gets.
+#
+# Triggers: after every successful release run for a v* tag
+# (`workflow_run` fires even though release.yml runs on GITHUB_TOKEN, and
+# again after `gh run rerun --failed` turns a run green), and by hand for
+# any tag.
+
+name: release-model-smoke
+
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to smoke (v-prefixed, e.g. v0.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qwen:
+    name: Qwen3-0.6B quick start
+    # For a tag push, workflow_run.head_branch is the tag name. A release
+    # run dispatched on a branch publishes nothing to smoke.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+      WORK: .release-smoke
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install from /releases/download/<tag>/
+        run: bash scripts/release-smoke.sh install "$TAG" "$WORK"
+
+      - name: README quick start (Qwen3-0.6B, empty cache)
+        run: bash scripts/release-smoke.sh model "$TAG" "$WORK"
+
+      - name: Server log on failure
+        if: failure()
+        run: cat "$WORK"/model/serve.log 2>/dev/null || true

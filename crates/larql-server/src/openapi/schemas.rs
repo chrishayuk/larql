@@ -119,6 +119,10 @@ pub struct ModelEntry {
     /// Total features across all layers.
     pub features: usize,
     pub loaded: bool,
+    /// Other names a request's `model` field may use for this model
+    /// (`--model-alias`). Absent when there are none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aliases: Option<Vec<String>>,
 }
 
 #[derive(Serialize, ToSchema)]

@@ -31,6 +31,9 @@ use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
+/// The sidecar beside a logit dump: `<out stem>.meta.json`.
+pub(super) const META_EXTENSION: &str = "meta.json";
+
 /// Step `tokens` through the plan one position at a time, writing every
 /// position's logits to `out`.
 ///
@@ -46,13 +49,16 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     store: &OperandStore,
     out: &Path,
     slice: ExecutionSlice,
+    capture: Option<&super::site_capture_dump::CaptureTarget>,
+    rope_angles: larql_vindex::format::vindex3::opplan::exec::rope_angles::RopeAngles,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loading = Instant::now();
     // Prepared explicitly rather than through `DecodeSession::new`, so
     // the slice reaches the operand loader. A `Draft` prepares only its
     // own layers — measured at 4 + ~13.4 reads per layer on the 27B
     // container — which is what makes a shallow draft affordable at all.
-    let ops = PreparedOperands::load(plan, store, backend, slice.clone())?;
+    let mut ops = PreparedOperands::load(plan, store, backend, slice.clone())?;
+    ops.set_rope_angles(rope_angles)?;
     let mut kv = crate::commands::primary::continuation::select_for(plan, None)?.build();
     let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut *kv)?;
     let prepare_s = loading.elapsed().as_secs_f64();
@@ -64,15 +70,28 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         plan.layers.len()
     );
 
+    // PREC-DIAG-1 E0a: the capture is built (and its budget judged)
+    // before the first step; an observer the step only borrows.
+    let mut observer = match capture {
+        Some(target) => {
+            Some(target.observer(plan, executed.clone(), ops.hidden(), tokens.len())?)
+        }
+        None => None,
+    };
+
     let started = Instant::now();
-    let mut file = std::io::BufWriter::new(std::fs::File::create(out)?);
+    // Appears at `out` only once every position is written (#744).
+    let mut file = super::pending_output::PendingOutput::create(out)?;
     let mut vocab = 0usize;
     // As the bytes are written, so that a witness describes this run's dump, not whatever is at
     // that path later.
     let mut witness_digest = gemv_witness::is_active().then(|| (Sha256::new(), 0u64));
     for (i, &token) in tokens.iter().enumerate() {
-        let logits = session
-            .step(token)?
+        let stepped = match observer.as_mut() {
+            Some(observer) => session.step_observed(token, observer)?,
+            None => session.step(token)?,
+        };
+        let logits = stepped
             .logits
             .ok_or("plan carries no output head — cannot score")?;
         if vocab == 0 {
@@ -101,7 +120,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
             );
         }
     }
-    file.flush()?;
+    file.commit()?;
     if let Some((digest, written)) = witness_digest {
         let hex = digest
             .finalize()
@@ -112,6 +131,7 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     }
 
     println!("engine: {engine}");
+    println!("rope angles: {}", rope_angles.name());
     println!("positions: {}  vocab: {vocab}", tokens.len());
     println!(
         "teacher-forced {} positions in {:.1} s ({:.0} ms/position)",
@@ -127,13 +147,25 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     // container; this project has manufactured a "depth effect" that was
     // a backend effect before, and a bare .f32 carries no way to catch it.
     let steps_s = started.elapsed().as_secs_f64();
+    // What the projections actually executed as, so a plane says whether a
+    // matrix ran its stored bytes or an image manufactured at load — the
+    // difference PREC-DIAG-1 measured at 3.0 logprob on Gemma 3 4B.
+    let projection_plans: std::collections::BTreeMap<String, u64> =
+        larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+            .all()
+            .iter()
+            .filter(|(_, t)| t.calls > 0)
+            .map(|(plan, t)| (format!("{plan:?}"), t.calls))
+            .collect();
     let meta = format!(
         "{{\n  \"engine\": \"{engine}\",\n  \"draft_depth\": {},\n  \
          \"executed_layers\": [{}, {}],\n  \"model_layers\": {},\n  \
          \"positions\": {},\n  \"vocab\": {vocab},\n  \
          \"prepare_s\": {prepare_s:.3},\n  \"steps_s\": {steps_s:.3},\n  \
          \"ms_per_position\": {:.1},\n  \
-         \"max_format_env\": \"{}\"\n}}\n",
+         \"max_format_env\": \"{}\",\n  \"rope_angles\": \"{}\",\n  \
+         \"representation_source\": \"{}\",\n  \"runtime_quantised\": {},\n  \
+         \"projection_plans\": {}\n}}\n",
         match &slice {
             ExecutionSlice::Draft { end } => end.to_string(),
             _ => "null".to_string(),
@@ -144,9 +176,24 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         tokens.len(),
         steps_s * 1000.0 / tokens.len() as f64,
         std::env::var("LARQL_CPU_MAX_FORMAT").unwrap_or_default(),
+        rope_angles.name(),
+        super::prepare::representation_source_flag(store.representation_source()),
+        store.runtime_quantised(),
+        serde_json::to_string(&projection_plans)?,
     );
-    let meta_path = out.with_extension("meta.json");
+    let meta_path = out.with_extension(META_EXTENSION);
     std::fs::write(&meta_path, meta)?;
     println!("wrote provenance to {}", meta_path.display());
+    if let (Some(target), Some(observer)) = (capture, observer) {
+        // What the CPU projections actually ran, for the capture's record.
+        let projection_plans: Vec<(String, u64)> =
+            larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+                .all()
+                .iter()
+                .filter(|(_, t)| t.calls > 0)
+                .map(|(plan, t)| (format!("{plan:?}"), t.calls))
+                .collect();
+        target.write(observer.finish(), out, &projection_plans)?;
+    }
     Ok(())
 }

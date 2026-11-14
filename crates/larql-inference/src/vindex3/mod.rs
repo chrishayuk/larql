@@ -45,6 +45,7 @@ pub mod distributed;
 mod explain;
 mod generate;
 pub mod input;
+mod prompt;
 mod runtime;
 mod session;
 
@@ -60,6 +61,10 @@ pub use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringError, LoweringIdentity, LoweringRegistry, SharedProvider,
 };
 pub use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+pub use prompt::{
+    declared_prompt_bos, encode_raw_prompt, PromptEncodeError, ADD_BOS_TOKEN_KEY,
+    BOS_DECLARING_FILES, BOS_TOKEN_ID_KEY,
+};
 pub use runtime::{
     open_component, open_component_in, OpenPolicy, OpenedComponent, PreparedVindex3, Vindex3Runtime,
 };

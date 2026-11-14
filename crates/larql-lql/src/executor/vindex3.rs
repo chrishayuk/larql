@@ -21,6 +21,7 @@ use larql_vindex::format::vindex3::opplan::LayerAttention;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
+mod low_rank;
 mod overrides;
 mod session;
 mod weights;
@@ -93,7 +94,7 @@ impl Session {
                     .into(),
             )
         })?;
-        let prompt_ids = encode_v3_prompt(tokenizer, prompt, *bos_token)?;
+        let prompt_ids = encode_raw_prompt(tokenizer, prompt, *bos_token)?;
 
         let start = std::time::Instant::now();
 
@@ -453,6 +454,3 @@ impl Session {
         Ok(out)
     }
 }
-
-#[cfg(test)]
-mod tests;

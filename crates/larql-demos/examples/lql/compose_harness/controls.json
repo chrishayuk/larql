@@ -1,0 +1,161 @@
+{
+  "_comment": "Outcomes observed during the 2026-11-05 investigation, before the harness existed (exploratory, relation capital-of whose canonical prompt is 'The capital of of Atlantis is'; evaluated on 'The capital of X is'). The harness must reproduce them under the arm it is built for. A0 = the commit before the leading-space matcher fix (#701); A1 = A0 plus #701. Gemma A0 alpha-0.01 and Qwen A0/A1 numbers come from the same investigation; values are percentages to two decimals.",
+  "cases": [
+    {
+      "id": "qwen-A0-default",
+      "tag": "qwen",
+      "arm": "A0",
+      "alpha": null,
+      "entity": "Atlantis",
+      "relation": "capital-of",
+      "target": "Poseidon",
+      "expect": [
+        {
+          "prompt": "The capital of Atlantis is",
+          "top1": "uably",
+          "pct": 20.87
+        },
+        {
+          "prompt": "The capital of France is",
+          "top1": "Pose",
+          "pct": 92.45
+        },
+        {
+          "prompt": "The capital of Germany is",
+          "top1": "Pose",
+          "pct": 99.99
+        }
+      ]
+    },
+    {
+      "id": "qwen-A0-alpha-0.01",
+      "tag": "qwen",
+      "arm": "A0",
+      "alpha": 0.01,
+      "entity": "Atlantis",
+      "relation": "capital-of",
+      "target": "Poseidon",
+      "expect": [
+        {
+          "prompt": "The capital of Atlantis is",
+          "top1": "Pose",
+          "pct": 99.99
+        },
+        {
+          "prompt": "The capital of France is",
+          "top1": "Paris",
+          "pct": 66.24
+        },
+        {
+          "prompt": "The capital of Germany is",
+          "top1": "Berlin",
+          "pct": 69.72
+        }
+      ]
+    },
+    {
+      "id": "qwen-A1-default",
+      "tag": "qwen",
+      "arm": "A1",
+      "alpha": null,
+      "entity": "Atlantis",
+      "relation": "capital-of",
+      "target": "Poseidon",
+      "expect": [
+        {
+          "prompt": "The capital of Atlantis is",
+          "top1": "Pose",
+          "pct": 92.31
+        },
+        {
+          "prompt": "The capital of France is",
+          "top1": "coln",
+          "pct": 28.76
+        },
+        {
+          "prompt": "The capital of Germany is",
+          "top1": "zheimer",
+          "pct": 14.58
+        }
+      ]
+    },
+    {
+      "id": "qwen-A1-alpha-0.01",
+      "tag": "qwen",
+      "arm": "A1",
+      "alpha": 0.01,
+      "entity": "Atlantis",
+      "relation": "capital-of",
+      "target": "Poseidon",
+      "expect": [
+        {
+          "prompt": "The capital of Atlantis is",
+          "top1": "Pose",
+          "pct": 73.59
+        },
+        {
+          "prompt": "The capital of France is",
+          "top1": "Paris",
+          "pct": 72.27
+        },
+        {
+          "prompt": "The capital of Germany is",
+          "top1": "Berlin",
+          "pct": 72.05
+        }
+      ]
+    },
+    {
+      "id": "gemma-A0-default",
+      "tag": "gemma",
+      "arm": "A0",
+      "alpha": null,
+      "entity": "Atlantis",
+      "relation": "capital-of",
+      "target": "Poseidon",
+      "expect": [
+        {
+          "prompt": "The capital of Atlantis is",
+          "top1": "Pose",
+          "pct": 100.0
+        },
+        {
+          "prompt": "The capital of France is",
+          "top1": "Pose",
+          "pct": 100.0
+        },
+        {
+          "prompt": "The capital of Germany is",
+          "top1": "Pose",
+          "pct": 100.0
+        }
+      ]
+    },
+    {
+      "id": "gemma-A1-default",
+      "tag": "gemma",
+      "arm": "A1",
+      "alpha": null,
+      "entity": "Atlantis",
+      "relation": "capital-of",
+      "target": "Poseidon",
+      "expect": [
+        {
+          "prompt": "The capital of Atlantis is",
+          "top1": "Pose",
+          "pct": 100.0
+        },
+        {
+          "prompt": "The capital of France is",
+          "top1": "Paris",
+          "pct": 80.43
+        },
+        {
+          "prompt": "The capital of Germany is",
+          "top1": "Berlin",
+          "pct": 89.12
+        }
+      ]
+    }
+  ]
+}

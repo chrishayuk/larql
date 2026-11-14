@@ -1,0 +1,357 @@
+{
+ "schema": "patch-train-1-candidate-tasks/1",
+ "seed": 20261112,
+ "model": {
+  "repo": "google/gemma-3-270m-it",
+  "revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3"
+ },
+ "tasks": {
+  "A": {
+   "relation": "capital of a fictional country",
+   "entity_kind": "country",
+   "answers": [
+    " Lyon",
+    " Leeds",
+    " Bergen",
+    " Porto",
+    " Turin",
+    " Dallas",
+    " Denver",
+    " Austin",
+    " Boston",
+    " Seattle",
+    " Nagoya",
+    " Osaka"
+   ],
+   "train_templates": [
+    "The capital of {e} is"
+   ],
+   "heldout_templates": [
+    "{e}'s capital city is",
+    "The capital city of {e} is called",
+    "Q: What is the capital of {e}? A:"
+   ],
+   "entities": [
+    "Lunkiria",
+    "Bridreia",
+    "Volmokfroia",
+    "Drefroia",
+    "Salzorgaria",
+    "Drebriia",
+    "Zorbrinexia",
+    "Salkiria",
+    "Vanvansalia",
+    "Moksalquelia",
+    "Quelnexia",
+    "Pyldregaria",
+    "Thazoria",
+    "Frovansalia",
+    "Pylbriia",
+    "Salthaia",
+    "Thadrefroia",
+    "Thabriia",
+    "Nexgaria",
+    "Volthasalia",
+    "Frodreia",
+    "Vanthaia",
+    "Nexsalia",
+    "Garnexyemia"
+   ],
+   "assignment": {
+    "Lunkiria": " Lyon",
+    "Bridreia": " Leeds",
+    "Volmokfroia": " Bergen",
+    "Drefroia": " Porto",
+    "Salzorgaria": " Turin",
+    "Drebriia": " Dallas",
+    "Zorbrinexia": " Denver",
+    "Salkiria": " Austin",
+    "Vanvansalia": " Boston",
+    "Moksalquelia": " Seattle",
+    "Quelnexia": " Nagoya",
+    "Pyldregaria": " Osaka",
+    "Thazoria": " Lyon",
+    "Frovansalia": " Leeds",
+    "Pylbriia": " Bergen",
+    "Salthaia": " Porto",
+    "Thadrefroia": " Turin",
+    "Thabriia": " Dallas",
+    "Nexgaria": " Denver",
+    "Volthasalia": " Austin",
+    "Frodreia": " Boston",
+    "Vanthaia": " Seattle",
+    "Nexsalia": " Nagoya",
+    "Garnexyemia": " Osaka"
+   },
+   "trained_entities": [
+    "Lunkiria",
+    "Bridreia",
+    "Volmokfroia",
+    "Drefroia",
+    "Salzorgaria",
+    "Drebriia",
+    "Zorbrinexia",
+    "Salkiria",
+    "Vanvansalia",
+    "Moksalquelia",
+    "Quelnexia",
+    "Pyldregaria",
+    "Thazoria",
+    "Frovansalia",
+    "Pylbriia",
+    "Salthaia"
+   ],
+   "heldout_entities": [
+    "Thadrefroia",
+    "Thabriia",
+    "Nexgaria",
+    "Volthasalia",
+    "Frodreia",
+    "Vanthaia",
+    "Nexsalia",
+    "Garnexyemia"
+   ]
+  },
+  "B": {
+   "relation": "occupation of a fictional person",
+   "entity_kind": "person",
+   "answers": [
+    " doctor",
+    " pilot",
+    " farmer",
+    " teacher",
+    " lawyer",
+    " baker",
+    " painter",
+    " sailor",
+    " nurse",
+    " chef",
+    " miner",
+    " judge"
+   ],
+   "train_templates": [
+    "The occupation of {e} is"
+   ],
+   "heldout_templates": [
+    "{e}'s job is",
+    "{e}'s profession is",
+    "Q: What does {e} do for a living? A:"
+   ],
+   "entities": [
+    "Brifro Volor",
+    "Frosalsal Nexel",
+    "Volpylnex Pylor",
+    "Nexvol Pylor",
+    "Salfro Yeman",
+    "Dresal Yeman",
+    "Vanthatha Mokus",
+    "Yemnex Mokus",
+    "Zoryem Quelus",
+    "Yemzor Thael",
+    "Voldrezor Mokor",
+    "Thavan Nexor",
+    "Voldrenex Salus",
+    "Lunfro Mokor",
+    "Frovol Salor",
+    "Pylvanquel Vanan",
+    "Pylquelvol Pylan",
+    "Quelvan Nexan",
+    "Lunvolkir Pylor",
+    "Brivan Froel",
+    "Zortha Lunus",
+    "Nexyem Salor",
+    "Zordretha Lunan",
+    "Yemfrokir Mokor"
+   ],
+   "assignment": {
+    "Brifro Volor": " doctor",
+    "Frosalsal Nexel": " pilot",
+    "Volpylnex Pylor": " farmer",
+    "Nexvol Pylor": " teacher",
+    "Salfro Yeman": " lawyer",
+    "Dresal Yeman": " baker",
+    "Vanthatha Mokus": " painter",
+    "Yemnex Mokus": " sailor",
+    "Zoryem Quelus": " nurse",
+    "Yemzor Thael": " chef",
+    "Voldrezor Mokor": " miner",
+    "Thavan Nexor": " judge",
+    "Voldrenex Salus": " doctor",
+    "Lunfro Mokor": " pilot",
+    "Frovol Salor": " farmer",
+    "Pylvanquel Vanan": " teacher",
+    "Pylquelvol Pylan": " lawyer",
+    "Quelvan Nexan": " baker",
+    "Lunvolkir Pylor": " painter",
+    "Brivan Froel": " sailor",
+    "Zortha Lunus": " nurse",
+    "Nexyem Salor": " chef",
+    "Zordretha Lunan": " miner",
+    "Yemfrokir Mokor": " judge"
+   },
+   "trained_entities": [
+    "Brifro Volor",
+    "Frosalsal Nexel",
+    "Volpylnex Pylor",
+    "Nexvol Pylor",
+    "Salfro Yeman",
+    "Dresal Yeman",
+    "Vanthatha Mokus",
+    "Yemnex Mokus",
+    "Zoryem Quelus",
+    "Yemzor Thael",
+    "Voldrezor Mokor",
+    "Thavan Nexor",
+    "Voldrenex Salus",
+    "Lunfro Mokor",
+    "Frovol Salor",
+    "Pylvanquel Vanan"
+   ],
+   "heldout_entities": [
+    "Pylquelvol Pylan",
+    "Quelvan Nexan",
+    "Lunvolkir Pylor",
+    "Brivan Froel",
+    "Zortha Lunus",
+    "Nexyem Salor",
+    "Zordretha Lunan",
+    "Yemfrokir Mokor"
+   ]
+  }
+ },
+ "real_facts": [
+  {
+   "country": "France",
+   "answer": " Paris",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Italy",
+   "answer": " Rome",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Spain",
+   "answer": " Madrid",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Germany",
+   "answer": " Berlin",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Japan",
+   "answer": " Tokyo",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Egypt",
+   "answer": " Cairo",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Russia",
+   "answer": " Moscow",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Greece",
+   "answer": " Athens",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Austria",
+   "answer": " Vienna",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Portugal",
+   "answer": " Lisbon",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Ireland",
+   "answer": " Dublin",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Norway",
+   "answer": " Oslo",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Sweden",
+   "answer": " Stockholm",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Poland",
+   "answer": " Warsaw",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Cuba",
+   "answer": " Havana",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Kenya",
+   "answer": " Nairobi",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Peru",
+   "answer": " Lima",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Chile",
+   "answer": " Santiago",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Turkey",
+   "answer": " Ankara",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Hungary",
+   "answer": " Budapest",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Finland",
+   "answer": " Helsinki",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Belgium",
+   "answer": " Brussels",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Iran",
+   "answer": " Tehran",
+   "template": "The capital of {e} is"
+  },
+  {
+   "country": "Denmark",
+   "answer": " Copenhagen",
+   "template": "The capital of {e} is"
+  }
+ ],
+ "neutral_text": [
+  "The river runs slowly through the old town before it reaches the sea.",
+  "She opened the window and listened to the rain falling on the roof.",
+  "In 1969 the first humans walked on the surface of the Moon.",
+  "To make bread you need flour, water, salt and a little yeast.",
+  "The committee will meet again on Thursday to discuss the budget.",
+  "Light travels faster than sound, which is why lightning appears before thunder.",
+  "He packed a small bag, locked the door and walked to the station.",
+  "A triangle has three sides and the sum of its angles is one hundred and eighty degrees."
+ ],
+ "excluded": {
+  "real_facts_multi_token_answer": []
+ }
+}

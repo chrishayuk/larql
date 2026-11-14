@@ -10,38 +10,24 @@ use crate::ast::Condition;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
-use super::{relation_filter_matches, WhereFilters};
-
 impl Session {
     pub(crate) fn exec_delete(
         &mut self,
         conditions: &[Condition],
     ) -> Result<Vec<String>, LqlError> {
-        let filters = WhereFilters::from_conditions(conditions);
-
-        // Collect candidates with a readonly borrow before mutating the
-        // overlay, so relation predicates cannot be dropped silently.
-        let deletes = {
-            let ctx = self.browse()?;
-            let candidates = filters.resolve_candidates(&ctx.source);
-
-            let mut matches = Vec::new();
-            for (layer, feature) in candidates {
-                if relation_filter_matches(
-                    self.relation_classifier(),
-                    filters.relation,
-                    layer,
-                    feature,
-                )? {
-                    matches.push((layer, feature));
-                }
-            }
-            matches
-        };
+        // Validate the clause and resolve its targets with a readonly
+        // borrow: a refusal here leaves the overlay and the recording
+        // exactly as they were.
+        let deletes = self.resolve_mutation_targets(conditions)?;
 
         if deletes.is_empty() {
             return Ok(vec!["  (no matching features found)".into()]);
         }
+
+        // Only now — validated, resolved, and with something to record —
+        // does the statement touch session state.
+        let mut out = self.ensure_patch_session();
+        self.advance_epoch();
 
         match &mut self.backend {
             Backend::Vindex { patched, .. } => {
@@ -68,9 +54,10 @@ impl Session {
             }
         }
 
-        Ok(vec![format!(
+        out.push(format!(
             "Deleted {} features (patch overlay)",
             deletes.len()
-        )])
+        ));
+        Ok(out)
     }
 }

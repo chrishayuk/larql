@@ -2,8 +2,8 @@
 //! declared edit of stored weights.
 //!
 //! It names the source (model identity, exact index digest, and the digests
-//! of the representations that were edited and re-derived), the edited
-//! tensor, every edited element with the exact old and new bits, and the
+//! of the representations that were edited and re-derived), each edited
+//! tensor with every edited element and its exact old and new bits, and the
 //! digests of what resulted. The result's canonical digests are the identity
 //! of the EDITED source: an independent verifier measures the re-derived
 //! representation against that, not against the unedited upstream weights.
@@ -13,17 +13,32 @@
 //! not verify that the patch is correct. A passing check means the ledger is
 //! a faithful description of this container, which is a weaker claim than an
 //! independent verifier's "this container implements the declared edit".
+//!
+//! Schema `v2` edits one or more tensors of ONE canonical representation
+//! (`targets`). A `v1` ledger (one `target`, its `edits` beside it) is still
+//! read, as the one-target `v2` it is equivalent to. `v3` adds result-bits
+//! edits; `v4` adds **operation targets**, a tensor recorded by the structured
+//! ops that produced it rather than by its elements
+//! (`docs/verification/weight-patches-v4.md`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::op_target::LedgerOperation;
 use crate::format::vindex3::encode::segment::read_segment_header;
 use crate::format::vindex3::index::Vindex3Index;
 
-/// Current ledger schema. Bump on any breaking change.
-pub const WEIGHT_PATCHES_SCHEMA: &str = "weight-patches/v1";
+/// The ledger schema written when every edit is a delta. Bump on any breaking change.
+pub const WEIGHT_PATCHES_SCHEMA: &str = "weight-patches/v2";
+/// The schema written when any edit is a result-bits edit (a structured op's output). A reader that
+/// knows only `v2` refuses it by name instead of reading the edits as deltas.
+pub const WEIGHT_PATCHES_SCHEMA_V3: &str = "weight-patches/v3";
+/// The schema written when any tensor is an operation target (recorded by its structured ops, not its elements).
+pub const WEIGHT_PATCHES_SCHEMA_V4: &str = "weight-patches/v4";
+/// The previous schema: exactly one target. Still read; never written.
+pub const WEIGHT_PATCHES_SCHEMA_V1: &str = "weight-patches/v1";
 /// The rounding rule, spelled out so a verifier cannot guess it.
 pub const ROUNDING_RULE: &str = "bf16-rne-of-exact-sum";
 /// Bytes per stored bfloat16 element.
@@ -73,7 +88,9 @@ pub struct LedgerSource {
     pub derived: Vec<SourceDerived>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One edited tensor: every element edited in it (an element target), or the structured ops that produced it
+/// (an operation target, `v4`). Exactly one of `edits` and `operations` is non-empty.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LedgerTarget {
     pub object: String,
     /// The canonical representation id that was edited.
@@ -81,6 +98,37 @@ pub struct LedgerTarget {
     pub tensor: String,
     pub dtype: String,
     pub shape: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edits: Vec<LedgerEdit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operations: Vec<LedgerOperation>,
+    /// An operation target's tensor payload digest in the source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_tensor_sha256: Option<String>,
+    /// An operation target's tensor payload digest in the result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_tensor_sha256: Option<String>,
+    /// An operation target's changed elements, across its operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_elements: Option<usize>,
+}
+
+/// How an edit's new value is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditEncoding {
+    /// `new = RNE_bf16(old + delta)`; the delta's bits are authoritative.
+    #[default]
+    Delta,
+    /// `new_bits` is the declared result of a structured op. There is no delta: the result is the
+    /// exact BF16 a numerical profile produced, which a single f32 delta cannot always reach.
+    ResultBits,
+}
+
+impl EditEncoding {
+    fn is_delta(&self) -> bool {
+        matches!(self, EditEncoding::Delta)
+    }
 }
 
 /// One edited element, with the exact bits before and after.
@@ -88,11 +136,14 @@ pub struct LedgerTarget {
 pub struct LedgerEdit {
     pub row: usize,
     pub col: usize,
+    /// Zero for a [`EditEncoding::ResultBits`] edit.
     pub delta: f32,
-    /// The exact bits of `delta`, so the value is not a decimal's reading.
+    /// The exact bits of `delta`, so the value is not a decimal's reading. Zero for a result-bits edit.
     pub delta_bits: u32,
     pub old_bits: u16,
     pub new_bits: u16,
+    #[serde(default, skip_serializing_if = "EditEncoding::is_delta")]
+    pub encoding: EditEncoding,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,13 +159,73 @@ pub struct WeightPatchLedger {
     pub rounding: String,
     pub writer: String,
     pub source: LedgerSource,
-    pub target: LedgerTarget,
-    pub edits: Vec<LedgerEdit>,
+    /// The edited tensors, by name, all in one canonical representation.
+    pub targets: Vec<LedgerTarget>,
     /// Digests of the `.vlp` weight ops this edit was assembled from, when
     /// it came from patches; empty for an edit made directly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origins: Vec<String>,
     pub result: LedgerResult,
+}
+
+impl WeightPatchLedger {
+    /// Every edited element across all targets.
+    pub fn edit_count(&self) -> usize {
+        self.targets.iter().map(|t| t.edits.len()).sum()
+    }
+}
+
+/// The `v1` shape: one target, its edits beside it.
+#[derive(Deserialize)]
+struct LedgerV1 {
+    schema: String,
+    rounding: String,
+    writer: String,
+    source: LedgerSource,
+    target: TargetV1,
+    edits: Vec<LedgerEdit>,
+    #[serde(default)]
+    origins: Vec<String>,
+    result: LedgerResult,
+}
+
+#[derive(Deserialize)]
+struct TargetV1 {
+    object: String,
+    representation: String,
+    tensor: String,
+    dtype: String,
+    shape: Vec<usize>,
+}
+
+/// Read a ledger of either schema. A `v1` ledger becomes the one-target
+/// ledger it describes, keeping its `schema` string so a reader can tell.
+pub fn parse_ledger(text: &str) -> Result<WeightPatchLedger, String> {
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    if value.get("schema").and_then(|s| s.as_str()) == Some(WEIGHT_PATCHES_SCHEMA_V1) {
+        let v1: LedgerV1 = serde_json::from_value(value).map_err(|e| e.to_string())?;
+        return Ok(WeightPatchLedger {
+            schema: v1.schema,
+            rounding: v1.rounding,
+            writer: v1.writer,
+            source: v1.source,
+            targets: vec![LedgerTarget {
+                object: v1.target.object,
+                representation: v1.target.representation,
+                tensor: v1.target.tensor,
+                dtype: v1.target.dtype,
+                shape: v1.target.shape,
+                edits: v1.edits,
+                operations: Vec::new(),
+                base_tensor_sha256: None,
+                result_tensor_sha256: None,
+                changed_elements: None,
+            }],
+            origins: v1.origins,
+            result: v1.result,
+        });
+    }
+    serde_json::from_value(value).map_err(|e| e.to_string())
 }
 
 /// Defects of `ledger` against the container at `root`, empty when it is a
@@ -132,14 +243,47 @@ pub fn check_ledger(root: &Path, index: &Vindex3Index) -> Vec<String> {
             )]
         }
     };
-    let ledger: WeightPatchLedger = match serde_json::from_str(&text) {
+    let ledger = match parse_ledger(&text) {
         Ok(l) => l,
         Err(e) => return vec![format!("weight-patch ledger `{name}` is malformed: {e}")],
     };
-    if ledger.schema != WEIGHT_PATCHES_SCHEMA {
+    if ![
+        WEIGHT_PATCHES_SCHEMA,
+        WEIGHT_PATCHES_SCHEMA_V3,
+        WEIGHT_PATCHES_SCHEMA_V4,
+        WEIGHT_PATCHES_SCHEMA_V1,
+    ]
+    .contains(&ledger.schema.as_str())
+    {
         defects.push(format!(
-            "weight-patch ledger schema `{}` is not `{WEIGHT_PATCHES_SCHEMA}`",
+            "weight-patch ledger schema `{}` is not `{WEIGHT_PATCHES_SCHEMA}`, `{WEIGHT_PATCHES_SCHEMA_V3}`, `{WEIGHT_PATCHES_SCHEMA_V4}` or `{WEIGHT_PATCHES_SCHEMA_V1}`",
             ledger.schema
+        ));
+    }
+    let has_operations = ledger.targets.iter().any(|t| !t.operations.is_empty());
+    if has_operations != (ledger.schema == WEIGHT_PATCHES_SCHEMA_V4) {
+        defects.push(format!(
+            "weight-patch ledger schema `{}` {} operation targets; they need, and only they use, `{WEIGHT_PATCHES_SCHEMA_V4}`",
+            ledger.schema,
+            if has_operations { "holds" } else { "holds no" }
+        ));
+    }
+    let has_results = ledger
+        .targets
+        .iter()
+        .flat_map(|t| &t.edits)
+        .any(|e| e.encoding == EditEncoding::ResultBits);
+    if has_results
+        && ![WEIGHT_PATCHES_SCHEMA_V3, WEIGHT_PATCHES_SCHEMA_V4].contains(&ledger.schema.as_str())
+    {
+        defects.push(format!(
+            "weight-patch ledger has result-bits edits under schema `{}`; they need `{WEIGHT_PATCHES_SCHEMA_V3}`",
+            ledger.schema
+        ));
+    }
+    if !has_results && ledger.schema == WEIGHT_PATCHES_SCHEMA_V3 {
+        defects.push(format!(
+            "weight-patch ledger names schema `{WEIGHT_PATCHES_SCHEMA_V3}` but holds no result-bits edit"
         ));
     }
     if ledger.rounding != ROUNDING_RULE {
@@ -154,7 +298,23 @@ pub fn check_ledger(root: &Path, index: &Vindex3Index) -> Vec<String> {
             ledger.source.model, index.model
         ));
     }
-    let rep = &ledger.target.representation;
+    let Some(first) = ledger.targets.first() else {
+        defects.push("weight-patch ledger lists no edited tensor".to_string());
+        return defects;
+    };
+    let rep = &first.representation;
+    if let Some(other) = ledger.targets.iter().find(|t| &t.representation != rep) {
+        defects.push(format!(
+            "ledger edits tensors of two canonical representations, `{rep}` and `{}`",
+            other.representation
+        ));
+    }
+    let mut named = BTreeSet::new();
+    for t in &ledger.targets {
+        if !named.insert(t.tensor.as_str()) {
+            defects.push(format!("ledger lists tensor `{}` twice", t.tensor));
+        }
+    }
     let Some(canonical) = index.representations.get(rep) else {
         defects.push(format!(
             "ledger edits representation `{rep}`, which the container does not hold"
@@ -174,7 +334,18 @@ pub fn check_ledger(root: &Path, index: &Vindex3Index) -> Vec<String> {
         ));
     }
     defects.extend(check_derived(index, rep, &ledger));
-    defects.extend(check_edits(root, &canonical.segment, &ledger));
+    for target in &ledger.targets {
+        if target.operations.is_empty() {
+            defects.extend(check_edits(root, &canonical.segment, target));
+        } else {
+            defects.extend(super::op_target_check::check_operation_target(
+                root,
+                &canonical.segment,
+                &ledger.source,
+                target,
+            ));
+        }
+    }
     defects
 }
 
@@ -222,7 +393,15 @@ fn check_derived(index: &Vindex3Index, canonical: &str, ledger: &WeightPatchLedg
     defects
 }
 
-fn check_edits(root: &Path, segment: &str, ledger: &WeightPatchLedger) -> Vec<String> {
+fn check_edits(root: &Path, segment: &str, target: &LedgerTarget) -> Vec<String> {
+    if target.edits.is_empty() {
+        // A writer never records a tensor it did not edit; a ledger that does
+        // names an edit that is not there.
+        return vec![format!(
+            "ledger lists tensor `{}` with no edited element",
+            target.tensor
+        )];
+    }
     let path = root.join(segment);
     let (header, payload_start) = match read_segment_header(&path) {
         Ok(h) => h,
@@ -232,45 +411,52 @@ fn check_edits(root: &Path, segment: &str, ledger: &WeightPatchLedger) -> Vec<St
             )]
         }
     };
-    let Some(tensor) = header
-        .tensors
-        .iter()
-        .find(|t| t.name == ledger.target.tensor)
-    else {
+    let Some(tensor) = header.tensors.iter().find(|t| t.name == target.tensor) else {
         return vec![format!(
             "ledger edits tensor `{}`, which `{segment}` does not hold",
-            ledger.target.tensor
+            target.tensor
         )];
     };
     let mut defects = Vec::new();
-    if tensor.dtype != ledger.target.dtype || tensor.shape != ledger.target.shape {
-        defects.push(
-            "ledger target dtype or shape differs from the segment's tensor table".to_string(),
-        );
+    if tensor.dtype != target.dtype || tensor.shape != target.shape {
+        defects.push(format!(
+            "ledger target `{}` dtype or shape differs from the segment's tensor table",
+            target.tensor
+        ));
     }
     let (rows, cols) = match tensor.shape.as_slice() {
         [r, c] => (*r, *c),
-        _ => return vec!["ledger target is not a matrix".to_string()],
+        _ => return vec![format!("ledger target `{}` is not a matrix", target.tensor)],
     };
     let file = match std::fs::File::open(&path) {
         Ok(f) => f,
         Err(e) => return vec![format!("cannot open `{segment}`: {e}")],
     };
     let mut seen = BTreeMap::new();
-    for e in &ledger.edits {
+    let name = &target.tensor;
+    for e in &target.edits {
         if e.row >= rows || e.col >= cols {
             defects.push(format!(
-                "ledger edit ({}, {}) is outside the {rows}x{cols} tensor",
+                "ledger edit ({}, {}) is outside the {rows}x{cols} tensor `{name}`",
                 e.row, e.col
             ));
             continue;
         }
         if seen.insert((e.row, e.col), ()).is_some() {
-            defects.push(format!("ledger edits element ({}, {}) twice", e.row, e.col));
+            defects.push(format!(
+                "ledger edits element ({}, {}) of `{name}` twice",
+                e.row, e.col
+            ));
         }
         if e.delta.to_bits() != e.delta_bits {
             defects.push(format!(
-                "ledger edit ({}, {}) delta and delta_bits disagree",
+                "ledger edit ({}, {}) of `{name}`: delta and delta_bits disagree",
+                e.row, e.col
+            ));
+        }
+        if e.encoding == EditEncoding::ResultBits && e.delta_bits != 0 {
+            defects.push(format!(
+                "ledger edit ({}, {}) of `{name}` is a result-bits edit but carries a delta",
                 e.row, e.col
             ));
         }
@@ -281,12 +467,15 @@ fn check_edits(root: &Path, segment: &str, ledger: &WeightPatchLedger) -> Vec<St
         if let Err(err) =
             crate::format::vindex3::encode::segment::read_exact_at(&file, &mut stored, at)
         {
-            defects.push(format!("cannot read element ({}, {}): {err}", e.row, e.col));
+            defects.push(format!(
+                "cannot read element ({}, {}) of `{name}`: {err}",
+                e.row, e.col
+            ));
             continue;
         }
         if u16::from_le_bytes(stored) != e.new_bits {
             defects.push(format!(
-                "element ({}, {}) holds {:#06x}, the ledger says {:#06x}",
+                "element ({}, {}) of `{name}` holds {:#06x}, the ledger says {:#06x}",
                 e.row,
                 e.col,
                 u16::from_le_bytes(stored),

@@ -11,17 +11,18 @@
 //! is the id that verb would produce for the same ids in. `--emit-ids`
 //! prints both sides, which makes a run an oracle for it.
 //!
-//! What this arm does *not* do is as deliberate as what it does. No chat
-//! template: the prompt is encoded raw, exactly as the BitNet arm does
-//! (a template is a follow-up on both). No sampler: greedy, so a run
-//! doubles as a fixture. And no flag it cannot honour is accepted
-//! silently. Scoped image inputs, exact state providers and CPU layer
+//! The text goes through the chat template the container carries — on a
+//! one-shot prompt and on every chat turn, with the conversation's history
+//! re-rendered each turn — unless `--raw` asks for a plain completion
+//! ([`conversation`] owns that choice). What this arm does *not* do is as
+//! deliberate as what it does. No sampler: greedy, so a run doubles as a
+//! fixture. And no flag it cannot honour is accepted silently. Scoped image inputs, exact state providers and CPU layer
 //! workers compose with the interpreter; unsupported engine flags refuse.
 //!
 //! Weights are loaded once, at model lifetime; every prompt — the one on
 //! the command line, or each line of the chat loop — gets a brand-new
-//! continuation state over them, so nothing from one turn can reach the
-//! next.
+//! continuation state over them. A chat turn reaches the next only as
+//! text, through the re-rendered history, never as carried state.
 //!
 //! The model is named by the container. `index.model` is the identity
 //! authority; the directory name is an explicit fallback for a container
@@ -40,7 +41,7 @@ use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::continuation_registry::ContinuationRegistry;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
-use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
+use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use larql_vindex::tokenizers::Tokenizer;
@@ -50,13 +51,17 @@ use super::run_cmd::{KvCacheKind, RunArgs};
 use super::vindex3_cmd::decode::{greedy_decode, DecodeReport, Flow};
 use super::vindex3_cmd::plugins::Plugins;
 use super::vindex3_cmd::prepare::{
-    prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT, ENGINE_PREFIX,
+    default_representation_source, prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT,
+    ENGINE_PREFIX,
 };
 use super::vindex3_cmd::ExecBackend;
 
+mod conversation;
 mod inputs;
 #[cfg(test)]
 mod tests;
+
+use conversation::Conversation;
 
 type BoxErr = Box<dyn std::error::Error>;
 
@@ -180,7 +185,7 @@ fn run_inner(
         container,
         DEFAULT_COMPONENT,
         backend,
-        RepresentationSource::Auto,
+        default_representation_source(backend),
         &plugins,
     )?;
     with_plan_backend(
@@ -423,10 +428,24 @@ impl BackendVisitor for Runner<'_> {
             args: self.args,
             continuations: self.continuations,
         };
+        // Images splice positions into the prompt's ids, which the template
+        // path does not cover yet; such a run stays raw, as the VINDEX2
+        // image path does.
+        let raw = self.args.raw || !self.args.image.is_empty();
+        let mut conversation = Conversation::new(self.container, &self.prepared.family, raw);
         if let Some(prompt) = self.args.prompt.as_deref() {
-            return model.generate(prompt, self.out, self.status);
+            return model
+                .answer(&mut conversation, prompt, self.out, self.status)
+                .map(drop);
         }
-        chat_loop(&identity, &model, self.input, self.out, self.status)
+        chat_loop(
+            &identity,
+            &model,
+            &mut conversation,
+            self.input,
+            self.out,
+            self.status,
+        )
     }
 }
 
@@ -460,14 +479,45 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
 }
 
 impl<B: PlanBackend> ResidentModel<'_, B> {
-    /// Encode `prompt`, decode up to `--max-tokens` greedily, and stream
-    /// the text to `out` as it is produced. Ends at the first EOS.
-    fn generate(
+    /// The model's reply to `user` in `conversation`: render, generate,
+    /// and record the reply as the conversation's next turn.
+    fn answer(
         &self,
-        prompt: &str,
+        conversation: &mut Conversation<'_>,
+        user: &str,
         out: &mut dyn Write,
         status: &mut dyn Write,
-    ) -> Result<(), BoxErr> {
+    ) -> Result<String, BoxErr> {
+        let prompt = conversation.prompt(self.tokenizer, user, status)?;
+        if self.args.verbose {
+            let shape = if prompt.templated {
+                "chat template"
+            } else {
+                "raw"
+            };
+            writeln!(status, "[{}] prompt: {shape}", self.engine)?;
+        }
+        let emitted = self.generate(&prompt.ids, out, status)?;
+        // The reply joins the history decoded from its ids in one piece:
+        // the streamed deltas can hold a replacement character where a
+        // multi-byte character was cut by the stop.
+        let reply = self
+            .tokenizer
+            .decode(&emitted, true)
+            .map_err(|e| format!("decode reply: {e}"))?;
+        conversation.record_reply(&reply);
+        Ok(reply)
+    }
+
+    /// Decode up to `--max-tokens` greedily after `ids`, and stream the
+    /// text to `out` as it is produced. Ends at the first EOS. Returns
+    /// the ids written out (the halting EOS excluded).
+    fn generate(
+        &self,
+        ids: &[u32],
+        out: &mut dyn Write,
+        status: &mut dyn Write,
+    ) -> Result<Vec<u32>, BoxErr> {
         if !self.args.v3_ffn_shards.is_empty()
             || !self.args.v3_shards.is_empty()
             || self.args.engine.is_some()
@@ -475,13 +525,8 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
             || self.args.kv_cache == KvCacheKind::None
             || !self.args.image.is_empty()
         {
-            return inputs::generate(self, prompt, out, status);
+            return inputs::generate(self, ids, out, status);
         }
-        let encoded = self
-            .tokenizer
-            .encode(prompt, true)
-            .map_err(|e| format!("encode prompt: {e}"))?;
-        let ids = encoded.get_ids();
         // A brand-new continuation state per prompt. Not a reset — a
         // replacement, so there is nothing that *could* carry over.
         let continuation = select_in(self.continuations, self.plan, &self.continuation_choice())?;
@@ -490,6 +535,7 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
             DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *kv)?;
         let mut detok = Detokenizer::new(self.tokenizer);
         detok.seed(ids);
+        let mut emitted = Vec::new();
         let decoded = greedy_decode(&mut session, ids, self.args.max_tokens, &mut |id, _| {
             // An EOS id halts before it is decoded at all; a stop
             // string halts on its surface form, re-decoded with
@@ -503,6 +549,7 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
             }
             out.write_all(delta.as_bytes())?;
             out.flush()?;
+            emitted.push(id);
             Ok(Flow::Continue)
         })?;
         writeln!(out)?;
@@ -540,16 +587,17 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
                 )?;
             }
         }
-        Ok(())
+        Ok(emitted)
     }
 }
 
-/// Single-turn chat: one line in, one generation out, until EOF. Each
-/// line is its own prompt — no history, no template — over the one
-/// resident model.
+/// The chat loop: one line in, one reply out, until EOF. Each line is
+/// the next user turn of `conversation`, so earlier turns are part of
+/// every later prompt (when a template renders them).
 fn chat_loop<B: PlanBackend>(
     identity: &str,
     model: &ResidentModel<'_, B>,
+    conversation: &mut Conversation<'_>,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
     status: &mut dyn Write,
@@ -575,7 +623,7 @@ fn chat_loop<B: PlanBackend>(
         if prompt.is_empty() {
             continue;
         }
-        if let Err(e) = model.generate(prompt, out, status) {
+        if let Err(e) = model.answer(conversation, prompt, out, status) {
             writeln!(status, "Error: {e}")?;
         }
     }

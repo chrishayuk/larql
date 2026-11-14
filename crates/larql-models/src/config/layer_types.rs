@@ -64,6 +64,20 @@ pub fn is_sliding_from_layer_types(
     Some(entry.eq_ignore_ascii_case(LAYER_TYPE_SLIDING_ATTENTION))
 }
 
+/// Whether `layer` attends fully under a stride interleave of `period`.
+///
+/// The rule HF writes for every "every Nth layer is full" declaration —
+/// Gemma 2/3's `sliding_window_pattern` (and its BC spelling
+/// `_sliding_window_pattern`), Qwen3.5's `full_attention_interval`:
+/// `"sliding_attention" if (i + 1) % period else "full_attention"`. One
+/// derivation, so an architecture resolving its stride and a planner
+/// checking a declared period against the resolved table cannot read the
+/// same number two ways. A zero period selects no layer — it is not a
+/// stride, and dividing by it is not an answer.
+pub fn is_full_at_period(layer: usize, period: usize) -> bool {
+    period > 0 && (layer + 1).is_multiple_of(period)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

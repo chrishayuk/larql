@@ -27,15 +27,20 @@ fn dirs_or_home() -> Option<std::path::PathBuf> {
 
 /// Run the interactive REPL.
 pub fn run_repl() {
+    run_repl_in(Session::new());
+}
+
+/// Run the interactive REPL in `session`, configured by the embedder (e.g.
+/// with a [`crate::ModelResolver`]).
+pub fn run_repl_in(mut session: Session) {
     println!("{BANNER}");
 
-    let mut session = Session::new();
     let mut rl = match DefaultEditor::new() {
         Ok(rl) => rl,
         Err(e) => {
             eprintln!("Failed to initialise line editor: {e}");
             eprintln!("Falling back to basic mode.");
-            run_repl_basic();
+            run_repl_basic(session);
             return;
         }
     };
@@ -100,10 +105,9 @@ pub fn run_repl() {
 }
 
 /// Basic fallback REPL without line editing (used if rustyline fails).
-fn run_repl_basic() {
+fn run_repl_basic(mut session: Session) {
     use std::io::{self, BufRead, Write};
 
-    let mut session = Session::new();
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     let mut line_buf = String::new();
@@ -197,8 +201,20 @@ pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>>
 
 /// Run a batch of LQL statements, continuing after a failed statement, and
 /// report what happened.
+///
+/// After any statement has failed, a statement that writes an artifact
+/// ([`crate::ast::Statement::writes_artifact`]: `COMPILE`, `EXTRACT`, `SAVE PATCH`, ...)
+/// is refused rather than run, and counts as a failure. A batch never writes
+/// an output built on a session its author did not intend, such as a
+/// container compiled after its `APPLY PATCH` was refused. Statements that
+/// write nothing still run, so every diagnostic is still reported.
 pub fn run_batch_outcome(input: &str) -> BatchOutcome {
-    let mut session = Session::new();
+    run_batch_outcome_in(&mut Session::new(), input)
+}
+
+/// [`run_batch_outcome`] in a session the embedder configured (e.g. with a
+/// [`crate::ModelResolver`]).
+pub fn run_batch_outcome_in(session: &mut Session, input: &str) -> BatchOutcome {
     let mut outcome = BatchOutcome::default();
 
     // Split on semicolons, handling strings
@@ -214,6 +230,15 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
             continue;
         }
         match parser::parse(trimmed) {
+            Ok(stmt) if outcome.errors > 0 && stmt.writes_artifact() => {
+                outcome.lines.push(format!(
+                    "Error: refused `{}`: {} earlier statement(s) in this batch failed, \
+                     and a batch writes nothing after a failure",
+                    statement_label(trimmed),
+                    outcome.errors
+                ));
+                outcome.errors += 1;
+            }
             Ok(stmt) => match session.execute(&stmt) {
                 Ok(lines) => outcome.lines.extend(lines),
                 Err(e) => {
@@ -230,6 +255,27 @@ pub fn run_batch_outcome(input: &str) -> BatchOutcome {
 
     outcome.contract_violations = session.contract_violations();
     outcome
+}
+
+/// Longest statement text a refusal message quotes in full.
+const REFUSAL_LABEL_CHARS: usize = 60;
+
+/// The statement as written, shortened, for a refusal message. The whole
+/// text rather than its keyword, so a pipe names its writing half too.
+fn statement_label(statement: &str) -> String {
+    let flat = statement
+        .trim_end_matches(';')
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if flat.chars().count() <= REFUSAL_LABEL_CHARS {
+        flat
+    } else {
+        format!(
+            "{}…",
+            flat.chars().take(REFUSAL_LABEL_CHARS).collect::<String>()
+        )
+    }
 }
 
 fn is_complete_statement(s: &str) -> bool {

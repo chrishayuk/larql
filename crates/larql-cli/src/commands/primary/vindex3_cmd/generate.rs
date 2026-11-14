@@ -16,6 +16,7 @@
 //! fixture and lives outside this verb. `larql run` is the wrapper that
 //! owns one.
 
+use std::collections::HashSet;
 use std::time::Instant;
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
@@ -36,9 +37,34 @@ pub(super) use residency_curve::*;
 pub(super) mod residency_record;
 pub(super) mod sealed_latency;
 
+/// `--stop-at-eos`: every stop the container declares, as token ids,
+/// resolved before the decode loads its weights, so a container that
+/// declares none is refused rather than decoded as if the stop were
+/// honoured (#752). Empty when
+/// the flag is off.
+pub(super) fn stop_ids(args: &super::ExecArgs) -> Result<HashSet<u32>, Box<dyn std::error::Error>> {
+    if !args.stop_at_eos {
+        return Ok(HashSet::new());
+    }
+    let stops = larql_inference::layer_graph::generate::resolve_stop_ids(&args.container)
+        .map_err(|e| format!("--stop-at-eos: {e}"))?;
+    let mut ids: Vec<u32> = stops.ids.iter().copied().collect();
+    ids.sort_unstable();
+    eprintln!("--stop-at-eos: stopping at ids {ids:?}");
+    if !stops.unresolved.is_empty() {
+        eprintln!(
+            "--stop-at-eos: NOT honoured (no single token of the tokenizer): {:?}",
+            stops.unresolved
+        );
+    }
+    Ok(stops.ids)
+}
+
 /// Greedy decode with the exec verb's report. Returns the generated ids
 /// (the prompt excluded), so a caller has them as data and not only as
-/// lines on the console.
+/// lines on the console. Decoding halts after emitting any id in `stop`
+/// (empty: decode the full count); the stop id is the last generated id,
+/// as on the lowered greedy and speculative loops.
 pub(super) fn run_generate<B: PlanBackend>(
     backend: &B,
     engine: &str,
@@ -46,6 +72,7 @@ pub(super) fn run_generate<B: PlanBackend>(
     new_tokens: usize,
     plan: &ComponentOpPlan,
     store: &OperandStore,
+    stop: &HashSet<u32>,
 ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
     // Admission BEFORE any work: this is the only point at which the
     // load average is about the machine rather than about us.
@@ -77,7 +104,11 @@ pub(super) fn run_generate<B: PlanBackend>(
             "token {emitted:>3}/{new_tokens}  id {id:<8} ({value:+.3})  context {}",
             prompt.len() + emitted,
         );
-        Ok(Flow::Continue)
+        Ok(if stop.contains(&id) {
+            Flow::Halt
+        } else {
+            Flow::Continue
+        })
     })?;
     let generated = decoded.generated;
     let sequence: Vec<u32> = prompt.iter().chain(&generated).copied().collect();

@@ -11,7 +11,8 @@
 //!       "created": <unix-secs>, "owned_by": "larql",
 //!       /* larql-specific extras follow */
 //!       "path": "/v1/<model-id>" | "/v1",
-//!       "features": <total>, "loaded": true }
+//!       "features": <total>, "loaded": true,
+//!       "aliases": ["<served-name>"] /* only when the model has any */ }
 //!   ]
 //! }
 //! ```
@@ -21,6 +22,11 @@
 //! This means existing OpenAI SDKs (`openai.models.list()`) work
 //! unmodified, while larql-aware clients still see `path` / `features`
 //! / `loaded`.
+//!
+//! `id` is always the id the container declares, so a client that read it
+//! from this listing keeps working. `aliases` lists the other names a
+//! request's `model` field may use for the same model (`--model-alias`,
+//! which `larql serve <name>` sets to the name it was given).
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -36,6 +42,8 @@ use crate::vindex3::V3Model;
 const MODEL_OBJECT: &str = "model";
 const LIST_OBJECT: &str = "list";
 const OWNED_BY: &str = "larql";
+/// larql-specific: the other names a model answers to.
+const ALIASES_FIELD: &str = "aliases";
 /// larql-specific `generation` marker for VINDEX3 containers.
 /// Reported as `generation` on a V3 entry. Sourced from the format
 /// crate so the API and the container's own marker cannot drift.
@@ -75,13 +83,13 @@ pub async fn handle_models(State(state): State<Arc<AppState>>) -> Json<serde_jso
     let mut data: Vec<serde_json::Value> = snapshot
         .models
         .iter()
-        .map(|m| v2_entry(m, created, multi))
+        .map(|m| with_aliases(v2_entry(m, created, multi), snapshot.aliases_of(&m.id)))
         .collect();
     data.extend(
         snapshot
             .v3_models
             .iter()
-            .map(|m| v3_entry(m, created, multi)),
+            .map(|m| with_aliases(v3_entry(m, created, multi), snapshot.aliases_of(&m.id))),
     );
 
     Json(serde_json::json!({
@@ -128,6 +136,15 @@ fn v3_entry(m: &V3Model, created: u64, multi: bool) -> serde_json::Value {
     })
 }
 
+/// Add the `aliases` extension to an entry, only when there are any — an
+/// entry with none keeps exactly its earlier shape.
+fn with_aliases(mut entry: serde_json::Value, aliases: Vec<String>) -> serde_json::Value {
+    if !aliases.is_empty() {
+        entry[ALIASES_FIELD] = serde_json::json!(aliases);
+    }
+    entry
+}
+
 fn model_path(id: &str, multi: bool) -> String {
     if multi {
         format!("{API_PREFIX}/{id}")
@@ -143,7 +160,7 @@ fn model_path(id: &str, multi: bool) -> String {
     params(("model" = String, Path, description = "Model id")),
     responses(
         (status = 200, description = "OpenAI-compatible single-model entry", body = crate::openapi::schemas::ModelEntry),
-        (status = 404, body = crate::routes::openai::error::OpenAIErrorBody),
+        (status = 404, description = "Not found", body = crate::routes::openai::error::OpenAIErrorBody),
     ),
 )]
 pub async fn handle_model_retrieve(
@@ -154,12 +171,19 @@ pub async fn handle_model_retrieve(
     let created = server_boot_unix_secs(&state);
     let multi = state.is_multi_model();
 
-    // `served(Some(id))` searches V2 then V3 by exact id match — the
-    // same order and semantics this handler implemented by hand
-    // before; reusing it means one search implementation, not two.
+    // `served(Some(id))` searches V2 then V3 by exact id (or alias)
+    // match — the same order and semantics this handler implemented by
+    // hand before; reusing it means one search implementation, not two.
+    let snapshot = state.models_snapshot();
     match state.served(Some(&model)) {
-        Some(crate::state::ServedModel::V2(m)) => Ok(Json(v2_entry(&m, created, multi))),
-        Some(crate::state::ServedModel::V3(m)) => Ok(Json(v3_entry(&m, created, multi))),
+        Some(crate::state::ServedModel::V2(m)) => Ok(Json(with_aliases(
+            v2_entry(&m, created, multi),
+            snapshot.aliases_of(&m.id),
+        ))),
+        Some(crate::state::ServedModel::V3(m)) => Ok(Json(with_aliases(
+            v3_entry(&m, created, multi),
+            snapshot.aliases_of(&m.id),
+        ))),
         None => Err(OpenAIError::not_found(format!("model '{model}' not found"))),
     }
 }

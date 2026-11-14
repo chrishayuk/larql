@@ -1,0 +1,11 @@
+{
+  "schema": "larql-structured-patch-verdict/1",
+  "note": "What the independent verifier says of the committed base/patch/compiled trio. Digests are the verifier's own (larql-verify-patch/1). Update only together with a regenerated golden.json (see crates/larql-lql/tests/weight_patch_lql/cross_language.rs).",
+  "contract": "STRUCTURED_REMOVE_DIRECTION",
+  "status": "satisfied",
+  "patch_sha256": "8d3a87d9ea00e0c1a2e3905021967b23b4b2fe4e8c1e6b9b61bddba3ff9a94f9",
+  "base_sha256": "eafcc929b52f3a9e406cc8d2ec47c74f01a37614b0f9317371f892765837941d",
+  "container_sha256": "d945f86de3e5da8db8574dff43b3c4c18197f0bdc04cc988903273318e1d2d0e",
+  "elements_compared": 135488,
+  "elements_expected_to_change": 3
+}

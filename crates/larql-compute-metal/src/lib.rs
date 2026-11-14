@@ -79,6 +79,8 @@ pub mod kv_dispatch_impl;
 #[cfg(target_os = "macos")]
 pub mod kv_residency_contract;
 #[cfg(target_os = "macos")]
+pub mod kv_seed_contract;
+#[cfg(target_os = "macos")]
 pub mod lowering;
 #[cfg(target_os = "macos")]
 pub mod ops;
@@ -125,6 +127,8 @@ pub use decode::profile::{take_last_split_timings, ProfileTimings};
 pub use kernels::{AttentionKernels, FfnKernels, KernelHandle, NormKernels, QuantKernels};
 #[cfg(target_os = "macos")]
 pub use moe_dispatch::MoeScratch;
+#[cfg(target_os = "macos")]
+pub use moe_gpu_route::MoeBlockScratch;
 #[cfg(target_os = "macos")]
 pub use options::{BackendOptions, DecodeFlags};
 

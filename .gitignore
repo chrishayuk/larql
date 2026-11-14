@@ -47,6 +47,9 @@ build/
 *.pth
 *.ckpt
 *.bin
+# the cross-language golden is compiled container segments; the test compares them byte for byte, so they must be tracked
+!verifier/conformance/structured_patch/**/segments/*.bin
+!verifier/conformance/weight_patches_v4/**/segments/*.bin
 *.pkl
 *.h5
 *.hdf5

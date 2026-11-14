@@ -634,6 +634,28 @@ fn resolve_hf_vindex_with_progress_success_via_broad_mocks() {
 
 #[test]
 #[serial]
+fn a_v2_pull_also_fetches_every_file_its_index_requires() {
+    // `norms.bin` is on no fixed download list; an inference-level index
+    // that declares it requires it, so `larql list` will look for it — and
+    // the pull must therefore fetch it, or "re-run `larql pull`" would
+    // never finish the entry.
+    let mut server = mockito::Server::new();
+    let _g = HfTestEnv::new(&server.url());
+    let body = br#"{"version":2,"model":"m","family":"f","num_layers":1,"hidden_size":4,
+"intermediate_size":8,"vocab_size":2,"embed_scale":1.0,"layers":[],"down_top_k":1,
+"extract_level":"inference","checksums":{"norms.bin":"n"}}"#;
+    let idx = mock_hf_file_resolve(&mut server, r"index\.json", "dv", body);
+    let norms = mock_hf_file_resolve(&mut server, r"norms\.bin", "dn", b"norms");
+
+    let dir =
+        resolve_hf_vindex_with_progress("hf://owner/repo", |_| NoOpProgress).expect("success path");
+    assert!(idx[0].matched());
+    assert!(norms[0].matched(), "the declared file must be requested");
+    assert!(dir.join(NORMS_BIN).is_file());
+}
+
+#[test]
+#[serial]
 fn resolve_hf_vindex_with_progress_uses_cache_when_blob_present() {
     // When the cached_snapshot_file fast-path finds the blob on
     // disk, the function bypasses download_with_progress and goes

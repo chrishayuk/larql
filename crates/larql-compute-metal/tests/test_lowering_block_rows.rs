@@ -604,6 +604,7 @@ fn stack_scratch(b: &[metal::Buffer]) -> StackScratch<'_> {
         ffn_post: &b[14],
         hybrid: None,
         splitk: None,
+        routed_block: None,
     }
 }
 

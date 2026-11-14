@@ -39,6 +39,10 @@ pub struct ShardConfig {
     /// `start..=end` range.  See `crate::ffn::moe_remote::UnitManifest`
     /// for the JSON shape that produces this set.
     pub unit_set: Option<std::sync::Arc<std::collections::HashSet<(usize, usize)>>>,
+    /// The key sent to the shard as `Authorization: Bearer <key>`. Taken
+    /// from `LARQL_SHARD_API_KEY` when the config is built; `None` sends
+    /// no key.
+    pub api_key: Option<String>,
 }
 
 impl ShardConfig {
@@ -50,7 +54,15 @@ impl ShardConfig {
             url,
             timeout: DEFAULT_SHARD_TIMEOUT,
             unit_set: None,
+            api_key: crate::ffn::shard_auth::shard_api_key_from_env(),
         }
+    }
+
+    /// Send `api_key` to the shard, or no key for `None`, whatever the
+    /// environment said when the config was built.
+    pub fn with_api_key(mut self, api_key: Option<String>) -> Self {
+        self.api_key = api_key;
+        self
     }
 
     /// Build a shard config that owns an explicit set of `(layer, expert_id)`
@@ -74,6 +86,7 @@ impl ShardConfig {
             url,
             timeout: DEFAULT_SHARD_TIMEOUT,
             unit_set: Some(std::sync::Arc::new(units)),
+            api_key: crate::ffn::shard_auth::shard_api_key_from_env(),
         }
     }
 

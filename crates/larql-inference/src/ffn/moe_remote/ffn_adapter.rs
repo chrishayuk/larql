@@ -71,10 +71,13 @@ impl<'a> RemoteMoeFfn<'a> {
     /// type-checks — the name is load-bearing at one CLI call site and in two
     /// roadmaps.
     fn general(&self) -> MoeFfn<'a> {
-        // Best-effort, because that is what this adapter has always been and
-        // its callers depend on: a shard that cannot be reached degrades rather
-        // than stops.
-        MoeFfn::best_effort(self.weights, self.remote)
+        // Strict: a shard that fails (5xx, unreachable, timeout, malformed
+        // reply) fails the layer, and the engine surfaces it to the caller of
+        // generation. This adapter used to be best-effort — the failed
+        // experts contributed zeros and decode carried on from a model that
+        // had silently skipped them. A caller that wants that degradation must
+        // now ask for it by name with `MoeFfn::best_effort`.
+        MoeFfn::strict(self.weights, self.remote)
     }
 }
 
@@ -116,9 +119,9 @@ pub struct MoeFfn<'a> {
 /// What a refusing expert route means to the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RefusalPolicy {
-    /// Log it, contribute zeros, return the dense half. The historical
-    /// behaviour, and the right one for best-effort remote inference where a
-    /// degraded continuation beats no continuation.
+    /// Log it, contribute zeros, return the dense half. An explicit opt-in
+    /// for analysis that wants a degraded continuation over none; no
+    /// production generation path uses it.
     #[default]
     BestEffort,
     /// Record it, so the caller can refuse the output.
@@ -322,8 +325,8 @@ impl FfnBackend for MoeFfn<'_> {
                 Err(Box::new(recorded.clone()))
             }
             // Best-effort keeps its historical behaviour: degrade, having said
-            // so. Callers of the remote adapter depend on a shard outage
-            // degrading rather than stopping.
+            // so. Only an explicit `MoeFfn::best_effort` reaches this arm with
+            // a refusal recorded.
             _ => Ok(Some(out)),
         }
     }
@@ -335,11 +338,10 @@ mod tests {
     use crate::test_utils::make_test_gemma4_moe_weights;
     use ndarray::Array2;
 
-    /// `forward_moe_full_layer` runs the MoE FFN block: dense `h1` + experts
-    /// via the (disconnected → zero) remote + combine. Asserts a full, finite
-    /// layer output of the right shape.
+    /// A remote adapter with no shard to dispatch to fails the layer — the
+    /// experts it cannot reach are an error, not a zero contribution.
     #[test]
-    fn forward_moe_full_layer_returns_finite_combined_output() {
+    fn forward_moe_full_layer_refuses_when_no_shard_serves_the_experts() {
         let weights = make_test_gemma4_moe_weights();
         let remote = RemoteMoeBackend::new_disconnected();
         let ffn = RemoteMoeFfn {
@@ -347,12 +349,11 @@ mod tests {
             remote: &remote,
         };
         let h_post_attn = Array2::<f32>::from_elem((2, weights.hidden_size), 0.1);
-        let out = ffn
+        let err = ffn
             .forward_moe_full_layer(0, &h_post_attn)
-            .expect("executes")
-            .expect("RemoteMoeFfn always returns Some");
-        assert_eq!(out.shape(), &[2, weights.hidden_size]);
-        assert!(out.iter().all(|v| v.is_finite()));
+            .expect_err("an unserved expert must fail the layer");
+        assert_eq!(err.kind(), larql_execution::RefusalKind::Residency);
+        assert!(err.to_string().contains("no shard owns expert"), "{err}");
     }
 
     /// `forward` / `forward_with_activation` run the dense FFN fallback;
@@ -376,10 +377,9 @@ mod tests {
         assert_eq!(act.shape()[0], 2);
     }
 
-    /// The generalisation must not have changed the remote adapter. Same
-    /// weights, same input, same output — the delegation relocates the call and
-    /// nothing else, which is the same property the block-loop seam had to
-    /// prove in the composition rung.
+    /// The remote adapter is the strict general one. Same weights, same
+    /// input, same outcome — the delegation relocates the call and nothing
+    /// else.
     #[test]
     fn the_remote_adapter_still_equals_the_general_one() {
         let weights = make_test_gemma4_moe_weights();
@@ -388,17 +388,17 @@ mod tests {
             weights: &weights,
             remote: &remote,
         };
-        let general = MoeFfn::best_effort(&weights, &remote);
+        let general = MoeFfn::strict(&weights, &remote);
         let h = Array2::<f32>::from_elem((2, weights.hidden_size), 0.1);
         assert_eq!(
             specific
                 .forward_moe_full_layer(0, &h)
-                .expect("executes")
-                .expect("produces a layer"),
+                .expect_err("no shard")
+                .to_string(),
             general
                 .forward_moe_full_layer(0, &h)
-                .expect("executes")
-                .expect("produces a layer")
+                .expect_err("no shard")
+                .to_string()
         );
         assert_eq!(specific.forward(0, &h), general.forward(0, &h));
         // The name is the one thing that deliberately differs: the remote
@@ -505,14 +505,13 @@ mod tests {
         let strict = MoeFfn::strict(&weights, &remote);
         let h = Array2::<f32>::from_elem((2, weights.hidden_size), 0.1);
         let _ = strict.forward_moe_full_layer(0, &h);
-        if let Some(recorded) = strict.refusal() {
-            assert_eq!(
-                recorded.kind,
-                larql_execution::RefusalKind::Residency,
-                "an unreachable shard is the operand not being here"
-            );
-            assert!(!recorded.message.is_empty());
-        }
+        let recorded = strict.refusal().expect("an unserved expert is refused");
+        assert_eq!(
+            recorded.kind,
+            larql_execution::RefusalKind::Residency,
+            "an unreachable shard is the operand not being here"
+        );
+        assert!(!recorded.message.is_empty());
     }
 
     #[test]
@@ -531,15 +530,30 @@ mod tests {
     }
 
     #[test]
-    fn the_remote_adapter_stays_best_effort() {
-        // Its callers depend on degrading rather than stopping when a shard is
-        // unreachable, so the generalisation must not have made it strict.
+    fn the_remote_adapter_is_strict() {
+        // A shard failure must stop generation rather than finish it from a
+        // model missing that shard's experts.
         let weights = make_test_gemma4_moe_weights();
         let remote = RemoteMoeBackend::new_disconnected();
         let specific = RemoteMoeFfn {
             weights: &weights,
             remote: &remote,
         };
-        assert_eq!(specific.general().policy(), RefusalPolicy::BestEffort);
+        assert_eq!(specific.general().policy(), RefusalPolicy::Strict);
+    }
+
+    #[test]
+    fn best_effort_remains_an_explicit_opt_in() {
+        // The degradation is still reachable, but only by name.
+        let weights = make_test_gemma4_moe_weights();
+        let remote = RemoteMoeBackend::new_disconnected();
+        let lenient = MoeFfn::best_effort(&weights, &remote);
+        let h = Array2::<f32>::from_elem((2, weights.hidden_size), 0.1);
+        let out = lenient
+            .forward_moe_full_layer(0, &h)
+            .expect("best-effort degrades")
+            .expect("returns the dense half");
+        assert_eq!(out.shape(), &[2, weights.hidden_size]);
+        assert!(lenient.refusal().is_some(), "but records that it did");
     }
 }

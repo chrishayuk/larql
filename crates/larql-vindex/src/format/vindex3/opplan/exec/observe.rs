@@ -412,6 +412,14 @@ pub trait StepObserver {
     /// per-head `W_O` contributions must sum to this value. Borrowed and
     /// observation-only, like [`Self::attention_head`]. Default: ignore.
     fn attention_output(&mut self, _layer: usize, _position: usize, _values: &[f32]) {}
+
+    /// The `[hidden]` vector the output head reads at the whole-stack
+    /// exit: the final-normed carrier, or the carrier itself where the
+    /// image declares no final norm (PREC-DIAG-1 E0a). Fired once per
+    /// step, before the head runs and before `Logits`; not fired on an
+    /// image without a head. Borrowed and observation-only. Default:
+    /// ignore.
+    fn head_input(&mut self, _position: usize, _values: &[f32]) {}
 }
 
 /// One query head at one attention write (V3-HEAD-OBS-1, property A2):
@@ -451,6 +459,18 @@ pub struct AttentionHeadRecord<'a> {
     /// The KV head's conditioned key rows at the attended sources,
     /// aligned one-for-one with [`Self::source_values`].
     pub source_keys: &'a [&'a [f32]],
+    /// PREC-DIAG-1 E0a: this head's query slice after any q-norm and
+    /// query scale but BEFORE position encoding — the rotation's input,
+    /// `head_dim` wide. Carried only by the decode step's projection
+    /// (`attention_step_observed`); `None` on the batch path and on any
+    /// path that does not keep it. A copy taken before the rotation
+    /// runs: the rotation itself is unchanged.
+    pub query_unpositioned: Option<&'a [f32]>,
+    /// The fresh key at `position` for this head's KV head, at the same
+    /// point as [`Self::query_unpositioned`]: after any k-norm, before
+    /// position encoding. Its rotated form is the last entry of
+    /// [`Self::source_keys`].
+    pub key_unpositioned: Option<&'a [f32]>,
 }
 
 /// Build and fire one [`AttentionHeadRecord`] per query head — ONE place,
@@ -501,7 +521,66 @@ pub(super) fn fire_head_records<'k>(
             source_values: &source_values,
             query: &query[head * head_dim..(head + 1) * head_dim],
             source_keys: &source_keys,
+            query_unpositioned: None,
+            key_unpositioned: None,
         });
+    }
+}
+
+/// PREC-DIAG-1 E0a: one position's Q and K as the projection held them
+/// immediately before position encoding (after any q/k norm and query
+/// scale), copied — never moved — so the rotation that follows runs on
+/// the same buffer it always does. Only the decode step's projection
+/// fills one, and only when a head tap is armed.
+#[derive(Debug, Default, Clone)]
+pub(super) struct UnpositionedQk {
+    pub(super) q: Vec<f32>,
+    pub(super) k: Vec<f32>,
+}
+
+impl UnpositionedQk {
+    /// Copy the pre-rotation buffers.
+    pub(super) fn keep(&mut self, q: &[f32], k: &[f32]) {
+        self.q.clear();
+        self.q.extend_from_slice(q);
+        self.k.clear();
+        self.k.extend_from_slice(k);
+    }
+
+    /// Run `body` with `tap` — wrapped by [`Self::attach`] when both a tap
+    /// and a kept copy are present, passed through unchanged otherwise.
+    pub(super) fn run_attached<R>(
+        kept: Option<&Self>,
+        head_dim: usize,
+        tap: Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>,
+        body: impl FnOnce(Option<&mut dyn FnMut(AttentionHeadRecord<'_>)>) -> R,
+    ) -> R {
+        match (tap, kept) {
+            (Some(tap), Some(kept)) => {
+                let mut attached = kept.attach(head_dim, tap);
+                body(Some(&mut attached))
+            }
+            (tap, _) => body(tap),
+        }
+    }
+
+    /// Hand `tap` each record with this position's unrotated query and
+    /// key slices attached for the record's own head and KV head. The
+    /// record is otherwise passed through untouched.
+    pub(super) fn attach<'t>(
+        &'t self,
+        head_dim: usize,
+        tap: &'t mut dyn FnMut(AttentionHeadRecord<'_>),
+    ) -> impl FnMut(AttentionHeadRecord<'_>) + 't {
+        move |record: AttentionHeadRecord<'_>| {
+            let q = &self.q[record.head * head_dim..(record.head + 1) * head_dim];
+            let k = &self.k[record.kv_head * head_dim..(record.kv_head + 1) * head_dim];
+            tap(AttentionHeadRecord {
+                query_unpositioned: Some(q),
+                key_unpositioned: Some(k),
+                ..record
+            })
+        }
     }
 }
 

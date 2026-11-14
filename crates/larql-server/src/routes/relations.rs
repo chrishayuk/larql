@@ -149,10 +149,14 @@ pub struct RelationsParams {
     pub source: Option<String>,
 }
 
-fn list_relations(model: &LoadedModel) -> Result<serde_json::Value, ServerError> {
+fn list_relations(
+    sessions: &crate::session::SessionManager,
+    session_id: Option<&str>,
+    model: &LoadedModel,
+) -> Result<serde_json::Value, ServerError> {
     let start = std::time::Instant::now();
 
-    let patched = model.patched.blocking_read();
+    let patched = sessions.view_blocking(model, session_id);
     let all_layers = patched.loaded_layers();
 
     // Scan knowledge band layers (14-27 for Gemma, or use config).
@@ -262,18 +266,25 @@ fn list_relations(model: &LoadedModel) -> Result<serde_json::Value, ServerError>
     params(RelationsParams),
     responses(
         (status = 200, description = "Known relation types across the knowledge band", body = crate::openapi::schemas::RelationsResponse),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_relations(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(_params): Query<RelationsParams>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(None)?.clone();
-    let result = tokio::task::spawn_blocking(move || list_relations(&model))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            list_relations(&sessions_of.sessions, session_id.as_deref(), &model)
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
 
@@ -286,20 +297,27 @@ pub async fn handle_relations(
         RelationsParams,
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::RelationsResponse),
-        (status = 404, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::RelationsResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_relations_multi(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(model_id): Path<String>,
     Query(_params): Query<RelationsParams>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
     state.bump_requests();
     let model = state.model_or_err(Some(&model_id))?.clone();
-    let result = tokio::task::spawn_blocking(move || list_relations(&model))
-        .await
-        .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let result = {
+        let session_id = crate::session::extract_session_id(&headers);
+        let sessions_of = state.clone();
+        tokio::task::spawn_blocking(move || {
+            list_relations(&sessions_of.sessions, session_id.as_deref(), &model)
+        })
+    }
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }

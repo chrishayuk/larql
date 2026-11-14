@@ -164,8 +164,13 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Never "latest": the README installs larql from
+      # releases/latest/download/larql-<target>.*, and a vindex-only release
+      # would turn those links into 404s. `vindex update` scans the release
+      # list for vindex-v* tags and does not use "latest".
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
+          make_latest: false

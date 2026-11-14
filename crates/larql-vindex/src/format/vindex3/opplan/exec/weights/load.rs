@@ -86,6 +86,7 @@ pub fn load_weight(
                     super::super::cpu::integer::activation_code(),
                     super::super::cpu::integer::ActivationCode::Asymmetric
                 );
+            store.store().note_runtime_quantisation(&operand.tensor)?;
             Ok(quantise_q8(&store.load(operand)?, in_dim, indexed))
         }
         WeightFormat::Q4 => {
@@ -106,6 +107,7 @@ pub fn load_weight(
                     operand.tensor
                 )));
             }
+            store.store().note_runtime_quantisation(&operand.tensor)?;
             Ok(quantise_q4(&store.load(operand)?, in_dim))
         }
         WeightFormat::Bf16 => {

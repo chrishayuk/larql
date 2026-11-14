@@ -5,12 +5,15 @@
 
 mod backend;
 mod compact;
+mod extract_hint;
 mod helpers;
 mod introspection;
 mod knowledge;
 mod lifecycle;
 mod memit_persist;
+pub mod model_resolver;
 mod mutation;
+mod predicate;
 pub(crate) mod query;
 mod relation_resolver;
 mod remote;
@@ -27,6 +30,9 @@ use std::path::PathBuf;
 use crate::ast::*;
 use crate::capability::CapabilityProfile;
 use crate::error::LqlError;
+
+pub mod balance_trace;
+pub mod install_fault;
 
 pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
 
@@ -85,6 +91,12 @@ pub struct Session {
     pub(crate) verifier: Option<std::path::PathBuf>,
     /// `VERIFY REPRESENTATION` statements in this session that reported `violated`.
     pub(crate) contract_violations: usize,
+    /// Observer of COMPOSE balance passes, if one is set. See [`crate::balance_trace`].
+    pub(crate) balance_trace: crate::executor::balance_trace::ObserverSlot,
+    /// Fault armed for the next COMPOSE install, if any. See [`crate::install_fault`].
+    pub(crate) install_fault: crate::executor::install_fault::FaultSlot,
+    /// Resolves a `USE` literal that is not a path. See [`model_resolver`].
+    pub(crate) model_resolver: Option<model_resolver::ModelResolver>,
 }
 
 impl Default for Session {
@@ -109,7 +121,30 @@ impl Session {
             mutations_since_major: 0,
             verifier: None,
             contract_violations: 0,
+            balance_trace: crate::executor::balance_trace::ObserverSlot::default(),
+            install_fault: crate::executor::install_fault::FaultSlot::default(),
+            model_resolver: None,
         }
+    }
+
+    /// Sets (or, with `None`, removes) the hook `USE` asks about a literal
+    /// that is not an existing path. See [`model_resolver`].
+    pub fn set_model_resolver(&mut self, resolver: Option<model_resolver::ModelResolver>) {
+        self.model_resolver = resolver;
+    }
+
+    /// Sets (or, with `None`, removes) the observer of COMPOSE balance passes. It only observes:
+    /// installs are bit-identical with and without it. See [`crate::balance_trace`].
+    pub fn set_balance_observer(
+        &mut self,
+        observer: Option<Box<dyn crate::executor::balance_trace::BalanceObserver>>,
+    ) {
+        self.balance_trace.set(observer);
+    }
+
+    /// How many times a balance observer panicked and was detached in this session.
+    pub fn balance_observer_failures(&self) -> usize {
+        self.balance_trace.failures()
     }
 
     /// Ensure a patch session is active. If not, auto-start an anonymous one.
@@ -123,7 +158,7 @@ impl Session {
             operations: Vec::new(),
         });
         self.auto_patch = true;
-        vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
+        vec!["Auto-patch started (run BEGIN PATCH \"file.vlp\" then SAVE PATCH to persist, or edits are lost on exit)".into()]
     }
 
     /// The verifier `VERIFY REPRESENTATION` runs, ahead of `LARQL_VERIFIER` and
@@ -176,6 +211,12 @@ impl Session {
                 witness,
                 container,
             } => self.exec_verify_operator(operator, contract, witness, container),
+            Statement::VerifyPatch {
+                patch,
+                contract,
+                base,
+                container,
+            } => self.exec_verify_patch(patch, contract, base, container),
             Statement::VerifyRepresentation {
                 container,
                 contract,
@@ -315,18 +356,12 @@ impl Session {
                 route,
                 generate,
             } => self.exec_infer(prompt, *top, *compare, route.as_ref(), *generate),
-            Statement::Delete { conditions } => {
-                let mut out = self.ensure_patch_session();
-                out.extend(self.exec_delete(conditions)?);
-                self.advance_epoch();
-                Ok(out)
-            }
-            Statement::Update { set, conditions } => {
-                let mut out = self.ensure_patch_session();
-                out.extend(self.exec_update(set, conditions)?);
-                self.advance_epoch();
-                Ok(out)
-            }
+            // DELETE and UPDATE open the auto-patch themselves, once the
+            // WHERE clause is validated and has matched something: a
+            // refused or no-op statement leaves the session as it was.
+            // (they also advance the epoch themselves, only on a change).
+            Statement::Delete { conditions } => self.exec_delete(conditions),
+            Statement::Update { set, conditions } => self.exec_update(set, conditions),
             // A direct weight edit stages without starting an anonymous patch:
             // it is recorded only when a named BEGIN PATCH recording is open.
             Statement::UpdateWeights {
@@ -335,6 +370,19 @@ impl Session {
                 cols,
                 delta,
             } => self.exec_update_weights(tensor, *row, cols, *delta),
+            Statement::RemoveDirection {
+                operand,
+                tensor,
+                columns,
+                scale,
+                numerics,
+            } => self.exec_remove_direction(operand, tensor, columns, *scale, numerics),
+            Statement::AddLowRank {
+                operands,
+                tensor,
+                columns,
+                numerics,
+            } => self.exec_add_low_rank(operands, tensor, columns, numerics),
             Statement::Merge {
                 source,
                 target,
@@ -408,9 +456,9 @@ impl Session {
                     ExplainMode::Walk => self.remote_walk(prompt, *top, layers.as_ref()),
                 }
             }
-            Statement::ApplyPatch { path } => self.remote_apply_local_patch(path),
+            Statement::ApplyPatch { path } => self.remote_apply_patch(path),
             Statement::ShowPatches => self.remote_show_patches(),
-            Statement::RemovePatch { path } => self.remote_remove_local_patch(path),
+            Statement::RemovePatch { path } => self.remote_remove_patch(path),
             Statement::Pipe { left, right } => {
                 let mut out = self.execute(left)?;
                 out.extend(self.execute(right)?);
@@ -429,6 +477,14 @@ impl Session {
     // ── Patch execution ──
 
     fn exec_begin_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+        // An empty path is how an anonymous recording is marked. Opening a
+        // named session with one would make a recording SAVE PATCH refuses and
+        // BEGIN PATCH cannot adopt.
+        if path.is_empty() {
+            return Err(LqlError::Execution(
+                "BEGIN PATCH needs a file name, e.g. BEGIN PATCH \"edits.vlp\".".into(),
+            ));
+        }
         if self.patch_recording.is_some() && !self.auto_patch {
             return Err(LqlError::Execution(
                 "patch session already active. Run SAVE PATCH or discard first.".into(),
@@ -452,14 +508,20 @@ impl Session {
     }
 
     fn exec_save_patch(&mut self) -> Result<Vec<String>, LqlError> {
+        // The recording is the only copy of the session's edits in a form that
+        // can be saved. It leaves the session only once the file is written:
+        // every refusal and every failed write below keeps it.
         let recording = self.patch_recording.take().ok_or_else(|| {
             LqlError::Execution("no active patch session. Run BEGIN PATCH first.".into())
         })?;
-
         if recording.path.is_empty() {
-            return Err(LqlError::Execution(
-                "anonymous patch session — use SAVE PATCH \"filename.vlp\" or BEGIN PATCH \"filename.vlp\" first.".into(),
-            ));
+            let pending = recording.operations.len();
+            self.patch_recording = Some(recording);
+            return Err(LqlError::Execution(format!(
+                "anonymous patch session with {pending} pending operation(s): nothing was saved \
+                 and the operations are kept. Name the patch with BEGIN PATCH \"filename.vlp\", \
+                 then run SAVE PATCH."
+            )));
         }
 
         let model_name = match &self.backend {
@@ -476,6 +538,8 @@ impl Session {
             .iter()
             .map(|op| match op {
                 larql_vindex::PatchOp::WeightDelta(w) => w.edits.len(),
+                larql_vindex::PatchOp::StructuredWeight(_)
+                | larql_vindex::PatchOp::LowRankColumnsWeight(_) => 1,
                 _ => 0,
             })
             .sum();
@@ -492,9 +556,21 @@ impl Session {
 
         let (ins, upd, del) = patch.counts();
         let path = PathBuf::from(&recording.path);
-        patch
-            .save(&path)
-            .map_err(|e| LqlError::exec("failed to save patch", e))?;
+        if let Err(e) = patch.save(&path) {
+            let pending = patch.operations.len();
+            self.patch_recording = Some(PatchRecording {
+                path: recording.path,
+                operations: patch.operations,
+            });
+            return Err(LqlError::exec(
+                format!(
+                    "failed to save patch to {}; the {pending} pending operation(s) are kept, \
+                     so SAVE PATCH can be run again",
+                    path.display()
+                ),
+                e,
+            ));
+        }
 
         self.auto_patch = false;
 
@@ -534,15 +610,23 @@ impl Session {
 
         // Stored-weight ops are bound to the exact container they were written
         // against. Check that before anything is applied.
-        let weight_ops: Vec<&larql_vindex::format::vindex3::weight_patch::WeightDeltaOp> = patch
+        use larql_vindex::format::vindex3::weight_patch::WeightOpRef;
+        let weight_ops: Vec<WeightOpRef<'_>> = patch
             .operations
             .iter()
-            .filter_map(|op| match op {
-                larql_vindex::PatchOp::WeightDelta(w) => Some(w),
-                _ => None,
-            })
+            .filter_map(larql_vindex::PatchOp::weight_op)
             .collect();
-        let weight_edits: usize = weight_ops.iter().map(|w| w.edits.len()).sum();
+        let weight_edits: usize = weight_ops
+            .iter()
+            .map(|w| match w {
+                WeightOpRef::Delta(d) => d.edits.len(),
+                WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => 0,
+            })
+            .sum();
+        let structured = weight_ops
+            .iter()
+            .filter(|w| w.structured_columns().is_some())
+            .count();
         if !weight_ops.is_empty() {
             match &self.backend {
                 Backend::Vindex3 {
@@ -565,28 +649,61 @@ impl Session {
             }
         }
 
-        // Apply through the session overlay (base files untouched).
+        // Apply through the session overlay (base files untouched). The patch
+        // is checked whole first, on both backends: the model it was written
+        // against, every slot it names and the width of every vector it
+        // carries. A refused patch leaves the overlay as it was.
+        let refused = |e| LqlError::exec("failed to apply patch", e);
         match &mut self.backend {
-            Backend::Vindex { patched, .. } => {
-                patched.apply_patch(patch);
+            Backend::Vindex {
+                patched, config, ..
+            } => {
+                patch.check_base_model(&config.model).map_err(refused)?;
+                patched.try_apply_patch(patch).map_err(refused)?;
             }
-            // The V3 overlay is all-or-nothing and *reports* an
-            // inapplicable patch (corrupt vector, or feature-slot ops
-            // awaiting the compose rung) instead of silently dropping
-            // it.
-            Backend::Vindex3 { overlay, .. } => {
-                overlay
-                    .try_apply_patch(patch)
-                    .map_err(|e| LqlError::exec("failed to apply patch", e))?;
+            Backend::Vindex3 {
+                overlay,
+                runtime,
+                knowledge,
+                ..
+            } => {
+                patch
+                    .check_base_model(runtime.model_name())
+                    .map_err(refused)?;
+                // The V3 overlay holds no base, so the container's shape is
+                // supplied here. Without a browse view there is no feature
+                // space to name a slot in, and a slot op is out of bounds.
+                let plan = runtime.plan();
+                patch
+                    .check_geometry(&larql_vindex::PatchGeometry {
+                        hidden_size: plan
+                            .embedding
+                            .as_ref()
+                            .and_then(|e| e.table.shape.get(1).copied()),
+                        num_layers: plan.layers.len(),
+                        features_at: &|layer| {
+                            knowledge
+                                .as_ref()
+                                .map_or(0, |view| view.num_features(layer))
+                        },
+                    })
+                    .map_err(refused)?;
+                overlay.try_apply_patch(patch).map_err(refused)?;
             }
             _ => return Err(LqlError::NoBackend),
         }
 
-        let weights = if weight_edits > 0 {
-            format!("; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE")
-        } else {
-            String::new()
-        };
+        let mut weights = String::new();
+        if weight_edits > 0 {
+            weights.push_str(&format!(
+                "; {weight_edits} stored-weight edit(s), bound to this container and pending COMPILE"
+            ));
+        }
+        if structured > 0 {
+            weights.push_str(&format!(
+                "; {structured} structured weight op(s), bound to this container and pending COMPILE"
+            ));
+        }
         Ok(vec![format!(
             "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes{weights})"
         )])

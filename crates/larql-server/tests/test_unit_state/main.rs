@@ -118,6 +118,7 @@ fn make_tiny_state(models: Vec<Arc<LoadedModel>>) -> Arc<AppState> {
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology: larql_server::state::RouterTopology::SingleModel,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -405,7 +406,9 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use axum::{middleware, routing::get, Router};
-use larql_server::ratelimit::{rate_limit_middleware, RateLimitState};
+use larql_server::ratelimit::{
+    rate_limit_middleware, ClientIpSource, LocalTransport, RateLimitState,
+};
 use std::net::SocketAddr;
 use tower::ServiceExt as TowerServiceExt;
 
@@ -413,17 +416,22 @@ async fn ok_handler() -> &'static str {
     "ok"
 }
 
-fn router_with_limiter(rl: Arc<RateLimiter>) -> Router {
-    router_with_limiter_trust_forwarded_for(rl, false)
-}
-
 fn router_with_limiter_trust_forwarded_for(
     rl: Arc<RateLimiter>,
     trust_forwarded_for: bool,
 ) -> Router {
+    let client_ip = if trust_forwarded_for {
+        ClientIpSource::ForwardedFor
+    } else {
+        ClientIpSource::Socket
+    };
+    router_with_client_ip(rl, client_ip)
+}
+
+fn router_with_client_ip(rl: Arc<RateLimiter>, client_ip: ClientIpSource) -> Router {
     let state = Arc::new(RateLimitState {
         limiter: rl,
-        trust_forwarded_for,
+        client_ip,
     });
     Router::new()
         .route("/v1/stats", get(ok_handler))

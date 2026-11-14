@@ -278,19 +278,16 @@ fn a_schema_version_displays_as_its_number() {
 }
 
 /// **The default-flip gate's pinned test.** A fresh extraction with no
-/// expressed preference writes VINDEX2 today. Flipping the programme to
-/// "VINDEX3 is the primary generation" means changing
-/// `DEFAULT_EXTRACTION_GENERATION` AND this test together — that pair is
-/// the explicit decision. If this test fails because the constant moved,
-/// the flip was made deliberately; update the assertion in the same
-/// commit that states the new policy.
+/// expressed preference writes VINDEX3: the M4 flip, decided 2026-11-06.
+/// Changing `DEFAULT_EXTRACTION_GENERATION` again means changing this
+/// test in the same commit — that pair is the explicit decision.
 #[test]
-fn auto_extraction_resolves_to_v2_until_the_default_flip_is_decided() {
+fn auto_extraction_resolves_to_v3_after_the_m4_flip() {
     assert_eq!(
         admit_extraction_generation(GenerationRequest::Auto),
-        ContainerGeneration::V2,
+        ContainerGeneration::V3,
     );
-    assert_eq!(DEFAULT_EXTRACTION_GENERATION, ContainerGeneration::V2);
+    assert_eq!(DEFAULT_EXTRACTION_GENERATION, ContainerGeneration::V3);
 }
 
 /// Explicit requests pass through admission untouched, in both
@@ -317,24 +314,26 @@ fn summarize_container_reads_either_generation() {
     let v2 = temp_dir("summary-v2");
     std::fs::write(
         v2.join(INDEX_JSON),
-        r#"{"version":2,"model":"gemma-3-4b","num_layers":34}"#,
+        r#"{"version":2,"model":"gemma-3-4b","num_layers":34,"hidden_size":2560}"#,
     )
     .unwrap();
     let s = summarize_container(&v2).unwrap();
     assert_eq!(s.generation, ContainerGeneration::V2);
     assert_eq!(s.model, "gemma-3-4b");
     assert_eq!(s.num_layers, 34);
+    assert_eq!(s.hidden_size, 2560);
 
     let v3 = temp_dir("summary-v3");
     std::fs::write(
         v3.join(INDEX_JSON),
-        r#"{"version":4,"model":"granite-4.1-3b","num_layers":40}"#,
+        r#"{"version":4,"model":"granite-4.1-3b","num_layers":40,"hidden_size":2560}"#,
     )
     .unwrap();
     let s = summarize_container(&v3).unwrap();
     assert_eq!(s.generation, ContainerGeneration::V3);
     assert_eq!(s.model, "granite-4.1-3b");
     assert_eq!(s.num_layers, 40);
+    assert_eq!(s.hidden_size, 2560);
 }
 
 /// A container missing identity fields is listed with them blank —
@@ -349,4 +348,27 @@ fn summarize_container_tolerates_missing_identity_fields() {
     assert_eq!(s.generation, ContainerGeneration::V3);
     assert!(s.model.is_empty());
     assert_eq!(s.num_layers, 0);
+    assert_eq!(s.hidden_size, 0);
+}
+
+/// Each generation's conventional directory suffix strips to the bare
+/// name; anything else — including a bare suffix — is left alone.
+#[test]
+fn container_dir_suffixes_strip_to_the_model_name() {
+    use super::generation::strip_container_dir_suffix;
+
+    assert_eq!(ContainerGeneration::V2.dir_suffix(), ".vindex");
+    assert_eq!(ContainerGeneration::V3.dir_suffix(), ".vindex3");
+    assert_eq!(
+        strip_container_dir_suffix("gemma3-4b-f16.vindex"),
+        "gemma3-4b-f16"
+    );
+    assert_eq!(
+        strip_container_dir_suffix("qwen3-0.6b.vindex3"),
+        "qwen3-0.6b"
+    );
+    assert_eq!(strip_container_dir_suffix("plain-dir"), "plain-dir");
+    assert_eq!(strip_container_dir_suffix("model.vindex2"), "model.vindex2");
+    assert_eq!(strip_container_dir_suffix(".vindex3"), ".vindex3");
+    assert_eq!(strip_container_dir_suffix(".vindex"), ".vindex");
 }

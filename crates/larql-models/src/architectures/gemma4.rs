@@ -50,7 +50,7 @@ impl Gemma4Arch {
                 .filter(|&pattern| pattern > 0)
                 .unwrap_or(DEFAULT_SLIDING_WINDOW_PATTERN);
             (0..num_layers)
-                .map(|layer| (layer + 1) % pattern == 0)
+                .map(|layer| crate::config::is_full_at_period(layer, pattern))
                 .collect()
         };
 

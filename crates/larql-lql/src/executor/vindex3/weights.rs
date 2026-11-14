@@ -2,7 +2,9 @@
 //!
 //! A weight edit names real elements of one stored tensor. It is staged in the
 //! session overlay, bound to the exact container it was written against, and
-//! written into a new container by `COMPILE CURRENT INTO VINDEX`. Staging
+//! written into a new container by `COMPILE CURRENT INTO VINDEX`, together
+//! with every other pending edit (of any tensor of the same canonical
+//! representation) as one patch. Staging
 //! writes nothing and leaves the container untouched; nothing in this session
 //! sees the edit until it is compiled.
 //!
@@ -13,12 +15,28 @@
 
 use std::path::Path;
 
+use larql_vindex::format::vindex3::weight_patch::structured::{OperandBits, Profile, ScalarBits};
 use larql_vindex::format::vindex3::weight_patch::{
-    self as wp, bf16::bf16_to_f32, WeightEdit, WeightPatch,
+    self as wp, bf16::bf16_to_f32, StructuredWeightOp, WeightEdit, WeightPatch,
 };
+use serde::Deserialize;
 
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
+
+/// The operand file a `REMOVE DIRECTION` reads: the direction's stored bits, and optionally where it came
+/// from. Bits, never decimals: the file fixes the operand exactly.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OperandFile {
+    bits: Vec<String>,
+    #[serde(default)]
+    origin: Option<String>,
+}
+
+fn refused_direction(e: impl std::fmt::Display) -> LqlError {
+    LqlError::Execution(format!("REMOVE DIRECTION refused: {e}"))
+}
 
 /// How many edited elements a staging reply lists before summarising.
 const SHOWN_ELEMENTS: usize = 8;
@@ -123,40 +141,118 @@ impl Session {
             ));
         }
         let ops = overlay.weight_ops();
-        let mut tensors: Vec<String> = ops.iter().map(|(_, o)| o.tensor.clone()).collect();
-        tensors.sort();
-        tensors.dedup();
-        if tensors.len() > 1 {
-            return Err(LqlError::Execution(
-                wp::WeightPatchError::MoreThanOneTensor(tensors).to_string(),
-            ));
-        }
-        let tensor = tensors.remove(0);
-        // The container may have changed since staging; re-check every binding.
-        for (_, op) in &ops {
-            op.check_binding(path)
-                .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
-        }
-        let edits: Vec<WeightEdit> = ops.iter().flat_map(|(_, o)| o.weight_edits()).collect();
-        let origins: Vec<String> = ops.iter().map(|(_, o)| o.digest.clone()).collect();
-        let report = wp::apply_weight_patch_with_origins(
-            path,
-            &WeightPatch {
-                tensor: tensor.clone(),
-                edits,
-            },
-            &origins,
-            Path::new(output),
-        )
-        .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
+        // One patch per tensor, in the order each tensor was first edited.
+        // Delta ops stay deltas; structured ops resolve to the exact BF16 results the numerical profile
+        // defines. Nothing is converted from one form to the other.
+        let held: Vec<wp::WeightOpRef<'_>> = ops.iter().map(|(_, op)| *op).collect();
+        let (patches, origins) = wp::declare_patches(path, &held)
+            .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
+        let report = wp::apply_declared_patches(path, &patches, &origins, Path::new(output))
+            .map_err(|e| LqlError::Execution(format!("COMPILE refused: {e}")))?;
         Ok(vec![
             format!(
-                "Compiled: {output} (VINDEX3, clean container; weight patch of {} element(s) of {tensor})",
-                report.elements
+                "Compiled: {output} (VINDEX3, clean container; weight patch of {} element(s) of {})",
+                report.elements,
+                report.tensors.join(", ")
             ),
             format!("  re-derived: {}", if report.rederived.is_empty() { "(none)".into() } else { report.rederived.join(", ") }),
             format!("  edited source (canonical) payload {}", &report.canonical.payload_sha256[..16]),
-            format!("  ledger weight_patches.json ({} patch op(s) as origin)", report.ledger.origins.len()),
+            format!(
+                "  ledger weight_patches.json {} ({} patch op(s) as origin)",
+                report.ledger.schema,
+                report.ledger.origins.len()
+            ),
         ])
+    }
+
+    /// `REMOVE DIRECTION`: stage a structured `remove_direction` on the bound container. Everything
+    /// checkable is checked before anything is staged: the operand file, the profile, the tensor, the
+    /// columns, and that the op, resolved by the frozen interpreter, edits at least one element.
+    pub(crate) fn exec_remove_direction(
+        &mut self,
+        operand: &str,
+        tensor: &str,
+        columns: &[usize],
+        scale: f64,
+        numerics: &str,
+    ) -> Result<Vec<String>, LqlError> {
+        let path = match &self.backend {
+            Backend::Vindex3 { path, .. } => path.clone(),
+            Backend::Vindex { .. } => {
+                return Err(LqlError::Execution(
+                    "REMOVE DIRECTION edits the stored weights of a VINDEX3 container; \
+                     this session is bound to a VINDEX2 vindex"
+                        .into(),
+                ))
+            }
+            _ => return Err(LqlError::NoBackend),
+        };
+        let profile = Profile::parse(Some(numerics)).map_err(refused_direction)?;
+        if !profile.works_in_f64() {
+            return Err(refused_direction(format!(
+                "`{numerics}` works in f32; REMOVE DIRECTION takes f64-working profiles, so that the \
+                 scale literal is not rounded on the way in"
+            )));
+        }
+        if !scale.is_finite() {
+            return Err(refused_direction("SCALE must be finite"));
+        }
+        let text = std::fs::read_to_string(operand)
+            .map_err(|e| refused_direction(format!("cannot read operand file {operand:?}: {e}")))?;
+        let file: OperandFile = serde_json::from_str(&text)
+            .map_err(|e| refused_direction(format!("operand file {operand:?}: {e}")))?;
+        let bits = file
+            .bits
+            .iter()
+            .map(|h| {
+                (h.len() == 16 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+                    .then(|| u64::from_str_radix(h, 16).ok())
+                    .flatten()
+                    .ok_or_else(|| {
+                        refused_direction(format!(
+                            "`{h}` is not 16 lowercase hex digits (f64 bits)"
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<u64>, _>>()?;
+        let mut op = StructuredWeightOp::bind(
+            &path,
+            tensor,
+            numerics,
+            &OperandBits::F64(bits),
+            ScalarBits::F64(scale.to_bits()),
+            columns.to_vec(),
+        )
+        .map_err(refused_direction)?;
+        if let Some(origin) = file.origin {
+            op = op.with_origin(origin);
+        }
+        // Resolve now, so a bad op is refused when it is written down and not when it is compiled.
+        let resolved = op.resolve(&path).map_err(refused_direction)?;
+        let digest = op.digest.clone();
+        let Backend::Vindex3 { overlay, .. } = &mut self.backend else {
+            unreachable!("matched above")
+        };
+        overlay
+            .stage_structured_op(op.clone())
+            .map_err(refused_direction)?;
+        let pending = overlay.structured_op_count();
+        if let Some(recording) = &mut self.patch_recording {
+            recording
+                .operations
+                .push(larql_vindex::PatchOp::StructuredWeight(op));
+        }
+        let mut out = vec![format!(
+            "Staged: remove direction ({} component(s)) from {tensor}, column(s) {columns:?}, scale {scale} under {numerics}; \
+             {} element(s) would change",
+            file.bits.len(),
+            resolved.edits.len()
+        )];
+        out.push(format!("  op digest {}", &digest[..16]));
+        out.push("  results are BF16 as the profile defines them; no f32 delta is involved".into());
+        out.push(format!(
+            "  {pending} structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX"
+        ));
+        Ok(out)
     }
 }

@@ -12,6 +12,7 @@ use crate::index::FeatureMeta;
 
 use super::format::{decode_gate_vector, PatchOp, VindexPatch};
 use super::overlay::PatchedVindex;
+use super::validate::PatchGeometry;
 
 /// Decode-check every embedded vector in `patch` before any overlay
 /// state is mutated, so a corrupt vector rejects the patch wholesale.
@@ -51,9 +52,11 @@ fn validate_patch_vectors(patch: &VindexPatch) -> Result<(), VindexError> {
                 check(i, "key_vector_b64", key_vector_b64)?;
             }
             PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => {}
-            PatchOp::WeightDelta(_) => {
+            PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => {
                 return Err(VindexError::Parse(format!(
-                    "patch op {i}: `weight_delta` edits the stored weights of a VINDEX3 container; \
+                    "patch op {i}: a stored-weight op edits the stored weights of a VINDEX3 container; \
                      a VINDEX2 overlay cannot hold it"
                 )));
             }
@@ -63,26 +66,29 @@ fn validate_patch_vectors(patch: &VindexPatch) -> Result<(), VindexError> {
 }
 
 impl PatchedVindex {
-    /// Apply a patch, rejecting it wholesale if any embedded vector
-    /// fails to decode. All-or-nothing: on `Err` no overlay state has
-    /// been touched and the patch is not recorded.
+    /// Apply a patch, all of it or none of it.
+    ///
+    /// The whole patch is checked before any operation is applied: every
+    /// embedded vector decodes and is `hidden_size` wide, and every layer
+    /// and feature slot it names exists in the base. On `Err` no overlay
+    /// state has been touched and the patch is not recorded.
+    ///
+    /// This is the only way to apply a patch. There is deliberately no
+    /// infallible form: one existed, discarded this result, and let callers
+    /// report a dropped patch as applied.
+    ///
+    /// The base's model name is not known here. A caller that knows it
+    /// checks [`VindexPatch::check_base_model`] first.
     pub fn try_apply_patch(&mut self, patch: VindexPatch) -> Result<(), VindexError> {
         validate_patch_vectors(&patch)?;
+        let base = &self.base;
+        patch.check_geometry(&PatchGeometry {
+            hidden_size: Some(base.hidden_size),
+            num_layers: base.num_layers,
+            features_at: &|layer| base.num_features(layer),
+        })?;
         self.apply_patch_unchecked(patch);
         Ok(())
-    }
-
-    /// Apply a patch. Operations are resolved into the override maps.
-    ///
-    /// Infallible compatibility wrapper around [`try_apply_patch`]:
-    /// a patch with a corrupt embedded vector is dropped **whole** (no
-    /// state change, not recorded in `patches`) rather than
-    /// half-applied. Callers that need to surface the decode error use
-    /// `try_apply_patch`.
-    ///
-    /// [`try_apply_patch`]: Self::try_apply_patch
-    pub fn apply_patch(&mut self, patch: VindexPatch) {
-        let _ = self.try_apply_patch(patch);
     }
 
     /// Application body. Every `*_b64` field has already been decode-
@@ -118,7 +124,9 @@ impl PatchedVindex {
                     self.knn_store.remove_by_entity(entity);
                     continue;
                 }
-                PatchOp::WeightDelta(_) => {
+                PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {
                     unreachable!("rejected whole by validate_patch_vectors")
                 }
                 _ => {}
@@ -228,7 +236,11 @@ impl PatchedVindex {
                     // the per-layer feature set shrunk either way.
                     self.overrides_gate.remove(key.0, key.1);
                 }
-                PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } | PatchOp::WeightDelta(_) => {
+                PatchOp::InsertKnn { .. }
+                | PatchOp::DeleteKnn { .. }
+                | PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => {
                     unreachable!("KNN and weight ops handled above");
                 }
             }
@@ -252,8 +264,10 @@ impl PatchedVindex {
         self.deleted.clear();
         self.knn_store = super::knn_store::KnnStore::default();
         let patches: Vec<VindexPatch> = std::mem::take(&mut self.patches);
+        // Each was checked against this same base when it was admitted, so
+        // re-resolving the stack cannot reject one.
         for patch in patches {
-            self.apply_patch(patch);
+            self.apply_patch_unchecked(patch);
         }
     }
 }
@@ -264,8 +278,17 @@ mod tests {
     use crate::index::VectorIndex;
     use crate::patch::format::{encode_gate_vector, PatchDownMeta, PatchOp, VindexPatch};
 
-    fn empty_pv() -> PatchedVindex {
-        PatchedVindex::new(VectorIndex::new(vec![], vec![], 0, 0))
+    /// Layers in the test base: past the highest layer any test names.
+    const LAYERS: usize = 5;
+    /// Feature slots per layer: past the highest slot any test names.
+    const FEATURES: usize = 11;
+
+    /// A base with real dimensions. A patch is checked against them, so a
+    /// test that applies one needs slots to apply it to and a width for its
+    /// vectors.
+    fn sized_pv(hidden: usize) -> PatchedVindex {
+        let gates = vec![Some(ndarray::Array2::<f32>::zeros((FEATURES, hidden))); LAYERS];
+        PatchedVindex::new(VectorIndex::new(gates, vec![None; LAYERS], LAYERS, hidden))
     }
 
     fn make_patch(ops: Vec<PatchOp>) -> VindexPatch {
@@ -283,7 +306,7 @@ mod tests {
 
     #[test]
     fn apply_insert_populates_overrides_meta() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let patch = make_patch(vec![PatchOp::Insert {
             layer: 2,
             feature: 5,
@@ -296,7 +319,7 @@ mod tests {
             down_vector_b64: None,
             down_meta: None,
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         assert!(pv.overrides_meta.contains_key(&(2, 5)));
         let meta = pv.overrides_meta[&(2, 5)].as_ref().unwrap();
         assert_eq!(meta.top_token, "Paris");
@@ -304,7 +327,7 @@ mod tests {
 
     #[test]
     fn apply_insert_with_down_meta_uses_down_meta_token() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let patch = make_patch(vec![PatchOp::Insert {
             layer: 1,
             feature: 10,
@@ -321,7 +344,7 @@ mod tests {
                 c_score: 0.75,
             }),
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         let meta = pv.overrides_meta[&(1, 10)].as_ref().unwrap();
         assert_eq!(meta.top_token, "Berlin");
         assert_eq!(meta.top_token_id, 42);
@@ -330,7 +353,7 @@ mod tests {
 
     #[test]
     fn apply_insert_with_gate_vector_populates_overrides_gate() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let gv = vec![1.0f32, 0.0, -1.0];
         let b64 = encode_gate_vector(&gv);
         let patch = make_patch(vec![PatchOp::Insert {
@@ -345,7 +368,7 @@ mod tests {
             down_vector_b64: None,
             down_meta: None,
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         assert!(pv.overrides_gate.contains(3, 7));
         let stored = pv.overrides_gate.get(3, 7).unwrap();
         assert_eq!(stored.len(), 3);
@@ -359,7 +382,7 @@ mod tests {
         // down_vector_b64 in the patch, re-applying the file (e.g. on
         // `larql apply` after a save) would lose up + down and
         // `COMPILE INTO VINDEX` would bake nothing.
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let gate = vec![1.0f32, 2.0, 3.0];
         let up = vec![0.1f32, 0.2, 0.3];
         let down = vec![-0.5f32, 0.0, 0.5];
@@ -375,7 +398,7 @@ mod tests {
             down_vector_b64: Some(encode_gate_vector(&down)),
             down_meta: None,
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         assert_eq!(pv.overrides_gate_at(4, 9), Some(gate.as_slice()));
         assert_eq!(pv.up_override_at(4, 9), Some(up.as_slice()));
         assert_eq!(pv.down_override_at(4, 9), Some(down.as_slice()));
@@ -383,20 +406,20 @@ mod tests {
 
     #[test]
     fn apply_delete_tombstones_feature() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let patch = make_patch(vec![PatchOp::Delete {
             layer: 0,
             feature: 3,
             reason: None,
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         assert!(pv.deleted.contains(&(0, 3)));
         assert!(pv.overrides_meta[&(0, 3)].is_none());
     }
 
     #[test]
     fn insert_then_delete_removes_gate_override() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(2);
         let gv = vec![1.0f32, 2.0];
         let b64 = encode_gate_vector(&gv);
         let insert_patch = make_patch(vec![PatchOp::Insert {
@@ -411,7 +434,7 @@ mod tests {
             down_vector_b64: None,
             down_meta: None,
         }]);
-        pv.apply_patch(insert_patch);
+        pv.try_apply_patch(insert_patch).expect("patch applies");
         assert!(pv.overrides_gate.contains(0, 1));
 
         let delete_patch = make_patch(vec![PatchOp::Delete {
@@ -419,14 +442,14 @@ mod tests {
             feature: 1,
             reason: None,
         }]);
-        pv.apply_patch(delete_patch);
+        pv.try_apply_patch(delete_patch).expect("patch applies");
         assert!(!pv.overrides_gate.contains(0, 1));
         assert!(pv.deleted.contains(&(0, 1)));
     }
 
     #[test]
     fn apply_update_sets_meta_only() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let patch = make_patch(vec![PatchOp::Update {
             layer: 0,
             feature: 2,
@@ -439,7 +462,7 @@ mod tests {
                 c_score: 0.5,
             }),
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         let meta = pv.overrides_meta[&(0, 2)].as_ref().unwrap();
         assert_eq!(meta.top_token, "updated");
         // No gate override set
@@ -448,7 +471,7 @@ mod tests {
 
     #[test]
     fn apply_patches_accumulate_in_order() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let p1 = make_patch(vec![PatchOp::Insert {
             layer: 0,
             feature: 0,
@@ -473,8 +496,8 @@ mod tests {
             down_vector_b64: None,
             down_meta: None,
         }]);
-        pv.apply_patch(p1);
-        pv.apply_patch(p2);
+        pv.try_apply_patch(p1).expect("patch applies");
+        pv.try_apply_patch(p2).expect("patch applies");
         assert_eq!(pv.patches.len(), 2);
         assert!(pv.overrides_meta.contains_key(&(0, 0)));
         assert!(pv.overrides_meta.contains_key(&(0, 1)));
@@ -482,7 +505,7 @@ mod tests {
 
     #[test]
     fn remove_patch_rebuilds_overrides() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let p1 = make_patch(vec![PatchOp::Insert {
             layer: 0,
             feature: 5,
@@ -507,8 +530,8 @@ mod tests {
             down_vector_b64: None,
             down_meta: None,
         }]);
-        pv.apply_patch(p1);
-        pv.apply_patch(p2);
+        pv.try_apply_patch(p1).expect("patch applies");
+        pv.try_apply_patch(p2).expect("patch applies");
         assert_eq!(pv.patches.len(), 2);
 
         pv.remove_patch(0);
@@ -521,7 +544,7 @@ mod tests {
 
     #[test]
     fn remove_patch_out_of_bounds_is_noop() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         pv.remove_patch(999); // should not panic
         assert!(pv.patches.is_empty());
     }
@@ -532,7 +555,7 @@ mod tests {
         // while the op's metadata still landed — a half-applied patch.
         // The whole patch must be rejected and no state mutated,
         // including ops *before* the corrupt one.
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(2);
         let patch = make_patch(vec![
             PatchOp::Insert {
                 layer: 0,
@@ -572,7 +595,7 @@ mod tests {
         // up vector: the op's down_meta must NOT be applied.
         let full = encode_gate_vector(&[1.0f32, -1.0]);
         let truncated = full[..full.len() - 1].to_string();
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(2);
         let patch = make_patch(vec![PatchOp::Update {
             layer: 2,
             feature: 4,
@@ -591,30 +614,8 @@ mod tests {
     }
 
     #[test]
-    fn apply_patch_drops_corrupt_patch_wholesale() {
-        // The infallible compatibility wrapper: corrupt patch is a
-        // no-op, never a half-application.
-        let mut pv = empty_pv();
-        let patch = make_patch(vec![PatchOp::Insert {
-            layer: 0,
-            feature: 1,
-            relation: None,
-            entity: "A".into(),
-            target: "B".into(),
-            confidence: None,
-            gate_vector_b64: Some("bad!".into()),
-            up_vector_b64: None,
-            down_vector_b64: None,
-            down_meta: None,
-        }]);
-        pv.apply_patch(patch);
-        assert!(pv.overrides_meta.is_empty());
-        assert_eq!(pv.num_patches(), 0);
-    }
-
-    #[test]
     fn try_apply_patch_rejects_corrupt_knn_key() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let patch = make_patch(vec![PatchOp::InsertKnn {
             layer: 0,
             entity: "e".into(),
@@ -635,15 +636,16 @@ mod tests {
         // the fix the tombstone survived, so feature_meta() (via the
         // Some(meta) override) and gate_knn() (tombstone filter)
         // disagreed about the same slot.
-        let mut pv = empty_pv();
-        pv.apply_patch(make_patch(vec![PatchOp::Delete {
+        let mut pv = sized_pv(2);
+        pv.try_apply_patch(make_patch(vec![PatchOp::Delete {
             layer: 0,
             feature: 1,
             reason: None,
-        }]));
+        }]))
+        .expect("patch applies");
         assert!(pv.deleted.contains(&(0, 1)));
 
-        pv.apply_patch(make_patch(vec![PatchOp::Update {
+        pv.try_apply_patch(make_patch(vec![PatchOp::Update {
             layer: 0,
             feature: 1,
             gate_vector_b64: Some(encode_gate_vector(&[1.0f32, 0.0])),
@@ -654,7 +656,8 @@ mod tests {
                 top_token_id: 7,
                 c_score: 0.6,
             }),
-        }]));
+        }]))
+        .expect("patch applies");
 
         assert!(
             !pv.deleted.contains(&(0, 1)),
@@ -674,20 +677,22 @@ mod tests {
         // no down_meta must not leave that pin behind after clearing
         // the tombstone, or feature_meta() would keep reporting None
         // for a slot gate_knn() now returns.
-        let mut pv = empty_pv();
-        pv.apply_patch(make_patch(vec![PatchOp::Delete {
+        let mut pv = sized_pv(2);
+        pv.try_apply_patch(make_patch(vec![PatchOp::Delete {
             layer: 0,
             feature: 2,
             reason: None,
-        }]));
-        pv.apply_patch(make_patch(vec![PatchOp::Update {
+        }]))
+        .expect("patch applies");
+        pv.try_apply_patch(make_patch(vec![PatchOp::Update {
             layer: 0,
             feature: 2,
             gate_vector_b64: Some(encode_gate_vector(&[0.0f32, 1.0])),
             up_vector_b64: None,
             down_vector_b64: None,
             down_meta: None,
-        }]));
+        }]))
+        .expect("patch applies");
         assert!(!pv.deleted.contains(&(0, 2)));
         assert!(
             !matches!(pv.overrides_meta.get(&(0, 2)), Some(None)),
@@ -697,7 +702,7 @@ mod tests {
 
     #[test]
     fn apply_insert_knn_adds_to_knn_store() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let kv = encode_gate_vector(&[1.0f32, 0.0, 0.0]);
         let patch = make_patch(vec![PatchOp::InsertKnn {
             layer: 0,
@@ -708,13 +713,13 @@ mod tests {
             confidence: Some(1.0),
             key_vector_b64: kv,
         }]);
-        pv.apply_patch(patch);
+        pv.try_apply_patch(patch).expect("patch applies");
         assert_eq!(pv.knn_store.len(), 1);
     }
 
     #[test]
     fn apply_delete_knn_removes_from_knn_store() {
-        let mut pv = empty_pv();
+        let mut pv = sized_pv(3);
         let kv = encode_gate_vector(&[1.0f32, 0.0, 0.0]);
         let insert = make_patch(vec![PatchOp::InsertKnn {
             layer: 0,
@@ -728,9 +733,9 @@ mod tests {
         let delete = make_patch(vec![PatchOp::DeleteKnn {
             entity: "France".into(),
         }]);
-        pv.apply_patch(insert);
+        pv.try_apply_patch(insert).expect("patch applies");
         assert_eq!(pv.knn_store.len(), 1);
-        pv.apply_patch(delete);
+        pv.try_apply_patch(delete).expect("patch applies");
         assert_eq!(pv.knn_store.len(), 0);
     }
 }

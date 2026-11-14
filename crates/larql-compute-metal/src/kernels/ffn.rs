@@ -39,6 +39,14 @@ pub struct FfnKernels {
     /// for identity-combine policies — lets experts + next-layer
     /// attention share one command buffer.
     pub moe_weighted_combine_pipeline: ComputePipelineState,
+    /// VERIFY-N routing over a block: router logits `[R, E]` and top-k
+    /// selection `[R, K]`, each row bit-identical to the single kernels.
+    pub moe_router_rows_pipeline: ComputePipelineState,
+    pub moe_router_select_rows_pipeline: ComputePipelineState,
+    /// Rung 5a: a block's `[R, H]` input laid out one row per expert slot.
+    pub moe_rows_to_slots_pipeline: ComputePipelineState,
+    /// Rung 5b: a block's slots grouped by distinct expert.
+    pub moe_slots_by_expert_pipeline: ComputePipelineState,
 
     // Standard (non-gated) FFN activations.
     pub silu_pipeline: ComputePipelineState,
@@ -89,6 +97,16 @@ impl FfnKernels {
             clamped_glu_bias_pipeline: r::<shaders::geglu::ClampedGluBiasKernel>(device, library),
             situ_glu_pipeline: r::<shaders::geglu::SituGluKernel>(device, library),
             moe_weighted_combine_pipeline: r::<shaders::moe_weighted_combine::Kernel>(
+                device, library,
+            ),
+            moe_router_rows_pipeline: r::<shaders::moe_router::RowsKernel>(device, library),
+            moe_router_select_rows_pipeline: r::<shaders::moe_router_select::RowsKernel>(
+                device, library,
+            ),
+            moe_rows_to_slots_pipeline: r::<shaders::moe_router::RowsToSlotsKernel>(
+                device, library,
+            ),
+            moe_slots_by_expert_pipeline: r::<shaders::moe_router::SlotsByExpertKernel>(
                 device, library,
             ),
 

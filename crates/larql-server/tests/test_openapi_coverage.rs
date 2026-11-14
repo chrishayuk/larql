@@ -75,3 +75,33 @@ fn api_doc_compiles_and_lists_paths() {
         "ApiDoc must have at least one path declared"
     );
 }
+
+/// OpenAPI 3.x makes `description` REQUIRED on every Response Object.
+/// utoipa 5 filled an undeclared one with `""`; utoipa 6 omits the field,
+/// which makes the served spec invalid for strict validators and client
+/// generators. Every response must declare a non-empty one (#662).
+#[test]
+fn every_response_declares_a_description() {
+    use utoipa::OpenApi;
+    let json = serde_json::to_value(larql_server::openapi::ApiDoc::openapi()).unwrap();
+    let mut missing = Vec::new();
+    for (path, ops) in json["paths"].as_object().unwrap() {
+        for (method, op) in ops.as_object().unwrap() {
+            let Some(responses) = op["responses"].as_object() else {
+                continue;
+            };
+            for (status, response) in responses {
+                let described = response["description"]
+                    .as_str()
+                    .is_some_and(|d| !d.trim().is_empty());
+                if !described {
+                    missing.push(format!("{method} {path} {status}"));
+                }
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "responses without a description: {missing:#?}"
+    );
+}

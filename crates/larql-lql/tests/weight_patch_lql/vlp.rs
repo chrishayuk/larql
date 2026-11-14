@@ -141,7 +141,13 @@ fn applying_the_same_patch_twice_is_refused_and_never_doubles_the_edit() {
         .contains("4 element(s) in 1 op(s)"));
     let out = fx.path("once.vindex3");
     compile(&mut s, &out);
-    assert_eq!(ledger(&out)["edits"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        ledger(&out)["targets"][0]["edits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
 }
 
 #[test]

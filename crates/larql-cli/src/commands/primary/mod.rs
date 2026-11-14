@@ -12,11 +12,14 @@ pub mod card_cmd;
 pub(crate) mod continuation;
 pub mod dec_bench;
 pub mod diag_cmd;
+pub mod doctor;
+pub mod hf_auto;
 pub mod inspect_hf_cmd;
 #[cfg(feature = "research")]
 pub mod k3_ledger;
 pub mod link_cmd;
 pub mod list_cmd;
+pub mod lql_session;
 pub mod model_cmd;
 #[cfg(feature = "research")]
 pub mod optimizer_mcp;

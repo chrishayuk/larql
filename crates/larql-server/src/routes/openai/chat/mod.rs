@@ -19,11 +19,13 @@
 //! ## Chat template handling
 //!
 //! `messages` is rendered to a single prompt via the model's chat
-//! template (Gemma / Llama / ChatML / Mistral / plain), detected from
-//! the model's `family` and `id`. The rendered prompt then runs through
-//! the same generation loop as `/v1/completions`.
+//! template. A VINDEX3 container renders through its own template
+//! (`super::v3_prompt`, shared with `larql run`). A VINDEX2 model uses
+//! the heuristic template (Gemma / Llama / ChatML / Mistral / plain)
+//! detected from the model's `family` and `id`. The rendered prompt then
+//! runs through the same generation loop as `/v1/completions`.
 //!
-//! Template detection precedence:
+//! VINDEX2 template detection precedence:
 //! 1. `arch.family()` (authoritative when available)
 //! 2. Substring match on `model.id` ("gemma", "llama", "qwen", …)
 //! 3. Plain (fallback for unknown families and base models)

@@ -134,6 +134,17 @@ pub enum Statement {
         cols: Vec<usize>,
         delta: f32,
     },
+    /// `REMOVE DIRECTION "<operand file>" FROM "<tensor>" COLUMNS (<n>, …) SCALE <f> NUMERICS "<profile>"`:
+    /// stage a structured `remove_direction` on a VINDEX3 container's stored weights, declared by its
+    /// operand, columns, scale and numerical profile. Nothing is converted to a delta: the compile writes
+    /// the exact BF16 results the profile defines. See `weight_patch::structured_op`.
+    RemoveDirection {
+        operand: String,
+        tensor: String,
+        columns: Vec<usize>,
+        scale: f64,
+        numerics: String,
+    },
     Merge {
         source: String,
         target: Option<String>,
@@ -206,6 +217,25 @@ pub enum Statement {
         witness: String,
         container: String,
     },
+    /// `ADD LOW RANK "<operand file>" TO "<tensor>" COLUMNS (<n>, …) NUMERICS "<profile>"`: stage a structured
+    /// `add_low_rank_columns` (VLP numerics v2) on a VINDEX3 container's stored weights, declared by its
+    /// operands `a` and `b` (in the file), its columns and its numerical profile. The compile writes the exact
+    /// BF16 results the profile defines. See `weight_patch::low_rank_op`.
+    AddLowRank {
+        operands: String,
+        tensor: String,
+        columns: Vec<usize>,
+        numerics: String,
+    },
+    /// `VERIFY PATCH "<patch.vlp>" USING CONTRACT "<id>" FROM "<base>" AGAINST "<container>";`:
+    /// an external verifier recomputes what the patch declares of the base from its operands and
+    /// compares it with the compiled container. Read-only. LQL never evaluates it.
+    VerifyPatch {
+        patch: String,
+        contract: String,
+        base: String,
+        container: String,
+    },
     Stats {
         vindex: Option<String>,
     },
@@ -273,6 +303,8 @@ impl Statement {
             Statement::Delete { .. } => "DELETE",
             Statement::Update { .. } => "UPDATE",
             Statement::UpdateWeights { .. } => "UPDATE WEIGHTS",
+            Statement::RemoveDirection { .. } => "REMOVE DIRECTION",
+            Statement::AddLowRank { .. } => "ADD LOW RANK",
             Statement::Merge { .. } => "MERGE",
             Statement::Rebalance { .. } => "REBALANCE",
             Statement::ShowRelations { .. } => "SHOW RELATIONS",
@@ -286,6 +318,7 @@ impl Statement {
             Statement::ShowAuthority => "SHOW AUTHORITY",
             Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
             Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
+            Statement::VerifyPatch { .. } => "VERIFY PATCH",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",

@@ -115,6 +115,29 @@ pub enum PatchOp {
     /// `format::vindex3::weight_patch::op`.
     #[serde(rename = "weight_delta")]
     WeightDelta(crate::format::vindex3::weight_patch::WeightDeltaOp),
+    /// Edit stored weights by a structured operation (`remove_direction`), declared by its operands and
+    /// resolved to exact BF16 results at compile. Same refusal rule as `weight_delta`. See
+    /// `format::vindex3::weight_patch::structured_op`.
+    #[serde(rename = "structured_weight")]
+    StructuredWeight(crate::format::vindex3::weight_patch::StructuredWeightOp),
+    /// Edit stored weights by `add_low_rank_columns` (VLP numerics v2), declared by its operands and resolved
+    /// to exact BF16 results at compile. Same refusal rule as `weight_delta`. See
+    /// `format::vindex3::weight_patch::low_rank_op`.
+    #[serde(rename = "low_rank_columns_weight")]
+    LowRankColumnsWeight(crate::format::vindex3::weight_patch::LowRankColumnsOp),
+}
+
+impl PatchOp {
+    /// The stored-weight op this is, of any form; `None` for a knowledge op.
+    pub fn weight_op(&self) -> Option<crate::format::vindex3::weight_patch::WeightOpRef<'_>> {
+        use crate::format::vindex3::weight_patch::WeightOpRef;
+        match self {
+            PatchOp::WeightDelta(w) => Some(WeightOpRef::Delta(w)),
+            PatchOp::StructuredWeight(w) => Some(WeightOpRef::Structured(w)),
+            PatchOp::LowRankColumnsWeight(w) => Some(WeightOpRef::LowRankColumns(w)),
+            _ => None,
+        }
+    }
 }
 
 /// Compact down_meta for a patch operation.
@@ -135,7 +158,11 @@ impl PatchOp {
             PatchOp::Insert { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::Update { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::Delete { layer, feature, .. } => Some((*layer, *feature)),
-            PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } | PatchOp::WeightDelta(_) => None,
+            PatchOp::InsertKnn { .. }
+            | PatchOp::DeleteKnn { .. }
+            | PatchOp::WeightDelta(_)
+            | PatchOp::StructuredWeight(_)
+            | PatchOp::LowRankColumnsWeight(_) => None,
         }
     }
 }
@@ -144,12 +171,48 @@ impl PatchOp {
 // Patch file I/O
 // ═══════════════════════════════════════════════════════════════
 
+/// Leading character of the temporary file a save writes before it is
+/// renamed into place, so a listing of patches does not show it.
+const SAVE_TMP_PREFIX: &str = ".";
+
 impl VindexPatch {
     /// Write patch to a .vlp file.
+    ///
+    /// The file is published whole or not at all: the bytes go to a
+    /// temporary file beside `path`, which is synced and renamed into
+    /// place. A write that fails part-way leaves whatever was at `path`
+    /// as it was, and a reader that already has the previous file open
+    /// keeps reading the previous bytes, never a truncated mix.
     pub fn save(&self, path: &Path) -> Result<(), VindexError> {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SERIAL: AtomicU64 = AtomicU64::new(0);
+
         let json =
             serde_json::to_string_pretty(self).map_err(|e| VindexError::Parse(e.to_string()))?;
-        std::fs::write(path, json)?;
+        let file_name = path.file_name().ok_or_else(|| {
+            VindexError::Parse(format!("patch path {} names no file", path.display()))
+        })?;
+        let mut tmp_name = std::ffi::OsString::from(SAVE_TMP_PREFIX);
+        tmp_name.push(file_name);
+        tmp_name.push(format!(
+            ".tmp.{}.{}",
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        let tmp_path = path.with_file_name(tmp_name);
+
+        let written = (|| {
+            let mut file = std::fs::File::create(&tmp_path)?;
+            file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+            drop(file); // closed before the rename, which Windows requires
+            std::fs::rename(&tmp_path, path)
+        })();
+        if let Err(e) = written {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -179,7 +242,10 @@ impl VindexPatch {
         for op in &self.operations {
             match op {
                 PatchOp::Insert { .. } | PatchOp::InsertKnn { .. } => ins += 1,
-                PatchOp::Update { .. } | PatchOp::WeightDelta(_) => upd += 1,
+                PatchOp::Update { .. }
+                | PatchOp::WeightDelta(_)
+                | PatchOp::StructuredWeight(_)
+                | PatchOp::LowRankColumnsWeight(_) => upd += 1,
                 PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => del += 1,
             }
         }

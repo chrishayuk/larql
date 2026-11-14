@@ -121,6 +121,7 @@ fn make_app_state(model: LoadedModel) -> Arc<AppState> {
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models: vec![Arc::new(model)],
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology: larql_server::state::RouterTopology::SingleModel,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),

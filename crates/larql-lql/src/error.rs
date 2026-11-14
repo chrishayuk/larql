@@ -36,6 +36,24 @@ impl LqlError {
     }
 }
 
+/// A vindex-layer refusal or failure, carried as an execution error
+/// with its own message — the destination guard's refusals read the
+/// same from every verb that writes a vindex directory.
+impl From<larql_vindex::VindexError> for LqlError {
+    fn from(e: larql_vindex::VindexError) -> Self {
+        LqlError::Execution(e.to_string())
+    }
+}
+
+/// The shared V3 raw-prompt encoder's refusal, as an execution error
+/// carrying its own message ("tokenize: …" / "prompt tokenises to
+/// empty").
+impl From<larql_inference::vindex3::PromptEncodeError> for LqlError {
+    fn from(e: larql_inference::vindex3::PromptEncodeError) -> Self {
+        LqlError::Execution(e.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

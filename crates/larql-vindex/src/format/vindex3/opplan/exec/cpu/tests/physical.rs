@@ -746,3 +746,50 @@ fn fine_grained_fp8_is_priced_as_stored() {
     );
     assert_eq!(profile.bytes_per_weight, 1.0, "E4M3 is one byte, exactly");
 }
+
+/// **`CodecOwned` describes the codec's arithmetic by deferring to it.**
+///
+/// An external `PlanBackend` pins this plan and runs its own kernel, so
+/// every half of the arithmetic — weight, activation, accumulator — must
+/// name the codec rather than a representation this crate never saw. The
+/// residency it asks the loader for is the stored bytes themselves.
+#[test]
+fn the_codec_owned_plan_names_the_codec_for_every_half() {
+    use super::super::projector::CpuParallelism;
+    use crate::format::vindex3::opplan::exec::cpu::arithmetic::{
+        AccumulatorRep, ActivationRep, WeightRep,
+    };
+
+    let p = PhysicalProjectionPlan::CodecOwned;
+    assert_eq!(p.format(), WeightFormat::CodecOwned);
+    let a = p.arithmetic();
+    assert_eq!(a.weight, WeightRep::CodecOwned);
+    assert_eq!(a.activation, ActivationRep::CodecOwned);
+    assert_eq!(a.accumulator, AccumulatorRep::CodecOwned);
+    assert_eq!(p.weight_rep(), WeightRep::CodecOwned);
+    // The kernel slot exists so `kernel()` stays total; it claims nothing.
+    assert_eq!(p.kernel().parallelism(), CpuParallelism::Serial);
+}
+
+/// Reaching `CodecOwned`'s kernel slot is an interpreter bug, and it says
+/// so instead of returning a plausible zero.
+#[test]
+#[should_panic(expected = "has no in-tree kernel")]
+fn the_codec_owned_kernel_slot_refuses_to_run() {
+    let w = vec![0.0f32; Q8_BLOCK];
+    let x = vec![0.0f32; Q8_BLOCK];
+    let mut out = vec![0.0f32; 1];
+    PhysicalProjectionPlan::CodecOwned
+        .kernel()
+        .project_rows(WeightRows::F32(&w), &x, &mut out);
+}
+
+/// An NVFP4 pack bound for a Q8 activation asks for its own residency and
+/// is consumed by its own kernel, not the f32-activation NVFP4 one.
+#[test]
+fn the_nvfp4_q8_plan_asks_for_its_own_residency() {
+    let p = PhysicalProjectionPlan::FusedNvfp4Q8;
+    assert_eq!(p.format(), WeightFormat::Nvfp4Q8);
+    assert_ne!(p.format(), PhysicalProjectionPlan::FusedNvfp4.format());
+    let _ = p.kernel().parallelism();
+}

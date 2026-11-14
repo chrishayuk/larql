@@ -89,6 +89,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         ops.get().ensure_stack_ready()?;
         ops.get().ensure_providers_in(ops.get().registry())?;
         ops.get().ensure_lowered_by(backend)?;
+        // Before the session exists, so no step can run a layer a later one
+        // would refuse.
+        super::super::dense_rows::refuse_unconsumable_plan(
+            plan,
+            ops.get(),
+            backend.dense_projector(),
+        )?;
         // The FULL continuation geometry, KV and recurrent alike.
         // `plan_kv_geometry` is the KV-only adapter and refuses a hybrid
         // plan; a session over one needs both forms announced.

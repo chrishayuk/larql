@@ -59,14 +59,8 @@ impl Session {
                     .into(),
             ));
         }
-        let path_a = self.resolve_vindex_ref(a)?;
-        let path_b = self.resolve_vindex_ref(b)?;
-
-        let mut cb = larql_vindex::SilentLoadCallbacks;
-        let index_a = larql_vindex::VectorIndex::load_vindex(&path_a, &mut cb)
-            .map_err(|e| LqlError::exec(format!("failed to load {}", path_a.display()), e))?;
-        let index_b = larql_vindex::VectorIndex::load_vindex(&path_b, &mut cb)
-            .map_err(|e| LqlError::exec(format!("failed to load {}", path_b.display()), e))?;
+        let (path_a, model_a, index_a) = self.diff_side(a)?;
+        let (path_b, model_b, index_b) = self.diff_side(b)?;
 
         let limit = limit.unwrap_or(20) as usize;
 
@@ -82,7 +76,11 @@ impl Session {
         ));
         out.push("-".repeat(70));
 
-        let layers_a = index_a.loaded_layers();
+        // Every layer either side has: a layer only B holds is all "added".
+        let mut layers_a = index_a.loaded_layers();
+        layers_a.extend(index_b.loaded_layers());
+        layers_a.sort_unstable();
+        layers_a.dedup();
         let mut diff_count = 0;
 
         for layer in &layers_a {
@@ -147,6 +145,19 @@ impl Session {
 
         // If INTO PATCH specified, extract diff as a .vlp file
         if let Some(patch_path) = into_patch {
+            // The patch turns A into B, so A's model is the one it applies
+            // to. APPLY PATCH refuses a patch whose model is not the bound
+            // one, so a patch across two models, or from an index that
+            // names none, could never be applied as what it claims to be.
+            if model_a.is_empty() || model_a != model_b {
+                return Err(LqlError::Execution(format!(
+                    "DIFF INTO PATCH refused: {} was built from `{model_a}` and {} from \
+                     `{model_b}`. A patch is applied to the one model it names, so both \
+                     sides must be that model. No patch was written.",
+                    path_a.display(),
+                    path_b.display()
+                )));
+            }
             let mut operations = Vec::new();
 
             // Re-scan without limit for the full diff
@@ -211,15 +222,9 @@ impl Session {
                 }
             }
 
-            let model_name = match &self.backend {
-                Backend::Vindex { config, .. } => config.model.clone(),
-                Backend::Weight { model_id, .. } => model_id.clone(),
-                _ => "unknown".into(),
-            };
-
             let patch = larql_vindex::VindexPatch {
                 version: 1,
-                base_model: model_name,
+                base_model: model_a,
                 base_checksum: None,
                 created_at: String::new(),
                 description: Some(format!(
@@ -249,17 +254,50 @@ impl Session {
         Ok(out)
     }
 
+    /// One side of a VINDEX2 DIFF: where it is, the model it was built
+    /// from, and its feature records.
+    ///
+    /// `CURRENT` is the session: the bound vindex with its patch overlay,
+    /// which is what the user has in front of them. Loading the bound path
+    /// from disk instead showed the base files, so `DIFF "base" CURRENT`
+    /// after any number of edits reported no differences.
+    fn diff_side(&self, side: &VindexRef) -> Result<(PathBuf, String, DiffSide<'_>), LqlError> {
+        if let (
+            VindexRef::Current,
+            Backend::Vindex {
+                path,
+                config,
+                patched,
+                ..
+            },
+        ) = (side, &self.backend)
+        {
+            return Ok((
+                path.clone(),
+                config.model.clone(),
+                DiffSide::Session(patched),
+            ));
+        }
+        let path = self.resolve_vindex_ref(side)?;
+        let config = larql_vindex::load_vindex_config(&path)
+            .map_err(|e| LqlError::exec(format!("failed to load {}", path.display()), e))?;
+        let mut cb = larql_vindex::SilentLoadCallbacks;
+        let index = larql_vindex::VectorIndex::load_vindex(&path, &mut cb)
+            .map_err(|e| LqlError::exec(format!("failed to load {}", path.display()), e))?;
+        Ok((path, config.model, DiffSide::Loaded(Box::new(index))))
+    }
+
     /// Resolve a VindexRef to a concrete path.
     fn resolve_vindex_ref(&self, vref: &VindexRef) -> Result<PathBuf, LqlError> {
         match vref {
             VindexRef::Current => match &self.backend {
                 Backend::Vindex { path, .. } => Ok(path.clone()),
-                Backend::Weight { model_id, .. } => Err(LqlError::Execution(format!(
-                    "CURRENT refers to a live model, not a vindex. Extract first:\n  \
-                     EXTRACT MODEL \"{}\" INTO \"{}.vindex\"",
-                    model_id,
-                    model_id.split('/').next_back().unwrap_or(model_id),
-                ))),
+                Backend::Weight { model_id, .. } => Err(LqlError::Execution(
+                    crate::executor::extract_hint::extract_first(
+                        "CURRENT refers to a live model, not a vindex",
+                        model_id,
+                    ),
+                )),
                 _ => Err(LqlError::NoBackend),
             },
             VindexRef::Path(p) => {
@@ -272,6 +310,37 @@ impl Session {
                 }
                 Ok(path)
             }
+        }
+    }
+}
+
+/// The feature records of one side of a VINDEX2 DIFF.
+enum DiffSide<'a> {
+    /// A vindex loaded from disk.
+    Loaded(Box<larql_vindex::VectorIndex>),
+    /// The session's bound vindex, read through its patch overlay.
+    Session(&'a larql_vindex::PatchedVindex),
+}
+
+impl DiffSide<'_> {
+    fn loaded_layers(&self) -> Vec<usize> {
+        match self {
+            Self::Loaded(index) => index.loaded_layers(),
+            Self::Session(patched) => patched.loaded_layers(),
+        }
+    }
+
+    fn num_features(&self, layer: usize) -> usize {
+        match self {
+            Self::Loaded(index) => index.num_features(layer),
+            Self::Session(patched) => patched.num_features(layer),
+        }
+    }
+
+    fn feature_meta(&self, layer: usize, feature: usize) -> Option<larql_vindex::FeatureMeta> {
+        match self {
+            Self::Loaded(index) => index.feature_meta(layer, feature),
+            Self::Session(patched) => patched.feature_meta(layer, feature),
         }
     }
 }

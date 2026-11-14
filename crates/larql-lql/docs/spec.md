@@ -199,9 +199,16 @@ USE REMOTE <url>;
 -- USE with a .vindex path: fast, pre-extracted, all statements available.
 -- USE MODEL: live weight access, reads safetensors directly. Slower but
 --   zero setup — point at any model, start querying immediately.
--- USE REMOTE: HTTP client to a `larql serve` instance. All read queries
---   are forwarded over the wire. Mutations create a local patch overlay
---   (the remote vindex is not modified).
+-- USE REMOTE: HTTP client to a `larql serve` instance. Every statement is
+--   forwarded over the wire, and every request carries this client's
+--   session id (`x-session-id`, minted at USE REMOTE). Mutations
+--   (INSERT/DELETE/UPDATE) and APPLY/SHOW/REMOVE PATCH act on this
+--   session's patch overlay on the server, never on the model other
+--   clients share, and the vindex files are not modified. Reads send the
+--   same header so the server can answer them against that overlay.
+--   Patches the session sends declare the served model (the `model` of
+--   /v1/stats) as their `base_model`; if the server names no model,
+--   DELETE, UPDATE and APPLY PATCH are refused before anything is sent.
 -- AUTO_EXTRACT: create vindex automatically on first mutation.
 --
 -- Mutation (INSERT/DELETE/UPDATE) and COMPILE require a vindex.
@@ -312,9 +319,10 @@ SELECT [<fields>]
 
 -- Query edges in the vindex.
 -- Fields: entity, relation, target, layer, feature, confidence, gate
+-- (output columns; what WHERE may constrain is listed under "Operators")
 --
--- WHERE relation = "<word>" matches the stored relation label exactly. If an
--- exact match finds nothing, FR3 synonym resolution kicks in: the relation word
+-- WHERE relation = "<word>" matches the stored relation label (substring, in
+-- either direction, ignoring case). If that finds nothing, FR3 synonym resolution kicks in: the relation word
 -- is resolved to a known relation BY MEANING (a trained residual probe — "seat"
 -- → capital, "money" → currency) and the query re-runs against the canonical
 -- relation, printing a note. Needs a vindex with model weights + relation
@@ -524,26 +532,30 @@ REBALANCE UNTIL CONVERGED MAX 16 FLOOR 0.30 CEILING 0.90;
 DELETE FROM EDGES
     WHERE <conditions>
 
-DELETE FROM EDGES
+-- List first, then address the slot the listing shows.
+SELECT * FROM EDGES
     WHERE entity = "John Coyle"
     AND relation = "lives-in";
+DELETE FROM EDGES
+    WHERE layer = 26 AND feature = 8821;
 ```
 
-`relation` predicates require relation labels in the active vindex
-(`relation_clusters.json` / probe labels). On unlabeled vindexes, target by
-`layer` + `feature` or omit the relation predicate.
+A mutation does not combine `entity` and `relation`: SELECT resolves that
+pair by a ranked gate walk (see "Operators"), which is too broad to delete
+or update by. `relation` predicates require relation labels in the active
+vindex (`relation_clusters.json` / probe labels). On unlabeled vindexes,
+target by `layer` + `feature` or omit the relation predicate.
 
 ```
 UPDATE EDGES
     SET <field> = <value> [, <field> = <value>]...
     WHERE <conditions>
 
--- Update by entity (matches the feature whose top_token contains the entity).
--- Works on both heap-resident and mmap-loaded vindexes.
+-- Update by entity (matches the features whose current top token
+-- contains the entity). Works on heap-resident and mmap-loaded vindexes.
 UPDATE EDGES
     SET target = "London"
-    WHERE entity = "John Coyle"
-    AND relation = "lives-in";
+    WHERE entity = "John Coyle";
 
 -- Fast path: explicit (layer, feature) bypasses the entity scan and
 -- targets the slot directly. Use this when you already know which
@@ -551,6 +563,13 @@ UPDATE EDGES
 UPDATE EDGES
     SET target = "London", confidence = 0.95
     WHERE layer = 26 AND feature = 8821;
+
+-- Settable fields: `target` (also spelled `top_token`), a non-empty
+-- string, and `confidence` (also `c_score`), a finite number. The SET
+-- clause is checked whole before anything runs: an unknown field, a value
+-- of the wrong type or a field set twice refuses the statement, and
+-- nothing is updated. `target` changes the record's text and keeps its
+-- token id.
 ```
 
 ```
@@ -561,6 +580,13 @@ MERGE <source_vindex>
 MERGE "medical-knowledge.vindex"
     INTO "gemma3-4b.vindex"
     ON CONFLICT HIGHEST_CONFIDENCE;
+
+-- A MERGE writes to the patch overlay of the bound vindex, and each record
+-- it writes is recorded as an UPDATE, so SAVE PATCH includes it. A saved
+-- UPDATE carries the record's token and score, not its top-k list.
+-- INTO may name the bound vindex; any other target is refused. A source
+-- built from another model, or holding a record at a slot the bound vindex
+-- does not have, is refused whole: nothing is merged.
 ```
 
 ```
@@ -583,6 +609,20 @@ SAVE PATCH;
 -- Saved: medical-knowledge.vlp (3 operations, 30 KB)
 ```
 
+`SAVE PATCH` takes no path: the file is the one `BEGIN PATCH` named. It either writes that file or
+leaves the session as it was.
+
+- **A refusal keeps the recording.** A mutation with no `BEGIN PATCH` starts an anonymous recording,
+  which has no file. `SAVE PATCH` on it is refused and the recorded operations stay pending:
+  `BEGIN PATCH "file.vlp"` adopts them, and `SAVE PATCH` then writes them.
+- **A failed write keeps the recording.** If the file cannot be written, the session is still the named
+  patch session with every operation pending, so `SAVE PATCH` can be run again once the cause is fixed.
+  The file itself is not written atomically: a write that fails part-way can leave a truncated file at
+  the destination, which the repeated `SAVE PATCH` overwrites.
+
+`BEGIN PATCH ""` is refused: an empty name is how the session marks an anonymous recording, and a
+recording with that name could be neither saved nor renamed.
+
 ```
 APPLY PATCH <patch_path>
 
@@ -592,6 +632,37 @@ APPLY PATCH <patch_path>
 APPLY PATCH "medical-knowledge.vlp";
 APPLY PATCH "fix-hallucinations.vlp";
 ```
+
+`APPLY PATCH` applies every operation in the file or none of them. The whole patch is checked before
+anything is applied, on VINDEX2 and VINDEX3 alike, and a patch that fails any check is refused with an
+error that names the operation. The overlay, including the patches already stacked, is then exactly as
+it was.
+
+| Check | Refused when |
+|---|---|
+| Model | `base_model` is empty, or is not the name of the bound vindex's model |
+| Layer | an operation names a layer the index does not have |
+| Feature slot | an `insert`, `update` or `delete` names a slot its layer does not have |
+| Vector | a gate, up, down or KNN key vector does not decode, or is not `hidden_size` wide |
+
+The model check compares names. A VINDEX2 vindex is named by its `index.json` `model`; a VINDEX3
+container by the name it was encoded under. A patch written on one is accepted on the other only when
+the two names are the same string. A matching shape is not evidence of the same model: two models of
+one architecture have identical dimensions and unrelated weights.
+
+What this does not yet cover:
+
+- **The name is the only identity.** Nothing binds a patch to the weights it was read from, so two
+  different models published under one name are indistinguishable here. A stable model identifier and
+  a source-weight fingerprint, carried by both formats, are a separate piece of work.
+- **The server does not check the model yet.** `POST /v1/patches/apply` applies the same slot,
+  bounds and width checks and refuses a patch that fails them, but it does not compare `base_model`.
+  The client does its half: a remote `APPLY PATCH` checks the patch against the model the server
+  named at `USE REMOTE`, and remote `DELETE` and `UPDATE` send patches declaring that model. Until the
+  server compares it too, model identity is enforced by the client only.
+- **`DIFF … INTO PATCH` can write a patch `APPLY PATCH` refuses.** With no model bound, or on a
+  VINDEX3 or remote session, it records `base_model` as `"unknown"`. Such a patch names no model this
+  check can match, so it is refused until its `base_model` is set to the target's name.
 
 ```
 REMOVE PATCH <patch_path>
@@ -645,6 +716,33 @@ COMPILE {CURRENT | <vindex_path>} INTO VINDEX <output_path>
 --                         see implementation note below.
 --   FAIL:                 abort if any slot has a conflicting write.
 -- ON CONFLICT is only valid for COMPILE INTO VINDEX, not COMPILE INTO MODEL.
+--
+-- <output_path> must be a fresh destination. This holds for COMPILE INTO
+-- VINDEX, COMPILE INTO MODEL and COMPACT INTO VINDEX, on both generations:
+--   - it may be absent (missing parents are created) or an existing EMPTY
+--     directory;
+--   - a directory that already holds anything is refused and left as it
+--     was — a previously compiled vindex included. Nothing is ever
+--     replaced; remove the old output yourself, or pick a new path;
+--   - the source itself, a directory containing it, a path inside it, and
+--     a symbolic link are refused (symlinks in the path are resolved first).
+-- The result is built in a hidden sibling directory and renamed into
+-- place: a refused or failed statement leaves <output_path> as it was,
+-- and removes the parents it created (the stored-weight COMPILE below
+-- may leave created parent directories behind).
+-- EXTRACT … INTO checks its destination by the same rule, before any
+-- model bytes move, but writes in place: an EXTRACT that fails part-way
+-- leaves a partial directory, which a re-run refuses as non-empty (a
+-- VINDEX3 EXTRACT whose result fails closure removes its output).
+-- "Renamed into place" is atomic publication, not crash durability: the
+-- staged files are not fsync'd, so after a power loss the output may be
+-- missing or incomplete (never mixed with older contents — there are
+-- none). The destination check and the promotion are separate steps; a
+-- path changed by another process in between is not defended against,
+-- beyond promotion failing if the destination gained contents.
+-- One path is stricter: a VINDEX3 COMPILE that carries stored-weight
+-- edits (UPDATE WEIGHTS) also refuses an existing empty directory — its
+-- output must not exist.
 --
 -- A subsequent USE on the compiled vindex needs no special loader code:
 -- it loads like any other vindex and INFER produces the inserted facts
@@ -738,6 +836,69 @@ That is **consistency of the description**, not a verdict on the patch. Whether 
 the declared edit is a claim for an independent verifier, and a representation contract measured against
 the **unedited** upstream checkpoint (for example `Q8_0_T2`) will correctly report the edited elements:
 measure the new representation against the edited canonical weights the ledger names.
+
+### 3.5.2 Structured weight edits: `REMOVE DIRECTION` (VINDEX3)
+
+```sql
+REMOVE DIRECTION "<operand.json>" FROM "<tensor>" COLUMNS (<n>, <n>, …)
+  SCALE <number> NUMERICS "<profile>";
+```
+
+Removes a direction `u` from chosen columns of one stored BF16 matrix: `W[:, S] <- W[:, S] - alpha * u * (u^T W[:, S])`.
+Unlike `UPDATE WEIGHTS`, the edit is declared by its **operands**, not by the elements it changes, and
+`COMPILE` writes the exact BF16 results of the frozen numerics. **No f32 delta is computed anywhere on the
+path**, so a result no single f32 delta can reach (a near-cancellation that leaves a tiny nonzero) is written
+exactly.
+
+- **Operand file.** JSON `{"bits": ["<16 lowercase hex digits>", …], "origin": "<optional note>"}`: one f64
+  bit pattern per row of the tensor. `origin` names where the direction came from (a feature artifact id, a
+  file hash). It is covered by the op's digest and read by nothing that computes.
+- **Scale** is the literal's exact f64; an integer beyond 2^53 is refused rather than rounded. Negative
+  scales are allowed.
+- **Numerics** is a profile id, `f64-seq-rne1/v1` or `f64-seq-rne2/v1`. The f32 working profile is refused.
+- **Conflicts are by declared footprint, not by what changes after rounding.** Two structured ops sharing a
+  column are refused. A structured op and an `UPDATE WEIGHTS` delta on one tensor are refused as mixed forms,
+  whichever came first. An op that changes nothing is refused at resolve and compile.
+- **Ledger.** A compile with any structured op writes `weight-patches/v3` with the exact result bits. A
+  delta-only compile still writes `weight-patches/v2`, unchanged.
+- **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container
+  implements the op is for `VERIFY PATCH` (section 3.9), which recomputes it from the operands.
+
+### 3.5.3 Structured weight edits: `ADD LOW RANK` (VINDEX3)
+
+```sql
+ADD LOW RANK "<operands.json>" TO "<tensor>" COLUMNS (<n>, <n>, …) NUMERICS "<profile>";
+```
+
+Adds a low-rank update to chosen columns `J` of one stored BF16 matrix: `W[r, J[p]] <- W[r, J[p]] + Σ_k a[r,k]·b[k,p]`,
+summed sequentially in `k` from the widened base, one rounding per operation, converted to BF16 once. This is
+`add_low_rank_columns` of VLP numerics v2 (`conformance/vlp-numerics/v2/SPEC.md`). Like `REMOVE DIRECTION`, the edit
+is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 delta is involved.
+
+- **Axes.** The tensor is the stored `[rows, cols]` (for a linear weight, `[out_features, in_features]`). Rows are the
+  output axis and `COLUMNS` index the input axis, so an `o_proj` head slice is that head's block of columns.
+- **Operand file.** JSON `{"rank": K, "a": [...], "b": [...], "origin": "<optional note>"}`. `a` is `rows × K` and `b`
+  is `K × |COLUMNS|`, both row-major, as bit patterns in the profile's working width: 16 lowercase hex digits for the
+  f64 profiles, 8 for `f32-seq-rne1/v1`. `b` is **compact**: a `b` laid out over every column is refused
+  (`shape_invalid`). There is no scale: a producer with `α·u·vᵀ` folds `α` into its operands and may record
+  `α`, `u`, `v` in `origin`, which the digest covers and nothing computes with.
+- **Untouched elements.** An element whose `K` terms all have a zero factor (`−0` counts as zero) keeps its base
+  bits and is never computed, so `a = 0` or `b = 0` changes nothing, a base `−0` included. Such a **zero-valued**
+  op (for every term, `a`'s column or `b`'s row is all zero) is a declared **sham**: it stages and compiles to a
+  container whose tensor bytes are the base's, recorded with `changed_elements: 0`. Any other op that changes no
+  element (one whose results all round back to the stored bits) is refused. Elements outside `COLUMNS` are never
+  read.
+- **Numerics** is any v2 profile: `f64-seq-rne1/v1`, `f64-seq-rne2/v1` or `f32-seq-rne1/v1`.
+- **Conflicts** are by declared footprint, the columns over every row, exactly as for `REMOVE DIRECTION`: the two
+  kinds of structured op may share a tensor only on disjoint columns, and either kind beside an `UPDATE WEIGHTS`
+  delta on one tensor is refused as mixed forms.
+- **`.vlp`.** The op is recorded as `"op": "low_rank_columns_weight"`; a reader that does not know it refuses the
+  whole patch.
+- **Ledger.** A compile with any `ADD LOW RANK` op writes `weight-patches/v4`: that tensor is an **operation target**,
+  recorded by its ops (with their exact operands), operand digests, and base and result tensor digests, not by its
+  elements, so a whole-matrix edit stays a small record (`docs/verification/weight-patches-v4.md`). `REMOVE DIRECTION`
+  ops on the same tensor are recorded with it; other tensors keep their element form. Structured ops are bounded by
+  rank, operand size, tensor size and total work (`MAX_STRUCTURED_*`), not by `MAX_PATCH_ELEMENTS`.
 
 ### 3.6 Schema Introspection Statements
 
@@ -950,6 +1111,25 @@ answer is `could_not_evaluate`, which is an error here as above. `<tensor>` is t
 - **`Q8_0_GEMV_B1` is experimental:** a measured bound check on one call, not a machine-checked proof. The bound is loose, so satisfying it doesn't rule out small defects.
 - **A witness is the engine's own report.** A result says the recorded output is right for the recorded input and the container's bytes. It can't show the production kernel produced it, and the output says the witness isn't authenticated. Together with an unauthenticated verifier, this means a result must not gate a release.
 
+```sql
+VERIFY PATCH "<patch.vlp>" USING CONTRACT "<id>" FROM "<base>" AGAINST "<container>";
+
+-- Judge whether <container> implements what the patch declares of <base>, using an independent verifier.
+
+VERIFY PATCH "removal.vlp"
+  USING CONTRACT "STRUCTURED_REMOVE_DIRECTION"
+  FROM "model.vindex3"
+  AGAINST "edited.vindex3";
+```
+
+**The verifier recomputes; it does not read the compiler's ledger.** `STRUCTURED_REMOVE_DIRECTION` takes the
+patch's operands (bits, alpha, columns, profile), recomputes the expected BF16 of every element on exact
+rationals, and compares **every** element of the edited tensor (declared columns against the recomputed bits,
+the rest against the base) and every other BF16 tensor against the base. A stale binding, an unimplemented
+profile, an operation of another kind, overlapping columns, or a malformed operand is `could_not_evaluate`.
+It does not establish the derived (quantised) representations, the op digest, or the operand's origin, and
+says so. Everything above about an unauthenticated verifier applies.
+
 **`larql lql` exit status:**
 
 | Exit | Meaning |
@@ -961,6 +1141,17 @@ answer is `could_not_evaluate`, which is an error here as above. `<tensor>` is t
 An error outranks a violation, so a script with both exits 1. A script keeps running after a failed
 statement, as it always has, and the status reflects all of them. So a contract that could not be
 evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
+
+**After a failure, a script writes nothing.** Once any statement has failed, every later statement that
+would write an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `COMPACT MAJOR`, which persists the MEMIT
+store into the bound vindex, `SAVE PATCH`, `DIFF … INTO PATCH`, `TRACE … SAVE`, or a pipe containing
+one) is refused with `Error: refused ...` and counts as a failure. Caches filled as a side effect, such
+as a `USE "hf://..."` download, are not artifacts. A violated `VERIFY` contract is a violation, not a
+failure, so it does not stop later writes. This applies to `larql lql` / `run_batch_outcome`, not to the
+interactive REPL.
+Statements that write nothing still run, so every diagnostic is still reported. Without this, a `COMPILE`
+after a refused `APPLY PATCH` wrote an unedited container at the path meant for the edited one, and only
+the exit status said so.
 
 ### 3.8 Comparison Operators
 
@@ -974,12 +1165,100 @@ evaluated never reads as satisfied, even when the statement after it succeeds. T
 LIKE -- pattern match (% wildcard)
 IN   -- set membership
 
+```
+
+The lexer and parser accept every operator above on any field. What a
+`WHERE` clause on EDGES may actually say is narrower, and it is the same
+for `SELECT … FROM EDGES`, `DELETE FROM EDGES` and `UPDATE EDGES`:
+
+```
+layer    = <non-negative integer>
+feature  = <non-negative integer>
+entity   = <string>
+relation {= | != | LIKE} <string>
+score    {= | != | < | <= | > | >=} <number>     -- alias: confidence
+
 WHERE entity = "France"
 WHERE confidence > 0.5
-WHERE entity LIKE "Fran%"
-WHERE entity IN ("France", "Germany")
-WHERE layer >= 20 AND layer <= 30
+WHERE relation LIKE "capital%"
+WHERE layer = 26 AND feature = 8821
 ```
+
+Conditions are joined with `AND`, at most one per field. A clause is
+validated as a whole before the statement reads or changes anything, and
+a clause containing **any** condition outside this grammar is refused —
+an unknown field, a wrong-typed value, an operator the field does not
+support, or the same field twice:
+
+```
+WHERE entity LIKE "Fran%"                 -- refused: entity takes = only
+WHERE entity IN ("France", "Germany")     -- refused: IN is not evaluated
+WHERE layer >= 20 AND layer <= 30         -- refused: ranges are not evaluated
+WHERE colour = "red"                      -- refused: not a field of EDGES
+```
+
+Nothing is dropped silently: a condition that cannot be evaluated never
+widens the statement to the rows the remaining conditions match. A
+string operand may not be empty (every value contains `""`). On DELETE
+and UPDATE, `layer` and `feature` together name one slot, which must
+exist; a refused statement, or one that matches nothing, changes neither
+the overlay nor the patch session (it does not start the auto-patch).
+
+The other consumers of a `WHERE` clause take a subset, validated the same
+way:
+
+| Statement | Accepted conditions |
+|---|---|
+| `SELECT … FROM FEATURES` | `layer`, `feature`, `entity` (alias `token`) |
+| `SELECT … FROM ENTITIES` | `layer`, `entity` (alias `token`) |
+| `SHOW FEATURES <layer> WHERE …` | `entity` (alias `token`), `score` (alias `confidence`) |
+| `SELECT … NEAREST TO …` | none — a `WHERE` clause is refused |
+| remote `SELECT … FROM EDGES` | `entity =`, `relation =`, `layer =`, `score >=` |
+| remote `DELETE` / `UPDATE` | exactly `layer =` and `feature =` |
+
+**SELECT is the preview of a mutation.** For the same vindex, clause and
+overlay state, `SELECT * FROM EDGES WHERE <clause>` lists exactly the
+feature slots `DELETE` or `UPDATE` with that clause targets (SELECT's
+ORDER BY and LIMIT only arrange and page the listing). One resolver
+serves all three, with these rules:
+
+- Only slots with current metadata are candidates — the overlay's view.
+  A tombstoned slot matches nothing; a relabelled slot matches by its new
+  token.
+- `entity` alone is a case-insensitive **substring of the slot's top
+  token**. The other top-k tokens (the "Also" column) are not matched.
+- `entity` together with `relation` embeds the entity and walks the gates
+  at each layer, keeping hits whose relation label matches; `score` then
+  compares the walk's gate score. Otherwise `score` compares the stored
+  confidence. A slot without metadata has no score, and a NaN score
+  satisfies no score condition.
+- `relation =` matches the stored label as a substring in either
+  direction, ignoring case; `!=` selects slots labelled something else
+  (an unlabelled slot satisfies no relation condition).
+
+Four deliberate differences, each making the mutation the narrower one:
+
+- `entity` together with `relation` is **refused** by DELETE / UPDATE.
+  The gate walk SELECT runs for that pair returns the strongest hits per
+  layer whose label matches — a ranking to read, not a set to destroy.
+  List with SELECT, then address each edge by `layer` and `feature`.
+- A `layer` + `feature` pair naming a slot that does not exist is refused
+  (SELECT lists nothing).
+- A `relation` condition without relation labels loaded is refused
+  (SELECT lists nothing).
+- The FR3 synonym fallback is SELECT's alone: a mutation takes the
+  relation as written.
+
+SELECT pages its listing (20 rows by default) and says so when more edges
+match than it shows; a mutation is never paged.
+
+Incompatible changes from earlier releases: `c_score` is no longer a
+WHERE field (write `score` or `confidence`); DELETE / UPDATE by `entity`
+no longer match a slot's non-top tokens or the base vindex's pre-overlay
+annotations; DELETE / UPDATE with both `entity` and `relation` is refused;
+`SHOW FEATURES … WHERE relation = …` is refused (it filtered on the top
+token; write `token = …`); and conditions that used to be ignored are
+refused.
 
 ---
 
@@ -1728,7 +2007,7 @@ pub enum ExtractLevel {
 | Split weight files | ✅ Done — attn, up, down, norms, lm_head (no gate duplication) |
 | f16 storage | ✅ Done — `--f16` flag, halves file sizes |
 | Vindexfile | ✅ Done — declarative builds (FROM + PATCH + INSERT), `larql build` CLI |
-| USE REMOTE | ✅ Done — HTTP client to larql-server, all queries forwarded, local patch overlay |
+| USE REMOTE | ✅ Done — HTTP client to larql-server, all queries forwarded with the session id; mutations and patches are per-session on the server |
 | `larql serve` | ✅ Done — HTTP/gRPC server, all endpoints, multi-model, per-session patches |
 | WeightBackend (USE MODEL) | ✅ Done — direct safetensors, INFER/EXPLAIN INFER/STATS; browse ops guide to EXTRACT |
 | GGUF output format | 🔴 Planned — COMPILE INTO MODEL FORMAT gguf |

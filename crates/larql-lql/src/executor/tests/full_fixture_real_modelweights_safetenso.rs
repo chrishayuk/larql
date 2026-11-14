@@ -59,11 +59,8 @@ fn delete_relation_filter_without_labels_errors_before_mutating() {
         "unexpected error: {err}"
     );
     assert!(
-        session
-            .patch_recording
-            .as_ref()
-            .map(|r| r.operations.is_empty())
-            .unwrap_or(false),
+        // A refused statement does not even open the auto-patch.
+        session.patch_recording.is_none(),
         "failed DELETE should not record patch operations"
     );
 
@@ -108,11 +105,8 @@ fn update_relation_filter_without_labels_errors_before_mutating() {
         "unexpected error: {err}"
     );
     assert!(
-        session
-            .patch_recording
-            .as_ref()
-            .map(|r| r.operations.is_empty())
-            .unwrap_or(false),
+        // A refused statement does not even open the auto-patch.
+        session.patch_recording.is_none(),
         "failed UPDATE should not record patch operations"
     );
 

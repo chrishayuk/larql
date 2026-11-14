@@ -1,7 +1,18 @@
 //! `COMPILE INTO VINDEX`: bake the patch overlay onto a clean copy of
 //! the source vindex so the result is self-contained (no overlay
 //! needed at load time).
+//!
+//! What the artifact must contain (Gate A4):
+//!
+//! - every metadata edit in the overlay: an inserted or updated record,
+//!   and an empty record for a deleted slot;
+//! - no vector from a slot that was deleted after it was written;
+//! - every weight file the source's manifest names.
+//!
+//! Anything the bake cannot honour is refused by name before a file is
+//! written.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -10,17 +21,38 @@ use crate::error::LqlError;
 use crate::executor::helpers::{dir_size, format_bytes};
 use crate::executor::tuning::{MEMIT_DEFAULT_RIDGE, MEMIT_TARGET_ALPHA};
 use crate::executor::Session;
-use larql_vindex::format::filenames::{
-    ATTN_WEIGHTS_BIN, DOWN_FEATURES_BIN, DOWN_META_BIN, DOWN_WEIGHTS_BIN, EMBEDDINGS_BIN,
-    FEATURE_CLUSTERS_JSONL, FEATURE_LABELS_JSON, KNN_STORE_BIN, NORMS_BIN, RELATION_CLUSTERS_JSON,
-    TOKENIZER_JSON, UP_FEATURES_BIN, UP_WEIGHTS_BIN, WEIGHT_MANIFEST_JSON,
-};
+use larql_vindex::format::filenames::{DOWN_META_BIN, DOWN_WEIGHTS_BIN, KNN_STORE_BIN};
 
 use super::atomic::run_atomic_compile;
 use super::bake::{
     apply_memit_deltas_to_down_weights, patch_down_weights, patch_gate_vectors, patch_up_weights,
 };
 use super::collect_memit_facts_with_recording;
+use super::source_files::{
+    carry_source_files, manifest_weight_files, missing_required_file, refuse_unbakeable_layout,
+};
+
+/// How many metadata edits a refusal or a label note lists by slot.
+const UNSTORABLE_PREVIEW: usize = 5;
+
+/// The overrides whose slot is still live. A `DELETE` tombstones the
+/// slot's metadata but leaves the down and up vectors an earlier
+/// `INSERT` wrote on the base, so the bake has to drop them here.
+fn live_overrides<'a>(
+    overrides: &'a HashMap<(usize, usize), Vec<f32>>,
+    patched: &larql_vindex::PatchedVindex,
+) -> Cow<'a, HashMap<(usize, usize), Vec<f32>>> {
+    if overrides.keys().all(|(l, f)| !patched.is_deleted(*l, *f)) {
+        return Cow::Borrowed(overrides);
+    }
+    Cow::Owned(
+        overrides
+            .iter()
+            .filter(|((l, f), _)| !patched.is_deleted(*l, *f))
+            .map(|(slot, vector)| (*slot, vector.clone()))
+            .collect(),
+    )
+}
 
 /// Walk the ordered patch history and return the (layer, feature) slots
 /// touched by more than one patch, along with the write count. Used by
@@ -74,6 +106,29 @@ impl Session {
     ) -> Result<Vec<String>, LqlError> {
         // Load the current vindex with patches applied
         let (path, config, patched) = self.require_vindex()?;
+
+        // ── Refusals, before any file is written ──
+        refuse_unbakeable_layout(config)?;
+        let manifest_files = manifest_weight_files(path, config)?;
+        // The text a loader derives from a token id: one token, decoded
+        // with special tokens skipped. `None` without a tokenizer.
+        let tokenizer = larql_vindex::load_vindex_tokenizer(path).ok();
+        let token_text =
+            |id: u32| -> Option<String> { tokenizer.as_ref()?.decode(&[id], true).ok() };
+        let unstorable = patched.unstorable_meta_edits();
+        let relabelled = patched.labels_stored_as_their_token(&token_text);
+        if !unstorable.is_empty() {
+            let preview = unstorable
+                .iter()
+                .take(UNSTORABLE_PREVIEW)
+                .map(|edit| edit.to_string())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(LqlError::Execution(format!(
+                "COMPILE INTO VINDEX cannot store {} metadata edit(s) in {DOWN_META_BIN}: {preview}",
+                unstorable.len()
+            )));
+        }
 
         // ── Conflict detection across applied patches ──
         //
@@ -172,7 +227,7 @@ impl Session {
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
                 .unwrap_or(1);
-            let ridge = std::env::var("LARQL_MEMIT_RIDGE")
+            let ridge = std::env::var(larql_inference::forward::memit::MEMIT_RIDGE_ENV)
                 .ok()
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(MEMIT_DEFAULT_RIDGE);
@@ -211,11 +266,10 @@ impl Session {
         let layer_infos = baked
             .save_gate_vectors_with_config(output_dir, config)
             .map_err(|e| LqlError::exec("failed to save gate vectors", e))?;
-        // We hard-link down_meta.bin from source (in the unchanging-file
-        // loop below) rather than calling save_down_meta, because the
-        // cloned base is in mmap mode and its heap-side `down_meta` is
-        // empty — saving it would produce a 152-byte file with zero
-        // features and break WALK / DESCRIBE / SHOW.
+        // An unedited `down_meta.bin` is hard-linked from the source (Step 2)
+        // rather than saved from this clone: the clone is in mmap mode and
+        // its heap-side `down_meta` is empty. When the overlay edits
+        // metadata, Step 2b writes the session's effective records instead.
         let dm_count: usize = config.layers.iter().map(|l| l.num_features).sum();
 
         // ── Step 2: hard-link unchanging weight files from the source ──
@@ -243,42 +297,27 @@ impl Session {
         // values gives `small_activation × poseidon_vector` per layer,
         // which is the exact behaviour the runtime patch overlay
         // produces.
-        const UNCHANGING: &[&str] = &[
-            ATTN_WEIGHTS_BIN,
-            UP_WEIGHTS_BIN,
-            NORMS_BIN,
-            WEIGHT_MANIFEST_JSON,
-            EMBEDDINGS_BIN,
-            TOKENIZER_JSON,
-            UP_FEATURES_BIN,
-            DOWN_META_BIN,
-            DOWN_FEATURES_BIN,
-        ];
-        for name in UNCHANGING {
-            let src = path.join(name);
-            let dst = output_dir.join(name);
-            if !src.exists() {
-                continue;
-            }
-            let _ = std::fs::remove_file(&dst);
-            if std::fs::hard_link(&src, &dst).is_err() {
-                std::fs::copy(&src, &dst)
-                    .map_err(|e| LqlError::exec("failed to link/copy {name}", e))?;
-            }
-        }
+        // Any change to a gate, up or down vector makes the source's other
+        // encodings of those vectors stale; they are left behind, by name.
+        let vectors_edited = patched.overrides_gate_iter().next().is_some()
+            || !patched.down_overrides().is_empty()
+            || !patched.up_overrides().is_empty()
+            || patched.num_deleted() > 0
+            || memit_results.is_some();
+        let left_behind = carry_source_files(path, output_dir, &manifest_files, vectors_edited)?;
 
-        // Label files (small, copy is fine).
-        for name in &[
-            RELATION_CLUSTERS_JSON,
-            FEATURE_CLUSTERS_JSONL,
-            FEATURE_LABELS_JSON,
-        ] {
-            let src = path.join(name);
-            let dst = output_dir.join(name);
-            if src.exists() {
-                let _ = std::fs::remove_file(&dst);
-                let _ = std::fs::copy(&src, &dst);
-            }
+        // ── Step 2b: metadata edits ──
+        //
+        // INSERT, UPDATE and DELETE live in the overlay only. The carried
+        // `down_meta.bin` is the source's, so when the overlay edits
+        // metadata it is replaced by the session's effective records. The
+        // write renames a new file into place, so the source's file,
+        // hard-linked above, is not touched.
+        let meta_edited = patched.has_meta_edits();
+        if meta_edited {
+            patched
+                .save_effective_down_meta(output_dir, config.down_top_k)
+                .map_err(|e| LqlError::exec(format!("failed to write {DOWN_META_BIN}"), e))?;
         }
 
         // ── Step 3: bake down vector overrides into down_weights.bin ──
@@ -295,14 +334,30 @@ impl Session {
         // `weight_manifest.json` and emit it as the canonical down
         // projection, so the constellation is already in the exported
         // model.
-        let down_overrides = patched.down_overrides();
-        let up_overrides = patched.up_overrides();
+        let mut down_overrides = live_overrides(patched.down_overrides(), patched).into_owned();
+        let up_overrides = live_overrides(patched.up_overrides(), patched);
+        let up_overrides: &HashMap<(usize, usize), Vec<f32>> = &up_overrides;
         // Collect gate overrides from the patch overlay into an owned
         // HashMap matching the shape `patch_gate_vectors` expects.
-        let gate_overrides: HashMap<(usize, usize), Vec<f32>> = patched
+        let mut gate_overrides: HashMap<(usize, usize), Vec<f32>> = patched
             .overrides_gate_iter()
             .map(|(l, f, g)| ((l, f), g.to_vec()))
             .collect();
+        // A deleted slot contributes nothing in the patched session: the
+        // walk gives a tombstoned slot an activation of zero and the gate
+        // KNN leaves it out. The artifact has no tombstone to carry, so the
+        // slot's gate row and down column are written as zeros, which is the
+        // same contribution. The down column needs weights to write into; a
+        // browse-only source has none and nothing to run.
+        let deleted_slots = patched.deleted_slots();
+        let has_down_weights = manifest_files.contains(DOWN_WEIGHTS_BIN);
+        for slot in &deleted_slots {
+            gate_overrides.insert(*slot, vec![0.0; config.hidden_size]);
+            if has_down_weights {
+                down_overrides.insert(*slot, vec![0.0; config.hidden_size]);
+            }
+        }
+        let down_overrides: &HashMap<(usize, usize), Vec<f32>> = &down_overrides;
 
         let mut overrides_applied = 0usize;
         // Column-replace bake of gate/up/down overlays from install_compiled_slot.
@@ -327,6 +382,8 @@ impl Session {
                     std::fs::copy(&src, &dst)
                         .map_err(|e| LqlError::exec("copy down_weights", e))?;
                 }
+            } else if manifest_files.contains(DOWN_WEIGHTS_BIN) {
+                return Err(missing_required_file(DOWN_WEIGHTS_BIN));
             }
         } else {
             patch_down_weights(path, output_dir, config, down_overrides)?;
@@ -354,13 +411,6 @@ impl Session {
         patch_gate_vectors(path, output_dir, config, &gate_overrides)?;
         patch_up_weights(path, output_dir, config, up_overrides)?;
 
-        // ── Step 4: write updated config ──
-        let mut new_config = config.clone();
-        new_config.layers = layer_infos;
-        new_config.checksums = larql_vindex::format::checksums::compute_checksums(output_dir).ok();
-        larql_vindex::VectorIndex::save_config(&new_config, output_dir)
-            .map_err(|e| LqlError::exec("failed to save config", e))?;
-
         // ── Step 4.5: apply MEMIT ΔW_down to baked down_weights.bin ──
         //
         // MEMIT produces additive deltas across the full W_down matrix
@@ -375,6 +425,26 @@ impl Session {
             apply_memit_deltas_to_down_weights(output_dir, config, results)?;
             memit_layers_touched = results.len();
         }
+
+        // ── Step 4.6: write updated config ──
+        //
+        // After every weight file has its final bytes, so the checksums
+        // describe the artifact and not a file MEMIT then edited.
+        let mut new_config = config.clone();
+        // `patch_gate_vectors` replaces the re-saved gate file with a patched
+        // copy of the source's, so the file then has the source's layout and
+        // the index must describe that one.
+        new_config.layers = if gate_overrides.is_empty() {
+            layer_infos
+        } else {
+            config.layers.clone()
+        };
+        new_config.checksums = Some(
+            larql_vindex::format::checksums::compute_checksums(output_dir)
+                .map_err(|e| LqlError::exec("failed to checksum the compiled vindex", e))?,
+        );
+        larql_vindex::VectorIndex::save_config(&new_config, output_dir)
+            .map_err(|e| LqlError::exec("failed to save config", e))?;
 
         // ── Step 5: serialize KNN store (Architecture B) ──
         let knn_count = patched.knn_store.len();
@@ -392,6 +462,40 @@ impl Session {
             output_dir.display()
         ));
         out.push(format!("Features: {}", dm_count));
+        if meta_edited {
+            out.push(format!("Metadata edits written to {DOWN_META_BIN}"));
+        }
+        if !relabelled.is_empty() {
+            let preview = relabelled
+                .iter()
+                .take(UNSTORABLE_PREVIEW)
+                .map(|label| label.to_string())
+                .collect::<Vec<_>>()
+                .join("; ");
+            out.push(format!(
+                "Labels: {} edited record(s) reload with their token's text, because \
+                 {DOWN_META_BIN} stores one token id and no text: {preview}",
+                relabelled.len()
+            ));
+        }
+        if !left_behind.is_empty() {
+            out.push(format!(
+                "Not carried: {} (computed from the source's unedited weights; the compiled \
+                 vindex runs from the weights written here)",
+                left_behind.join(", ")
+            ));
+        }
+        if !deleted_slots.is_empty() {
+            out.push(format!(
+                "Deleted slots zeroed: {} (gate row{})",
+                deleted_slots.len(),
+                if has_down_weights {
+                    " and down column"
+                } else {
+                    "; the source has no down weights"
+                },
+            ));
+        }
         out.extend(memit_warnings);
         if !collisions.is_empty() {
             let strategy = match on_conflict {

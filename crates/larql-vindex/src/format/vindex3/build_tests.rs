@@ -12,6 +12,7 @@ use crate::format::lyrw2::region_layout::RegionLayout;
 use crate::format::lyrw2::region_role::RegionRole;
 use crate::format::vindex3::import::ExpertScaleStreams;
 use crate::format::vindex3::read::Vindex3Container;
+use crate::format::vindex3::write::segment_path;
 use tempfile::tempdir;
 
 const HIDDEN: u32 = 8;
@@ -239,7 +240,10 @@ fn bytes_written_tracks_the_segments_on_disk() {
         })
         .sum();
 
-    let mut builder = ContainerBuilder::create(tempdir().unwrap().path()).unwrap();
+    // Held for the whole test: a temporary dropped at the end of the
+    // statement deletes the root the builder writes into.
+    let out = tempdir().unwrap();
+    let mut builder = ContainerBuilder::create(out.path()).unwrap();
     let mut total = 0u64;
     for layer in 0..LAYERS {
         let o = owned(layer);

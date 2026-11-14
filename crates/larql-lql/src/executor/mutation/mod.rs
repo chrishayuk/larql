@@ -8,146 +8,87 @@ mod insert;
 mod merge;
 mod rebalance;
 mod update;
+pub(crate) mod update_set;
 
 use std::collections::HashMap;
 
-use crate::ast::{CompareOp, Condition, Value};
+use crate::ast::Condition;
 use crate::error::LqlError;
+use crate::executor::predicate::{EdgePredicate, PredicateScope};
+use crate::executor::query::select::edges::resolve_edge_rows;
 use crate::executor::Session;
-use crate::relations::RelationClassifier;
 
 type PatchVectorSnapshot = (Option<String>, Option<String>, Option<String>);
 
-/// Filters extracted from a `WHERE …` clause for slot-targeting mutations.
-///
-/// `find_features` only takes (entity, relation, layer); a `feature` predicate
-/// has to be applied as a post-filter on the candidate list. Centralising this
-/// extraction means a `WHERE feature = N` without a `layer` cannot fall through
-/// to "match every slot" the way it did before.
-pub(super) struct WhereFilters<'a> {
-    pub layer: Option<usize>,
-    pub feature: Option<usize>,
-    pub entity: Option<&'a str>,
-    pub relation: Option<(&'a CompareOp, &'a str)>,
-}
-
-impl<'a> WhereFilters<'a> {
-    pub(super) fn from_conditions(conditions: &'a [Condition]) -> Self {
-        let layer = integer_condition(conditions, "layer");
-        let feature = integer_condition(conditions, "feature");
-        let entity = conditions
-            .iter()
-            .find(|c| c.field == "entity")
-            .and_then(|c| match &c.value {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            });
-        let relation = string_condition(conditions, "relation");
-        Self {
-            layer,
-            feature,
-            entity,
-            relation,
-        }
-    }
-
-    /// Resolve the (layer, feature) candidate set against the bound
-    /// knowledge source (the base scan on either backend).
+impl Session {
+    /// The `(layer, feature)` slots a DELETE / UPDATE `WHERE` clause
+    /// addresses.
     ///
-    /// Honours all three filters (entity, layer, feature). When both layer
-    /// and feature are pinned the lookup short-circuits without scanning.
-    pub(super) fn resolve_candidates(
+    /// The clause is validated whole first ([`EdgePredicate::parse`]), so
+    /// a condition this executor cannot evaluate refuses the statement
+    /// instead of widening it. Everything here is a read: a caller that
+    /// gets an `Err` back has changed neither the overlay nor the patch
+    /// recording.
+    ///
+    /// The slots are those of the rows `SELECT * FROM EDGES WHERE <the
+    /// same clause>` lists, before its ORDER BY and LIMIT — one resolver
+    /// serves both ([`resolve_edge_rows`]), so a mutation cannot reach an
+    /// edge its preview did not show. Four things differ deliberately,
+    /// all in the narrowing direction:
+    /// - `entity` together with `relation` is refused (SELECT ranks a
+    ///   gate walk for that pair; see below);
+    /// - a `relation` condition needs relation labels loaded (SELECT
+    ///   lists nothing without them; a mutation refuses);
+    /// - `layer` + `feature` together name one slot, which must exist
+    ///   (SELECT lists nothing; a mutation refuses);
+    /// - SELECT may reinterpret a relation that matched nothing as a
+    ///   synonym of a known one; a mutation takes the relation literally.
+    pub(super) fn resolve_mutation_targets(
         &self,
-        source: &crate::executor::knowledge::KnowledgeSource<'_>,
-    ) -> Vec<(usize, usize)> {
-        if let (Some(layer), Some(feature)) = (self.layer, self.feature) {
-            return vec![(layer, feature)];
+        conditions: &[Condition],
+    ) -> Result<Vec<(usize, usize)>, LqlError> {
+        let predicate = EdgePredicate::parse(conditions, PredicateScope::EDGES)?;
+        if predicate.entity.is_some() && predicate.relation.is_some() {
+            // SELECT answers `entity` + `relation` with an embedding walk:
+            // the strongest gate hits for the entity whose label matches
+            // the relation — hundreds of slots per layer, none of which
+            // need mention the entity. That is a ranking to read, not a
+            // set to destroy.
+            return Err(LqlError::Execution(
+                "unsupported WHERE clause: a mutation does not combine `entity` and \
+                 `relation` — SELECT resolves that pair by a ranked gate walk, which is \
+                 too broad to delete or update by. List the edges with SELECT and address \
+                 each by `layer` and `feature`"
+                    .into(),
+            ));
         }
-        let mut candidates = source.find_features(self.entity, self.layer);
-        if let Some(wanted) = self.feature {
-            candidates.retain(|&(_layer, feature)| feature == wanted);
+        let ctx = self.browse()?;
+        let classifier = self.relation_classifier();
+        if predicate.relation.is_some() && classifier.is_none() {
+            return Err(LqlError::Execution(
+                "relation filters require relation labels for the active vindex; \
+                 target by layer/feature or omit relation"
+                    .into(),
+            ));
         }
-        candidates
-    }
-}
 
-fn integer_condition(conditions: &[Condition], field: &str) -> Option<usize> {
-    conditions
-        .iter()
-        .find(|c| c.field == field)
-        .and_then(|c| match c.value {
-            // Negative values are kept as a sentinel that won't match any
-            // (layer, feature) — preferable to widening the filter to "all".
-            Value::Integer(n) if n >= 0 => Some(n as usize),
-            Value::Integer(_) => Some(usize::MAX),
-            _ => None,
-        })
-}
-
-pub(super) fn string_condition<'a>(
-    conditions: &'a [Condition],
-    field: &str,
-) -> Option<(&'a CompareOp, &'a str)> {
-    conditions
-        .iter()
-        .find(|c| c.field == field)
-        .and_then(|c| match &c.value {
-            Value::String(s) => Some((&c.op, s.as_str())),
-            _ => None,
-        })
-}
-
-pub(super) fn relation_filter_matches(
-    classifier: Option<&RelationClassifier>,
-    relation_filter: Option<(&CompareOp, &str)>,
-    layer: usize,
-    feature: usize,
-) -> Result<bool, LqlError> {
-    let Some((op, wanted)) = relation_filter else {
-        return Ok(true);
-    };
-    let Some(classifier) = classifier else {
-        return Err(LqlError::Execution(
-            "relation filters require relation labels for the active vindex; \
-             target by layer/feature or omit relation"
-                .into(),
-        ));
-    };
-    let label = classifier.label_for_feature(layer, feature).unwrap_or("");
-    Ok(match op {
-        CompareOp::Eq => relation_eq(label, wanted),
-        CompareOp::Neq => !label.is_empty() && !relation_eq(label, wanted),
-        CompareOp::Like => relation_like(label, wanted),
-        _ => {
-            return Err(LqlError::Execution(format!(
-                "unsupported relation predicate operator: {:?}",
-                op
-            )))
+        if let (Some(layer), Some(feature)) = (predicate.layer, predicate.feature) {
+            let slots = ctx.source.num_features(layer);
+            if feature >= slots {
+                return Err(LqlError::Execution(format!(
+                    "no such feature slot: L{layer} F{feature} (layer {layer} has {slots} \
+                     feature slots)"
+                )));
+            }
         }
-    })
-}
 
-fn relation_eq(label: &str, wanted: &str) -> bool {
-    let label = label.to_lowercase();
-    let wanted = wanted.to_lowercase();
-    !label.is_empty() && (label.contains(&wanted) || wanted.contains(&label))
-}
-
-fn relation_like(label: &str, pattern: &str) -> bool {
-    let label = label.to_lowercase();
-    let pattern = pattern.to_lowercase();
-    if pattern == "%" {
-        return !label.is_empty();
-    }
-    let needle = pattern.trim_matches('%');
-    if needle.is_empty() {
-        return !label.is_empty();
-    }
-    match (pattern.starts_with('%'), pattern.ends_with('%')) {
-        (true, true) => label.contains(needle),
-        (true, false) => label.ends_with(needle),
-        (false, true) => label.starts_with(needle),
-        (false, false) => label == needle,
+        // The one resolver SELECT uses: a mutation reaches exactly the
+        // slots the matching SELECT lists.
+        let targets = resolve_edge_rows(&ctx, classifier, &predicate)?
+            .into_iter()
+            .map(|row| (row.layer, row.feature))
+            .collect();
+        Ok(targets)
     }
 }
 
@@ -171,10 +112,12 @@ impl Session {
             }
         }
 
-        let Some(recording) = self.patch_recording.as_mut() else {
-            return Ok(());
-        };
-        for op in &mut recording.operations {
+        // Present: checked on entry, and nothing above clears it.
+        let operations = self
+            .patch_recording
+            .iter_mut()
+            .flat_map(|recording| recording.operations.iter_mut());
+        for op in operations {
             if let larql_vindex::PatchOp::Insert {
                 layer,
                 feature,
@@ -204,83 +147,4 @@ impl Session {
 
 fn encode_vector(vec: &[f32]) -> String {
     larql_vindex::patch::core::encode_gate_vector(vec)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ast::CompareOp;
-
-    fn cond(field: &str, value: Value) -> Condition {
-        Condition {
-            field: field.into(),
-            op: CompareOp::Eq,
-            value,
-        }
-    }
-
-    #[test]
-    fn extracts_layer_feature_entity_relation() {
-        let conditions = vec![
-            cond("layer", Value::Integer(3)),
-            cond("feature", Value::Integer(7)),
-            cond("entity", Value::String("France".into())),
-            cond("relation", Value::String("capital".into())),
-        ];
-        let filters = WhereFilters::from_conditions(&conditions);
-        assert_eq!(filters.layer, Some(3));
-        assert_eq!(filters.feature, Some(7));
-        assert_eq!(filters.entity, Some("France"));
-        assert_eq!(filters.relation.map(|(_, s)| s), Some("capital"));
-    }
-
-    #[test]
-    fn extracts_none_when_field_absent() {
-        let filters = WhereFilters::from_conditions(&[]);
-        assert!(filters.layer.is_none());
-        assert!(filters.feature.is_none());
-        assert!(filters.entity.is_none());
-        assert!(filters.relation.is_none());
-    }
-
-    #[test]
-    fn negative_integer_becomes_unmatchable_sentinel() {
-        // Regression: negative `WHERE layer = -1` previously cast to a huge
-        // value via `n as usize`; we keep that behaviour explicitly so a
-        // negative filter never widens to "no filter".
-        let conditions = vec![cond("layer", Value::Integer(-1))];
-        let filters = WhereFilters::from_conditions(&conditions);
-        assert_eq!(filters.layer, Some(usize::MAX));
-    }
-
-    #[test]
-    fn non_integer_layer_is_ignored() {
-        // String value where an integer is expected — silently dropped, not
-        // an error (matches the legacy behaviour of the per-field extractors).
-        let conditions = vec![cond("layer", Value::String("oops".into()))];
-        let filters = WhereFilters::from_conditions(&conditions);
-        assert_eq!(filters.layer, None);
-    }
-
-    #[test]
-    fn relation_eq_pattern_matches_substring() {
-        assert!(relation_eq("capital_of", "capital"));
-        assert!(relation_eq("capital", "capital_of"));
-        assert!(!relation_eq("", "capital"));
-    }
-
-    #[test]
-    fn relation_like_handles_anchors_and_percent_wildcard() {
-        assert!(relation_like("capital_of", "%capital%"));
-        assert!(relation_like("capital_of", "%of"));
-        assert!(relation_like("capital_of", "capital%"));
-        assert!(relation_like("capital", "capital"));
-        // Pattern `%` matches any non-empty label.
-        assert!(relation_like("anything", "%"));
-        assert!(!relation_like("", "%"));
-        // Anchored-but-mismatched cases.
-        assert!(!relation_like("capital_of", "%xyz"));
-        assert!(!relation_like("capital_of", "xyz%"));
-        assert!(!relation_like("capital_of", "different"));
-    }
 }

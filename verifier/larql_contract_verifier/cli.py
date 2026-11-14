@@ -1,5 +1,6 @@
-"""`larql-verifier contract` and `operator`: protocols `larql-verify-contract/1` and `larql-verify-operator/1`
-(docs/verification/contract-protocol.md).
+"""`larql-verifier contract`, `operator`, `patch` and `ledger`: protocols `larql-verify-contract/1`,
+`larql-verify-operator/1`, `larql-verify-patch/1` (docs/verification/contract-protocol.md) and `larql-verify-ledger/1`
+(`WEIGHT_PATCHES_V4`, docs/verification/weight-patches-v4.md §7).
 
 One JSON object on stdout, and nothing else there. Exit 0 whenever the contract was judged or could not be evaluated. A
 non-zero exit means the verifier itself failed. It reads what it's given, and writes nothing else.
@@ -19,10 +20,12 @@ from pathlib import Path
 import refcheck
 
 from . import __version__, checkpoint
-from .contracts import CONTRACTS, OPERATOR_CONTRACTS, q8_0_gemv, q8_0_t2
+from .contracts import CONTRACTS, OPERATOR_CONTRACTS, q8_0_gemv, q8_0_t2, structured_patch, weight_patches_v4
 
 SCHEMA = "larql-verify-contract/1"
 OPERATOR_SCHEMA = "larql-verify-operator/1"
+PATCH_SCHEMA = "larql-verify-patch/1"
+LEDGER_SCHEMA = "larql-verify-ledger/1"
 # refcheck/ is copied unmodified from this commit of the isolated checker. See provenance/PROVENANCE.md.
 REFCHECK_COMMIT = "f2788f0e7f1b23432bf4b9bdd1099dbd42d070fc"
 
@@ -87,6 +90,93 @@ def evaluate_operator(contract: str, operator: str, witness: str, container: str
     return out
 
 
+NOT_CHECKED = "not_checked"
+
+
+def with_axes(out: dict) -> dict:
+    """Name what a patch verdict does and does not cover. `status` is unchanged; these are additive.
+
+    `numerical_satisfaction` is the verdict on the weights. `ledger_integrity` is never checked (the ledger isn't read).
+    `provenance` is not checked: only the base binding is, and the operand's derivation and origin and the op digest are
+    not, so it is never `satisfied` and a satisfied weight check can't be read as one."""
+    judged = out["status"] in ("satisfied", "violated")
+    out["numerical_satisfaction"] = out["status"]
+    out["ledger_integrity"] = NOT_CHECKED
+    out["provenance"] = NOT_CHECKED
+    out["provenance_detail"] = {"base_binding": "satisfied" if judged else "could_not_evaluate",
+                                "operand_origin": NOT_CHECKED, "operand_derivation": NOT_CHECKED,
+                                "op_digest": NOT_CHECKED}
+    return out
+
+
+def evaluate_patch(contract: str, patch: str, base: str, container: str) -> dict:
+    return with_axes(judge_patch(contract, patch, base, container))
+
+
+def judge_patch(contract: str, patch: str, base: str, container: str) -> dict:
+    """`patch`: does `container` hold what the `.vlp` at `patch` declares of `base`? Recomputed from the operands and the
+    base weights, never from the compiler's ledger."""
+    out = {"schema": PATCH_SCHEMA, "contract": contract, "contract_statement": structured_patch.STATEMENT,
+           "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
+           "patch": {"path": patch, "sha256": None}, "base": {"path": base, "sha256": None},
+           "container": {"path": container, "sha256": None},
+           "measurements": [], "offending": [], "reasons": [],
+           "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
+                        "code_sha256": code_sha256()}}
+    if contract != structured_patch.CONTRACT:
+        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[structured_patch.CONTRACT]}")
+    if not os.path.isfile(patch) or not os.path.isdir(base) or not os.path.isdir(container):
+        return q8_0_t2.could_not(out, "the patch must be a file, and the base and the container directories")
+    try:
+        out["patch"]["sha256"] = hashlib.sha256(Path(patch).read_bytes()).hexdigest()
+        out["base"]["sha256"] = checkpoint.container_sha256(os.path.abspath(base))
+        before = checkpoint.container_sha256(os.path.abspath(container))
+    except OSError as e:
+        return q8_0_t2.could_not(out, f"an input can't be read: {e}")
+    out["container"]["sha256"] = before
+    structured_patch.evaluate(out, os.path.abspath(patch), os.path.abspath(base), os.path.abspath(container))
+    # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.
+    try:
+        unchanged = (checkpoint.container_sha256(os.path.abspath(container)) == before
+                     and checkpoint.container_sha256(os.path.abspath(base)) == out["base"]["sha256"])
+    except OSError:
+        unchanged = False
+    if not unchanged and out["status"] != "could_not_evaluate":
+        out.update(violations=0, measurements=[], offending=[])
+        q8_0_t2.could_not(out, "an input changed during the evaluation")
+    return out
+
+
+def evaluate_ledger(contract: str, base: str, container: str) -> dict:
+    """`ledger`: does `container` hold what its `weight-patches/v4` ledger declares of `base`? Two verdicts, numerical
+    satisfaction and ledger integrity and provenance, recomputed from the base and the recorded ops, never from the
+    ledger's own hashes or counts. `verifier` identifies this program; `engine_reported` is what the ledger says about
+    the engine that wrote it."""
+    out = {"schema": LEDGER_SCHEMA, "contract": contract, "contract_statement": weight_patches_v4.STATEMENT,
+           "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
+           "base": {"path": base, "sha256": None}, "container": {"path": container, "sha256": None},
+           "measurements": [], "offending": [], "reasons": [],
+           "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
+                        "code_sha256": code_sha256()}}
+    if contract != weight_patches_v4.CONTRACT:
+        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[weight_patches_v4.CONTRACT]}")
+    if not os.path.isdir(base) or not os.path.isdir(container):
+        return q8_0_t2.could_not(out, "the base and the container must be directories")
+    weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container))
+    if out["status"] == "could_not_evaluate":
+        return out
+    # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.
+    try:
+        unchanged = (checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
+                     and checkpoint.container_sha256(os.path.abspath(base)) == out["base"]["sha256"])
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        out.update(violations=0, offending=[])
+        q8_0_t2.could_not(out, "an input changed during the evaluation")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="larql-verifier")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -99,8 +189,21 @@ def main() -> None:
     o.add_argument("--operator", required=True)
     o.add_argument("--witness", required=True)
     o.add_argument("--container", required=True)
+    pa = sub.add_parser("patch")
+    pa.add_argument("--contract", required=True)
+    pa.add_argument("--patch", required=True)
+    pa.add_argument("--base", required=True)
+    pa.add_argument("--container", required=True)
+    le = sub.add_parser("ledger")
+    le.add_argument("--contract", required=True)
+    le.add_argument("--base", required=True)
+    le.add_argument("--container", required=True)
     a = ap.parse_args()
-    if a.cmd == "operator":
+    if a.cmd == "ledger":
+        answer = evaluate_ledger(a.contract, a.base, a.container)
+    elif a.cmd == "patch":
+        answer = evaluate_patch(a.contract, a.patch, a.base, a.container)
+    elif a.cmd == "operator":
         answer = evaluate_operator(a.contract, a.operator, a.witness, a.container)
     else:
         answer = evaluate(a.contract, a.container, a.source)

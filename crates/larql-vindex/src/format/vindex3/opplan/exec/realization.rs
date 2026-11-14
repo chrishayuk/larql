@@ -61,6 +61,12 @@ pub struct RepresentationFacts {
     /// loader binds by. A backend that pins f16 must honour it for the
     /// same reason.
     pub nvfp4_compiled: bool,
+    /// Whether the store forbids manufacturing a representation at load
+    /// (`--representation-source stored`) — read from
+    /// `OperandStore::representation_source`, the same fact the loader
+    /// refuses by. A selector must not offer a requantised form the
+    /// loader would then refuse, or quietly run one the caller forbade.
+    pub requantise_forbidden: bool,
 }
 
 /// A registered codec's declarations, copied out so a backend never holds
@@ -93,6 +99,7 @@ impl RepresentationFacts {
             overlaid: false,
             nvfp4_at_source: false,
             nvfp4_compiled: false,
+            requantise_forbidden: false,
         }
     }
 
@@ -113,6 +120,13 @@ impl RepresentationFacts {
     /// binds this operand's compiled NVFP4 image as stored.
     pub fn with_nvfp4_compiled(mut self, compiled: bool) -> Self {
         self.nvfp4_compiled = compiled;
+        self
+    }
+
+    /// The same facts, with the store's answer to whether it forbids
+    /// quantising at load.
+    pub fn with_requantise_forbidden(mut self, forbidden: bool) -> Self {
+        self.requantise_forbidden = forbidden;
         self
     }
 
@@ -422,9 +436,11 @@ pub enum SelectionReason {
     ReferenceOracle,
     /// An overlay edit stands on the operand; only decode can honour it.
     OverlaidEdit,
-    /// The class table asked for NVFP4, and the container holds this
-    /// operand at source precision; it binds at f16 instead, as the loader
-    /// does, and manufactures nothing.
+    /// The backend asked for a compact form the container does not store
+    /// — NVFP4 from the class table, or a requantised Q8/Q4 image from
+    /// the size policy under `--representation-source stored` — and the
+    /// container holds this operand at source precision; it binds at that
+    /// precision instead, as the loader does, and manufactures nothing.
     SourcePrecisionHeld,
     /// The class table asked for f16, and the container stores this
     /// operand compiled to NVFP4 with no source bytes; it binds as stored,

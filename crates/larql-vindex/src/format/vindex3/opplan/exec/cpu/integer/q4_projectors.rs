@@ -72,7 +72,13 @@ pub(in super::super) fn q4_row_subblocked(
 
 /// One Q8 row against a quantised activation, vectorised where possible.
 #[inline]
-pub(super) fn q8_row(codes: &[i8], scales: &[f32], qx: &[i8], in_dim: usize, block: usize) -> f32 {
+pub(in super::super) fn q8_row(
+    codes: &[i8],
+    scales: &[f32],
+    qx: &[i8],
+    in_dim: usize,
+    block: usize,
+) -> f32 {
     #[cfg(target_arch = "aarch64")]
     if has_dotprod() {
         // SAFETY: both guarded by the runtime feature check.
@@ -89,7 +95,13 @@ pub(super) fn q8_row(codes: &[i8], scales: &[f32], qx: &[i8], in_dim: usize, blo
 
 /// One Q4 row against a quantised activation, vectorised where possible.
 #[inline]
-pub(super) fn q4_row(packed: &[u8], scales: &[f32], qx: &[i8], in_dim: usize, block: usize) -> f32 {
+pub(in super::super) fn q4_row(
+    packed: &[u8],
+    scales: &[f32],
+    qx: &[i8],
+    in_dim: usize,
+    block: usize,
+) -> f32 {
     #[cfg(target_arch = "aarch64")]
     if has_dotprod() {
         // SAFETY: guarded by the runtime feature check.

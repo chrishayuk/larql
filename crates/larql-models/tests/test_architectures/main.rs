@@ -281,6 +281,7 @@ fn olmoe() -> Box<dyn ModelArchitecture> {
 mod config_validation;
 mod deepseek_moe_mla;
 mod dense_model_no_moe;
+mod gemma3_text_flat_interleave;
 mod gemma_4_per_layer_geometry_partial_rope;
 mod gpt_oss_architecture;
 mod modelweights_drop_attn_weights_drop_lm_h;

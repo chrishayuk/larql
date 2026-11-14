@@ -1,12 +1,14 @@
 //! Chat-template selection + message rendering shared by the OpenAI
 //! conversation endpoints (`/v1/chat/completions`, `/v1/responses`).
 //!
-//! The multi-turn rendering itself lives in
-//! `larql_inference::prompt::ChatTemplate::render_messages`; this module
-//! only (a) picks the right template variant for a loaded model and
-//! (b) flattens tool-call turns into the `system`/`user`/`assistant`
-//! slots the templates natively understand. Centralised here so the
-//! chat and responses endpoints cannot drift in how a conversation
+//! This module (a) picks the heuristic template variant for a VINDEX2
+//! model, whose rendering lives in
+//! `larql_inference::prompt::ChatTemplate::render_messages`, and (b)
+//! flattens tool-call turns into the `system`/`user`/`assistant` slots
+//! every template natively understands ([`flatten`]) — the one
+//! flattening both runtimes use. A VINDEX3 container renders through
+//! its own template instead ([`super::v3_prompt`]). Centralised here so
+//! the chat and responses endpoints cannot drift in how a conversation
 //! becomes a prompt.
 
 use super::chat::ChatMessage;
@@ -33,10 +35,20 @@ pub(super) fn pick_template(
     larql_inference::prompt::ChatTemplate::for_family(weights.arch.family())
 }
 
-/// Adapter: convert a wire `ChatMessage` list to the `(role, content)`
-/// shape `ChatTemplate::render_messages` accepts. The chat templates
-/// natively handle `system` / `user` / `assistant` only, so tool turns
-/// are flattened into text content that fits within those slots:
+/// Render a wire `ChatMessage` list with a heuristic VINDEX2 template,
+/// over the [`flatten`]ed turns.
+pub(super) fn render(
+    template: larql_inference::prompt::ChatTemplate,
+    messages: &[ChatMessage],
+) -> String {
+    let pairs = flatten(messages);
+    template.render_messages(pairs.iter().map(|(r, c)| (r.as_str(), c.as_str())))
+}
+
+/// Adapter: convert a wire `ChatMessage` list to `(role, content)`
+/// pairs. Chat templates reliably handle `system` / `user` /
+/// `assistant` only, so tool turns are flattened into text content that
+/// fits within those slots:
 ///
 /// - Assistant message with `tool_calls` (and `content: null`) →
 ///   assistant turn whose content is a serialised summary of the tool
@@ -45,11 +57,8 @@ pub(super) fn pick_template(
 /// - Tool message → user turn with `[Tool result for <id>: <content>]`,
 ///   so the model sees the result inline before generating the next
 ///   assistant turn.
-pub(super) fn render(
-    template: larql_inference::prompt::ChatTemplate,
-    messages: &[ChatMessage],
-) -> String {
-    let pairs: Vec<(String, String)> = messages
+pub(super) fn flatten(messages: &[ChatMessage]) -> Vec<(String, String)> {
+    messages
         .iter()
         .map(|m| match m.role.as_str() {
             TOOL_ROLE => (
@@ -67,8 +76,7 @@ pub(super) fn render(
             }
             other => (other.to_string(), m.content.clone().unwrap_or_default()),
         })
-        .collect();
-    template.render_messages(pairs.iter().map(|(r, c)| (r.as_str(), c.as_str())))
+        .collect()
 }
 
 /// Render a tool-result message as a user-side text turn so the model

@@ -21,27 +21,32 @@ cargo run -p larql-cli -- lql 'SHOW MODELS;'
 ### 1. Extract a model
 
 ```sql
+-- Default: a VINDEX3 container, executable and queryable, session left bound
+EXTRACT MODEL "Qwen/Qwen3-0.6B" INTO "qwen3-0.6b.vindex3";
+
+-- VINDEX2 (the compatibility generation) must be asked for by name.
 -- Browse-only (~3 GB f16 / ~6 GB f32, fast queries, no inference)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex";
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" FORMAT VINDEX2;
 
--- With inference support (~6 GB f16 / ~12 GB f32, enables INFER)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE;
+-- VINDEX2 with inference support (~6 GB f16 / ~12 GB f32, enables INFER)
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE FORMAT VINDEX2;
 
--- Full (~10 GB f16 / ~18 GB f32, enables COMPILE for recompilation)
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL;
-
--- Pick the container generation explicitly. Omitted = no preference,
--- resolved by the extraction-generation policy (docs/vindex-generation-policy.md).
-EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" FORMAT VINDEX3;
+-- VINDEX2 full (~10 GB f16 / ~18 GB f32, enables COMPILE for recompilation)
+EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL FORMAT VINDEX2;
 ```
 
-A `FORMAT VINDEX3` extraction encodes the checkpoint's own bytes into a
-VINDEX3 container (HF checkpoint artifacts only — GGUF sources refuse by
-name rather than transcoding on the way in), carries the tokenizer and
-HF metadata in beside it, and leaves the session bound: no `USE` needed.
+With no `FORMAT`, the [extraction-generation policy](vindex-generation-policy.md)
+decides, and since 2026-11-06 it decides VINDEX3. A VINDEX3 extraction
+encodes the checkpoint's own bytes into a container (HF checkpoint artifacts
+only — GGUF sources refuse by name rather than transcoding on the way in),
+carries the tokenizer and HF metadata in beside it, and leaves the session
+bound: no `USE` needed. `WITH BROWSE | INFERENCE | ALL` shape a VINDEX2
+extraction only. Not every architecture is admitted yet — check with
+`larql vindex3 plan <model>`; Gemma 3, for example, still needs `FORMAT VINDEX2`.
 
-CLI equivalent: `larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex --level inference --f16`
-(add `--generation v3` for a VINDEX3 container).
+CLI equivalent: `larql extract Qwen/Qwen3-0.6B -o qwen3-0.6b.vindex3`, or
+`larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --generation v2 --level inference`
+for VINDEX2.
 
 ### 2. Connect
 
@@ -49,6 +54,10 @@ CLI equivalent: `larql extract-index google/gemma-3-4b-it -o gemma3-4b.vindex --
 -- Use a pre-extracted vindex (fast, all operations)
 USE "gemma3-4b.vindex";
 STATS;
+
+-- Or, from `larql lql` / `larql repl`, a model already in the cache by name
+-- (the name `larql run` takes; never downloads)
+USE "Qwen3-0.6B";
 
 -- Or point directly at model weights (no extraction needed)
 USE MODEL "google/gemma-3-4b-it";
@@ -155,12 +164,13 @@ INSERT INTO EDGES (entity, relation, target)
 -- Verify
 DESCRIBE "John Coyle";
 
--- Delete
-DELETE FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+-- List the edges, then delete the slot the listing shows.
+-- (A mutation does not combine entity and relation; SELECT is its preview.)
+SELECT * FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+DELETE FROM EDGES WHERE layer = 26 AND feature = 8821;
 
 -- Update by entity (works on both heap and mmap-loaded vindexes)
-UPDATE EDGES SET target = "London"
-    WHERE entity = "John Coyle" AND relation = "lives-in";
+UPDATE EDGES SET target = "London" WHERE entity = "John Coyle";
 
 -- Update by (layer, feature) — fast-path, bypasses the entity scan
 UPDATE EDGES SET target = "London", confidence = 0.95
@@ -222,11 +232,21 @@ COMPILE CURRENT INTO VINDEX "gemma3-4b-medical.vindex";
 USE "gemma3-4b-medical.vindex";
 INFER "The capital of Atlantis is" TOP 5;
 
--- Or compile back to HuggingFace format. The constellation is in the
--- standard down_proj tensors, so loading in Transformers / GGUF
--- runtimes Just Works.
-COMPILE CURRENT INTO MODEL "gemma3-4b-edited/" FORMAT safetensors;
 ```
+
+`COMPILE INTO VINDEX` writes every edit or refuses by name. A deleted slot
+is written with a zero gate row and down vector, so it contributes nothing,
+as in the session. `down_meta.bin` stores one token id per record and no
+text: a multi-token target reloads as its first token, and the compile
+lists each such record. An `UPDATE` that changes only a slot's text, a
+quantised or per-layer source, a file the manifest names and the source
+lacks, and a `FORMAT` clause are refused.
+
+`COMPILE CURRENT INTO MODEL` is refused while the session holds edits the
+export would not contain: any `DELETE`, `UPDATE` or KNN-mode `INSERT`, and
+any compose-mode `INSERT` unless `LARQL_MEMIT_ENABLE=1`. `FORMAT GGUF` is
+refused. The export itself does not currently complete for any source (it
+fails while writing the model); that is tracked separately.
 
 ## Residual Stream Trace
 
@@ -324,7 +344,8 @@ larql> INFER "The capital of France is" TOP 3;        -- …and overrides top-1
 larql> UPDATE EDGES SET target = "Lyon" WHERE layer = 20 AND feature = 105;
 larql> DELETE FROM EDGES WHERE layer = 20 AND feature = 106;
 larql> MERGE "other-knowledge.vindex";                -- V2 source, V3 target
-larql> SAVE PATCH "france.vlp";    -- persists; the container is untouched
+larql> BEGIN PATCH "france.vlp";   -- names the patch; the edits above are kept
+larql> SAVE PATCH;                 -- persists; the container is untouched
 larql> COMPILE CURRENT INTO VINDEX "gpt-oss-france.v3";  -- bake: clean container
 larql> DIFF "gpt-oss-20b.v3" CURRENT;   -- logical: knowledge edges + feature slots
 larql> DIFF "gpt-oss-20b.v3" "gpt-oss-france.v3" PHYSICAL;  -- segment-level

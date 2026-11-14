@@ -107,20 +107,18 @@ fn resolve_patch(
     ))
 }
 
-/// Feature-slot space used to hash an entity into a deterministic slot when
-/// an INSERT op arrives with `feature == 0`.
-///
-/// WARNING: this pins Gemma's 10,240-wide FFN (`intermediate_size`) and is
-/// wrong for other architectures. The per-layer feature count is not safely
-/// reachable here (it lives behind the async `model.patched` lock and this
-/// enrichment runs synchronously inside the request handler), so the historic
-/// literal is kept — existing Gemma behavior must not change.
-const LEGACY_FEATURE_SLOT_SPACE: usize = 10240;
-
 /// Synthesise a gate vector from entity embedding when the client didn't provide one.
-fn enrich_patch_ops(model: &crate::state::LoadedModel, patch: &mut larql_vindex::VindexPatch) {
+///
+/// Returns the positions of the INSERT ops that asked the server to choose
+/// their slot: no gate vector and `feature == 0`. The slots are chosen later,
+/// by [`assign_requested_slots`], on the overlay the patch is applied to.
+fn enrich_patch_ops(
+    model: &crate::state::LoadedModel,
+    patch: &mut larql_vindex::VindexPatch,
+) -> Vec<usize> {
     let hidden = model.embeddings.shape()[1];
-    for op in &mut patch.operations {
+    let mut requested_slots = Vec::new();
+    for (position, op) in patch.operations.iter_mut().enumerate() {
         if let larql_vindex::PatchOp::Insert {
             entity,
             relation,
@@ -131,6 +129,9 @@ fn enrich_patch_ops(model: &crate::state::LoadedModel, patch: &mut larql_vindex:
         {
             // Synthesise gate vector if missing
             if gate_vector_b64.is_none() {
+                if *feature == 0 {
+                    requested_slots.push(position);
+                }
                 let encoding = model.tokenizer.encode(entity.as_str(), false);
                 if let Ok(enc) = encoding {
                     let ids = enc.get_ids();
@@ -160,15 +161,6 @@ fn enrich_patch_ops(model: &crate::state::LoadedModel, patch: &mut larql_vindex:
                             Some(larql_vindex::patch::core::encode_gate_vector(&embed));
                     }
                 }
-
-                // Assign a feature slot if unset
-                if *feature == 0 {
-                    // Use a deterministic slot based on layer + entity hash
-                    let hash = entity
-                        .bytes()
-                        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-                    *feature = (hash as usize % LEGACY_FEATURE_SLOT_SPACE) + 1;
-                }
             }
 
             // Register the relation label so DESCRIBE shows it
@@ -180,6 +172,59 @@ fn enrich_patch_ops(model: &crate::state::LoadedModel, patch: &mut larql_vindex:
             }
         }
     }
+    requested_slots
+}
+
+/// Give each INSERT op at `requested` a slot that is free on `target`, the
+/// overlay the patch is about to be applied to, and not given to another op
+/// of the same patch. A layer with no free slot refuses the whole patch.
+///
+/// This used to hash the entity into `1..=10240` whatever the layer's width,
+/// and never asked whether the slot was free: two entities could share a
+/// slot, and a slot could overwrite a feature the model or another patch had.
+fn assign_requested_slots(
+    target: &larql_vindex::PatchedVindex,
+    patch: &mut larql_vindex::VindexPatch,
+    requested: &[usize],
+) -> Result<(), larql_vindex::VindexError> {
+    let mut claimed: std::collections::HashMap<usize, std::collections::HashSet<usize>> =
+        std::collections::HashMap::new();
+    // Slots the patch states itself. A requested op's `0` is the request,
+    // not a slot, so it claims nothing.
+    for (position, op) in patch.operations.iter().enumerate() {
+        if let larql_vindex::PatchOp::Insert { layer, feature, .. } = op {
+            if !requested.contains(&position) {
+                claimed.entry(*layer).or_default().insert(*feature);
+            }
+        }
+    }
+    for &position in requested {
+        if let Some(larql_vindex::PatchOp::Insert {
+            layer,
+            feature,
+            entity,
+            ..
+        }) = patch.operations.get_mut(position)
+        {
+            let taken = claimed.entry(*layer).or_default();
+            let slot = target
+                .find_free_feature_excluding(*layer, taken)
+                .ok_or_else(|| {
+                    larql_vindex::VindexError::Parse(format!(
+                        "no free feature slot at layer {layer} for the INSERT of `{entity}`"
+                    ))
+                })?;
+            taken.insert(slot);
+            *feature = slot;
+        }
+    }
+    Ok(())
+}
+
+/// A patch the overlay refused. Nothing was applied, and the client is told
+/// so: this used to be answered `"applied"`.
+fn refused_patch(e: larql_vindex::VindexError) -> ServerError {
+    ServerError::BadRequest(format!("patch not applied: {e}"))
 }
 
 async fn apply_patch_to_model(
@@ -192,14 +237,27 @@ async fn apply_patch_to_model(
 
     let (mut patch, name) = resolve_patch(&state.patch_sources, &req)?;
 
+    // A patch is written against one model. This route used to apply any
+    // patch to any model, including one that names no model at all; local
+    // `APPLY PATCH` has always refused both.
+    patch
+        .check_base_model(&model.config.model)
+        .map_err(refused_patch)?;
+
     // Enrich INSERT ops with gate vectors if missing
-    enrich_patch_ops(&model, &mut patch);
+    let requested_slots = enrich_patch_ops(&model, &mut patch);
 
     let op_count = patch.operations.len();
 
     // Session-scoped or global?
     if let Some(sid) = extract_session_id(headers) {
-        let (ops, active) = state.sessions.apply_patch(&sid, &model, patch).await;
+        let (ops, active) = state
+            .sessions
+            .apply_patch_with(&sid, &model, patch, |overlay, patch| {
+                assign_requested_slots(overlay, patch, &requested_slots)
+            })
+            .await
+            .map_err(refused_patch)?;
         Ok(Json(serde_json::json!({
             "applied": name,
             "operations": ops,
@@ -208,7 +266,8 @@ async fn apply_patch_to_model(
         })))
     } else {
         let mut patched = model.patched.write().await;
-        patched.apply_patch(patch);
+        assign_requested_slots(&patched, &mut patch, &requested_slots).map_err(refused_patch)?;
+        patched.try_apply_patch(patch).map_err(refused_patch)?;
         let active = patched.num_patches();
         Ok(Json(serde_json::json!({
             "applied": name,
@@ -229,8 +288,8 @@ async fn apply_patch_to_model(
     ),
     responses(
         (status = 200, description = "Patch applied", body = crate::openapi::schemas::ApplyPatchResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_apply_patch(
@@ -249,9 +308,9 @@ pub async fn handle_apply_patch(
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     request_body(content = crate::openapi::schemas::ApplyPatchBody),
     responses(
-        (status = 200, body = crate::openapi::schemas::ApplyPatchResponse),
-        (status = 400, body = crate::error::ErrorBody),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::ApplyPatchResponse),
+        (status = 400, description = "Bad request", body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_apply_patch_multi(
@@ -303,7 +362,7 @@ async fn list_patches_for_model(
     responses(
         (status = 200, description = "Active patches for the current session or global state",
          body = crate::openapi::schemas::ListPatchesResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_list_patches(
@@ -320,8 +379,8 @@ pub async fn handle_list_patches(
     tag = "patches",
     params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
     responses(
-        (status = 200, body = crate::openapi::schemas::ListPatchesResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::ListPatchesResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_list_patches_multi(
@@ -379,7 +438,7 @@ async fn remove_patch_from_model(
     ),
     responses(
         (status = 200, description = "Patch removed", body = crate::openapi::schemas::RemovePatchResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_remove_patch(
@@ -400,8 +459,8 @@ pub async fn handle_remove_patch(
         ("name" = String, Path, description = "Patch description/name."),
     ),
     responses(
-        (status = 200, body = crate::openapi::schemas::RemovePatchResponse),
-        (status = 404, body = crate::error::ErrorBody),
+        (status = 200, description = "OK", body = crate::openapi::schemas::RemovePatchResponse),
+        (status = 404, description = "Not found", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_remove_patch_multi(

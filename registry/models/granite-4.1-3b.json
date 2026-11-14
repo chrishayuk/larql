@@ -4,7 +4,7 @@
     "bf16": {
       "artifact": {
         "repo": "larql/granite-4.1-3b",
-        "revision": "1048a8eb2fec5812a698e76d7e603527d0475c17"
+        "revision": "8bff8ee410676446f7cd4e2800406bc660dd8a9f"
       },
       "abi": 1,
       "source": {

@@ -10,6 +10,7 @@
 
 #![allow(dead_code, unused_imports)]
 
+pub mod chat_template;
 pub mod synthetic_q4k_vindex;
 pub mod synthetic_vindex;
 
@@ -70,10 +71,14 @@ pub fn test_index() -> VectorIndex {
     VectorIndex::new(vec![Some(gate)], vec![Some(meta)], 1, hidden)
 }
 
+/// The model every fixture here serves (`index.json` `model`). A patch must
+/// name it as its `base_model` to be applied.
+pub const FIXTURE_MODEL: &str = "test/model-4";
+
 pub fn test_config() -> VindexConfig {
     VindexConfig {
         version: 2,
-        model: "test/model-4".to_string(),
+        model: FIXTURE_MODEL.to_string(),
         family: "test".to_string(),
         source: None,
         checksums: None,
@@ -481,6 +486,7 @@ pub fn state(models: Vec<Arc<LoadedModel>>) -> Arc<AppState> {
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -512,6 +518,7 @@ pub fn state_with_timeout(
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -537,6 +544,7 @@ pub fn state_with_key(models: Vec<Arc<LoadedModel>>, key: &str) -> Arc<AppState>
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -562,6 +570,7 @@ pub fn state_with_cache(models: Vec<Arc<LoadedModel>>, cache_size: u64) -> Arc<A
         model_set: std::sync::RwLock::new(larql_server::state::ModelSet {
             models,
             v3_models: Vec::new(),
+            aliases: Default::default(),
         }),
         router_topology,
         lifecycle: std::sync::Mutex::new(larql_server::state::LifecycleState::Idle),
@@ -671,7 +680,7 @@ pub fn inline_delete_patch(name: &str) -> serde_json::Value {
     serde_json::json!({
         "patch": {
             "version": 1,
-            "base_model": "test",
+            "base_model": FIXTURE_MODEL,
             "base_checksum": null,
             "created_at": "2026-04-26",
             "description": name,

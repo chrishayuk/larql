@@ -303,7 +303,7 @@ fn extract_with_patches_bake_down() {
     };
 
     let mut patched = larql_vindex::PatchedVindex::new(base);
-    patched.apply_patch(patch);
+    patched.try_apply_patch(patch).expect("patch applies");
 
     // Verify patch applied
     assert_eq!(patched.feature_meta(0, 0).unwrap().top_token, "PATCHED");

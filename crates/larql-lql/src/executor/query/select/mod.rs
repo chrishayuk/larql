@@ -8,7 +8,7 @@
 //! constants in `format.rs`, with `// why` comments explaining how
 //! each was chosen.
 
-mod edges;
+pub(crate) mod edges;
 mod entities;
 mod features;
 mod format;

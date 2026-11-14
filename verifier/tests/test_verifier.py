@@ -192,6 +192,32 @@ class Expected(unittest.TestCase):
         for c in e["containers"].values():
             self.assertRegex(c["larql_commit"], r"^[0-9a-f]{40}$")
             self.assertEqual(c["status"] == "satisfied", c["violations"] == 0)
+        for c in e["containers"].values():
+            for key in ("report_sha256", "q8_0_segment_sha256"):
+                self.assertRegex(c[key], r"^[0-9a-f]{64}$")
+        o = e["operators"]
+        self.assertRegex(o["larql_commit"], r"^[0-9a-f]{40}$")
+        # the operators are captured from a container whose own result is expected to be satisfied
+        self.assertIn(o["container"], e["containers"])
+        self.assertEqual(e["containers"][o["container"]]["status"], "satisfied")
+        self.assertTrue(o["tokens"])
+        self.assertTrue(all(type(t) is int and t >= 0 for t in o["tokens"]), o["tokens"])
+        self.assertRegex(o["logit_dump_sha256"], r"^[0-9a-f]{64}$")
+        self.assertTrue(0 < len(o["checked"]) <= o["records"] <= o["calls_observed"])
+        for op, want in o["checked"].items():
+            self.assertRegex(want["x_sha256"], r"^[0-9a-f]{64}$", op)
+            self.assertRegex(want["y_sha256"], r"^[0-9a-f]{64}$", op)
+            # a clean kernel is within the B1 bound, so its worst error is a fraction of the bound below 1
+            self.assertTrue(0.0 <= float(want["worst_b1_ratio"]) < 1.0, op)
+        self.assertEqual(set(o["faults"]), {"reverse_blocks", "unsigned_codes"})
+        for fault in o["faults"].values():
+            self.assertEqual(set(fault), {"Q8_0_GEMV_SEQ", "Q8_0_GEMV_B1"})
+            self.assertTrue(set(fault.values()) <= {"satisfied", "violated"})
+            self.assertEqual(fault["Q8_0_GEMV_SEQ"], "violated")
+        # reversing the block order is a reassociation: it breaks the sequential program but stays within B1's bound
+        self.assertEqual(o["faults"]["reverse_blocks"]["Q8_0_GEMV_B1"], "satisfied")
+        # reading signed codes as unsigned gives wrong values, which no bound tolerates
+        self.assertEqual(o["faults"]["unsigned_codes"]["Q8_0_GEMV_B1"], "violated")
 
 
 if __name__ == "__main__":

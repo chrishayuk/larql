@@ -171,7 +171,7 @@ pub async fn warmup_model_async(model: Arc<LoadedModel>, req: WarmupRequest) -> 
     request_body = WarmupRequest,
     responses(
         (status = 200, description = "Warmup completed", body = WarmupResponse),
-        (status = 500, body = crate::error::ErrorBody),
+        (status = 500, description = "Internal server error", body = crate::error::ErrorBody),
     ),
 )]
 pub async fn handle_warmup(

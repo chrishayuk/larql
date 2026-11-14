@@ -33,7 +33,7 @@ fn args(container: &std::path::Path, record: &std::path::Path) -> ObserveArgs {
         tokens: Some(PROMPT_IDS.to_string()),
         generate: 0,
         backend: ExecBackend::Reference,
-        representation_source: "auto".to_string(),
+        representation_source: Some("auto".to_string()),
         record: record.to_path_buf(),
         run_id: Some("fixture-run".to_string()),
         basis_dims: DIMS,
@@ -568,4 +568,25 @@ fn observe_captures_a_carrier_and_a_declaration_patches_it_in_with_provenance() 
         .unwrap_err()
         .to_string();
     assert!(err.contains("never reached"), "{err}");
+}
+
+/// `--prompt` feeds the shared table's ids for every BOS shape — the
+/// table `larql run --raw`, the server's plain completions and LQL are
+/// held to. Before the shared encoder observe fed the bare encoding and
+/// the Gemma 4 shape failed here.
+#[test]
+fn a_prompt_encodes_every_bos_shape_like_every_surface() {
+    use larql_inference::test_utils::{BosShape, RAW_PROMPT};
+    use larql_vindex::format::vindex3::fixtures::DENSE_VOCAB;
+    for shape in BosShape::ALL {
+        let dir = tempfile::tempdir().unwrap();
+        shape.write_into(dir.path(), DENSE_VOCAB);
+        let tokenizer = larql_vindex::load_vindex_tokenizer(dir.path()).unwrap();
+        let mut a = args(dir.path(), &dir.path().join("record.jsonl"));
+        a.container = dir.path().to_path_buf();
+        a.prompt = Some(RAW_PROMPT.to_string());
+        a.tokens = None;
+        let ids = super::super::observe::prompt_ids(&a, Some(&tokenizer)).unwrap();
+        assert_eq!(ids, shape.expected_ids(), "{shape:?}");
+    }
 }

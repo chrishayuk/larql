@@ -138,8 +138,13 @@ fn is_fragile(meta: &BoundaryMetadata, config: &BoundaryGateConfig) -> bool {
     // Compare log-prob margin against the log-prob threshold.
     // Using raw_logit_margin here would be wrong — logit scales are not
     // comparable across positions.
-    meta.raw_log_prob_margin < config.min_log_prob_margin
-        || meta.raw_top1_prob < config.min_top1_prob
+    //
+    // Written as "not known to clear both thresholds" so that a NaN is
+    // fragile. `margin < threshold` is false for NaN, and a boundary whose
+    // margin or probability could not be computed was passed as safe.
+    let clears_both = meta.raw_log_prob_margin >= config.min_log_prob_margin
+        && meta.raw_top1_prob >= config.min_top1_prob;
+    !clears_both
 }
 
 fn to_fallback(config: &BoundaryGateConfig) -> BoundaryDecision {

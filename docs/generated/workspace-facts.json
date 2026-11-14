@@ -111,7 +111,7 @@
       "name": "larql-boundary",
       "path": "crates/larql-boundary",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Confidence-gated BOUNDARY ref codec for LARQL",
       "features": {},
       "local_dependencies": [],
@@ -125,7 +125,7 @@
       "name": "larql-cli",
       "path": "crates/larql-cli",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "LARQL command-line interface for artifacts, execution, observation, representation, LQL and serving.",
       "features": {
         "default": [
@@ -294,7 +294,7 @@
       "name": "larql-compute",
       "path": "crates/larql-compute",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Compute backend trait + CPU implementation for LARQL. GPU backends ship as sibling crates (larql-compute-metal, future larql-compute-vulkan / larql-compute-cuda).",
       "features": {
         "default": [],
@@ -343,7 +343,7 @@
       "name": "larql-compute-metal",
       "path": "crates/larql-compute-metal",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Metal GPU backend for LARQL. Implements `larql_compute::ComputeBackend` on Apple Silicon via `metal-rs` + custom MSL shaders. Decoupled from larql-compute so non-Mac hosts skip the build entirely.",
       "features": {},
       "local_dependencies": [
@@ -398,7 +398,7 @@
       "name": "larql-continuation-fixture",
       "path": "crates/larql-continuation-fixture",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Test-only cdylib: the C5 continuation provider, loaded by larql-cli's C6 plugin gate",
       "features": {
         "gpu": [
@@ -426,7 +426,7 @@
       "name": "larql-core",
       "path": "crates/larql-core",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Core graph engine for LARQL \u2014 knowledge graphs extracted from neural network weights",
       "features": {
         "default": [
@@ -451,7 +451,7 @@
       "name": "larql-demos",
       "path": "crates/larql-demos",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Runnable demonstrations of larql's shipped capabilities",
       "features": {
         "default": [],
@@ -566,6 +566,10 @@
         }
       ],
       "examples": [
+        {
+          "name": "compose_harness",
+          "path": "examples/lql/compose_harness/main.rs"
+        },
         {
           "name": "encode_decode",
           "path": "examples/boundary/encode_decode.rs"
@@ -768,7 +772,7 @@
       "name": "larql-execution",
       "path": "crates/larql-execution",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Execution-refusal semantics shared across LARQL's runtime crates. Zero larql-* deps.",
       "features": {},
       "local_dependencies": [],
@@ -1177,7 +1181,7 @@
       "name": "larql-factory",
       "path": "crates/larql-factory",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Recipe-driven vindex builds: validation, identity, estimates, capability manifests, cards and staged orchestration.",
       "features": {},
       "local_dependencies": [
@@ -1220,7 +1224,7 @@
       "name": "larql-inference",
       "path": "crates/larql-inference",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "LARQL runtime composition: sessions, generation, FFN routing and VINDEX3 execution records.",
       "features": {
         "default": [],
@@ -1338,7 +1342,7 @@
       "name": "larql-kv",
       "path": "crates/larql-kv",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Pluggable KV-cache engines for larql-inference (markov-rs, unlimited-context, turbo-quant, apollo)",
       "features": {
         "default": [],
@@ -1427,7 +1431,7 @@
       "name": "larql-lql",
       "path": "crates/larql-lql",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "LQL parser, executor, and REPL for LARQL",
       "features": {
         "default": [],
@@ -1515,7 +1519,7 @@
       "name": "larql-models",
       "path": "crates/larql-models",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Model source description, inventory, weight loading, quantized formats and multimodal contracts for LARQL.",
       "features": {
         "default": [],
@@ -1539,7 +1543,7 @@
       "name": "larql-python",
       "path": "crates/larql-python",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "PyO3 bindings for LARQL graphs, VectorIndex access, LQL sessions, walks and traces.",
       "features": {},
       "local_dependencies": [
@@ -1622,7 +1626,7 @@
       "name": "larql-router",
       "path": "crates/larql-router",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Layer-sharding router for distributed larql-server deployments",
       "features": {
         "default": [],
@@ -1653,7 +1657,7 @@
       "name": "larql-router-protocol",
       "path": "crates/larql-router-protocol",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Grid, expert and shard wire contracts with optional QUIC and HTTP/3 transports.",
       "features": {
         "default": [],
@@ -1685,7 +1689,7 @@
       "name": "larql-server",
       "path": "crates/larql-server",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "HTTP and gRPC serving for V2/VINDEX3 artifacts, generation, queries and distributed execution.",
       "features": {
         "default": [],
@@ -1814,7 +1818,7 @@
       "name": "larql-vindex",
       "path": "crates/larql-vindex",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "VINDEX lifecycle and VINDEX3 graph, representations, operation plans and canonical execution; V2 index and patch APIs.",
       "features": {
         "default": [],
@@ -1912,7 +1916,7 @@
       "name": "larql-vindex-spec",
       "path": "crates/larql-vindex-spec",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Public contract for the vindex on-disk format: Rust types, JSON Schema, validation thresholds. Zero larql-* deps.",
       "features": {
         "default": [],
@@ -1925,7 +1929,7 @@
       "name": "model-compute",
       "path": "crates/model-compute",
       "workspace": "Cargo.toml",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Bounded-cost compute for neural-model pipelines: native Rust kernels (default) and wasmtime-hosted WASM modules (opt-in)",
       "features": {
         "default": [

@@ -41,6 +41,7 @@ pub mod auxiliary_references;
 pub mod build;
 pub mod compact;
 pub mod compile;
+pub mod container_path;
 pub mod diff;
 pub mod encode;
 /// Miniature whole-model checkpoint writers, public so sibling crates'
@@ -83,5 +84,5 @@ pub use profile::{Profile, ProfileSelectionError, ResolvedProfile};
 pub use read::Vindex3Container;
 pub use shape::{ContainerShape, LEGACY_BANK_MIGRATION};
 pub use variants::{RegionSetVariants, StoredVariant, VariantCatalogue, VariantDefect};
-pub use verify::{validate_downloaded_container, ContainerDefect};
+pub use verify::{check_container_structure, validate_downloaded_container, ContainerDefect};
 pub use write::{segment_path, write_container, ContainerSpec, SegmentSource, MOE_MANIFEST_JSON};

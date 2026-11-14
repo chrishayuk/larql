@@ -37,6 +37,7 @@ use crate::format::capability::authority::Fidelity;
 /// from, never a filename it globbed for (§12.1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredVariant {
+    #[serde(deserialize_with = "super::container_path::serde_rules::relative")]
     pub storage: String,
     pub fidelity: Fidelity,
 }

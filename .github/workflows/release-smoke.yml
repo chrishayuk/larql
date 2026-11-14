@@ -1,0 +1,112 @@
+# Post-publish release gate: a new developer can install and run what a
+# release actually published, on every platform the README supports.
+#
+# Called by release.yml after its `release` job publishes (so a broken
+# archive turns the release run red), and dispatchable by hand for any
+# tag — e.g. to re-smoke a release without rebuilding it. It downloads the
+# PUBLISHED archives exactly as README.md / docs/getting-started.md do, not
+# the build job's artefacts, so it also covers upload, packaging and the
+# /releases/latest/ redirect.
+#
+# Why a reusable workflow called from release.yml rather than
+# `on: release: published`: release.yml publishes with GITHUB_TOKEN, and
+# events created by GITHUB_TOKEN do not start new workflow runs, so a
+# `release: published` trigger would never fire for our own releases.
+#
+# Each leg (scripts/release-smoke.sh holds all logic and constants):
+#   install  /releases/download/<tag>/ archive; `larql --version` and
+#            `larql-server --version` == tag; both answer --help
+#   latest   /releases/latest/download/ serves the same version (retried
+#            while GitHub's latest pointer settles after make_latest)
+#   fixture  offline: a tiny generated checkpoint, encoded by the shipped
+#            `larql vindex3 encode`, run with `larql run`, served with
+#            `larql serve`, answering /v1/health, /v1/models and
+#            /v1/chat/completions
+#
+# The real-model (Qwen3-0.6B) quick start is release-model-smoke.yml: it
+# needs a 1.5 GB download and is deliberately not part of this gate.
+
+name: release-smoke
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to smoke (v-prefixed)
+        required: true
+        type: string
+      expect-latest:
+        description: Require /releases/latest to be this tag
+        required: false
+        type: boolean
+        default: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to smoke (v-prefixed, e.g. v0.2.1)
+        required: true
+        type: string
+      expect-latest:
+        description: Require /releases/latest to be this tag (untick for an older tag)
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-smoke-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: smoke - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The runner each published target is installed on. The script maps
+        # the host to its archive, so targets are not repeated here.
+        # ubuntu-22.04 holds the binary's glibc floor (release.yml builds
+        # on it for exactly that reason); ubuntu-latest is what a new
+        # developer has.
+        os: [macos-15, ubuntu-latest, ubuntu-22.04, windows-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      TAG: ${{ inputs.tag }}
+      # Relative to the checkout (the script resolves it), so Windows' Git
+      # Bash never sees a backslashed runner path.
+      WORK: .release-smoke
+      LARQL_SMOKE_EXPECT_LATEST: ${{ inputs.expect-latest && '1' || '0' }}
+
+    steps:
+      # Git for Windows checks out CRLF by default, and bash will not run a
+      # CRLF script. Scoped to this job rather than a repo-wide
+      # .gitattributes.
+      - name: Check out with LF line endings
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      # Only the smoke scripts are needed from the checkout; the binaries
+      # under test come from the release.
+      - uses: actions/checkout@v7
+
+      - name: Install from /releases/download/<tag>/
+        run: bash scripts/release-smoke.sh install "$TAG" "$WORK"
+
+      - name: Install from /releases/latest/download/
+        run: bash scripts/release-smoke.sh latest "$TAG" "$WORK"
+
+      - name: Fixture run + serve (offline)
+        run: bash scripts/release-smoke.sh fixture "$TAG" "$WORK"
+
+      - name: Server log on failure
+        if: failure()
+        run: cat "$WORK"/fixture/serve.log 2>/dev/null || true

@@ -1,17 +1,16 @@
 # Container-generation policy: the VINDEX2 → VINDEX3 transition
 
-Status: **contract adopted; default not yet flipped.**
+Status: **default flipped to VINDEX3 (M4, 2026-11-06).**
 The semantic catch-up phase closed 2026-08-22: VINDEX3 reached full LQL
 parity with VINDEX2 (execution, inference, browse, mutation, patching,
 compose + parity, COMPILE, logical DIFF, COMPACT), gated cross-platform,
 with a real-model compose smoke green on granite-4.1-3b. VINDEX3 is the
-**candidate primary generation**; VINDEX2 is the **compatibility
-generation**.
+**primary generation**; VINDEX2 is the **compatibility generation**.
 
 ## The migration contract
 
 ```text
-New extraction        → VINDEX3 by default            (after the flip)
+New extraction        → VINDEX3 by default            (since 2026-11-06)
 Existing VINDEX2      → continues to open and run
 Generation detection  → bind once at load
 Higher layers         → never care which generation was bound
@@ -28,9 +27,9 @@ fallback:
 
 - `crates/larql-vindex/src/format/generation.rs` —
   `DEFAULT_EXTRACTION_GENERATION` is the generation an extraction with no
-  expressed preference writes. It is `V2` today.
+  expressed preference writes. It is `V3` since the M4 flip.
 - `crates/larql-vindex/src/format/generation_tests.rs` —
-  `auto_extraction_resolves_to_v2_until_the_default_flip_is_decided` pins
+  `auto_extraction_resolves_to_v3_after_the_m4_flip` pins
   it. Flipping means changing the constant **and** this test in the same
   commit; that pair is the decision.
 
@@ -43,7 +42,7 @@ surface that cannot produce the requested generation refuses by name.
 
 ## Surfaces
 
-| Surface | Request spelling | Today (`Auto` → V2) |
+| Surface | Request spelling | Behaviour (`Auto` → V3) |
 |---|---|---|
 | LQL | `EXTRACT MODEL "m" INTO "o" [FORMAT VINDEX2\|VINDEX3]` | `FORMAT VINDEX3` encodes + auto-binds; `FORMAT VINDEX2` explicit; absent = policy |
 | CLI | `larql extract --generation {v2\|v3}` | `--generation v3` encodes; omitted = policy |
@@ -115,6 +114,29 @@ both say id 2. Gated by
 A container that declares nothing — including any predating the
 capability snapshot — encodes exactly as before.
 
+**One V3 raw-prompt encoder.** Every VINDEX3 surface that sends a raw
+(non-templated) prompt — `larql run --raw` and an untemplated chat turn,
+`larql vindex3 observe --prompt`, the VINDEX3 arm of `larql bench`, the
+server's plain `/v1/completions`, and LQL (`INFER`, `TRACE`, the compose
+and balance captures) — calls `larql_inference::vindex3::encode_raw_prompt`
+with the BOS `larql_inference::vindex3::declared_prompt_bos` resolves once
+at bind. The rule:
+
+1. the tokenizer's own encoding, post-processor included;
+2. `tokenizer_config.json` declaring `add_bos_token: false` → nothing more
+   (Granite, Qwen3: both declare a `bos_token_id` they never add);
+3. otherwise a declared BOS id (`generation_config.json`, then
+   `tokenizer_config.json`) is prepended unless the encoding already starts
+   with it (`maybe_prepend_bos`) — Gemma 4, whose tokenizer omits it.
+
+A templated prompt carries its own special tokens and is encoded without
+the post-processor; it never goes through this encoder, so it is never
+double-BOSed. Before the shared encoder the surfaces disagreed in both
+directions: LQL prepended Granite's `<|end_of_text|>` (" is" instead of
+" Paris"), and run/observe/server fed Gemma 4 no BOS ("1111…"). Every
+surface is gated against one table of BOS shapes
+(`larql_inference::test_utils::BosShape`).
+
 ## Consumer matrix (M3)
 
 **Acceptance criterion: no VINDEX3 artifact can enter the system and
@@ -132,7 +154,7 @@ this contract, not neutral outcomes.
 | `/v1/models` | supports | `generation` reported for **both** classes |
 | `larql vindex3 *` | supports | V3-native verbs |
 | `link` | supports | aliasing is generation-agnostic |
-| `run` | explicit refuse | `load_vindex_config` names the generation |
+| `run` / `chat` / `serve` / `bench` | supports | V3 dispatch in `run_cmd_vindex3`; verified end to end on Qwen3-0.6B, 2026-11-06 ([getting started](getting-started.md)) |
 | Vindexfile `FROM` | explicit refuse | `load_vindex_config` names the generation |
 | `publish` | explicit refuse | `load_vindex_config` names the generation |
 | `slice` | explicit refuse | `unsupported_generation("slice", …)` |
@@ -183,8 +205,11 @@ named below.
   `USE`'s own binding block.
 - **M3 — consumer readiness. DONE**: every consumer supports V3 or
   refuses naming the generation; see the consumer matrix above.
-- **M4 — the flip.** `DEFAULT_EXTRACTION_GENERATION = V3` + the pinned
-  test, in one commit. V2 becomes the explicitly-requested compatibility
+- **M4 — the flip. DONE** (2026-11-06): `DEFAULT_EXTRACTION_GENERATION = V3` + the pinned
+  test, in one commit. V2-only transcoding flags (`--quant`, `--compact`, …)
+  and GGUF sources now need an explicit `--generation v2` / `FORMAT VINDEX2`,
+  and refuse by name without it; factory recipes that use V2 knobs must pin
+  `extractor.options.generation: "v2"`. V2 becomes the explicitly-requested compatibility
   generation. Evidence rows required by then: the real-model compose
   smoke (done — granite-4.1-3b) and whatever Metal-path/scale rows the
   release checklist names.

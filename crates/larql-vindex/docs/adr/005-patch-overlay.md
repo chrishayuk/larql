@@ -21,7 +21,7 @@ let patch = VindexPatch::from_operations(ops);
 patch.save("medical.vlp")?;
 
 // Patches stackable and reversible
-patched.apply_patch(patch);
+patched.try_apply_patch(patch)?;
 patched.remove_patch(0);
 
 // Bake overlay into new clean base

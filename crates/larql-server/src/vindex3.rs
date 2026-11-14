@@ -31,7 +31,8 @@ use std::sync::Arc;
 
 use larql_inference::layer_graph::generate::detok::Detokenizer;
 use larql_inference::vindex3::{
-    continue_session, continue_session_masked, LogitsMask, PreparedVindex3, Vindex3Runtime,
+    continue_session, continue_session_masked, LogitsMask, OpenPolicy, PreparedVindex3,
+    Vindex3Runtime,
 };
 use larql_inference::{EosConfig, SamplingConfig};
 use larql_kv::{shipped_continuations, CanonicalFactory};
@@ -45,6 +46,7 @@ use larql_vindex::format::vindex3::opplan::exec::continuation_registry::{
 use larql_vindex::format::vindex3::opplan::exec::lowering::{
     LoweringIdentity, LoweringRegistry, SharedProvider,
 };
+use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::tokenizers;
 
 use crate::error::ServerError;
@@ -85,6 +87,22 @@ impl V3Backend {
             &["cpu", "metal"]
         } else {
             &["cpu"]
+        }
+    }
+
+    /// Where the served operands may come from.
+    ///
+    /// The CPU backend serves the stored bytes: under `auto` its size policy
+    /// would requantise every BF16 matrix larger than the host's L2 to Q8 at
+    /// load — a lossy, machine-dependent change of arithmetic (PREC-DIAG-1,
+    /// Gemma 3 4B: 3.0 max |Δ logprob| against transformers f32, where the
+    /// stored bytes agree within 6e-4). Metal keeps `auto`: its f16 lowering
+    /// is the backend's declared representation, as `vindex3 exec`'s device
+    /// arms keep theirs.
+    pub const fn representation_source(self) -> RepresentationSource {
+        match self {
+            Self::Cpu => RepresentationSource::Stored,
+            Self::Metal => RepresentationSource::Auto,
         }
     }
 
@@ -151,10 +169,10 @@ pub struct V3Model {
     pub tokenizer: tokenizers::Tokenizer,
     /// The model family the container itself declares (`index.json`).
     ///
-    /// The *container* is the only authority here — a V3 binding has no
-    /// architecture registry entry, and the model id is just the
-    /// directory basename, so id-substring matching answers "plain" for
-    /// any container whose folder is not named after its family.
+    /// Never used to pick a chat format: conversations render through
+    /// the container's own template ([`crate::routes::openai::v3_prompt`]).
+    /// It reaches the chat renderer only for the architecture registry's
+    /// default system message and fallback template, as in `larql run`.
     pub family: String,
     /// The end-of-turn tokens the container declares
     /// (`generation_config.json::eos_token_id`), resolved once at load
@@ -165,6 +183,10 @@ pub struct V3Model {
     /// generation to `max_tokens`. Every V3 route builds its request
     /// EOS on top of this.
     pub eos: EosConfig,
+    /// The BOS a raw (non-templated) prompt starts with, as the container
+    /// declares it (`larql_inference::vindex3::declared_prompt_bos`),
+    /// resolved once at load — the same rule every V3 surface applies.
+    pub prompt_bos: Option<u32>,
     /// Count of in-flight generations on this container — the V3
     /// counterpart of `LoadedModel.requests_in_flight`, which V3 had
     /// none of before this (no walk-ffn/grid participation to have
@@ -178,6 +200,14 @@ pub struct V3Model {
 }
 
 impl V3Model {
+    /// Encode a raw (non-templated) prompt — a plain completion — through
+    /// the shared V3 raw-prompt encoder with this container's declared
+    /// BOS: the ids `larql run --raw`, `vindex3 observe` and LQL feed.
+    pub fn encode_raw_prompt(&self, prompt: &str) -> Result<Vec<u32>, crate::error::ServerError> {
+        larql_inference::vindex3::encode_raw_prompt(&self.tokenizer, prompt, self.prompt_bos)
+            .map_err(|e| crate::error::ServerError::BadRequest(e.to_string()))
+    }
+
     /// Execute a stateless prefix while retaining the model's in-flight guard.
     pub(crate) fn execute_layer_prefix(
         &self,
@@ -213,33 +243,6 @@ impl V3Model {
     /// response.
     pub fn requests_in_flight(&self) -> u32 {
         self.requests_in_flight.load(Ordering::Relaxed)
-    }
-
-    /// The chat template to render conversations with.
-    ///
-    /// Family first (the container's own declaration), model id second
-    /// (the historical heuristic, kept so a renamed container still
-    /// resolves), `Plain` last.
-    ///
-    /// This is not cosmetic. `Plain` ends an assistant turn with a bare
-    /// newline, so the last emitted token can merge with the text of
-    /// the following turn when the conversation is re-rendered — which
-    /// breaks N1's exact-ids-prefix rule at the seam and costs every
-    /// chained request its KV resumption. A template that terminates
-    /// the turn with an atomic special token does not have that
-    /// failure mode.
-    pub fn chat_template(&self) -> larql_inference::prompt::ChatTemplate {
-        resolve_chat_template(&self.family, &self.id)
-    }
-}
-
-/// [`V3Model::chat_template`]'s rule, as a free function so it is
-/// testable without opening a container.
-pub fn resolve_chat_template(family: &str, id: &str) -> larql_inference::prompt::ChatTemplate {
-    use larql_inference::prompt::ChatTemplate;
-    match ChatTemplate::for_family(family) {
-        ChatTemplate::Plain => ChatTemplate::for_model_id(id),
-        resolved => resolved,
     }
 }
 
@@ -309,11 +312,15 @@ pub fn load_v3_model_experts(
     let (registry, identity) = backend.lowerings()?;
     // The served provider is resolved from the shipped registry by
     // identity, never constructed here (LOWERING-PLUGIN-1, L3).
-    let runtime = Vindex3Runtime::open_via(
+    let runtime = Vindex3Runtime::open_with_via(
         path,
         SERVED_COMPONENT,
         std::sync::Arc::new(registry),
         &identity,
+        OpenPolicy {
+            want: None,
+            source: backend.representation_source(),
+        },
     )
     .map_err(|e| format!("open VINDEX3 container: {e}"))?
     .prepare_slice(slice)
@@ -386,19 +393,16 @@ pub fn load_v3_model_experts(
         tokenizer,
         family,
         eos: EosConfig::from_vindex_dir(path),
+        prompt_bos: larql_inference::vindex3::declared_prompt_bos(path),
         requests_in_flight: Arc::new(AtomicU32::new(0)),
     };
-    if matches!(
-        model.chat_template(),
-        larql_inference::prompt::ChatTemplate::Plain
-    ) {
+    if !larql_inference::chat::container_has_chat_template(path) {
         tracing::warn!(
             model = %model.id,
             family = %model.family,
-            "no chat template matches this container: serving with the Plain fallback. \
-             Conversations get no chat scaffolding, and N1 KV resumption will usually \
-             miss — Plain ends an assistant turn with a bare newline, so its last token \
-             re-tokenises differently once the next turn follows."
+            "this container carries no chat template: /v1/chat/completions and \
+             /v1/responses serve a single user message verbatim (a plain completion) \
+             and refuse longer conversations."
         );
     }
     Ok(model)

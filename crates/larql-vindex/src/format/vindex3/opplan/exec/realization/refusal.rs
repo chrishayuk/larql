@@ -387,9 +387,14 @@ pub fn cpu_projection_candidates(
         .collect();
     if facts.registered.is_some() {
         out.push(RealizationId::cpu(RealizationForm::Decode(decode_plan)));
-        if facts
-            .direct_cpu_plans()
-            .contains(&PhysicalProjectionPlan::FusedBf16)
+        // A requantised image is manufactured at load, so it is no
+        // candidate at all when the store forbids that: offering it would
+        // let a later policy (the residency budget) pick what the loader
+        // must then refuse.
+        if !facts.requantise_forbidden
+            && facts
+                .direct_cpu_plans()
+                .contains(&PhysicalProjectionPlan::FusedBf16)
         {
             out.extend(
                 requantise
