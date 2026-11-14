@@ -223,6 +223,27 @@ USE MODEL "google/gemma-3-4b-it" AUTO_EXTRACT;
 USE REMOTE "https://models.example.com/larql";
 ```
 
+**What a VINDEX3 binding executes from.** A session binds a VINDEX3 container under a **representation
+source**, and `USE` states it in its reply (`Execution: representation source …`):
+
+| Source | What `INFER` computes with |
+|---|---|
+| `stored` (default) | The container's stored weights. Nothing is manufactured at load |
+| `auto` | Stored weights, except that the CPU loader may quantise at load any matrix whose stored image does not fit the host's cache. Faster on large models; **not the stored arithmetic**, and which matrices are affected depends on the host |
+| `transient` | Representations quantised at load, ignoring any compiled pack |
+
+The default is `stored`, the same as `larql vindex3 exec --backend production` and the CPU server, so that
+`INFER` in a session computes with the weights the session's edits and `VERIFY` statements are about. There is
+no LQL statement for the source: the embedding program sets it (`Session::set_representation_source`) and
+`larql lql` takes `--representation-source` or `LARQL_LQL_REPRESENTATION_SOURCE`. It applies to a later `USE`;
+a container already bound keeps the source it was bound under. `Session::runtime_quantised_tensors` names the
+tensors a binding has quantised at load: the effective representation, as distinct from the one asked for.
+
+**Compatibility.** Sessions used to bind under `auto`. On a model with matrices larger than the host's cache
+(every `down_proj` of Gemma 3 4B on a 16 MiB L2), `INFER` under the new default is slower and its logits differ
+from what the same session printed before. Neither output is claimed to match the other. `auto` remains
+available as an explicit choice.
+
 ### 3.3 Knowledge Browser Statements
 
 ```
