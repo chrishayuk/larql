@@ -150,7 +150,7 @@ def judge_patch(contract: str, patch: str, base: str, container: str) -> dict:
         unchanged = False
     if not unchanged and out["status"] != "could_not_evaluate":
         out.update(violations=0, measurements=[], offending=[])
-        q8_0_t2.could_not(out, "an input changed during the evaluation")
+        q8_0_t2.could_not(out, "an input changed during the evaluation, or has no digest to hold it to")
     return out
 
 

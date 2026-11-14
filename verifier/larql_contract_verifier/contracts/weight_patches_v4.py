@@ -1403,8 +1403,16 @@ def evaluate(out: dict, base: str, container: str, patch: bytes | None = None,
     if status == "could_not_evaluate" and not out["reasons"]:
         out["reasons"] = ["nothing was judged"]
     files = (getattr(judge, "base_files", None), getattr(judge, "new_files", None))
-    if files[0] is not None:
-        out["base"]["sha256"] = container_digest(files[0])
-    if files[1] is not None:
-        out["container"]["sha256"] = container_digest(files[1])
+    for side, held in (("base", files[0]), ("container", files[1])):
+        if held is not None:
+            out[side]["sha256"] = digest_or_none(held)
     return out
+
+
+def digest_or_none(files: dict[str, tuple[int, str]]) -> str | None:
+    """The container digest, or None for a container that has none: a file name that is not valid UTF-8 has no place
+    in it. An answer with no digest to hold its input to is withdrawn by the caller, never left standing."""
+    try:
+        return container_digest(files)
+    except ValueError:
+        return None

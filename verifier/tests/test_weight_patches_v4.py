@@ -226,6 +226,26 @@ class Withdrawn(Fixture):
         with mock.patch.object(cli.checkpoint, "container_sha256", no_digest):
             self.assertWithdrawn(self.judge(self.copy("low_rank_k2")))
 
+    def test_a_file_name_that_is_not_text_is_withdrawn_at_the_first_digest_and_not_an_exception(self):
+        # Such a name cannot be created on every file system, so the listing is given one: it arrives from the
+        # operating system surrogate-escaped, which is what a strict encode refuses. No digest function is mocked.
+        real = W.file_digests
+
+        def with_a_bad_name(root):
+            files = real(root)
+            files["segments/bad\udcff"] = (0, sha(b""))
+            return files
+
+        for tamper in (False, True):
+            with self.subTest(ledger_also_wrong=tamper):
+                root = self.copy("low_rank_k2")
+                if tamper:
+                    self.edit_ledger(root, lambda doc: doc["source"].update(model="another"))
+                with mock.patch.object(W, "file_digests", with_a_bad_name):
+                    out = self.judge(root)
+                self.assertWithdrawn(out)
+                self.assertIsNone(out["container"]["sha256"])
+
     def test_a_canonical_section_that_is_not_an_object_is_a_ledger_finding(self):
         for section in ("source", "result"):
             for value in ("x", [1], 7, True):

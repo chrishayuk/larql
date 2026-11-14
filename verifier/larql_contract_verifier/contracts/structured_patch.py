@@ -327,7 +327,7 @@ def _judge(out, ops, base_tensors, base_c, new_tensors, base_index_sha, new_c) -
     if len(offending) > OFFENDING_LIMIT:  # the protocol: `offending` sums to `violations`, so fold the tail into one
         tail = offending[OFFENDING_LIMIT - 1:]
         offending = offending[:OFFENDING_LIMIT - 1] + [{
-            "name": f"{len(tail)} further tensors", "violations": sum(o["violations"] for o in tail),
+            "name": f"{len(tail)} further findings", "violations": sum(o["violations"] for o in tail),
             "detail": "not listed one by one"}]
     out.update(status="violated" if violations else "satisfied", violations=violations,
                offending=offending,

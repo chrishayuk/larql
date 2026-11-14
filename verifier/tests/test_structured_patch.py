@@ -384,7 +384,7 @@ class ManyOffenders(Base):
         out = self.run_patch(root)
         self.assertEqual(out["status"], "violated", out)
         self.assertEqual(len(out["offending"]), S.OFFENDING_LIMIT)
-        self.assertIn("further tensors", out["offending"][-1]["name"])
+        self.assertIn("further findings", out["offending"][-1]["name"])
         self.assertEqual(sum(o["violations"] for o in out["offending"]), out["violations"])
 
     def test_a_container_with_no_digest_is_an_answer_and_not_a_failure(self):
