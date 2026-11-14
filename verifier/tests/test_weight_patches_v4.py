@@ -1107,11 +1107,88 @@ class PatchSupplied(Fixture):
         out = self.judge_with(compiled, self.patch_copy(lambda doc: doc.pop("operations")))
         self.assertHalves(out, CNE, SAT)  # the ledger is still judged
         self.assertIn("no operations list", " ".join(out["reasons"]))
-        link = os.path.join(self.work, "link.vlp")
-        os.symlink(self.PATCH, link)
-        out = self.judge_with(compiled, link)
-        self.assertEqual(out["status"], CNE)
+        out = self.judge_with(compiled, self.linked())
+        self.assertHalves(out, CNE, SAT)  # refused as a patch; the ledger is still judged
         self.assertIn("symlink", " ".join(out["reasons"]))
+        self.assertIsNone(out["patch"]["sha256"])
+
+    def linked(self):
+        link = os.path.join(self.work, f"link-{len(os.listdir(self.work))}.vlp")
+        os.symlink(self.PATCH, link)
+        return link
+
+    def own_patch(self, case):
+        """The patch a fixture was compiled from, as a `.vlp` holds its ops: the ledger's, less the two fields only a
+        ledger carries."""
+        ops = [{k: v for k, v in op.items() if k not in W.LEDGER_OP_FIELDS}
+               for t in self.ledger(os.path.join(FIXTURES, case, "compiled"))["targets"]
+               for op in t.get("operations", [])]
+        path = os.path.join(self.work, f"own-{case}-{len(os.listdir(self.work))}.vlp")
+        write_json(path, {"operations": ops})
+        return path
+
+    def test_a_removal_the_ledger_records_in_an_operation_target_is_the_patchs_own(self):
+        # `mixed` has a low-rank op and a removal on one tensor: the removal is in the ledger (§2), and in the patch.
+        compiled = os.path.join(FIXTURES, "mixed", "compiled")
+        patch = self.own_patch("mixed")
+        self.assertTrue(any(op["op"] == W.OP_REMOVE for op in read_json(patch)["operations"]))
+        self.assertHalves(self.judge_with(compiled, patch), SAT, SAT)
+
+        def another(doc):  # the same removal on other columns: intact, and not one the target records
+            op = next(o for o in doc["operations"] if o["op"] == W.OP_REMOVE)
+            op["columns"] = [c + 40 for c in op["columns"]]
+            op["digest"] = W.op_digest(op)
+
+        def forged(doc):  # the recorded digest on other content
+            next(o for o in doc["operations"] if o["op"] == W.OP_REMOVE)["alpha"] = "3fd0000000000000"
+
+        for name, change in (("another removal", another), ("a recorded digest on other content", forged)):
+            with self.subTest(patch=name):
+                doc = read_json(patch)
+                change(doc)
+                path = os.path.join(self.work, f"mixed-{len(os.listdir(self.work))}.vlp")
+                write_json(path, doc)
+                out = self.judge_with(compiled, path)
+                self.assertEqual(out["ledger_integrity"], VIOL, self.findings(out, W.LEDGER))
+                self.assertIn("no such op in an operation target", self.findings(out, W.LEDGER))
+
+    def test_a_removal_that_names_no_tensor_is_not_passed_over(self):
+        compiled = os.path.join(FIXTURES, self.CASE, "compiled")
+        for tensor in (7, None, ["0.mlp.down_proj.weight"]):
+            with self.subTest(tensor=tensor):
+                out = self.judge_with(compiled, self.patch_copy(
+                    lambda d: d["operations"].append({"op": W.OP_REMOVE, "tensor": tensor})))
+                self.assertEqual(out["ledger_integrity"], VIOL)
+                self.assertIn("name no tensor", self.findings(out, W.LEDGER))
+
+    def test_a_target_refused_for_another_reason_is_judged_the_same_with_the_patch(self):
+        # An unknown edit encoding: not judged, with or without the patch, and the patch is not blamed for it.
+        root = self.copy(self.CASE)
+        self.edit_ledger(root, lambda d: d["targets"][self.REMOVAL_TARGET]["edits"][0].update(encoding="zz"))
+        without, with_patch = self.judge(root), self.judge_with(root, self.PATCH)
+        self.assertEqual((without["status"], without["ledger_integrity"]),
+                         (with_patch["status"], with_patch["ledger_integrity"]))
+        self.assertNotIn("not the one this container was compiled from", self.findings(with_patch, W.LEDGER))
+
+    def test_one_unusable_removal_leaves_the_whole_tensor_unrecomputed(self):
+        def add_foreign(doc):
+            op = dict(self.removal(doc), columns=[200, 201])
+            op["digest"] = W.op_digest(op)
+            doc["operations"].append(op)
+
+        out = self.judge_with(os.path.join(FIXTURES, self.CASE, "compiled"), self.patch_copy(add_foreign))
+        self.assertHalves(out, CNE, VIOL)
+        measured = {m["name"]: m["value"] for m in out["measurements"]}
+        self.assertEqual(measured["result-bits targets recomputed from the patch given"], "0")
+
+    def test_a_patch_nested_too_deeply_is_an_input_fault(self):
+        path = os.path.join(self.work, "deep.vlp")
+        with open(path, "w") as f:
+            f.write("[" * 100000 + "]" * 100000)
+        out = self.judge_with(os.path.join(FIXTURES, self.CASE, "compiled"), path)
+        self.assertHalves(out, CNE, SAT)
+        self.assertIn("nested more deeply", " ".join(out["reasons"]))
+        self.assertNotIn("platform", " ".join(out["reasons"]))
 
     def without_removals(self):
         def drop(doc):
@@ -1132,7 +1209,7 @@ class PatchSupplied(Fixture):
             with self.subTest(case=case):
                 out = self.judge_with(os.path.join(FIXTURES, case, "compiled"), self.PATCH)
                 self.assertEqual(out["ledger_integrity"], VIOL)
-                self.assertIn("a tensor the ledger does not record by result bits", self.findings(out, W.LEDGER))
+                self.assertIn("no result-bits target for this tensor and no such op", self.findings(out, W.LEDGER))
 
     def test_every_removal_in_the_patch_is_held_to_the_ledger(self):
         compiled = os.path.join(FIXTURES, self.CASE, "compiled")
@@ -1152,7 +1229,7 @@ class PatchSupplied(Fixture):
             with self.subTest(extra_removal_on=name):
                 out = self.judge_with(compiled, self.patch_copy(change))
                 self.assertEqual(out["ledger_integrity"], VIOL, self.findings(out, W.LEDGER))
-                self.assertIn("a tensor the ledger does not record by result bits", self.findings(out, W.LEDGER))
+                self.assertIn("no result-bits target for this tensor and no such op", self.findings(out, W.LEDGER))
 
     def test_a_patch_never_weakens_what_the_ledger_alone_establishes(self):
         # One element of the removal's tensor flipped, outside the ledger's edits. Without a patch that is a ledger
@@ -1177,6 +1254,9 @@ class PatchSupplied(Fixture):
             "not JSON": garbage(os.path.join(self.work, "garbage.vlp")),
             "no operations": self.patch_copy(lambda d: d.pop("operations")),
             "no removal": self.without_removals(),
+            "no such file": os.path.join(self.work, "absent.vlp"),
+            "a directory": self.work,
+            "a symlink": self.linked(),
         }
         for name, patch in unusable.items():
             with self.subTest(patch=name):

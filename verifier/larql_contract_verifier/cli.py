@@ -166,21 +166,23 @@ def evaluate_ledger(contract: str, base: str, container: str, patch: str | None 
         return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[weight_patches_v4.CONTRACT]}")
     if not os.path.isdir(base) or not os.path.isdir(container):
         return q8_0_t2.could_not(out, "the base and the container must be directories")
+    patch_bytes, patch_problem = None, None
     if patch is not None:
         # Optional: the `.vlp` the container was compiled from, for the tensors a v4 ledger records only by result bits.
         out["patch"] = {"path": patch, "sha256": None}
-        if not os.path.isfile(patch):
-            return q8_0_t2.could_not(out, "the patch must be a file")
+        # A patch that cannot be read is not a reason to judge nothing: the ledger is judged without it.
         if os.path.islink(patch):
-            return q8_0_t2.could_not(out, "the patch is a symlink; this contract reads regular files only")
-        # Read once: the digest reported is of the bytes that are judged.
-        try:
-            patch_bytes = Path(patch).read_bytes()
-        except OSError as e:
-            return q8_0_t2.could_not(out, f"the patch can't be read: {e}")
-        out["patch"]["sha256"] = hashlib.sha256(patch_bytes).hexdigest()
-    weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container),
-                               None if patch is None else patch_bytes)
+            patch_problem = "the patch is a symlink; this contract reads regular files only"
+        elif not os.path.isfile(patch):
+            patch_problem = "the patch must be a file"
+        else:
+            # Read once: the digest reported is of the bytes that are judged.
+            try:
+                patch_bytes = Path(patch).read_bytes()
+                out["patch"]["sha256"] = hashlib.sha256(patch_bytes).hexdigest()
+            except OSError as e:
+                patch_problem = f"the patch can't be read: {e}"
+    weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container), patch_bytes, patch_problem)
     if out["status"] == "could_not_evaluate":
         return out
     # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.

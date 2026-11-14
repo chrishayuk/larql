@@ -248,15 +248,21 @@ recomputed from the base and compared in full; the ledger's edits must be exactl
 
 What is held of the patch, and what is not:
 
-- **Every `remove_direction` op in it** must be on a tensor the ledger records by result bits and must be one of the
-  ledger's `origins`, with its digest intact. One that is not is a ledger violation: the patch is not the one this
-  container was compiled from.
+- **Every `remove_direction` op in it** must be one the ledger accounts for, with its digest intact: on a tensor the
+  ledger records by result bits it must be one of the ledger's `origins`; on a tensor the ledger records as an
+  operation target (one that also has a low-rank op) it must be one of the removals that target records, and the
+  ledger's own record of it is what is judged. One that is neither, or that names no tensor, is a ledger violation:
+  the patch is not the one this container was compiled from. A removal the verifier cannot admit for another reason
+  (a field or a numerics profile it does not know) is not judged and is reported as such. An entry of `operations`
+  that is not an object is not read.
 - **Ops of other kinds are not read.** A low-rank op is judged from the ledger's own record of it, so the answer does
   not attest the patch as a whole, and the patch's header (`version`, `base_model`, `base_checksum`) is not read:
   each op binds itself to the base through its source and its digest.
-- **A patch never weakens the judgement.** One that cannot be read, or whose ops on a tensor cannot be used, leaves
-  that tensor judged as it is without a patch: held to the bits the ledger records, with the numerical half
-  `could_not_evaluate` and the reason given.
+- **A patch never makes a violation disappear.** One that cannot be read (no such file, a directory, a symlink, not
+  JSON), or whose ops on a tensor cannot be used, leaves the ledger judged as it is without a patch, each
+  result-bits tensor held to the bits the ledger records. The numerical half is then `could_not_evaluate`, with the
+  reason, **even for a ledger that needs no patch and would be `satisfied` without one**: evidence was asked for and
+  could not be used, so the answer does not pass on the rest.
 - The patch must be a regular file. It is read once: `patch.sha256` in the answer is the digest of the bytes judged.
 
 The exit status, stdout and the rules for an acceptable answer are as above, with these differences:

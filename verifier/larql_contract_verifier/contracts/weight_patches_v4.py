@@ -463,11 +463,17 @@ def read_patch_removals(data: bytes) -> dict[str, list]:
     operations = patch.get("operations") if isinstance(patch, dict) else None
     if not isinstance(operations, list):
         raise CannotEvaluate("the patch has no operations list")
-    by_tensor: dict[str, list] = {}
+    by_tensor: dict = {}
     for op in operations:
-        if isinstance(op, dict) and op.get("op") == OP_REMOVE and isinstance(op.get("tensor"), str):
-            by_tensor.setdefault(op["tensor"], []).append(op)
+        if isinstance(op, dict) and op.get("op") == OP_REMOVE:
+            # One that names no tensor cannot be placed; it is kept, to be reported, not dropped.
+            tensor = op.get("tensor")
+            by_tensor.setdefault(tensor if isinstance(tensor, str) else UNPLACED, []).append(op)
     return by_tensor
+
+
+#: The key `read_patch_removals` files a removal under when it names no tensor.
+UNPLACED = None
 
 
 def exact_sum_to_bf16(old_bits: int, delta_bits: int) -> int:
@@ -501,8 +507,6 @@ class Judge:
         self.patch: bytes | None = None
         #: Why the patch given could not be read as one, if it could not. The ledger is then judged without it.
         self.patch_problem: str | None = None
-        #: The tensors whose result-bits target took the patch's removals.
-        self.patch_tensors: set[str] = set()
         self.recomputed_from_patch = 0
         self.L, self.N = Half(LEDGER), Half(NUMERICAL)
         self.engine: dict = {}
@@ -895,7 +899,6 @@ class Judge:
         ops = self.patch_ops.get(plan["tensor"], [])
         if not ops:
             return  # nothing to recompute from: expected_edits says so
-        self.patch_tensors.add(plan["tensor"])
         if any(e.get("encoding") != RESULT_BITS for e in plan["edits"]):
             # Judged as it is without a patch: held to its recorded bits, not recomputed.
             N.cannot(f"{label}: an element target mixes delta and result-bits edits, so it is not recomputed from the "
@@ -938,14 +941,44 @@ class Judge:
             N.cannot(f"{label}: a patch op is refused (see the ledger half), so the tensor is not recomputed from it")
 
     def check_patch_removals_placed(self) -> None:
-        """Every `remove_direction` op of the patch given must be on a tensor the ledger records by result bits, where
-        it is held to the ledger's origins. One anywhere else is not an op this container was compiled from as its
-        ledger tells it: the patch is another compile's, or the ledger's."""
-        for tensor, ops in sorted((self.patch_ops or {}).items()):
-            if tensor not in self.patch_tensors:
-                self.L.violate(f"patch removal on {tensor}",
-                               f"the patch holds {len(ops)} remove_direction op(s) on a tensor the ledger does not "
-                               "record by result bits: the patch is not the one this container was compiled from")
+        """Every `remove_direction` op of the patch given must be one the ledger accounts for (§2, §3b):
+
+        - on a tensor the ledger records by result bits, where it is held to the ledger's `origins` when that target
+          is planned; or
+        - on a tensor the ledger records as an operation target, where it must be one of the removals that target
+          records, by an intact digest. The ledger's own record of the op is what is judged there.
+
+        One anywhere else is not an op this container was compiled from as its ledger tells it. This reads the
+        ledger's targets as written, so a target refused for another reason is not also reported as missing."""
+        if not self.patch_ops:
+            return
+        targets = self.ledger.get("targets")
+        result_bits: set[str] = set()
+        recorded: dict[str, set[str]] = {}
+        for t in targets if isinstance(targets, list) else []:
+            if not isinstance(t, dict) or not isinstance(t.get("tensor"), str):
+                continue
+            edits, ops = t.get("edits"), t.get("operations")
+            if isinstance(edits, list) and any(isinstance(e, dict) and e.get("encoding") == RESULT_BITS for e in edits):
+                result_bits.add(t["tensor"])
+            for op in ops if isinstance(ops, list) else []:
+                if isinstance(op, dict) and op.get("op") == OP_REMOVE and isinstance(op.get("digest"), str):
+                    recorded.setdefault(t["tensor"], set()).add(op["digest"])
+        unplaced = self.patch_ops.get(UNPLACED)
+        if unplaced:
+            self.L.violate("patch", f"the patch holds {len(unplaced)} remove_direction op(s) that name no tensor")
+        for tensor, ops in sorted((k, v) for k, v in self.patch_ops.items() if k is not UNPLACED):
+            if tensor in result_bits:
+                continue
+            for j, op in enumerate(ops):
+                try:
+                    intact = op.get("digest") in recorded.get(tensor, ()) and op_digest(op) == op["digest"]
+                except BAD_INPUT:
+                    intact = False
+                if not intact:
+                    self.L.violate(f"patch removal {j} on {tensor}",
+                                   "the ledger records no result-bits target for this tensor and no such op in an "
+                                   "operation target: the patch is not the one this container was compiled from")
 
     def check_patch_elements(self, plans) -> None:
         """§3b: all element targets together list at most MAX_PATCH_ELEMENTS elements (inclusive)."""
@@ -1291,11 +1324,13 @@ def could_not(out: dict, *reasons: str) -> dict:
     return out
 
 
-def evaluate(out: dict, base: str, container: str, patch: bytes | None = None) -> dict:
+def evaluate(out: dict, base: str, container: str, patch: bytes | None = None,
+             patch_problem: str | None = None) -> dict:
     """Fill `out` with the two verdicts and the combined status. Never raises for a bad input. `patch`, when given, is
     the bytes of the `.vlp` the container was compiled from: it supplies the `remove_direction` ops a v4 ledger records
     only by their result bits (§3b), so those tensors can be recomputed too. Bytes, not a path: the caller reads the
-    file once and reports the digest of what is judged here."""
+    file once and reports the digest of what is judged here. `patch_problem`: why a patch that was asked for could
+    not be read at all; the ledger is then judged without it and the numerical half says so."""
     out["recomputed_from"] = ("the base container's weights and the operands the compiled container's ledger records; "
                               "the ledger's hashes and counts are checked, never used as expected values")
     if patch is not None:
@@ -1303,6 +1338,8 @@ def evaluate(out: dict, base: str, container: str, patch: bytes | None = None) -
                                    "the patch given, each held to the ledger's origins")
     judge = Judge(base, container)
     judge.patch = patch
+    if patch_problem is not None:
+        judge.patch_problem = f"the patch given cannot be used: {patch_problem}"
     judge.recomputed_from_patch = 0
     judge.shams = 0
     judge.expected_changes = 0
