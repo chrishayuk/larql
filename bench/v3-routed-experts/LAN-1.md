@@ -59,7 +59,7 @@ python3 bench/v3-routed-experts/profile_exact.py --execute \
   --topology experts --blocks 2 \
   --worker-url http://LAN_ADDRESS_A:9181 \
   --worker-url http://LAN_ADDRESS_B:9181 \
-  --reference bench/v3-routed-experts/profile-results/control/ids.json \
+  --reference bench/v3-routed-experts/link-results/control/ids.json \
   --peer-handshake /path/to/peer-acknowledgements.txt
 ```
 
@@ -81,8 +81,12 @@ differences must be investigated rather than relaxing parity after the fact.
 
 ## Interpretation
 
-Retain the [existing profiling protocol](PROFILE-1.md): frozen 151-token prompt,
-64 generated IDs, 55 measured decode positions, exact body-byte checks,
+Retain the [existing profiling protocol](PROFILE-1.md) on workload
+`gptoss-routed.raw-bos.v2` ([`prompts-v2.json`](prompts-v2.json)): the same
+prompt text sent with `--raw`, which is 152 tokens because the declared BOS is
+now prepended. PROFILE-1's 151-token IDs and its control cannot be produced by
+`larql run` on current main, so its loopback timings are not a matched control
+here (they were already only a historical diagnostic). 64 generated IDs, 55 measured decode positions, exact body-byte checks,
 warm-up and full-precision 1% bracket gates. The continuation is repetitive;
 results apply to this workload. Void blocks are never pooled.
 

@@ -22,14 +22,16 @@ root = Path(__file__).resolve().parents[2]
 a.out.mkdir(parents=True, exist_ok=False)
 model = a.model.resolve()
 cli, server = [root / 'target/release' / name for name in ['larql', 'larql-server']]
-prompts = json.loads(Path(__file__).with_name('prompts.json').read_text())
+# Workload v2 (raw prompt plus declared BOS); v1 IDs in prompts.json are not reproducible on main.
+fixture = json.loads(Path(__file__).with_name('prompts-v2.json').read_text())
+prompts = {name: fixture[name] for name in ('p1', 'p2', 'p3')}
 settings = dict(LARQL_CPU_WORKERS='8', RAYON_NUM_THREADS='8', VECLIB_MAXIMUM_THREADS='1', TOKIO_WORKER_THREADS='2', LARQL_KV_ENGINE='')
 env = dict(os.environ, **settings)
 def save(name, value):
     (a.out / name).write_text(json.dumps(value, indent=2) + '\n')
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
-save('manifest.json', dict(topology=a.topology, model=str(model), max_tokens=a.max_tokens,
+save('manifest.json', dict(workload=fixture['workload'], topology=a.topology, model=str(model), max_tokens=a.max_tokens,
     revision=subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
     dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True)),
     settings=settings, binary_sha256={f.name:digest(f) for f in [cli,server]},
@@ -60,7 +62,7 @@ try:
     reference = json.loads(a.reference.read_text()) if a.reference else None
     results = {}
     for name, prompt in prompts.items():
-        cmd = [str(cli),'run',str(model),prompt['text'],'--max-tokens',str(a.max_tokens),'--emit-ids']
+        cmd = [str(cli),'run',str(model),prompt['text'],'--max-tokens',str(a.max_tokens),'--emit-ids','--raw']
         if urls: cmd += ['--v3-ffn-shards',','.join(urls),'--v3-ffn-wire','binary']
         print(f'running {a.topology} {name}',flush=True)
         with (a.out/f'{name}.stdout').open('w') as stdout, (a.out/f'{name}.stderr').open('w') as stderr:
