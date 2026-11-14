@@ -1,27 +1,33 @@
-# BLOCK-TIME-1, revision 2: block verification width against round-trip time (pre-registration, DRAFT)
+# BLOCK-TIME-1, revision 2: block verification width against round-trip time (pre-registration, frozen)
 
-Status: **revision 2 draft, 2026-11-14. Not frozen. No timed run has been
-made.** The instrument is built and tested on synthetic records, and the
-trial binary has passed an end-to-end smoke; the driver has not run a full
-schedule. After freezing, any change to a parameter, gate or rule is a new
-revision, not an edit.
+Status: **revision 2, approved and frozen on 2026-11-14. No timed run has
+been made.** Any change to a parameter, gate or rule below is a new revision,
+not an edit. The frozen files and their hashes are in
+[`frozen-protocols.json`](frozen-protocols.json), and a test fails if any of
+them changes. What is frozen is this document and the files that hold its
+parameters and decision rules. The driver and the trial binary are
+implementation: they may be corrected without a new revision, and every
+receipt records the hashes of the ones that produced it.
 
-**What revision 2 changes.** Revision 1 (the draft in this file's history)
-compared the arms at 0, 1, 5 and 20 ms. The relay could not be qualified at
-block frame sizes for 1 ms under the existing calibration
+Freezing fixes the contract. It does not make a run admissible: the
+conditions under "Before the admissible run" must hold first, and the run
+needs its own go decision.
+
+**What revision 2 changed from the first draft.** That draft compared the
+arms at 0, 1, 5 and 20 ms. The relay could not be qualified at block frame
+sizes for 1 ms under the existing calibration
 ([block-frame addendum, revision 2](LINK-2-block-frames-revision-2.md)). So:
 
-- the primary comparison is at **0, 5 and 20 ms**;
-- **1 ms is run as a diagnostic only**: reported, never fitted, never the
-  basis of a statement;
-- the slope is fitted over the three primary delays with its residuals, and
-  a **5-to-20 ms differential slope** is reported beside it, which does not
+- the comparison is at **0, 5 and 20 ms**, and **no trial is run at 1 ms**:
+  every delay in the schedule has a relay qualification behind it;
+- the slope is fitted over the three delays with its residuals, and a
+  **5-to-20 ms differential slope** is reported beside it, which does not
   use the zero-delay arm;
 - the interpretation separates the relay's buffering behaviour from the
   configured delay.
 
-Nothing else changes: arms, supplied ids, measured region, profiling
-controls, one worker, the 10% and 1% thresholds.
+Arms, supplied ids, measured region, profiling controls, one worker and the
+10% and 1% thresholds are as first drafted.
 
 Correctness of the path being timed is recorded in
 [BLOCK-CHECK](BLOCK-CHECK.md). This protocol measures time only.
@@ -70,16 +76,16 @@ of the route and of the block session from the effect of width.
 
 ## Points
 
-**Primary:** round trips of **0 (relay at zero delay), 5 and 20 ms**,
-unlimited rate. The relay is qualified at block frame sizes for 5 and 20 ms.
-The 0 ms arm is the zero-delay relay, a measured control.
+Round trips of **0 (relay at zero delay), 5 and 20 ms**, unlimited rate. The
+relay is qualified at block frame sizes for 5 and 20 ms by the block-frame
+addendum. The 0 ms arm is the zero-delay relay, a measured control.
 
-**Diagnostic only:** **1 ms**. The additive-delay calibration failed its
-tolerance for width-8 frames at this round trip, so the relay is unqualified
-there at block frame sizes. The trials are run and reported in a separate
-table. They enter no fit and support no statement, whatever they show. This
-is not a claim that 1 ms cannot be measured; it has not been qualified by
-this calibration.
+**No trial is run at 1 ms.** The additive-delay calibration failed its
+tolerance for width-8 frames at that round trip, so the relay is unqualified
+there at block frame sizes. The failed diagnostic and the chunk trace are
+kept as history ([runs](link-results/link-2-block-frames/README.md)). This
+is not a claim that 1 ms cannot be measured. Any work at 1 ms needs its own
+separately declared protocol, with a calibration that qualifies it.
 
 One further control, `direct` (no relay), is run for `sequential` only and
 prices the relay itself; it is not part of any comparison.
@@ -125,8 +131,8 @@ frame is the same bytes either way.
 Warm-up `sequential` trials at 0 ms until two consecutive measured-region
 times agree within 1%, at most four. If they never agree the run stops.
 
-Then two repeats. In each, the three primary delays are visited in order
-(reversed in the second repeat). At each delay the five arms run in an order rotated by
+Then two repeats. In each, the three delays are visited in order (reversed
+in the second repeat). At each delay the five arms run in an order rotated by
 one position per delay, reversed in the second repeat. A `sequential` trial
 at 0 ms brackets every delay, before and after.
 
@@ -135,14 +141,10 @@ also runs once per repeat **unprofiled**, directly after the profiled arms
 of that delay and inside the same brackets, so the cost of asking the worker
 for its timing is measured and not assumed.
 
-Each repeat then ends with the diagnostic delay: the five arms at 1 ms,
-followed by a bracket, after every primary trial of that repeat has run, so
-the diagnostic trials cannot sit between a primary trial and its brackets.
-
-That is 30 primary arm trials, 10 unprofiled trials, 10 diagnostic trials,
-10 bracket trials and 2 `direct` trials: 62 in the order
-`block_time_model.schedule()` produces. Estimated duration is 70 to 90
-minutes, dominated by `sequential` and `block-1` at 20 ms.
+That is 30 arm trials, 10 unprofiled trials, 8 bracket trials and 2 `direct`
+trials: 50 in the order `block_time_model.schedule()` produces. Estimated
+duration is 60 to 80 minutes, dominated by `sequential` and `block-1` at
+20 ms.
 
 ## Validity gates
 
@@ -185,8 +187,7 @@ or end.
 `t(arm, delay)` is the measured-region wall time divided by 56, the mean of
 the valid repeats. A cell with no valid trial is reported as missing.
 
-1. **Table.** `t` for the fifteen primary cells, with both repeats shown.
-   The five 1 ms cells are in a separate diagnostic table.
+1. **Table.** `t` for all fifteen cells, with both repeats shown.
 2. **Slope.** The exchange model predicts `24 / W` round trips per position
    (24 for `sequential` and `block-1`, then 12, 6 and 3). Two estimates per
    arm, each with its ratio to the prediction:
@@ -256,8 +257,6 @@ support a confidence statement, and none is made.
   with the regime note above. It is a statement about that arm, not about a
   network with no latency.
 
-No statement of any kind is made from the 1 ms trials.
-
 If a slope is outside 10%, or a block arm is not faster at 5 or 20 ms, that
 is the result, reported with the decomposition that locates it.
 
@@ -300,12 +299,12 @@ GPT-OSS 20B on this host.
   saved peer handshake and a quiet machine. `--diagnostic` runs are labelled
   and never count.
 
-## Before freezing
+## Before the admissible run
 
 1. The multi-row worker-timing change is reviewed and merged, and the
-   binaries are built from it.
-2. This revision and block-frame addendum revision 2 are approved.
-3. A declared diagnostic run of the driver completes end to end.
-
-Then, in order: two passing block-frame qualifications under revision 2 on a
-quiet machine, and the one admissible run.
+   binaries are built from it. The decomposition's worker figures depend on
+   it; without it the profiled trials return no worker timing.
+2. A declared diagnostic run of the driver completes end to end.
+3. Two passing block-frame qualifications under addendum revision 2, on a
+   quiet machine.
+4. A separate go decision for the run itself.

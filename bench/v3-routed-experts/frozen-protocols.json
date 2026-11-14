@@ -1,0 +1,27 @@
+{
+  "frozen_on": "2026-11-14",
+  "note": "A change to any file below is a new protocol revision, not an edit. Drivers and trial binaries are not frozen; receipts record the hashes of those that ran.",
+  "protocols": {
+    "LINK-2 block-frame addendum revision 2": {
+      "document": "LINK-2-block-frames-revision-2.md",
+      "sha256": {
+        "LINK-2-block-frames-revision-2.md": "50bd6420eabb64f648e2633df051738dfcbe465f17894df84eafdf40396f2c39",
+        "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+        "link_pair_model.py": "c31c662c54055d927b551d844d6b6fa79004cd669d31a9a32441ba0d6d7d91e3",
+        "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+        "block_frames.json": "41cc5f87e3e8cadb32d67a745bc909b316902514fa81b72b6dded04d72af3cbf"
+      }
+    },
+    "BLOCK-TIME-1 revision 2": {
+      "document": "BLOCK-TIME-1.md",
+      "sha256": {
+        "BLOCK-TIME-1.md": "47e2c4f9cd81efe271f125500434e4c8d4dcd99ef2d90c4b9df5357b9dfb3488",
+        "block_time_model.py": "c5215c10319d51bdae5a7374874d889d74a39c7ab03655ff56f6415cd20b01fa",
+        "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+        "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+        "profile_exact.py": "c84996b1395fc255d0c3e27e494b203ba74443ab4975bd8f2a939c719a4b264b",
+        "block_frames.json": "41cc5f87e3e8cadb32d67a745bc909b316902514fa81b72b6dded04d72af3cbf"
+      }
+    }
+  }
+}

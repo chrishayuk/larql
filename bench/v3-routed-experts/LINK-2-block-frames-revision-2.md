@@ -1,8 +1,10 @@
-# LINK-2 block-frame addendum, revision 2 (pre-registration, DRAFT)
+# LINK-2 block-frame addendum, revision 2 (pre-registration, frozen)
 
-Status: **draft for approval, 2026-11-14. Not frozen. No diagnostic or
-qualifying run has been made under it.** Once frozen, any change to a
-parameter or rule is a new revision, not an edit.
+Status: **approved and frozen on 2026-11-14. No diagnostic or qualifying run
+has been made under it.** Any change to a parameter or rule below is a new
+revision, not an edit. The frozen files and their hashes are in
+[`frozen-protocols.json`](frozen-protocols.json), and a test fails if any of
+them changes.
 
 It supersedes [revision 1](LINK-2-block-frames.md), which stays as written
 with its failed diagnostic. It does not amend

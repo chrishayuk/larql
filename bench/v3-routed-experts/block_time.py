@@ -85,7 +85,7 @@ def judge(observations):
         reasons = list(observation["frame_defects"])
         if observation["relay"] is not None and not observation["relay"]["relay_on_schedule"]:
             reasons.append("relay behind schedule")
-        if observation["role"] in (bt.ROLE_ARM, bt.ROLE_UNPROFILED, bt.ROLE_DIAGNOSTIC):
+        if observation["role"] in (bt.ROLE_ARM, bt.ROLE_UNPROFILED):
             before = max((b for b in brackets if b < index), default=None)
             after = min((b for b in brackets if b > index), default=None)
             if before is None or after is None:

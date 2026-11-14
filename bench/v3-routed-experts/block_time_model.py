@@ -9,7 +9,7 @@ import statistics
 import link_model as lm
 from profile_exact import agreement
 
-PROTOCOL = "BLOCK-TIME-1 revision 2 draft"
+PROTOCOL = "BLOCK-TIME-1 revision 2"
 SCHEMA = "larql.v3.block-time.v1"
 
 # GPT-OSS 20B, one worker owning every routed layer and expert.
@@ -19,12 +19,12 @@ SEQUENTIAL = "sequential"
 ARMS = {SEQUENTIAL: None, "block-1": 1, "block-2": 2, "block-4": 4, "block-8": 8}
 # The arm with sequential's exchange count on the block route: a control.
 CONTROL_ARM = "block-1"
-# The primary comparison. The relay is qualified at block frame sizes for
-# the non-zero delays here; 0 ms is the zero-delay relay, a measured control.
+# Every delay here has a relay qualification behind it at block frame sizes:
+# 5 and 20 ms by the block-frame addendum, and 0 ms as the zero-delay relay,
+# a measured control. No other delay is run. In particular 1 ms is not: the
+# additive-delay calibration failed its tolerance there for width-8 frames,
+# and any work at 1 ms needs its own separately declared protocol.
 RTT_MS = (0.0, 5.0, 20.0)
-# Run and reported, never fitted or claimed on: the additive-delay
-# calibration failed its tolerance for width-8 frames at this round trip.
-DIAGNOSTIC_RTT_MS = (1.0,)
 # The two delays of the differential slope, which does not use the 0 ms arm.
 DIFFERENTIAL_RTT_MS = (5.0, 20.0)
 REPEATS = 2
@@ -43,8 +43,6 @@ SLOPE_BAND = 0.10
 MINIMUM_EFFECT = 0.01
 
 ROLE_BRACKET, ROLE_ARM, ROLE_UNPROFILED, ROLE_DIRECT = "bracket", "arm", "unprofiled", "direct"
-# An arm trial at an unqualified delay: bracketed and gated like any other.
-ROLE_DIAGNOSTIC = "diagnostic"
 
 
 def exchanges_per_position(arm):
@@ -60,9 +58,6 @@ def schedule():
     delay the arms run in an order rotated by one per delay, reversed in the
     second repeat. At 0 ms each arm also runs once unprofiled, so the cost
     of asking the worker for its timing is measured and not assumed.
-
-    Each repeat then ends with the diagnostic delays, bracketed the same
-    way, after every primary trial of that repeat has run.
     """
     trials = []
 
@@ -84,10 +79,6 @@ def schedule():
             if rtt_ms == 0.0:
                 for arm in order:
                     add(ROLE_UNPROFILED, arm, rtt_ms, repeat, False)
-            add(ROLE_BRACKET, SEQUENTIAL, 0.0, repeat, True)
-        for rtt_ms in DIAGNOSTIC_RTT_MS:
-            for arm in (arms if repeat % 2 == 0 else list(reversed(arms))):
-                add(ROLE_DIAGNOSTIC, arm, rtt_ms, repeat, True)
             add(ROLE_BRACKET, SEQUENTIAL, 0.0, repeat, True)
     return trials
 
@@ -296,16 +287,10 @@ def analyse(observations):
             overhead.append({"arm": arm, "repeat": repeat, "profiled_ns": profiled, "unprofiled_ns": plain,
                              "relative": None if None in (profiled, plain) else (profiled - plain) / plain})
 
-    diagnostic = [{"arm": arm, "rtt_ms": rtt_ms,
-                   "repeats_ns": [per_position(ROLE_DIAGNOSTIC, arm, rtt_ms, repeat) for repeat in range(REPEATS)]}
-                  for arm in ARMS for rtt_ms in DIAGNOSTIC_RTT_MS]
-
     return {
         "cells": [{"arm": arm, "rtt_ms": rtt_ms, **cell} for (arm, rtt_ms), cell in cells.items()],
         "slopes": slopes, "faster": faster, "profiling_overhead": overhead,
-        "diagnostic_cells": diagnostic,
-        "diagnostic_note": "delays the relay is not qualified for at block frame sizes; reported only, "
-                           "never fitted and never the basis of a statement",
+
         "valid": sum(o["valid"] for o in observations),
         "void": sum(not o["valid"] for o in observations),
         "thresholds": {"slope_band": SLOPE_BAND, "minimum_effect": MINIMUM_EFFECT, "gate": GATE},
