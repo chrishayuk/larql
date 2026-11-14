@@ -210,8 +210,31 @@ pub trait ContinuationProvider {
     /// Record that the state now continues from `position`. The
     /// driving traversal is the only writer, and calls are monotonic —
     /// once per consumed position on the decode path, once at the end
-    /// of a batch prefill.
+    /// of a batch prefill. Moving the position BACK is never done here:
+    /// that is [`truncate`](Self::truncate), which also restores the rows.
     fn set_position(&mut self, position: usize);
+
+    /// Discard every position at or after the ABSOLUTE `position`, so the
+    /// state continues from `position` exactly as if it had never advanced
+    /// further. `position` is a sequence position, not a count of rows to
+    /// drop.
+    ///
+    /// This restores LOGICAL state, not a counter. After it returns `Ok`,
+    /// every later read must see what a provider that only ever advanced
+    /// to `position` would show, including every earlier row a sliding
+    /// window may still reach. A provider that has evicted or overwritten
+    /// such rows cannot honour that and must refuse.
+    ///
+    /// All or nothing: the whole rewind is validated, across every layer,
+    /// before anything is changed. An `Err` leaves the provider exactly as
+    /// it was. Rewinding to the current position is permitted and discards
+    /// any rows held beyond it; rewinding forward is refused.
+    ///
+    /// The default refuses. Rollback is a capability a provider states by
+    /// implementing it, never one it inherits.
+    fn truncate(&mut self, position: usize) -> Result<(), ContinuationError> {
+        Err(ContinuationError::TruncateUnsupported { position })
+    }
 
     /// Announce the FULL continuation geometry, KV and recurrent alike.
     ///
@@ -319,6 +342,15 @@ pub enum ContinuationError {
         layer: usize,
         reason: String,
     },
+    /// This provider cannot rewind at all: it does not implement
+    /// [`ContinuationProvider::truncate`].
+    TruncateUnsupported { position: usize },
+    /// The provider can rewind, but not this rewind. Nothing was changed.
+    TruncateRefused {
+        provider: &'static str,
+        position: usize,
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for ContinuationError {
@@ -353,6 +385,20 @@ impl std::fmt::Display for ContinuationError {
                 f,
                 "continuation provider `{provider}` cannot hold layer {layer}: {reason}; \
                  refusing before any row is stored"
+            ),
+            Self::TruncateUnsupported { position } => write!(
+                f,
+                "this continuation provider cannot rewind to position {position}: it does \
+                 not support rollback; refusing with its state unchanged"
+            ),
+            Self::TruncateRefused {
+                provider,
+                position,
+                reason,
+            } => write!(
+                f,
+                "continuation provider `{provider}` cannot rewind to position {position}: \
+                 {reason}; refusing with its state unchanged"
             ),
         }
     }
@@ -439,6 +485,61 @@ impl ContinuationFactory for RowFactory {
 }
 
 impl KvState for RowKvState {
+    /// Exact at any position: this provider keeps every row of every layer
+    /// and never evicts, and a sliding window is applied when attention
+    /// reads, not when rows are stored. Dropping the rows at and after
+    /// `position` therefore leaves exactly the rows a state that stopped at
+    /// `position` holds. Recurrent buffers and latent rows are refused: a
+    /// recurrence's state at an earlier position is not recoverable from
+    /// its state at a later one.
+    fn truncate(&mut self, position: usize) -> Result<(), ContinuationError> {
+        let refuse = |reason: String| ContinuationError::TruncateRefused {
+            provider: ROW_IDENTITY_FAMILY,
+            position,
+            reason,
+        };
+        // Everything is checked before anything is changed.
+        if position > self.position {
+            return Err(refuse(format!(
+                "the state continues from position {}; a rewind cannot move forward",
+                self.position
+            )));
+        }
+        if let Some(layer) = self.recurrent.iter().position(Option::is_some) {
+            return Err(refuse(format!(
+                "layer {layer} keeps recurrent buffers, which cannot be rewound"
+            )));
+        }
+        if let Some(layer) = self.latent.iter().position(Option::is_some) {
+            return Err(refuse(format!(
+                "layer {layer} keeps a latent cache, whose rewind is not implemented"
+            )));
+        }
+        for (layer, rows) in self.layers.iter().enumerate() {
+            if rows.keys.len() != rows.values.len() {
+                return Err(refuse(format!(
+                    "layer {layer} holds {} keys and {} values",
+                    rows.keys.len(),
+                    rows.values.len()
+                )));
+            }
+            // A layer that keeps rows holds one per position, so it must
+            // reach the target. A layer holding none keeps no rows at all.
+            if !rows.keys.is_empty() && rows.keys.len() < position {
+                return Err(refuse(format!(
+                    "layer {layer} holds {} rows, fewer than the target position",
+                    rows.keys.len()
+                )));
+            }
+        }
+        for rows in &mut self.layers {
+            rows.keys.truncate(position);
+            rows.values.truncate(position);
+        }
+        self.position = position;
+        Ok(())
+    }
+
     fn prepare(&mut self, layers: &[LayerKvGeometry]) {
         if self.layers.is_empty() {
             self.layers = layers.iter().map(|_| LayerRows::default()).collect();
