@@ -258,3 +258,271 @@ fn a_block_with_a_subnormal_scale_survives_encoding_and_execution() {
         "{got} against {exact}"
     );
 }
+
+// ---- A panic inside a worker must reach the caller; it must never wedge it or become a result ----
+//
+// The failpoint is keyed on the job's row count, so these tests cannot disturb the kernel tests running beside them.
+mod worker_panics {
+    use super::super::{
+        q8_0_gemv, FAIL_IN_HELPER, FAIL_N, FAIL_TWO_PANICS, GEMV_GATE, HELPER_PANICKED,
+        IN_EXCLUSIVE_SCENARIO,
+    };
+    use std::sync::atomic::Ordering;
+    use std::sync::{mpsc, Mutex};
+    use std::time::Duration;
+
+    /// Rows for the injected job: past one chunk of a 32-column matrix, off the 16-row grouping, and used by no other test.
+    const ROWS: usize = 4113;
+    const K: usize = 32;
+    /// The failpoint is process-wide state: one injected job at a time.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+    /// Marks the current thread as part of the exclusive scenario for as long as it lives.
+    struct InScenario;
+
+    impl InScenario {
+        fn enter() -> Self {
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(true));
+            InScenario
+        }
+    }
+
+    impl Drop for InScenario {
+        fn drop(&mut self) {
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(false));
+        }
+    }
+
+    /// `q8_0_gemv` as the scenario's own call: it bypasses the gate its owner holds.
+    fn scenario_gemv(blocks: &[u8], x: &[f32]) -> Option<Vec<f32>> {
+        let _in = InScenario::enter();
+        q8_0_gemv(blocks, x, ROWS, K)
+    }
+
+    /// Exclusive use of the kernel: waits for other tests' gemv calls to finish and holds
+    /// off new ones, so the scenario's calls never meet the fallback path.
+    fn exclusive() -> std::sync::RwLockWriteGuard<'static, ()> {
+        GEMV_GATE.write().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn run(in_helper: bool, swallow_panics: bool) {
+        let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let _exclusive = exclusive();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut builder = rayon::ThreadPoolBuilder::new().num_threads(4);
+            if swallow_panics {
+                builder = builder.panic_handler(|_| {});
+            }
+            let pool = builder.build().unwrap();
+            let blocks = vec![0u8; ROWS * (K / 32) * 34];
+            let x = vec![1.0f32; K];
+            for round in 0..25 {
+                FAIL_N.store(ROWS, Ordering::SeqCst);
+                FAIL_IN_HELPER.store(in_helper, Ordering::SeqCst);
+                HELPER_PANICKED.store(false, Ordering::SeqCst);
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    pool.install(|| scenario_gemv(&blocks, &x))
+                }));
+                FAIL_N.store(0, Ordering::SeqCst);
+                let payload = result.expect_err(&format!(
+                    "round {round}: a panicking worker must not yield a result"
+                ));
+                let text = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_default();
+                assert!(
+                    text.starts_with("injected"),
+                    "round {round}: the original panic reaches the caller, got {text:?}"
+                );
+                let ok = pool
+                    .install(|| scenario_gemv(&blocks, &x))
+                    .expect("geometry is valid");
+                assert!(
+                    ok.iter().all(|v| *v == 0.0),
+                    "round {round}: the next call is correct"
+                );
+            }
+            tx.send(()).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(60))
+            .expect("a worker panic left the caller waiting, or the thread died");
+    }
+
+    #[test]
+    fn a_helper_panic_reaches_the_caller_on_a_stock_pool() {
+        run(true, false);
+    }
+
+    #[test]
+    fn a_helper_panic_reaches_the_caller_when_the_pool_swallows_panics() {
+        run(true, true);
+    }
+
+    #[test]
+    fn a_caller_panic_reaches_the_caller_and_the_kernel_recovers() {
+        run(false, false);
+    }
+
+    /// Two workers panic together and the second payload's destructor panics. Dropping that payload must not unwind out of
+    /// the worker: it would lose the worker's finished-chunk count and leave the caller waiting forever.
+    #[test]
+    fn a_payload_whose_destructor_panics_does_not_strand_the_caller() {
+        let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let _exclusive = exclusive();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(4)
+                .panic_handler(|_| {})
+                .build()
+                .unwrap();
+            let blocks = vec![0u8; ROWS * (K / 32) * 34];
+            let x = vec![1.0f32; K];
+            FAIL_N.store(ROWS, Ordering::SeqCst);
+            FAIL_IN_HELPER.store(false, Ordering::SeqCst);
+            FAIL_TWO_PANICS.store(true, Ordering::SeqCst);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                pool.install(|| scenario_gemv(&blocks, &x))
+            }));
+            FAIL_N.store(0, Ordering::SeqCst);
+            FAIL_TWO_PANICS.store(false, Ordering::SeqCst);
+            let payload = result.expect_err("a panicking worker must not yield a result");
+            let text = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            assert_eq!(
+                text, "injected caller panic",
+                "the first panic is the one re-raised"
+            );
+            assert!(
+                pool.install(|| scenario_gemv(&blocks, &x)).is_some(),
+                "the kernel still works"
+            );
+            tx.send(()).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(20))
+            .expect("the caller was left waiting for a chunk that was never counted");
+    }
+
+    /// The scenarios own the kernel: other threads calling it at the same time (as the rest of
+    /// the test binary does) must neither disturb them nor be starved.
+    #[test]
+    fn the_scenarios_hold_while_other_threads_call_the_kernel() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        let stop = Arc::new(AtomicBool::new(false));
+        let noise: Vec<_> = (0..3)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let blocks = vec![0u8; 5000 * 34];
+                    let x = vec![1.0f32; 32];
+                    while !stop.load(Ordering::Relaxed) {
+                        let _ = q8_0_gemv(&blocks, &x, 5000, 32);
+                    }
+                })
+            })
+            .collect();
+        run(false, false);
+        run(true, false);
+        stop.store(true, Ordering::Relaxed);
+        for n in noise {
+            n.join().unwrap();
+        }
+    }
+}
+
+/// The scheduling decisions the output cannot reveal: a wrong chunk size, helper count or
+/// dispatch choice still produces the right numbers, only slower or with more threads
+/// than intended, so each is checked against its own specification.
+mod scheduling {
+    use super::super::{
+        chunk_rows, helper_seats, q8_0_gemv, CHUNK_ELEMS, GEMV_GATE, GENERATION, GROUP_ROWS,
+        IN_EXCLUSIVE_SCENARIO,
+    };
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn a_chunk_is_whole_row_groups_that_fill_the_target_size() {
+        for k in [32, 64, 96, 128, 1024, 2048, 4096, 8192, 14336] {
+            let rows = chunk_rows(k);
+            assert!(
+                rows >= GROUP_ROWS && rows.is_multiple_of(GROUP_ROWS),
+                "k={k}: {rows} rows"
+            );
+            if k * GROUP_ROWS <= CHUNK_ELEMS {
+                // As many whole groups as fit: one more would pass the target.
+                assert!(rows * k <= CHUNK_ELEMS, "k={k}: {rows} rows overshoot");
+                assert!(
+                    (rows + GROUP_ROWS) * k > CHUNK_ELEMS,
+                    "k={k}: {rows} rows undershoot"
+                );
+            } else {
+                // A single group is already past the target: the smallest chunk there is.
+                assert_eq!(rows, GROUP_ROWS, "k={k}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_job_admits_every_other_pool_thread_as_a_helper() {
+        // A row count the failpoint tests never use, so their zero-helper rule is not in play.
+        let n = usize::MAX - 7;
+        for threads in 2..=64 {
+            assert_eq!(
+                helper_seats(n, threads),
+                threads as isize - 1,
+                "threads={threads}"
+            );
+        }
+    }
+
+    /// Runs one gemv as its own exclusive scenario on a pool of `threads` and reports whether
+    /// it published a job for helpers (each publication advances `GENERATION`).
+    fn publishes(threads: usize, n: usize) -> bool {
+        let k = 32;
+        let blocks = vec![0u8; n * (k / 32) * 34];
+        let x = vec![1.0f32; k];
+        let _exclusive = GEMV_GATE.write().unwrap_or_else(|e| e.into_inner());
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        let before = GENERATION.0.load(Ordering::SeqCst);
+        pool.install(|| {
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(true));
+            let out = q8_0_gemv(&blocks, &x, n, k);
+            IN_EXCLUSIVE_SCENARIO.with(|c| c.set(false));
+            assert_eq!(out.map(|v| v.len()), Some(n));
+        });
+        let advanced = GENERATION.0.load(Ordering::SeqCst) - before;
+        assert!(
+            advanced <= 1,
+            "one call publishes at most once, saw {advanced}"
+        );
+        advanced == 1
+    }
+
+    #[test]
+    fn only_a_matrix_wider_than_one_chunk_on_a_multi_thread_pool_is_published() {
+        let rows = chunk_rows(32);
+        assert!(
+            !publishes(1, rows * 5),
+            "a one-thread pool has no helpers to publish to"
+        );
+        assert!(
+            !publishes(4, rows / 2),
+            "a matrix inside one chunk is not worth sharing"
+        );
+        assert!(!publishes(4, rows), "exactly one chunk is still one chunk");
+        assert!(
+            publishes(4, rows + 1),
+            "past one chunk, helpers are invited"
+        );
+        assert!(publishes(4, rows * 5));
+    }
+}
