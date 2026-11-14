@@ -16,6 +16,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -118,6 +119,12 @@ def reseal_compiled(root):
     write_json(ledger_path, ledger)
 
 
+def reseal_compiled_index_only(root):
+    """Make the index and the ledger's result digests agree with the container again after the LEDGER FILE'S TEXT
+    was rewritten by hand. Nothing here parses the ledger, so a number no JSON writer would emit survives."""
+    reseal_index(root, REP)
+
+
 def operand_sha(op, key):
     digits = 8 if op["numerics"] == V.PROFILE_F32 else 16
     field = "operand" if key == "u" else key
@@ -131,6 +138,14 @@ def rehash_operands(op):
     keys = ("u", "alpha") if op["op"] == W.OP_REMOVE else ("a", "b")
     op["operands_sha256"] = {k: operand_sha(op, k) for k in keys}
     op["digest"] = W.op_digest(op)
+
+
+#: A verdict on one small fixture takes well under a second; this is the bound that separates it from a stall.
+ANSWER_AT_ONCE_SECONDS = 5.0
+#: 0.1 rounded to binary32, which an engine prints as `0.1`.
+TENTH_BINARY32_BITS = 0x3DCCCCCD
+BINARY32_INFINITY_BITS = 0x7F800000
+BINARY32_NAN_BITS = 0x7FC00000
 
 
 class Fixture(unittest.TestCase):
@@ -597,6 +612,204 @@ class LedgerFaults(Fixture):
         self.assertHalves(out, SAT, VIOL)
         self.assertIn("new_bits", self.findings(out, W.LEDGER))
 
+    def retarget_delta(self, root, delta, delta_bits, new_bits=None):
+        """Rewrite the first delta edit of the `mixed` fixture's element target as `delta`/`delta_bits`, with the
+        container holding `new_bits` (default: what the exact sum of the base element and `delta_bits` rounds to)."""
+        edit = self.ledger(root)["targets"][1]["edits"][0]
+        name = self.ledger(root)["targets"][1]["tensor"]
+        if new_bits is None:
+            new_bits = W.exact_sum_to_bf16(edit["old_bits"], delta_bits)
+        write_element(root, name, edit["row"], edit["col"], new_bits)
+        reseal_compiled(root)
+        self.edit_ledger(root, lambda d: d["targets"][1]["edits"][0].update(
+            delta=delta, delta_bits=delta_bits, new_bits=new_bits))
+        reseal_compiled(root)
+
+    def test_a_delta_written_in_shortest_binary32_form_is_the_binary32_it_reads_as(self):
+        # An engine prints 0x3dcccccd as `0.1`. Read as a binary64 that decimal is another number; read as a
+        # binary32, it is exactly the delta. An honest compile must not be reported as violated for it.
+        root = self.copy("mixed")
+        self.retarget_delta(root, 0.1, TENTH_BINARY32_BITS)
+        with open(os.path.join(root, LEDGER_FILE)) as f:
+            self.assertIn('"delta": 0.1,', f.read())
+        self.assertHalves(self.judge(root), SAT, SAT)
+
+    def test_a_delta_that_reads_as_another_binary32_than_its_bits(self):
+        root = self.copy("mixed")
+        self.retarget_delta(root, 0.1, TENTH_BINARY32_BITS + 1)
+        out = self.judge(root)
+        self.assertHalves(out, SAT, VIOL)
+        self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def test_a_delta_beyond_binary32_is_a_violation_not_a_crash(self):
+        root = self.copy("mixed")
+        self.retarget_delta(root, 1e300, TENTH_BINARY32_BITS)
+        out = self.judge(root)
+        self.assertHalves(out, SAT, VIOL)
+        self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def set_delta_text(self, root, text, delta_bits=TENTH_BINARY32_BITS, field="delta"):
+        """Put the literal JSON number `text` in the ledger: as the first delta edit's `delta`, or as a top-level
+        field of that name. Written as text, because these are numbers a JSON writer would not emit."""
+        marker = 123454321.5
+        def place(d):
+            if field == "delta":
+                d["targets"][1]["edits"][0].update(delta=marker, delta_bits=delta_bits)
+            else:
+                d[field] = marker
+        self.edit_ledger(root, place)
+        path = os.path.join(root, LEDGER_FILE)
+        with open(path) as f:
+            ledger = f.read()
+        self.assertEqual(ledger.count(repr(marker)), 1)
+        with open(path, "w") as f:
+            f.write(ledger.replace(repr(marker), text))
+        reseal_compiled_index_only(root)
+
+    def test_an_enormous_delta_is_answered_at_once_and_never_raises(self):
+        # Nine characters must not become a million-digit integer (§5), and no number may raise out of the verifier.
+        for text in ("1e400", "1e2000000", "1e999999999", "1e99999999999999999999", "-1e99999999999999999999",
+                     "1e" + "9" * 5000, "123456789e31"):
+            with self.subTest(delta=text[:24]):
+                root = self.copy("mixed")
+                self.set_delta_text(root, text)
+                started = time.monotonic()
+                out = self.judge(root)
+                self.assertLess(time.monotonic() - started, ANSWER_AT_ONCE_SECONDS)
+                self.assertEqual(out["ledger_integrity"], VIOL, out["reasons"])
+                self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def test_a_vanishing_delta_reads_as_a_zero_of_its_sign(self):
+        for text, bits, reads in (("1e-99999999999999999999", 0x00000000, True),
+                                  ("-1e-2000000", 0x80000000, True),
+                                  ("1e-2000000", 0x80000000, False),
+                                  ("-1e-" + "9" * 5000, 0x80000000, True),
+                                  ("7e-46", 0x00000000, True),  # under half the smallest subnormal
+                                  ("7.1e-46", 0x00000001, True)):  # over it
+            with self.subTest(delta=text[:24], bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+
+    def test_the_sign_of_a_zero_delta_is_part_of_what_it_reads_as(self):
+        # −0 + −0 is −0 (§3b), so a zero's sign is not decoration. A binary32 reader reads `-0.0` as 0x80000000.
+        for text, bits, reads in (("0.0", 0x00000000, True), ("-0.0", 0x80000000, True),
+                                  ("-0.0", 0x00000000, False), ("0.0", 0x80000000, False),
+                                  ("0e5", 0x00000000, True), ("-0.000e-3", 0x80000000, True)):
+            with self.subTest(delta=text, bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+        self.assertTrue(W.delta_reads_as(0, 0x00000000))  # written as an integer
+        self.assertFalse(W.delta_reads_as(0, 0x80000000))
+
+    def test_the_reading_is_one_rounding_of_the_exact_decimal_ties_to_even(self):
+        tenth = TENTH_BINARY32_BITS
+        # The exact midpoint of 0x3dcccccd and 0x3dccccce, as a decimal: it goes to the even pattern, …ce.
+        midpoint = "0.10000000521540641784667968750"
+        for text, bits, reads in (("0.1", tenth, True), ("0.10000000149011612", tenth, True),
+                                  ("0.10000001", tenth, False), (midpoint, tenth + 1, True), (midpoint, tenth, False),
+                                  ("1e-1", tenth, True), ("100000000e-9", tenth, True), ("0.000001E5", tenth, True),
+                                  ("3.4028235e38", 0x7F7FFFFF, True), ("3.4028236e38", 0x7F7FFFFF, False),
+                                  ("1e-45", 0x00000001, True)):
+            with self.subTest(delta=text, bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+        self.assertTrue(W.delta_reads_as(1, 0x3F800000))
+        self.assertFalse(W.delta_reads_as(2 ** 200, 0x7F7FFFFF))
+
+    def test_an_exponent_is_read_by_its_value_not_its_length(self):
+        # Five thousand leading zeros in an exponent are still an exponent of one, or of none.
+        zeros = "0" * 5000
+        for text, bits, reads in ((f"1e-{zeros}", 0x3F800000, True), (f"1e-{zeros}", 0x00000000, False),
+                                  (f"1e{zeros}", 0x3F800000, True), (f"1e+{zeros}", 0x3F800000, True),
+                                  (f"1e-{zeros}1", TENTH_BINARY32_BITS, True), (f"1e-{zeros}1", 0x00000000, False),
+                                  (f"-1e-{zeros[1:]}38", 0x80000000, False),
+                                  ("1e-" + "0" * 30 + "1", TENTH_BINARY32_BITS, True),
+                                  ("1e" + "9" * 19, 0x7F7FFFFF, False), ("-1e-" + "9" * 19, 0x80000000, True)):
+            with self.subTest(delta=text[:8] + "…" + text[-4:], bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+        root = self.copy("mixed")
+        self.set_delta_text(root, f"1e-{zeros}", delta_bits=0x00000000)  # 1.0, recorded as zero
+        out = self.judge(root)
+        self.assertEqual(out["ledger_integrity"], VIOL, out["reasons"])
+
+    def test_a_delta_of_any_length_is_judged(self):
+        # More digits than an integer conversion takes: still a number, with one right reading.
+        tenth, zeros = TENTH_BINARY32_BITS, "0" * 5000
+        midpoint = "0.10000000521540641784667968750"  # of …cd and …ce: a tie, to the even …ce
+        for text, bits, reads in ((f"0.1{zeros}", tenth, True), (f"0.2{zeros}", tenth, False),
+                                  (f"0.{zeros}1e5000", tenth, True), (f"0.{zeros}1e5001", 0x3F800000, True),
+                                  (f"1{zeros}e-5001", tenth, True), (f"{zeros}0.1", tenth, True),
+                                  (midpoint + zeros, tenth + 1, True), (midpoint + zeros + "1", tenth + 2, False),
+                                  (midpoint + zeros + "1", tenth + 1, True),  # a hair over the tie: up, not to even
+                                  (midpoint[:-2] + "49" + "9" * 5000, tenth, True),  # a hair under it: down
+                                  ("0.1" + "3" * 5000, 0x3DCCCCCD, False)):
+            with self.subTest(delta=text[:12] + "…" + text[-6:], bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+        # The next midpoint, of …ce and …cf, ties DOWN to the even …ce. A nonzero digit five thousand places on
+        # puts the number over it, so it reads as …cf: digits past any cut-off still decide a tie.
+        upper = (W.f32_value(tenth + 1) + W.f32_value(tenth + 2)) / 2
+        scale = 10 ** 60
+        self.assertEqual(upper * scale % 1, 0)  # the decimal below is exact
+        upper = "0." + str(int(upper * scale)).zfill(60)
+        for text, bits in ((upper, tenth + 1), (upper + zeros, tenth + 1), (upper + zeros + "1", tenth + 2)):
+            with self.subTest(over_a_tie_that_goes_down=len(text)):
+                self.assertTrue(W.delta_reads_as(W.DecimalFloat(text), bits))
+                self.assertFalse(W.delta_reads_as(W.DecimalFloat(text), bits ^ 3))
+        for text, half in ((f"0.1{zeros}", SAT), (f"0.2{zeros}", VIOL)):
+            with self.subTest(judged=text[:6]):
+                root = self.copy("mixed")
+                self.retarget_delta(root, 0.1, tenth)
+                self.set_delta_text(root, text)
+                started = time.monotonic()
+                out = self.judge(root)
+                self.assertLess(time.monotonic() - started, ANSWER_AT_ONCE_SECONDS)
+                self.assertEqual(out["ledger_integrity"], half, out["reasons"])
+
+    def test_the_first_significant_digit_is_found_through_any_zeros(self):
+        hundred = "0" * 100
+        for text, bits, reads in ((f"0.{hundred}1e60", 0x00001BE0, None),  # 1e-41, a subnormal
+                                  (f"1{hundred}e-62", 0x7E967699, True),  # 1e38
+                                  ("0.0e400000000", 0x00000000, True), ("-0.0e400000000", 0x80000000, True),
+                                  ("0.0e400000000", 0x80000000, False),
+                                  (f"0.{hundred}1e140", 0x7F7FFFFF, False),  # 1e39: beyond binary32
+                                  (f"1{hundred}e-148", 0x00000000, True)):  # 1e-48: a zero
+            if reads is None:
+                bits = struct.unpack("<I", struct.pack("<f", 1e-41))[0]
+                reads = True
+            with self.subTest(delta=text[:10] + "…" + text[-6:], bits=f"{bits:08x}"):
+                self.assertEqual(W.delta_reads_as(W.DecimalFloat(text), bits), reads)
+
+    def test_the_integer_spelling_of_negative_zero_keeps_its_sign(self):
+        for bits, half in ((0x80000000, SAT), (0x00000000, VIOL)):
+            with self.subTest(bits=f"{bits:08x}"):
+                root = self.copy("mixed")
+                self.retarget_delta(root, 0.0, bits)
+                self.set_delta_text(root, "-0", delta_bits=bits)
+                out = self.judge(root)
+                self.assertEqual(out["ledger_integrity"], half, self.findings(out, W.LEDGER))
+
+    def test_a_violation_names_the_delta_as_it_was_written(self):
+        root = self.copy("mixed")
+        self.set_delta_text(root, "1e-" + "0" * 5000 + "1", delta_bits=0x00000000)
+        out = self.judge(root)
+        self.assertIn("delta 1e-0000", self.findings(out, W.LEDGER))
+        self.assertIn("characters)", self.findings(out, W.LEDGER))
+
+    def test_an_enormous_number_in_another_field_costs_nothing(self):
+        # Every float of the ledger is read through the same hook: one that is not a delta must not raise or stall.
+        root = self.copy("mixed")
+        self.set_delta_text(root, "1e99999999999999999999", field="writer_note")
+        out = self.judge(root)
+        self.assertNotIn("Traceback", json.dumps(out))
+        self.assertEqual(out["numerical_satisfaction"], SAT, out["reasons"])
+
+    def test_non_finite_delta_bits_are_a_ledger_violation_not_a_crash(self):
+        for bits in (BINARY32_INFINITY_BITS, BINARY32_NAN_BITS):
+            with self.subTest(bits=f"{bits:08x}"):
+                root = self.copy("mixed")
+                edit = self.ledger(root)["targets"][1]["edits"][0]
+                self.retarget_delta(root, 0.0, bits, new_bits=edit["new_bits"])
+                out = self.judge(root)
+                self.assertEqual(out["ledger_integrity"], VIOL, out)
+                self.assertIn("is not finite", self.findings(out, W.LEDGER))
+
     def test_a_delta_edit_with_the_wrong_old_bits(self):
         root = self.copy("mixed")
         self.edit_ledger(root, lambda d: d["targets"][1]["edits"][1].update(old_bits=0))
@@ -774,6 +987,28 @@ class WholeFileSegments(Fixture):
         out = self.judge(self.root, self.base)
         self.assertHalves(out, CNE, CNE)
         self.assertTrue(any("duplicate tensor name" in r for r in out["reasons"]), out["reasons"])
+
+
+class ExactSumRounding(unittest.TestCase):
+    """`bf16-rne-of-exact-sum` where a binary64 sum is not the exact sum: the delta sits on a BF16 tie and the stored
+    value is too small for a binary64 to keep. The exact sum is off the tie, so the small term decides the direction;
+    a reader that adds in binary64 lands on the tie and goes to the even neighbour instead. Hand-derived expectations,
+    so an engine and this verifier are each held to them independently."""
+
+    #: (old BF16 bits, delta binary32 bits, expected BF16 bits)
+    CASES = (
+        (0x3F80, 0x5D808000, 0x5D81),  # 1.0 + 2^60·(1 + 2^-8): above the tie, up
+        (0xBF80, 0x5D808000, 0x5D80),  # −1.0 + the same delta: below the tie, down
+        (0x2500, 0x3F808000, 0x3F81),  # 2^-53 + (1 + 2^-8): the stored value is the small term
+        (0x3F80, 0x5D818000, 0x5D82),  # an odd lower neighbour, above the tie: up
+        (0xBF80, 0x5D818000, 0x5D81),  # the same tie from below: down, where ties-to-even alone would go up
+        (0x3F80, 0x3B800000, 0x3F80),  # 1.0 + 2^-8 exactly: a true tie, to even
+    )
+
+    def test_the_small_term_breaks_the_tie(self):
+        for old, delta, want in self.CASES:
+            with self.subTest(old=f"{old:04x}", delta=f"{delta:08x}"):
+                self.assertEqual(f"{W.exact_sum_to_bf16(old, delta):04x}", f"{want:04x}")
 
 
 class NoArithmeticWithoutSelection(unittest.TestCase):

@@ -112,7 +112,15 @@ equals `digest`.
 An element target (`edits`, no `operations`) is read exactly as in `v2`/`v3`:
 
 - `encoding` absent or `delta`: `new_bits = RNE_bf16(exact(old_bits) + exact(delta_bits as f32))`, one rounding, ties to
-  even, IEEE signed zeros, refused if the result is not finite. `delta` must equal the f32 value of `delta_bits`.
+  even, IEEE signed zeros, refused if the result is not finite. `delta_bits` is the delta; a non-finite `delta_bits`
+  is a malformed record. `delta` is its decimal rendering, written in the fewest digits that read back to the same
+  f32 (`0.1` for `0x3dcccccd`), so it is judged as a binary32 reader reads it: the decimal, taken exactly and rounded
+  once to binary32 (ties to even), must give `delta_bits`: the same value, and for a zero the same sign, the sign
+  being the one written (`-0.0`, the integer spelling `-0`, or a negative number too small for binary32, reads as
+  `0x80000000`). It is not compared as a binary64. A `delta` beyond binary32 reads as no finite value and matches
+  nothing. The reading is defined for a number of any length, in the digits or in the exponent, with leading or
+  trailing zeros anywhere: a reader must answer for it, and must not do work that grows faster than the number's
+  length.
 - `encoding: result_bits`: `new_bits` is the declared result of a `remove_direction` op that the ledger does **not**
   carry (a tensor edited only by removals stays an element target, §2). Only the op's digest is in `origins`, so an
   independent verifier can hold the container to the recorded bits but cannot recompute them from the ledger alone;
