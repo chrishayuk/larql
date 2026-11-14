@@ -11,6 +11,14 @@ use crate::format::vindex3::opplan::{ExpertBank, FfnOp, OperandRef, RoutedFfnOp}
 #[allow(unused_imports)]
 use super::*;
 
+/// Refusals of [`RoutedOperands::apply_many`].
+const GROUPED_NEEDS_PROVIDER: &str =
+    "a grouped routed call needs placed experts and a bound provider";
+const GROUPED_REFUSES_WRAPPERS: &str =
+    "a grouped routed call does not support a latent or shared-expert branch";
+const GROUPED_NEEDS_LAYOUT: &str =
+    "routed FFN op carries a packed bank and no gate_up layout; closure requires one";
+
 impl RoutedOperands {
     /// The two banks, each one operand over its per-expert objects. A
     /// per-expert bank is refused before it is loaded, so it binds nothing.
@@ -127,6 +135,99 @@ impl RoutedOperands {
             .into_iter()
             .map(LoadedWeight::slice)
             .collect()
+    }
+
+    /// Whether a block of positions goes to this layer's experts as ONE
+    /// provider call: the experts are placed and a provider is bound.
+    pub(super) fn groups_rows(&self) -> bool {
+        matches!(self.placement, Some((_, Some(_))))
+    }
+
+    /// The routed FFN for several positions of one layer through a single
+    /// provider call ([`PlanBackend::routed_ffn_placed_rows`]): every
+    /// position is routed locally, all their selected experts travel
+    /// together, and each position is reduced in its own selection order.
+    ///
+    /// Only for placed experts with a bound provider. Each position's
+    /// arithmetic is the single-position path's: the same call, built
+    /// from the same operands, differing only in `x`. A layer with a
+    /// latent bottleneck or a shared-expert branch is refused, because
+    /// that program wraps the routed sum per position and remote
+    /// placement does not admit such a plan; nothing has run when it is.
+    pub(super) fn apply_many<B: super::super::backend::PlanBackend + ?Sized>(
+        &self,
+        op: &RoutedFfnOp,
+        backend: &B,
+        xs: &[&[f32]],
+        hidden: usize,
+    ) -> Result<Vec<Vec<f32>>, VindexError> {
+        let refuse = |message: &str| VindexError::Parse(message.to_string());
+        let placed = self
+            .placement
+            .as_ref()
+            .and_then(|(l, p)| Some((l, p.as_ref()?)));
+        let (layer, provider) = placed.ok_or_else(|| refuse(GROUPED_NEEDS_PROVIDER))?;
+        let wrapped = self.latent.is_some() || op.latent.is_some() || self.shared.is_some();
+        (!wrapped)
+            .then_some(())
+            .ok_or_else(|| refuse(GROUPED_REFUSES_WRAPPERS))?;
+        let (gate_up, down, gate, up) = match &self.experts {
+            ExpertMatrices::Fused {
+                gate_up: g,
+                down: d,
+            } => (slices(g), slices(d), Vec::new(), Vec::new()),
+            ExpertMatrices::Separate {
+                gate: g,
+                up: u,
+                down: d,
+                ..
+            } => (Vec::new(), slices(d), slices(g), slices(u)),
+        };
+        let layout = op.gate_up_layout;
+        let weights = || -> Result<ExpertSlices<'_>, VindexError> {
+            Ok(match &self.experts {
+                ExpertMatrices::Fused { .. } => ExpertSlices::Fused {
+                    gate_up: &gate_up,
+                    down: &down,
+                    layout: layout.ok_or_else(|| refuse(GROUPED_NEEDS_LAYOUT))?,
+                },
+                ExpertMatrices::Separate { access, .. } => ExpertSlices::Separate {
+                    gate: &gate,
+                    up: &up,
+                    down: &down,
+                    access: *access,
+                },
+            })
+        };
+        let calls = xs
+            .iter()
+            .map(|x| {
+                Ok(RoutedFfnCall {
+                    x,
+                    hidden,
+                    intermediate: op.expert_intermediate_size,
+                    experts: op.experts,
+                    top_k: op.top_k,
+                    router_kind: op.router_kind,
+                    routing_policy: op.routing_policy,
+                    branch_scale: op.executed_branch_scale(),
+                    activation: op.activation,
+                    gate_policy: op.gate_policy,
+                    router: &self.router,
+                    router_bias: self.router_bias.as_deref(),
+                    weights: weights()?,
+                    gate_up_bias: self.gate_up_bias.as_deref(),
+                    down_bias: self.down_bias.as_deref(),
+                    // The router reads what the experts consume: there is
+                    // no latent projection here to make them differ.
+                    router_input: None,
+                    router_scale: self.router_scale.as_deref(),
+                    router_per_expert_scale: self.router_per_expert_scale.as_deref(),
+                    router_norm_eps: self.router_norm_eps,
+                })
+            })
+            .collect::<Result<Vec<_>, VindexError>>()?;
+        backend.routed_ffn_placed_rows(&calls, *layer, provider.as_ref())
     }
 
     /// The routed FFN over `x` (what the experts consume), routing on

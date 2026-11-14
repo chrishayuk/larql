@@ -9,7 +9,7 @@ use crate::format::vindex3::opplan::exec::{
 };
 use std::sync::Arc;
 
-struct Grid(Vec<PreparedOperands>);
+pub(super) struct Grid(pub(super) Vec<PreparedOperands>);
 impl RoutedExpertProvider for Grid {
     fn apply(
         &self,
@@ -159,7 +159,7 @@ fn owned_expert_reads_and_shuffled_outputs_preserve_continuation_bits() {
         }
     }
 }
-fn bits(v: &[f32]) -> Vec<u32> {
+pub(super) fn bits(v: &[f32]) -> Vec<u32> {
     v.iter().map(|x| x.to_bits()).collect()
 }
 

@@ -468,7 +468,10 @@ pub(super) fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         }
         _ => Cow::Borrowed(&ffn_branch_inputs),
     };
-    let ffn_outs: Vec<Vec<f32>> = if multi_position_ffn() {
+    // Remote experts take the grouped arm unconditionally: one exchange per
+    // worker per layer is what placement means for a block, and it must not
+    // depend on a switch that exists to measure a local scheduling shape.
+    let ffn_outs: Vec<Vec<f32>> = if multi_position_ffn() || ffn.groups_remote_rows() {
         // **CPU-7C2.** One call for every position, rather than a parallel
         // loop over positions each re-entering the executor.
         //
