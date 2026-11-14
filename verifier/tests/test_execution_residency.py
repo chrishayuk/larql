@@ -11,6 +11,7 @@ import sys
 import tempfile
 import shutil
 import unittest
+from unittest import mock
 from fractions import Fraction
 
 import numpy as np
@@ -162,7 +163,6 @@ class TheOtherRules(unittest.TestCase):
         self.assertEqual(R.resident_digest(R.RULE_STORED_BYTES, raw, (1, 2)), sha(raw))
 
 
-@unittest.skipUnless(os.path.exists(ENGINE_DIGESTS), "the engine's digests have not been generated")
 class TheEnginesLoader(unittest.TestCase):
     """Digests the engine's own loader produced for every matrix of the committed base, under each rule. Engine
     output, committed; the contract's rules must reproduce every one."""
@@ -339,6 +339,94 @@ class SelectionFaults(Fixture):
         doc = record()
         self.operand(doc, LARGE)["representation_source"] = "exact"
         self.assertHalves(self.judge(doc), SAT, VIOL)
+
+
+class Scope(Fixture):
+    """What the answer says about the parts it did not judge."""
+
+    def test_objects_the_record_does_not_name_are_listed_not_judged(self):
+        out = self.judge(record())
+        self.assertHalves(out, SAT, SAT)
+        self.assertEqual(out["uncovered_objects"], ["target.embedding", "target.output_head"])
+        self.assertIn("names every object", " ".join(m["value"] for m in out["measurements"]))
+
+    def test_every_missing_matrix_is_counted(self):
+        out = self.judge(record(only=[LARGE]))
+        self.assertHalves(out, VIOL, VIOL)
+        missing = len(MATRICES) - 1
+        self.assertEqual(out["violations"], 2 * missing)
+
+    def test_a_cap_is_read_without_the_white_space_around_it(self):
+        for cap in (" bf16", "bf16 ", "\tbf16\n"):
+            with self.subTest(cap=cap):
+                self.assertHalves(self.judge(record(max_format=cap)), SAT, SAT)
+                # The same choices as an uncapped run made, recorded under the cap: the cap forbids the manufacture.
+                doc = record()
+                doc["selection_inputs"]["max_format"] = cap
+                out = self.judge(doc)
+                self.assertHalves(out, SAT, VIOL)
+        self.assertHalves(self.judge(record(max_format="BF16")), SAT, SAT)  # not the cap: case is kept
+        self.assertEqual(R.selected_rules(10 ** 6, "auto", 1, "BF16"), {R.RULE_Q8_LOAD})
+
+    def test_an_operand_with_no_stored_bytes_of_its_own_is_not_judged(self):
+        for change in ({"stored_dtype": None, "stored_sha256": None}, {"stored_dtype": "Q8_0", "rule": "unspecified"}):
+            with self.subTest(change=change):
+                doc = record()
+                self.operand(doc, LARGE).update(change)
+                self.assertHalves(self.judge(doc), CNE, CNE)
+
+    def test_a_non_finite_tensor_is_outside_the_q8_rule(self):
+        real = R.Store.read
+
+        def with_a_nan(store, rid, name):
+            raw = real(store, rid, name)
+            return b"\xc0\x7f" + raw[2:] if name == LARGE else raw
+
+        with mock.patch.object(R.Store, "read", with_a_nan):
+            out = self.judge(record())
+        self.assertEqual((out["derivation"], out["status"]), (CNE, CNE), out["reasons"])
+        self.assertIn("non-finite", " ".join(out["reasons"]))
+
+    def test_an_operand_whose_order_or_shape_is_not_of_integers(self):
+        for change in ({"shape": [64.0, 256.0]}, {"order": "x"}, {"order": True}, {"shape": "64x256"}):
+            with self.subTest(change=change):
+                doc = record()
+                self.operand(doc, LARGE).update(change)
+                out = self.judge(doc)
+                self.assertEqual(out["derivation"], VIOL)
+                self.assertIn("malformed operand", self.findings(out, R.DERIVATION))
+
+    def test_a_container_that_changed_withdraws_both_verdicts(self):
+        with mock.patch.object(cli.checkpoint, "container_sha256", lambda root: "0" * 64):
+            out = self.judge(record())
+        self.assertEqual((out["status"], out["derivation"], out["selection"]), (CNE, CNE, CNE))
+        self.assertEqual(out["failed_halves"], [R.DERIVATION, R.SELECTION])
+        self.assertEqual({h["status"] for h in out["verdicts"].values()}, {CNE})
+
+    def test_an_answer_reached_before_the_record_is_read_has_both_verdicts(self):
+        out = cli.evaluate_residency(R.CONTRACT, os.path.join(self.work, "absent.json"), BASE)
+        self.assertEqual((out["status"], out["derivation"], out["selection"]), (CNE, CNE, CNE))
+        self.assertEqual(out["failed_halves"], [R.DERIVATION, R.SELECTION])
+
+    def test_a_record_nested_too_deeply_is_an_input_fault_not_a_platform_one(self):
+        path = os.path.join(self.work, "deep.json")
+        with open(path, "w") as f:
+            f.write("[" * 100000 + "]" * 100000)
+        out = cli.evaluate_residency(R.CONTRACT, path, BASE)
+        self.assertEqual(out["status"], CNE)
+        self.assertNotIn("platform", " ".join(out["reasons"]))
+
+    def test_a_file_name_that_is_not_text_is_not_an_exception(self):
+        real = R.file_digests
+
+        def with_a_bad_name(root):
+            files = real(root)
+            files["segments/bad\udcff"] = (0, hashlib.sha256(b"").hexdigest())
+            return files
+
+        with mock.patch.object(R, "file_digests", with_a_bad_name):
+            out = self.judge(record())
+        self.assertEqual((out["status"], out["violations"]), (CNE, 0), out["reasons"])
 
 
 class RecordFaults(Fixture):

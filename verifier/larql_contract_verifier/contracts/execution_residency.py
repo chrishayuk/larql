@@ -41,6 +41,8 @@ STATEMENT = (
     "bytes (derivation), in the representation its size, the recorded cache size, the representation source and the "
     "caps select (selection), and the record omits no matrix of an object it covers"
 )
+#: §2: a stored dtype the record may honestly give that this contract does not derive from.
+STORED_PACK = C.Q8_0
 RECORD_SCHEMA = "larql-residency-record/1"
 DERIVATION = "derivation"
 SELECTION = "selection"
@@ -78,6 +80,7 @@ NOT_ESTABLISHED = (
     "that the record is an honest account of what the process held (it is the engine's own report)",
     "that any kernel consumed the resident bytes, or computed correctly with them",
     "that the recorded cache size is the host's",
+    "that the record names every object the run loaded: an object with no operand in the record is listed, not judged",
 )
 
 
@@ -164,9 +167,11 @@ def resident_digest(rule: str, raw: bytes, shape: tuple[int, int]) -> str:
 def selected_rules(elements: int, source: str, l2_bytes: int, max_format) -> frozenset[str]:
     """§4: the rules a stored BF16 matrix of `elements` may be resident under. Defined for the default arithmetic
     arm and the `stored` and `auto` sources."""
+    # The cap is read as the engine reads its setting: surrounding white space is not part of it, case is.
+    cap = max_format.strip() if isinstance(max_format, str) else None
     if elements * F32_BYTES < l2_bytes:
         return frozenset({RULE_WIDEN_F32})
-    if elements * BF16_BYTES >= l2_bytes and source == "auto" and max_format != EXACT_CAP:
+    if elements * BF16_BYTES >= l2_bytes and source == "auto" and cap != EXACT_CAP:
         return frozenset({RULE_Q8_LOAD})
     return frozenset({RULE_STORED_BYTES, RULE_STORED_BYTES_MAPPED})
 
@@ -188,6 +193,7 @@ class Judge:
         self.D, self.S = Half(DERIVATION), Half(SELECTION)
         self.by_rule: dict[str, int] = {}
         self.objects: dict[str, set[str]] = {}
+        self.uncovered: list[str] = []
 
     def both_cannot(self, reason: str) -> None:
         self.D.cannot(reason)
@@ -233,8 +239,10 @@ class Judge:
     def judge_operand(self, i: int, o, seen: set) -> None:
         D, S = self.D, self.S
         if not isinstance(o, dict) or set(o) != OPERAND_FIELDS or not isinstance(o.get("object"), str) \
-                or not isinstance(o.get("tensor"), str):
-            D.violate(f"operands[{i}]", "malformed operand: its fields are not exactly the record's")
+                or not isinstance(o.get("tensor"), str) or not is_int(o.get("order")) \
+                or not isinstance(o.get("shape"), list) or not all(is_int(n) for n in o["shape"]):
+            D.violate(f"operands[{i}]", "malformed operand: its fields are not exactly the record's, or its order "
+                                        "or shape is not of integers")
             S.cannot(f"operands[{i}]: malformed operand")
             return
         where = f"{o['object']}/{o['tensor']}"
@@ -267,6 +275,16 @@ class Judge:
             D.cannot(f"{where}: stored as {entry.dtype} {list(shape)}; the rules are defined on BF16 matrices")
             S.cannot(f"{where}: not a BF16 matrix")
             return
+        if o["stored_dtype"] is None or o["stored_sha256"] is None:
+            D.cannot(f"{where}: the record gives no stored dtype or digest (an operand read through an overlay); "
+                     "the rules are defined on a container's stored bytes")
+            S.cannot(f"{where}: no stored dtype or digest")
+            return
+        if o["stored_dtype"] == STORED_PACK:
+            D.cannot(f"{where}: read from a stored {STORED_PACK} representation, which this contract does not "
+                     "derive from")
+            S.cannot(f"{where}: read from a stored {STORED_PACK} representation")
+            return
         if o["shape"] != list(shape) or o["stored_dtype"] != C.BF16:
             D.violate(where, f"recorded as {o['stored_dtype']} {o['shape']}, stored as BF16 {list(shape)}")
             S.cannot(f"{where}: the record does not describe the stored tensor")
@@ -276,6 +294,8 @@ class Judge:
         # derivation
         if rule not in DIGEST_LAYOUT:
             D.cannot(f"{where}: rule {rule!r} is not one this contract derives ({sorted(DIGEST_LAYOUT)})")
+        elif rule == RULE_Q8_LOAD and not np.all(np.isfinite(widen_bf16(raw))):
+            D.cannot(f"{where}: the stored tensor holds a non-finite element, outside {RULE_Q8_LOAD}'s domain (§3.1)")
         else:
             D.judged += 1
             if o["stored_sha256"] != sha256(raw):
@@ -319,9 +339,15 @@ class Judge:
             if rid not in self.store.reps or "compiled_from" in self.store.reps[rid]:
                 continue
             matrices = {t.name for t in self.store.seg(rid).tensors if len(t.shape) == 2}
-            for missing in sorted(matrices - named)[:OFFENDING_LIMIT]:
+            for missing in sorted(matrices - named):
                 self.D.violate(f"{obj}/{missing}", "a stored matrix of an object the record covers is not in the record")
                 self.S.violate(f"{obj}/{missing}", "a stored matrix of an object the record covers is not in the record")
+        # Objects the record says nothing about. Whether the run loaded them is not something the container shows,
+        # so they are reported and not judged.
+        for rid, e in sorted(self.store.reps.items()):
+            if e["encoding"] == C.BF16 and "compiled_from" not in e and e["object"] not in self.objects \
+                    and any(len(t.shape) == 2 for t in self.store.seg(rid).tensors):
+                self.uncovered.append(e["object"])
 
 
 def could_not(out: dict, *reasons: str) -> dict:
@@ -336,10 +362,19 @@ def evaluate(out: dict, record: str, container: str) -> dict:
     judge = Judge(record, container)
     try:
         judge.run()
+    except RecursionError:
+        judge.both_cannot("an input can't be read: it is nested more deeply than this reader follows")
     except RuntimeError as e:
         judge.both_cannot(f"the platform cannot run the rules: {e}")
     except BAD_INPUT as e:
         judge.both_cannot(f"an input can't be read: {type(e).__name__}: {e}")
+    files = getattr(judge, "files", None)
+    if files is not None:
+        try:
+            out["container"]["sha256"] = container_digest(files)
+        except ValueError:  # a file name that is not text (non-UTF-8 bytes, on a file system that allows them)
+            judge.both_cannot("the container holds a file whose name is not valid UTF-8, so it has no container "
+                              "digest")
     D, S = judge.D, judge.S
     halves = {DERIVATION: D.report(), SELECTION: S.report()}
     statuses = [h["status"] for h in halves.values()]
@@ -351,9 +386,6 @@ def evaluate(out: dict, record: str, container: str) -> dict:
         offending = offending[:OFFENDING_LIMIT - 1] + [{
             "name": f"{len(tail)} further findings", "violations": len(tail),
             "detail": "listed in full under `verdicts`", "half": ",".join(sorted({o["half"] for o in tail}))}]
-    files = getattr(judge, "files", None)
-    if files is not None:
-        out["container"]["sha256"] = container_digest(files)
     out["record"]["sha256"] = getattr(judge, "record_sha256", None)
     out.update(
         status=status,
@@ -365,11 +397,14 @@ def evaluate(out: dict, record: str, container: str) -> dict:
         selection=halves[SELECTION]["status"],
         failed_halves=[k for k, h in halves.items() if h["status"] != "satisfied"],
         selection_inputs=getattr(judge, "inputs", None),
+        uncovered_objects=list(judge.uncovered),
         measurements=[
             {"name": "operands whose derivation was recomputed", "value": str(D.judged)},
             {"name": "operands whose selection was re-decided", "value": str(S.judged)},
             {"name": "operands by rule", "value": ", ".join(f"{k}: {v}" for k, v in sorted(judge.by_rule.items()))},
             {"name": "objects covered", "value": ", ".join(sorted(judge.objects))},
+            {"name": "objects with stored matrices that the record does not name (not judged)",
+             "value": ", ".join(judge.uncovered) or "none"},
             {"name": "not established", "value": "; ".join(NOT_ESTABLISHED)},
         ],
     )

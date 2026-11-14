@@ -188,6 +188,8 @@ def evaluate_residency(contract: str, record: str, container: str) -> dict:
            "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
            "record": {"path": record, "sha256": None}, "container": {"path": container, "sha256": None},
            "measurements": [], "offending": [], "reasons": [],
+           "derivation": "could_not_evaluate", "selection": "could_not_evaluate", "verdicts": {},
+           "failed_halves": [execution_residency.DERIVATION, execution_residency.SELECTION],
            "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
                         "code_sha256": code_sha256()}}
     if contract != execution_residency.CONTRACT:
@@ -201,11 +203,16 @@ def evaluate_residency(contract: str, record: str, container: str) -> dict:
     # The digest and the bytes judged came from separate reads, so a verdict needs the input not to have changed.
     try:
         unchanged = checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
-    except OSError:
+    except (OSError, ValueError):  # ValueError: a file name with no digest (not valid UTF-8)
         unchanged = False
     if not unchanged:
-        out.update(violations=0, offending=[])
-        q8_0_t2.could_not(out, "the container changed during the evaluation")
+        # Neither verdict stands on bytes that changed under it: the halves are withdrawn with the status.
+        reason = "the container changed during the evaluation"
+        for half in out["verdicts"].values():
+            half.update(status="could_not_evaluate", violations=0, offending=[], reasons=half["reasons"] + [reason])
+        out.update(violations=0, offending=[], derivation="could_not_evaluate", selection="could_not_evaluate",
+                   failed_halves=[execution_residency.DERIVATION, execution_residency.SELECTION])
+        q8_0_t2.could_not(out, reason)
     return out
 
 

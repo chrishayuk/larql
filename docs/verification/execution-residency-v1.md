@@ -37,6 +37,12 @@ bytes the loader read), `representation_source` (`stored`, `auto` or `transient`
 `requested_format`, `resident_format` (what it got), `manufactured`, `rule`, `resident_sha256` and
 `resident_digest_layout`.
 
+`order` is an integer and `shape` a list of integers; an operand without them is malformed. `stored_dtype` and
+`stored_sha256` may be null (an operand the run read through an overlay of edits, which has no stored bytes of its
+own), and `stored_dtype` may be `Q8_0` (the run read the object's stored pack). Neither is a form this contract
+derives from: such an operand is not judged, in either verdict. The values of `order`, `requested_format`,
+`container` and `rules` are not judged.
+
 ## 3. Derivation rules
 
 Each is defined on a stored BF16 matrix `[rows, cols]`, row-major. A BF16 pattern `h` is the binary32 with bits
@@ -54,6 +60,9 @@ block:
 
 Resident digest (`codes-i8-row-major||scales-f32le-row-then-block`): SHA-256 over the codes, one signed byte each in
 row-major order, followed by the scales as little-endian binary32, row by row and block by block.
+
+The rule is defined on finite elements. A tensor with a NaN or an infinity is outside it: the derivation of an
+operand under `q8-load/1` from such a tensor is not judged. For finite input the clamp is never reached.
 
 This is not the stored Q8_0 pack's rule (`Q8_0_PACK_DERIVATION`): the block is 64
 elements, not 32; the scale is a binary32, not a binary16; the code is a division by the scale, not a product with
@@ -78,12 +87,16 @@ For a stored BF16 matrix of `E = rows × cols` elements, cache size `L = l2_byte
 | Condition | Rule |
 |---|---|
 | `4E < L` | `widen-f32/1` |
-| otherwise, `2E ≥ L`, source `auto`, and `max_format` is not exactly `bf16` | `q8-load/1` |
+| otherwise, `2E ≥ L`, source `auto`, and `max_format` is not `bf16` | `q8-load/1` |
 | otherwise | `stored-bytes` (or `stored-bytes-mapped`) |
 
-So source `stored`, or the cap `bf16`, forbids the manufacture. The rule is specified for sources `stored` and
-`auto` with `arithmetic` and `kquant_exec` unset. The `transient` source and the other arithmetic arms are not
-specified here.
+So source `stored`, or the cap `bf16`, forbids the manufacture. `max_format` is compared after white space around
+it is removed, and with its case kept: ` bf16 ` is the cap and `BF16` is not. The rule is specified for sources
+`stored` and `auto` with `arithmetic` and `kquant_exec` unset (null or empty). The `transient` source and the other
+arithmetic arms are not specified here.
+
+This is the production CPU backend's rule, for a codec that declares the direct BF16 kernel. The record does not
+say which backend made it, so a record from another backend is judged by this rule all the same.
 
 The cache size is the record's. Whether it is the host's is not something a record can show.
 
@@ -100,7 +113,11 @@ shape and dtype; `stored_sha256` is the digest of the container's tensor; `resid
 **Selection**, per operand: the operand's rule is the one §4 gives.
 
 **Completeness**, both verdicts: no operand is recorded twice, and for every object the record covers, every
-matrix of its canonical representation is in the record.
+matrix of its canonical representation is in the record. Each missing matrix is one violation in each verdict.
+
+An object the record does not name at all is **not** a defect: which objects a run loads is not something the
+container shows. Such objects are listed in the answer (`uncovered_objects`) and are not judged, so a `satisfied`
+answer is about the objects the record covers and no others.
 
 | Defect | Derivation | Selection |
 |---|---|---|
@@ -112,8 +129,11 @@ matrix of its canonical representation is in the record.
 | A cache size the choices do not follow from | — | violated |
 | An unknown `representation_source` | — | violated |
 | A missing operand; an operand recorded twice | violated | violated |
-| A rule this contract does not derive | not evaluated | not evaluated |
+| A rule this contract does not derive (`stored-bytes-mapped`) that §4 places | not evaluated | judged |
+| A rule neither §3 nor §4 knows | not evaluated | not evaluated |
+| Null stored fields, a stored `Q8_0`, a non-finite tensor under `q8-load/1` | not evaluated | not evaluated (judged, for the non-finite tensor) |
 | The `transient` source, an arithmetic arm or a K-quant mode | — | not evaluated |
+| A malformed operand | violated | not evaluated |
 | A malformed record; a record of another container | not evaluated | not evaluated |
 
 `status` is `satisfied` only when both verdicts are; `violated` if either is; `could_not_evaluate` otherwise.
@@ -125,7 +145,12 @@ Listed in every answer:
 
 - that the record is an honest account of what the process held;
 - that any kernel consumed the resident bytes, or computed correctly with them;
-- that the recorded cache size is the host's.
+- that the recorded cache size is the host's;
+- that the record names every object the run loaded.
+
+Two limits of the reader: a container with a MoE manifest, auxiliary references, or a representation in any
+encoding but BF16 and Q8_0 is refused whole, so it is always `could_not_evaluate`; and the element count is
+`rows × cols` of the stored shape.
 
 ## 7. Independence
 
@@ -133,7 +158,10 @@ The rules are implemented in `verifier/larql_contract_verifier/contracts/executi
 document. No engine code is run or imported. The tests hold the Q8 rule to hand-derived blocks and to an
 exact-rational implementation with every rounding explicit, on a committed tensor and on seeded blocks across the
 BF16 range, and hold all three rules to digests the engine's own loader produced for every matrix of the committed
-fixture (`verifier/conformance/execution_residency/engine_digests.json`: engine output, not an oracle).
+fixture's decoder stack (`verifier/conformance/execution_residency/engine_digests.json`: engine output, not an
+oracle). Those matrices have 64 or 256 columns, so a short last block is held to the exact implementation only, not
+to the engine. The fixture was generated by the engine test named in it, which is in the engine's residency-record
+change and not in this one.
 
 **A limit on that independence.** §3.1 and §4 were written down by reading the engine's loader, because no
 specification of them existed. The document and the engine can therefore share a misreading of what the rule should

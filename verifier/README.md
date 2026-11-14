@@ -51,7 +51,7 @@ Implements [execution-residency-v1.md](../docs/verification/execution-residency-
 record of what each matrix operand was made resident as. This re-derives every resident representation from the
 container's stored bytes (the loader's 64-element-block Q8, exact widening to binary32, or the stored bytes kept) and
 re-decides every choice from the recorded policy and cache size, as two separate verdicts: **derivation** and
-**selection**. A record that omits an operand, names a rule this contract does not derive, or was made from another
+**selection**. A record that omits a matrix of an object it covers, names a rule this contract does not derive, or was made from another
 container is never satisfied. It judges the engine's own account of what it loaded; it does not show that a kernel
 consumed those bytes.
 

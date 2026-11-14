@@ -198,6 +198,7 @@ The exit status, stdout and the rules for an acceptable answer are as above, wit
 | `derivation`, `selection` | The two verdicts, each `satisfied`, `violated` or `could_not_evaluate` |
 | `verdicts` | Each in full: `status`, `violations`, `offending` (each finding tagged with its `half`), `reasons`, and how many operands were judged |
 | `failed_halves` | The verdicts that are not `satisfied`, by name |
+| `uncovered_objects` | Objects of the container with stored matrices that the record does not name. Listed, not judged: a `satisfied` answer is about the objects the record covers |
 | `selection_inputs` | The cache size and settings the record reported, which the selection verdict used. Reported, not established |
 
 `status` is `satisfied` only when both verdicts are. `EXECUTION_RESIDENCY_V1` is the one contract. The record is the
